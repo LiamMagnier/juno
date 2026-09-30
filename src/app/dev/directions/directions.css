@@ -1,0 +1,365 @@
+/*
+ * The directions gallery's material law: everything a direction changes that
+ * is not a colour. The colour tokens are generated from tokens.ts
+ * (`directionCss`) and mounted beside this file by the stage, so there is one
+ * place a value lives.
+ *
+ * Scoped to `[data-direction]` throughout. The attribute sits on the scene's
+ * wrapper and, while a scene is mounted, on <html> too, so the layers Radix
+ * portals to <body> read the same system.
+ */
+
+/* ———————————————————————————————— Type ———————————————————————————————— */
+
+[data-direction="ion"] {
+  --font-sans: var(--font-dir-geologica);
+  --font-mono: var(--font-dir-jetbrains);
+  --dir-display-tracking: -0.025em;
+  --dir-display-axes: normal;
+  --dir-ui-axes: normal;
+}
+[data-direction="graphite"] {
+  --font-sans: var(--font-dir-plex-sans);
+  --font-mono: var(--font-dir-plex-mono);
+  --dir-display-tracking: -0.02em;
+  --dir-display-axes: normal;
+  --dir-ui-axes: normal;
+}
+[data-direction="meridian"] {
+  --font-sans: var(--font-dir-commissioner);
+  --font-mono: var(--font-dir-jetbrains);
+  --dir-display-tracking: -0.018em;
+  /* The display rung is the one place Commissioner's axes move: a little
+     flare on the terminals and a little volume, so a heading reads as set
+     rather than typed. The interface keeps both at 0. */
+  --dir-display-axes: "FLAR" 40, "VOLM" 24;
+  --dir-ui-axes: "FLAR" 0, "VOLM" 0;
+}
+
+/* The dev-build indicator sits on the account row; a still of a scene should not carry it. */
+html[data-direction] nextjs-portal { display: none; }
+
+/* The html copy of the attribute outranks next/font's own `--font-sans`
+   class on the same element (one class against an attribute plus :root). */
+html:root[data-direction="ion"] { --font-sans: var(--font-dir-geologica); --font-mono: var(--font-dir-jetbrains); }
+html:root[data-direction="graphite"] { --font-sans: var(--font-dir-plex-sans); --font-mono: var(--font-dir-plex-mono); }
+html:root[data-direction="meridian"] { --font-sans: var(--font-dir-commissioner); --font-mono: var(--font-dir-jetbrains); }
+
+/* body resolved `font-family` against the page's face before the scope
+   existed, so the scope restates it rather than inheriting it. */
+[data-direction] {
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-variation-settings: var(--dir-ui-axes);
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+[data-direction] :is(.text-display, .text-page-title, .text-title, .dir-display) {
+  font-weight: 600;
+  letter-spacing: var(--dir-display-tracking);
+  font-variation-settings: var(--dir-display-axes);
+}
+
+[data-direction] .prose-juno :is(h1, h2, h3, h4) {
+  letter-spacing: var(--dir-display-tracking);
+  font-variation-settings: var(--dir-display-axes);
+}
+
+/* Meridian reads a step larger and looser: the editorial measure. */
+[data-direction="meridian"] :is(.prose-juno, .text-reading) {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+}
+
+/* ———————————————————————————————— Shape ———————————————————————————————— */
+
+/*
+ * The radius ladder, rung by rung. Tailwind's classes carry fixed px, so the
+ * scope restates each rung from the direction's variables. `control` is
+ * !important because two thumbs (the segmented control, the product switch)
+ * draw their corner as an inline style for framer's layout projection.
+ */
+[data-direction] .rounded-control { border-radius: var(--dir-r-control) !important; }
+[data-direction] .rounded-field { border-radius: var(--dir-r-field); }
+[data-direction] .rounded-menu { border-radius: var(--dir-r-menu); }
+[data-direction] :is(.rounded-card, .rounded-popover, .rounded-surface) { border-radius: var(--dir-r-card); }
+[data-direction] .rounded-panel { border-radius: var(--dir-r-panel); }
+[data-direction] .rounded-composer { border-radius: var(--dir-r-composer); }
+[data-direction] :is(.rounded-composer-control, .rounded-composer-action) { border-radius: var(--dir-r-composer-control); }
+[data-direction] .rounded-xs { border-radius: var(--dir-r-token); }
+/* A box nested in a panel at p-2: the concentric rung, computed rather than
+   chosen, because it lands on a different named rung in each direction. */
+[data-direction] .dir-nest-panel-2 { border-radius: calc(var(--dir-r-panel) - 8px); }
+/* Corner utilities that ride on a rung (the user bubble's tail) re-assert
+   themselves after the rung above flattened them. */
+[data-direction] .rounded-br-md { border-bottom-right-radius: 4px; }
+
+/* Thumbs inside a p-0.5 or p-1 track: concentric with the track. */
+[data-direction] .product-switch-thumb {
+  border-radius: calc(var(--dir-r-control) - 2px) !important;
+  background-color: hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--border));
+}
+.dark [data-direction] .product-switch-thumb,
+html.dark[data-direction] .product-switch-thumb {
+  background-color: hsl(var(--selected));
+  box-shadow: none;
+}
+[data-direction] [role="tab"] > span.surface-raised { border-radius: var(--dir-r-control) !important; }
+
+/* ———————————————————————————————— Material ———————————————————————————————— */
+
+/* Flat by default: the composer is a fill and a hairline, not a lifted card. */
+[data-direction] .composer-surface { box-shadow: none; }
+[data-direction] .composer-surface:focus-within {
+  box-shadow: none;
+  border-color: hsl(var(--foreground) / 0.32);
+}
+
+/* Hover is tonal; the press is a tonal step. Only the primary action dips,
+   and only to 0.98. */
+[data-direction] :is(.pressable, .control-neu):active,
+[data-direction] [role="radiogroup"] > button:active { transform: none; }
+@media (hover: hover) {
+  [data-direction] .control-primary:hover {
+    filter: none;
+    background-color: hsl(var(--primary) / 0.9);
+  }
+}
+[data-direction] .control-primary:active {
+  filter: none;
+  background-color: hsl(var(--primary) / 0.82);
+  transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-direction] .control-primary:active { transform: none; }
+}
+
+/* Focus: the house outline in the brand, on fields too (the field's own
+   3px halo is replaced so every control shows focus the same way). */
+[data-direction] :is(input, textarea):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-color: hsl(var(--ring));
+  box-shadow: none;
+}
+[data-direction] ::selection { background-color: hsl(var(--brand) / 0.2); color: hsl(var(--foreground)); }
+.dark [data-direction] ::selection,
+html.dark[data-direction] ::selection { background-color: hsl(var(--brand) / 0.34); }
+
+/* Faces: flat tone, no ground shadow, no catchlight, and still at rest.
+   Presence moves for thinking, working and waiting; an idle face does not
+   breathe. */
+[data-direction] :is(.agent-face__lit, .agent-face__rim) { stop-color: hsl(var(--face-tone)); }
+[data-direction] :is(.agent-face__ground, .agent-face__glint) { display: none; }
+[data-direction] .agent-face:is([data-state="idle"], [data-state="sleeping"]) .agent-face__all { animation: none; }
+[data-direction] .dir-face-offline .agent-face { filter: saturate(0); opacity: 0.55; }
+/* Hover is tonal: a row under the pointer does not lift or squash the face
+   in it. Each selector outranks the one in agent-face.css it answers. */
+[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible, :active) .agent-face:not([data-state="sleeping"]) .agent-face__rig,
+[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible, :active) .agent-face .agent-face__rig,
+[data-direction] .agent-face:not([data-state="sleeping"]):is(:hover, :active) .agent-face__rig,
+[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible) .agent-face:is([data-state="idle"], [data-state="waiting"], [data-state="done"]) .agent-face__eyes,
+[data-direction] .agent-face:is([data-state="idle"], [data-state="waiting"]):hover .agent-face__eyes {
+  transform: none;
+}
+
+/* Graphite's switch is ink on and inverts in dark, so its light thumb
+   would vanish on a light track: the thumb takes the ink there. */
+.dark [data-direction="graphite"] [role="switch"][data-state="checked"] span span,
+html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span span {
+  background-color: hsl(var(--primary-foreground));
+}
+
+/* Floating layers appear fast and quiet: 120ms, 3px, no spring, no scale. */
+@keyframes dir-layer-in {
+  from { opacity: 0; transform: translateY(var(--dir-layer-shift, 3px)); }
+  to { opacity: 1; transform: none; }
+}
+[data-direction] .origin-popper[data-state="open"] {
+  --dir-layer-shift: calc(var(--pop-shift, 4px) * 0.75);
+  animation: dir-layer-in 120ms var(--ease-out-soft) both;
+}
+[data-direction] .dir-layer-in { animation: dir-layer-in 120ms var(--ease-out-soft) both; }
+[data-direction] .dir-layer-in[data-side="top"] { --dir-layer-shift: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  [data-direction] :is(.origin-popper[data-state="open"], .dir-layer-in) { animation-name: none; }
+}
+
+/* The system sheet's forced states: the variant's own hover and pressed
+   styles, applied without a pointer so a still shows them. */
+[data-direction] .control-primary[data-force="hover"] { background-color: hsl(var(--primary) / 0.9); }
+[data-direction] .control-primary[data-force="pressed"] { background-color: hsl(var(--primary) / 0.82); transform: scale(0.98); }
+[data-direction] .control-neu[data-force="hover"] { background-color: hsl(var(--accent)); border-color: hsl(var(--foreground) / 0.18); }
+[data-direction] .control-neu[data-force="pressed"] { background-color: hsl(var(--selected)); border-color: hsl(var(--foreground) / 0.22); }
+[data-direction] [data-force="focus"] { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+[data-direction] input[data-force="focus"] { border-color: hsl(var(--ring)); }
+[data-direction] .dir-glyph-static * { animation: none !important; }
+
+/* ———————————————————————————————— Layout ———————————————————————————————— */
+
+[data-direction] .dir-column { width: 100%; max-width: var(--dir-column); margin-inline: auto; }
+[data-direction] .dir-turns > * + * { margin-top: var(--dir-turn-gap); }
+[data-direction] .dir-sidebar { width: var(--dir-sidebar); }
+
+[data-direction] .dir-text-brand { color: hsl(var(--brand)); }
+/* The draft field's placeholder: drawn only while the field is empty, so
+   typing replaces it rather than appending to it. */
+[data-direction] .dir-field-empty:empty::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+[data-direction] .dir-text-signal { color: hsl(var(--warning-foreground)); }
+
+/* ———————————————————————————————— Context tokens ———————————————————————————————— */
+
+/*
+ * A token is an object in the sentence: the thing's own mark, its name in
+ * the brand ink, a tonal fill, on the direction's token rung. It sits on the
+ * text's baseline at 1.5em so a line with a token is exactly as tall as one
+ * without.
+ */
+[data-direction] .dir-token {
+  /* Baseline-aligned on the label alone (the mark centres itself), so the
+     token's words sit on the sentence's baseline and the box grows evenly
+     above and below them. */
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  margin-inline: 0.08em;
+  padding: 0.16em 0.45em 0.18em 0.38em;
+  border: 1px solid transparent;
+  border-radius: var(--dir-r-token);
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--primary-ink));
+  font-size: 0.9375em;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  transition: background-color var(--dur-fast) var(--ease-out-soft), border-color var(--dur-fast) var(--ease-out-soft);
+}
+[data-direction] .dir-token:hover { background-color: hsl(var(--accent)); }
+/* On the user bubble, whose fill is the token's own, the token steps up to
+   the card with a hairline so it still reads as an object. */
+[data-direction] .dir-bubble .dir-token { background-color: hsl(var(--card)); border-color: hsl(var(--border)); }
+[data-direction] .dir-token[data-state="selected"] {
+  background-color: hsl(var(--selected));
+  border-color: hsl(var(--brand));
+}
+[data-direction] .dir-token[data-state="needs-connection"] {
+  border-style: dashed;
+  border-color: hsl(var(--muted-foreground) / 0.6);
+  background-color: transparent;
+  color: hsl(var(--muted-foreground));
+}
+[data-direction] .dir-token__hint {
+  margin-left: 0.15em;
+  padding-left: 0.4em;
+  border-left: 1px solid hsl(var(--border));
+  color: hsl(var(--primary-ink));
+  font-size: 0.9em;
+}
+[data-direction] .dir-token > svg { align-self: center; color: currentColor; }
+[data-direction] .dir-token[data-kind="crew"] > svg { width: 1.05em; height: 1.05em; }
+[data-direction] .dir-token__hint { align-self: center; }
+@media (prefers-reduced-motion: reduce) {
+  [data-direction] .dir-token { transition: none; }
+}
+
+/* ———————————————————————————————— Signatures ———————————————————————————————— */
+
+/*
+ * The three signature glyphs (glyphs.tsx). Geometry in SVG at 1px, motion in
+ * CSS on transform and opacity only, and a static form under reduced motion:
+ * the glyph holds one frame and the words beside it carry the state.
+ */
+.dir-glyph {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--glyph-size, 16px);
+  height: var(--glyph-size, 16px);
+  vertical-align: -0.2em;
+}
+.dir-glyph > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dir-glyph :is(ellipse, circle, path, line, polyline) { vector-effect: non-scaling-stroke; }
+
+/* Orbit. The satellite rides two movers: x swings ±rx and y swings ±ry a
+   quarter period behind it on a sine curve, which traces the ellipse exactly
+   without squashing the dot. The track is tilted with the drawing. */
+.dir-orbit__track { position: absolute; inset: 0; transform: rotate(-25deg); }
+.dir-orbit__x,
+.dir-orbit__y { position: absolute; inset: 0; }
+.dir-orbit__dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(3px, calc(var(--glyph-size, 16px) * 0.17));
+  height: max(3px, calc(var(--glyph-size, 16px) * 0.17));
+  border-radius: 9999px;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+.dir-glyph[data-state="idle"] .dir-orbit__track { display: none; }
+.dir-glyph[data-state="thinking"] .dir-orbit__x { transform: translateX(41.7%); }
+@media (prefers-reduced-motion: no-preference) {
+  .dir-glyph[data-state="thinking"] .dir-orbit__x {
+    animation: dir-orbit-x 1.5s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+  }
+  .dir-glyph[data-state="thinking"] .dir-orbit__y {
+    animation: dir-orbit-y 1.5s cubic-bezier(0.37, 0, 0.63, 1) -0.75s infinite alternate;
+  }
+}
+@keyframes dir-orbit-x { from { transform: translateX(-41.7%); } to { transform: translateX(41.7%); } }
+/* The far side of the orbit is the top of the ellipse: the point dims there
+   and brightens as it comes round the front. */
+@keyframes dir-orbit-y {
+  from { transform: translateY(-18.3%); opacity: 0.45; }
+  to { transform: translateY(18.3%); opacity: 1; }
+}
+
+/* Constellation. Points light in turn along a short arc. */
+.dir-constellation__point { transition: opacity var(--dur-fast) var(--ease-out-soft); }
+.dir-glyph[data-state="thinking"] .dir-constellation__point { opacity: 0.3; }
+.dir-glyph[data-state="thinking"] .dir-constellation__point:first-of-type { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .dir-glyph[data-state="thinking"] .dir-constellation__point {
+    animation: dir-constellation 1.35s var(--ease-in-out) infinite;
+  }
+  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(2) { animation-delay: 0.22s; }
+  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(3) { animation-delay: 0.44s; }
+}
+@keyframes dir-constellation {
+  0%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+  60% { opacity: 0.25; }
+}
+
+/* Meridian. The arc is half an ellipse; scaling it from +1.8 to -1.8 about
+   the centre turns it once round the globe. At both ends it lies on the
+   outline, so the restart is invisible. */
+.dir-meridian__arc { transform-box: view-box; transform-origin: 50% 50%; transform: scaleX(0.9); }
+@media (prefers-reduced-motion: no-preference) {
+  .dir-glyph[data-state="thinking"] .dir-meridian__arc {
+    animation: dir-meridian 2.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  }
+}
+@keyframes dir-meridian { from { transform: scaleX(1.8); } to { transform: scaleX(-1.8); } }
+
+/* Graphite's progress: points on a hairline. */
+.dir-points { display: flex; align-items: center; }
+.dir-points__seg { height: 1px; flex: 1 1 0; min-width: 8px; background: hsl(var(--border)); }
+.dir-points__seg[data-done] { background: hsl(var(--foreground) / 0.5); }
+.dir-points__pt {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid hsl(var(--muted-foreground) / 0.7);
+  background: hsl(var(--card));
+}
+.dir-points__pt[data-state="done"] { background: hsl(var(--foreground)); border-color: hsl(var(--foreground)); }
+.dir-points__pt[data-state="active"] { width: 9px; height: 9px; background: hsl(var(--brand)); border-color: hsl(var(--brand)); }
