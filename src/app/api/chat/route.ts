@@ -43,6 +43,7 @@ import {
 } from "@/lib/artifacts-store";
 import { UNTRUSTED_INPUT_TAINT } from "@/lib/artifact-proposals";
 import { sealArtifactDraft } from "@/lib/artifact-writes";
+import { artifactsForInstalledApps, isInstalledAppRequest } from "@/lib/artifact-access";
 import {
   applyArtifactPatch,
   ArtifactPatchError,
@@ -224,7 +225,7 @@ import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
-import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail, StreamChunk } from "@/types/chat";
+import type { ChatFinishReason, ClientActivityEvent, ClientArtifact, ClientToolDetail, StreamChunk } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -641,6 +642,12 @@ async function handleChat(req: Request) {
   }
 
   const legacyClient = legacyChatClientForOrigin(input);
+  // A `done` frame's artifacts go to an installed app without trashed rows or
+  // web design drafts (artifactsForInstalledApps): those builds keep every row
+  // they are handed until sync catches up with it.
+  const doneArtifacts = isInstalledAppRequest(req)
+    ? (rows: ClientArtifact[]) => artifactsForInstalledApps(rows)
+    : (rows: ClientArtifact[]) => rows;
 
   const admissible = privateAttachmentsRefusal(input) ?? emptySubmissionRefusal(input);
   if (admissible) return refuse(admissible);
@@ -3461,7 +3468,7 @@ async function handleChat(req: Request) {
           // now a column, and `serializeMessage` reads it back off the row that
           // was just written. Same numbers live and on reload, from one source.
           message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined },
-          artifacts,
+          artifacts: doneArtifacts(artifacts),
           memoryUpdated,
           quota: consumed.quota,
           finishReason,
@@ -3596,7 +3603,7 @@ async function handleChat(req: Request) {
               type: "done",
               // Read back off the persisted row, same as the success path.
               message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined },
-              artifacts,
+              artifacts: doneArtifacts(artifacts),
               memoryUpdated: false,
               quota: consumed.quota,
               finishReason: reason,

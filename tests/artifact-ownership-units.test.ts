@@ -7,9 +7,12 @@ import {
   ARTIFACT_VERSION_WINDOW,
   artifactInProjectWhere,
   artifactProjectId,
+  artifactsForInstalledApps,
+  isInstalledAppRequest,
   ownedArtifactWhere,
   syncConversationIdFor,
 } from "../src/lib/artifact-access";
+import type { ClientArtifact } from "../src/types/chat";
 import { nextVersionCursor, parseVersionPageQuery } from "../src/lib/artifact-version-pages";
 import {
   afterCursorWhere,
@@ -156,6 +159,58 @@ test("the migration is additive (expand step) and keeps every change-capture bra
   assert.match(sql, /IF NOT EXISTS \(SELECT 1 FROM "User" WHERE id = account_id\) THEN RETURN NULL; END IF;/);
   assert.match(sql, /\$\$ LANGUAGE plpgsql SET search_path = public, pg_temp;\s*CREATE TRIGGER juno_change_artifact/);
   assert.equal(sql.match(/SET search_path = public, pg_temp/g)?.length, 3, "every function this migration defines pins its search_path");
+});
+
+// ─── The installed apps ──────────────────────────────────────────────────────
+
+function clientArtifact(overrides: Partial<ClientArtifact> = {}): ClientArtifact {
+  return {
+    id: "art-1",
+    identifier: "hero",
+    type: "DESIGN",
+    title: "Hero",
+    currentVersion: 2,
+    content: "v2",
+    versions: [
+      { version: 1, content: "v1", origin: "generated", createdAt: "2026-09-30T10:00:00.000Z" },
+      { version: 2, content: "v2", origin: "edit", createdAt: "2026-09-30T11:00:00.000Z" },
+    ],
+    messageId: null,
+    createdAt: "2026-09-30T10:00:00.000Z",
+    updatedAt: "2026-09-30T11:00:00.000Z",
+    ...overrides,
+  };
+}
+
+test("an installed app is never handed a trashed artifact or a web draft", () => {
+  const live = clientArtifact();
+  const trashed = clientArtifact({ id: "art-2", deletedAt: "2026-09-30T12:00:00.000Z" });
+  const drafted = clientArtifact({
+    id: "art-3",
+    currentVersion: 3,
+    content: "draft",
+    versions: [...live.versions, { version: 3, content: "draft", origin: "edit", createdAt: "2026-09-30T12:00:00.000Z", draft: true }],
+  });
+  const [first, third, ...rest] = artifactsForInstalledApps([live, trashed, drafted]);
+  assert.equal(rest.length, 0, "the trashed one is left out");
+  assert.equal(first, live, "a plain live artifact passes through untouched");
+  assert.equal(third.id, "art-3");
+  assert.equal(third.currentVersion, 2, "the sealed head, not the draft's number");
+  assert.equal(third.content, "v2");
+  assert.deepEqual(third.versions.map((v) => v.version), [1, 2]);
+  assert.ok(third.versions.every((v) => !v.draft));
+
+  assert.equal(isInstalledAppRequest(new Request("http://juno.test", { headers: { authorization: "Bearer x" } })), true);
+  assert.equal(isInstalledAppRequest(new Request("http://juno.test")), false);
+});
+
+test("the chat read and a turn's done frame give the installed apps their projection", () => {
+  const thread = read("src/app/api/conversations/[id]/route.ts");
+  assert.match(thread, /isInstalledAppRequest\(req\)[\s\S]*artifactsForInstalledApps\(thread\.artifacts\)/);
+  const chat = read("src/app/api/chat/route.ts");
+  const frames = [...chat.matchAll(/type: "done",[\s\S]*?\n\s*\}\);/g)].map((m) => m[0]).filter((f) => /\bartifacts\b/.test(f) && !/artifacts: \[\]/.test(f));
+  assert.ok(frames.length >= 2, "both saved-turn done frames found");
+  for (const frame of frames) assert.match(frame, /artifacts: doneArtifacts\(artifacts\)/);
 });
 
 // ─── Publish vs Share ────────────────────────────────────────────────────────

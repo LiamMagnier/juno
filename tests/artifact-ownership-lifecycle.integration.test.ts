@@ -726,6 +726,41 @@ if (!DB_URL || !canMockModules) {
     assert.ok(Number(limited?.headers.get("retry-after")) >= 1);
   });
 
+  // ─── Review fixes ────────────────────────────────────────────────────────
+
+  test("an installed app's chat read carries no trashed artifact and no web design draft", async () => {
+    const user = await signUp("installed-app");
+    const { conversation, artifact: trashed } = await chatWithArtifact(user.id, { bodies: ["# gone"] });
+    const design = await prisma.artifact.create({
+      data: {
+        userId: user.id,
+        conversationId: conversation.id,
+        identifier: "hero",
+        title: "Hero",
+        type: "DESIGN",
+        currentVersion: 1,
+        versions: { create: { version: 1, content: await designBody("Sealed"), origin: "generated" } },
+      },
+    });
+    await transact(design.id, "Unsealed");
+    await (await artifactRoute()).DELETE(request("DELETE"), params({ id: trashed.id }));
+
+    const route = await import("@/app/api/conversations/[id]/route");
+    type Thread = { artifacts: Array<{ id: string; currentVersion: number; content: string; deletedAt?: string; versions: Array<{ version: number; draft?: true }> }> };
+    const web = (await (await route.GET(request("GET"), params({ id: conversation.id }))).json()) as Thread;
+    assert.ok(web.artifacts.find((a) => a.id === trashed.id)?.deletedAt, "the website still sees it, to offer Restore");
+    const webDesign = web.artifacts.find((a) => a.id === design.id)!;
+    assert.equal(webDesign.currentVersion, 2, "the website sees the draft as the version it will become");
+
+    const app = new Request("http://juno.test/api", { headers: { authorization: "Bearer device-token" } });
+    const native = (await (await route.GET(app, params({ id: conversation.id }))).json()) as Thread;
+    assert.equal(native.artifacts.some((a) => a.id === trashed.id), false, "sync tombstoned it; the read must not bring it back");
+    const nativeDesign = native.artifacts.find((a) => a.id === design.id)!;
+    assert.equal(nativeDesign.currentVersion, 1);
+    assert.deepEqual(nativeDesign.versions.map((v) => v.version), [1]);
+    assert.match(nativeDesign.content, /Sealed/);
+  });
+
   test("clean up the throwaway accounts", async () => {
     await prisma.user.deleteMany({ where: { email: { startsWith: "artifact-own-" } } });
     await prisma.$disconnect();

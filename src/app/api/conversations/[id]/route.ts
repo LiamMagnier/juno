@@ -6,14 +6,19 @@ import { getConversationThread } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
 import { artifactsFollowConversationProject, deleteConversationsKeepingArtifacts, type ArtifactFollowDb } from "@/lib/artifact-follow";
+import { artifactsForInstalledApps, isInstalledAppRequest } from "@/lib/artifact-access";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const thread = await getConversationThread(user.id, id);
   if (!thread) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // The installed apps lay every artifact of a chat read over their library
+  // until sync catches up, so they get neither a trashed artifact (sync has
+  // tombstoned it; it would come back and stay) nor a web design draft.
+  if (isInstalledAppRequest(req)) return NextResponse.json({ ...thread, artifacts: artifactsForInstalledApps(thread.artifacts) });
   return NextResponse.json(thread);
 }
 

@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { ClientArtifact } from "@/types/chat";
 
 /*
  * How an artifact is owned and scoped (PRODUCT_REFOUNDATION §10, D-013).
@@ -82,4 +83,52 @@ export function artifactProjectId(artifact: {
  */
 export function artifactInProjectWhere(projectId: string): Prisma.ArtifactWhereInput {
   return { OR: [{ projectId }, { projectId: null, conversation: { projectId } }] };
+}
+
+/**
+ * Whether a request comes from an installed Mac or iPhone build: those
+ * authenticate with a device bearer token (src/lib/session.ts), the website
+ * with its session cookie.
+ */
+export function isInstalledAppRequest(req: Pick<Request, "headers">): boolean {
+  return !!req.headers.get("authorization");
+}
+
+/**
+ * The chat artifacts an installed Mac or iPhone build is sent: a chat read
+ * (GET /api/conversations/[id]) and a turn's `done` frame.
+ *
+ * Those builds merge every artifact they are handed into their library as a
+ * row that stays until sync delivers the same version or a newer one
+ * (NativeArtifactModel.merge(streamed:)). So:
+ *
+ *   - a TRASHED artifact is left out. Sync tombstones it; handed over here, it
+ *     would be laid back over the library and never leave, because sync never
+ *     delivers it again. (The website keeps it, so a card can offer Restore.)
+ *   - a design's unsealed web DRAFT is taken off. It is presented to the
+ *     website as `currentVersion + 1`, and a build that cached it would keep a
+ *     body under a version number whose sealed body can still differ. The
+ *     sealed head goes instead.
+ *
+ * A live artifact with no draft passes through as the same object.
+ */
+export function artifactsForInstalledApps(artifacts: readonly ClientArtifact[]): ClientArtifact[] {
+  const out: ClientArtifact[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.deletedAt) continue;
+    if (!artifact.versions.some((version) => version.draft)) {
+      out.push(artifact);
+      continue;
+    }
+    const versions = artifact.versions.filter((version) => !version.draft);
+    const head = versions.reduce<(typeof versions)[number] | null>(
+      (best, version) => (best === null || version.version > best.version ? version : best),
+      null
+    );
+    // A design is born with version 1, so a draft always has a sealed head
+    // under it; one that somehow has none has nothing an app could show.
+    if (!head) continue;
+    out.push({ ...artifact, versions, currentVersion: head.version, content: head.content });
+  }
+  return out;
 }
