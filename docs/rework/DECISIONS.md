@@ -102,3 +102,64 @@ ACP do.
 
 **D-015 · iPhone tab bar is Chat · Crew · Code.** The Work tab goes; tasks live
 in chats. Search is the system search tab.
+
+## Design round 1 rejected (2026-09-30)
+
+**D-016 · Round 1 directions rejected.** The owner judged the first gallery
+(ion / graphite / meridian, commit 9f52b73b) "horrible AI slop compared to the
+actual website". Agreed diagnosis: token swaps of one layout rather than three
+designs; the accent everywhere; heavy greeting in off-the-shelf faces; busy
+sidebar and suggestion rows; cool grey plus saturated blue reads as a default
+SaaS template. The owner's goal is "the best overall product in terms of UI / UX
+and motion design", and the bar is *better than today's Juno at the same frame*,
+not merely different. Round 2 gives each designer a genuinely different concept
+(Porcelain: evolve today; Canvas: the reference images' principles; Instrument:
+a dark-first pro tool), a craft brief (two weights, accent in at most two places
+per screen, tokens drawn with the entity's own mark, one elevated object), a
+motion brief with recorded clips, three self-critique passes against current
+frames, a critic panel and a revision round.
+
+**D-017 · Skill guidance that the owner's rules override.** swiftui-design-skill
+recommends a serif display face and a warm accent, and stitch-design-taste
+recommends perpetual micro-loops and staggered list mounts. Both are overruled:
+the serif/warm pairing is exactly what reads as Claude, and the owner's motion
+brief bans decorative loops and endless staggers.
+
+## Juno Code agent (owner request 2026-09-30)
+
+The owner asked for "a real agent that can autonomously loop … like Codex,
+Claude Code and everyone", fixed computer use, preview, and every missing
+feature. Spec: `CODE_AGENT_SPEC.md` (lanes A–F). Its §7 decisions, taken here:
+
+**D-018 · Autonomy is on by default at the standard level**, with the §1.6
+budgets. The runtime's stop check, not the model, decides whether a run is
+finished; it never widens permissions.
+
+**D-019 · Checks run without prompts only through exact rules** the reader
+accepts once from the verify-recipe card ("Run these without asking in this
+repository"). Auto-running any command in the sandbox waits until the sandbox
+stops allowing global reads; the credential read deny-list (S3) is built in
+lane B.
+
+**D-020 · The goal judge is the cheapest capable model in the account's
+catalogue**, billed like other Code usage and shown separately in `/cost`. The
+judge can only answer continue / met / impossible.
+
+**D-021 · Computer-use grants are per app and per session** (Claude Code's
+model), no persistent "Always allow" in this pass.
+
+**D-022 · Evidence:** Preview screenshots and check results are kept with the
+session (local, deletable, not synced); computer-use screenshots stay
+memory-only. Nothing is attached to a PR unless the reader asks.
+
+**D-023 · Preview stays loopback-only.** External sites are out of scope for the
+agent's browser in this pass.
+
+**D-024 · Simulator input uses public tooling only:** `simctl` for install,
+launch, screenshots and URLs; taps and typing through accessibility on
+Simulator.app under a computer-use grant. No private SimulatorKit APIs.
+
+**D-025 · Offscreen Preview host,** with a 1-pt near-transparent on-screen host
+as the fallback if WebKit throttles offscreen pages. **Resume on launch** is off
+by default with a setting. **Headless CLI** waits (P2); an App Intent ships
+first.
