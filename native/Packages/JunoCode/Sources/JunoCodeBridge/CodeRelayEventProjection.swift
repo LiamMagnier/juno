@@ -119,22 +119,26 @@ public enum CodeRelayEventProjection {
     // MARK: - Interactions
 
     /// A redacted, bounded copy of an interaction event, or nil for any other.
+    ///
+    /// Bounded in UTF-8 bytes, which is what the relay's 64 KB per event is
+    /// counted in, with room for JSON to double what it escapes: counted in
+    /// characters, fifty checklist items of 300 were 90 KB in a script of
+    /// three-byte letters, and the relay swapped the whole list for a notice.
     static func canonicalInteraction(_ payload: SessionEventPayload) -> SessionEventPayload? {
-        func clean(_ value: String, _ limit: Int = maximumSummaryCharacters) -> String {
-            let redacted = redactor.redact(value)
-            guard redacted.count > limit else { return redacted }
-            return String(redacted.prefix(limit)) + "\n… [shortened on the way to your phone]"
+        func clean(_ value: String, _ bytes: Int = maximumSummaryCharacters) -> String {
+            OutputLimiter.apply(
+                OutputLimit(maximumBytes: bytes, truncationNotice: "\n… [shortened on the way to your phone]"),
+                to: redactor.redact(value)
+            ).text
         }
         switch payload {
         case let .todosUpdated(list):
             return .todosUpdated(TodoListEvent(items: list.items.prefix(50).map { item in
-                // Short per item: fifty of them still fit well inside the
-                // relay's 64 KB per event.
                 TodoItem(
                     id: String(item.id.prefix(64)),
-                    content: clean(item.content, 300),
+                    content: clean(item.content, 250),
                     status: item.status,
-                    activeForm: item.activeForm.map { clean($0, 300) }
+                    activeForm: item.activeForm.map { clean($0, 200) }
                 )
             }))
         case let .questionRequested(request):
@@ -148,7 +152,7 @@ public enum CodeRelayEventProjection {
                         question: clean(question.question),
                         header: question.header.map { clean($0, 120) },
                         options: question.options.map { option in
-                            UserQuestionOption(label: clean(option.label), description: option.description.map { clean($0) })
+                            UserQuestionOption(label: clean(option.label, 200), description: option.description.map { clean($0, 400) })
                         },
                         allowsMultipleSelection: question.allowsMultipleSelection
                     )
@@ -163,7 +167,7 @@ public enum CodeRelayEventProjection {
                 resolution: .answered(answers.map { answer in
                     QuestionAnswer(
                         questionID: answer.questionID,
-                        selectedOptions: answer.selectedOptions.map { clean($0) },
+                        selectedOptions: answer.selectedOptions.map { clean($0, 200) },
                         text: answer.text.map { clean($0) }
                     )
                 })
@@ -173,7 +177,7 @@ public enum CodeRelayEventProjection {
                 id: request.id,
                 sessionID: request.sessionID,
                 toolCallID: request.toolCallID,
-                plan: clean(request.plan, maximumTextCharacters),
+                plan: clean(request.plan, 24_000),
                 requestedAt: request.requestedAt,
                 expiresAt: request.expiresAt
             ))

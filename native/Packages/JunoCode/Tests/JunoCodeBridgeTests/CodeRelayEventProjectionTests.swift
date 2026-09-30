@@ -248,6 +248,40 @@ final class CodeRelayEventProjectionTests: XCTestCase {
         XCTAssertEqual(typed.expiresAt, request.expiresAt)
     }
 
+    /// The relay refuses a payload over 64 KB, counted in UTF-8 bytes: the
+    /// largest checklist and the largest question todo_write and ask_user
+    /// accept, in three-byte letters with quotes to escape, still fit.
+    func testTheLargestInteractionsFitOneRelayEvent() throws {
+        let wide = String(repeating: "語\"", count: 400)
+        let checklist = TodoListEvent(items: (1...50).map {
+            TodoItem(id: "item-\($0)", content: wide, status: .inProgress, activeForm: wide)
+        })
+        let question = UserQuestion(
+            id: "q",
+            question: wide + wide,
+            header: wide,
+            options: (1...4).map { UserQuestionOption(label: "\($0)" + wide, description: wide + wide) },
+            allowsMultipleSelection: true
+        )
+        let payloads: [SessionEventPayload] = [
+            .todosUpdated(checklist),
+            .questionRequested(QuestionRequest(
+                sessionID: session, toolCallID: "t", questions: Array(repeating: question, count: 4),
+                requestedAt: Date(), expiresAt: Date()
+            )),
+            .planSubmitted(PlanApprovalRequest(
+                sessionID: session, toolCallID: nil, plan: String(repeating: wide, count: 60),
+                requestedAt: Date(), expiresAt: Date()
+            )),
+        ]
+        for payload in payloads {
+            let relay = CodeRelayEventProjection.relayEvent(event(7, payload))
+            XCTAssertEqual(relay.kind, "canonical_session_event")
+            let bytes = try JSONEncoder().encode(relay.payload).count
+            XCTAssertLessThan(bytes, 64 * 1_024, String(describing: payload).prefix(60).description)
+        }
+    }
+
     func testAPlanTravelsBoundedAndItsDecisionWithIt() throws {
         let long = String(repeating: "step\n", count: 10_000)
         let submitted = CodeRelayEventProjection.relayEvent(event(5, .planSubmitted(PlanApprovalRequest(
