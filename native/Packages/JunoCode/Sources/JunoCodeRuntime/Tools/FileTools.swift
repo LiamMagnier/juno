@@ -1,7 +1,7 @@
 import Foundation
 import JunoCodeCore
 
-private func workspacePath(from input: JSONValue, field: String = "path") throws -> WorkspacePath {
+func workspacePath(from input: JSONValue, field: String = "path") throws -> WorkspacePath {
     guard let raw = input[field]?.stringValue else {
         throw ToolError.invalidInput(message: "Missing '\(field)'.")
     }
@@ -19,7 +19,7 @@ private func workspacePath(from input: JSONValue, field: String = "path") throws
 /// asks, an allow rule never silences it, and no "Always allow" is offered.
 /// Without it, a write to `.juno/settings.local.json` was an ordinary edit
 /// that Auto-edit made unasked.
-private func policyRisk(_ base: ActionRisk, _ input: JSONValue, fields: [String] = ["path"]) -> ActionRisk {
+func policyRisk(_ base: ActionRisk, _ input: JSONValue, fields: [String] = ["path"]) -> ActionRisk {
     let touchesPolicy = fields.contains { field in
         input[field]?.stringValue.map(WorkspacePolicyPaths.isProtected) ?? false
     }
@@ -34,7 +34,7 @@ private func policyRisk(_ base: ActionRisk, _ input: JSONValue, fields: [String]
 /// model was told the file had changed underneath it — and went off to re-read
 /// and re-reason about a file nobody had touched, sometimes in a loop. The two
 /// failures need different sentences because they have different fixes.
-private func parsedFingerprint(from input: JSONValue, field: String = "base_sha256") throws
+func parsedFingerprint(from input: JSONValue, field: String = "base_sha256") throws
     -> FileFingerprint?
 {
     guard let raw = input[field]?.stringValue else { return nil }
@@ -417,64 +417,6 @@ public struct WriteFileTool: CodeTool {
     }
 }
 
-public struct ApplyPatchTool: CodeTool {
-    private let files: any FileOperating
-
-    public init(files: any FileOperating) {
-        self.files = files
-    }
-
-    public let name = "apply_patch"
-    public let description =
-        "Replace an exact unique text block in a file. Fails when the target is missing or ambiguous; provide more context lines in that case."
-    public var inputSchema: JSONValue {
-        [
-            "type": "object",
-            "properties": [
-                "path": ["type": "string"],
-                "target": ["type": "string", "description": "Exact text to replace"],
-                "replacement": ["type": "string"],
-                "replace_all": ["type": "boolean"],
-                "base_sha256": ["type": "string"],
-            ],
-            "required": ["path", "target", "replacement"],
-        ]
-    }
-
-    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
-
-    public func summary(input: JSONValue) -> String {
-        "Edit \(input["path"]?.stringValue ?? "?")"
-    }
-
-    public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
-        let path = try workspacePath(from: input)
-        guard let target = input["target"]?.stringValue,
-              let replacement = input["replacement"]?.stringValue
-        else {
-            throw ToolError.invalidInput(message: "Missing 'target' or 'replacement'.")
-        }
-        let base = try parsedFingerprint(from: input)
-        let patch = TextPatch(
-            target: target,
-            replacement: replacement,
-            replaceAll: input["replace_all"]?.boolValue ?? false
-        )
-        let result = try await files.applyPatch(
-            path,
-            patch: patch,
-            expectedBase: base,
-            sessionID: context.sessionID
-        )
-        let added = result.diff?.linesAdded ?? 0
-        let removed = result.diff?.linesRemoved ?? 0
-        return ToolResult(
-            content: "Patched \(path.value) (+\(added) −\(removed)).",
-            sideEffects: [.fileChanged(fileChangedEvent(from: result))]
-        )
-    }
-}
-
 public struct DeleteFileTool: CodeTool {
     private let files: any FileOperating
 
@@ -550,7 +492,7 @@ public struct MoveFileTool: CodeTool {
     }
 }
 
-private func fileChangedEvent(from result: FileMutationResult) -> FileChangedEvent {
+func fileChangedEvent(from result: FileMutationResult) -> FileChangedEvent {
     FileChangedEvent(
         path: result.path,
         kind: result.kind,

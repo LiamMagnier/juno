@@ -8,9 +8,15 @@ public struct ToolRegistry: Sendable {
 
     /// Tools that can inspect a workspace without mutating it or starting a
     /// process. Ask and Plan sessions expose exactly this set.
+    ///
+    /// The session tools are here too — the todo list, a question for the
+    /// reader, a skill's instructions and the plan handoff change no file and
+    /// start nothing — though a session adds them itself, with its own
+    /// coordinators, rather than finding them in a workspace's registry.
     public static let inspectionToolNames: Set<String> = [
         "read_file", "list_directory", "find_files", "glob", "grep",
         "git_status", "git_diff", "git_log", "web_search",
+        "todo_write", "ask_user", "exit_plan", "use_skill",
     ]
 
     public init(tools: [any CodeTool]) {
@@ -42,6 +48,7 @@ public struct ToolRegistry: Sendable {
             CreateFileTool(files: files),
             WriteFileTool(files: files),
             ApplyPatchTool(files: files),
+            MultiEditTool(files: files),
             DeleteFileTool(files: files),
             MoveFileTool(files: files),
             RunCommandTool(executor: executor, changes: changes),

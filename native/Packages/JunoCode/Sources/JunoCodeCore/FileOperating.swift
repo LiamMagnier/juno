@@ -16,6 +16,89 @@ public enum FileOperationError: Error, Equatable, Sendable {
     case baseFingerprintRequired(path: String)
     case patchFailed(path: String, underlying: TextPatchError)
     case ioFailure(path: String, message: String)
+    /// A change set that cannot be applied as asked — a path named twice, a
+    /// move onto an existing file — refused before anything was written.
+    case invalidChangeSet(message: String)
+}
+
+extension FileOperationError: CustomStringConvertible {
+    /// A sentence a model can act on. The tool loop reports a thrown error by
+    /// its description, and the synthesized one (`concurrentModification(path:
+    /// "a")`) names the case without saying what to do about it.
+    public var description: String {
+        switch self {
+        case let .notFound(path):
+            return "\(path) does not exist."
+        case let .alreadyExists(path):
+            return "\(path) already exists."
+        case let .isADirectory(path):
+            return "\(path) is a directory."
+        case let .notUTF8Text(path):
+            return "\(path) is not UTF-8 text."
+        case let .tooLarge(path, byteCount, maximumBytes):
+            return "\(path) is \(byteCount) bytes, over the \(maximumBytes)-byte limit."
+        case let .concurrentModification(path):
+            return "\(path) changed since it was read. Read it again and redo the edit against the current content."
+        case let .baseFingerprintRequired(path):
+            return "\(path) already exists; pass the base_sha256 read_file returned for it."
+        case let .patchFailed(path, underlying):
+            return "\(path): the edit did not apply (\(underlying))."
+        case let .ioFailure(path, message):
+            return "\(path): \(message)"
+        case let .invalidChangeSet(message):
+            return message
+        }
+    }
+}
+
+/// One file's part of a change set: the content it should end with, and the
+/// state it must be in now for the change to apply.
+///
+/// Every request that touches an existing file carries the fingerprint of
+/// the content the new content was computed from. The service re-checks each
+/// one immediately before writing, so a file edited between the caller's read
+/// and the write fails the whole set rather than being silently overwritten.
+public enum FileChangeRequest: Equatable, Sendable {
+    /// Create a file that must not exist yet.
+    case create(path: WorkspacePath, content: String)
+    /// Replace an existing file's content, optionally moving it to `moveTo`
+    /// (which must not exist yet) in the same step.
+    case update(path: WorkspacePath, content: String, expectedBase: FileFingerprint, moveTo: WorkspacePath? = nil)
+    /// Delete an existing file.
+    case delete(path: WorkspacePath, expectedBase: FileFingerprint)
+
+    public var path: WorkspacePath {
+        switch self {
+        case let .create(path, _), let .update(path, _, _, _), let .delete(path, _):
+            return path
+        }
+    }
+
+    /// The source path and, for a move, its destination.
+    public var touchedPaths: [WorkspacePath] {
+        if case let .update(path, _, _, moveTo?) = self, moveTo != path {
+            return [path, moveTo]
+        }
+        return [path]
+    }
+}
+
+/// The raw bytes of a workspace file, for content that is not text: an image
+/// or a PDF.
+public struct FileDataReadResult: Equatable, Sendable {
+    public let path: WorkspacePath
+    /// At most the requested number of bytes, from the start of the file.
+    public let data: Data
+    /// The file's full size on disk.
+    public let totalByteCount: Int
+
+    public init(path: WorkspacePath, data: Data, totalByteCount: Int) {
+        self.path = path
+        self.data = data
+        self.totalByteCount = totalByteCount
+    }
+
+    public var isComplete: Bool { data.count == totalByteCount }
 }
 
 public struct FileReadResult: Equatable, Sendable {
@@ -112,4 +195,19 @@ public protocol FileOperating: Sendable {
         to destination: WorkspacePath,
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult
+
+    /// Reads up to `maximumBytes` of a file's raw bytes, whatever they encode.
+    func readData(_ path: WorkspacePath, maximumBytes: Int) async throws -> FileDataReadResult
+
+    /// Applies every change or none of them.
+    ///
+    /// Every request is validated first — containment, existence, the
+    /// expected fingerprints, sizes — then one checkpoint covering every path
+    /// is recorded, and the writes run in order. A failure part-way puts back
+    /// what this call already changed before the error is thrown. Results
+    /// come back in request order.
+    func applyChangeSet(
+        _ changes: [FileChangeRequest],
+        sessionID: CodeSessionID
+    ) async throws -> [FileMutationResult]
 }

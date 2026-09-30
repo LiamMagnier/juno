@@ -6,6 +6,11 @@ public enum PermissionRuleSubject: Equatable, Sendable {
     case command(String)
     /// A workspace-relative path.
     case path(String)
+    /// Several workspace-relative paths one invocation touches — both ends of
+    /// a move, every file of a multi-file patch. A deny or ask rule matching
+    /// any of them applies; an allow rule vouches only when every path is
+    /// allowed.
+    case paths([String])
     /// A host name, for tools that reach the network.
     case domain(String)
 }
@@ -82,8 +87,8 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
         // repository hook is a shell command too, asked about as one: the
         // reader's rule about `npm run lint` means the same when a hook runs
         // it.
-        "bash": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
-        "shell": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
+        "bash": ["run_command", "run_tests", "shell_start", "git_status", "git_diff", "git_log", "git_commit", "hook"],
+        "shell": ["run_command", "run_tests", "shell_start", "git_status", "git_diff", "git_log", "git_commit", "hook"],
         "read": ["read_file", "list_directory", "find_files", "glob", "grep"],
         "edit": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
         "write": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
@@ -131,6 +136,10 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
             return Self.commandMatches(pattern: specifier, command: command)
         case let .path(path)?:
             return Self.pathMatches(pattern: specifier, path: path)
+        case let .paths(paths)?:
+            // Answers "does this rule speak about any of them"; the set's
+            // evaluation decides what "any" means for allow.
+            return paths.contains { Self.pathMatches(pattern: specifier, path: $0) }
         case let .domain(host)?:
             guard specifier.lowercased().hasPrefix("domain:") else { return false }
             return Self.domainMatches(pattern: String(specifier.dropFirst(7)), host: host)
@@ -281,6 +290,27 @@ public struct PermissionRuleSet: Equatable, Sendable, Codable {
             }
             return nil
         }
+        if case let .paths(paths)? = subject {
+            // A path the reader denied or wants asked about is reason enough,
+            // whichever end of the operation it is on. An allow must cover
+            // every path: a rule for `src/**` says nothing about the file a
+            // patch also deletes from `secrets/`.
+            let each = paths.map(PermissionRuleSubject.path)
+            if let rule = deny.first(where: { rule in each.contains { rule.matches(toolName: toolName, subject: $0) } }) {
+                return .deny(rule)
+            }
+            if let rule = ask.first(where: { rule in each.contains { rule.matches(toolName: toolName, subject: $0) } }) {
+                return .ask(rule)
+            }
+            var first: PermissionRule?
+            for path in each {
+                guard let rule = allow.first(where: { $0.matches(toolName: toolName, subject: path) }) else {
+                    return nil
+                }
+                first = first ?? rule
+            }
+            return first.map(PermissionRuleDecision.allow)
+        }
         if let rule = deny.first(where: { $0.matches(toolName: toolName, subject: subject) }) {
             return .deny(rule)
         }
@@ -358,7 +388,7 @@ public struct PermissionRuleSet: Equatable, Sendable, Codable {
                 .filter { !$0.hasPrefix("-") }
                 .joined(separator: " ")
             return PermissionRule(tool: "Bash", specifier: prefix + " *")
-        case .path?:
+        case .path?, .paths?:
             return PermissionRule(tool: "Edit")
         case let .domain(host)?:
             return PermissionRule(tool: "WebFetch", specifier: "domain:" + host)

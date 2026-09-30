@@ -75,21 +75,35 @@ public struct TurnCapturingFileOperations: FileOperating {
         }
     }
 
+    public func readData(_ path: WorkspacePath, maximumBytes: Int) async throws -> FileDataReadResult {
+        try await base.readData(path, maximumBytes: maximumBytes)
+    }
+
+    /// Every path the set touches, a move's destination included.
+    public func applyChangeSet(
+        _ changes: [FileChangeRequest],
+        sessionID: CodeSessionID
+    ) async throws -> [FileMutationResult] {
+        try await capturing(changes.flatMap(\.touchedPaths), sessionID: sessionID) {
+            try await base.applyChangeSet(changes, sessionID: sessionID)
+        }
+    }
+
     /// Reads each path before, and records the outcome after — on failure
     /// too: whatever a tool left on disk is what the agent last left there,
     /// and a rewind judges every later edit against it. A pre-image is only
     /// kept for a path the operation changed, so one the service refused
     /// costs the turn nothing.
-    private func capturing(
+    private func capturing<Value: Sendable>(
         _ paths: [WorkspacePath],
         sessionID: CodeSessionID,
-        _ operation: () async throws -> FileMutationResult
-    ) async throws -> FileMutationResult {
+        _ operation: () async throws -> Value
+    ) async throws -> Value {
         var preImages: [TurnCheckpointStore.PreImage?] = []
         for path in paths {
             preImages.append(await turns.capturePreImage(of: path, sessionID: sessionID))
         }
-        let result: Result<FileMutationResult, any Error>
+        let result: Result<Value, any Error>
         do {
             result = .success(try await operation())
         } catch {
