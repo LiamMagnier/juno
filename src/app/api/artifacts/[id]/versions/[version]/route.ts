@@ -6,9 +6,13 @@ import { ownedArtifactWhere } from "@/lib/artifact-access";
 export const runtime = "nodejs";
 
 /**
- * One version's body. Versions are immutable, so a version older than the
- * head is cacheable by the browser for good; the head may still be followed
- * by a newer one and is not.
+ * One version's body.
+ *
+ * Never stored by the browser, although a version never changes: a version
+ * can still be DELETED ("Delete now", the trash purge, account deletion), and
+ * a year-long cache entry would keep its body on the device after the person
+ * erased it, readable to whoever uses the browser next without asking the
+ * server. Bodies are fetched one at a time on demand, so the cost is small.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string; version: string }> }) {
   const user = await getCurrentUser();
@@ -21,7 +25,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const artifact = await prisma.artifact.findFirst({
     where: ownedArtifactWhere(user.id, { id }),
-    select: { id: true, currentVersion: true },
+    select: { id: true },
   });
   if (!artifact) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -31,9 +35,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const sealed = version < artifact.currentVersion;
   return NextResponse.json(
     { version: { version: row.version, origin: row.origin, content: row.content, createdAt: row.createdAt.toISOString() } },
-    { headers: { "Cache-Control": sealed ? "private, max-age=31536000, immutable" : "private, no-cache" } }
+    { headers: { "Cache-Control": "private, no-store" } }
   );
 }

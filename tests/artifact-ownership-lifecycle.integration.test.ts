@@ -454,7 +454,9 @@ if (!DB_URL || !canMockModules) {
     const one = await import("@/app/api/artifacts/[id]/versions/[version]/route");
     const v3 = await one.GET(request("GET"), params({ id: artifact.id, version: "3" }));
     assert.equal(((await v3.json()) as { version: { content: string } }).version.content, "# v3");
-    assert.match(v3.headers.get("cache-control") ?? "", /immutable/);
+    // Never kept by the browser: a version can still be erased ("Delete now",
+    // the purge, account deletion), and a cached body would outlive that.
+    assert.match(v3.headers.get("cache-control") ?? "", /no-store/);
 
     // The artifact read carries a window, and says there is more.
     const got = (await (await (await artifactRoute()).GET(request("GET"), params({ id: artifact.id }))).json()) as {
@@ -725,6 +727,26 @@ if (!DB_URL || !canMockModules) {
     assert.equal(item.publications.length, 1);
   });
 
+  test("the account export carries a design's draft and Juno's suggestions with their bodies", async () => {
+    const user = await signUp("export-bodies");
+    const { artifact } = await chatWithArtifact(user.id, { type: "DESIGN", bodies: [await designBody("Sealed")] });
+    await transact(artifact.id, "Working copy");
+    await prisma.artifactProposal.create({
+      data: { artifactId: artifact.id, baseVersion: 1, payload: { content: "suggested body", title: "Hero", language: null }, summary: "s" },
+    });
+    const route = await import("@/app/api/account/export/route");
+    const payload = (await (await route.GET(request("GET", "/api/account/export"))).json()) as {
+      artifacts: {
+        versionsTruncated: boolean;
+        items: Array<{ id: string; draft: { content: string | null } | null; suggestions: Array<{ payload: { content: string } | null }> }>;
+      };
+    };
+    const item = payload.artifacts.items.find((i) => i.id === artifact.id)!;
+    assert.match(item.draft?.content ?? "", /Working copy/);
+    assert.equal(item.suggestions[0]?.payload?.content, "suggested body");
+    assert.equal(payload.artifacts.versionsTruncated, false);
+  });
+
   test("the artifact write routes are rate limited", async () => {
     const user = await signUp("limits");
     const { artifactWriteLimited, ARTIFACT_WRITE_BUDGETS } = await import("@/lib/artifact-rate-limit");
@@ -778,6 +800,26 @@ if (!DB_URL || !canMockModules) {
     assert.equal((await (await publication(secondCopy)).publish("latest")).status, 403);
     await restoreShare({ shareId: second.id, by: "admin@example.invalid" });
     assert.equal((await (await publication(secondCopy)).publish("latest")).status, 200);
+  });
+
+  test("deleting a chat keeps a file that only a Duplicate of its artifact still uses", async () => {
+    const user = await signUp("keep-for-copy");
+    const file = await prisma.attachment.create({
+      data: { userId: user.id, kind: "IMAGE", fileName: "logo.png", mimeType: "image/png", size: 10, storageKey: `k-${Date.now()}-copy` },
+    });
+    const { conversation, artifact } = await chatWithArtifact(user.id, { type: "HTML", bodies: ["<p>no picture yet</p>"] });
+    await prisma.attachment.update({ where: { id: file.id }, data: { conversationId: conversation.id } });
+    const duplicate = await import("@/app/api/artifacts/[id]/duplicate/route");
+    const { artifact: copy } = (await (await duplicate.POST(request("POST", "/api", {}), params({ id: artifact.id }))).json()) as {
+      artifact: { id: string };
+    };
+    assert.equal((await save(copy.id, { content: `<img src="/api/files/${file.storageKey}">`, baseVersion: 1 })).status, 200);
+
+    const route = await import("@/app/api/conversations/[id]/route");
+    assert.equal((await route.DELETE(request("DELETE"), params({ id: conversation.id }))).status, 200);
+    const kept = await prisma.attachment.findUnique({ where: { id: file.id } });
+    assert.ok(kept, "the copy's picture outlives the source's chat");
+    assert.equal(kept.conversationId, null);
   });
 
   test("an installed app's chat read carries no trashed artifact and no web design draft", async () => {

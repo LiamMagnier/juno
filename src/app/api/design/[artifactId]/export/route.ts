@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
+import { artifactWriteLimited } from "@/lib/artifact-rate-limit";
 import { prisma } from "@/lib/prisma";
 import { headObject } from "@/lib/storage";
 import { sniffImageMime } from "@/lib/uploads";
@@ -138,6 +139,10 @@ function designExportProblem(format: "svg" | "pdf" | "html", content: string): s
 export async function GET(req: Request, { params }: { params: Promise<{ artifactId: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Every format renders or serializes the whole document (audit B6): the
+  // same budget as an artifact download.
+  const limited = await artifactWriteLimited(user, "download");
+  if (limited) return limited;
 
   const { artifactId } = await params;
   const artifact = await loadOwnedDesignArtifact(artifactId, user.id);

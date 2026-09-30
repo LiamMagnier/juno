@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { prisma } from "@/lib/prisma";
@@ -260,7 +261,10 @@ export async function GET(req: Request) {
       deletedAt: true,
       createdAt: true,
       updatedAt: true,
-      draft: { select: { baseVersion: true, content: true, updatedAt: true } },
+      // Bodies (the draft's content, a suggestion's payload) are read below,
+      // in pages under the same budget as the history: each can be a whole
+      // document, and there is one per artifact or more.
+      draft: { select: { baseVersion: true, updatedAt: true } },
       publications: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -280,7 +284,7 @@ export async function GET(req: Request) {
       },
       proposals: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, baseVersion: true, status: true, summary: true, payload: true, createdAt: true, resolvedAt: true },
+        select: { id: true, baseVersion: true, status: true, summary: true, createdAt: true, resolvedAt: true },
       },
     },
   });
@@ -322,6 +326,54 @@ export async function GET(req: Request) {
     if (page.length < ARTIFACT_VERSION_PAGE) break;
     const last = page[page.length - 1];
     versionCursor = { artifactId: last.artifactId, version: last.version };
+  }
+
+  // Unsealed design drafts, then Juno's suggestions, after the history and
+  // under what is left of the same character budget.
+  const draftBodies = new Map<string, string>();
+  const suggestionBodies = new Map<string, Prisma.JsonValue>();
+  if (!artifactVersionsTruncated) {
+    let draftCursor: string | null = null;
+    drafts: for (;;) {
+      const page: Array<{ artifactId: string; content: string }> = await prisma.artifactDraft.findMany({
+        where: { userId: user.id, ...(draftCursor ? { artifactId: { gt: draftCursor } } : {}) },
+        orderBy: { artifactId: "asc" },
+        take: ARTIFACT_VERSION_PAGE,
+        select: { artifactId: true, content: true },
+      });
+      for (const row of page) {
+        if (exportedVersionChars + row.content.length > MAX_ARTIFACT_VERSION_CHARS) {
+          artifactVersionsTruncated = true;
+          break drafts;
+        }
+        exportedVersionChars += row.content.length;
+        draftBodies.set(row.artifactId, row.content);
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      draftCursor = page[page.length - 1].artifactId;
+    }
+  }
+  if (!artifactVersionsTruncated) {
+    let suggestionCursor: string | null = null;
+    suggestions: for (;;) {
+      const page: Array<{ id: string; payload: Prisma.JsonValue }> = await prisma.artifactProposal.findMany({
+        where: { artifact: { userId: user.id }, ...(suggestionCursor ? { id: { gt: suggestionCursor } } : {}) },
+        orderBy: { id: "asc" },
+        take: ARTIFACT_VERSION_PAGE,
+        select: { id: true, payload: true },
+      });
+      for (const row of page) {
+        const size = JSON.stringify(row.payload ?? null).length;
+        if (exportedVersionChars + size > MAX_ARTIFACT_VERSION_CHARS) {
+          artifactVersionsTruncated = true;
+          break suggestions;
+        }
+        exportedVersionChars += size;
+        suggestionBodies.set(row.id, row.payload);
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      suggestionCursor = page[page.length - 1].id;
+    }
   }
 
   const truncated = rawMessages.length > MAX_MESSAGE_ROWS;
@@ -553,7 +605,7 @@ export async function GET(req: Request) {
       versionsTruncated: artifactVersionsTruncated,
       ...(artifactVersionsTruncated
         ? {
-            truncationNote: `Artifact history is capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions and ${MAX_ARTIFACT_VERSION_CHARS.toLocaleString("en-US")} characters; the rest stays in your account.`,
+            truncationNote: `Artifact history, drafts and suggestions are capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions and ${MAX_ARTIFACT_VERSION_CHARS.toLocaleString("en-US")} characters; the rest stays in your account.`,
           }
         : {}),
       items: artifactRows.map(({ draft, publications, shares, proposals, ...artifact }) => ({
@@ -562,10 +614,11 @@ export async function GET(req: Request) {
         messageId: artifact.messageId ? stableMessageId.get(artifact.messageId) ?? artifact.messageId : null,
         projectId: artifact.projectId ? stableProjectId.get(artifact.projectId) ?? artifact.projectId : null,
         versions: versionsByArtifact.get(artifact.id) ?? [],
-        draft,
+        // A body left out by the budget is null; the truncation note says so.
+        draft: draft ? { ...draft, content: draftBodies.get(artifact.id) ?? null } : null,
         publications,
         shareLinks: shares,
-        suggestions: proposals,
+        suggestions: proposals.map((proposal) => ({ ...proposal, payload: suggestionBodies.get(proposal.id) ?? null })),
       })),
     },
     conversations: conversations.map((c) => ({

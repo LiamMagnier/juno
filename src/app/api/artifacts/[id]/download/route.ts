@@ -75,6 +75,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         "Content-Disposition": downloadDisposition(artifactFileName(artifact)),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
+        // An HTML or SVG body is the owner's (or Juno's) page, served from the
+        // app's own origin. `attachment` already makes browsers save it; the
+        // sandbox is the backstop so it can never run script as Juno if one
+        // renders it anyway.
+        "Content-Security-Policy": "sandbox",
       },
     });
   }

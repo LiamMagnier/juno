@@ -1,8 +1,11 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-export type ArtifactFollowDb = Pick<Prisma.TransactionClient, "artifact" | "attachment" | "artifactVersion" | "conversation">;
+export type ArtifactFollowDb = Pick<
+  Prisma.TransactionClient,
+  "artifact" | "attachment" | "artifactVersion" | "conversation" | "$queryRaw"
+>;
 type Db = ArtifactFollowDb;
 
 /*
@@ -40,33 +43,49 @@ export async function artifactsFollowConversationProject(
  * a Markdown image) would lose it with the chat, so those attachments are
  * detached from the chat first: they stay the owner's, still served by
  * /api/files, now belonging to no chat. Taken from artifacts/r1-lifecycle.
+ *
+ * "Its artifacts" are the ones made in these chats AND every Duplicate made
+ * from them, however many copies deep (`derivedFromId`): a copy has no chat of
+ * its own, carries the same body, and would otherwise lose its pictures when
+ * its source's chat goes. Every version counts (a restore brings an old one
+ * back), trashed artifacts count (Recently deleted brings them back), and so
+ * does a design's unsealed draft.
+ *
+ * One statement, so the work stays in the database however many files and
+ * versions there are: the bodies that quote any file at all are found once,
+ * and each of the chats' files is looked for in those.
  */
 export async function keepArtifactAttachments(db: Db, userId: string, conversationIds: readonly string[]): Promise<number> {
   if (conversationIds.length === 0) return 0;
-  const attachments = await db.attachment.findMany({
-    where: { userId, conversationId: { in: [...conversationIds] }, deletedAt: null },
-    select: { id: true, storageKey: true },
-  });
-  if (attachments.length === 0) return 0;
-  const artifacts = await db.artifact.findMany({
-    where: { userId, conversationId: { in: [...conversationIds] } },
-    select: { id: true },
-  });
-  if (artifacts.length === 0) return 0;
-  const keep: string[] = [];
-  for (const attachment of attachments) {
-    const quoted = await db.artifactVersion.findFirst({
-      where: {
-        artifactId: { in: artifacts.map((a) => a.id) },
-        content: { contains: `/api/files/${attachment.storageKey}` },
-      },
-      select: { id: true },
-    });
-    if (quoted) keep.push(attachment.id);
-  }
-  if (keep.length === 0) return 0;
+  const chats = Prisma.join([...conversationIds]);
+  const quoted = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    WITH RECURSIVE lineage AS (
+      SELECT a."id" FROM "Artifact" a
+       WHERE a."userId" = ${userId} AND a."conversationId" IN (${chats})
+      UNION
+      SELECT c."id" FROM "Artifact" c
+        JOIN lineage l ON c."derivedFromId" = l."id"
+       WHERE c."userId" = ${userId}
+    ),
+    bodies AS MATERIALIZED (
+      SELECT v."content" AS body FROM "ArtifactVersion" v
+       WHERE v."artifactId" IN (SELECT "id" FROM lineage)
+         AND strpos(v."content", '/api/files/') > 0
+      UNION ALL
+      SELECT d."content" FROM "ArtifactDraft" d
+       WHERE d."userId" = ${userId}
+         AND d."artifactId" IN (SELECT "id" FROM lineage)
+         AND strpos(d."content", '/api/files/') > 0
+    )
+    SELECT att."id" FROM "Attachment" att
+     WHERE att."userId" = ${userId}
+       AND att."conversationId" IN (${chats})
+       AND att."deletedAt" IS NULL
+       AND EXISTS (SELECT 1 FROM bodies b WHERE strpos(b.body, '/api/files/' || att."storageKey") > 0)
+  `);
+  if (quoted.length === 0) return 0;
   const detached = await db.attachment.updateMany({
-    where: { id: { in: keep }, userId },
+    where: { id: { in: quoted.map((row) => row.id) }, userId },
     data: { conversationId: null, messageId: null },
   });
   return detached.count;
@@ -86,11 +105,4 @@ export async function deleteConversationsKeepingArtifacts(userId: string, conver
     },
     { timeout: 30_000 }
   );
-}
-
-/** How many live artifacts deleting these chats keeps (for the confirmation copy). */
-export async function countArtifactsKeptOnDelete(userId: string, conversationId?: string): Promise<number> {
-  return prisma.artifact.count({
-    where: { userId, deletedAt: null, ...(conversationId ? { conversationId } : { conversationId: { not: null } }) },
-  });
 }

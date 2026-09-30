@@ -194,6 +194,11 @@ if (!canMockModules) {
       },
     },
   });
+  // The route's budget (the download bucket) is tested with the other artifact
+  // limits; here it always lets the export through.
+  mock.module("@/lib/artifact-rate-limit", {
+    namedExports: { artifactWriteLimited: async () => null },
+  });
 
   // Imported on first use, after the mocks above are in place.
   const exportAs = async (format: string, extra = "") => {
