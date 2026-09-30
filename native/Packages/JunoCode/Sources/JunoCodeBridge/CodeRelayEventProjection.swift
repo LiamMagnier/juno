@@ -128,11 +128,13 @@ public enum CodeRelayEventProjection {
         switch payload {
         case let .todosUpdated(list):
             return .todosUpdated(TodoListEvent(items: list.items.prefix(50).map { item in
+                // Short per item: fifty of them still fit well inside the
+                // relay's 64 KB per event.
                 TodoItem(
-                    id: item.id,
-                    content: clean(item.content),
+                    id: String(item.id.prefix(64)),
+                    content: clean(item.content, 300),
                     status: item.status,
-                    activeForm: item.activeForm.map { clean($0) }
+                    activeForm: item.activeForm.map { clean($0, 300) }
                 )
             }))
         case let .questionRequested(request):
