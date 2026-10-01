@@ -144,6 +144,8 @@ export function userMcpUrlProblem(raw: string): string | null {
   return null;
 }
 
+export const customMcpUrlProblem = userMcpUrlProblem;
+
 type Resolve = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
 
 const systemResolve: Resolve = (hostname) => dnsLookup(hostname, { all: true, verbatim: true });

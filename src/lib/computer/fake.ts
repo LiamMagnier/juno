@@ -340,14 +340,6 @@ export class FakeProvider implements ComputerProvider {
     return Boolean(c && c.state === "running" && c.vncRunning);
   }
 
-  async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
-    // Recorded without the token: the fake's call log is read by tests that
-    // assert no secret is ever recorded anywhere.
-    this.record("provisionCdpToken", handle);
-    const c = this.containers.get(handle.name);
-    if (c) c.gateToken = token;
-  }
-
   async fileInfo(
     handle: ComputerHandle,
     rawPath: string
@@ -395,7 +387,10 @@ export class FakeProvider implements ComputerProvider {
     // Recorded without the token itself: the call log is read by tests.
     this.record("provisionCdpToken", handle);
     const c = this.containers.get(handle.name);
-    if (c) c.cdpToken = token;
+    if (c) {
+      c.cdpToken = token;
+      c.gateToken = token;
+    }
   }
 }
 

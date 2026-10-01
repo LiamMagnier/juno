@@ -47,7 +47,6 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
   const image = opts.image ?? env.agentComputer.image;
   const network = opts.network ?? env.agentComputer.network;
   const name = `juno-agent-${opts.agentId}`;
-  const network = opts.network ?? env.agentComputer.network;
 
   const argv: string[] = [
     "create",
@@ -816,24 +815,6 @@ export class DockerProvider implements ComputerProvider {
       { allowNonZero: true, timeoutMs: 10_000 }
     );
     return res.exitCode === 0 && res.stdout.trim().length > 0;
-  }
-
-  async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
-    // Written to tmpfs through stdin, then renamed so the gate never reads half
-    // a token. The gate loads it, deletes it and keeps it in memory only.
-    await spawnWithStdin(
-      [
-        "exec",
-        "-i",
-        "--user",
-        "1000",
-        handle.name,
-        "sh",
-        "-c",
-        "umask 077 && cat > /tmp/.juno-cdp-token.part && mv -f /tmp/.juno-cdp-token.part /tmp/.juno-cdp-token",
-      ],
-      Buffer.from(token, "utf8")
-    );
   }
 
   async fileInfo(

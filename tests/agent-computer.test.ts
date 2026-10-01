@@ -125,6 +125,7 @@ describe("agent-computer provider and lifecycle", () => {
 
     // Rest (pause)
     const rested = await restComputer("user_1", "agent_1");
+    assert.ok(rested);
     assert.equal(rested.status, "resting");
     assert.equal(await fakeComputerProvider.state(awake1.handle), "paused");
 
@@ -135,6 +136,7 @@ describe("agent-computer provider and lifecycle", () => {
 
     // Sleep (stop)
     const slept = await sleepComputer("user_1", "agent_1");
+    assert.ok(slept);
     assert.equal(slept.status, "asleep");
     assert.equal(await fakeComputerProvider.state(awake2.handle), "exited");
 

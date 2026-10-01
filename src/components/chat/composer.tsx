@@ -1875,6 +1875,10 @@ export function Composer({
   // space is how you get a literal "@" or "/". "/" is anchored at the start of
   // the draft; "@" is anchored at the caret (see `mentionAt`).
   const slash = React.useMemo((): SlashState => {
+    if (mentionAt) {
+      const items = filterRows(mentions, mentionAt.query.toLowerCase());
+      return items.length ? { kind: "mention", items } : null;
+    }
     if (text.startsWith("/")) {
       const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
       if (modelMatch) {
@@ -1896,7 +1900,8 @@ export function Composer({
       }
       return null;
     }
-  }, [text, models, commands]);
+    return null;
+  }, [mentionAt, mentions, text, models, commands]);
 
   /*
    * The first "/" is what asks for the skill library.
