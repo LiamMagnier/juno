@@ -99,6 +99,14 @@
       "routes": {
         "/api/approvals": "native",
         "/api/approvals/[id]": "native",
+        "/api/approvals/grants": {
+          "status": "planned",
+          "note": "The standing \"always allow\" grants listed under Customize › Apps on the web, so a person can see what Juno may do without asking. The apps answer approvals but do not list standing grants yet."
+        },
+        "/api/approvals/grants/[id]": {
+          "status": "planned",
+          "note": "Revoking one standing grant from that list (DELETE). As /api/approvals/grants."
+        },
         "/api/chat": "native",
         "/api/chat/cancel": "native",
         "/api/chat/clarify": {
@@ -107,8 +115,8 @@
         },
         "/api/chat/follow-ups": "native",
         "/api/mentions": {
-          "status": "planned",
-          "note": "The composer's @ palette for typed context tokens (crew, files, projects, apps with needs-connection and approval preview, skills, chats, artifacts); the Mac and iPhone composers adopt inline tokens in the UI phase (request.context in the chat wire)."
+          "status": "native",
+          "note": "The composer's @ lookup for typed context tokens (agents, files, projects, apps with their connection and approval state, skills, chats, artifacts). Both apps' composers call it and send the chosen tokens as request.context."
         },
         "/api/chat/receipt": {
           "status": "planned",
@@ -319,8 +327,8 @@
           "note": "The picture of a suggested design, for Compare."
         },
         "/api/artifacts/[id]/publication": {
-          "status": "planned",
-          "note": "Publish (pinned to a version or to latest), Update, Roll back, Unpublish. The apps still make the legacy snapshot link through /api/share; the Publish panel is web-only until the native lane adds it."
+          "status": "native",
+          "note": "The apps read an existing publication (GET) to share its live link; opening an artifact never publishes it. Publish, Update, Roll back and Unpublish stay on the web until the native lane adds the panel."
         },
         "/api/artifacts/[id]/publication/reset": {
           "status": "planned",
@@ -387,6 +395,12 @@
           "mac": "native",
           "ios": "native",
           "screen": "DesktopConnectionsScreen"
+        },
+        "/customize": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopConnectionsScreen",
+          "note": "The web's Customize hub opens on its Apps tab, which renders /connections; the apps reach the same screen as Connections."
         }
       },
       "routes": {
@@ -412,6 +426,33 @@
         },
         "/api/connectors/composio/[slug]/connect": "native",
         "/api/connectors/composio/catalog": "native",
+        "/api/connectors/custom": {
+          "status": "native",
+          "note": "Mac only: lists and adds an OAuth-protected MCP server by URL (DesktopCustomConnectorSheets). The iPhone shows saved ones through /api/connectors but has no add form yet."
+        },
+        "/api/connectors/custom/probe": {
+          "status": "native",
+          "note": "Mac only: checks a pasted URL before it is added. As /api/connectors/custom."
+        },
+        "/api/connectors/custom/[id]": {
+          "status": "native",
+          "swift": "NativeCustomConnectorPath.resource(id) in JunoChatKit/NativeCustomConnectors.swift (GET, PATCH, DELETE)",
+          "note": "Mac only: reads, renames, switches tools off and removes a custom server."
+        },
+        "/api/connectors/custom/[id]/tools": {
+          "status": "native",
+          "swift": "NativeCustomConnectorPath.tools(id) in JunoChatKit/NativeCustomConnectors.swift",
+          "note": "Mac only: refreshes the server's tool list."
+        },
+        "/api/connectors/custom/[id]/connect": {
+          "status": "native",
+          "swift": "NativeCustomConnectorPath.connectURL(backend:id:) in JunoChatKit/NativeCustomConnectors.swift, opened in the browser",
+          "note": "Mac only: sign-in to the server starts here in the person's browser."
+        },
+        "/api/connectors/custom/callback": {
+          "status": "web-only",
+          "note": "The server's authorization page redirects the browser here; the Mac starts the flow at /api/connectors/custom/{id}/connect in the browser."
+        },
         "/api/mcp/[connector]": {
           "status": "internal",
           "note": "MCP servers Juno hosts for its own model runs."
@@ -474,13 +515,21 @@
           "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet."
         },
         "/api/skills/import/github": "native",
+        "/api/skills/import/package": {
+          "status": "planned",
+          "note": "Importing an uploaded SKILL.md or .zip/.skill package, pasted text or a public link, through the SSRF-safe fetcher. The Mac previews a SKILL.md through /api/skills/import/file; packages and links are web-only until the native lane adds them."
+        },
         "/api/skills/sources/[id]": "native",
         "/api/skills/sources/[id]/check": "native",
         "/api/skills/sources/[id]/update": "native",
         "/api/work/skills": "native",
         "/api/work/skills/[id]": "native",
         "/api/work/skills/[id]/versions": "native",
-        "/api/work/skills/[id]/versions/[version]/consent": "native"
+        "/api/work/skills/[id]/versions/[version]/consent": "native",
+        "/api/work/skills/[id]/export": {
+          "status": "planned",
+          "note": "Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet."
+        }
       }
     },
     {
@@ -614,6 +663,12 @@
           "mac": "native",
           "ios": "native",
           "screen": "Agents (shared with the iPhone)"
+        },
+        "/crew": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "Agents (shared with the iPhone)",
+          "note": "A user-facing alias of /agents that renders the same agents home; the apps' Agents destination is the same place."
         },
         "/agents/new": {
           "mac": "native",
@@ -835,6 +890,12 @@
           "mac": "native",
           "ios": "native",
           "screen": "DesktopSettingsWindow"
+        },
+        "/customize/instructions": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "Settings › Personalization (DesktopSettingsPersonalizationPane)",
+          "note": "The web's Customize › Instructions tab renders the same personalization section as Settings."
         },
         "/profile": {
           "mac": "native",
