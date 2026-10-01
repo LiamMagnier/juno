@@ -86,6 +86,7 @@ public final class StudioPreferences {
         static let notificationSound = "juno.code.studio.notification-sound"
         static let keepAwake = "juno.code.studio.keep-awake"
         static let showContextMeter = "juno.code.studio.context-meter"
+        static let resumeInterruptedOnLaunch = "juno.code.studio.resume-interrupted-on-launch"
     }
 
     private let store: UserDefaults
@@ -104,6 +105,7 @@ public final class StudioPreferences {
         notificationSound = store.object(forKey: Key.notificationSound) as? Bool ?? true
         keepAwakeWhileRunning = store.object(forKey: Key.keepAwake) as? Bool ?? true
         showContextMeter = store.object(forKey: Key.showContextMeter) as? Bool ?? true
+        resumeInterruptedOnLaunch = store.object(forKey: Key.resumeInterruptedOnLaunch) as? Bool ?? false
     }
 
     public var density: StudioThreadDensity {
@@ -160,6 +162,12 @@ public final class StudioPreferences {
         didSet { store.set(showContextMeter, forKey: Key.showContextMeter) }
     }
 
+    /// Carry on runs Juno quit in the middle of as soon as it opens again,
+    /// rather than waiting for Resume. Off by default (D-025).
+    public var resumeInterruptedOnLaunch: Bool {
+        didSet { store.set(resumeInterruptedOnLaunch, forKey: Key.resumeInterruptedOnLaunch) }
+    }
+
     public func resetToDefaults() {
         density = .balanced
         showReasoning = false
@@ -173,5 +181,6 @@ public final class StudioPreferences {
         notificationSound = true
         keepAwakeWhileRunning = true
         showContextMeter = true
+        resumeInterruptedOnLaunch = false
     }
 }

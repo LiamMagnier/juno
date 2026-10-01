@@ -156,7 +156,10 @@ public final class WorkbenchModel {
 
     public private(set) var workspaces: [WorkspaceRecord] = []
     public private(set) var sessions: [CodeSession] = [] {
-        didSet { sessionsObserver?(sessions) }
+        didSet {
+            sessionsObserver?(sessions)
+            publishRunIndex()
+        }
     }
     /// Told every change to the session list, for the lifetime of the
     /// workbench rather than of any window: the app hands it to
@@ -167,9 +170,49 @@ public final class WorkbenchModel {
     public var sessionsObserver: (@MainActor ([CodeSession]) -> Void)? {
         didSet { sessionsObserver?(sessions) }
     }
-    public var selectedSessionID: CodeSessionID?
+    public var selectedSessionID: CodeSessionID? {
+        didSet {
+            // Opening a session is reading it: a finished run leaves Ready for
+            // review once the reader has looked (CODE_AGENT_SPEC §5.1).
+            if let selectedSessionID { markViewed(selectedSessionID) }
+        }
+    }
     public var sessionSearchText = ""
-    public private(set) var lastError: String?
+
+    /// What the Runs list knows about every session, folded from the store's
+    /// events (see ``RunTracker``).
+    var runTracker = RunTracker()
+    /// Told the Runs list whenever it changes, for the life of the workbench:
+    /// the app hands it to `StudioRunMonitor`, which says what changed.
+    @ObservationIgnored
+    public var runIndexObserver: (@MainActor ([RunIndexEntry]) -> Void)? {
+        didSet { publishRunIndex() }
+    }
+    /// Whether interrupted runs carry on by themselves at launch. Off by
+    /// default (D-025); the reader turns it on in Settings.
+    @ObservationIgnored
+    public var resumesInterruptedRunsOnLaunch: @MainActor () -> Bool = {
+        StudioPreferences.shared.resumeInterruptedOnLaunch
+    }
+    /// The sessions a full-text search matched in their transcripts, keyed by
+    /// the query it answered (§5.17).
+    var transcriptMatches: (query: String, ids: Set<CodeSessionID>)?
+    /// Worktree setup commands waiting for the reader's approval, by session.
+    public internal(set) var worktreeSetupPending: [CodeSessionID: String] = [:]
+    /// Where approved worktree setup commands are remembered. Replaced in
+    /// tests.
+    @ObservationIgnored
+    public var worktreeSetupApprovals: WorktreeSetupApprovals = .standard
+    /// Reads a linked pull request's state for the archive sweep (§5.17):
+    /// nil asks GitHub's CLI through the session's project; tests answer from
+    /// a script.
+    @ObservationIgnored
+    public var pullRequestStateReader: (@MainActor (CodeSession, String) async -> GitHubPullRequestRef?)?
+    /// The sweep that archives sessions whose pull request merged or closed,
+    /// started once the sessions are read.
+    @ObservationIgnored
+    var pullRequestSweep: Task<Void, Never>?
+    public internal(set) var lastError: String?
     /// The workspace whose folder grant lapsed, if one has.
     ///
     /// macOS withdraws a sandboxed app's folder permission when the app's code
@@ -233,7 +276,9 @@ public final class WorkbenchModel {
     public let sessionStore: CodeSessionStore
     private let workspaceDirectory: WorkspaceDirectory
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
-    private var controllers: [CodeSessionID: SessionController] = [:]
+    /// Every live controller. Internal so the Runs list can answer a session's
+    /// approval without attaching its controller to a window.
+    var controllers: [CodeSessionID: SessionController] = [:]
     /// The sessions opened most recently, newest last. See
     /// `retainTranscripts(opening:)`.
     private var recentlyOpened: [CodeSessionID] = []
@@ -252,6 +297,16 @@ public final class WorkbenchModel {
     /// in-memory fixtures and must not read the on-disk session store.
     private var isPreview = false
     #endif
+
+    /// Whether the Runs list's facts are written to disk. Never for the
+    /// preview harness, which must leave its storage root untouched.
+    var persistsRunIndex: Bool {
+        #if DEBUG
+        return !isPreview
+        #else
+        return true
+        #endif
+    }
 
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -301,12 +356,17 @@ public final class WorkbenchModel {
                 }
             }
         }
+        runTracker = RunTracker.load(from: runTrackerURL)
         workspaces = await workspaceDirectory.allWorkspaces()
         sessions = await sessionStore.allSessions()
         hasLoaded = true
         if selectedSessionID == nil {
             selectedSessionID = visibleSessions.first?.id
         }
+        if resumesInterruptedRunsOnLaunch() {
+            await resumeInterruptedRuns()
+        }
+        startPullRequestSweep()
     }
 
     private func applyStoreUpdate(_ update: CodeSessionStore.StoreUpdate) {
@@ -319,6 +379,8 @@ public final class WorkbenchModel {
             }
             sessions.sort { $0.updatedAt > $1.updatedAt }
         case let .sessionRemoved(id):
+            runTracker.forget(id)
+            saveRunTracker()
             sessions.removeAll { $0.id == id }
             controllers.removeValue(forKey: id)
             recentlyOpened.removeAll { $0 == id }
@@ -328,7 +390,16 @@ public final class WorkbenchModel {
                 // by.
                 selectedSessionID = visibleSessions.first?.id
             }
-        case .eventAppended, .usageChanged:
+        case let .eventAppended(event):
+            // Assigned only when something changed, so a stream of output
+            // chunks does not redraw the Runs list for nothing.
+            var next = runTracker
+            let saved = next.apply(event)
+            guard next != runTracker else { break }
+            runTracker = next
+            if saved { saveRunTracker() }
+            publishRunIndex()
+        case .usageChanged:
             break
         }
     }
@@ -467,6 +538,7 @@ public final class WorkbenchModel {
         do {
             var branch: String?
             var executionRootPath: String?
+            var createdWorktree: ManagedWorktree?
             if let context, context.record.descriptor.isGitRepository {
                 branch = try? await context.git.status().branch
                 if isolatedWorktree {
@@ -478,6 +550,7 @@ public final class WorkbenchModel {
                     )
                     executionRootPath = worktree.rootPath
                     branch = worktree.branch
+                    createdWorktree = worktree
                 }
             }
             let session = try await sessionStore.createSession(
@@ -489,6 +562,17 @@ public final class WorkbenchModel {
                 configuration: configuration,
                 gitBranch: branch
             )
+            // `.juno/worktree.json`: copy its include files, and run its setup
+            // once the reader has approved those exact bytes (§5.7).
+            if let context, let createdWorktree,
+               let setup = await WorktreeSessionSetup.prepare(
+                   createdWorktree,
+                   in: context,
+                   approvals: worktreeSetupApprovals
+               )
+            {
+                worktreeSetupPending[session.id] = setup
+            }
             if select { selectedSessionID = session.id }
             return session
         } catch {
@@ -498,9 +582,16 @@ public final class WorkbenchModel {
     }
 
     /// `juno/<base>-<stamp>`: recognisable as Juno's, unique per session, and
-    /// safe for `git worktree add`.
-    static func worktreeBranchName(base: String?, prefix: String = "juno/", now: Date = Date()) -> String {
-        let stamp = Int(now.timeIntervalSince1970) % 1_000_000
+    /// safe for `git worktree add`. The stamp carries a random tail, so two
+    /// sessions started in the same second (parallel worktree sessions, a
+    /// fork beside its source) never ask Git for the same branch.
+    static func worktreeBranchName(
+        base: String?,
+        prefix: String = "juno/",
+        now: Date = Date(),
+        nonce: String = String(UUID().uuidString.prefix(4)).lowercased()
+    ) -> String {
+        let stamp = "\(Int(now.timeIntervalSince1970) % 1_000_000)\(nonce)"
         let cleaned = (base ?? "task")
             .lowercased()
             .map { $0.isLetter || $0.isNumber ? $0 : "-" }
@@ -669,8 +760,48 @@ public final class WorkbenchModel {
         controllers[sessionID] = controller
         await controller.attach()
         await controller.reconcileModelCapabilities()
+        bindShip(controller)
         retainTranscripts(opening: sessionID)
         return controller
+    }
+
+    /// Gives a session its saved review queue and pull request, and the
+    /// workbench actions its review and rewind surfaces need (§5.3, §5.6).
+    private func bindShip(_ controller: SessionController) {
+        controller.bindShipState()
+        let sessionID = controller.sessionID
+        controller.reviewQueue.sessionActions = ShipSessionActions(
+            fork: { [weak self] turnID, inNewWorktree in
+                await self?.fork(sessionID, throughTurn: turnID, inNewWorktree: inNewWorktree)
+            },
+            archive: { [weak self] in
+                await self?.archive(sessionID) ?? .refused("The workbench is gone.")
+            },
+            recordPullRequest: { [weak self] url in
+                self?.recordPullRequest(url, for: sessionID)
+            },
+            worktreeInfo: { [weak self] in
+                await self?.worktreeInfo(for: sessionID)
+            },
+            pendingSetup: { [weak self] in
+                self?.worktreeSetupPending[sessionID]
+            },
+            runSetup: { [weak self] command in
+                guard let self else { return .refused("The workbench is gone.") }
+                return await self.approveAndRunWorktreeSetup(
+                    command,
+                    for: sessionID,
+                    approvals: self.worktreeSetupApprovals
+                )
+            },
+            bringBackPlan: { [weak self] method in
+                await self?.bringBackPlan(for: sessionID, method: method) ?? .failure(.worktreeMissing)
+            },
+            performBringBack: { [weak self] step in
+                await self?.performBringBack(step, for: sessionID) ?? .refused("The workbench is gone.")
+            }
+        )
+        Task { await controller.resumeCIWatch() }
     }
 
     /// How many recently opened sessions keep their decoded transcript while
@@ -850,15 +981,29 @@ public final class WorkbenchModel {
         sessions.filter { !$0.isSubagent }
     }
 
+    /// The sessions a reader browses, less those they archived (§5.17).
     public var filteredSessions: [CodeSession] {
-        let sessions = visibleSessions
+        matchingSearch(visibleSessions.filter { !runTracker.archived.contains($0.id.value) })
+    }
+
+    /// The archived sessions the search matches (all of them with no
+    /// search), newest first: archived is out of the way, never out of
+    /// reach (§5.17).
+    public var filteredArchivedSessions: [CodeSession] {
+        matchingSearch(visibleSessions.filter { runTracker.archived.contains($0.id.value) })
+    }
+
+    private func matchingSearch(_ sessions: [CodeSession]) -> [CodeSession] {
         let query = sessionSearchText.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return sessions }
+        let transcriptHits = transcriptMatches?.query == query ? transcriptMatches?.ids ?? [] : []
         return sessions.filter { session in
             session.title.lowercased().contains(query)
                 || workspaceName(for: session.workspaceID).lowercased().contains(query)
                 // "no project" is a thing a reader will type looking for these.
                 || (session.workspaceID == nil && "no project".contains(query))
+                || (runTracker.pullRequests[session.id.value]?.lowercased().contains(query) ?? false)
+                || transcriptHits.contains(session.id)
         }
     }
 

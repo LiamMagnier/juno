@@ -150,6 +150,7 @@
 		8FD1C4164E8CDE6C7D2CD7ED /* DesktopChatDesignSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7078F6DE8A2BB72326BE41F2 /* DesktopChatDesignSourceTests.swift */; };
 		920EBFD18DE90BC1BD60CC8E /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 35AB29EB28C0B56EEAD2AAAB /* JunoPreviewSupport */; };
 		92B937323764063EA9C4214E /* DesktopUsageModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE662C8AAB794BA99D7E03F /* DesktopUsageModelTests.swift */; };
+		97D45F2C30A89033B81F70D6 /* QuitAndLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47510857DE1466575F8201EA /* QuitAndLifecycleTests.swift */; };
 		9C106C9CD0BDAAFECC47CFB6 /* ChatCommandsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B791DB8FC7F6325C21B88389 /* ChatCommandsTests.swift */; };
 		9C4575C30669CFEE10A98EE6 /* ArtifactPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F769B3CDB69F7AED341FCB /* ArtifactPage.swift */; };
 		9D75E980D81ADDC7975A56F9 /* JunoWorkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FD1B5C83E81A48727EDB93C /* JunoWorkKit */; };
@@ -320,6 +321,7 @@
 		42BA94CA2D66FA985D4EE0D7 /* DesktopWorkSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkSettings.swift; sourceTree = "<group>"; };
 		433996A932C48A9FAC61E9DB /* DesktopShellContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShellContract.swift; sourceTree = "<group>"; };
 		46C29E6F975AE6B19C0F05EB /* ChatComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposer.swift; sourceTree = "<group>"; };
+		47510857DE1466575F8201EA /* QuitAndLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuitAndLifecycleTests.swift; sourceTree = "<group>"; };
 		49E24C4F4F709CAE49626242 /* SettingsWindowsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowsSnapshotTests.swift; sourceTree = "<group>"; };
 		4AE1C5CC35CCBED724E4B5EB /* DesktopFirstRunPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFirstRunPresenter.swift; sourceTree = "<group>"; };
 		4C61EDFFB61392831EDE140B /* Newsreader24pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Regular.ttf"; sourceTree = "<group>"; };
@@ -795,6 +797,7 @@
 				00EF62FB4286BF63383E60F3 /* JunoDesktopSmokeTests.swift */,
 				856BEA1C563BFB12201A1FDA /* JunoShortcutRegistryTests.swift */,
 				179D49011A1D7BB1781AB506 /* MessageMenuModelTests.swift */,
+				47510857DE1466575F8201EA /* QuitAndLifecycleTests.swift */,
 				C3444CFDCA4B21C0B3A3B814 /* ResearchStageBTests.swift */,
 				F14A1FB7B49218FF31599295 /* RunBlockTests.swift */,
 				71C0E023673A086C2CDFFDF3 /* TaskRecordStageDTests.swift */,
@@ -1195,6 +1198,7 @@
 				78853E1CC3EE35CB44F05DDD /* PageSnapshotTestsC.swift in Sources */,
 				E3F77953F849D2BC2E6905DA /* PageSnapshotTestsStageB.swift in Sources */,
 				F798C292566A414A9E5B32CF /* PremiumSnapshotTests.swift in Sources */,
+				97D45F2C30A89033B81F70D6 /* QuitAndLifecycleTests.swift in Sources */,
 				2F2EC426C9EE411A510255D0 /* ResearchStageBSnapshotTests.swift in Sources */,
 				6237FD50F5E437BC6EB51EA9 /* ResearchStageBTests.swift in Sources */,
 				BA63DFDBBB3DD89C5D4231AF /* RunBlockTests.swift in Sources */,

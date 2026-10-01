@@ -235,9 +235,13 @@ extension SessionController {
     // MARK: - Reader actions
 
     /// Keep going after a step limit, a budget or a stall: another block of
-    /// steps and budget, and the run carries on with no new message.
-    public func keepGoing() async {
-        guard let live else { return }
+    /// steps and budget, and the run carries on with no new message. Refused
+    /// while a run, a rewind or a compaction holds the session; answers
+    /// whether the run carried on (the Runs list and notifications ask).
+    @discardableResult
+    public func keepGoing() async -> Bool {
+        guard let live, !isRunning, !isRewinding, !isCompacting else { return false }
+        var resumed = false
         do {
             if let current = await live.store.currentGoalRun(for: sessionID),
                current.status == .budgetReached || current.status == .needsYou
@@ -254,17 +258,20 @@ extension SessionController {
             try await currentOrchestrator(live).resume(note: .keepGoing, origin: .user)
             runStartedAt = Date()
             transientError = nil
+            resumed = true
         } catch {
             transientError = "Could not keep going: \(error.localizedDescription)"
         }
         await goal.refresh()
+        return resumed
     }
 
     /// Resume a run Juno quit in the middle of: the calls that were running
     /// are named as "outcome unknown", and no message is added for the
     /// reader (§1.12).
-    public func resumeInterruptedRun() async {
-        guard let live else { return }
+    @discardableResult
+    public func resumeInterruptedRun() async -> Bool {
+        guard let live, !isRunning, !isRewinding, !isCompacting else { return false }
         let states = ConversationIntegrity.interruptedCalls(in: events)
         var summaries: [String: String] = [:]
         for event in events {
@@ -280,8 +287,10 @@ extension SessionController {
             try await currentOrchestrator(live).resume(note: .afterQuit(unknownOutcomes: unknown), origin: .user)
             runStartedAt = Date()
             transientError = nil
+            return true
         } catch {
             transientError = "Could not resume: \(error.localizedDescription)"
+            return false
         }
     }
 

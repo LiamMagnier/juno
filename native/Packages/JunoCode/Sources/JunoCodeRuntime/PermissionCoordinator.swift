@@ -15,14 +15,21 @@ public enum AuthorizationOutcome: Equatable, Sendable {
 ///
 /// An approval nobody answers is never turned into a denial the model reads as
 /// "declined" (CODE_AGENT_SPEC §1.11). After `approvalTimeToLiveSeconds` the
-/// run *parks*: the call stays pending and bound to its digest, the reader is
-/// reminded at 15, 60 and 240 minutes, and their decision may arrive whenever
-/// it comes.
+/// run *parks*: the call stays pending and bound to its digest for as long as
+/// the reader takes, the reader is reminded at 15, 60 and 240 minutes, and
+/// their decision may arrive whenever it comes. `expiresAt` is when the first
+/// reminder is due, not when the request dies.
 public actor PermissionCoordinator {
+    /// When an unanswered approval is first due a reminder. The request stays
+    /// pending past it.
     public static let approvalTimeToLiveSeconds: Double = 15 * 60
     /// When a waiting approval reminds the reader, in minutes after it was
     /// asked.
     public static let parkingReminderMinutes: [Double] = [15, 60, 240]
+    /// How long an approval the reader gave stays good for the call to start.
+    /// Counted from the decision, so a parked approval answered hours later
+    /// is as good as one answered at once.
+    public static let approvedExecutionWindowSeconds: Double = 5 * 60
 
     private enum PendingResolution: Sendable {
         case decided(ApprovalDecision)
@@ -65,9 +72,18 @@ public actor PermissionCoordinator {
         case parked(ApprovalRequest, reminder: Int)
     }
 
-    public init(sessionID: CodeSessionID, mode: PermissionMode) {
+    /// The coordinator's clock: when a request was raised and when it was
+    /// decided. Injected by tests that park an approval for hours.
+    private let now: @Sendable () -> Date
+
+    public init(
+        sessionID: CodeSessionID,
+        mode: PermissionMode,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.sessionID = sessionID
         self.mode = mode
+        self.now = now
     }
 
     public var permissionMode: PermissionMode { mode }
@@ -314,7 +330,7 @@ public actor PermissionCoordinator {
             guard !Task.isCancelled else {
                 return .denied(reason: "The run was stopped.")
             }
-            let now = Date()
+            let now = self.now()
             let request = ApprovalRequest(
                 sessionID: sessionID,
                 actionDigest: actionDigest,
@@ -363,24 +379,28 @@ public actor PermissionCoordinator {
                 return .denied(reason: reason)
             }
             // The reader's yes binds this exact action, however long they
-            // took to give it: a parked approval is approved fresh from the
-            // moment they decided, for the same digest and nothing else.
-            let decided = ApprovalRequest(
-                id: request.id,
-                sessionID: request.sessionID,
-                actionDigest: request.actionDigest,
-                toolName: request.toolName,
-                summary: request.summary,
-                risk: request.risk,
-                approvalPolicy: request.approvalPolicy,
-                requestedAt: request.requestedAt,
-                expiresAt: max(request.expiresAt, Date().addingTimeInterval(Self.approvalTimeToLiveSeconds)),
-                suggestedRule: request.suggestedRule
-            )
-            guard decided.authorizes(digest: actionDigest, at: Date()) else {
+            // took to give it: a parked approval does not decay, an answer to
+            // a different action never carries this one out, and the yes is
+            // good for the call to start for a short window from the moment
+            // they decided.
+            guard request.actionDigest == actionDigest else {
                 return .denied(reason: "The approval no longer matches the action.")
             }
-            return .approved(decided)
+            let decidedAt = self.now()
+            return .approved(
+                ApprovalRequest(
+                    id: request.id,
+                    sessionID: request.sessionID,
+                    actionDigest: request.actionDigest,
+                    toolName: request.toolName,
+                    summary: request.summary,
+                    risk: request.risk,
+                    approvalPolicy: request.approvalPolicy,
+                    requestedAt: request.requestedAt,
+                    expiresAt: decidedAt.addingTimeInterval(Self.approvedExecutionWindowSeconds),
+                    suggestedRule: request.suggestedRule
+                )
+            )
         }
     }
 
@@ -480,8 +500,8 @@ public actor PermissionCoordinator {
         continuation.resume(returning: resolution)
     }
 
-    /// Denies every pending approval (session stop, cancellation, expiry
-    /// sweep, or app termination). Approvals always fail closed.
+    /// Denies every pending approval (session stop, cancellation, or app
+    /// termination). Approvals always fail closed.
     public func denyAll(reason: String = "Cancelled") {
         let ids = Array(pending.keys)
         for id in ids {
@@ -493,19 +513,26 @@ public actor PermissionCoordinator {
         }
     }
 
-    /// Parks pending approvals that have waited past a reminder time: the
-    /// call stays pending and bound to its digest, and the reader is reminded
-    /// once per threshold (15, 60 and 240 minutes). Nothing is denied — an
+    /// Parks pending approvals that have waited past a reminder time and
+    /// answers those whose first reminder is due: the call stays pending and
+    /// bound to its digest, observers hear `.parked` once per threshold (15,
+    /// 60 and 240 minutes; the hooks' Notification event), and the run
+    /// monitor posts the reader's own reminders. Nothing is denied — an
     /// unanswered approval is a run waiting on the reader, not a "no".
-    public func sweepExpired(now: Date = Date()) {
+    @discardableResult
+    public func sweepExpired(now: Date? = nil) -> [ApprovalRequest] {
+        let moment = now ?? self.now()
         for request in pendingApprovals {
-            let waited = now.timeIntervalSince(request.requestedAt) / 60
+            let waited = moment.timeIntervalSince(request.requestedAt) / 60
             let due = Self.parkingReminderMinutes.filter { waited >= $0 }.count
             let sent = reminders[request.id] ?? 0
             guard due > sent else { continue }
             reminders[request.id] = due
             notify(.parked(request, reminder: due))
         }
+        return pendingRequests.values
+            .filter { $0.expiresAt <= moment }
+            .sorted { $0.requestedAt < $1.requestedAt }
     }
 
     /// Wakes at each reminder time for one request, while it is pending.
@@ -524,7 +551,7 @@ public actor PermissionCoordinator {
                     }
                 }
                 guard let self else { return }
-                await self.sweepExpired(now: Date())
+                await self.sweepExpired()
             }
         }
     }

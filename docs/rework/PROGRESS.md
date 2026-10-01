@@ -841,3 +841,81 @@ native:test JunoCode` 1,360 XCTests (15 skipped) + 78 Swift Testing pass;
 `npm run native:test JunoWork` 303 pass; the JunoDesktop Debug `xcodebuild`
 succeeds; `node scripts/check-code-runtime-wiring.mjs` passes; the screen
 snapshots (`StudioScreenSnapshotTests`, `JUNO_SNAPSHOT_DIR`) render.
+
+### Lane E: review, ship, sessions and away (`rf/code-ship`, §6.5)
+
+Branched from the trunk at `e1fde2fa` (the seams merge). Five commits,
+`047d9e6e`..`ae36c3d4`, not pushed.
+
+| Spec item | State | Notes |
+|---|---|---|
+| §1.11 approvals park | DONE | `PermissionCoordinator.sweepExpired` reports and keeps; an approval given later is valid from the decision, digest-bound. Lane A owns the file: the change is the sweep, the post-decision check and an injected clock |
+| §1.11 notifications | DONE | `code.done`, `code.needs-approval` (Allow once, Decline), `code.question` (Reply), `code.needs-you` (+ Keep going variant), `code.ci` (Fix it), `code.failed` (Retry). Nothing for the session in view; approvals and questions speak with Juno in front; reminders at 15, 60, 240 min |
+| §1.11 menu bar | DONE | "2 working, 1 waiting for you" and Stop Screen Control (stops `computerUse` on every controller until Lane C's service owns it) |
+| §1.12 quit guard, Resume | DONE | `applicationShouldTerminate` with Keep Working default; staged update deferred; Resume (row, Runs list, notification) calls `resume(note: .afterQuit(unknownOutcomes:))`; resume-on-launch setting, off (D-025) |
+| §5.1 Runs list | DONE | `RunIndex` + `RunTracker` in `WorkbenchModel`, `StudioRunsList`, embedded at the top of the Code sidebar |
+| §5.3 PR, CI, auto-fix | PARTIAL | Watch, CI bar, Fix it, Auto-fix (3 per PR), `git_push`/`ci_status`/`ci_logs`, `ci.status` events. Fix it records `goalSet` (origin ci) and resumes with a runtime note; binding the plan to Lane A's goal runtime waits for `GoalModel` |
+| §5.6 rewind and fork | PARTIAL | Goal and run journal restored with the conversation (file snapshots per turn), todos with the transcript, shell-change warning, Fork from here / into a worktree, relay fork. Not done: (d) "Summarize from here" |
+| §5.7 worktree sessions | DONE | Creation choice existed; `.juno/worktree.json` include and approved-bytes setup, header, Bring changes back per step, removal at archive, Fork into Its Own Worktree from the session menu |
+| §5.10 diff review | DONE, one deviation | Click a line to comment (Return adds, ⌘Return sends all), queue saved with the session, sent as `path:line` blocks with the quoted line without touching the draft; Keep (stage the exact hunk) and Revert per hunk, file, all; the four scopes; findings inline with Fix this and Dismiss. The queue rides as a text block on the message rather than a `CodeAttachment.reviewComments` case, which is Lane F's file |
+| §5.17 export, archive, search | PARTIAL | Markdown and redacted protocol JSON export, manual archive (with worktree removal), search over titles, PR links and transcripts. Not done: archiving automatically when the PR merges or closes |
+
+Tests (66 new in the package, 5 in the Mac app):
+`ApprovalParkingTests` 4, `ShipToolsTests` 8, `CIWatchServiceTests` 5,
+`RunIndexTests` 9, `StudioRunMonitorTests` 10, `InterruptedRunTests` 3,
+`QuitGuardTests` 4, `SessionForkTests` 5, `RewindGoalStateTests` 3,
+`ReviewCommentQueueTests` 6, `WorktreeSessionTests` 3, `ShipSnapshotTests` 6
+(rendered with `JUNO_SNAPSHOT_DIR`, reviewed light and dark: Runs list, CI
+bar in four states, line comments, inline findings, interrupted row,
+Fork from here); `native/macOS/JunoDesktop/Tests/QuitAndLifecycleTests` 5
+(compiled by `build-for-testing`, not run: the desktop test host launches
+the app). One seam expectation changed: the CI row now puts check names in
+code voice. `PermissionCoordinatorTests.testExpirySweep…` now asserts
+parking.
+
+Gates (through `gate.sh`): `npm run native:test JunoCode` passed, 1,388
+XCTests (19 skipped, 6 of them the snapshots) and 78 Swift Testing, 0
+failures; JunoDesktop Debug `xcodebuild … build` succeeded and
+`build-for-testing` succeeded (DerivedData `/private/tmp/juno-rf-dd-code-ship`);
+`code:runtime:check`, `code:preview:check`, `code:remote:check` pass;
+`native:design:check` passes (targets 197 → 192, glass 24 → 19; baselines
+not re-recorded).
+
+For integration: `SessionController.reviewComments` / `submitReviewComments`
+are superseded by the review queue and unused; the phone still reads an
+approval's `expiresAt` as a deadline; `RunTracker` derives a run's ending
+from its status until Lane A records `run.outcome`.
+
+#### Lane E adversarial review (2026-10-01)
+
+Six fix commits on `rf/code-ship`, `bf8d6bc3`..`2387b10e`, not pushed.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| Keep (stage one hunk) built the blob from the command executor's output, which is redacted, capped at 2 MB and decoded per chunk: a `TOKEN_TTL = 3600` line elsewhere in the file was staged as `[redacted]`; large files staged truncated | High (silent corruption of what gets committed) | Both sides read byte-faithfully (disk, and `git checkout-index --prefix` for the index), strict UTF-8, `hash-object --path`; conflicts, symlinks, submodules refused. Also fixed: a CRLF file lost its last line ending (`hasSuffix("\n")` is false for `"\r\n"`) |
+| A Runs row's Allow once read whatever approval was pending at click time, not the one the row showed | High (digest binding) | `WorkbenchModel.answer(_:shown:)` answers with the row's own approval and digest |
+| Notification Allow once/Decline accepted any approval id + digest, including from a remote push or a banner from an earlier launch; stale Keep going / Retry started runs | Medium | Only approvals this monitor announced in this launch and still waiting; pushes only open; Keep going / Retry only while the row offers them |
+| Fix it put the CI log inside the `<juno_runtime>` fence (the model's "Juno said" channel); check names unsanitised | Medium (prompt injection) | Logs read with `ci_logs` (tool output); names cleaned to one short line |
+| CI watch polled forever with no checks, a failing `gh`, or a stuck check, and restarted at every launch | Medium | Stops, in words, after 10 empty polls, 10 failed reads, or 300 polls |
+| Worktree setup (approved by its bytes) drawn as Markdown; Bring back showed `commit -am` but ran `add -A` + `commit -m` | Medium (approval shows something else) | Setup drawn verbatim (snapshot `worktree-setup`); each step shows its exact command |
+| Fork into a worktree from a worktree session started at the project's HEAD | Medium | Starts from the source checkout's commit |
+| Archived sessions were reachable from nowhere | Medium | Sidebar "Archived (n)", search reaches them, Unarchive |
+| Quit guard's modal cancelled logout/restart; ⌥⌘⎋ (Force Quit) on Stop Screen Control; resume-on-launch resumed every interrupted session ever; `RunTracker.proposed` grew without bound | Low | Power-off quits without asking; shortcut removed; 24 h window; per-session map |
+
+Completed from PARTIAL: §5.17 archive after the pull request merges or
+closes (a sweep 15 s after launch, then every 30 min, at most 20 sessions;
+working, open or dirty-worktree sessions stay). Still PARTIAL: §5.3 Fix it
+is not bound to Lane A's goal runtime (it records `goalSet` and resumes
+with a note); §5.6 (d) "Summarize from here" needs a suffix fold in
+`ConversationCompactor`/`AgentOrchestrator` (Lane A's files).
+
+Tests added: `ReviewCommentQueueTests.testKeepStagesTheFileAsItIsOnDisk…`,
+`StudioRunMonitorTests.testOnlyABannerThisMonitorPostedCanAnswerAnApproval`,
+`CIWatchServiceTests.testACheckNameCannotWriteIntoJunosWords` and
+`testTheWatchNeverPollsForever`, `SessionForkTests.testAForkOfAWorktreeSession…`,
+`WorktreeSessionTests.testASessionWhosePullRequestMergedOrClosed…` and
+`testOnlyAGitHubPullRequestLinkIsLookedUp`, `QuitGuardTests.testARestartOrShutdownIsNotAskedAbout`,
+`ShipSnapshotTests.testRenderWorktreeSetupLine`, the desktop
+`QuitAndLifecycleTests.aRestartWithRunsWorkingQuitsWithoutAsking`; extended
+`RunIndexTests` (row binding, stale Keep going / Retry) and the existing
+Keep, bring-back and notification-answer tests.

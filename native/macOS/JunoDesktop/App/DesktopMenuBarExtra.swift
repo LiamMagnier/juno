@@ -65,6 +65,26 @@ struct DesktopMenuBarExtraContent: View {
             }
         }
 
+        // The runs in words, "2 working, 1 waiting for you", and the way to
+        // stop screen control from anywhere (CODE_AGENT_SPEC §1.11).
+        if let workbench = registry.workbench {
+            if let line = workbench.runSummaryLine {
+                Section {
+                    Text(verbatim: line)
+                }
+            }
+            if workbench.isScreenControlActive {
+                Section {
+                    // No key equivalent: ⌥⌘⎋ is the system's Force Quit, so
+                    // the menu would advertise a shortcut that opens a
+                    // different window. The global Esc stop is §3.7's.
+                    Button("Stop Screen Control") {
+                        Task { await workbench.stopAllScreenControl() }
+                    }
+                }
+            }
+        }
+
         let sessions = registry.activeSessions
         if !sessions.isEmpty {
             Section("Live Code Sessions") {

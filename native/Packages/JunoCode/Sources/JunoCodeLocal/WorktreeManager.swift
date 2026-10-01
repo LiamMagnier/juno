@@ -768,3 +768,255 @@ private extension JSONDecoder {
         return decoder
     }
 }
+
+// MARK: - Sessions in their own worktree (Lane E, CODE_AGENT_SPEC §5.7)
+
+/// `.juno/worktree.json`: what a session's own worktree needs beyond what
+/// `git worktree add` checks out.
+///
+/// ```json
+/// { "include": [".env.local", "config/*.local.json"], "setup": "npm ci" }
+/// ```
+///
+/// `include` names ignored files to copy from the main checkout (like Claude
+/// Code's `.worktreeinclude`). `setup` is a command run in the new worktree,
+/// only once the reader approved its exact bytes, like a launch
+/// configuration; a later edit asks again.
+public struct WorktreeConfiguration: Hashable, Codable, Sendable {
+    public var include: [String]
+    public var setup: String?
+
+    public init(include: [String] = [], setup: String? = nil) {
+        self.include = include
+        self.setup = setup
+    }
+
+    public static let relativePath = ".juno/worktree.json"
+
+    /// The workspace's configuration, or nil when it has none or it does not
+    /// parse.
+    public static func load(fromWorkspace root: URL) -> WorktreeConfiguration? {
+        let url = root.appendingPathComponent(relativePath)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        struct Raw: Decodable {
+            var include: [String]?
+            var setup: String?
+        }
+        guard let raw = try? JSONDecoder().decode(Raw.self, from: data) else { return nil }
+        let setup = raw.setup?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return WorktreeConfiguration(include: raw.include ?? [], setup: setup?.isEmpty == false ? setup : nil)
+    }
+}
+
+/// The setup commands the reader approved, by the SHA-256 of their exact
+/// bytes and the workspace they belong to. Repository text never approves
+/// itself: an edited command is a new hash, and asks again.
+public struct WorktreeSetupApprovals: Sendable {
+    public let fileURL: URL
+
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    /// `~/Library/Application Support/Juno/code/worktree-setup-approvals.json`.
+    public static var standard: WorktreeSetupApprovals {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return WorktreeSetupApprovals(
+            fileURL: base
+                .appendingPathComponent("Juno", isDirectory: true)
+                .appendingPathComponent("code", isDirectory: true)
+                .appendingPathComponent("worktree-setup-approvals.json")
+        )
+    }
+
+    public static func key(command: String, workspace: URL) -> String {
+        Digests.sha256Hex(workspace.standardizedFileURL.path + "\u{1f}" + command)
+    }
+
+    public func isApproved(_ command: String, workspace: URL) -> Bool {
+        load().contains(Self.key(command: command, workspace: workspace))
+    }
+
+    public func approve(_ command: String, workspace: URL) throws {
+        var approved = load()
+        approved.insert(Self.key(command: command, workspace: workspace))
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(approved.sorted()).write(to: fileURL, options: .atomic)
+    }
+
+    private func load() -> Set<String> {
+        guard let data = try? Data(contentsOf: fileURL),
+              let keys = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return Set(keys)
+    }
+}
+
+/// What running a worktree's setup came to.
+public enum WorktreeSetupOutcome: Equatable, Sendable {
+    /// The reader has not approved these exact bytes; nothing ran.
+    case needsApproval(command: String)
+    case ran(exitCode: Int32, output: String)
+}
+
+/// One step of bringing a worktree's changes back to the branch the reader
+/// has open. Each is shown with its exact command and confirmed on its own;
+/// nothing chains the next step automatically.
+public struct WorktreeBringBackStep: Hashable, Sendable, Identifiable {
+    public enum Kind: Hashable, Sendable {
+        /// Commit what the worktree has not committed yet.
+        case commit(message: String)
+        /// Merge the worktree's branch into the open branch.
+        case merge
+        /// Apply the worktree's commits one by one onto the open branch.
+        case cherryPick(range: String)
+    }
+
+    public let kind: Kind
+    /// What the step does, in words.
+    public let title: String
+    /// The exact command, as the confirmation shows it.
+    public let command: String
+
+    public var id: String { command }
+}
+
+/// How the worktree's commits come back.
+public enum WorktreeBringBackMethod: String, CaseIterable, Sendable {
+    case merge
+    case cherryPick
+}
+
+public extension WorktreeManager {
+    /// Copies `include` files from the main checkout into a worktree. Only
+    /// regular files inside the workspace; `.git`, `.juno` and
+    /// `node_modules` are never walked. Returns the paths copied.
+    @discardableResult
+    func copyIncludes(_ patterns: [String], into worktree: ManagedWorktree) throws -> [String] {
+        let patterns = patterns.compactMap { try? GlobPattern($0) }
+        guard !patterns.isEmpty else { return [] }
+        let root = Self.canonicalURL(workspaceRootURL)
+        let destination = URL(fileURLWithPath: worktree.rootPath, isDirectory: true)
+        guard Self.isContained(destination, in: root.appendingPathComponent(".juno/worktrees", isDirectory: true)) else {
+            throw WorktreeManagerError.pathEscapesWorkspace
+        }
+        var copied: [String] = []
+        let skipped: Set<String> = [".git", ".juno", "node_modules", ".build", "DerivedData"]
+        guard let walker = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey],
+            options: []
+        ) else { return [] }
+        let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        while let item = walker.nextObject() as? URL {
+            let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isDirectory == true {
+                if skipped.contains(item.lastPathComponent) || walker.level > 6 {
+                    walker.skipDescendants()
+                }
+                continue
+            }
+            guard values?.isRegularFile == true, values?.isSymbolicLink != true else { continue }
+            let standardized = item.standardizedFileURL.path
+            guard standardized.hasPrefix(prefix) else { continue }
+            let relative = String(standardized.dropFirst(prefix.count))
+            guard patterns.contains(where: { $0.matches(relative) }) else { continue }
+            let target = destination.appendingPathComponent(relative)
+            guard Self.isContained(target, in: destination) else { continue }
+            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if fileManager.fileExists(atPath: target.path) {
+                try fileManager.removeItem(at: target)
+            }
+            try fileManager.copyItem(at: item, to: target)
+            copied.append(relative)
+        }
+        return copied.sorted()
+    }
+
+    /// Runs the worktree's setup command in it, only when the reader approved
+    /// its exact bytes for this workspace.
+    func runSetup(
+        _ command: String,
+        in worktree: ManagedWorktree,
+        approvals: WorktreeSetupApprovals
+    ) async throws -> WorktreeSetupOutcome {
+        guard approvals.isApproved(command, workspace: workspaceRootURL) else {
+            return .needsApproval(command: command)
+        }
+        let current = try await validateOwned(worktree)
+        let line = "cd \(Self.shellQuote(current.rootPath)) && \(command)"
+        let result = try await executor.run(line, timeoutSeconds: 600, outputLimit: .commandOutput)
+        let output = (result.stdout + result.stderr).trimmingCharacters(in: .whitespacesAndNewlines)
+        return .ran(exitCode: result.result.exitCode, output: String(output.suffix(4_000)))
+    }
+
+    /// The steps that bring a worktree's changes back, in order: a commit
+    /// when it has uncommitted changes, then a merge or a cherry-pick. Reads
+    /// only.
+    func bringBackPlan(
+        _ worktree: ManagedWorktree,
+        method: WorktreeBringBackMethod = .merge,
+        message: String = "Juno: changes from a worktree session"
+    ) async throws -> [WorktreeBringBackStep] {
+        let current = try await validateOwned(worktree)
+        var steps: [WorktreeBringBackStep] = []
+        let status = try await runCheckedAt(current.rootPath, ["status", "--porcelain", "--untracked-files=all"])
+        if !status.isEmpty {
+            // The confirmation shows exactly what `perform` runs: every change,
+            // new files included, then the commit.
+            let root = Self.shellQuote(current.rootPath)
+            steps.append(WorktreeBringBackStep(
+                kind: .commit(message: message),
+                title: "Commit the worktree's changes on \(current.branch)",
+                command: "git -C \(root) add -A -- . && git -C \(root) commit -m \(Self.shellQuote(message))"
+            ))
+        }
+        let ahead = try await runCheckedAt(current.rootPath, ["rev-list", "--count", "\(current.baseRevision)..HEAD"])
+        guard !status.isEmpty || (Int(ahead) ?? 0) > 0 else { return [] }
+        switch method {
+        case .merge:
+            steps.append(WorktreeBringBackStep(
+                kind: .merge,
+                title: "Merge \(current.branch) into the branch you have open",
+                command: "git -C \(Self.shellQuote(Self.canonicalPath(workspaceRootURL))) merge --no-ff --no-edit \(current.branch)"
+            ))
+        case .cherryPick:
+            let range = "\(current.baseRevision)..\(current.branch)"
+            steps.append(WorktreeBringBackStep(
+                kind: .cherryPick(range: range),
+                title: "Apply \(current.branch)'s commits onto the branch you have open",
+                command: "git -C \(Self.shellQuote(Self.canonicalPath(workspaceRootURL))) cherry-pick \(range)"
+            ))
+        }
+        return steps
+    }
+
+    /// Performs exactly one step the reader confirmed. The open branch must
+    /// be clean apart from Juno's own folder for a merge or cherry-pick: no
+    /// change of the reader's is stashed, reset or merged around.
+    func perform(_ step: WorktreeBringBackStep, on worktree: ManagedWorktree) async throws {
+        let current = try await validateOwned(worktree)
+        switch step.kind {
+        case let .commit(message):
+            _ = try await runCheckedAt(current.rootPath, ["add", "-A", "--", "."])
+            _ = try await runCheckedAt(current.rootPath, ["commit", "-m", message])
+        case .merge, .cherryPick:
+            let parentStatus = try await runChecked(["status", "--porcelain", "--untracked-files=all"])
+            let unsafe = parentStatus
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .filter {
+                    let path = $0.count > 3 ? String($0.dropFirst(3)) : ""
+                    return !($0.hasPrefix("?? ") && (path == ".juno" || path.hasPrefix(".juno/")))
+                }
+            guard unsafe.isEmpty else { throw WorktreeManagerError.parentHasChanges }
+            if case let .cherryPick(range) = step.kind {
+                _ = try await runChecked(["cherry-pick", range])
+            } else {
+                _ = try await runChecked(["merge", "--no-ff", "--no-edit", current.branch])
+            }
+        }
+    }
+}

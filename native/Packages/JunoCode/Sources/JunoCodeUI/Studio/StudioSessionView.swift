@@ -72,6 +72,8 @@ public struct StudioSessionView: View {
             }
             StudioThreadView(controller: controller, openReview: openReview)
             VStack(spacing: JunoSpace.snug) {
+                // Resume, the session's worktree, its CI (Lane E).
+                StudioShipBar(controller: controller)
                 StudioApprovalPrompt(controller: controller)
                 StudioQuestionPrompt(controller: controller)
                 StudioPlanApprovalPrompt(controller: controller)

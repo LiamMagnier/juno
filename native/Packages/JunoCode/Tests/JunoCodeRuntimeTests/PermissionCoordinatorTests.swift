@@ -326,6 +326,39 @@ final class PermissionCoordinatorTests: XCTestCase {
         XCTAssertFalse(request.authorizes(digest: Self.digest("other"), at: Date()))
     }
 
+    /// An approval past its reminder time parks: the sweep reports it and
+    /// leaves it pending (CODE_AGENT_SPEC §1.11), and the reader's answer
+    /// still decides it.
+    func testExpirySweepParksStaleApprovals() async {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        let requested = expectation(description: "approval requested")
+        await coordinator.addObserver { update in
+            if case .requested = update {
+                requested.fulfill()
+            }
+        }
+        let staleDigest = Self.digest("stale")
+        let authorization = Task {
+            await coordinator.authorize(
+                toolName: "write_file",
+                actionDigest: staleDigest,
+                risk: .write,
+                summary: "Stale"
+            )
+        }
+        await fulfillment(of: [requested], timeout: 5)
+        // Far-future sweep: everything pending is past its reminder time.
+        let parked = await coordinator.sweepExpired(now: Date().addingTimeInterval(24 * 3_600))
+        XCTAssertEqual(parked.map(\.actionDigest), [staleDigest])
+        let pending = await coordinator.pendingApprovals
+        XCTAssertEqual(pending.count, 1, "a parked approval stays pending")
+        await coordinator.resolve(approvalID: pending[0].id, decision: .denied)
+        let outcome = await authorization.value
+        guard case .denied = outcome else {
+            return XCTFail("expected denial, got \(outcome)")
+        }
+    }
+
     func testModeChangeTakesEffect() async {
         let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .readOnly)
         await coordinator.setMode(.fullAccess)

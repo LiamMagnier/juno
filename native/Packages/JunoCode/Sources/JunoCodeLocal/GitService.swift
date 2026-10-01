@@ -327,8 +327,12 @@ public final class GitService: GitServicing, Sendable {
             ]
         )
         let checkRows: [GitHubCheckStatus]
+        // `gh` exits 1 when a check failed and 8 while some are pending; the
+        // checks are on stdout in every case.
         if checks.result.exitCode == 0 || checks.result.exitCode == 8 {
             checkRows = try GitHubStatusParser.parseChecks(checks.stdout)
+        } else if checks.result.exitCode == 1, let parsed = try? GitHubStatusParser.parseChecks(checks.stdout) {
+            checkRows = parsed
         } else {
             let message = checks.stderr.isEmpty ? checks.stdout : checks.stderr
             let lowercased = message.lowercased()
@@ -516,5 +520,341 @@ enum GitHubStatusParser {
                     link: $0.link
                 )
             }
+    }
+}
+
+// MARK: - Review and shipping (Lane E, CODE_AGENT_SPEC §5.3, §5.10)
+
+extension GitService: GitPublishing {
+    public func pushTarget() async throws -> GitPushTarget {
+        let plan = try await preparePush()
+        return GitPushTarget(
+            remote: plan.remote,
+            localBranch: plan.localBranch,
+            remoteBranch: plan.remoteBranch,
+            setsUpstream: plan.setsUpstream
+        )
+    }
+
+    public func push(to target: GitPushTarget) async throws -> String {
+        try await push(
+            GitPushPlan(
+                remote: target.remote,
+                localBranch: target.localBranch,
+                remoteBranch: target.remoteBranch,
+                setsUpstream: target.setsUpstream
+            )
+        )
+    }
+}
+
+/// Which changes a review shows, beyond the session's own edits.
+public enum GitReviewScope: String, CaseIterable, Sendable {
+    /// Everything not committed, against `HEAD`, untracked files included.
+    case uncommitted
+    /// What is staged, against `HEAD`.
+    case staged
+    /// The branch's whole change, against its merge base with the default
+    /// branch.
+    case branch
+}
+
+/// One file in a review scope, with both sides to diff.
+public struct GitScopedFile: Hashable, Sendable {
+    public let path: String
+    /// `A`, `M`, `D`, `R` or `?`.
+    public let status: String
+    /// The file before the change; nil when it did not exist.
+    public let old: String?
+    /// The file after the change; nil when it no longer exists.
+    public let new: String?
+
+    public init(path: String, status: String, old: String?, new: String?) {
+        self.path = path
+        self.status = status
+        self.old = old
+        self.new = new
+    }
+}
+
+public enum GitStageHunkError: Error, Equatable, LocalizedError {
+    /// The change is already in the index.
+    case alreadyStaged
+    /// The hunk no longer lines up with the file.
+    case noMatch
+    case notText
+    /// The file is too large to stage one hunk of; Keep the whole file.
+    case tooLarge
+    /// The file has an unresolved merge conflict in the index.
+    case unmerged
+
+    public var errorDescription: String? {
+        switch self {
+        case .alreadyStaged: "That change is already kept (staged)."
+        case .noMatch: "That change no longer matches the file. Refresh the diff."
+        case .notText: "Only text changes can be kept one hunk at a time."
+        case .tooLarge: "That file is too large to keep one hunk at a time. Keep the whole file instead."
+        case .unmerged: "That file has a merge conflict. Resolve it before keeping part of it."
+        }
+    }
+}
+
+extension GitService {
+    /// Most files a scope lists with their contents.
+    public static let maximumScopedFiles = 200
+
+    /// `git show <revision>:<path>`, or nil when the file is not there.
+    /// `:path` reads the index.
+    public func show(revision: String, path: String) async -> String? {
+        guard let outcome = try? await run(
+            ["show", "\(revision):\(path)"],
+            outputLimit: OutputLimit(maximumBytes: Self.maximumDiffBytes)
+        ), outcome.result.exitCode == 0 else { return nil }
+        return outcome.stdout
+    }
+
+    /// The default branch the branch scope compares with: `origin/HEAD`, or
+    /// the first of `main`, `master`, `trunk` that exists.
+    public func defaultBranchRef() async -> String? {
+        if let symbolic = try? await runChecked(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]) {
+            let name = symbolic.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { return name }
+        }
+        for candidate in ["main", "master", "trunk"] {
+            if let outcome = try? await run(["rev-parse", "--verify", "--quiet", candidate]),
+               outcome.result.exitCode == 0
+            {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    /// The commit the branch scope compares with.
+    public func mergeBase() async throws -> String {
+        guard let target = await defaultBranchRef() else {
+            throw GitServiceError.commandFailed(message: "No default branch to compare with.")
+        }
+        let outcome = try await runChecked(["merge-base", "HEAD", target])
+        return outcome.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The files a review scope covers, with both sides of each.
+    public func scopedFiles(_ scope: GitReviewScope) async throws -> [GitScopedFile] {
+        switch scope {
+        case .uncommitted:
+            let status = try await runChecked(["status", "--porcelain", "--untracked-files=all"])
+            return await files(
+                Self.parsePorcelain(status.stdout),
+                oldRevision: "HEAD",
+                newFromIndex: false
+            )
+        case .staged:
+            let names = try await runChecked(["diff", "--cached", "--name-status"])
+            return await files(Self.parseNameStatus(names.stdout), oldRevision: "HEAD", newFromIndex: true)
+        case .branch:
+            let base = try await mergeBase()
+            let names = try await runChecked(["diff", "--name-status", base])
+            let untracked = try await runChecked(["ls-files", "--others", "--exclude-standard"])
+            var entries = Self.parseNameStatus(names.stdout)
+            for line in untracked.stdout.split(separator: "\n") where !line.isEmpty {
+                let path = String(line)
+                if !entries.contains(where: { $0.path == path }) {
+                    entries.append((path, "?"))
+                }
+            }
+            return await files(entries, oldRevision: base, newFromIndex: false)
+        }
+    }
+
+    private func files(
+        _ entries: [(path: String, status: String)],
+        oldRevision: String,
+        newFromIndex: Bool
+    ) async -> [GitScopedFile] {
+        var result: [GitScopedFile] = []
+        for entry in entries.prefix(Self.maximumScopedFiles) {
+            let old = entry.status == "A" || entry.status == "?"
+                ? nil
+                : await show(revision: oldRevision, path: entry.path)
+            let new: String?
+            if entry.status == "D" {
+                new = nil
+            } else if newFromIndex {
+                new = await show(revision: "", path: entry.path)
+            } else {
+                new = await workingContent(entry.path)
+            }
+            result.append(GitScopedFile(path: entry.path, status: entry.status, old: old, new: new))
+        }
+        return result
+    }
+
+    /// The working tree's copy of a file, read through the executor, which is
+    /// pinned to the checkout.
+    private func workingContent(_ path: String) async -> String? {
+        try? await executorCat(path)
+    }
+
+    private func executorCat(_ path: String) async throws -> String? {
+        let outcome = try await runExecutable(
+            "cat",
+            arguments: ["--", path],
+            outputLimit: OutputLimit(maximumBytes: Self.maximumDiffBytes)
+        )
+        return outcome.result.exitCode == 0 ? outcome.stdout : nil
+    }
+
+    /// Stages exactly one change of a file: the hunk of the index-to-working
+    /// diff that makes the same edit as `hunk`. Written as a blob and placed
+    /// in the index with `update-index`, so nothing else in the file, and no
+    /// other file, is staged.
+    ///
+    /// Both sides are read as the bytes on disk, never through the command
+    /// executor's output: that output is redacted (a `TOKEN_TTL = 3600` line
+    /// comes back as `[redacted]`), capped at two megabytes, and decoded a
+    /// chunk at a time, so a blob built from it would stage a corrupted copy
+    /// of the file. The working copy is read from the checkout, the index
+    /// copy is checked out by Git into a scratch folder in the Git directory,
+    /// and the new blob is hashed with the file's own path so its filters
+    /// and line endings apply.
+    public func stageHunk(path: String, matching hunk: DiffHunk) async throws {
+        let listed = try await runChecked(["ls-files", "-s", "--", path]).stdout
+        let entries = listed.split(separator: "\n", omittingEmptySubsequences: true)
+        guard let entry = entries.first else {
+            // Not in the index yet: the whole file is the change.
+            try await stage(paths: [path])
+            return
+        }
+        // `<mode> <object> <stage>\t<path>`; a stage other than 0 is a conflict.
+        let fields = entry.split(separator: "\t", maxSplits: 1).first?.split(separator: " ") ?? []
+        guard fields.count == 3 else { throw GitStageHunkError.noMatch }
+        guard entries.count == 1, fields[2] == "0" else { throw GitStageHunkError.unmerged }
+        let mode = String(fields[0])
+        // A symlink or a submodule has no lines to keep one of.
+        guard mode == "100644" || mode == "100755" else { throw GitStageHunkError.notText }
+
+        let places = try await runChecked(["rev-parse", "--absolute-git-dir", "--show-toplevel", "--show-prefix"])
+            .stdout.components(separatedBy: "\n")
+        guard places.count >= 3, !places[0].isEmpty, !places[1].isEmpty else {
+            throw GitServiceError.commandFailed(message: "Could not find the repository's folders.")
+        }
+        let gitDir = URL(fileURLWithPath: places[0], isDirectory: true)
+        let top = URL(fileURLWithPath: places[1], isDirectory: true).standardizedFileURL
+        let prefix = places[2].trimmingCharacters(in: .whitespacesAndNewlines)
+        let relative = prefix + path
+        let workingURL = top.appendingPathComponent(relative).standardizedFileURL
+        guard workingURL.path.hasPrefix(top.path.hasSuffix("/") ? top.path : top.path + "/") else {
+            throw GitStageHunkError.noMatch
+        }
+
+        let scratch = gitDir.appendingPathComponent("juno-stage-\(UUID().uuidString.lowercased())", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        _ = try await runChecked(["checkout-index", "--prefix=\(scratch.path)/", "--", path])
+
+        let working = try Self.faithfulText(at: workingURL)
+        let index = try Self.faithfulText(at: scratch.appendingPathComponent(relative))
+        let diff = try DiffEngine.diff(old: index, new: working)
+        let wanted = Self.changedLines(hunk)
+        guard let match = diff.hunks.first(where: { Self.changedLines($0) == wanted }) else {
+            // Already in the index when HEAD-to-index makes the same edit.
+            // Both sides of this check come through the same redaction, so
+            // they compare like for like; it only chooses the message.
+            let head = await show(revision: "HEAD", path: "./" + path) ?? ""
+            let stagedText = await show(revision: "", path: "./" + path) ?? ""
+            let staged = (try? DiffEngine.diff(old: head, new: stagedText))?.hunks ?? []
+            if diff.hunks.isEmpty || staged.contains(where: { Self.changedLines($0) == wanted }) {
+                throw GitStageHunkError.alreadyStaged
+            }
+            throw GitStageHunkError.noMatch
+        }
+        let updated = Self.applying(match, to: index)
+        let temporary = scratch.appendingPathComponent("juno-stage-blob")
+        try Data(updated.utf8).write(to: temporary, options: .atomic)
+        let blob = try await runChecked(["hash-object", "-w", "--path=\(path)", temporary.path])
+            .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard blob.range(of: "^[0-9a-f]{40,64}$", options: .regularExpression) != nil else {
+            throw GitServiceError.commandFailed(message: "Git did not return the new blob.")
+        }
+        _ = try await runChecked(["update-index", "--cacheinfo", "\(mode),\(blob),\(path)"])
+    }
+
+    /// A file's text exactly as it is on disk: strict UTF-8, within the diff
+    /// engine's limit, or an error that refuses the Keep.
+    static func faithfulText(at url: URL) throws -> String {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        if let size = attributes?[.size] as? NSNumber, size.intValue > DiffEngine.maximumInputBytes {
+            throw GitStageHunkError.tooLarge
+        }
+        guard let data = try? Data(contentsOf: url) else { throw GitStageHunkError.noMatch }
+        guard data.count <= DiffEngine.maximumInputBytes else { throw GitStageHunkError.tooLarge }
+        // Decoded without dropping a byte-order mark, and refused unless it
+        // turns back into exactly the same bytes.
+        let text = String(decoding: data, as: UTF8.self)
+        guard !data.contains(0), Data(text.utf8) == data else {
+            throw GitStageHunkError.notText
+        }
+        return text
+    }
+
+    /// The edit a hunk makes, without its position: what it removes and
+    /// what it adds, in order.
+    static func changedLines(_ hunk: DiffHunk) -> [String] {
+        hunk.lines.compactMap { line in
+            switch line.kind {
+            case .added: "+" + line.text
+            case .removed: "-" + line.text
+            case .context: nil
+            }
+        }
+    }
+
+    /// `content` with `hunk` applied forward.
+    static func applying(_ hunk: DiffHunk, to content: String) -> String {
+        var lines = DiffEngine.splitLines(content)
+        let start = max(0, hunk.oldStart > 0 ? hunk.oldStart - 1 : 0)
+        let end = min(lines.count, start + hunk.oldCount)
+        let replacement = hunk.lines.compactMap { $0.kind == .removed ? nil : $0.text }
+        lines.replaceSubrange(start..<end, with: replacement)
+        let joined = lines.joined(separator: "\n")
+        // By byte: Swift compares Characters, and a file ending "\r\n" ends
+        // in one Character that is not "\n", so `hasSuffix("\n")` dropped a
+        // CRLF file's last line ending.
+        let endsWithNewline = content.utf8.last == UInt8(ascii: "\n")
+        return (endsWithNewline || content.isEmpty) && !joined.isEmpty ? joined + "\n" : joined
+    }
+
+    /// `git status --porcelain` lines as path and status, renames as their
+    /// new path.
+    public static func parsePorcelain(_ output: String) -> [(path: String, status: String)] {
+        output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { raw in
+            let line = String(raw)
+            guard line.count > 3 else { return nil }
+            let index = line[line.startIndex]
+            let worktree = line[line.index(after: line.startIndex)]
+            var path = String(line.dropFirst(3))
+            if let arrow = path.range(of: " -> ") { path = String(path[arrow.upperBound...]) }
+            if path.hasPrefix("\""), path.hasSuffix("\""), path.count >= 2 {
+                path = String(path.dropFirst().dropLast())
+            }
+            let status: String
+            if index == "?" { status = "?" }
+            else if index == "D" || worktree == "D" { status = "D" }
+            else if index == "A" { status = "A" }
+            else if index == "R" { status = "R" }
+            else { status = "M" }
+            return (path, status)
+        }
+    }
+
+    /// `git diff --name-status` lines as path and status.
+    static func parseNameStatus(_ output: String) -> [(path: String, status: String)] {
+        output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { raw in
+            let fields = raw.split(separator: "\t").map(String.init)
+            guard let code = fields.first?.first, fields.count >= 2 else { return nil }
+            let path = code == "R" || code == "C" ? (fields.last ?? fields[1]) : fields[1]
+            return (path, String(code == "C" ? "A" : code))
+        }
     }
 }

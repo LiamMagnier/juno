@@ -1529,14 +1529,18 @@ public final class SessionController {
             live: live
         )
         let wasActive = session.status.isActive
+        // The reader's queued line comments ride on this message, without
+        // touching the draft (CODE_AGENT_SPEC §5.10).
+        let outgoing = reviewQueue.outgoing(prompt: prompt, modelPrompt: modelPrompt)
         do {
             try await deliver(
-                prompt: prompt,
-                modelPrompt: modelPrompt,
+                prompt: outgoing.prompt,
+                modelPrompt: outgoing.modelPrompt,
                 images: pendingAttachments.map(\.image),
                 kind: activeInstructionKind,
                 live: live
             )
+            reviewQueue.markSent(outgoing.commentIDs)
             composerText = ""
             composerFileReferences = []
             pendingAttachments = []
@@ -1564,7 +1568,7 @@ public final class SessionController {
     ///
     /// - Parameter accepted: told once the agent has taken the message, before
     ///   its hooks run; see `AgentOrchestrator.submit`.
-    private func deliver(
+    func deliver(
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
@@ -1607,6 +1611,9 @@ public final class SessionController {
         liveAssistantText = ""
         liveReasoningSummary = ""
         let configuration = session.configuration
+        // The goal and run journal as they stand before this turn, so a rewind
+        // to it puts them back with the conversation (CODE_AGENT_SPEC §5.6).
+        live.store.turnState(for: sessionID).snapshot(atSequence: await live.store.nextSequence(for: sessionID))
         // Written before the prompt, so the transcript reads contract-then-turn
         // and a past turn's permissions can still be read off the record long
         // after the composer has moved on to a different mode.
@@ -2948,8 +2955,15 @@ public final class SessionController {
             if let orchestrator, await orchestrator.isRunning {
                 return conversationNotRewound(RewindCopy.running)
             }
+            // Where the turn began, read before the cut takes its row away.
+            let turnSequence = events.first { $0.id == turnID }?.sequence
             do {
                 let plan = try await live.store.rewindConversation(sessionID: sessionID, to: turnID)
+                // The goal and run journal go back with the conversation, so a
+                // rewound goal keeps no evidence from turns that are gone.
+                if let turnSequence {
+                    live.store.turnState(for: sessionID).restore(toSequence: turnSequence)
+                }
                 if scope.restoresCode {
                     // Their files are restored and their rows are gone; nothing
                     // is left to rewind them by.
