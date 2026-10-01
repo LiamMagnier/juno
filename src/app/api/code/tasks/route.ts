@@ -612,7 +612,7 @@ export async function POST(req: Request) {
           }],
           { status: "failed", fromStatus: "queued" },
         );
-        failedTask = await prisma.codeTask.findUnique({ where: { id: task.id } });
+        failedTask = await prisma.codeTask.findUnique({ where: { id: task.id, userId: task.userId } });
         if (failedTask) await persistCodeTaskOutcome(failedTask);
         // The rows this request wrote, handed back so the client can keep the
         // user's turn on screen and append the failure beneath it — exactly

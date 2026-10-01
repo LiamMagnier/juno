@@ -235,7 +235,7 @@ export async function startCodeRoutineRun(input: CodeRunInput): Promise<CodeRunO
         ],
         { status: "failed", fromStatus: "queued" }
       );
-      const failed = await prisma.codeTask.findUnique({ where: { id: task.id } });
+      const failed = await prisma.codeTask.findUnique({ where: { id: task.id, userId: task.userId } });
       if (failed) await persistCodeTaskOutcome(failed);
     } catch {
       // The stuck-task sweeper reconciles a task left queued. Nothing further

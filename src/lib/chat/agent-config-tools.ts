@@ -1014,7 +1014,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
     let snapshot = ctx.agent;
     if (freshAgent) {
       const compRow = await prisma.agentComputer
-        .findUnique({ where: { agentId: freshAgent.id }, select: { status: true } })
+        .findUnique({ where: { agentId: freshAgent.id, userId: freshAgent.userId }, select: { status: true } })
         .catch(() => null);
       snapshot = {
         id: freshAgent.id,
@@ -1218,7 +1218,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         ]);
 
         const compRow = await prisma.agentComputer
-          .findUnique({ where: { agentId: freshAgent.id }, select: { status: true } })
+          .findUnique({ where: { agentId: freshAgent.id, userId: freshAgent.userId }, select: { status: true } })
           .catch(() => null);
         const beforeSnapshot: AgentSnapshotForConfig = {
           id: freshAgent.id,
