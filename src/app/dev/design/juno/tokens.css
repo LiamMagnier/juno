@@ -48,11 +48,15 @@
   --mat-pop: light-dark(rgb(255 255 255 / 0.7), rgb(40 41 44 / 0.72));
   --mat-sheet: light-dark(rgb(255 255 255 / 0.82), rgb(36 37 40 / 0.84));
   --mat-bar: light-dark(rgb(252 252 253 / 0.74), rgb(24 25 27 / 0.72));
+  /* The member's peek band sits over coloured bubbles: more opaque and barely
+     saturated, so a thread colour never turns into a haze behind the character. */
+  --mat-band: light-dark(rgb(252 252 253 / 0.9), rgb(24 25 27 / 0.9));
   --mat-toast: light-dark(rgb(25 27 30 / 0.86), rgb(58 59 63 / 0.82));
   --mat-edge: light-dark(rgb(25 27 30 / 0.085), rgb(255 255 255 / 0.1));
   --mat-sheen: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.05));
   --mat-filter: blur(18px) saturate(1.8);
-  --mat-filter-bar: blur(16px) saturate(1.6);
+  --mat-filter-bar: blur(16px) saturate(1.3);
+  --mat-filter-band: blur(16px) saturate(1.05);
   --mat-filter-scrim: blur(2px) saturate(1.05);
 
   /* Ink: graphite, four steps. ink-3 is the lowest step that carries text (4.5:1 on every plane). */
@@ -785,6 +789,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
     --mat-pop: var(--raised);
     --mat-sheet: var(--raised);
     --mat-bar: var(--ground);
+    --mat-band: var(--ground);
     --mat-toast: light-dark(#26282c, #3a3b3f);
   }
 }
@@ -793,9 +798,11 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
     --mat-pop: var(--raised);
     --mat-sheet: var(--raised);
     --mat-bar: var(--ground);
+    --mat-band: var(--ground);
     --mat-toast: light-dark(#26282c, #3a3b3f);
     --mat-filter: none;
     --mat-filter-bar: none;
+    --mat-filter-band: none;
     --mat-filter-scrim: none;
   }
 }
@@ -804,9 +811,11 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   --mat-pop: var(--raised);
   --mat-sheet: var(--raised);
   --mat-bar: var(--ground);
+  --mat-band: var(--ground);
   --mat-toast: light-dark(#26282c, #3a3b3f);
   --mat-filter: none;
   --mat-filter-bar: none;
+  --mat-filter-band: none;
   --mat-filter-scrim: none;
 }
 

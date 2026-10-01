@@ -66,9 +66,9 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--mat-bar);
-  -webkit-backdrop-filter: var(--mat-filter-bar);
-  backdrop-filter: var(--mat-filter-bar);
+  background: var(--mat-band);
+  -webkit-backdrop-filter: var(--mat-filter-band);
+  backdrop-filter: var(--mat-filter-band);
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
