@@ -206,7 +206,7 @@ const KIND_NOUN: Record<ContextTokenKind, string> = {
   file: "file",
   project: "project",
   app: "app",
-  crew: "crew member",
+  crew: "agent",
   skill: "skill",
   chat: "chat",
   artifact: "artifact",
@@ -738,9 +738,9 @@ export class TurnContext {
 
     for (const { ref, route } of routes) {
       const name = oneLine(ref.agent.name);
-      const lines = [`## Crew member: ${name}${ref.agent.role.trim() ? ` — ${oneLine(ref.agent.role, 120)}` : ""}`];
+      const lines = [`## Agent: ${name}${ref.agent.role.trim() ? ` — ${oneLine(ref.agent.role, 120)}` : ""}`];
       lines.push(
-        `${name} is one of the user's crew members (a teammate agent). Their brief is below so you know who they are and what they look after. You are not ${name}; never speak as them.`
+        `${name} is one of the user's agents. Their brief is below so you know who they are and what they look after. You are not ${name}; never speak as them.`
       );
       const brief = ref.agent.instructions.trim();
       if (brief) lines.push(`Brief:\n${bound(brief, CONTEXT_SECTION_CHARS.crew)}`);

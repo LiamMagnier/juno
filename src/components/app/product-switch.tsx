@@ -14,7 +14,7 @@ import { spring } from "@/lib/motion";
 import { useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { BRAND, PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE ONE PRODUCT SWITCH.
@@ -103,8 +103,8 @@ type Product = {
  * both were navigation wearing a control's clothes.
  */
 export const PRODUCTS = [
-  { id: "chat", label: "Chat", href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
-  { id: "code", label: "Code", href: "/code", kind: "code", chord: "⌘⇧2", minPlan: "FREE" },
+  { id: "chat", label: BRAND.chat.label, href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
+  { id: "code", label: BRAND.code.label, href: "/code", kind: "code", chord: "⌘⇧2", minPlan: "FREE" },
 ] as const satisfies readonly Product[];
 
 /**

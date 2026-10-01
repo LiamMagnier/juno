@@ -610,8 +610,8 @@ export function ApprovalCard({
         <p id={labelId} className={cn("text-caption font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
           {handoff
             ? answerable
-              ? "Hand this to a teammate?"
-              : "Handoff to a teammate"
+              ? "Hand this to another agent?"
+              : "Handoff to another agent"
             : task
               ? answerable
                 ? "Start a background task?"

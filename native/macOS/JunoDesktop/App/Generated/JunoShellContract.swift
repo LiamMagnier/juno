@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "aca057083d19ddb46022c7234af1fe9e9fd574546cf91d56daec2bafab59dfcd"
+    static let digest = "79ce1aef60ea22dc12e14ade3f9a1ed542faff5ef81f00138030dc5645c2cf75"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -109,13 +109,13 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         case .library: "Library"
         case .projects: "Projects"
         case .artifacts: "Artifacts"
-        case .agents: "Agents"
+        case .agents: "Orbit"
         case .customize: "Customize"
         case .pulls: "Pull requests"
         case .assistants: "Assistants"
         case .skills: "Skills"
-        case .automations: "Automations"
-        case .connections: "Connections"
+        case .automations: "Routines"
+        case .connections: "Apps"
         case .accountCustomize: "Customize"
         }
     }
@@ -126,13 +126,13 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         case .library: "Library"
         case .projects: "Projects"
         case .artifacts: "Artifacts"
-        case .agents: "Agents"
+        case .agents: "Orbit"
         case .customize: "Customize"
         case .pulls: "Pull Requests"
         case .assistants: "Assistants"
         case .skills: "Skills"
-        case .automations: "Automations"
-        case .connections: "Connections"
+        case .automations: "Routines"
+        case .connections: "Apps"
         case .accountCustomize: "Customize"
         }
     }
@@ -240,7 +240,7 @@ enum JunoShellChatSidebar {
         var label: String {
             switch self {
             case .needsYou: "Needs you"
-            case .agents: "Crew"
+            case .agents: "Orbit"
             case .pinnedProjects: "Pinned projects"
             case .pinned: "Pinned chats"
             case .recent: "Recent"
@@ -347,7 +347,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: "Take a screenshot"
         case .library: "Add from library"
         case .project: "Add to project"
-        case .connectors: "Connectors"
+        case .connectors: "Apps"
         case .skill: "Use a skill"
         case .research: "Research"
         case .search: "Web search"
@@ -363,7 +363,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: "Take a Screenshot"
         case .library: "Add from Library"
         case .project: "Add to Project"
-        case .connectors: "Connectors"
+        case .connectors: "Apps"
         case .skill: "Use a Skill"
         case .research: "Research"
         case .search: "Web Search"
@@ -516,7 +516,7 @@ enum JunoShellSettingsSection: String, CaseIterable, Sendable {
         case .personalization: "Personalization"
         case .memory: "Memory"
         case .models: "Models"
-        case .connectors: "Connectors"
+        case .connectors: "Apps"
         case .devices: "Devices"
         case .voice: "Voice"
         case .data: "Data & privacy"

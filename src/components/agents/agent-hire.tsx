@@ -24,6 +24,7 @@ import type { AgentAvatar } from "@/lib/agents/avatar";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { BRAND, FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * The hire form (docs/design/AGENTS.md §5.1), and the power-user surface of
@@ -325,10 +326,10 @@ export function AgentHire({
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        heading="New agent"
-        lede="A teammate with its own brief, goals and memory. It works in the cloud and asks before anything it cannot take back."
+        heading={FEATURE_NAMES.createAgent.label}
+        lede="An agent with its own brief, goals and memory. It works in the cloud and asks before anything it cannot take back."
         backHref="/agents"
-        backLabel="Agents"
+        backLabel={BRAND.orbit.label}
       />
       {form}
     </AppPage>

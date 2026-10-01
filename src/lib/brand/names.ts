@@ -53,6 +53,9 @@ export const BRAND = {
 export const AGENT_NOUN = {
   singular: "agent",
   plural: "agents",
+  /** As a heading or a label of its own. */
+  label: "Agent",
+  pluralLabel: "Agents",
 } as const;
 
 /**

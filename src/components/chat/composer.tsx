@@ -63,7 +63,7 @@ import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { useFileDrop } from "@/components/library/library-drop-zone";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 /**
  * Split: it renders only while a clarification is pending, which is a state
  * most messages never enter, and its render site is already guarded on
@@ -2521,7 +2521,7 @@ export function Composer({
       ? [{
           id: "research",
           icon: <ComposerIcons.research className="size-4" />,
-          label: "Research",
+          label: FEATURE_NAMES.research.label,
           // No depth word: Research sizes itself, and a level name told people
           // to pick a model to get a "deeper" run it did not give them.
           tooltip: <>Plans, reads the web and writes a cited report. Usually 5–15 minutes.</>,
@@ -2834,7 +2834,7 @@ export function Composer({
       ? {
           kind: "toggle",
           id: "research",
-          label: "Research",
+          label: FEATURE_NAMES.research.label,
           icon: ComposerIcons.research,
           checked: research,
           onToggle: () => setResearch((on) => !on),
@@ -2929,7 +2929,7 @@ export function Composer({
                 {
                   kind: "sub" as const,
                   id: "connectors",
-                  label: "Connectors",
+                  label: FEATURE_NAMES.apps.label,
                   icon: AppIcons.connections,
                   detail: activeConnectorCount > 0 ? String(activeConnectorCount) : undefined,
                   render: connectorsPanel,
@@ -2964,7 +2964,7 @@ export function Composer({
           {
             kind: "toggle",
             id: "memory",
-            label: "Memory",
+            label: FEATURE_NAMES.memory.label,
             icon: ComposerIcons.memory,
             checked: settings.memoryEnabled,
             onToggle: () => toggleMemory(!settings.memoryEnabled),
