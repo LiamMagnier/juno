@@ -859,7 +859,8 @@ public final class SessionController {
                 files: context.files,
                 executor: context.executor,
                 git: context.git,
-                tests: context.tests
+                tests: context.tests,
+                shells: context.shells
             )
         )
         if !contract.supportsVision || !contract.computerUseActive {
@@ -879,13 +880,8 @@ public final class SessionController {
             tools.append(ExitPlanTool(questions: live.questions))
         }
         if contract.behavior == .code {
-            // Preview inspection is bound to the exact parent session by the
-            // ToolContext supplied during invocation. It is deliberately not
-            // part of WorkspaceContext, so Ask, Plan and isolated sub-agents
-            // cannot observe a UI surface they do not own.
-            tools.append(CodePreviewOpenTool(workspaceRoot: context.access.rootURL))
-            tools.append(CodePreviewInspectTool())
-            tools.append(CodePreviewBrowserTool())
+            // The Preview's tools come from Lane D's provider above
+            // (PreviewToolProvider), bound to this session by the ToolContext.
             // Workspace-declared MCP tools are discovered through the same
             // session construction path as built-in tools. They remain
             // approval-pinned by MCPCodeTool, so discovery never broadens the
@@ -1026,7 +1022,17 @@ public final class SessionController {
             fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
             // In every mode, not only Code: an Ask turn changes no files, but
             // it is still a turn a later rewind has to count past.
-            turnCheckpoints: context.turnCheckpoints
+            turnCheckpoints: context.turnCheckpoints,
+            // Code turns: the Preview's rule 8 (UI edits need a look at the
+            // running page) around the stop check. Lane A's gate replaces
+            // the base and keeps this wrapper.
+            completionGate: contract.behavior == .code
+                ? previewLease.completionGate(
+                    wrapping: ReportOnlyCompletionGate(),
+                    sessionID: sessionID,
+                    workspaceRoot: context.access.rootURL
+                )
+                : ReportOnlyCompletionGate()
         )
     }
 

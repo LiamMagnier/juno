@@ -283,6 +283,8 @@ struct DesktopCodeWorkspace: View {
         }
         .onChange(of: selectedSessionID) { _, _ in
             simulatorHost.tearDown()
+            // Hides the pane only: the session's preview server is leased to
+            // the session and keeps running (PV-1).
             previewTarget = nil
         }
         .onChange(of: controller?.review.isPresented) { _, presented in
@@ -308,6 +310,7 @@ struct DesktopCodeWorkspace: View {
         }
         .onAppear {
             if storedColumnVisibility == "detailOnly" { columnVisibility = .detailOnly }
+            PreviewHost.configureForApp()
         }
         .onDisappear {
             simulatorHost.tearDown()
@@ -325,6 +328,7 @@ struct DesktopCodeWorkspace: View {
     private var canvas: some View {
         DesktopCodePreviewDock(
             target: previewTarget,
+            lease: controller?.previewLease,
             close: { previewTarget = nil },
             openInWindow: {
                 guard let previewTarget else { return }

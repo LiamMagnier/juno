@@ -29,6 +29,9 @@ public struct CodeToolProviderContext: Sendable {
     public var executor: any CommandExecuting
     public var git: any GitServicing
     public var tests: any TestRunning
+    /// The session's durable shells, when the workspace has them (Lane D's
+    /// `preview_server attach` promotes a shell's server).
+    public var shells: (any ShellSessionManaging)?
 
     public init(
         sessionID: CodeSessionID,
@@ -42,7 +45,8 @@ public struct CodeToolProviderContext: Sendable {
         files: any FileOperating,
         executor: any CommandExecuting,
         git: any GitServicing,
-        tests: any TestRunning
+        tests: any TestRunning,
+        shells: (any ShellSessionManaging)? = nil
     ) {
         self.sessionID = sessionID
         self.workspaceID = workspaceID
@@ -56,6 +60,7 @@ public struct CodeToolProviderContext: Sendable {
         self.executor = executor
         self.git = git
         self.tests = tests
+        self.shells = shells
     }
 }
 

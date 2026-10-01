@@ -12,17 +12,21 @@ import SwiftUI
 /// window: collapsing the dock never destroys a half-written prompt.
 struct DesktopCodePreviewDock<Content: View>: View {
     let target: CodePreviewTarget?
+    /// The session's lease model, so the dock and the session share one.
+    var lease: PreviewLeaseModel?
     let close: () -> Void
     let openInWindow: () -> Void
     private let content: Content
 
     init(
         target: CodePreviewTarget?,
+        lease: PreviewLeaseModel? = nil,
         close: @escaping () -> Void,
         openInWindow: @escaping () -> Void,
         @ViewBuilder content: () -> Content
     ) {
         self.target = target
+        self.lease = lease
         self.close = close
         self.openInWindow = openInWindow
         self.content = content()
@@ -105,6 +109,7 @@ struct DesktopCodePreviewDock<Content: View>: View {
                 }
                 CodePreviewDock(
                     target: target,
+                    lease: lease,
                     close: close,
                     openInWindow: openInWindow
                 )
