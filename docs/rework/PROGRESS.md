@@ -217,3 +217,38 @@ the three JunoNativeKit failures that predate the refoundation.
 - The strict (warnings-as-errors) JunoDesktop build (as the swift-loop lane
   reported it) is a pre-existing failure outside Phase 9. The three
   JunoNativeKit tests above are fixed on the trunk (`2adf8e75`).
+
+## Phase 10 — Juno Code autonomous agent (`docs/rework/CODE_AGENT_SPEC.md`)
+
+### Step 0: the seams commit (`rf/code-agent-seams`, §6.0)
+
+The shared types and hook points every lane builds on, merged before the
+lanes start. Behaviour is unchanged: nothing records the new events yet, the
+default stop check finishes every run as before, and every lane model and
+tool provider starts empty.
+
+| Seam | Where | Owner after this |
+|---|---|---|
+| `RunEndReason`, `GateReason`, `TurnOrigin`, `RuntimeNote` (fenced `<juno_runtime>`), `Budget`, `BudgetUsage` | `JunoCodeCore/RunOutcome.swift` | Lane A |
+| `VerificationRecord`, `UIVerificationRecord`, `ReviewRecord`, `CheckKind`, `VerificationLedgerReading` / `Writing`, `VerificationSnapshot` | `JunoCodeCore/VerificationRecords.swift` | Lane B |
+| 12 `SessionEventPayload` cases (`runContinued`, `runOutcome`, `verificationRecorded`, `uiVerificationRecorded`, `reviewCompleted`, `goalSet`, `goalEdited`, `goalVerdict`, `goalStatus`, `checkInDue`, `ciStatus`, `budgetReached`), projected to protocol v1.1 | `SessionEvents.swift`, `AgentProtocolProjection.swift` | Lane A |
+| `CompletionGating` (default `ReportOnlyCompletionGate`), `resume(note:origin:)`, PreCompact / PostCompact / PostToolBatch / PostToolUseFailure | `CompletionGating.swift`, `AgentOrchestrator.swift`, `AgentLifecycleHooks.swift`, `ToolScheduler.swift` | Lane A (gate, resume), Lane F (hooks) |
+| `goal`, `verification`, `screen`, `previewLease`, `reviewQueue`, `commands` on `SessionController` | one file per lane in `JunoCodeUI/Models/` | each lane |
+| Thread items `.continued`, `.goalVerdict`, `.verification`, `.uiCheck`, `.reviewFindings`, `.screenStep`, `.ciStatus`, `.runReport` with placeholder rows | `StudioThreadItems.swift`; rows in `StudioLoopRows`, `StudioVerificationRows`, `StudioRunReport`, `Views/Preview/PreviewCheckRow`, `StudioScreenStepRows`, `StudioCIBar` | each lane |
+| `CodeToolProvider` and one empty provider per lane | `CodeToolProvider.swift`, `JunoCodeUI/Models/CodeToolProviders.swift` | each lane |
+| Protocol v1.1 (12 events, 7 commands, new enum values) | `contracts/agent/*`, regenerated outputs, `autonomous-loop` fixture | Lane A |
+
+Deviation from §6.0: the review queue is `SessionController.reviewQueue`,
+because `review` already holds the document-review model.
+
+Gates on the branch (through `gate.sh`): `native:test JunoCode` 1,320
+XCTests (13 skipped) + 78 Swift Testing, 0 failures (42 new tests);
+`native:test JunoNativeKit` 1,673 + 58, 0 failures; JunoDesktop Debug
+`xcodebuild` succeeded; `typecheck` 0 errors; agent-core 236/236;
+`agent:protocol:check`, `code:task-wire:check`, `code:runtime:check`,
+`code:preview:check`, `code:remote:check`, `native:contract:check`,
+`native:parity:check`, `check-approval-dispatch` pass. `npm test`: 4,485
+tests, 4,416 pass, 67 skipped, 2 fail, both outside this change and failing
+on the trunk too since 2026-10-01: `google:gemini-omni-flash-preview` passed
+its `retiresOn: 2026-09-30` and left the catalog
+(`tests/model-catalog-fidelity.test.ts`, `tests/video-gen.test.ts`).
