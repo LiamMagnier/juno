@@ -82,6 +82,36 @@ final class AutonomySettingsTests: XCTestCase {
         XCTAssertEqual(ResolvedCodeSettings.resolve([approved]).autonomy.maxAutoContinues, 12)
     }
 
+    /// The turn limit is the soft step limit. A project file the reader has
+    /// not approved may lower it, never raise it — neither through
+    /// `agent.maxTurns` nor by naming `autonomy.stepLimit`, which must not
+    /// set aside the reader's own lower turn limit.
+    func testAnUnapprovedProjectFileCannotRaiseTheStepLimit() {
+        let raiseTurns = CodeSettingsLayer(CodeSettingsFile(agent: CodeSettingsFile.Agent(maxTurns: 1_000)), origin: .project)
+        let raised = ResolvedCodeSettings.resolve([raiseTurns])
+        XCTAssertEqual(raised.maxTurns, 200)
+        XCTAssertEqual(raised.autonomy.stepLimit, 200, "agent.maxTurns cannot raise the step limit")
+        XCTAssertTrue(raiseTurns.file.loosensAnything, "raising the turn limit needs the reader's approval")
+
+        let reader = CodeSettingsLayer(CodeSettingsFile(agent: CodeSettingsFile.Agent(maxTurns: 50)), origin: .user)
+        let names = CodeSettingsLayer(
+            CodeSettingsFile(autonomy: AutonomySettings.Overrides(stepLimit: 1_000)),
+            origin: .project
+        )
+        XCTAssertEqual(
+            ResolvedCodeSettings.resolve([reader, names]).autonomy.stepLimit, 50,
+            "naming a step limit does not set aside the reader's 50 turns"
+        )
+        let lowers = CodeSettingsLayer(
+            CodeSettingsFile(agent: CodeSettingsFile.Agent(maxTurns: 30), autonomy: AutonomySettings.Overrides(stepLimit: 40)),
+            origin: .project
+        )
+        XCTAssertEqual(ResolvedCodeSettings.resolve([reader, lowers]).autonomy.stepLimit, 30, "lowering still works")
+
+        let approved = CodeSettingsLayer(raiseTurns.file, origin: .project, isApproved: true)
+        XCTAssertEqual(ResolvedCodeSettings.resolve([approved]).autonomy.stepLimit, 1_000)
+    }
+
     func testTheStepLimitIsTheTurnLimitUnlessAFileNamesIt() {
         let turns = CodeSettingsLayer(CodeSettingsFile(agent: CodeSettingsFile.Agent(maxTurns: 120)), origin: .user)
         XCTAssertEqual(ResolvedCodeSettings.resolve([turns]).autonomy.stepLimit, 120)

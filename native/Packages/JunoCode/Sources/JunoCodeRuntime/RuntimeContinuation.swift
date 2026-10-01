@@ -97,6 +97,27 @@ public enum RuntimeContinuation {
         text: "The reader resumed the goal. Continue toward it from where you stopped."
     )
 
+    /// Text that came from a file, a command's output or another model, set
+    /// into a note as a quotation: one line, in quotation marks, with angle
+    /// brackets and straight quotes neutralised and its length bounded. A
+    /// note is Juno's own voice, which the system prompt tells the agent to
+    /// act on; what it quotes stays data, and can never open or close a
+    /// fence of its own.
+    public static func quoted(_ text: String, limit: Int = 160) -> String {
+        var line = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .replacingOccurrences(of: "<", with: "‹")
+            .replacingOccurrences(of: ">", with: "›")
+            .replacingOccurrences(of: "\"", with: "'")
+            .replacingOccurrences(of: "“", with: "'")
+            .replacingOccurrences(of: "”", with: "'")
+        if line.count > limit { line = String(line.prefix(limit)) + "…" }
+        return "“" + line + "”"
+    }
+
     /// `detail` as the middle of a sentence: trimmed, bounded, ending in one
     /// full stop.
     static func sentence(_ detail: String, limit: Int = 320) -> String {

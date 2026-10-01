@@ -221,6 +221,21 @@ public struct GoalRun: Hashable, Codable, Sendable, Identifiable {
 
     public var isActive: Bool { status == .active }
 
+    /// How a goal waiting on one of its run's approvals says so.
+    public static let approvalWaitPrefix = "Waiting for you to allow "
+
+    /// Whether the goal waits only on an approval its own run asked for:
+    /// the run is still working toward it.
+    public var isWaitingOnApproval: Bool {
+        status == .needsYou && (statusReason ?? "").hasPrefix(Self.approvalWaitPrefix)
+    }
+
+    /// Whether the commands the reader ticked on the start card may run
+    /// without asking now: while the goal is active, or waits only on one of
+    /// its run's approvals. Met, impossible, out of budget, blocked, paused
+    /// and cleared goals grant nothing.
+    public var grantsApply: Bool { isActive || isWaitingOnApproval }
+
     /// The newest verdict, if any.
     public var lastVerdict: GoalVerdict? { verdicts.last }
 
@@ -454,7 +469,9 @@ public extension GoalRun {
             id: legacy.id,
             objective: legacy.objective,
             criteria: criteria,
-            budget: Budget(),
+            // The standard goal budget, not an unlimited one: resuming a goal
+            // an earlier build kept must not start a run with no ceiling.
+            budget: AutonomySettings.standard.goalBudget,
             status: status,
             statusReason: status == .paused ? "Carried over from an earlier version of Juno. Resume it to keep working." : nil,
             origin: .reader,

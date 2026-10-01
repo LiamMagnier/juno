@@ -49,7 +49,10 @@ public enum GoalText {
             lines.append("Budget: \(budget).")
         }
         if let verdict = goal.lastVerdict {
-            lines.append("Last check: \(verdictWords(verdict.kind))" + (verdict.reason.isEmpty ? "." : " — \(verdict.reason)"))
+            // A judge's reason is another model's reading of the transcript:
+            // quoted, so the goal section never speaks it in Juno's voice.
+            lines.append("Last check: \(verdictWords(verdict.kind))"
+                + (verdict.reason.isEmpty ? "." : " — \(RuntimeContinuation.quoted(verdict.reason, limit: GoalVerdictEvent.maximumReasonCharacters))"))
         }
         switch goal.status {
         case .active:
@@ -63,7 +66,7 @@ public enum GoalText {
         case .achieved:
             lines.append("This goal is met. Its record stays as it is.")
         case .impossible:
-            lines.append("This goal was judged impossible: \(goal.statusReason ?? "no reason given").")
+            lines.append("This goal was judged impossible: \(goal.statusReason.map { RuntimeContinuation.quoted($0, limit: 300) } ?? "no reason given").")
         case .cleared:
             break
         }

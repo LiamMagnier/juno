@@ -192,6 +192,7 @@ extension CodeSettingsFile {
             || !(sandbox?.writablePaths ?? []).isEmpty
             || sandbox?.network == true
             || agent?.modelFallback == true
+            || (agent?.maxTurns ?? 0) > ResolvedCodeSettings.defaults.maxTurns
             || autonomy?.raisesAnything == true
     }
 }
@@ -292,13 +293,23 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> ResolvedCodeSettings {
         var resolved = defaults
+        // Whether a file that may loosen named `autonomy.stepLimit`, and the
+        // lowest one a file that may only narrow asked for.
         var stepLimitSet = false
+        var narrowedStepLimit: Int?
         for layer in layers {
             let file = layer.file
             let loosens = layer.mayLoosen
             if let autonomy = file.autonomy {
                 resolved.autonomy.apply(autonomy, mayLoosen: loosens)
-                stepLimitSet = stepLimitSet || autonomy.stepLimit != nil
+                if let limit = autonomy.stepLimit {
+                    if loosens {
+                        stepLimitSet = true
+                    } else {
+                        let clamped = min(max(limit, AutonomySettings.stepLimitRange.lowerBound), AutonomySettings.stepLimitRange.upperBound)
+                        narrowedStepLimit = min(narrowedStepLimit ?? clamped, clamped)
+                    }
+                }
             }
             if let permissions = file.permissions {
                 resolved.rules = resolved.rules.merging(
@@ -343,7 +354,11 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
             }
             if let agent = file.agent {
                 if let turns = agent.maxTurns {
-                    resolved.maxTurns = min(max(turns, maxTurnsRange.lowerBound), maxTurnsRange.upperBound)
+                    // The turn limit is the soft step limit, how long a run
+                    // works before it stops to ask: a file the reader has not
+                    // approved may lower it, never raise it.
+                    let clamped = min(max(turns, maxTurnsRange.lowerBound), maxTurnsRange.upperBound)
+                    resolved.maxTurns = loosens ? clamped : min(resolved.maxTurns, clamped)
                 }
                 if let auto = agent.autoCompact { resolved.autoCompact = auto }
                 if let threshold = agent.compactThreshold {
@@ -375,10 +390,12 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
                 }
             }
         }
-        // The step limit is today's turn limit, made soft, unless a file
-        // names it under `autonomy`.
+        // The step limit is today's turn limit, made soft, unless a file that
+        // may loosen names it under `autonomy`. A file that may only narrow
+        // lowers whichever limit stands; its naming one never sets aside the
+        // reader's own lower turn limit.
         if !stepLimitSet {
-            resolved.autonomy.stepLimit = resolved.maxTurns
+            resolved.autonomy.stepLimit = min(resolved.maxTurns, narrowedStepLimit ?? resolved.maxTurns)
         }
         return resolved
     }

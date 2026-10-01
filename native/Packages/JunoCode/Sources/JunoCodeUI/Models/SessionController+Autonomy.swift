@@ -184,6 +184,16 @@ extension SessionController {
     /// Binds the goal model and reads the goals, after the transcript loads.
     func restoreAutonomy(_ live: Live) async {
         goal.host = self
+        // A task grant applies only while its goal is in force, read from the
+        // stored goal at the moment of each call: the goal runtime moves a
+        // goal out of `active` (met, impossible, out of budget, blocked,
+        // stopped) without telling the coordinator.
+        let store = live.store
+        let sessionID = self.sessionID
+        await live.permissions.setTaskGrantCheck { goalID in
+            guard let goal = await store.currentGoalRun(for: sessionID), goal.id == goalID else { return false }
+            return goal.grantsApply
+        }
         let file = await live.store.goalFile(for: sessionID)
         goal.apply(file)
         goal.isWorking = session.status.isActive

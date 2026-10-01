@@ -49,6 +49,13 @@ public actor PermissionCoordinator {
     /// The checkout this coordinator's session works in; a grant applies only
     /// in its own.
     private var workspaceRoot: String?
+    /// Asks whether the goal with this id still lets its grants apply, from
+    /// the goal as it is stored now. The goal runtime moves a goal out of
+    /// `active` on its own — met, judged impossible, out of budget, blocked,
+    /// stopped — without telling this coordinator, so a grant is honoured
+    /// only after this says yes at the moment of the call. Nil trusts the
+    /// grants as set (tests, and sessions with no goal store).
+    private var taskGrantCheck: (@Sendable (_ goalID: String) async -> Bool)?
 
     public enum ApprovalUpdate: Sendable {
         case requested(ApprovalRequest)
@@ -120,6 +127,12 @@ public actor PermissionCoordinator {
         activeGrantGoalID = nil
     }
 
+    /// Installs the check that confirms, at each call a grant would allow,
+    /// that its goal is still in force (see `taskGrantCheck`).
+    public func setTaskGrantCheck(_ check: (@Sendable (_ goalID: String) async -> Bool)?) {
+        taskGrantCheck = check
+    }
+
     /// The grants in force now.
     public var activeTaskGrants: [TaskGrant] {
         guard activeGrantGoalID != nil else { return [] }
@@ -183,6 +196,27 @@ public actor PermissionCoordinator {
         }
     }
 
+    /// Whether a task grant covers this call *and* its goal is still in
+    /// force, asked of the stored goal at this moment. Everything after the
+    /// one suspension is read afresh, so a grant cleared or replaced while
+    /// the goal was being read does not count.
+    private func grantConfirmed(
+        toolName: String,
+        subject: PermissionRuleSubject?,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy
+    ) async -> Bool {
+        guard rules.evaluate(toolName: toolName, subject: subject) == nil,
+              grantCovers(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy),
+              let goalID = activeGrantGoalID
+        else { return false }
+        if let check = taskGrantCheck {
+            guard await check(goalID) else { return false }
+        }
+        return activeGrantGoalID == goalID
+            && grantCovers(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
+    }
+
     /// Whether this call would run without a prompt as things stand: the
     /// mode, the reader's rules and the active task grants. A dry run that
     /// asks nothing, for the stop check deciding whether the runtime may run a
@@ -192,12 +226,13 @@ public actor PermissionCoordinator {
         subject: PermissionRuleSubject?,
         risk: ActionRisk,
         approvalPolicy: ApprovalPolicy = .byRisk
-    ) -> Bool {
+    ) async -> Bool {
+        let granted = await grantConfirmed(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
         let ruling = Self.ruling(
             mode: mode,
             risk: risk,
             approvalPolicy: approvalPolicy,
-            rule: effectiveRule(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy),
+            rule: effectiveRule(toolName: toolName, subject: subject, granted: granted),
             toolName: toolName
         )
         if case .allow = ruling { return true }
@@ -205,18 +240,17 @@ public actor PermissionCoordinator {
     }
 
     /// The reader's rule for this call, or, when no rule speaks to it, an
-    /// allow from a task grant. Grants come after deny and ask rules and
-    /// before the mode ladder.
+    /// allow from a task grant `grantConfirmed` vouched for. Grants come
+    /// after deny and ask rules and before the mode ladder.
     private func effectiveRule(
         toolName: String,
         subject: PermissionRuleSubject?,
-        risk: ActionRisk,
-        approvalPolicy: ApprovalPolicy
+        granted: Bool
     ) -> PermissionRuleDecision? {
         if let rule = rules.evaluate(toolName: toolName, subject: subject) {
             return rule
         }
-        guard grantCovers(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy) else {
+        guard granted else {
             return nil
         }
         return .allow(PermissionRule(tool: "Bash", specifier: (subject.flatMap {
@@ -252,11 +286,15 @@ public actor PermissionCoordinator {
         subject: PermissionRuleSubject? = nil,
         hookPermission: AgentHookPermission? = nil
     ) async -> AuthorizationOutcome {
+        // The only suspension before the ruling: whether a task grant's goal
+        // is still in force. Everything from the ruling to the request's
+        // registration below runs without another.
+        let granted = await grantConfirmed(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
         let ruling = Self.ruling(
             mode: mode,
             risk: risk,
             approvalPolicy: approvalPolicy,
-            rule: effectiveRule(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy),
+            rule: effectiveRule(toolName: toolName, subject: subject, granted: granted),
             hook: hookPermission,
             toolName: toolName
         )

@@ -919,7 +919,7 @@ public actor AgentOrchestrator {
             // A goal waits on the reader while they decide (§2.2), and says
             // what for.
             if request.toolName != "hook" {
-                await goals?.markNeedsYou(GoalRuntime.approvalWaitPrefix + request.summary)
+                await goals?.markWaitingOnApproval(request.summary)
             }
             // A `Notification` hook is how a reader who has walked away hears
             // that the run is waiting on them. A hook's own approval is left

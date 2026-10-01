@@ -226,6 +226,36 @@ final class GoalModelTests: XCTestCase {
 
     // MARK: - Words
 
+    /// The grants the reader ticked apply while the goal runs. The goal
+    /// runtime then ends the goal on its own — here, met — and nobody tells
+    /// the permission coordinator; the session's grant check reads the stored
+    /// goal at the moment of the call, so the grant is gone with it.
+    func testATaskGrantEndsWhenTheRuntimeEndsItsGoal() async throws {
+        let session = try await store.createSession(
+            workspaceID: context.record.id,
+            workspaceName: "Goal fixture",
+            title: "Goal",
+            configuration: AgentConfiguration(modelID: "test-model", reasoningEffort: nil, permissionMode: .askBeforeChanges),
+            gitBranch: nil
+        )
+        var goal = GoalRun(objective: "Make the importer handle CSV files")
+        goal.grants = [TaskGrant(command: "swift test", goalID: goal.id, worktreePath: context.access.rootURL.path)]
+        try await store.setGoal(goal, for: session.id)
+        let controller = SessionController(session: session, context: context, store: store, modelClient: model)
+        await controller.attach()
+        let permissions = try XCTUnwrap(controller.live?.permissions)
+
+        let whileActive = await permissions.allowsWithoutPrompt(toolName: "run_command", subject: .command("swift test"), risk: .execute)
+        XCTAssertTrue(whileActive, "the ticked command runs without asking while the goal is active")
+
+        // The judge says met: the runtime moves the goal, not the reader.
+        try await store.updateCurrentGoal(for: session.id, record: .status) { current in
+            try current.transition(to: .achieved)
+        }
+        let afterMet = await permissions.allowsWithoutPrompt(toolName: "run_command", subject: .command("swift test"), risk: .execute)
+        XCTAssertFalse(afterMet, "a met goal's grant no longer applies")
+    }
+
     func testGoalCommandsParseWithTheirAliases() {
         XCTAssertEqual(GoalCommand.parse(""), .showSheet)
         XCTAssertEqual(GoalCommand.parse("pause"), .pause)

@@ -352,7 +352,7 @@ public struct CompletionGate: Sendable {
     // MARK: - The facts each continuation names
 
     static func todosDetail(_ todos: [TodoItemRef]) -> String {
-        let names = todos.prefix(3).map { "\"\(RunEndWords.firstLine($0.content, limit: 60))\"" }
+        let names = todos.prefix(3).map { RuntimeContinuation.quoted($0.content, limit: 60) }
         let more = todos.count > 3 ? " and \(todos.count - 3) more" : ""
         return "\(todos.count) todo\(todos.count == 1 ? " was" : "s were") still open: "
             + names.joined(separator: ", ") + more
@@ -365,8 +365,10 @@ public struct CompletionGate: Sendable {
     }
 
     static func failingDetail(_ record: VerificationRecord) -> String {
+        // The failing line is the check's output: quoted, never Juno's words.
         let first = firstFailingLine(record.excerpt)
-        return "`\(record.command)` failed after your last edit" + (first.map { " (first: \($0))" } ?? "")
+        return "`\(record.command)` failed after your last edit"
+            + (first.map { " (its first failing line: \(RuntimeContinuation.quoted($0)))" } ?? "")
     }
 
     static func uiDetail(_ target: GateUITarget) -> String {
@@ -383,9 +385,10 @@ public struct CompletionGate: Sendable {
     }
 
     static func findingsDetail(_ findings: [ReviewFinding]) -> String {
+        // A reviewer's words, from a model that read the repository: quoted.
         let items = findings.prefix(3).map { finding -> String in
             let place = finding.path.map { path in finding.line.map { "\(path):\($0)" } ?? path }
-            return finding.title + (place.map { " (\($0))" } ?? "")
+            return RuntimeContinuation.quoted(finding.title, limit: 120) + (place.map { " (\(RuntimeContinuation.quoted($0, limit: 120)))" } ?? "")
         }
         return "the review found \(findings.count) problem\(findings.count == 1 ? "" : "s"): " + items.joined(separator: "; ")
     }

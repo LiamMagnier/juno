@@ -223,7 +223,19 @@ public actor GoalRuntime {
     }
 
     /// How a goal waiting on an approval says so.
-    public static let approvalWaitPrefix = "Waiting for you to allow "
+    public static let approvalWaitPrefix = GoalRun.approvalWaitPrefix
+
+    /// The run asked the reader for an approval: an active goal waits on
+    /// them, and says what for. A goal already waiting on the reader for
+    /// another reason — blocked, stalled, a failed judge — keeps that reason,
+    /// so answering this approval never makes it active again.
+    public func markWaitingOnApproval(_ summary: String) async {
+        let now = clock()
+        await updateCurrent(.status) { goal in
+            guard goal.isActive || goal.isWaitingOnApproval else { return }
+            try goal.transition(to: .needsYou, reason: Self.approvalWaitPrefix + summary, at: now)
+        }
+    }
 
     /// The reader answered what the goal was waiting on: it is active again.
     /// With a prefix, only a wait whose reason starts with it is cleared, so
@@ -346,7 +358,12 @@ public actor GoalRuntime {
                 current.record(recorded)
             }
             let unmet = recorded.unmetCriteria.isEmpty ? "" : " (unmet: \(recorded.unmetCriteria.joined(separator: ", ")))"
-            return .continueWith(.goalNotMet, detail: (recorded.reason.isEmpty ? "the judge found it not met" : recorded.reason) + unmet)
+            // The judge read the transcript, tool output and all: its reason
+            // reaches the agent quoted, as data inside Juno's note.
+            let said = recorded.reason.isEmpty
+                ? "the judge found it not met"
+                : "the judge said \(RuntimeContinuation.quoted(recorded.reason, limit: GoalVerdictEvent.maximumReasonCharacters))"
+            return .continueWith(.goalNotMet, detail: said + unmet)
         }
     }
 
@@ -355,14 +372,18 @@ public actor GoalRuntime {
     static func judgeInput(goal: GoalRun, ledger: RunLedger, recipe: GateRecipe?, recentMessages: [ModelMessage], lastReport: String?) -> JudgeInput {
         let criteria = goal.criteria.map { criterion -> GoalCriterion in
             var resolved = criterion
+            // What the agent cited with `update_goal` is its own claim, kept
+            // apart from what Juno recorded so the judge never reads one as
+            // the other.
+            resolved.evidence = criterion.evidence.map { "cited by the agent, not verified by Juno: \($0)" }
             switch criterion.check {
             case let .command(checkID):
                 resolved.evidence += ledger.freshVerifications
                     .filter { $0.checkID == checkID || recipe?.check(for: $0)?.id == checkID }
-                    .map { "\($0.command) \($0.passed ? "passed" : "failed") at revision \($0.workspaceRevision) (\($0.id))" }
+                    .map { "recorded by Juno: \($0.command) \($0.passed ? "passed" : "failed") at revision \($0.workspaceRevision) (\($0.id))" }
             case let .ui(surface, target):
                 resolved.evidence += ledger.freshUIVerifications(surface: surface, target: target)
-                    .map { "\($0.target) \($0.passed ? "passed" : "failed") \($0.checks.map(\.name).joined(separator: ", ")) (\($0.id))" }
+                    .map { "recorded by Juno: \($0.target) \($0.passed ? "passed" : "failed") \($0.checks.map(\.name).joined(separator: ", ")) (\($0.id))" }
             case .judged:
                 break
             }
