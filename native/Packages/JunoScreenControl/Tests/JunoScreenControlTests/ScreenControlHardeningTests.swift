@@ -172,6 +172,62 @@ final class ScreenControlHardeningTests: XCTestCase {
         XCTAssertEqual(send.floor, .sendsMessage, "Return after typing in Mail sends, whatever app was targeted")
     }
 
+    // MARK: Takeover with a card to answer
+
+    func testAnsweringACardInTakeoverIsNotTheReaderTakingOver() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start(grant: ["com.apple.TextEdit", "com.apple.mail"])
+        _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
+        fixture.environment.front = ScreenFixture.mail
+        let typing = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .type, text: "hello"))
+        await fixture.service.publishApprovalDetail(.action(typing), digest: "d1")
+        // The reader moves the pointer to the card and clicks Approve.
+        await fixture.service.readerInput()
+        var state = await fixture.service.state(sessionID: "s1")
+        XCTAssertEqual(state, .running(mode: .takeover, app: "TextEdit"), "answering Juno is not taking the Mac back")
+        // Approve brought Juno forward.
+        fixture.environment.front = ScreenFixture.juno
+        await fixture.service.clearApprovalDetail(digest: "d1")
+        await fixture.service.readerInput()
+        state = await fixture.service.state(sessionID: "s1")
+        XCTAssertEqual(state, .running(mode: .takeover, app: "TextEdit"), "nor is the click's own tail")
+        _ = try await fixture.service.perform(sessionID: "s1", prepared: typing, toolCallID: nil, attachFrame: false)
+        XCTAssertEqual(fixture.environment.activated, [ScreenFixture.mail.pid], "Mail came back to the front before the keys")
+        let posted = await fixture.sink.posted
+        XCTAssertFalse(posted.isEmpty)
+        XCTAssertTrue(posted.allSatisfy { $0.target == .global })
+        // After the grace, the reader's own input pauses as before.
+        fixture.clock.advance(2)
+        await fixture.service.readerInput()
+        state = await fixture.service.state(sessionID: "s1")
+        XCTAssertEqual(state, .paused)
+    }
+
+    func testInTakeoverWithJunoInFrontClicksStillLandButKeysWait() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
+        // The reader just sent the prompt from Juno: Juno is in front.
+        fixture.environment.front = ScreenFixture.juno
+        let shot = try await fixture.service.perform(
+            sessionID: "s1",
+            prepared: try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot)),
+            toolCallID: nil, attachFrame: true
+        )
+        let size = try XCTUnwrap(shot.frame?.size)
+        // The display is 1512 points wide at scale 2.
+        let scale = Double(size.width) / 3024
+        let point = [ScreenFixture.nameField.center.x * 2 * scale, ScreenFixture.nameField.center.y * 2 * scale]
+        let click = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .leftClick, coordinate: point))
+        XCTAssertEqual(click.target.appName, "TextEdit")
+        do {
+            _ = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .key, text: "cmd+s"))
+            XCTFail("keys went to Juno")
+        } catch let error as ScreenControlError {
+            XCTAssertTrue(error.errorDescription!.contains("Juno's own window has the keyboard"))
+        }
+    }
+
     // MARK: The card's place, proved again after the wait
 
     func testAFieldThatTurnedSecureWhileTheCardWaitedIsRefused() async throws {

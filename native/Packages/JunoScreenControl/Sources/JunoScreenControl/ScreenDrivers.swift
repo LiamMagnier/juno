@@ -124,6 +124,14 @@ public protocol ScreenEnvironment: Sendable {
     /// Launches an app or finds it running, without bringing it to the
     /// front: background mode leaves the reader's focus alone.
     func open(bundleID: String) async throws -> RunningApp
+    /// Brings a running app to the front. Takeover only: answering Juno's
+    /// card brings Juno forward, and the input the reader approved is for
+    /// the app it named. False when it could not.
+    func activate(pid: Int32) async -> Bool
+}
+
+public extension ScreenEnvironment {
+    func activate(pid _: Int32) async -> Bool { false }
 }
 
 /// Reads and acts through the Accessibility API.

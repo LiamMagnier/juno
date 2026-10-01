@@ -98,6 +98,15 @@ final class FakeEnvironment: ScreenEnvironment, @unchecked Sendable {
     func frontmostApp() async -> RunningApp? { lock.withLock { front } }
     func windows(pid: Int32) async -> [WindowInfo] { lock.withLock { windowsByPID[pid] ?? [] } }
     func displays() async -> [DisplayInfo] { lock.withLock { screens } }
+    private(set) var activated: [Int32] = []
+    func activate(pid: Int32) async -> Bool {
+        lock.withLock {
+            activated.append(pid)
+            guard let app = apps.first(where: { $0.pid == pid }) else { return false }
+            front = app
+            return true
+        }
+    }
     func open(bundleID: String) async throws -> RunningApp {
         lock.withLock { opened.append(bundleID) }
         guard let app = lock.withLock({ apps.first { $0.bundleID == bundleID } }) else {

@@ -125,6 +125,12 @@ public struct SystemScreenEnvironment: ScreenEnvironment {
         }
     }
 
+    public func activate(pid: Int32) async -> Bool {
+        await MainActor.run {
+            NSRunningApplication(processIdentifier: pid)?.activate() ?? false
+        }
+    }
+
     public func open(bundleID: String) async throws -> RunningApp {
         if let app = await runningApps().first(where: { $0.bundleID.lowercased() == bundleID.lowercased() }) {
             return app

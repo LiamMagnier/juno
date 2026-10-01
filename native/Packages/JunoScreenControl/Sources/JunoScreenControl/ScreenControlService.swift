@@ -78,6 +78,11 @@ public actor ScreenControlService: ScreenControlling {
     private var presenceContinuations: [UUID: AsyncStream<ScreenPresenceState>.Continuation] = [:]
     private var listeningToLock = false
     private var tapRunning = false
+    /// Sessions whose reader is answering one of Juno's cards, until when.
+    /// Clicking Approve is reader input; in takeover it must not count as
+    /// the reader taking the Mac back.
+    private var answeringCard: [String: Date] = [:]
+    static let answerGrace: TimeInterval = 1.5
 
     public init(
         dependencies: Dependencies,
@@ -346,7 +351,9 @@ public actor ScreenControlService: ScreenControlling {
     /// Real input arrived while Juno held the whole screen: it pauses.
     func readerInput() async {
         var changed = false
+        let now = deps.now()
         for id in sessions.keys where sessions[id]?.isRunning == true && sessions[id]?.mode == .takeover {
+            if let until = answeringCard[id], now < until { continue }
             if sessions[id]?.paused == false {
                 sessions[id]?.paused = true
                 sessions[id]?.generation &+= 1
@@ -869,8 +876,17 @@ public actor ScreenControlService: ScreenControlling {
                 throw ScreenControlError.systemPromptInFront(app: front.name)
             }
             if sessions[sessionID]?.mode == .takeover {
-                if ownsFront { throw ScreenControlError.junoWindow }
-                if !action.kind.takesPoint, front.bundleID.lowercased() != target.bundleID.lowercased() {
+                // Juno in front is the usual case right after the reader
+                // sends a message or answers a card. A click lands on the
+                // window under the point (the hit-test below refuses Juno's
+                // own), so only keys, which go to the app in front, wait for
+                // the model to click into its app first.
+                if ownsFront, !action.kind.takesPoint {
+                    throw ScreenControlError.invalidInput(
+                        "Juno's own window has the keyboard. Click in the app you mean to type into first, then send the keys."
+                    )
+                }
+                if !ownsFront, !action.kind.takesPoint, front.bundleID.lowercased() != target.bundleID.lowercased() {
                     // Keys in takeover go to whatever is in front; that app
                     // must be granted for them too.
                     let frontGrant = try liveGrant(sessionID, bundleID: front.bundleID, appName: front.name)
@@ -1479,10 +1495,22 @@ public actor ScreenControlService: ScreenControlling {
         var keyCategory = target.category
         var keyBundle = target.bundleID
         if mode == .takeover {
-            if let front = await deps.environment.frontmostApp() {
+            if var front = await deps.environment.frontmostApp() {
                 try checkpoint(sessionID, generation)
                 if deps.environment.ownProcess.owns(pid: front.pid, bundleID: front.bundleID) {
-                    throw ScreenControlError.junoWindow
+                    // Answering the card brought Juno forward. The input is
+                    // for the app the card named: bring it back, then look
+                    // again; never send into Juno.
+                    if let named = await deps.environment.runningApps().first(where: {
+                        $0.bundleID.lowercased() == prepared.target.bundleID.lowercased()
+                    }), await deps.environment.activate(pid: named.pid) {
+                        try await deps.pause(.milliseconds(150))
+                        try checkpoint(sessionID, generation)
+                        front = await deps.environment.frontmostApp() ?? front
+                    }
+                    if deps.environment.ownProcess.owns(pid: front.pid, bundleID: front.bundleID) {
+                        throw ScreenControlError.junoWindow
+                    }
                 }
                 if AppCategories.category(bundleID: front.bundleID, appStoreCategory: front.appStoreCategory) == .refused {
                     throw ScreenControlError.systemPromptInFront(app: front.name)
@@ -1809,10 +1837,21 @@ public actor ScreenControlService: ScreenControlling {
 
     public func publishApprovalDetail(_ detail: ScreenApprovalDetail, digest: String) {
         approvalDetails[digest] = detail
+        if let session = Self.sessionID(of: detail) { answeringCard[session] = .distantFuture }
     }
 
     public func clearApprovalDetail(digest: String) {
-        approvalDetails[digest] = nil
+        if let detail = approvalDetails.removeValue(forKey: digest), let session = Self.sessionID(of: detail) {
+            answeringCard[session] = deps.now().addingTimeInterval(Self.answerGrace)
+        }
+    }
+
+    static func sessionID(of detail: ScreenApprovalDetail) -> String? {
+        switch detail {
+        case let .action(prepared): prepared.sessionID
+        case let .grants(proposal): proposal.sessionID
+        case let .takeover(sessionID, _): sessionID
+        }
     }
 
     public func approvalDetail(digest: String) -> ScreenApprovalDetail? {
