@@ -261,6 +261,57 @@ async function main() {
     http.close();
   }
 
+  // A hostile authorization server: huge metadata and a token endpoint that
+  // trickles forever. Neither may be buffered whole or hold a request open.
+  const { MAX_OAUTH_RESPONSE_BYTES } = await import("../../src/lib/mcp-oauth");
+  const hostile = createServer((req, res) => {
+    if (req.url?.startsWith("/.well-known/oauth-authorization-server")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      const chunk = Buffer.alloc(64 * 1024, 0x20);
+      let sent = 0;
+      const pump = () => {
+        while (sent < 16 * 1024 * 1024) {
+          sent += chunk.byteLength;
+          if (!res.write(chunk)) return void res.once("drain", pump);
+        }
+        res.end("{}");
+      };
+      pump();
+      return;
+    }
+    if (req.url === "/slow-token") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write("{");
+      return; // never finishes
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => hostile.listen(0, resolve));
+  const hostileUrl = `http://localhost:${(hostile.address() as AddressInfo).port}`;
+  try {
+    await check("an oversized authorization server answer is refused, not buffered", async () => {
+      assert.ok(MAX_OAUTH_RESPONSE_BYTES <= 1024 * 1024);
+      const before = process.memoryUsage().arrayBuffers;
+      await assert.rejects(discoverEndpoints(`${hostileUrl}/mcp`, safeMcpFetch), /too large/);
+      assert.ok(process.memoryUsage().arrayBuffers - before < 8 * 1024 * 1024, "the body was not read whole");
+    });
+
+    await check("a token endpoint that never finishes times out", async () => {
+      const started = Date.now();
+      await assert.rejects(
+        exchangeMcpCode(
+          { tokenEndpoint: `${hostileUrl}/slow-token`, client: { clientId: "c" }, code: "x", codeVerifier: "v", redirectUri: "https://juno.test/cb", resource: `${hostileUrl}/mcp` },
+          safeMcpFetch
+        ),
+        /abort|timeout/i
+      );
+      assert.ok(Date.now() - started < 30_000);
+    });
+  } finally {
+    hostile.closeAllConnections();
+    hostile.close();
+  }
+
   console.log(`\n${passed} custom MCP checks passed`);
 }
 

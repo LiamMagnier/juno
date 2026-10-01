@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -183,12 +184,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       // saved and have no effect.
       ...(workDefaults !== undefined
         ? {
-            workDefaults: serializeWorkDefaults(workDefaults),
+            workDefaults: serializeWorkDefaults(workDefaults) as Prisma.InputJsonValue,
             workDefaultsVersion: WORK_DEFAULTS_VERSION,
           }
         : {}),
     };
-    await prisma.project.update({ where: { id }, data });
+    // Unguarded on purpose, after `checkProjectAccess` allowed an EDITOR: a
+    // collaborator edits a project they do not own, so a `userId` scope would
+    // refuse exactly the people this route lets in.
+    await prismaUnguarded.project.update({ where: { id }, data });
   }
   if (workspace === null) {
     await prisma.projectWorkspace.deleteMany({ where: { projectId: id, userId: user.id } });
@@ -218,6 +222,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!allowed) return NextResponse.json({ error: "Not found or only the owner can delete the project" }, { status: 403 });
 
   // Conversations are kept (projectId set null); project files cascade-delete.
-  await prisma.project.delete({ where: { id } });
+  // Owner-only, and the owner is the requester: scope the delete to them.
+  await prisma.project.delete({ where: { id, userId: user.id } });
   return NextResponse.json({ ok: true });
 }
