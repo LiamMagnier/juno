@@ -361,6 +361,12 @@ public enum LaunchConfigurationStore {
                 issues.append(PreviewLaunchIssue(source: source, message: "A configuration has no name."))
                 continue
             }
+            // A name is shown on approval cards and in the agent's tools; a
+            // line break or control character in it could forge a card's text.
+            guard name.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }), name.count <= 80 else {
+                issues.append(PreviewLaunchIssue(source: source, message: "A configuration name has control characters or is longer than 80 characters."))
+                continue
+            }
             guard seen.insert(name).inserted else {
                 issues.append(PreviewLaunchIssue(
                     source: source, configuration: name, message: "\"\(name)\" is defined twice; the first is used."

@@ -442,17 +442,42 @@ struct PreviewServerTool: CodeTool {
 /// exact argv, the folder, env keys (never values), the network and where it
 /// came from.
 enum PreviewConfigurationDescription {
+    /// The command exactly as the shell gets it: each word quoted as it is
+    /// passed, so `["dev", "; curl …"]` reads as one quoted argument, and
+    /// control characters written out (`\n`), so a line break or a carriage
+    /// return in the file cannot push the rest of a command out of sight.
     static func commandText(_ configuration: ResolvedPreviewConfiguration) -> String {
         switch configuration.kind {
         case .attach(let url): return "attach to \(url.absoluteString)"
-        case .staticSite: return "Juno's static server for \(configuration.workingDirectoryDisplay)"
-        case .command: return configuration.displayArgv.joined(separator: " ")
+        case .staticSite: return "Juno's static server for \(visible(configuration.workingDirectoryDisplay))"
+        case .command: return visible(ShellWords.join(configuration.displayArgv))
         }
     }
 
+    /// `text` with every control character spelled out.
+    static func visible(_ text: String) -> String {
+        var out = ""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if CharacterSet.controlCharacters.contains(scalar) || scalar.properties.generalCategory == .format
+                    || scalar.properties.generalCategory == .lineSeparator || scalar.properties.generalCategory == .paragraphSeparator
+                {
+                    out += "\\u{\(String(scalar.value, radix: 16))}"
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return out
+    }
+
     static func summary(_ configuration: ResolvedPreviewConfiguration, verb: String) -> String {
-        var lines = ["\(verb) the preview server \"\(configuration.name)\": \(commandText(configuration))"]
-        lines.append("in \(configuration.workingDirectoryDisplay == "." ? "the workspace root" : configuration.workingDirectoryDisplay)")
+        var lines = ["\(verb) the preview server \"\(visible(configuration.name))\": \(commandText(configuration))"]
+        lines.append("in \(configuration.workingDirectoryDisplay == "." ? "the workspace root" : visible(configuration.workingDirectoryDisplay))")
         if !configuration.environmentKeys.isEmpty {
             lines.append("env \(configuration.environmentKeys.joined(separator: ", "))")
         }

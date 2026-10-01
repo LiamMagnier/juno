@@ -519,7 +519,7 @@ struct PreviewConfigApprovalCard: View {
                 .foregroundStyle(Studio.Ink.secondary)
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 row("Command", PreviewConfigurationDescription.commandText(configuration), mono: true)
-                row("Folder", configuration.workingDirectoryDisplay == "." ? "the workspace root" : configuration.workingDirectoryDisplay, mono: true)
+                row("Folder", configuration.workingDirectoryDisplay == "." ? "the workspace root" : PreviewConfigurationDescription.visible(configuration.workingDirectoryDisplay), mono: true)
                 row("Environment", configuration.environmentKeys.isEmpty ? "no variables from the file" : configuration.environmentKeys.joined(separator: ", "), mono: !configuration.environmentKeys.isEmpty)
                 row("Port", portText)
                 row("Network", configuration.network == .internet ? "May use the internet" : "Loopback only (kernel sandbox)")
