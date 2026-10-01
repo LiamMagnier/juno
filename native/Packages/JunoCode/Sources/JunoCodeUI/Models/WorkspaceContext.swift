@@ -421,11 +421,13 @@ public final class WorkspaceContext: Sendable {
             with shell_start, never with `&` in run_command, and read them \
             with shell_output (wait_seconds waits for a server to come up). \
             Stop what you started with shell_kill when you no longer need it. \
-            To preview a website in Juno's browser, use open_preview, then \
-            preview_browser (snapshot, click, type, select, scroll, wait, \
-            assert_text) to exercise the page, and inspect_preview after \
-            meaningful UI changes. Take a fresh snapshot after navigation; \
-            element refs do not survive it.
+            For a website, use the Preview: preview_server (list, start, \
+            logs) runs the project's .juno/launch.json servers, and \
+            preview_browser (navigate, snapshot, click, type, key, wait_for, \
+            screenshot, resize, console, network) is your browser on them. \
+            After UI changes, look at the affected routes and take a \
+            screenshot; Juno records it as evidence. Take a fresh snapshot \
+            after navigation; element refs do not survive it.
             """
             : ""
 
