@@ -50,8 +50,16 @@ function storageImagePatterns() {
 }
 
 /** @type {import('next').NextConfig} */
+// The design-system galleries under src/app/dev/design and src/app/dev/directions
+// load dozens of Google fonts for their typeface labs. They already 404 in
+// production, but `next build` still compiled them, and one flaky font fetch
+// failed whole releases (2026-10-01). Their pages are named page.dev.tsx, a
+// page extension that only exists outside production builds.
+const devOnlyPages = process.env.NODE_ENV !== "production";
+
 const nextConfig = {
   reactStrictMode: true,
+  pageExtensions: devOnlyPages ? ["dev.tsx", "tsx", "ts", "jsx", "js"] : ["tsx", "ts", "jsx", "js"],
   poweredByHeader: false,
   /*
    * THE CLIENT ROUTER CACHE, turned back on.
