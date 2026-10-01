@@ -70,8 +70,12 @@ final class WorktreeSessionTests: XCTestCase {
         guard case .commit = steps[0].kind, case .merge = steps[1].kind else {
             return XCTFail("unexpected steps \(steps)")
         }
-        XCTAssertTrue(steps[0].command.contains("commit"))
-        XCTAssertTrue(steps[1].command.hasPrefix("git merge --no-ff --no-edit juno/"))
+        // Each confirmation shows exactly what its step runs.
+        XCTAssertTrue(steps[0].command.contains(" add -A -- . && git -C "), steps[0].command)
+        XCTAssertTrue(steps[0].command.contains(" commit -m "), steps[0].command)
+        XCTAssertFalse(steps[0].command.contains("commit -am"), "the step adds new files too, and says so")
+        XCTAssertTrue(steps[1].command.hasPrefix("git -C "), steps[1].command)
+        XCTAssertTrue(steps[1].command.contains(" merge --no-ff --no-edit juno/"), steps[1].command)
 
         let committed = await fixture.workbench.performBringBack(steps[0], for: session.id)
         XCTAssertEqual(committed, .done)

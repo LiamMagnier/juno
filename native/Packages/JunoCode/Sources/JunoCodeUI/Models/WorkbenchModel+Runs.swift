@@ -279,8 +279,13 @@ public extension WorkbenchModel {
                 return nil
             }
             do {
+                // From the commit the source's own checkout is on: a source
+                // in a worktree of its own may have commits the project's
+                // checkout does not, and its uncommitted changes, copied next,
+                // are relative to that commit.
                 let worktree = try await context.worktrees.create(
-                    branch: Self.worktreeBranchName(base: source.gitBranch, prefix: "juno/fork-")
+                    branch: Self.worktreeBranchName(base: source.gitBranch, prefix: "juno/fork-"),
+                    from: await Self.headRevision(of: source, in: context)
                 )
                 executionRootPath = worktree.rootPath
                 branch = worktree.branch
@@ -310,6 +315,19 @@ public extension WorkbenchModel {
             lastError = (error as? LocalizedError)?.errorDescription ?? "Could not fork the session: \(error)"
             return nil
         }
+    }
+
+    /// The commit a session's checkout is on, when it runs in a worktree of
+    /// its own; nil (the project's `HEAD`) otherwise.
+    internal static func headRevision(of session: CodeSession, in context: WorkspaceContext) async -> String? {
+        guard let root = session.executionRootPath else { return nil }
+        let quoted = "'" + root.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        guard let outcome = try? await context.executor.run(
+            "git -C \(quoted) rev-parse --verify 'HEAD^{commit}'",
+            timeoutSeconds: 30
+        ), outcome.result.exitCode == 0 else { return nil }
+        let revision = outcome.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return revision.range(of: "^[0-9a-f]{40,64}$", options: .regularExpression) == nil ? nil : revision
     }
 
     // MARK: Worktrees (§5.7)

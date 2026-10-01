@@ -172,6 +172,15 @@ struct StudioWorktreeLine: View {
     @State private var problem: String?
     @State private var isBringingBack = false
 
+    /// - Parameters:
+    ///   - info, setup: what to show before the session's own are read; for
+    ///     previews and snapshots, whose session has no worktree to read.
+    init(controller: SessionController, info: SessionWorktreeInfo? = nil, setup: String? = nil) {
+        self.controller = controller
+        _info = State(initialValue: info)
+        _setup = State(initialValue: setup)
+    }
+
     var body: some View {
         Group {
             if let info {
@@ -190,10 +199,20 @@ struct StudioWorktreeLine: View {
                                 .font(Studio.Font.meta)
                         }
                         if let setup {
-                            HStack(spacing: JunoSpace.snug) {
-                                Text(StudioRunRow.markdown("This worktree's setup has not run: `\(setup)`"))
-                                    .font(Studio.Font.meta)
-                                    .foregroundStyle(Studio.Ink.secondary)
+                            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                                // The exact bytes the approval remembers, drawn
+                                // verbatim: never as Markdown, which could hide
+                                // part of the command behind formatting.
+                                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                                    Text("This worktree's setup has not run:")
+                                        .font(Studio.Font.meta)
+                                        .foregroundStyle(Studio.Ink.secondary)
+                                    Text(verbatim: setup)
+                                        .font(Studio.Font.monoSmall)
+                                        .foregroundStyle(Studio.Ink.primary)
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                                 Spacer(minLength: JunoSpace.snug)
                                 Button("Allow and run") {
                                     Task {

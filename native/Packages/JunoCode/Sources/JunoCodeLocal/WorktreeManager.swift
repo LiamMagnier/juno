@@ -965,10 +965,13 @@ public extension WorktreeManager {
         var steps: [WorktreeBringBackStep] = []
         let status = try await runCheckedAt(current.rootPath, ["status", "--porcelain", "--untracked-files=all"])
         if !status.isEmpty {
+            // The confirmation shows exactly what `perform` runs: every change,
+            // new files included, then the commit.
+            let root = Self.shellQuote(current.rootPath)
             steps.append(WorktreeBringBackStep(
                 kind: .commit(message: message),
                 title: "Commit the worktree's changes on \(current.branch)",
-                command: "git -C \(Self.shellQuote(current.rootPath)) commit -am \(Self.shellQuote(message))"
+                command: "git -C \(root) add -A -- . && git -C \(root) commit -m \(Self.shellQuote(message))"
             ))
         }
         let ahead = try await runCheckedAt(current.rootPath, ["rev-list", "--count", "\(current.baseRevision)..HEAD"])
@@ -978,14 +981,14 @@ public extension WorktreeManager {
             steps.append(WorktreeBringBackStep(
                 kind: .merge,
                 title: "Merge \(current.branch) into the branch you have open",
-                command: "git merge --no-ff --no-edit \(current.branch)"
+                command: "git -C \(Self.shellQuote(Self.canonicalPath(workspaceRootURL))) merge --no-ff --no-edit \(current.branch)"
             ))
         case .cherryPick:
             let range = "\(current.baseRevision)..\(current.branch)"
             steps.append(WorktreeBringBackStep(
                 kind: .cherryPick(range: range),
                 title: "Apply \(current.branch)'s commits onto the branch you have open",
-                command: "git cherry-pick \(range)"
+                command: "git -C \(Self.shellQuote(Self.canonicalPath(workspaceRootURL))) cherry-pick \(range)"
             ))
         }
         return steps

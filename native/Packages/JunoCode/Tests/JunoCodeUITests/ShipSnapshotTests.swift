@@ -201,6 +201,31 @@ final class ShipSnapshotTests: XCTestCase {
         }
     }
 
+    /// The worktree line with a setup waiting for approval: the command is
+    /// drawn verbatim, never as Markdown, so formatting cannot hide part of
+    /// the bytes the approval remembers.
+    func testRenderWorktreeSetupLine() async throws {
+        let controller = SessionController(previewFixture: CodePreviewData.fixture(for: .transcript))
+        let info = SessionWorktreeInfo(
+            rootPath: "/Users/me/juno/.juno/worktrees/juno-fix-settings-1a2b",
+            branch: "juno/fix-settings-12345ab",
+            baseBranch: "main",
+            baseRevision: "1feb392c0ffee"
+        )
+        let setup = "npm ci && echo `whoami` [docs](https://example.com) **done**"
+        for dark in [false, true] {
+            try await render(
+                StudioWorktreeLine(controller: controller, info: info, setup: setup)
+                    .padding(JunoSpace.regular)
+                    .frame(width: 720)
+                    .background(Studio.Surface.canvas),
+                size: CGSize(width: 720, height: 130),
+                dark: dark,
+                name: "worktree-setup-\(dark ? "dark" : "light")"
+            )
+        }
+    }
+
     func testRenderForkFromTurn() async throws {
         let controller = SessionController(previewFixture: CodePreviewData.fixture(for: .transcript))
         let turn = try XCTUnwrap(controller.rewindTurns.last)

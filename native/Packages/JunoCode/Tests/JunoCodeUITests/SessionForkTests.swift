@@ -234,6 +234,37 @@ final class SessionForkTests: XCTestCase {
         XCTAssertNotNil(fork.gitBranch)
     }
 
+    func testAForkOfAWorktreeSessionStartsFromThatWorktreesCommit() async throws {
+        let fixture = try await ShipFixture.make(model: ShipScriptedModel([]), git: true)
+        defer { fixture.remove() }
+        let (source, _) = try await fixture.session(isolated: true)
+        let sourceRoot = URL(fileURLWithPath: try XCTUnwrap(source.executionRootPath), isDirectory: true)
+        // A commit only the source's worktree has, then an edit on top of it.
+        try ShipFixture.shell(
+            "echo 'committed in the worktree' > made.txt && git add made.txt && git commit -qm 'worktree commit'",
+            in: sourceRoot
+        )
+        try "edited after the commit\n".write(
+            to: sourceRoot.appendingPathComponent("made.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let forked = await fixture.workbench.fork(source.id, throughTurn: nil, inNewWorktree: true)
+        let fork = try XCTUnwrap(forked, fixture.workbench.lastError ?? "no fork")
+        let root = URL(fileURLWithPath: try XCTUnwrap(fork.executionRootPath), isDirectory: true)
+        let log = try ShipFixture.shell("git log --format=%s -1", in: root)
+        XCTAssertEqual(
+            log.trimmingCharacters(in: .whitespacesAndNewlines),
+            "worktree commit",
+            "the fork starts from the source worktree's commit, not the project's HEAD"
+        )
+        XCTAssertEqual(try fixture.read("made.txt", in: root), "edited after the commit\n")
+        let status = try ShipFixture.shell("git status --porcelain", in: root)
+        XCTAssertEqual(status.trimmingCharacters(in: .whitespacesAndNewlines), "M made.txt",
+                       "the copied edit sits on the commit it was made against")
+    }
+
     func testTheRelayForkNoLongerThrows() async throws {
         let (fixture, session, _) = try await threeTurns()
         defer { fixture.remove() }
