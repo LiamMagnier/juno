@@ -855,6 +855,15 @@ public actor AgentOrchestrator {
             // never holds up the next update's record.
             if request.toolName != "hook", let hooks {
                 Task {
+                    // `PermissionRequest` hooks may decline the request, the
+                    // way the reader's Decline would; they can never approve
+                    // it (CODE_AGENT_SPEC §5.9).
+                    let gate = await hooks.permissionRequested(request)
+                    await ToolScheduler.record(gate.notices, sessionID: sessionID, store: store)
+                    if gate.blockReason != nil {
+                        await permissions.resolve(approvalID: request.id, decision: .denied)
+                        return
+                    }
                     let response = await hooks.notify(
                         sessionID: sessionID,
                         kind: .permissionPrompt,
@@ -870,6 +879,9 @@ public actor AgentOrchestrator {
                     ApprovalResolvedEvent(approvalID: id, decision: decision)
                 )
             )
+            if let hooks {
+                Task { await hooks.permissionResolved(sessionID: sessionID, approvalID: id, decision: decision) }
+            }
             // Only clear the waiting state once nothing is still waiting.
             //
             // Several tool calls in one turn can each be gated, and this used

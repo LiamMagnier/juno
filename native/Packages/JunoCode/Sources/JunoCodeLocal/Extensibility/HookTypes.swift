@@ -1,23 +1,47 @@
 import Foundation
 import JunoCodeCore
 
-/// The lifecycle events Juno runs hooks for, named as Claude Code names them.
+/// The lifecycle events Juno runs hooks for, named as Claude Code names them
+/// (CODE_AGENT_SPEC §5.9; https://code.claude.com/docs/en/hooks.md).
 ///
 /// The raw values are the configuration keys, so a repository's existing
 /// `.claude/settings.json` works unchanged. Juno's own earlier names
 /// (`before_command`, `after_command`, `session_start`, `session_stop`) are
 /// still accepted when parsing and land on their Claude equivalents.
-/// `PreCompact` is deliberately absent: compaction has its own owner, and a
-/// hook Juno would never fire is better diagnosed than silently accepted.
+///
+/// Two are Juno's own: `GoalSet` and `GoalVerdict`, about the goal loop
+/// (§2). `PreModelSwitch` and `PostModelSwitch` are Juno's too. Claude Code's
+/// `Setup`, `UserPromptExpansion`, `MessageDisplay`, `TeammateIdle`,
+/// `DirectoryAdded`, `CwdChanged`, `Elicitation` and `ElicitationResult` are
+/// not adopted: a key Juno would never fire is diagnosed, not accepted.
 public enum HookLifecycleEvent: String, CaseIterable, Codable, Sendable {
     case preToolUse = "PreToolUse"
     case postToolUse = "PostToolUse"
+    case postToolUseFailure = "PostToolUseFailure"
+    case postToolBatch = "PostToolBatch"
     case userPromptSubmit = "UserPromptSubmit"
     case stop = "Stop"
+    case stopFailure = "StopFailure"
+    case subagentStart = "SubagentStart"
     case subagentStop = "SubagentStop"
     case sessionStart = "SessionStart"
     case sessionEnd = "SessionEnd"
     case notification = "Notification"
+    case permissionRequest = "PermissionRequest"
+    case permissionDenied = "PermissionDenied"
+    case taskCreated = "TaskCreated"
+    case taskCompleted = "TaskCompleted"
+    case preCompact = "PreCompact"
+    case postCompact = "PostCompact"
+    case instructionsLoaded = "InstructionsLoaded"
+    case configChange = "ConfigChange"
+    case fileChanged = "FileChanged"
+    case worktreeCreate = "WorktreeCreate"
+    case worktreeRemove = "WorktreeRemove"
+    case preModelSwitch = "PreModelSwitch"
+    case postModelSwitch = "PostModelSwitch"
+    case goalSet = "GoalSet"
+    case goalVerdict = "GoalVerdict"
 
     public init?(configurationKey rawValue: String) {
         let key = rawValue
@@ -40,16 +64,17 @@ public enum HookLifecycleEvent: String, CaseIterable, Codable, Sendable {
         // the whole session and is its own event now.
         case "stop", "sessionstop":
             self = .stop
-        case "subagentstop":
-            self = .subagentStop
         case "sessionstart":
             self = .sessionStart
         case "sessionend":
             self = .sessionEnd
-        case "notification":
-            self = .notification
         default:
-            return nil
+            // Every other event is spelled exactly as Claude Code spells it,
+            // give or take case and separators.
+            guard let match = Self.allCases.first(where: { $0.rawValue.lowercased() == key }) else {
+                return nil
+            }
+            self = match
         }
     }
 
@@ -59,21 +84,60 @@ public enum HookLifecycleEvent: String, CaseIterable, Codable, Sendable {
     /// Whether exit code 2 (or `"decision": "block"`) changes what happens.
     /// For the rest, Claude Code shows the hook's error to the reader only,
     /// and so does Juno.
+    ///
+    /// What a block means depends on the event, and it only ever narrows:
+    /// a tool call does not run, a prompt is not sent, the agent keeps
+    /// working instead of stopping, a pending approval is declined, a todo
+    /// is not added or not marked done, a settings change or a model switch
+    /// made in the app does not happen. After a tool already ran or failed,
+    /// a block is a note the model reads with the result.
     public var canBlock: Bool {
         switch self {
-        case .preToolUse, .postToolUse, .userPromptSubmit, .stop, .subagentStop:
+        case .preToolUse, .postToolUse, .postToolUseFailure, .userPromptSubmit, .stop, .subagentStop,
+             .permissionRequest, .taskCreated, .taskCompleted, .configChange, .preModelSwitch:
             true
-        case .sessionStart, .sessionEnd, .notification:
+        case .postToolBatch, .stopFailure, .subagentStart, .sessionStart, .sessionEnd, .notification,
+             .permissionDenied, .preCompact, .postCompact, .instructionsLoaded, .fileChanged,
+             .worktreeCreate, .worktreeRemove, .postModelSwitch, .goalSet, .goalVerdict:
             false
         }
     }
 
     /// Whether a hook's plain standard output becomes context for the model.
-    /// Claude Code does this for exactly these two; everywhere else stdout is
+    /// Claude Code does this for exactly these; everywhere else stdout is
     /// only read for its JSON.
     public var addsStandardOutputToContext: Bool {
         self == .userPromptSubmit || self == .sessionStart
     }
+
+    /// Whether a `prompt` hook means anything here: a small model's
+    /// `{ok, reason}` can only block, so it is offered where a block does.
+    public var acceptsPromptHooks: Bool { canBlock }
+
+    /// The default timeout for a hook of `kind` on this event, in seconds,
+    /// when its entry names none (§5.9): 600 for commands and HTTP, 30 for
+    /// prompts, and 30 for anything on `UserPromptSubmit`, which holds the
+    /// reader's message while it runs.
+    public func defaultTimeoutSeconds(for kind: HookHandlerKind) -> Double {
+        if self == .userPromptSubmit { return HookExecutionLimits.promptSubmitTimeoutSeconds }
+        switch kind {
+        case .command, .http: return HookExecutionLimits.defaultTimeoutSeconds
+        case .prompt: return HookExecutionLimits.promptTimeoutSeconds
+        }
+    }
+}
+
+/// How a hook answers (§5.9). `mcp_tool` is later (P2) and `agent` hooks are
+/// not adopted: upstream marks them experimental.
+public enum HookHandlerKind: String, CaseIterable, Codable, Sendable {
+    /// A shell command, contained like the agent's own commands, reading the
+    /// event as JSON on standard input.
+    case command
+    /// An HTTP POST of the same JSON, answered with the same output JSON.
+    case http
+    /// A single turn of a small model that answers `{ok, reason}`; `ok:
+    /// false` blocks. It can never allow anything.
+    case prompt
 }
 
 /// Which repository convention supplied a hook or skill.
@@ -185,6 +249,19 @@ public struct HookInvocationContext: Equatable, Sendable {
     public let message: String?
     /// `Notification`: `permission_prompt` or `idle_prompt`.
     public let notificationType: String?
+    /// `Stop`, `SubagentStop`, `StopFailure`: the agent's last words.
+    public let lastAssistantMessage: String?
+    /// Set when the hook runs for a delegated sub-agent: its id and the
+    /// agent it was started as (`explorer`, a custom agent's name…).
+    public let agentID: String?
+    public let agentType: String?
+    /// The event's own fields beyond the ones above, in Claude Code's
+    /// spelling (`trigger`, `error`, `file_path`, `goal`…), merged into the
+    /// payload as they are.
+    public let fields: [String: JSONValue]
+    /// What matchers on this event compare against when the fields above do
+    /// not say: `PreCompact`'s trigger, `FileChanged`'s file name.
+    public let matcherSubject: String?
 
     public init(
         event: HookLifecycleEvent,
@@ -201,7 +278,12 @@ public struct HookInvocationContext: Equatable, Sendable {
         source: String? = nil,
         reason: String? = nil,
         message: String? = nil,
-        notificationType: String? = nil
+        notificationType: String? = nil,
+        lastAssistantMessage: String? = nil,
+        agentID: String? = nil,
+        agentType: String? = nil,
+        fields: [String: JSONValue] = [:],
+        matcherSubject: String? = nil
     ) {
         self.event = event
         self.sessionID = sessionID
@@ -218,6 +300,11 @@ public struct HookInvocationContext: Equatable, Sendable {
         self.reason = reason
         self.message = message
         self.notificationType = notificationType
+        self.lastAssistantMessage = lastAssistantMessage
+        self.agentID = agentID
+        self.agentType = agentType
+        self.fields = fields
+        self.matcherSubject = matcherSubject
     }
 
     /// The tool name hooks see: Claude Code's where Juno has an equivalent.
@@ -227,15 +314,15 @@ public struct HookInvocationContext: Equatable, Sendable {
 
     /// The values a matcher is tested against, or nil when the event takes no
     /// matcher at all. Claude Code ignores matchers on `UserPromptSubmit`,
-    /// `Stop` and `SubagentStop`, and matches the others against the source,
-    /// the reason or the notification type.
+    /// `Stop`, `PostToolBatch` and a few more, and matches the others against
+    /// the tool name, the source, the reason, the trigger or the file name.
     ///
     /// A tool event offers both names, Claude's first, so a matcher written
     /// for Claude Code (`Bash`) and one written for Juno (`run_command`) both
     /// match the same call.
     public var matcherCandidates: [String]? {
         switch event {
-        case .preToolUse, .postToolUse:
+        case .preToolUse, .postToolUse, .postToolUseFailure, .permissionRequest, .permissionDenied:
             guard let toolName else { return [] }
             let mapped = HookToolNames.hookName(for: toolName)
             return mapped == toolName ? [toolName] : [mapped, toolName]
@@ -245,7 +332,14 @@ public struct HookInvocationContext: Equatable, Sendable {
             return reason.map { [$0] } ?? []
         case .notification:
             return notificationType.map { [$0] } ?? []
-        case .userPromptSubmit, .stop, .subagentStop:
+        case .subagentStart, .subagentStop:
+            // A session's own `Stop` takes no matcher; a sub-agent's matches
+            // the agent it was started as.
+            return agentType.map { [$0] } ?? []
+        case .preCompact, .postCompact, .configChange, .fileChanged, .instructionsLoaded, .stopFailure:
+            return matcherSubject.map { [$0] } ?? []
+        case .userPromptSubmit, .stop, .postToolBatch, .taskCreated, .taskCompleted,
+             .worktreeCreate, .worktreeRemove, .preModelSwitch, .postModelSwitch, .goalSet, .goalVerdict:
             return nil
         }
     }
@@ -264,8 +358,14 @@ public struct HookInvocationContext: Equatable, Sendable {
         if let permissionMode {
             fields["permission_mode"] = .string(Self.claudePermissionMode(permissionMode))
         }
+        if let agentID {
+            fields["agent_id"] = .string(agentID)
+        }
+        if let agentType {
+            fields["agent_type"] = .string(agentType)
+        }
         switch event {
-        case .preToolUse, .postToolUse:
+        case .preToolUse, .postToolUse, .postToolUseFailure, .permissionRequest, .permissionDenied:
             let name = toolName ?? ""
             let input = toolInput ?? .object([:])
             fields["tool_name"] = .string(HookToolNames.hookName(for: name))
@@ -285,10 +385,25 @@ public struct HookInvocationContext: Equatable, Sendable {
                     root: root
                 )
             }
+            if event == .postToolUseFailure {
+                fields["error"] = .string(Self.bounded(toolResult?.content ?? reason ?? ""))
+                fields["is_interrupt"] = .bool(false)
+            }
+            if event == .permissionDenied {
+                fields["reason"] = .string(reason ?? "")
+            }
         case .userPromptSubmit:
             fields["prompt"] = .string(prompt ?? "")
         case .stop, .subagentStop:
             fields["stop_hook_active"] = .bool(stopHookActive ?? false)
+            if let lastAssistantMessage {
+                fields["last_assistant_message"] = .string(Self.bounded(lastAssistantMessage))
+            }
+        case .stopFailure:
+            fields["error"] = .string(reason ?? "")
+            if let lastAssistantMessage {
+                fields["last_assistant_message"] = .string(Self.bounded(lastAssistantMessage))
+            }
         case .sessionStart:
             fields["source"] = .string(source ?? "startup")
         case .sessionEnd:
@@ -298,8 +413,25 @@ public struct HookInvocationContext: Equatable, Sendable {
             if let notificationType {
                 fields["notification_type"] = .string(notificationType)
             }
+        case .postToolBatch, .subagentStart, .taskCreated, .taskCompleted, .preCompact, .postCompact,
+             .instructionsLoaded, .configChange, .fileChanged, .worktreeCreate, .worktreeRemove,
+             .preModelSwitch, .postModelSwitch, .goalSet, .goalVerdict:
+            break
+        }
+        // The event's own fields last; they never replace the common ones.
+        for (key, value) in self.fields where fields[key] == nil {
+            fields[key] = value
         }
         return .object(fields)
+    }
+
+    /// Long text a hook is handed (a failure's output, the agent's last
+    /// message), bounded so one large result is not a large stdin write for
+    /// every hook.
+    public static func bounded(_ text: String) -> String {
+        let limit = HookExecutionLimits.maximumToolResponseBytes
+        guard text.utf8.count > limit else { return text }
+        return String(decoding: Array(text.utf8.prefix(limit)), as: UTF8.self) + "…"
     }
 
     /// Claude Code's names for the four modes, so a hook that branches on
@@ -385,9 +517,11 @@ public struct HookDiagnostic: Equatable, Codable, Sendable {
     }
 }
 
-/// One normalized command hook. The command is retained verbatim for the
-/// existing command classifier/executor; it is never interpolated into a
-/// larger shell command by this module.
+/// One normalized hook. For a `command` hook the command is retained
+/// verbatim for the existing command classifier and executor; it is never
+/// interpolated into a larger shell command by this module. For an `http`
+/// hook `command` holds the URL, and for a `prompt` hook the prompt, so every
+/// surface that shows "what it runs" shows the thing the reader would read.
 public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
     public let id: String
     public let event: HookLifecycleEvent
@@ -401,6 +535,14 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
     public let ordinal: Int
     public let trust: ExtensibilityTrust
     public let risk: ActionRisk
+    /// How the hook answers. Older stored definitions are commands.
+    public let kind: HookHandlerKind
+    /// `http`: the endpoint, already validated as http(s) with a host.
+    public let url: URL?
+    /// `http`: headers sent with the POST, as written.
+    public let headers: [String: String]
+    /// `prompt`: the model the entry asks for, or nil for Juno's small model.
+    public let model: String?
 
     /// - Parameter occurrence: which copy this is of an entry listed more
     ///   than once, identically, in one file — 0 for the first. It keeps
@@ -416,7 +558,11 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
         ordinal: Int = 0,
         occurrence: Int = 0,
         trust: ExtensibilityTrust = .untrustedWorkspace,
-        risk: ActionRisk? = nil
+        risk: ActionRisk? = nil,
+        kind: HookHandlerKind = .command,
+        url: URL? = nil,
+        headers: [String: String] = [:],
+        model: String? = nil
     ) {
         self.event = event
         self.matcher = matcher
@@ -426,15 +572,45 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
         self.path = path
         self.ordinal = ordinal
         self.trust = trust
-        self.risk = risk ?? HookDefinition.classify(command: command)
+        self.kind = kind
+        self.url = url
+        self.headers = headers
+        self.model = model
+        self.risk = risk ?? HookDefinition.classify(kind: kind, command: command, url: url)
         self.id = id ?? HookDefinition.makeID(
             event: event,
             matcher: matcher,
             command: command,
             source: source,
             path: path,
-            occurrence: occurrence
+            occurrence: occurrence,
+            kind: kind,
+            headers: headers,
+            model: model
         )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, event, matcher, command, timeoutSeconds, source, path, ordinal, trust, risk
+        case kind, url, headers, model
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        event = try container.decode(HookLifecycleEvent.self, forKey: .event)
+        matcher = try container.decode(HookMatcher.self, forKey: .matcher)
+        command = try container.decode(String.self, forKey: .command)
+        timeoutSeconds = try container.decode(Double.self, forKey: .timeoutSeconds)
+        source = try container.decode(ExtensibilitySource.self, forKey: .source)
+        path = try container.decode(String.self, forKey: .path)
+        ordinal = try container.decode(Int.self, forKey: .ordinal)
+        trust = try container.decode(ExtensibilityTrust.self, forKey: .trust)
+        risk = try container.decode(ActionRisk.self, forKey: .risk)
+        kind = try container.decodeIfPresent(HookHandlerKind.self, forKey: .kind) ?? .command
+        url = try container.decodeIfPresent(URL.self, forKey: .url)
+        headers = try container.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
+        model = try container.decodeIfPresent(String.self, forKey: .model)
     }
 
     public var commandFingerprint: String {
@@ -445,13 +621,40 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
         trust == .untrustedWorkspace
     }
 
+    /// Where the hook was declared, in the extension vocabulary: the
+    /// reader's own `~/.juno/settings.json`, or the project.
+    public var scope: ExtensionScope { ExtensionScope.of(path: path) }
+
+    /// Whether an `http` hook's endpoint is on this Mac. A repository's HTTP
+    /// hooks may only post there: the payload carries tool inputs and the
+    /// reader's prompts, and a cloned repository must not be able to send
+    /// them anywhere else. The reader's own file may name any endpoint.
+    public var postsToLoopback: Bool {
+        guard let host = url?.host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+    }
+
     /// A short name the thread can use: the script the command runs, with the
     /// project-directory variable taken off, or else the start of the command.
     ///
     /// `"$CLAUDE_PROJECT_DIR"/.claude/hooks/guard.sh` reads as
     /// `.claude/hooks/guard.sh`, and `python3 hooks/lint.py` as
-    /// `hooks/lint.py` — the file the reader would open to change it.
+    /// `hooks/lint.py` — the file the reader would open to change it. An HTTP
+    /// hook is its host and path; a prompt hook says it is one.
     public var displayName: String {
+        switch kind {
+        case .http:
+            guard let url else { return "HTTP hook" }
+            let host = url.host ?? ""
+            let port = url.port.map { ":\($0)" } ?? ""
+            return host + port + url.path
+        case .prompt:
+            let firstLine = command.split(separator: "\n").first.map(String.init) ?? command
+            let text = firstLine.count <= 40 ? firstLine : String(firstLine.prefix(39)) + "…"
+            return "Prompt: " + text
+        case .command:
+            break
+        }
         let words = command
             .split(whereSeparator: \.isWhitespace)
             .map { $0.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "'", with: "") }
@@ -477,36 +680,64 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
         return firstLine.count <= 48 ? firstLine : String(firstLine.prefix(47)) + "…"
     }
 
-    private static func classify(command: String) -> ActionRisk {
-        switch CommandClassifier().classify(command) {
-        case let .permitted(risk, _): risk
-        case .forbidden: .destructive
+    /// What running the hook risks, in the ladder's terms.
+    ///
+    /// A command is graded like the agent's own commands. A prompt hook can
+    /// only answer, so it is a read. An HTTP hook sends session data off the
+    /// process: to this Mac it is graded like a contained command, anywhere
+    /// else like a command that reaches the network.
+    static func classify(kind: HookHandlerKind, command: String, url: URL?) -> ActionRisk {
+        switch kind {
+        case .prompt:
+            return .read
+        case .http:
+            let host = url?.host?.lowercased() ?? ""
+            let local = host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+            return local ? .execute : .critical
+        case .command:
+            switch CommandClassifier().classify(command) {
+            case let .permitted(risk, _): return risk
+            case .forbidden: return .destructive
+            }
         }
     }
 
     /// A hook's identity is what it is, not where it sits: its file, event,
-    /// matcher and command. The reader's allowing and switching off are both
-    /// keyed by it, so a position in the file would move them onto other
-    /// hooks — or off these — whenever an entry above was added or removed,
-    /// and a teammate's new `Notification` hook would silently stop the
-    /// guards below it until they were allowed again.
+    /// matcher, kind and what it runs. The reader's allowing and switching
+    /// off are both keyed by it, so a position in the file would move them
+    /// onto other hooks — or off these — whenever an entry above was added or
+    /// removed, and a teammate's new `Notification` hook would silently stop
+    /// the guards below it until they were allowed again.
+    ///
+    /// A command hook's ID is the one earlier builds gave it, so an allowed
+    /// command stays allowed. An HTTP hook's headers and a prompt hook's
+    /// model are part of its identity: changing where data goes, or who
+    /// judges it, is a new hook that waits to be allowed.
     static func makeID(
         event: HookLifecycleEvent,
         matcher: HookMatcher,
         command: String,
         source: ExtensibilitySource,
         path: String,
-        occurrence: Int
+        occurrence: Int,
+        kind: HookHandlerKind = .command,
+        headers: [String: String] = [:],
+        model: String? = nil
     ) -> String {
-        let identity = [
+        var identity = [
             source.rawValue,
             path,
             event.rawValue,
             matcher.pattern ?? "*",
             String(occurrence),
             command,
-        ].joined(separator: "\u{1f}")
-        return "hook-" + Digests.sha256Hex(identity)
+        ]
+        if kind != .command {
+            identity.append(kind.rawValue)
+            identity.append(headers.keys.sorted().map { "\($0)=\(headers[$0] ?? "")" }.joined(separator: "\u{1e}"))
+            identity.append(model ?? "")
+        }
+        return "hook-" + Digests.sha256Hex(identity.joined(separator: "\u{1f}"))
     }
 }
 
@@ -679,7 +910,7 @@ public struct HookExecutionPolicy: HookAuthorizing, Equatable, Codable, Sendable
             }
         }
         guard !hook.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .denied(reason: "The hook command is empty.")
+            return .denied(reason: hook.kind == .command ? "The hook command is empty." : "The hook is empty.")
         }
         guard !hook.command.unicodeScalars.contains(where: { $0.value == 0 }) else {
             return .denied(reason: "The hook command contains a NUL byte.")
@@ -697,24 +928,60 @@ public struct HookExecutionPolicy: HookAuthorizing, Equatable, Codable, Sendable
             return .denied(reason: "The session is read-only, so no hook runs.")
         }
 
-        switch CommandClassifier().classify(hook.command) {
-        case .forbidden:
-            return .denied(reason: "The hook command is forbidden by the command policy.")
-        case let .permitted(risk, reason):
-            guard hook.risk == risk else {
-                return .denied(reason: "The hook risk metadata does not match its command.")
+        switch hook.kind {
+        case .prompt:
+            // A small model's answer can only block, so there is nothing to
+            // ask the reader about once the hook itself is allowed.
+            guard hook.event.acceptsPromptHooks else {
+                return .denied(reason: "A prompt hook cannot answer this event.")
             }
-            // The reader's own file is spared the prompt: a notifier in
-            // `~/bin` is outside every workspace by definition, and the
-            // reader wrote the line that runs it.
+            return .allowed
+
+        case .http:
+            guard let url = hook.url,
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  url.host != nil
+            else {
+                return .denied(reason: "The hook URL must be http or https with a host.")
+            }
+            // The reader's own file may post anywhere: they wrote the line.
             guard hook.isUntrusted else { return .allowed }
-            switch PermissionPolicy.ruling(mode: permissionMode, risk: risk) {
-            case .allow:
-                return .allowed
-            case .requireApproval:
-                return .requiresPermission(reason: reason)
-            case let .deny(reason):
-                return .denied(reason: reason)
+            guard hook.postsToLoopback else {
+                return .denied(
+                    reason: "A project's HTTP hook may only post to this Mac (localhost). Put it in ~/.juno/settings.json to post elsewhere."
+                )
+            }
+            let expected = HookDefinition.classify(kind: .http, command: hook.command, url: url)
+            guard hook.risk == expected else {
+                return .denied(reason: "The hook risk metadata does not match its endpoint.")
+            }
+            switch PermissionPolicy.ruling(mode: permissionMode, risk: hook.risk) {
+            case .allow: return .allowed
+            case .requireApproval: return .requiresPermission(reason: "A project hook posts this session's data to \(url.absoluteString).")
+            case let .deny(reason): return .denied(reason: reason)
+            }
+
+        case .command:
+            switch CommandClassifier().classify(hook.command) {
+            case .forbidden:
+                return .denied(reason: "The hook command is forbidden by the command policy.")
+            case let .permitted(risk, reason):
+                guard hook.risk == risk else {
+                    return .denied(reason: "The hook risk metadata does not match its command.")
+                }
+                // The reader's own file is spared the prompt: a notifier in
+                // `~/bin` is outside every workspace by definition, and the
+                // reader wrote the line that runs it.
+                guard hook.isUntrusted else { return .allowed }
+                switch PermissionPolicy.ruling(mode: permissionMode, risk: risk) {
+                case .allow:
+                    return .allowed
+                case .requireApproval:
+                    return .requiresPermission(reason: reason)
+                case let .deny(reason):
+                    return .denied(reason: reason)
+                }
             }
         }
     }
@@ -787,19 +1054,53 @@ public enum HookPermissionDecision: String, Codable, Sendable {
     case ask
 }
 
-/// What a hook printed on standard output, when it printed Claude Code's
-/// JSON. Read only after exit code 0, as Claude Code does.
+/// What a hook printed on standard output — or an HTTP hook answered, or a
+/// prompt hook's model decided — in Claude Code's JSON shape. Read only
+/// after exit code 0 (or a 2xx answer), as Claude Code does.
 public struct HookOutput: Equatable, Sendable {
     /// `"continue": false` ends the run.
     public var continueRun: Bool
     public var stopReason: String?
+    /// `"suppressOutput": true`: the hook's output is not shown in the
+    /// thread. Decisions it carries still count.
+    public var suppressOutput: Bool
     /// `"block"`, or the deprecated `"approve"` a `PreToolUse` hook may send.
     public var decision: String?
     public var reason: String?
     public var systemMessage: String?
+    /// `PreToolUse`: `allow`, `deny` or `ask`; `defer` reads as `ask`.
+    /// `PermissionRequest`: `hookSpecificOutput.decision.behavior`.
     public var permissionDecision: HookPermissionDecision?
     public var permissionDecisionReason: String?
     public var additionalContext: String?
+    /// `PreToolUse`: arguments to run the tool with instead. Juno validates
+    /// them against the tool's schema and authorizes the call again from
+    /// scratch, at no lower a risk than the original arguments.
+    public var updatedInput: JSONValue?
+
+    public init(
+        continueRun: Bool = true,
+        stopReason: String? = nil,
+        suppressOutput: Bool = false,
+        decision: String? = nil,
+        reason: String? = nil,
+        systemMessage: String? = nil,
+        permissionDecision: HookPermissionDecision? = nil,
+        permissionDecisionReason: String? = nil,
+        additionalContext: String? = nil,
+        updatedInput: JSONValue? = nil
+    ) {
+        self.continueRun = continueRun
+        self.stopReason = stopReason
+        self.suppressOutput = suppressOutput
+        self.decision = decision
+        self.reason = reason
+        self.systemMessage = systemMessage
+        self.permissionDecision = permissionDecision
+        self.permissionDecisionReason = permissionDecisionReason
+        self.additionalContext = additionalContext
+        self.updatedInput = updatedInput
+    }
 
     /// Parses `stdout` as the JSON form, or nil when it is not a JSON object
     /// — plain text is a normal, supported answer.
@@ -809,9 +1110,14 @@ public struct HookOutput: Equatable, Sendable {
               let value = try? JSONDecoder().decode(JSONValue.self, from: Data(trimmed.utf8)),
               let object = value.objectValue
         else { return nil }
+        self.init(object: object, event: event)
+    }
 
+    /// Reads one already-decoded answer object.
+    public init(object: [String: JSONValue], event: HookLifecycleEvent) {
         continueRun = object["continue"]?.boolValue ?? true
         stopReason = object["stopReason"]?.stringValue
+        suppressOutput = object["suppressOutput"]?.boolValue ?? false
         decision = object["decision"]?.stringValue?.lowercased()
         reason = object["reason"]?.stringValue
         systemMessage = object["systemMessage"]?.stringValue
@@ -821,15 +1127,31 @@ public struct HookOutput: Equatable, Sendable {
         let specific = object["hookSpecificOutput"]?.objectValue
         let named = specific?["hookEventName"]?.stringValue
         if let specific, named == nil || named == event.rawValue {
-            permissionDecision = specific["permissionDecision"]?.stringValue
-                .flatMap { HookPermissionDecision(rawValue: $0.lowercased()) }
-            permissionDecisionReason = specific["permissionDecisionReason"]?.stringValue
+            if event == .permissionRequest, let nested = specific["decision"]?.objectValue {
+                permissionDecision = nested["behavior"]?.stringValue.flatMap(Self.permission(named:))
+                permissionDecisionReason = nested["message"]?.stringValue
+            } else {
+                permissionDecision = specific["permissionDecision"]?.stringValue.flatMap(Self.permission(named:))
+                permissionDecisionReason = specific["permissionDecisionReason"]?.stringValue
+            }
             additionalContext = specific["additionalContext"]?.stringValue
+            if event == .preToolUse, let updated = specific["updatedInput"], updated.objectValue != nil {
+                updatedInput = updated
+            } else {
+                updatedInput = nil
+            }
         } else {
             permissionDecision = nil
             permissionDecisionReason = nil
             additionalContext = nil
+            updatedInput = nil
         }
+    }
+
+    /// `allow`, `deny`, `ask`; `defer` is an `ask` (§5.9).
+    static func permission(named value: String) -> HookPermissionDecision? {
+        let lowered = value.lowercased()
+        return lowered == "defer" ? .ask : HookPermissionDecision(rawValue: lowered)
     }
 }
 
@@ -875,10 +1197,14 @@ public enum HookExecutionLimits {
     public static let maximumHooksPerConfiguration = 64
     public static let maximumHooksPerRun = 32
     /// Standard output and error together, per hook run. The executor stops
-    /// the process when it prints more.
+    /// the process when it prints more. An HTTP hook's answer body too.
     public static let maximumOutputBytes = 64 * 1_024
-    /// Claude Code's default for a command hook.
-    public static let defaultTimeoutSeconds = 60.0
+    /// Claude Code's default for a command or HTTP hook: ten minutes.
+    public static let defaultTimeoutSeconds = 600.0
+    /// A prompt hook's default: a small model's single turn.
+    public static let promptTimeoutSeconds = 30.0
+    /// Any hook on `UserPromptSubmit`, which holds the reader's message.
+    public static let promptSubmitTimeoutSeconds = 30.0
     /// A longer `timeout` is clamped to this rather than rejected, so a
     /// repository written for Claude Code's ten-minute ceiling still loads.
     public static let maximumTimeoutSeconds = 600.0
@@ -891,4 +1217,6 @@ public enum HookExecutionLimits {
     /// bounded separately; this keeps a large read from becoming a large
     /// stdin write for every `PostToolUse` hook.
     public static let maximumToolResponseBytes = 64 * 1_024
+    /// A prompt hook's text, after `$ARGUMENTS` is filled in.
+    public static let maximumPromptHookCharacters = 24_000
 }

@@ -140,11 +140,16 @@ public struct ToolRegistry: Sendable {
     ///
     /// - Parameter hookPermission: a `PreToolUse` hook's answer about the
     ///   prompt. The coordinator weighs it below the reader's own rules.
+    /// - Parameter minimumRisk: a floor under the risk the arguments carry.
+    ///   Set when a hook rewrote the call's arguments: the rewrite is ruled
+    ///   at no lower a tier than the model's original call (CODE_AGENT_SPEC
+    ///   §5.9).
     public func authorizeInvocation(
         toolName: String,
         input: JSONValue,
         permissions: PermissionCoordinator,
-        hookPermission: AgentHookPermission? = nil
+        hookPermission: AgentHookPermission? = nil,
+        minimumRisk: ActionRisk? = nil
     ) async throws {
         guard let tool = tools[toolName] else {
             throw ToolError.unknownTool(name: toolName)
@@ -155,7 +160,7 @@ public struct ToolRegistry: Sendable {
         if let refusal = tool.precheck(input: input) {
             throw refusal
         }
-        let risk = tool.assessRisk(input: input)
+        let risk = max(tool.assessRisk(input: input), minimumRisk ?? .read)
         let digest = tool.actionDigest(input: input)
         let outcome = await permissions.authorize(
             toolName: toolName,
@@ -177,6 +182,12 @@ public struct ToolRegistry: Sendable {
         case let .denied(reason):
             throw ToolError.denied(reason: reason)
         }
+    }
+
+    /// The risk `input` carries for `toolName`, or nil for a tool the
+    /// registry does not hold.
+    public func risk(toolName: String, input: JSONValue) -> ActionRisk? {
+        tools[toolName]?.assessRisk(input: input)
     }
 
     /// Executes a previously authorized invocation.

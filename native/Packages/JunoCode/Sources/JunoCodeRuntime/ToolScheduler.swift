@@ -172,9 +172,9 @@ public actor ToolScheduler {
     ) async -> ExecutionResult {
         // Converted once, here, so the hooks, the approval digest and the
         // tool all see the same arguments.
-        let input = registry.coercedInput(toolName: name, input: input)
+        var input = registry.coercedInput(toolName: name, input: input)
         let startedAt = Date()
-        let hookInvocation = AgentToolHookInvocation(
+        var hookInvocation = AgentToolHookInvocation(
             sessionID: sessionID,
             toolCallID: id,
             toolName: name,
@@ -182,6 +182,9 @@ public actor ToolScheduler {
         )
 
         var hookPermission: AgentHookPermission?
+        // Set when a `PreToolUse` hook rewrote the arguments: the rewrite is
+        // ruled at no lower a risk than the model's own call.
+        var minimumRisk: ActionRisk?
         if let lifecycleHooks {
             let response = await lifecycleHooks.beforeTool(hookInvocation)
             // Stop can land while a `PreToolUse` hook runs. The hook is killed,
@@ -238,6 +241,22 @@ public actor ToolScheduler {
                 )
             }
             hookPermission = response.permission
+            if let updated = response.updatedInput {
+                // Re-authorized from scratch (CODE_AGENT_SPEC §5.9): the new
+                // arguments are validated against the schema below, ruled at
+                // no lower a risk than the original call, and without the
+                // hook's `allow` — a hook that rewrites a call does not also
+                // get to wave the rewrite through. Its `ask` still counts.
+                minimumRisk = registry.risk(toolName: name, input: input)
+                input = registry.coercedInput(toolName: name, input: updated)
+                hookInvocation = AgentToolHookInvocation(
+                    sessionID: sessionID,
+                    toolCallID: id,
+                    toolName: name,
+                    input: input
+                )
+                if hookPermission == .allow { hookPermission = nil }
+            }
         }
 
         do {
@@ -245,7 +264,8 @@ public actor ToolScheduler {
                 toolName: name,
                 input: input,
                 permissions: permissions,
-                hookPermission: hookPermission
+                hookPermission: hookPermission,
+                minimumRisk: minimumRisk
             )
         } catch {
             let reason = deniedReason(from: error)
@@ -351,6 +371,10 @@ public actor ToolScheduler {
             ) ?? .empty
             await record(after.notices, sessionID: sessionID, store: store)
             var notes: [String] = []
+            if minimumRisk != nil {
+                let ran = OutputLimiter.apply(OutputLimit(maximumBytes: 2_048), to: input.canonicalJSONString()).text
+                notes.append("A PreToolUse hook changed this call's arguments before it ran. It ran with: \(ran)")
+            }
             if let reason = after.blockReason {
                 notes.append("PostToolUse hook feedback:\n" + reason)
             }
