@@ -316,35 +316,8 @@ protocol PreviewSecretProviding: Sendable {
 
 /// Per-checkout test credentials in the Keychain.
 struct KeychainPreviewSecrets: PreviewSecretProviding {
-    static let service = "com.liammagnier.juno.preview-secrets"
-
     func secret(named name: String, checkoutRoot: URL) -> String? {
-        let account = PreviewKey(checkoutRoot: checkoutRoot, name: name).checkoutRoot + "#" + name
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-    }
-
-    static func save(_ value: String, named name: String, checkoutRoot: URL) {
-        let account = PreviewKey(checkoutRoot: checkoutRoot, name: name).checkoutRoot + "#" + name
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(base as CFDictionary)
-        var add = base
-        add[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        PreviewSecrets.value(.signIn, checkoutRoot: checkoutRoot, name: name)
     }
 }
 

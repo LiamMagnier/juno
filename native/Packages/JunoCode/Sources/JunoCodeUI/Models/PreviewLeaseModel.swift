@@ -25,6 +25,13 @@ public final class PreviewLeaseModel {
     public private(set) var pendingApproval: ResolvedPreviewConfiguration?
     /// A problem from the last reader action, in words.
     public private(set) var notice: String?
+    /// Annotate mode (§5.15): the reader is picking an element.
+    public var isAnnotating = false
+    /// The element picked, waiting for the reader's note.
+    public var pendingAnnotation: PreviewAnnotation?
+    /// Where a finished annotation goes: the session's composer. Set by the
+    /// workbench; annotate is offered only when it is.
+    @ObservationIgnored public var annotationSink: (@MainActor (PreviewAnnotation) -> Void)?
 
     @ObservationIgnored private let registry: JunoCodeLocal.PreviewRegistry
     @ObservationIgnored private let settings: PreviewLocalSettings
@@ -269,6 +276,23 @@ public final class PreviewLeaseModel {
 
     public var launchFileURL: URL? {
         workspaceRoot.map { $0.appendingPathComponent(LaunchConfigurationStore.junoRelativePath) }
+    }
+
+    // MARK: - Annotate
+
+    public var canAnnotate: Bool { annotationSink != nil && page != nil }
+
+    /// Sends the picked element and its note to the composer, and stays in
+    /// annotate mode for the next one.
+    public func sendAnnotation() {
+        guard let annotation = pendingAnnotation else { return }
+        annotationSink?(annotation)
+        pendingAnnotation = nil
+    }
+
+    public func cancelAnnotation() {
+        pendingAnnotation = nil
+        isAnnotating = false
     }
 
     // MARK: - The stop check

@@ -103,26 +103,12 @@ public struct CodePreviewDock: View {
     public var body: some View {
         PreviewPaneView(lease: lease, style: .dock, close: close, openInWindow: openInWindow)
             .task(id: target) { bind() }
-            .onAppear { addViewer() }
-            .onDisappear { removeViewer() }
             .accessibilityIdentifier("juno.code.preview.dock")
     }
 
     private func bind() {
         lease.bind(sessionID: target.sessionID, workspaceRoot: target.workspaceRoot)
         if let name = target.configurationName { lease.selectedName = name }
-    }
-
-    private func addViewer() {
-        guard let root = target.workspaceRoot else { return }
-        let name = target.configurationName ?? lease.selectedName
-        guard let name else { return }
-        Task { await JunoCodeLocal.PreviewRegistry.shared.addViewer(PreviewKey(checkoutRoot: root, name: name)) }
-    }
-
-    private func removeViewer() {
-        guard let root = target.workspaceRoot, let name = target.configurationName ?? lease.selectedName else { return }
-        Task { await JunoCodeLocal.PreviewRegistry.shared.removeViewer(PreviewKey(checkoutRoot: root, name: name)) }
     }
 }
 

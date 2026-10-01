@@ -236,6 +236,8 @@ public actor PreviewRegistry {
         var ledgerGroup: Int32?
         var blockedOutboundHost: String?
         var shellID: String?
+        /// Server secret values, scrubbed from every log line.
+        var secretValues: [String] = []
 
         init(key: PreviewKey, displayCommand: String, workingDirectoryDisplay: String) {
             self.key = key
@@ -250,6 +252,7 @@ public actor PreviewRegistry {
     private let clock: @Sendable () -> Date
     private let idleTimeout: TimeInterval
     private let settings: PreviewLocalSettings?
+    private let secretEnvironment: any PreviewSecretEnvironmentProviding
     private var entries: [PreviewKey: Entry] = [:]
     private var observers: [UUID: @Sendable (PreviewRegistryChange) -> Void] = [:]
     private var pendingLogNotifications: Set<PreviewKey> = []
@@ -260,6 +263,7 @@ public actor PreviewRegistry {
         ledger: PreviewServerLedger? = nil,
         probe: any PreviewHTTPProbing = URLSessionPreviewProbe(),
         settings: PreviewLocalSettings? = .shared,
+        secretEnvironment: (any PreviewSecretEnvironmentProviding)? = nil,
         idleTimeout: TimeInterval = PreviewRegistry.defaultIdleTimeout,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -267,6 +271,8 @@ public actor PreviewRegistry {
         self.ledger = ledger
         self.probe = probe
         self.settings = settings
+        self.secretEnvironment = secretEnvironment
+            ?? (Self.isTestProcess ? NoPreviewEnvironmentSecrets() : KeychainPreviewEnvironment())
         self.idleTimeout = idleTimeout
         self.clock = clock
     }
@@ -483,7 +489,9 @@ public actor PreviewRegistry {
         }
 
         entry.configuration = configuration
-        entry.displayCommand = configuration.commandLine() ?? configuration.displayArgv.joined(separator: " ")
+        entry.displayCommand = configuration.isStatic
+            ? "Juno's static server"
+            : configuration.commandLine() ?? configuration.displayArgv.joined(separator: " ")
         entry.workingDirectoryDisplay = configuration.workingDirectoryDisplay
         entry.blockedOutboundHost = nil
         entry.shellID = nil
@@ -494,8 +502,12 @@ public actor PreviewRegistry {
             return await attach(entry, url: url, generation: generation, ownerGroup: nil)
         }
 
-        // Ports (PV-15).
+        // Ports (PV-15). Server secrets from the Keychain go to the child
+        // only, and their values are scrubbed from its log.
         var environment = configuration.environment
+        let secrets = secretEnvironment.environment(for: configuration, checkoutRoot: checkoutRoot)
+        environment.merge(secrets) { _, secret in secret }
+        entry.secretValues = secrets.values.filter { $0.count >= 4 }
         var expectedPort: Int?
         var resolvedPort = configuration.port
         let argvUsesPort = configuration.displayArgv.contains { $0.contains("${port}") }
@@ -644,9 +656,13 @@ public actor PreviewRegistry {
         guard let entry = entries[key], entry.generation == generation else { return }
         switch event {
         case let .line(line):
-            entry.log.append(channel: line.channel, text: line.text, at: clock())
+            var text = line.text
+            for secret in entry.secretValues where text.contains(secret) {
+                text = text.replacingOccurrences(of: secret, with: "••••")
+            }
+            entry.log.append(channel: line.channel, text: text, at: clock())
             if entry.network == .loopback, entry.isContained, entry.blockedOutboundHost == nil,
-               let host = PreviewNetworkHints.blockedHost(in: line.text)
+               let host = PreviewNetworkHints.blockedHost(in: text)
             {
                 entry.blockedOutboundHost = host
                 notify(key)

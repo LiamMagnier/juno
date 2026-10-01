@@ -25,6 +25,7 @@ struct PreviewPaneView: View {
     var openInWindow: (() -> Void)?
 
     @State private var isLogVisible = false
+    @State private var isShowingSecrets = false
     @State private var addressText = ""
     @FocusState private var addressFocused: Bool
 
@@ -41,7 +42,24 @@ struct PreviewPaneView: View {
             }
         }
         .background(Studio.Surface.canvas)
+        .sheet(isPresented: $isShowingSecrets) {
+            if let root = lease.workspaceRoot {
+                PreviewSecretsSheet(workspaceRoot: root, configurationName: lease.selectedConfiguration?.name) {
+                    isShowingSecrets = false
+                }
+            }
+        }
         .onChange(of: lease.selectedName) { _, _ in lease.syncPage() }
+        // A pane on screen counts as a viewer: it never stops a server, it
+        // only keeps an unleased one from idling out while it is shown.
+        .task(id: lease.selectedKey) {
+            guard let key = lease.selectedKey else { return }
+            await JunoCodeLocal.PreviewRegistry.shared.addViewer(key)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3_600))
+            }
+            await JunoCodeLocal.PreviewRegistry.shared.removeViewer(key)
+        }
         .onChange(of: lease.page?.currentURL) { _, url in
             guard !addressFocused else { return }
             addressText = url.map(PreviewBrowserEngine.route(of:)) ?? ""
@@ -61,6 +79,11 @@ struct PreviewPaneView: View {
                 serversMenu
                 runButton
                 Spacer(minLength: JunoSpace.tight)
+                Button { lease.isAnnotating.toggle(); lease.pendingAnnotation = nil } label: { JunoIconView(.penTool, size: 15) }
+                    .buttonStyle(StudioIconButtonStyle(isOn: lease.isAnnotating))
+                    .disabled(!lease.canAnnotate)
+                    .help(lease.isAnnotating ? "Stop annotating" : "Annotate: point at an element and send a note to the message")
+                    .accessibilityLabel("Annotate")
                 deviceMenu
                 appearanceMenu
                 Button { isLogVisible.toggle() } label: { JunoIconView(.writing, size: 15) }
@@ -249,6 +272,8 @@ struct PreviewPaneView: View {
             Button("Clear site data") { lease.clearSiteData() }
                 .disabled(lease.page == nil)
             Divider()
+            Button("Secrets…") { isShowingSecrets = true }
+                .disabled(lease.workspaceRoot == nil)
             Toggle(
                 "Allow inspection scripts",
                 isOn: Binding(get: { lease.allowsInspectionScripts }, set: { lease.setAllowsInspectionScripts($0) })
@@ -327,6 +352,25 @@ struct PreviewPaneView: View {
             }
         } else if let page = lease.page {
             PreviewPageView(page: page)
+                .overlay {
+                    if lease.isAnnotating, lease.pendingAnnotation == nil {
+                        PreviewAnnotateLayer(page: page) { lease.pendingAnnotation = $0 }
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if lease.pendingAnnotation != nil {
+                        PreviewAnnotateToolbar(
+                            annotation: Binding(
+                                get: { lease.pendingAnnotation ?? PreviewAnnotation(route: "/", selector: "", role: "", name: "", box: .zero, styles: [], sourceHint: nil, note: "", screenshot: nil) },
+                                set: { lease.pendingAnnotation = $0 }
+                            ),
+                            send: { lease.sendAnnotation() },
+                            cancel: { lease.cancelAnnotation() }
+                        )
+                        .padding(JunoSpace.snug)
+                        .frame(maxWidth: 520)
+                    }
+                }
                 .overlay {
                     if page.agentIsDriving {
                         RoundedRectangle(cornerRadius: 2)
@@ -619,5 +663,108 @@ struct PreviewPageView: NSViewRepresentable {
         if let webView = container.hosted, let page = PreviewPageRegistry.shared.all.first(where: { $0.webView === webView }) {
             page.release(from: container)
         }
+    }
+}
+
+/// The Preview's secrets for this checkout, by name only (§4.2, §4.3):
+/// sign-in secrets the agent types by name, and server secrets the selected
+/// configuration's process receives. Values go to the Keychain and are never
+/// shown again.
+struct PreviewSecretsSheet: View {
+    let workspaceRoot: URL
+    let configurationName: String?
+    let done: () -> Void
+
+    @State private var signInNames: [String] = []
+    @State private var serverNames: [String] = []
+    @State private var newName = ""
+    @State private var newValue = ""
+    @State private var newKind: PreviewSecrets.Kind = .signIn
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            Text("Preview secrets")
+                .font(Studio.Font.title)
+            Text("Kept in the Keychain for this project. Juno never shows a value to the model or writes it to a file.")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+            section(
+                "Sign-in secrets",
+                caption: "The agent types these into password fields by name.",
+                names: signInNames,
+                kind: .signIn,
+                scope: nil
+            )
+            if let configurationName {
+                section(
+                    "Server secrets for \(configurationName)",
+                    caption: "Environment variables only this server's process receives.",
+                    names: serverNames,
+                    kind: .server,
+                    scope: configurationName
+                )
+            }
+            Divider()
+            HStack(spacing: JunoSpace.snug) {
+                Picker("", selection: $newKind) {
+                    Text("Sign-in").tag(PreviewSecrets.Kind.signIn)
+                    if configurationName != nil { Text("Server").tag(PreviewSecrets.Kind.server) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                TextField(newKind == .server ? "NAME" : "name", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Studio.Font.mono)
+                SecureField("value", text: $newValue)
+                    .textFieldStyle(.roundedBorder)
+                Button("Add") { add() }
+                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || newValue.isEmpty)
+            }
+            HStack {
+                Spacer()
+                Button("Done", action: done)
+                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(JunoSpace.region)
+        .frame(width: 520)
+        .onAppear(perform: reload)
+    }
+
+    private func section(_ title: String, caption: String, names: [String], kind: PreviewSecrets.Kind, scope: String?) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(title).font(Studio.Font.labelEmphasis)
+            Text(caption).font(Studio.Font.caption).foregroundStyle(Studio.Ink.tertiary)
+            if names.isEmpty {
+                Text("None yet").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+            }
+            ForEach(names, id: \.self) { name in
+                HStack {
+                    Text(name).font(Studio.Font.mono)
+                    Text("••••").font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
+                    Spacer()
+                    Button("Remove") {
+                        PreviewSecrets.delete(kind, checkoutRoot: workspaceRoot, scope: scope, name: name)
+                        reload()
+                    }
+                    .buttonStyle(StudioQuietButtonStyle())
+                }
+            }
+        }
+    }
+
+    private func add() {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        PreviewSecrets.save(newValue, newKind, checkoutRoot: workspaceRoot, scope: newKind == .server ? configurationName : nil, name: name)
+        newName = ""
+        newValue = ""
+        reload()
+    }
+
+    private func reload() {
+        signInNames = PreviewSecrets.names(.signIn, checkoutRoot: workspaceRoot)
+        serverNames = configurationName.map { PreviewSecrets.names(.server, checkoutRoot: workspaceRoot, scope: $0) } ?? []
     }
 }

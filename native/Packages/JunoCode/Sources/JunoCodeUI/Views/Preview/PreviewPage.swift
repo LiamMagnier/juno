@@ -327,11 +327,12 @@ public final class PreviewPage {
     /// Reload that keeps the route (PV-38): the current page when there is
     /// one, the origin otherwise.
     func reload() {
+        let failed = loadError != nil
         loadError = nil
-        if webView.url != nil, loadError == nil {
+        if let url = webView.url, !failed, url.scheme != "about" {
             webView.reloadFromOrigin()
-        } else if let origin {
-            load(currentURL ?? origin)
+        } else if let target = currentURL ?? origin {
+            load(target)
         }
     }
 
