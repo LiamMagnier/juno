@@ -8,7 +8,7 @@ import { encryptSecret, signState } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { buildMcpAuthorizeUrl, createPkce, discoverEndpoints, registerClient } from "@/lib/mcp-oauth";
 import { customMcpUrlProblem, safeMcpFetch } from "@/lib/mcp-safe-fetch";
-import { CUSTOM_NONCE_COOKIE, CUSTOM_SESSION_COOKIE, ownedConnector, type CustomOAuthSession } from "../../shared";
+import { CUSTOM_NONCE_COOKIE, CUSTOM_SESSION_COOKIE, ownedConnector, probeAllowed, type CustomOAuthSession } from "../../shared";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
@@ -32,6 +32,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!user) return NextResponse.redirect(new URL("/sign-in", env.appUrl));
   const connector = await ownedConnector(user.id, (await params).id);
   if (!connector) return back("unknown");
+  // Discovery and registration reach a stranger's server from ours, like a
+  // probe does, so they share the probe's per-person budget.
+  if (!(await probeAllowed(user.id))) return back("rate_limited", connector.id);
 
   let flow: { url: string; session: CustomOAuthSession };
   const nonce = randomBytes(16).toString("hex");

@@ -439,7 +439,7 @@ export function actionPreview(input: {
     const teammate = typeof input.args.teammate === "string" ? input.args.teammate.trim() : "";
     const title = typeof input.args.title === "string" ? input.args.title.trim().replace(/[.!?]+$/, "") : "";
     const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
-    const to = `Hand off to ${teammate || "a teammate"}`;
+    const to = `Hand off to ${teammate || "another agent"}`;
     const handoff = title ? `${to}: ${title}.` : `${to}.`;
     return estimate ? `${handoff} Estimated cost ${estimate}.` : handoff;
   }

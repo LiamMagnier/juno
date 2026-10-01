@@ -321,7 +321,8 @@ describe("(c) view links are not reusable bearers", () => {
   it("the CDP token is never part of the container's configuration", () => {
     const docker = readFileSync("src/lib/computer/docker.ts", "utf8");
     assert.doesNotMatch(docker, /env: \{ JUNO_CDP_TOKEN/);
-    assert.match(docker, /cat > \/tmp\/\.juno-cdp-token\.part && mv -f/);
+    assert.match(docker, /set -C && cat > \/run\/juno\/cdp-token\.part && mv -f/);
+    assert.doesNotMatch(docker, /\/tmp\/\.juno-(cdp-token|vncpass)/, "handover files never go through the shared /tmp");
     const gate = readFileSync("deploy/agent-computers/cdp-gate.py", "utf8");
     assert.doesNotMatch(gate, /os\.environ\["JUNO_CDP_TOKEN"\]/);
     assert.match(gate, /PR_SET_DUMPABLE/);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
 // Toggle the current user's vote on a request (one vote per user).
@@ -21,6 +21,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     await prisma.featureVote.create({ data: { requestId: id, userId: user.id } });
   }
 
-  const voteCount = await prisma.featureVote.count({ where: { requestId: id } });
+  // The public tally across everyone's votes, so deliberately unscoped: it
+  // reads a number, not anyone's rows. Guarded, it threw after the toggle above
+  // had already been written.
+  const voteCount = await prismaUnguarded.featureVote.count({ where: { requestId: id } });
   return NextResponse.json({ voted: !existing, voteCount });
 }

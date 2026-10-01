@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Plan, Prisma, SubStatus } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getOwnerUser } from "@/lib/admin";
 import { isOwnerEmail } from "@/lib/owner";
 import { currentPeriod } from "@/lib/utils";
@@ -57,27 +57,34 @@ export async function GET(req: Request) {
     }),
     prisma.user.count({ where }),
     prisma.user.count(),
-    prisma.usage.count({ where: { period, messageCount: { gt: 0 } } }),
+    // Owner-only and cross-account by definition: how many people sent a
+    // message this month. The ownership guard throws on an unscoped count, so
+    // the global question has to say so.
+    prismaUnguarded.usage.count({ where: { period, messageCount: { gt: 0 } } }),
     prisma.user.count({ where: { OR: [{ strikes: { gt: 0 } }, { bannedAt: { not: null } }] } }),
   ]);
 
   const ids = users.map((u) => u.id);
-  const [usage, spend, flags] = await Promise.all([
-    prisma.usage.findMany({
-      where: { userId: { in: ids }, period },
-      select: { userId: true, messageCount: true },
-    }),
-    prisma.apiSpend.groupBy({
-      by: ["userId", "source"],
-      where: { userId: { in: ids }, createdAt: { gte: monthStart } },
-      _sum: { costMicroUsd: true },
-    }),
-    prisma.moderationFlag.groupBy({
-      by: ["userId"],
-      where: { userId: { in: ids } },
-      _count: { _all: true },
-    }),
-  ]);
+  // A search that matches nobody leaves `ids` empty, and the guard refuses an
+  // empty `in` (it scopes to no one, which is not a scope). Nothing to look up.
+  const [usage, spend, flags] = ids.length === 0
+    ? [[], [], []]
+    : await Promise.all([
+        prisma.usage.findMany({
+          where: { userId: { in: ids }, period },
+          select: { userId: true, messageCount: true },
+        }),
+        prisma.apiSpend.groupBy({
+          by: ["userId", "source"],
+          where: { userId: { in: ids }, createdAt: { gte: monthStart } },
+          _sum: { costMicroUsd: true },
+        }),
+        prisma.moderationFlag.groupBy({
+          by: ["userId"],
+          where: { userId: { in: ids } },
+          _count: { _all: true },
+        }),
+      ]);
 
   const messagesByUser = new Map(usage.map((u) => [u.userId, u.messageCount]));
   // Per-user total + per-surface split (web vs native app) of this month's spend.

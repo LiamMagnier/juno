@@ -1,5 +1,13 @@
 # Security, release and maintenance continuation — 2026-10-01
 
+> **2026-10-02 review:** this log is the 2026-10-01 state. The adversarial review of
+> this work, its confirmed findings and their fixes on `rework/refoundation` are in
+> [SECURITY_REVIEW_2026-10-02.md](SECURITY_REVIEW_2026-10-02.md): the throwing
+> ownership guard broke production call sites (fixed on trunk, needs a deploy),
+> `SKIP_CHECKS` no longer skips `local-gates.sh` (one logged `--skip-checks=<reason>`
+> emergency flag remains on the Mac deploy), and the agent-computer image no longer
+> runs a desktop session or GUI apps as the browser uid (`pipe-v3`).
+
 ## Stop state and checkout
 
 The owner stopped further rework and requested a complete handoff, push and website deployment. At the final inspection, the integrated source is in `/Users/liammagnier/Developer/project/juno` on `main`, commit `133dd2857c787f70600b273994707263f109131c`. An external process merged and pushed the lane work while this lane was validating it. The original shared `/Users/liammagnier/Developer/project/juno-refoundation` checkout was reset back to the historical pause commit `756a93dc`; it is an ancestor of current main and is **not** the checkout to resume. This lane did not push or deploy.

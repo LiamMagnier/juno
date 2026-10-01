@@ -2261,9 +2261,14 @@ async function handleChat(req: Request) {
   // to what it produced before any of this existed. Retrieval failing, or the
   // background-provider policy permitting no embedding provider, both degrade
   // to that same prior behaviour rather than to a dead turn.
+  // Scoped to the conversation's owner, who is the requester (the
+  // conversation was loaded with `userId: user.id`). A conversation can only be
+  // filed into a project its owner owns, so this finds the same row it always
+  // did; unscoped, the ownership guard refused it and every turn in a project
+  // chat failed before it started.
   const projectRow = conversation.projectId
     ? await prisma.project.findUnique({
-        where: { id: conversation.projectId },
+        where: { id: conversation.projectId, userId: conversation.userId },
         select: { name: true, instructions: true, files: { select: { id: true, fileName: true, extractedText: true } } },
       })
     : null;
@@ -2407,6 +2412,7 @@ async function handleChat(req: Request) {
    * already getting, at the cost of doing the work twice.
    */
   await ensureAttachmentText(allAttachments, {
+    userId: conversation.userId,
     skip: (attachment) => modelSeesDocument && isPdfAttachment(attachment),
   });
 
