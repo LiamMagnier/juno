@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -183,7 +184,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       // saved and have no effect.
       ...(workDefaults !== undefined
         ? {
-            workDefaults: serializeWorkDefaults(workDefaults),
+            workDefaults: serializeWorkDefaults(workDefaults) as Prisma.InputJsonValue,
             workDefaultsVersion: WORK_DEFAULTS_VERSION,
           }
         : {}),
