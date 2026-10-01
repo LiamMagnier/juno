@@ -174,6 +174,14 @@ extension SessionController {
             checkRunner: VerifyGateCheckRunner(recipes: statuses, runner: checks),
             reviewRunner: reviewRunner,
             reportBuilder: VerifyRunReportBuilder(),
+            // Rule 2 waits on the session's background sub-agents (Lane B's
+            // `BackgroundSubagents`, §5.2): a run whose children still work
+            // ends "Waiting for … to finish", never as done.
+            backgroundWork: { [sessionID] in
+                await BackgroundSubagents.shared.snapshots(parentSessionID: sessionID)
+                    .filter { $0.finishedAt == nil }
+                    .map(\.title)
+            },
             pricing: { id in id == contractModelID ? modelPricing : nil },
             diffAvailable: context.access.isGitRepository
         )
