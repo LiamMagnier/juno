@@ -1,173 +1,442 @@
-/* —————————————————————————————— Frame —————————————————————————————— */
+/* —————————————————————————————— Frame (D-033) ——————————————————————————————
+ *
+ * The window is the frame: the sidebar sits directly on it, and the main area
+ * is a rounded inset panel 8 px in from the top, right and bottom edges, on its
+ * own plane with a low-contrast edge. The panel is the scroll container, so
+ * the sticky header and the dock float over the panel's own content, and the
+ * panel's corners clip everything that scrolls.
+ *
+ * Rhythm: everything in the shell sits on a 4 px grid, groups on 8. The
+ * sidebar's head and the panel's header share one centre line (y = 30), so
+ * the wordmark, the bell, a thread's title and its actions read as one row
+ * across the frame.
+ */
 
 .jn .jn-frame {
+  --side-w: 260px;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
-  min-height: 100dvh;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  height: 100dvh;
+  background: var(--side);
+  overflow: hidden;
 }
 .jn .jn-main {
   position: relative;
   min-width: 0;
+  min-height: 0;
+  margin: var(--gutter) var(--gutter) var(--gutter) 0;
+  border-radius: var(--r-panel);
   background: var(--ground);
+  box-shadow:
+    0 0 0 1px var(--panel-edge),
+    0 1px 2px var(--panel-lift);
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
+  /* The panel is its own stacking context, so a sticky header's material and a
+     popover never bleed onto the frame. */
+  isolation: isolate;
 }
 
-/* —————————————————————————————— Sidebar —————————————————————————————— */
+/* —————————————————————————————— Sidebar ——————————————————————————————
+ *
+ * Metrics (all on the 4 px grid):
+ *   width 260, padding 8 (the frame gutter), so rows are 244 wide
+ *   head 44 (centre y = 30), switch 32 after 4, nav after 12
+ *   rows 32 tall and touching; the hover/selected fill is drawn 1 px inside,
+ *   so adjacent fills read as two pills with a 2 px gap
+ *   lead slot 20 (icons 16, faces 20) at x 16..36; labels start at x = 46
+ *   the wordmark, section labels and plain text rows start at x = 18, the
+ *   icons' left edge, so the sidebar has two clean left edges, never three
+ *   sections: 16 above, label row 28, then rows
+ *   account 48, after an 8 px gap and a scroll edge
+ */
 
 .jn .jn-side {
-  position: sticky;
-  top: 0;
+  position: relative;
   height: 100dvh;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 10px 10px;
-  background: var(--side);
-  min-width: 0;
+  padding: 8px 8px 8px;
+  background: transparent;
 }
 .jn .jn-side__head {
   display: flex;
   align-items: center;
-  height: 40px;
-  padding: 0 4px 0 10px;
-  margin-bottom: 6px;
+  height: 44px;
+  padding: 0 2px 0 10px;
+  flex: none;
 }
 .jn .jn-wordmark {
   font-family: var(--font-serif);
   font-weight: 500;
   font-size: 21px;
   line-height: 24px;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
   color: var(--ink);
   font-variation-settings: "opsz" 24;
+  /* Newsreader's caps sit high in their box; nudge to the optical centre of the 44 px head. */
+  transform: translateY(-0.5px);
 }
 .jn .jn-side__headtools {
   margin-left: auto;
   display: flex;
-  gap: 2px;
+  gap: 0;
+}
+.jn .jn-side__headtools .jib {
+  color: var(--ink-3);
 }
 .jn .jn-side__switch {
-  margin: 0 2px 10px;
-  width: calc(100% - 4px);
+  flex: none;
+  width: 100%;
+  margin-top: 4px;
+  /* On the frame the track is a translucent step of the frame itself, so it
+     reads as carved into the frame in both themes rather than a grey slab. */
+  background: light-dark(rgb(25 27 30 / 0.05), rgb(255 255 255 / 0.045));
+}
+.jn .jn-side__switch .jseg__opt[aria-selected="true"]::before {
+  background: light-dark(#ffffff, #2a2b2e);
+  box-shadow:
+    0 0 0 1px light-dark(rgb(25 27 30 / 0.07), rgb(255 255 255 / 0.07)),
+    0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.25));
 }
 .jn .jn-side__nav-group {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  margin-top: 12px;
 }
-.jn .jn-side__nav .jn-side__kbd {
+
+/* A sidebar row. Inactive rows are the second ink (S1); hover and the current
+   row bring the first ink. The fill is a pseudo-element 1 px inside the row,
+   so the row keeps a full 32 px target while neighbouring fills never merge. */
+.jn .jn-side .jrow {
+  position: relative;
+  isolation: isolate;
+  height: 32px;
+  gap: 10px;
+  padding: 0 8px;
+  border-radius: 0;
+  color: var(--ink-2);
+  background: none;
+  transition: color var(--d-fast) var(--e-out);
+}
+.jn .jn-side .jrow::before {
+  content: "";
+  position: absolute;
+  inset: 1px 0;
+  z-index: -1;
+  border-radius: var(--r-row);
+  background: transparent;
+  transition: background-color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-side .jrow:hover {
+    background: none;
+    color: var(--ink);
+  }
+  .jn .jn-side .jrow:hover::before {
+    background: var(--fill-hover);
+  }
+  .jn .jn-side .jrow:hover > .jn-side__lead {
+    color: var(--ink-2);
+  }
+}
+.jn .jn-side .jrow[data-force="hover"] {
+  color: var(--ink);
+}
+.jn .jn-side .jrow[data-force="hover"]::before {
+  background: var(--fill-hover);
+}
+.jn .jn-side .jrow[data-force="focus"]::before {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.jn .jn-side .jrow:active {
+  background: none;
+}
+.jn .jn-side .jrow:active::before {
+  background: var(--fill-press);
+  transition-duration: var(--d-press);
+}
+.jn .jn-side .jrow[aria-current="page"] {
+  background: none;
+  color: var(--ink);
+}
+.jn .jn-side .jrow[aria-current="page"]::before {
+  background: var(--fill-selected);
+}
+.jn .jn-side .jrow:focus-visible {
+  outline: none;
+}
+.jn .jn-side .jrow:focus-visible::before {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.jn .jn-side__lead {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ink-3);
+  transition: color var(--d-fast) var(--e-out);
+}
+.jn .jn-side .jrow[aria-current="page"] > .jn-side__lead {
+  color: var(--ink);
+}
+/* Plain text rows (Recent) start at the icons' edge. */
+.jn .jn-side .jrow--text {
+  padding-left: 10px;
+}
+
+.jn .jn-side__kbd {
+  flex: none;
   font-size: 12px;
-  color: var(--ink-4);
+  line-height: 16px;
+  color: var(--ink-3);
   opacity: 0;
-  transition: opacity var(--d-fast) var(--e-out);
   letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--d-fast) var(--e-out);
 }
 @media (hover: hover) and (pointer: fine) {
   .jn .jn-side__nav:hover .jn-side__kbd {
     opacity: 1;
   }
 }
+
+/* The scrolling middle: sections, with soft edges that appear only when there
+   is something under them (a scroll-driven mask; no JavaScript, no lines). */
+@property --jn-edge-t {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --jn-edge-b {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
 .jn .jn-side__scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  margin: 0 -10px;
-  padding: 0 10px;
+  margin: 0 -8px;
+  padding: 0 8px 8px;
   scrollbar-width: none;
+  overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jn-edge-t), #000 calc(100% - var(--jn-edge-b)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jn-edge-t), #000 calc(100% - var(--jn-edge-b)), transparent 100%);
+}
+@supports (animation-timeline: scroll()) {
+  .jn .jn-side__scroll {
+    animation:
+      jn-edge-top linear both,
+      jn-edge-bottom linear both;
+    animation-timeline: scroll(self), scroll(self);
+  }
+  .jn[data-rm] .jn-side__scroll {
+    animation-duration: auto !important;
+  }
+}
+@keyframes jn-edge-top {
+  0% {
+    --jn-edge-t: 0px;
+  }
+  4%,
+  100% {
+    --jn-edge-t: 20px;
+  }
+}
+@keyframes jn-edge-bottom {
+  0%,
+  96% {
+    --jn-edge-b: 20px;
+  }
+  100% {
+    --jn-edge-b: 0px;
+  }
+}
+.jn .jn-side__scroll::-webkit-scrollbar {
+  display: none;
 }
 .jn .jn-side__section {
-  margin-top: 18px;
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
 }
 .jn .jn-side__label {
   display: flex;
   align-items: center;
-  height: 26px;
-  padding: 0 4px 0 8px;
+  height: 28px;
+  padding: 0 2px 0 10px;
   font-size: 12px;
   line-height: 16px;
   font-weight: 500;
+  letter-spacing: 0.005em;
   color: var(--ink-3);
 }
+.jn .jn-side__label > span:first-child {
+  flex: 1;
+}
 .jn .jn-side__labelbtn {
-  margin-left: auto;
   width: 24px;
   height: 24px;
+  border-radius: 7px;
+}
+.jn .jn-side__labelbtn:not(:hover):not(:focus-visible) {
+  color: var(--ink-3);
 }
 .jn .jn-side__crew {
-  gap: 9px;
+  gap: 10px;
 }
 .jn .jn-side__crewname {
   flex: none;
-  color: var(--ink);
 }
 .jn .jn-side__crewnow {
   color: var(--ink-3);
 }
-.jn .jn-side__need .jrow__text {
-  color: var(--ink);
-}
-.jn .jn-side__needwho {
-  font-weight: 500;
-}
-.jn .jn-side__glyph {
-  width: 20px;
-  display: grid;
-  place-items: center;
+.jn .jn-side .jrow:hover .jn-side__crewnow,
+.jn .jn-side .jrow[aria-current="page"] .jn-side__crewnow {
   color: var(--ink-3);
 }
-.jn .jn-side__glyph[data-state="working"] {
+.jn .jn-side__need {
   color: var(--ink);
+}
+.jn .jn-side__glyph[data-state="working"] {
+  color: var(--ink-2);
 }
 .jn .jn-side__glyph[data-state="waiting"] {
   color: var(--ink-2);
 }
-.jn .jn-side__account {
-  height: 44px;
-  margin-top: 6px;
+.jn .jn-side__sessionwhere {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* The account: the person, their plan, and the menu's affordance. */
+.jn .jn-side .jn-side__account {
+  flex: none;
+  height: 48px;
+  margin-top: 0;
   gap: 10px;
+  padding: 0 8px;
+  color: var(--ink);
+}
+.jn .jn-side .jn-side__account::before {
+  inset: 2px 0;
+  border-radius: 10px;
+}
+.jn .jn-side__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-side__whoname {
+  font-size: 14px;
+  line-height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jn .jn-side__whoplan {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-side__account > svg {
+  color: var(--ink-3);
 }
 .jn .jn-avatar {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   background: var(--well-2);
   color: var(--ink-2);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   flex: none;
 }
 
-/* —————————————————————————————— Content header —————————————————————————————— */
+/* —————————————————————————————— Content header ——————————————————————————————
+ *
+ * Sticky inside the panel, on the bar material: content scrolls under it and
+ * blurs; its hairline appears only once something is underneath (a scroll-
+ * driven fade over the first 24 px, so at rest the header is just the panel). */
 
 .jn .jn-top {
   position: sticky;
   top: 0;
   z-index: 5;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 52px;
-  padding: 0 12px 0 16px;
-  background: var(--ground);
+  height: 44px;
+  padding: 0 8px 0 10px;
+  background: var(--mat-bar);
+  -webkit-backdrop-filter: var(--mat-filter-bar);
+  backdrop-filter: var(--mat-filter-bar);
+}
+.jn .jn-top::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--line);
+  opacity: 0;
+  pointer-events: none;
+}
+.jn .jn-top[data-edge]::after {
+  opacity: 1;
+}
+@supports (animation-timeline: scroll()) {
+  .jn .jn-top:not([data-edge])::after {
+    animation: jn-top-edge linear both;
+    animation-timeline: scroll(nearest);
+    animation-range: 0 24px;
+  }
+  .jn[data-rm] .jn-top::after {
+    animation-duration: auto !important;
+  }
+}
+@keyframes jn-top-edge {
+  to {
+    opacity: 1;
+  }
+}
+.jn .jn-top--clear {
+  position: absolute;
+  inset: 0 0 auto;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+.jn .jn-top--clear::after {
+  display: none;
 }
 .jn .jn-top__title {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 32px;
-  padding: 0 8px 0 10px;
+  padding: 0 6px 0 10px;
   border-radius: var(--r-row);
   font-size: 14px;
   color: var(--ink);
   max-width: 60ch;
+  min-width: 0;
   transition: background-color var(--d-fast) var(--e-out);
 }
 .jn .jn-top__title > span {
@@ -184,26 +453,100 @@
     background: var(--fill-hover);
   }
 }
+.jn .jn-top__title:active {
+  background: var(--fill-press);
+}
 .jn .jn-top__actions {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 0;
 }
 
-/* —————————————————————————————— Phone —————————————————————————————— */
+/* —————————————————————————————— Toast ——————————————————————————————
+ *
+ * Transient confirmation with at most one verb, bottom centre of the panel, on
+ * the toast material (an inverted, translucent plane). It fades and rises 4 px
+ * on `base`, leaves on `exit`; reduced motion keeps the fade only. */
+
+.jn .jn-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 6px 0 14px;
+  border-radius: 12px;
+  background: var(--mat-toast);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
+  box-shadow:
+    0 0 0 1px light-dark(rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.08)),
+    0 10px 30px -10px light-dark(rgb(25 27 30 / 0.35), rgb(0 0 0 / 0.6));
+  color: light-dark(#f3f4f5, #ecedef);
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.jn .jn-toast > svg {
+  flex: none;
+  color: light-dark(#c9cbcf, #b4b6ba);
+}
+.jn .jn-toast__verb {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: light-dark(#ffffff, #ffffff);
+  transition: background-color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-toast__verb:hover {
+    background: rgb(255 255 255 / 0.1);
+  }
+}
+.jn .jn-toast__verb:active {
+  background: rgb(255 255 255 / 0.16);
+}
+.jn .jn-toast-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 132px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 6;
+}
+.jn .jn-toast-slot > * {
+  pointer-events: auto;
+}
+
+/* —————————————————————————————— Widths —————————————————————————————— */
 
 .jn .jn-mbar {
   display: none;
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1100px) {
   .jn .jn-frame {
-    grid-template-columns: 232px minmax(0, 1fr);
+    --side-w: 236px;
   }
 }
 
+/* Phone: the sidebar leaves; the panel goes full bleed (no inset, no corners,
+   no edge) and a bar on the bar material takes the header's place. */
 @media (max-width: 760px) {
   .jn .jn-frame {
     grid-template-columns: minmax(0, 1fr);
+    background: var(--ground);
+  }
+  .jn:has(> .jn-frame) {
+    background: var(--ground);
+  }
+  .jn .jn-main {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
   .jn .jn-side {
     display: none;
@@ -215,12 +558,15 @@
     position: sticky;
     top: 0;
     z-index: 6;
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
     height: 52px;
-    padding: 0 6px;
-    background: var(--ground);
+    padding: 0 4px;
+    background: var(--mat-bar);
+    -webkit-backdrop-filter: var(--mat-filter-bar);
+    backdrop-filter: var(--mat-filter-bar);
   }
   .jn .jn-mbar .jib {
     width: 44px;
@@ -235,5 +581,21 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .jn .jn-toast-slot {
+    bottom: 112px;
+  }
+}
+@media (max-width: 760px) {
+  html:has(.jn-frame) body {
+    background: #fcfcfd;
+  }
+  html:has(.jn[data-theme="dark"] .jn-frame) body {
+    background: #18191b;
+  }
+}
+@media (max-width: 760px) and (prefers-color-scheme: dark) {
+  html:has(.jn:not([data-theme="light"]) .jn-frame) body {
+    background: #18191b;
   }
 }

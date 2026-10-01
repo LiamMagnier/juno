@@ -8,7 +8,7 @@ import { Composer, type ComposerApi, type ComposerStill } from "./composer";
 import { Icon } from "./icons";
 import { FileMark, SlackMark } from "./marks";
 import { R, SPRING, T, useReduced } from "./motion";
-import { face, MobileBar, TopBar } from "./shell";
+import { face, MobileBar, panelOf, TopBar } from "./shell";
 import { Answer, ANSWER_WORDS, Approval, HANDOFF_ID, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
@@ -174,9 +174,8 @@ export function ChatSurface({
   // Keep the newest thing in view while a live thread grows.
   React.useEffect(() => {
     if (phase !== "thread" || !live) return;
-    const el = scrollRef?.current;
+    const el = scrollRef?.current ?? panelOf(chatRef.current);
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: reduced ? "auto" : "smooth" });
-    else window.scrollTo({ top: document.documentElement.scrollHeight, behavior: reduced ? "auto" : "smooth" });
   }, [phase, stage, revealed, live, scrollRef, reduced]);
 
   const home = phase === "home";

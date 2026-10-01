@@ -10,7 +10,7 @@ import { AvatarEditor, CrewCreate, normalizeAvatar, type AvatarConfig } from "./
 import { Icon } from "./icons";
 import { FileMark } from "./marks";
 import { R, SPRING, T, useReduced } from "./motion";
-import { AppFrame, ChatSidebar, face, MobileBar } from "./shell";
+import { AppFrame, ChatSidebar, face, MobileBar, usePanelAtEnd } from "./shell";
 
 /*
  * Crew (D-032). Crew members are characters: each has a body, a material, a
@@ -255,13 +255,7 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
     setTyping((n) => n + 1);
   }, []);
 
-  React.useEffect(() => {
-    if (top) return;
-    const go = () => window.scrollTo(0, document.documentElement.scrollHeight);
-    go();
-    const ts = [150, 400, 900, 1500].map((ms) => window.setTimeout(go, ms));
-    return () => ts.forEach((t) => window.clearTimeout(t));
-  }, [top]);
+  usePanelAtEnd(!top);
 
   return (
     <AppFrame sidebar={<ChatSidebar current="crew" crewCurrent={m.id} />}>

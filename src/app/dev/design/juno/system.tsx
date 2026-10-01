@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { AppMark, FileMark } from "./marks";
 import { COLOURS, contrast, hex, INKS, PLANES, type Swatch, type Theme } from "./palette";
-import { face } from "./shell";
+import { face, Toast } from "./shell";
 import { Approval, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
@@ -81,6 +81,23 @@ function Swatches({ list, theme }: { list: Swatch[]; theme: Theme }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** A popover over real transcript content, so the material can be judged. */
+function MaterialSample() {
+  return (
+    <div className="jn-sys__matstage">
+      <div className="jn-sys__matcopy" aria-hidden="true">
+        <p>
+          Compare <TokenChip id="forecast" /> with <TokenChip id="stripe" /> and ask <TokenChip id="mira" /> to flag renewal risk.
+        </p>
+        <p>
+          <b>Halvorsen</b> moved to monthly billing in August. <b>Brightline Studio</b> dropped two seats. <b>Oakridge Health</b> has an unpaid invoice from July.
+        </p>
+      </div>
+      <ModelPopover style={{ position: "absolute", right: 12, top: 44, width: 300 }} />
     </div>
   );
 }
@@ -158,10 +175,10 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="shape" title="Shape and depth" note="Radii are concentric; free-standing controls are capsules. Only floating layers cast a shadow. The composer has none.">
+      <Section id="shape" title="Shape and depth" note="Radii are concentric; free-standing controls are capsules. Only floating layers cast a shadow, and they sit on the material. The composer has none.">
         <div className="jn-sys__grid">
-          <Cell label="Token, 6">
-            <span className="jn-sys__rad" style={{ borderRadius: 6, width: 72, height: 24 }} />
+          <Cell label="Token, 7">
+            <span className="jn-sys__rad" style={{ borderRadius: 7, width: 72, height: 24 }} />
           </Cell>
           <Cell label="Row, 8">
             <span className="jn-sys__rad" style={{ borderRadius: 8, width: 120, height: 32 }} />
@@ -169,7 +186,7 @@ export function SystemScene() {
           <Cell label="Card, 12">
             <span className="jn-sys__rad" style={{ borderRadius: 12, width: 120, height: 64 }} />
           </Cell>
-          <Cell label="Popover, 14">
+          <Cell label="Popover and panel, 14">
             <span className="jn-sys__rad jn-sys__rad--pop" style={{ borderRadius: 14, width: 120, height: 64 }} />
           </Cell>
           <Cell label="Composer, 22, hairline only">
@@ -177,6 +194,159 @@ export function SystemScene() {
           </Cell>
           <Cell label="Control, capsule">
             <span className="jn-sys__rad" style={{ borderRadius: 999, width: 96, height: 32 }} />
+          </Cell>
+        </div>
+      </Section>
+
+      <Section id="shell" title="Shell" note="The window is the frame; the sidebar sits on it and the content is an inset panel, 8 px in, radius 14, with a low-contrast edge. Sidebar rows are 32 px on a 4 px grid: two left edges, the icons at 18 and the labels at 46.">
+        <div className="jn-sys__stack">
+          <Cell label="Frame and panel: the header and the sidebar head share one centre line" wide>
+            <div className="jn-sys__frame">
+              <div className="jn-side jn-sys__frameside">
+                <div className="jn-side__head">
+                  <span className="jn-wordmark">Juno</span>
+                  <span className="jn-side__headtools">
+                    <span className="jib jib--sm">
+                      <Icon name="bell" size={16} />
+                    </span>
+                    <span className="jib jib--sm">
+                      <Icon name="sidebar" size={16} />
+                    </span>
+                  </span>
+                </div>
+                <a href="#" className="jrow jn-side__nav">
+                  <span className="jn-side__lead">
+                    <Icon name="new-chat" size={16} />
+                  </span>
+                  <span className="jrow__text">New chat</span>
+                </a>
+                <a href="#" className="jrow jn-side__nav" aria-current="page">
+                  <span className="jn-side__lead">
+                    <Icon name="library" size={16} />
+                  </span>
+                  <span className="jrow__text">Library</span>
+                </a>
+              </div>
+              <div className="jn-sys__framepanel">
+                <header className="jn-top jn-sys__top" data-edge="">
+                  <span className="jn-top__title">
+                    <span>Q3 forecast against Stripe revenue</span>
+                    <Icon name="chevron-down" size={16} />
+                  </span>
+                  <span className="jn-top__actions">
+                    <span className="jib">
+                      <Icon name="share" size={20} />
+                    </span>
+                  </span>
+                </header>
+                <p className="jn-sys__framecopy">Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.</p>
+              </div>
+            </div>
+          </Cell>
+          <div className="jn-sys__grid">
+            <Cell label="Rows: rest, hover, current, focus">
+              <div className="jn-side jn-sys__siderows">
+                <a href="#" className="jrow jn-side__nav">
+                  <span className="jn-side__lead">
+                    <Icon name="search" size={16} />
+                  </span>
+                  <span className="jrow__text">Search</span>
+                </a>
+                <a href="#" className="jrow jn-side__nav" data-force="hover">
+                  <span className="jn-side__lead">
+                    <Icon name="folder" size={16} />
+                  </span>
+                  <span className="jrow__text">Projects</span>
+                  <kbd className="jn-side__kbd" style={{ opacity: 1 }}>
+                    ⌘P
+                  </kbd>
+                </a>
+                <a href="#" className="jrow jn-side__nav" aria-current="page">
+                  <span className="jn-side__lead">
+                    <Icon name="library" size={16} />
+                  </span>
+                  <span className="jrow__text">Library</span>
+                </a>
+                <a href="#" className="jrow jn-side__nav" data-force="focus">
+                  <span className="jn-side__lead">
+                    <Icon name="customize" size={16} />
+                  </span>
+                  <span className="jrow__text">Customize</span>
+                </a>
+              </div>
+            </Cell>
+            <Cell label="A section: label, its action, a crew row, a plain row">
+              <div className="jn-side jn-sys__siderows">
+                <div className="jn-side__label">
+                  <span>Crew</span>
+                  <span className="jib jib--sm jn-side__labelbtn">
+                    <Icon name="plus" size={16} />
+                  </span>
+                </div>
+                <a href="#" className="jrow jn-side__crew">
+                  <span className="jn-side__lead">
+                    <CrewFace member={face(CREW[2])} state="working" size={20} live={false} />
+                  </span>
+                  <span className="jn-side__crewname">Otto</span>
+                  <span className="jrow__text jn-side__crewnow">Reconciling invoices</span>
+                </a>
+                <a href="#" className="jrow jrow--text">
+                  <span className="jrow__text">Pricing page copy, second pass</span>
+                </a>
+              </div>
+            </Cell>
+            <Cell label="Needs you, and the account">
+              <div className="jn-side jn-sys__siderows">
+                <a href="#" className="jrow jn-side__need">
+                  <span className="jn-side__lead">
+                    <CrewFace member={face(CREW[0])} state="waiting" size={20} live={false} />
+                  </span>
+                  <span className="jrow__text">
+                    Mira <span className="jn-attn">wants your answer</span>
+                  </span>
+                </a>
+                <span className="jrow jn-side__account">
+                  <span className="jn-avatar">LM</span>
+                  <span className="jn-side__who">
+                    <span className="jn-side__whoname">Liam Magnier</span>
+                    <span className="jn-side__whoplan">Pro plan</span>
+                  </span>
+                  <Icon name="chevrons-up-down" size={16} />
+                </span>
+              </div>
+            </Cell>
+          </div>
+        </div>
+      </Section>
+
+      <Section id="material" title="Material" note="Only what floats over content is translucent: menus, popovers, the palette, the app panel, sheets, toasts, the sticky header and the dock’s backdrop. Blur and saturation, tuned per theme, with a hairline edge. Reduce Transparency turns every one of them solid.">
+        <div className="jn-sys__layers">
+          <Cell label="A popover over a transcript">
+            <MaterialSample />
+          </Cell>
+          <Cell label="The same, with Reduce Transparency">
+            <div data-rt="">
+              <MaterialSample />
+            </div>
+          </Cell>
+          <Cell label="The sticky header once content is under it">
+            <div className="jn-sys__matbar">
+              <p className="jn-sys__matcopy">
+                <b>Halvorsen</b> moved to monthly billing in August and has not renewed the annual plan. <b>Brightline Studio</b> dropped two seats on 12 September.
+              </p>
+              <header className="jn-top jn-sys__top" data-edge="">
+                <span className="jn-top__title">
+                  <span>Q3 forecast against Stripe revenue</span>
+                  <Icon name="chevron-down" size={16} />
+                </span>
+              </header>
+            </div>
+          </Cell>
+          <Cell label="Toast: one confirmation, at most one verb">
+            <div className="jn-sys__toasts">
+              <Toast verb="Undo">Posted to #design</Toast>
+              <Toast icon="copy">Copied</Toast>
+            </div>
           </Cell>
         </div>
       </Section>
@@ -394,7 +564,7 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="layers" title="Menus and popovers" note="Pointer-opened layers grow from their trigger (220 ms, from 0.96). The @ palette is keyboard-born and appears in the same frame.">
+      <Section id="layers" title="Menus and popovers" note="On the material. Pointer-opened layers grow from their trigger (220 ms, from 0.96). The @ palette is keyboard-born and appears in the same frame.">
         <div className="jn-sys__layers">
           <Cell label="@ palette">
             <Palette groups={paletteGroups} active={0} onChoose={() => {}} onHover={() => {}} style={{ position: "relative", width: 340 }} />

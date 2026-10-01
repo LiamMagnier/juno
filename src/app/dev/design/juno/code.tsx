@@ -59,9 +59,11 @@ export function CodeStartScene() {
         <div className="jn-top jn-top--clear" aria-hidden="true" />
         <div className="jn-home jn-codehome">
           <div className="jn-home__stack">
-            <h1 className="t-title jn-codehome__title">What are we changing in juno-web?</h1>
+            <div className="jn-home__greet">
+              <h1 className="t-title jn-codehome__title">What are we changing in juno-web?</h1>
+            </div>
             <Composer variant="code" placeholder="Describe the change, or paste an error" context={<ContextRow mode="Code" />} />
-            <div className="jn-codehome__recent">
+            <div className="jn-home__suggest jn-codehome__recent">
               <p className="t-label jn-codehome__label">From this repository</p>
               <button type="button" className="jrow jicon-trigger">
                 <Icon name="alert" size={16} />

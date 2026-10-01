@@ -21,16 +21,39 @@
 .jn {
   color-scheme: light dark;
 
-  /* Planes: the content is the brightest plane; chrome sits a step below. */
+  /* Planes: the content is the brightest plane; chrome sits a step below.
+     The framed shell (D-033): the window is the frame tone (`side`) and the
+     sidebar sits directly on it; the main area is an inset panel on `ground`,
+     8 px in from the top, right and bottom edges, with a low-contrast edge. */
   --ground: light-dark(#fcfcfd, #18191b);
-  --side: light-dark(#f5f6f7, #121314);
+  --side: light-dark(#f3f4f5, #111213);
+  --panel-edge: light-dark(rgb(25 27 30 / 0.08), rgb(255 255 255 / 0.065));
+  --panel-lift: light-dark(rgb(25 27 30 / 0.035), transparent);
+  --r-panel: 14px;
+  --gutter: 8px;
   --surface: light-dark(#ffffff, #222326);
   --raised: light-dark(#ffffff, #27282b);
   --card: light-dark(#f5f6f7, #1f2023);
   --well: light-dark(#eff0f1, #2d2e31);
   --well-2: light-dark(#e6e7e9, #37383c);
   --well-3: light-dark(#dcdee1, #414246);
-  --scrim: light-dark(rgb(25 27 30 / 0.16), rgb(8 8 10 / 0.42));
+  --scrim: light-dark(rgb(25 27 30 / 0.14), rgb(8 8 10 / 0.4));
+
+  /* Material (D-033): a restrained translucent layer for things that float
+     over content and nothing else (menus, popovers, palettes, the app panel,
+     sheets, toasts, the sticky header, the dock's backdrop). Tuned per theme:
+     light keeps more white so text over busy content stays crisp; dark keeps
+     the raised tone and less saturation so colour behind never glows through.
+     A solid fallback replaces it under Reduce Transparency. */
+  --mat-pop: light-dark(rgb(255 255 255 / 0.7), rgb(40 41 44 / 0.72));
+  --mat-sheet: light-dark(rgb(255 255 255 / 0.82), rgb(36 37 40 / 0.84));
+  --mat-bar: light-dark(rgb(252 252 253 / 0.74), rgb(24 25 27 / 0.72));
+  --mat-toast: light-dark(rgb(25 27 30 / 0.86), rgb(58 59 63 / 0.82));
+  --mat-edge: light-dark(rgb(25 27 30 / 0.085), rgb(255 255 255 / 0.1));
+  --mat-sheen: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.05));
+  --mat-filter: blur(18px) saturate(1.8);
+  --mat-filter-bar: blur(16px) saturate(1.6);
+  --mat-filter-scrim: blur(2px) saturate(1.05);
 
   /* Ink: graphite, four steps. ink-3 is the lowest step that carries text (4.5:1 on every plane). */
   --ink: light-dark(#191b1e, #e8e9eb);
@@ -93,7 +116,7 @@
   --r-token: 7px;
   --r-row: 8px;
   --r-pop: 14px;
-  --r-card: 16px;
+  --r-card: 12px;
   --r-composer: 22px;
   --r-pill: 999px;
 
@@ -129,6 +152,19 @@
 }
 .jn[data-theme="dark"] {
   color-scheme: dark;
+  --mat-filter: blur(20px) saturate(1.3);
+  --mat-filter-bar: blur(18px) saturate(1.2);
+}
+@media (prefers-color-scheme: dark) {
+  .jn:not([data-theme="light"]) {
+    --mat-filter: blur(20px) saturate(1.3);
+    --mat-filter-bar: blur(18px) saturate(1.2);
+  }
+}
+
+/* A stage that holds the framed shell is the frame. */
+.jn:has(> .jn-frame) {
+  background: var(--side);
 }
 
 /* The page behind the stage, for overscroll and the dev chrome. */
@@ -145,6 +181,17 @@ html:has(.jn[data-theme="dark"]) body {
 }
 html:has(.jn) nextjs-portal {
   display: none;
+}
+html:has(.jn-frame) body {
+  background: #f3f4f5;
+}
+html:has(.jn[data-theme="dark"] .jn-frame) body {
+  background: #111213;
+}
+@media (prefers-color-scheme: dark) {
+  html:has(.jn:not([data-theme="light"]) .jn-frame) body {
+    background: #111213;
+  }
 }
 
 /* ————————————————————————————————— Base ————————————————————————————————— */
@@ -719,6 +766,48 @@ html:has(.jn) nextjs-portal {
 }
 .jn .jn-mark--ink {
   color: var(--ink-2);
+}
+
+/* —————————————————————————————— Material —————————————————————————————— */
+
+/* The material is a token set, so its fallbacks are token swaps: under Reduce
+   Transparency (or where backdrop-filter is missing) every floating layer turns
+   solid in the same declarations. `data-rt` renders that form on any scene.
+   The material never animates in or out (INTERACTION_SPEC §1.4: no animating
+   into blurs); layers fade as a whole. */
+.jn .jmat {
+  background: var(--mat-pop);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .jn {
+    --mat-pop: var(--raised);
+    --mat-sheet: var(--raised);
+    --mat-bar: var(--ground);
+    --mat-toast: light-dark(#26282c, #3a3b3f);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .jn {
+    --mat-pop: var(--raised);
+    --mat-sheet: var(--raised);
+    --mat-bar: var(--ground);
+    --mat-toast: light-dark(#26282c, #3a3b3f);
+    --mat-filter: none;
+    --mat-filter-bar: none;
+    --mat-filter-scrim: none;
+  }
+}
+.jn[data-rt],
+.jn [data-rt] {
+  --mat-pop: var(--raised);
+  --mat-sheet: var(--raised);
+  --mat-bar: var(--ground);
+  --mat-toast: light-dark(#26282c, #3a3b3f);
+  --mat-filter: none;
+  --mat-filter-bar: none;
+  --mat-filter-scrim: none;
 }
 
 /* Keyboard-opened layers never animate (§1.5). */

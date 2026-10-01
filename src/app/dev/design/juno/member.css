@@ -48,34 +48,40 @@
 
 /* The member's head: the character sits at the top of its conversation,
    whole, with the name tag tucked against its lower edge; the transcript
-   scrolls away beneath it. The band's lower edge fades into the ground over
-   24 px, the scroll-edge treatment the dock already uses, so text never slides
-   under the character at full strength. Not a decoration. */
+   scrolls away beneath it, under the bar material (D-033), whose lower 28 px
+   fade out through a mask: the same soft scroll edge as the dock, so text
+   blurs and dims as it slides under the character instead of meeting a band. */
 .jn .jn-mhead {
   position: sticky;
   top: 0;
   z-index: 5;
+  flex: none;
   height: 162px;
   margin-bottom: -30px;
   pointer-events: none;
+  isolation: isolate;
 }
 .jn .jn-mhead::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(to bottom, var(--ground) calc(100% - 24px), color-mix(in srgb, var(--ground) 0%, transparent));
+  background: var(--mat-bar);
+  -webkit-backdrop-filter: var(--mat-filter-bar);
+  backdrop-filter: var(--mat-filter-bar);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
 .jn .jn-mhead__bar {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 52px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px 0 16px;
+  padding: 0 8px 0 10px;
 }
 .jn .jn-mhead__bar > *,
 .jn .jn-mhead__peek {
@@ -192,7 +198,9 @@
   display: flex;
   flex-direction: column;
   border-radius: 22px;
-  background: var(--raised);
+  background: var(--mat-sheet);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
   box-shadow: var(--shadow-sheet);
   overflow: hidden;
 }

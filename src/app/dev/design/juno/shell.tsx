@@ -3,16 +3,19 @@
 import * as React from "react";
 import { CrewFace } from "./crew/face";
 import { crewMember } from "./crew-bridge";
-import { ACCOUNT, CODE_SESSIONS, CREW, RECENT, WORKSPACES, type CrewRow, type SessionState } from "./fixtures";
+import { ACCOUNT, CODE_SESSIONS, CREW, PINNED, RECENT, WORKSPACES, type CrewRow, type SessionState } from "./fixtures";
 import { Icon } from "./icons";
 
 /*
- * The shell in the Refoundation IA (§4.1, §4.2). Rules:
- *   - The sidebar is one whisper of tone below the content, with no rule line.
- *   - Rows are 32px, one line, 14px; icons in the third ink, 16px.
+ * The shell in the Refoundation IA (§4.1, §4.2), on the framed layout (D-033):
+ * the sidebar sits on the window frame, the content is an inset panel.
+ *   - Rows are 32 px, 14 px text in the second ink; the current row and hover
+ *     bring the first ink. Icons 16 px in a 20 px lead slot, so icons and crew
+ *     faces share one column and every label starts on the same edge.
  *   - Sections are separated by space and a small label, never by lines.
- *   - Crew rows are face, name and one line of "now" in the third ink. State
- *     lives in the face; there is no pill, badge or dot anywhere.
+ *   - Crew rows are face, name and one line of "now" in the third ink. The
+ *     attention colour appears once, in Needs you; there is no pill, badge or
+ *     dot anywhere.
  */
 
 /** A roster row as the character system sees it (the stored look when the member has one). */
@@ -55,9 +58,11 @@ function WorkspaceSwitch({ active }: { active: "chat" | "code" }) {
 function NavRow({ icon, label, kbd, current }: { icon: string; label: string; kbd?: string; current?: boolean }) {
   return (
     <a href="#" className="jrow jicon-trigger jn-side__nav" aria-current={current ? "page" : undefined}>
-      <Icon name={icon} size={16} />
+      <span className="jn-side__lead">
+        <Icon name={icon} size={16} />
+      </span>
       <span className="jrow__text">{label}</span>
-      {kbd ? <span className="jn-side__kbd">{kbd}</span> : null}
+      {kbd ? <kbd className="jn-side__kbd">{kbd}</kbd> : null}
     </a>
   );
 }
@@ -74,26 +79,29 @@ function Section({ label, action, children }: { label: string; action?: React.Re
   );
 }
 
-export function CrewRowItem({ m, current }: { m: CrewRow; current?: boolean }) {
+export function CrewRowItem({ m, current, now }: { m: CrewRow; current?: boolean; now?: string }) {
   return (
     <a href="#" className="jrow jn-side__crew" aria-current={current ? "page" : undefined}>
-      <span className="jrow__lead">
+      <span className="jn-side__lead">
         <CrewFace member={face(m)} state={m.state} size={20} live={false} />
       </span>
       <span className="jn-side__crewname">{m.name}</span>
-      <span className="jrow__text jn-side__crewnow">{m.now}</span>
+      <span className="jrow__text jn-side__crewnow">{now ?? m.now}</span>
     </a>
   );
 }
 
 function Account() {
   return (
-    <button type="button" className="jrow jn-side__account">
+    <button type="button" className="jrow jicon-trigger jn-side__account" aria-label={`${ACCOUNT.name}, ${ACCOUNT.plan} plan. Account menu`}>
       <span className="jn-avatar" aria-hidden="true">
         {ACCOUNT.initials}
       </span>
-      <span className="jrow__text">{ACCOUNT.name}</span>
-      <span className="jrow__meta">{ACCOUNT.plan}</span>
+      <span className="jn-side__who">
+        <span className="jn-side__whoname">{ACCOUNT.name}</span>
+        <span className="jn-side__whoplan">{ACCOUNT.plan} plan</span>
+      </span>
+      <Icon name="chevrons-up-down" size={16} />
     </button>
   );
 }
@@ -114,7 +122,7 @@ export function ChatSidebar({ current, crewCurrent }: { current?: "thread" | "li
       <div className="jn-side__scroll">
         <Section label="Needs you">
           <a href="#" className="jrow jn-side__need">
-            <span className="jrow__lead">
+            <span className="jn-side__lead">
               <CrewFace member={face(mira)} state="waiting" size={20} live={false} />
             </span>
             <span className="jrow__text">
@@ -131,12 +139,19 @@ export function ChatSidebar({ current, crewCurrent }: { current?: "thread" | "li
           }
         >
           {CREW.slice(0, 4).map((m) => (
-            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id} />
+            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id} now={m.state === "waiting" ? "Waiting on you" : undefined} />
+          ))}
+        </Section>
+        <Section label="Pinned">
+          {PINNED.map((p) => (
+            <a key={p} href="#" className="jrow jrow--text">
+              <span className="jrow__text">{p}</span>
+            </a>
           ))}
         </Section>
         <Section label="Recent">
           {RECENT.slice(0, 6).map((r, i) => (
-            <a key={r} href="#" className="jrow" aria-current={current === "thread" && i === 0 ? "page" : undefined}>
+            <a key={r} href="#" className="jrow jrow--text" aria-current={current === "thread" && i === 0 ? "page" : undefined}>
               <span className="jrow__text">{r}</span>
             </a>
           ))}
@@ -167,7 +182,7 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
       <div className="jn-side__scroll">
         <Section label="Needs you">
           <a href="#" className="jrow jn-side__need">
-            <span className="jrow__lead jn-side__glyph">
+            <span className="jn-side__lead jn-side__glyph" data-state="waiting">
               <Icon name="hand" size={16} />
             </span>
             <span className="jrow__text">
@@ -178,18 +193,20 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
         <Section label="Sessions">
           {CODE_SESSIONS.map((s, i) => (
             <a key={s.title} href="#" className="jrow jn-side__session" aria-current={i === current ? "page" : undefined}>
-              <span className="jrow__lead jn-side__glyph" data-state={s.state}>
-                <Icon name={SESSION_GLYPH[s.state]} size={16} state={s.state === "working" ? "active" : "rest"} />
+              <span className="jn-side__lead jn-side__glyph" data-state={s.state === "waiting" ? "waiting-quiet" : s.state}>
+                <Icon name={SESSION_GLYPH[s.state]} size={16} state={s.state === "working" ? "active" : "rest"} value={s.state === "working" ? 0.62 : undefined} />
               </span>
               <span className="jrow__text">{s.title}</span>
-              <span className="jrow__meta">{s.where === "This Mac" ? "" : s.where}</span>
+              {s.where === "This Mac" ? null : <span className="jn-side__sessionwhere">{s.where}</span>}
             </a>
           ))}
         </Section>
         <Section label="Workspaces">
           {WORKSPACES.map((w) => (
             <a key={w.name} href="#" className="jrow">
-              <Icon name={w.kind === "cloud" ? "cloud" : "laptop"} size={16} />
+              <span className="jn-side__lead">
+                <Icon name={w.kind === "cloud" ? "cloud" : "laptop"} size={16} />
+              </span>
               <span className="jrow__text">{w.name}</span>
             </a>
           ))}
@@ -200,7 +217,7 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
   );
 }
 
-/* The frame: sidebar and content. At phone width the sidebar leaves and a bar takes its place. */
+/* The frame: the sidebar on the window, the content in an inset panel that scrolls on its own. At phone width the sidebar leaves and the panel goes full bleed. */
 export function AppFrame({ sidebar, children, className }: { sidebar: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <div className={className ? `jn-frame ${className}` : "jn-frame"}>
@@ -208,6 +225,25 @@ export function AppFrame({ sidebar, children, className }: { sidebar: React.Reac
       <main className="jn-main">{children}</main>
     </div>
   );
+}
+
+/** The panel that scrolls (the framed shell's main area), found from any element inside it. */
+export function panelOf(el?: Element | null): HTMLElement | null {
+  return ((el?.closest(".jn-main") as HTMLElement | null) ?? (document.querySelector(".jn-main") as HTMLElement | null)) || null;
+}
+
+/** Keep a scene's panel scrolled to its newest content while it settles (stills open on the latest turn). */
+export function usePanelAtEnd(enabled: boolean) {
+  React.useEffect(() => {
+    if (!enabled) return;
+    const go = () => {
+      const p = panelOf();
+      if (p) p.scrollTop = p.scrollHeight;
+    };
+    go();
+    const ts = [150, 400, 900, 1500, 2200].map((ms) => window.setTimeout(go, ms));
+    return () => ts.forEach((t) => window.clearTimeout(t));
+  }, [enabled]);
 }
 
 export function MobileBar({ title, back }: { title?: string; back?: boolean }) {
@@ -220,6 +256,23 @@ export function MobileBar({ title, back }: { title?: string; back?: boolean }) {
       <button type="button" className="jib jicon-trigger" aria-label="New chat">
         <Icon name="new-chat" size={20} />
       </button>
+    </div>
+  );
+}
+
+/** A transient confirmation with at most one verb (on the toast material). */
+export function Toast({ icon = "check", children, verb, onVerb }: { icon?: string; children: React.ReactNode; verb?: string; onVerb?: () => void }) {
+  return (
+    <div className="jn-toast" role="status">
+      <Icon name={icon} size={16} state="active" />
+      <span>{children}</span>
+      {verb ? (
+        <button type="button" className="jn-toast__verb" onClick={onVerb}>
+          {verb}
+        </button>
+      ) : (
+        <span style={{ width: 8 }} />
+      )}
     </div>
   );
 }

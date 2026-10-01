@@ -315,10 +315,14 @@
 
 /* ——————————————————————————— Floating layers ——————————————————————————— */
 
+/* Every floating layer is on the material (D-033): translucent, blurred and
+   saturated, with the hairline edge and the soft two-layer shadow. */
 .jn .jn-pop {
   position: absolute;
   z-index: 40;
-  background: var(--raised);
+  background: var(--mat-pop);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
   border-radius: var(--r-pop);
   box-shadow: var(--shadow-pop);
   padding: 6px;
