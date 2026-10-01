@@ -361,3 +361,75 @@ manual probes above are the first real run. Background-mode pointer events
 go to the target process, which some apps ignore for windows behind others;
 Accessibility presses come first for that reason. A Simulator screenshot's
 evidence counts only until the next edit once the ledger revision is wired.
+
+#### Lane C review (adversarial pass, 2026-10-01)
+
+Each DONE claim was traced end to end. These defects were real and are fixed
+on `rf/code-screen` (commits after `79e03867`):
+
+- **Esc and Stop did not end the action in flight.** A long `type`, a key
+  with `repeat`, a 30-second `hold_key` or `wait` and a drag ran to the end
+  after Esc; only the next checkpoint saw the stop. The input driver now
+  checks between chunks, repeats, drag steps and 100 ms slices of a held key
+  (and releases the key or button), waits sleep in 250 ms slices, and a
+  button left down by `left_mouse_down` is released on stop.
+- **Floor gaps.** A typed line break is the Return key and now asks in
+  messaging apps and on a consequential default button; `hold_key` Return,
+  Space on a focused button and ⌘⌫ ask; a key inside a sentence reads as a
+  credential. The floor read the hit-tested element only, so a "Send"
+  button whose words sit in a child static text (SwiftUI, web) passed: the
+  driver now reports the pressable ancestor's words, an element id brings its
+  snapshot words, and elements with no frame or outside the window are
+  refused. In takeover, keys are judged in the app that has the keyboard.
+- **Approved actions were not re-proved for keys.** After the card's wait, a
+  focused field that turned secure, or a Return whose default button became
+  "Delete", now refuses; in takeover, Juno or a system prompt now in front or
+  under the point refuses; `performMenu` must match the card's app and path.
+- **Clipboard grant bypass.** Edit › Paste/Copy through `computer_menu`, or a
+  click on those items, now need the clipboard grant like ⌘V/⌘C.
+- **Unbounded memory.** Frames bound to denied approvals stayed until the
+  session ended (each up to ~16 MB decoded); they are discarded on denial
+  and capped at four. Open grant proposals are capped at sixteen. The
+  service's `discard` had to be `async` to be the protocol witness rather
+  than the empty default.
+- **Work and Esc.** The Esc tap and the caption ran only for Code sessions;
+  they now follow the lock holder, so a Work task stops on Esc too.
+- **Settings narrowing ignored after relaunch.** The service started with no
+  preferences and only Settings edits pushed them; the coordinator now loads
+  them at every start, and a deny or lowered tier applies to live grants.
+- **Grant sheet race.** Unticking an app and pressing Allow quickly could
+  grant the unticked app; choices are now sent in order from the main actor
+  and Allow waits for them.
+- **Stop while a card waits.** The card stayed and, answered later, read as a
+  declined step; pending screen cards are now answered no when this
+  session's screen control ends, and that denial ends the turn.
+- **Phones allowing screen actions.** A phone could allow a screen card it
+  cannot see; screen cards are now allowed only at the Mac (declining from a
+  phone still works).
+- **iOS evidence.** A model-written `bundle_id` made any device screenshot a
+  check of that app; the record now names an app only if this session
+  launched it on that device.
+- **System Settings.** "Change permissions" is on the floor, but System
+  Settings had full control with a warning only; every press, keystroke,
+  drag and menu choice there now always asks.
+- **Takeover.** Reader input paused the agent, and every tool then failed at
+  once, so the model could call again and again: tools now wait for Resume
+  (Stop cancels; 15 minutes ends the turn). Clicking Approve no longer counts
+  as taking the Mac back, the approved app is brought back to the front
+  before its keys (never sent into Juno), and clicks work with Juno in
+  front. Display frames now leave out password managers, security prompts,
+  denied apps and finance apps not allowed.
+- Smaller: the turn tracker is fed through one ordered stream;
+  `computer_batch` follows the cross-call failure rule; the Esc tap's box is
+  released on main and its shared flag is locked.
+
+Still partial, unchanged: CU-05 retention budget (Lane A), CU-11 (manual
+probe), background-window outline glow and hiding other apps in takeover,
+OpenAI's native computer tool, the evidence revision (Lane B).
+
+Gates after the review (through `gate.sh`): `npm run native:test
+JunoScreenControl` 108 XCTests pass (79 before; 29 new); `npm run
+native:test JunoCode` 1,360 XCTests (15 skipped) + 78 Swift Testing pass;
+`npm run native:test JunoWork` 303 pass; the JunoDesktop Debug `xcodebuild`
+succeeds; `node scripts/check-code-runtime-wiring.mjs` passes; the screen
+snapshots (`StudioScreenSnapshotTests`, `JUNO_SNAPSHOT_DIR`) render.
