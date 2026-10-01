@@ -181,6 +181,58 @@ final class RunChecksToolTests: XCTestCase {
         XCTAssertFalse(otherAllowed)
     }
 
+    /// As run_command refuses them: a check that never finishes would hold
+    /// the run until its timeout, and a check row says where it ran.
+    func testAServerIsNeverRunAsACheckAndRecordsSayWhereTheyRan() async throws {
+        let permissions = PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
+        let executor = ScriptedCommandExecutor()
+        let ledger = await ledgers.ledger(for: session.id, store: store)
+        let runner = CheckRunner(executor: executor, permissions: permissions, ledger: ledger)
+        let servers = [
+            PlannedCheck(check: VerifyCheck(id: "dev", kind: .test, run: .shell("npm run dev")), commandLine: "npm run dev", isTargeted: false),
+            PlannedCheck(check: VerifyCheck(id: "bg", kind: .test, run: .shell("npm test &")), commandLine: "npm test &", isTargeted: false),
+        ]
+        let mayRunUnasked = await runner.allowedWithoutPrompt(servers)
+        XCTAssertFalse(mayRunUnasked, "the stop check sends the model rather than run what cannot finish, even in Full Access")
+        let refused = await runner.runAndRecord(servers)
+        XCTAssertTrue(executor.commands.isEmpty, "neither ran")
+        XCTAssertTrue(refused.allSatisfy { $0.refusal?.contains("has to finish") ?? false })
+
+        let planned = try CheckRunner.plan(recipe: recipe(), scope: .full, ids: ["api-test"], changedFiles: [], fileExists: { _ in true })
+        let outcomes = await runner.runAndRecord(planned)
+        XCTAssertEqual(outcomes.first?.record?.command, "cd apps/api && go test ./...")
+    }
+
+    /// A recipe can name anything. What does not read as a check is shown
+    /// to the reader every time, as `run_tests` pins it, Full Access included,
+    /// and the stop check never runs it on its own.
+    func testARecipeCommandThatIsNotACheckAlwaysAsks() async throws {
+        let permissions = PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
+        let approver = Approver { _ in .denied }
+        await approver.attach(to: permissions)
+        let executor = ScriptedCommandExecutor()
+        let ledger = await ledgers.ledger(for: session.id, store: store)
+        let runner = CheckRunner(executor: executor, permissions: permissions, ledger: ledger)
+        let push = PlannedCheck(
+            check: VerifyCheck(id: "ship", kind: .test, run: .shell("git push --force origin main")),
+            commandLine: "git push --force origin main",
+            isTargeted: false
+        )
+        let unasked = await runner.allowedWithoutPrompt([push])
+        XCTAssertFalse(unasked)
+        let outcomes = await runner.runAndRecord([push])
+        XCTAssertEqual(approver.requests.map(\.summary), ["Run check ship: git push --force origin main"])
+        XCTAssertEqual(approver.requests.first?.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertTrue(executor.commands.isEmpty, "declined, so it never ran")
+        XCTAssertNil(outcomes.first?.record)
+
+        // A real check still follows the mode.
+        let test = try CheckRunner.plan(recipe: recipe(), scope: .full, ids: ["api-test"], changedFiles: [], fileExists: { _ in true })
+        _ = await runner.runAndRecord(test)
+        XCTAssertEqual(approver.requests.count, 1, "Full Access runs a check without asking")
+        XCTAssertEqual(executor.commands, ["go test ./..."])
+    }
+
     func testTheStopChecksOwnRunsAreRecordedInTheSession() async throws {
         let permissions = PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
         let executor = ScriptedCommandExecutor()

@@ -12,7 +12,8 @@ import JunoCodeCore
 //
 // What it proposes is shown to the reader, command by command, before it is
 // kept. Nothing here runs a project's own code: the only process it starts is
-// `xcodebuild -list -json`, which reads the project file, and lookups of
+// `xcodebuild -list -json -disableAutomaticPackageResolution`, which reads the
+// project file without fetching or building its packages, and lookups of
 // whether an optional tool (clippy, golangci-lint, swiftlint) is installed.
 
 /// What discovery may ask of the machine. Injected so tests read fixtures.
@@ -123,7 +124,9 @@ public struct VerifyRecipeDiscovery: Sendable {
                 let url = folder.isEmpty ? workspaceRoot : workspaceRoot.appendingPathComponent(folder)
                 guard let names = try? manager.contentsOfDirectory(atPath: url.path) else { continue }
                 for name in names.sorted() {
-                    guard !name.hasPrefix("."), !Self.skippedFolders.contains(name),
+                    // A folder's name ends up in commands and in the session
+                    // state the model reads: never one with a line break.
+                    guard !name.hasPrefix("."), !Self.skippedFolders.contains(name), VerifyRecipe.isPlainText(name),
                           !name.hasSuffix(".xcodeproj"), !name.hasSuffix(".xcworkspace"),
                           !name.hasSuffix(".app"), !name.hasSuffix(".framework")
                     else { continue }
@@ -172,11 +175,20 @@ public struct VerifyRecipeDiscovery: Sendable {
         folder.isEmpty ? ["**"] : [folder + "/**"]
     }
 
-    /// `apps/web` → `apps-web`, the root → nil.
+    /// `apps/web` → `apps-web`, the root → nil. ASCII only, as a check id is.
     private func slug(_ folder: String) -> String? {
         guard !folder.isEmpty else { return nil }
-        let mapped = folder.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" }
-        return String(mapped).split(separator: "-").joined(separator: "-")
+        let mapped = folder.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }
+        let slug = String(mapped).split(separator: "-").joined(separator: "-")
+        return slug.isEmpty ? "folder" : slug
+    }
+
+    /// A check id of at most 64 characters: a deep folder's is shortened,
+    /// with a digest of the whole so two such folders still differ.
+    private func checkID(_ parts: [String]) -> String {
+        let id = parts.joined(separator: "-")
+        guard id.count > 64 else { return id }
+        return String(id.prefix(55)) + "-" + Digests.sha256Hex(id).prefix(8)
     }
 
     private func check(
@@ -188,7 +200,7 @@ public struct VerifyRecipeDiscovery: Sendable {
         runsInFolder: Bool = true,
         timeout: Int? = nil
     ) -> VerifyCheck {
-        let id = ([slug(folder), ecosystem, kind.rawValue].compactMap { $0 }).joined(separator: "-")
+        let id = checkID([slug(folder), ecosystem, kind.rawValue].compactMap { $0 })
         return VerifyCheck(
             id: id,
             kind: kind,
@@ -210,7 +222,9 @@ public struct VerifyRecipeDiscovery: Sendable {
         }
         if entries.contains("Cargo.toml") { await cargo(folder, into: &found) }
         if entries.contains("Package.swift") { await swiftPackage(folder, into: &found) }
-        let xcodeContainers = entries.filter { $0.hasSuffix(".xcworkspace") || $0.hasSuffix(".xcodeproj") }
+        let xcodeContainers = entries.filter {
+            ($0.hasSuffix(".xcworkspace") || $0.hasSuffix(".xcodeproj")) && VerifyRecipe.isPlainText($0)
+        }
         if !xcodeContainers.isEmpty { await xcode(folder, containers: xcodeContainers, into: &found) }
         if entries.contains("go.mod") { await go(folder, into: &found) }
         if entries.contains("pyproject.toml") || entries.contains("pytest.ini") || entries.contains("tox.ini")
@@ -412,10 +426,16 @@ public struct VerifyRecipeDiscovery: Sendable {
         let workspace = containers.first { $0.hasSuffix(".xcworkspace") }
         guard let container = workspace ?? containers.first(where: { $0.hasSuffix(".xcodeproj") }) else { return }
         let flag = container.hasSuffix(".xcworkspace") ? "-workspace" : "-project"
-        guard let listing = await environment.run(["xcodebuild", "-list", "-json", flag, container], in: url(folder)) else {
+        // Without package resolution: a listing must not clone and build a
+        // project's Swift packages, from wherever its manifests point, before
+        // the reader has accepted anything.
+        guard let listing = await environment.run(
+            ["xcodebuild", "-list", "-json", "-disableAutomaticPackageResolution", flag, container],
+            in: url(folder)
+        ) else {
             return
         }
-        let schemes = Self.schemes(fromListJSON: listing)
+        let schemes = Self.schemes(fromListJSON: listing).filter(VerifyRecipe.isPlainText)
         guard !schemes.isEmpty else { return }
         let name = (container as NSString).deletingPathExtension
         let scheme = schemes.first { $0 == name }
@@ -434,7 +454,7 @@ public struct VerifyRecipeDiscovery: Sendable {
         }
         found.ui.append(VerifyUITarget(
             kind: iOS ? .ios : .mac,
-            build: ([slug(folder), "xcode", CheckKind.build.rawValue].compactMap { $0 }).joined(separator: "-")
+            build: checkID([slug(folder), "xcode", CheckKind.build.rawValue].compactMap { $0 })
         ))
     }
 

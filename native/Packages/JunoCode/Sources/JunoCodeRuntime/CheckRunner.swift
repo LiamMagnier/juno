@@ -143,21 +143,44 @@ public struct CheckRunner: Sendable {
     /// reader's rules or the mode: when the stop check may run them itself
     /// rather than sending the model to (§1.4 rule 6). A command that would
     /// ask, or is refused, makes the answer no.
+    ///
+    /// Also no for a check that could not run here at all (a server, or a
+    /// folder this executor cannot start in): the stop check must send the
+    /// model rather than run, record nothing, and ask to run it again.
     public func allowedWithoutPrompt(_ planned: [PlannedCheck]) async -> Bool {
+        guard !planned.isEmpty else { return false }
         let mode = await permissions.permissionMode
         let rules = await permissions.permissionRules
         for check in planned {
+            guard Self.canRun(check, on: executor) else { return false }
             guard case let .permitted(risk, _) = classifier.classify(check.commandLine) else { return false }
             let ruling = PermissionCoordinator.ruling(
                 mode: mode,
                 risk: risk,
-                approvalPolicy: .byRisk,
+                approvalPolicy: approvalPolicy(for: check.commandLine),
                 rule: rules.evaluate(toolName: "run_command", subject: .command(check.commandLine)),
                 toolName: "run_command"
             )
             guard ruling == .allow else { return false }
         }
         return true
+    }
+
+    /// How a check's command is approved: like `run_command` when it reads
+    /// as a build, test, lint or typecheck, and pinned to asking otherwise,
+    /// as `run_tests` pins it. A recipe can name anything; a `git push` or an
+    /// `npm publish` someone put in it is shown to the reader every time,
+    /// Full Access included, unless they saved a rule for that exact command.
+    func approvalPolicy(for commandLine: String) -> ApprovalPolicy {
+        classifier.checkKind(of: commandLine) != nil ? .byRisk : .alwaysRequiresApproval
+    }
+
+    /// Whether `check` can run on `executor` at all.
+    static func canRun(_ check: PlannedCheck, on executor: any CommandExecuting) -> Bool {
+        let line = check.commandLine
+        if ShellBackgrounding.runsInBackground(line) || RunCommandTool.startsLongRunningServer(line) { return false }
+        guard let cwd = check.check.normalizedCwd else { return true }
+        return (try? WorkspacePath(cwd)) != nil && executor is any DirectoryScopedCommandExecuting
     }
 
     // MARK: - Running
@@ -206,6 +229,12 @@ public struct CheckRunner: Sendable {
     ) async -> (CheckOutcome, [SessionEventPayload]) {
         let line = planned.commandLine
         var outcome = CheckOutcome(planned: planned)
+        // As `run_command` refuses them: a check has to finish, and a server
+        // or a background job would hold the run until the timeout.
+        if ShellBackgrounding.runsInBackground(line) || RunCommandTool.startsLongRunningServer(line) {
+            outcome.refusal = "A check has to finish, and this command starts a server or a background job. Start it with shell_start instead."
+            return (outcome, [])
+        }
         let risk: ActionRisk
         switch classifier.classify(line) {
         case let .forbidden(reason):
@@ -220,7 +249,7 @@ public struct CheckRunner: Sendable {
             actionDigest: planned.actionDigest,
             risk: risk,
             summary: "Run check \(planned.check.id)\(place): \(line)",
-            approvalPolicy: .byRisk,
+            approvalPolicy: approvalPolicy(for: line),
             subject: .command(line)
         )
         switch authorization {
@@ -296,7 +325,7 @@ public struct CheckRunner: Sendable {
         }
         let record = CheckEvidence.record(
             checkID: planned.check.id,
-            command: line,
+            command: CheckEvidence.label(command: line, folder: planned.check.normalizedCwd),
             kind: planned.check.kind,
             exitCode: result.exitCode,
             passed: passed && !result.wasTimeout,
@@ -395,6 +424,18 @@ public enum CheckEvidence {
         return redactor.redact(tail.isEmpty ? headline : headline + "\n" + tail)
     }
 
+    /// The command as the report shows it: with the folder it ran in, so a
+    /// pass in `docs` never reads as the project's `npm test`, and three
+    /// packages' `npm test` stay three different rows.
+    public static func label(command: String, folder: String?) -> String {
+        var folder = folder?.trimmingCharacters(in: .whitespaces) ?? ""
+        while folder.hasPrefix("./") { folder.removeFirst(2) }
+        while folder.hasSuffix("/") { folder.removeLast() }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !folder.isEmpty, folder != ".", !trimmed.hasPrefix("cd ") else { return command }
+        return "cd \(ShellQuoting.quote(folder)) && \(trimmed)"
+    }
+
     /// The first line of a record's excerpt: its headline.
     public static func headline(of record: VerificationRecord) -> String {
         record.excerpt
@@ -458,7 +499,7 @@ public struct CheckEvidenceRecorder: Sendable {
         let didPass = (passed ?? result.succeeded) && !result.wasTimeout
         return CheckEvidence.record(
             checkID: checkID,
-            command: command,
+            command: CheckEvidence.label(command: command, folder: workingDirectory),
             kind: kind,
             exitCode: result.exitCode,
             passed: didPass,

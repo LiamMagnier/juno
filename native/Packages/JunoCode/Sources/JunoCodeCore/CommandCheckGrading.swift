@@ -41,13 +41,24 @@ public extension CommandClassifier {
         for words in segments {
             guard !words.isEmpty else { return nil }
             if words.first == "cd" {
-                guard words.count <= 2 else { return nil }
+                // Into a folder of the workspace only: a pass from
+                // `cd /some/other/project && npm test` says nothing about this
+                // change, and a bare `cd` goes home.
+                guard words.count == 2, Self.isWorkspaceRelativeFolder(words[1]) else { return nil }
                 continue
             }
             guard let graded = Self.gradeSegment(words) else { return nil }
             kind = graded
         }
         return kind
+    }
+
+    /// A relative folder that stays below where the command starts.
+    internal static func isWorkspaceRelativeFolder(_ folder: String) -> Bool {
+        guard !folder.isEmpty, !folder.hasPrefix("/"), !folder.hasPrefix("~"), !folder.hasPrefix("-"),
+              !folder.contains("$")
+        else { return false }
+        return !folder.split(separator: "/").contains("..")
     }
 
     /// One simple command's grade.
@@ -139,10 +150,26 @@ public extension CommandClassifier {
             default: return nil
             }
         case "make", "gmake", "just", "task":
-            return gradeTarget(positional.first)
+            // Every target named must be a check: `make test deploy` runs the
+            // deploy too.
+            let valueOptions: Set<String> = [
+                "-C", "-f", "-j", "-l", "-I", "-o", "-W", "--directory", "--file", "--makefile",
+                "-d", "--working-directory", "--justfile", "-t", "--taskfile", "--dir",
+            ]
+            return gradeTargets(targets(arguments, valueOptions: valueOptions).filter { !$0.contains("=") })
         case "gradle", "gradlew":
-            return gradeTarget(positional.first.map { $0.split(separator: ":").last.map(String.init) ?? $0 })
+            let valueOptions: Set<String> = [
+                "--tests", "-x", "--exclude-task", "-p", "--project-dir", "--console", "-b", "--build-file",
+                "-c", "--settings-file", "--warning-mode", "--max-workers", "-g", "--gradle-user-home",
+                "-I", "--init-script", "--include-build",
+            ]
+            return gradeTargets(targets(arguments, valueOptions: valueOptions).map {
+                $0.split(separator: ":").last.map(String.init) ?? $0
+            })
         case "mvn", "mvnw":
+            // `deploy`, `release:perform` and `site-deploy` publish, whatever
+            // else the line builds.
+            if positional.contains(where: { $0.contains("deploy") || $0.hasPrefix("release") }) { return nil }
             if positional.contains("test") || positional.contains("verify") { return .test }
             if positional.contains("package") || positional.contains("compile") || positional.contains("install") {
                 return .build
@@ -235,5 +262,38 @@ public extension CommandClassifier {
         case "build", "all", "compile", "assemble": return .build
         default: return nil
         }
+    }
+
+    /// The targets or tasks a build tool is asked to run: its positional
+    /// words, without the values of options that take one (`make -C web
+    /// test`, `./gradlew test --tests FooTest`).
+    private static func targets(_ arguments: [String], valueOptions: Set<String>) -> [String] {
+        var result: [String] = []
+        var skipNext = false
+        for argument in arguments {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if argument.hasPrefix("-") {
+                skipNext = valueOptions.contains(argument)
+                continue
+            }
+            result.append(argument)
+        }
+        return result
+    }
+
+    /// The grade of a list of targets: each a check (a leading `clean` is
+    /// housekeeping), the last naming the kind.
+    private static func gradeTargets(_ targets: [String]) -> CheckKind? {
+        let named = targets.filter { $0 != "clean" }
+        guard !named.isEmpty else { return nil }
+        var kind: CheckKind?
+        for target in named {
+            guard let graded = gradeTarget(target) else { return nil }
+            kind = graded
+        }
+        return kind
     }
 }

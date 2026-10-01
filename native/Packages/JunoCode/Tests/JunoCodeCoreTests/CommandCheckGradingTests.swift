@@ -55,6 +55,36 @@ final class CommandCheckGradingTests: XCTestCase {
         }
     }
 
+    /// A pass somewhere else says nothing about this change.
+    func testAFolderChangeCountsOnlyIntoTheWorkspace() {
+        XCTAssertEqual(classifier.checkKind(of: "cd apps/web && npm test"), .test)
+        for command in [
+            "cd /tmp/passing-project && npm test",
+            "cd ../other-repo && npm test",
+            "cd apps/../../elsewhere && npm test",
+            "cd ~/project && npm test",
+            "cd && npm test",
+            "cd $HOME && npm test",
+        ] {
+            XCTAssertNil(classifier.checkKind(of: command), command)
+        }
+    }
+
+    /// Every target a build tool is given runs, so every one must be a check.
+    func testEveryTargetOfABuildToolMustBeACheck() {
+        XCTAssertEqual(classifier.checkKind(of: "make -C web test"), .test)
+        XCTAssertEqual(classifier.checkKind(of: "make clean test VERBOSE=1"), .test)
+        XCTAssertEqual(classifier.checkKind(of: "./gradlew clean test"), .test)
+        XCTAssertEqual(classifier.checkKind(of: "./gradlew test --tests com.example.FooTest"), .test)
+        XCTAssertEqual(classifier.checkKind(of: "mvn -q clean install"), .build)
+        for command in [
+            "make test deploy", "make release", "./gradlew build publish", "gradle test uploadArchives",
+            "mvn install deploy", "mvn -q release:perform", "mvn site-deploy",
+        ] {
+            XCTAssertNil(classifier.checkKind(of: command), command)
+        }
+    }
+
     func testTheGradeNeverChangesTheRisk() {
         // Graded or not, a command keeps the tier the classifier gives it:
         // `npm test` runs package scripts and stays critical.

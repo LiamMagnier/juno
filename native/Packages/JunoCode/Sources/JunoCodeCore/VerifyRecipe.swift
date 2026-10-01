@@ -161,7 +161,7 @@ public struct VerifyCheck: Hashable, Codable, Sendable, Identifiable {
         fileExists: (String) -> Bool
     ) -> String? {
         guard let template = targeted?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !template.isEmpty
+              VerifyRecipe.isPlainTemplate(template)
         else { return nil }
         let covered = coveredFiles(changedFiles).filter(fileExists)
         guard !covered.isEmpty else { return nil }
@@ -197,7 +197,7 @@ public struct VerifyCheck: Hashable, Codable, Sendable, Identifiable {
     /// The literal part of the targeted template before its first
     /// placeholder: `npx vitest run` for `npx vitest run {tests}`.
     public var targetedPrefix: String? {
-        guard let template = targeted else { return nil }
+        guard let template = targeted, VerifyRecipe.isPlainTemplate(template) else { return nil }
         guard let open = template.firstIndex(of: "{") else { return nil }
         let prefix = template[..<open].trimmingCharacters(in: .whitespaces)
         return prefix.isEmpty ? nil : prefix
@@ -235,6 +235,9 @@ public enum VerifyRecipeError: Error, Equatable, Sendable, CustomStringConvertib
     case unsupportedVersion(Int)
     case duplicateCheck(String)
     case invalidCheck(String)
+    case invalidTargeted(String)
+    case invalidCheckID(String)
+    case invalidText(String)
 
     public var description: String {
         switch self {
@@ -246,6 +249,12 @@ public enum VerifyRecipeError: Error, Equatable, Sendable, CustomStringConvertib
             ".juno/verify.json names the check \"\(id)\" twice."
         case let .invalidCheck(id):
             ".juno/verify.json has a check \"\(id)\" with no command."
+        case let .invalidTargeted(id):
+            ".juno/verify.json gives the check \"\(id)\" a targeted command that is not one plain command: it may hold only the command, its arguments and {files} or {tests}."
+        case let .invalidCheckID(id):
+            ".juno/verify.json names a check \"\(id.prefix(40))\": a check id is letters, digits, '.', '_', ':' or '-', at most 64 of them."
+        case let .invalidText(id):
+            ".juno/verify.json gives \"\(id.prefix(40))\" a path, folder or name with a line break in it, or longer than 512 characters."
         }
     }
 }
@@ -297,12 +306,49 @@ public struct VerifyRecipe: Hashable, Codable, Sendable {
         }
         var seen = Set<String>()
         for check in recipe.checks {
+            // What the file names reaches the model in the session state, a
+            // block it reads as Juno's: an id is a name, never a sentence, and
+            // no field carries a second line.
+            guard Self.isCheckID(check.id) else { throw VerifyRecipeError.invalidCheckID(check.id) }
+            guard (check.paths + [check.cwd ?? ""]).allSatisfy(Self.isPlainText) else {
+                throw VerifyRecipeError.invalidText(check.id)
+            }
             guard seen.insert(check.id).inserted else { throw VerifyRecipeError.duplicateCheck(check.id) }
             guard !check.run.isEmpty, !check.id.trimmingCharacters(in: .whitespaces).isEmpty else {
                 throw VerifyRecipeError.invalidCheck(check.id)
             }
+            // A targeted template is filled in and run as written, so it is one
+            // command and its arguments: nothing after a `;` or a pipe hides
+            // behind the part a reader recognises.
+            if let targeted = check.targeted, !Self.isPlainTemplate(targeted) {
+                throw VerifyRecipeError.invalidTargeted(check.id)
+            }
+        }
+        for target in recipe.ui {
+            let fields = [target.launch, target.build, target.app].compactMap { $0 } + (target.routes ?? [])
+            guard fields.allSatisfy(Self.isPlainText) else { throw VerifyRecipeError.invalidText(target.kind.rawValue) }
         }
         return recipe
+    }
+
+    /// `web-test`, `apps-api-go-test`, `code:test`.
+    static func isCheckID(_ id: String) -> Bool {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-")
+        return (1...64).contains(id.count) && id.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    /// One line, of a sane length: what any name or path Juno puts in front
+    /// of the model or the reader from a project must be.
+    public static func isPlainText(_ text: String) -> Bool {
+        text.count <= 512 && !text.unicodeScalars.contains { CharacterSet.newlines.contains($0) || CharacterSet.controlCharacters.contains($0) }
+    }
+
+    /// A template with no operator, redirection, substitution or line break:
+    /// one command and its arguments, `{files}` and `{tests}` included.
+    static func isPlainTemplate(_ template: String) -> Bool {
+        let forbidden = CharacterSet(charactersIn: ";&|<>`$()\n\r")
+        let trimmed = template.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && trimmed.unicodeScalars.allSatisfy { !forbidden.contains($0) }
     }
 
     /// The bytes Juno writes: pretty, keys sorted, so a diff of the file in
@@ -386,7 +432,15 @@ public struct VerifyRecipe: Hashable, Codable, Sendable {
     /// `Bash(<template prefix> *)` for a check with a targeted template. Never
     /// a rule for a line a pattern cannot vouch for (one that runs commands
     /// from inside itself), and never a bare `Bash`.
+    ///
+    /// Only for a check that reads as one. The file is repository-authored,
+    /// and one tick of the box must not turn a `git push`, an `npm publish`
+    /// or a `curl … | sh` someone put in it into a standing permission: a
+    /// line the classifier does not grade as a build, test, lint or
+    /// typecheck, or with any part that is destructive or refused, gets no
+    /// rule and keeps asking, the same line `run_tests` draws for its pin.
     public var permissionRules: [PermissionRule] {
+        let classifier = CommandClassifier()
         var rules: [PermissionRule] = []
         var seen = Set<PermissionRule>()
         func add(_ specifier: String) {
@@ -399,17 +453,30 @@ public struct VerifyRecipe: Hashable, Codable, Sendable {
         }
         for check in checks {
             let line = check.commandLine
-            guard PermissionRuleSet.patternsCanVouch(for: .command(line)) else { continue }
+            guard Self.mayBecomeRule(line, classifier: classifier) else { continue }
             for segment in ShellSegments.split(line) {
                 add(segment)
             }
-            if let prefix = check.targetedPrefix, PermissionRuleSet.patternsCanVouch(for: .command(prefix)) {
+            if let prefix = check.targetedPrefix, Self.mayBecomeRule(prefix, classifier: classifier) {
                 let segments = ShellSegments.split(prefix)
                 for segment in segments.dropLast() { add(segment) }
                 if let last = segments.last { add(last + " *") }
             }
         }
         return rules
+    }
+
+    /// Whether a standing rule may vouch for `line`: a pattern can read it,
+    /// it is graded as a check, and no command in it is destructive or
+    /// refused.
+    static func mayBecomeRule(_ line: String, classifier: CommandClassifier) -> Bool {
+        guard PermissionRuleSet.patternsCanVouch(for: .command(line)),
+              classifier.checkKind(of: line) != nil
+        else { return false }
+        return ShellSegments.split(line).allSatisfy { segment in
+            guard case let .permitted(risk, _) = classifier.classify(segment) else { return false }
+            return risk != .destructive
+        }
     }
 
     // MARK: - Helpers
