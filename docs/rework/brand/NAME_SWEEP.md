@@ -10,7 +10,7 @@ Translation still works by matching rendered text against the build-time catalog
 
 ## What changed
 
-- **Product name.** 836 user-facing strings in 314 files (string literals, template literals, JSX text and attributes) moved from "Juno" to `PRODUCT_NAME` by a syntax-tree codemod that keeps each sentence one template literal. This covers metadata (title template, application name, Apple web-app title, OpenGraph, Twitter, JSON-LD), the manifest, onboarding, settings, notifications and web push, emails and their From display name, download and install pages, error pages, the command palette, keyboard help, tooltips, aria labels, empty states, approvals, memory, skills, Code, Work, Library and the public landing and engineering pages.
+- **Product name.** 829 user-facing strings in 310 files (string literals, template literals, JSX text and attributes) moved from "Juno" to `PRODUCT_NAME` by a syntax-tree codemod that keeps each sentence one template literal. This covers metadata (title template, application name, Apple web-app title, OpenGraph, Twitter, JSON-LD), the manifest, onboarding, settings, notifications and web push, emails and their From display name, download and install pages, error pages, the command palette, keyboard help, tooltips, aria labels, empty states, approvals, memory, skills, Code, Work, Library and the public landing and engineering pages.
 - **The assistant's self-name.** The chat system prompt, pre-answer triage, Deep research scoping, agent prompts ("one of Liam's agents in Alevr"), the voice relay ("You are Alevr") and the Code runner ("You are Alevr Code") introduce the assistant as Alevr.
 - **Orbit.** The sidebar section is Orbit with Create agent; the agents page is titled Orbit and its lede opens with "Your agents". Crew member and teammate became agent (or the agent's name) in errors, mentions, context receipts, prompts, the handoff tool's descriptions and refusals, and the approval card. Suggested agent names no longer include Juno (Vega instead).
 - **States.** Ready, Thinking, Working, Needs your answer, Blocked, Finished come from the registry (`AGENT_STATE_LABEL`, the face studio, the agent panel). The idle state was already Ready; "Free" no longer appears anywhere.
@@ -20,17 +20,17 @@ Translation still works by matching rendered text against the build-time catalog
 
 ## Sweep
 
-`rg -i "juno|crew" src public`, classified with a syntax-tree pass (comment, string, code, CSS, path). Before the lane: 5,252 matches. After: 4,462, every one of them below.
+`rg -i "juno|crew" src public`, classified with a syntax-tree pass (comment, string, code, CSS, path). Before the lane: 5,252 matches. After: 4,053, every one of them below.
 
 | Class | Matches | Verdict |
 |---|---:|---|
-| `src/app/dev/**` | 1,455 | Keep. Dev galleries 404 in production (`NODE_ENV === "production"` → `notFound()`); `/dev/design/juno` is the V3 reference, never edited. |
-| `src/lib/i18n-catalog.generated.ts` | 517 | Keep. Generated and gitignored; regenerated from source (`npm run i18n:extract`), so gallery copy is all that remains in it. |
-| Code comments | 1,259 in 502 files | Keep. Internal prose and history. |
+| `src/app/dev/**` | 1,454 | Keep. Dev galleries 404 in production (`NODE_ENV === "production"` → `notFound()`); `/dev/design/juno` is the V3 reference, never edited. |
+| `src/lib/i18n-catalog.generated.ts` | 104 | Keep. Generated and gitignored; regenerated from source (`npm run i18n:extract`), so gallery copy is all that remains in it. |
+| Code comments | 1,263 in 502 files | Keep. Internal prose and history. |
 | Identifiers | 383 | Keep (stable code names), listed below. |
 | CSS | 142 | Keep. Class names, custom properties, keyframes and comments. |
 | File and directory names | 15 | Keep. |
-| String literals | 679 | Keep, every one a stable identifier, listed below. |
+| String literals | 680 | Keep, every one a stable identifier, listed below. |
 | Imports and data | 12 | Keep. Module paths and the 3D kit's file names. |
 
 ### Intentional keeps: strings
