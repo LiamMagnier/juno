@@ -274,7 +274,9 @@ jobs:
         # JunoWork is the local-Work engine. Added here rather than left to the
         # app builds because a package outside this matrix is never built or
         # tested by CI at all — the matrix is the whole gate for the packages.
-        package: [JunoNativeKit, JunoCode, JunoWork]
+        # JunoScreenControl is the screen-control service Code and Work share
+        # (the lock, the stop, grants and the always-confirm floor).
+        package: [JunoNativeKit, JunoCode, JunoWork, JunoScreenControl]
     steps:
       - uses: actions/checkout@v4
         with:
