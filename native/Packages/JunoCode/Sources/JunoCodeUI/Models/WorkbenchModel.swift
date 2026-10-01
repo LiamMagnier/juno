@@ -203,6 +203,15 @@ public final class WorkbenchModel {
     /// tests.
     @ObservationIgnored
     public var worktreeSetupApprovals: WorktreeSetupApprovals = .standard
+    /// Reads a linked pull request's state for the archive sweep (§5.17):
+    /// nil asks GitHub's CLI through the session's project; tests answer from
+    /// a script.
+    @ObservationIgnored
+    public var pullRequestStateReader: (@MainActor (CodeSession, String) async -> GitHubPullRequestRef?)?
+    /// The sweep that archives sessions whose pull request merged or closed,
+    /// started once the sessions are read.
+    @ObservationIgnored
+    var pullRequestSweep: Task<Void, Never>?
     public internal(set) var lastError: String?
     /// The workspace whose folder grant lapsed, if one has.
     ///
@@ -357,6 +366,7 @@ public final class WorkbenchModel {
         if resumesInterruptedRunsOnLaunch() {
             await resumeInterruptedRuns()
         }
+        startPullRequestSweep()
     }
 
     private func applyStoreUpdate(_ update: CodeSessionStore.StoreUpdate) {
@@ -973,7 +983,17 @@ public final class WorkbenchModel {
 
     /// The sessions a reader browses, less those they archived (§5.17).
     public var filteredSessions: [CodeSession] {
-        let sessions = visibleSessions.filter { !runTracker.archived.contains($0.id.value) }
+        matchingSearch(visibleSessions.filter { !runTracker.archived.contains($0.id.value) })
+    }
+
+    /// The archived sessions the search matches (all of them with no
+    /// search), newest first: archived is out of the way, never out of
+    /// reach (§5.17).
+    public var filteredArchivedSessions: [CodeSession] {
+        matchingSearch(visibleSessions.filter { runTracker.archived.contains($0.id.value) })
+    }
+
+    private func matchingSearch(_ sessions: [CodeSession]) -> [CodeSession] {
         let query = sessionSearchText.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return sessions }
         let transcriptHits = transcriptMatches?.query == query ? transcriptMatches?.ids ?? [] : []

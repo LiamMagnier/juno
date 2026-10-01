@@ -110,8 +110,28 @@ public struct GitHubCIClient: Sendable {
 
     /// The pull request for the current branch, or for `number`.
     public func pullRequest(number: Int? = nil) async throws -> GitHubPullRequestRef {
+        try await view(number.map(String.init))
+    }
+
+    /// The pull request at a GitHub link, wherever the session's checkout
+    /// is: what archiving reads to tell a merged or closed one (§5.17).
+    public func pullRequest(url: String) async throws -> GitHubPullRequestRef {
+        guard Self.isPullRequestURL(url) else { throw GitHubCIError.noPullRequest }
+        return try await view(url)
+    }
+
+    /// `https://<host>/<owner>/<repo>/pull/<number>`, and nothing else.
+    public static func isPullRequestURL(_ url: String) -> Bool {
+        guard let parsed = URL(string: url), parsed.scheme == "https", parsed.host?.isEmpty == false,
+              parsed.query == nil, parsed.fragment == nil
+        else { return false }
+        let parts = parsed.pathComponents
+        return parts.count == 5 && parts[3] == "pull" && !parts[4].isEmpty && parts[4].allSatisfy(\.isNumber)
+    }
+
+    private func view(_ target: String?) async throws -> GitHubPullRequestRef {
         var arguments = ["pr", "view"]
-        if let number { arguments.append(String(number)) }
+        if let target { arguments.append(target) }
         arguments += ["--json", "number,url,state"]
         let outcome = try await run(arguments)
         guard outcome.result.exitCode == 0 else {

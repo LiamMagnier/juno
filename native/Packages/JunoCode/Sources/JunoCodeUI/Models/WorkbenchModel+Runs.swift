@@ -177,17 +177,27 @@ public extension WorkbenchModel {
     /// Archives a session: it leaves the lists and the Runs list but keeps
     /// its transcript. With `removingWorktree`, its own worktree goes too, when
     /// it has no changes left (the owner's "remove worktrees after use").
+    ///
+    /// - Parameter reportsRefusal: say a refusal in ``lastError``, where the
+    ///   sidebar shows it. The pull request sweep keeps quiet: it tries again.
     @discardableResult
-    func archive(_ id: CodeSessionID, removingWorktree: Bool = true) async -> RunActionResult {
-        guard let session = sessions.first(where: { $0.id == id }) else {
-            return .refused("That session no longer exists.")
+    func archive(
+        _ id: CodeSessionID,
+        removingWorktree: Bool = true,
+        reportsRefusal: Bool = true
+    ) async -> RunActionResult {
+        func refuse(_ reason: String) -> RunActionResult {
+            if reportsRefusal { lastError = reason }
+            return .refused(reason)
         }
-        guard !session.status.isActive else { return .refused("Stop Juno before archiving this session.") }
+        guard let session = sessions.first(where: { $0.id == id }) else {
+            return refuse("That session no longer exists.")
+        }
+        guard !session.status.isActive else { return refuse("Stop Juno before archiving this session.") }
         if removingWorktree, session.executionRootPath != nil {
             // A worktree with changes is kept, and so is the session: archiving
             // it would hide work that exists nowhere else.
-            let removal = await removeWorktree(of: session)
-            if case .refused = removal { return removal }
+            if case let .refused(reason) = await removeWorktree(of: session) { return refuse(reason) }
         }
         runTracker.archived.insert(id.value)
         saveRunTracker()
@@ -200,6 +210,69 @@ public extension WorkbenchModel {
         runTracker.archived.remove(id.value)
         saveRunTracker()
         publishRunIndex()
+    }
+
+    /// How often linked pull requests are looked at for a merge or a close.
+    static let pullRequestSweepInterval: TimeInterval = 30 * 60
+    /// Most sessions one sweep asks GitHub about, newest first.
+    static let maximumPullRequestChecks = 20
+
+    /// Starts the sweep that archives sessions whose pull request merged or
+    /// closed: shortly after launch, then every half hour. Once per
+    /// workbench, and never for the preview harness.
+    internal func startPullRequestSweep() {
+        guard pullRequestSweep == nil, persistsRunIndex else { return }
+        let interval = Self.pullRequestSweepInterval
+        pullRequestSweep = Task { [weak self] in
+            // Out of the way of launch.
+            try? await Task.sleep(for: .seconds(15))
+            while !Task.isCancelled {
+                guard self != nil else { return }
+                await self?.archiveFinishedPullRequests()
+                try? await Task.sleep(for: .seconds(interval))
+            }
+        }
+    }
+
+    /// Archives every session whose pull request merged or closed, with its
+    /// worktree (§5.17). A session that is working, the one the reader has
+    /// open, or one whose worktree still has changes stays where it is: the
+    /// first two are in use, and archiving the last would hide work that
+    /// exists nowhere else. Returns the sessions archived.
+    @discardableResult
+    func archiveFinishedPullRequests() async -> [CodeSessionID] {
+        let candidates = visibleSessions
+            .filter { session in
+                !isArchived(session.id)
+                    && !session.status.isActive
+                    && session.id != selectedSessionID
+                    && runTracker.pullRequests[session.id.value] != nil
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(Self.maximumPullRequestChecks)
+        var archivedNow: [CodeSessionID] = []
+        for session in candidates {
+            guard let url = runTracker.pullRequests[session.id.value],
+                  let ref = await pullRequestState(of: session, url: url),
+                  ref.isFinished,
+                  // Looked at again: the reader may have opened it or sent
+                  // it a message while GitHub answered.
+                  let current = sessions.first(where: { $0.id == session.id }),
+                  !current.status.isActive, current.id != selectedSessionID
+            else { continue }
+            if case .done = await archive(session.id, removingWorktree: true, reportsRefusal: false) {
+                archivedNow.append(session.id)
+            }
+        }
+        return archivedNow
+    }
+
+    private func pullRequestState(of session: CodeSession, url: String) async -> GitHubPullRequestRef? {
+        if let reader = pullRequestStateReader { return await reader(session, url) }
+        guard let workspaceID = session.workspaceID, let context = await context(for: workspaceID) else {
+            return nil
+        }
+        return try? await GitHubCIClient(executor: context.executor).pullRequest(url: url)
     }
 
     /// Records the pull request a session opened or was linked to.

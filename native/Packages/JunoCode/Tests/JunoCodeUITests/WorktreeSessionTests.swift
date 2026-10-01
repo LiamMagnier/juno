@@ -110,4 +110,62 @@ final class WorktreeSessionTests: XCTestCase {
         fixture.workbench.unarchive(clean.id)
         XCTAssertFalse(fixture.workbench.isArchived(clean.id))
     }
+
+    func testASessionWhosePullRequestMergedOrClosedIsArchivedWithItsWorktree() async throws {
+        let fixture = try await fixture()
+        defer { fixture.remove() }
+        let (merged, _) = try await fixture.session(isolated: true)
+        let mergedRoot = try XCTUnwrap(merged.executionRootPath)
+        let (closed, _) = try await fixture.session()
+        let (open, _) = try await fixture.session(isolated: true)
+        let (closedWithWork, _) = try await fixture.session(isolated: true)
+        let workRoot = try XCTUnwrap(closedWithWork.executionRootPath)
+        try "not brought back yet\n".write(toFile: workRoot + "/notes.txt", atomically: true, encoding: .utf8)
+        let (inView, _) = try await fixture.session()
+        let (unlinked, _) = try await fixture.session()
+
+        let workbench = fixture.workbench
+        let states = [
+            merged.id: "MERGED", closed.id: "CLOSED", open.id: "OPEN",
+            closedWithWork.id: "CLOSED", inView.id: "MERGED",
+        ]
+        for (index, id) in [merged.id, closed.id, open.id, closedWithWork.id, inView.id].enumerated() {
+            workbench.recordPullRequest("https://github.com/o/r/pull/\(index + 1)", for: id)
+        }
+        let asked = AskedSessions()
+        workbench.pullRequestStateReader = { session, url in
+            asked.ids.append(session.id)
+            return GitHubPullRequestRef(number: 1, url: url, state: states[session.id] ?? "OPEN")
+        }
+        workbench.selectedSessionID = inView.id
+
+        let archived = await workbench.archiveFinishedPullRequests()
+        XCTAssertEqual(Set(archived), [merged.id, closed.id])
+        XCTAssertTrue(workbench.isArchived(merged.id))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mergedRoot), "its worktree goes with it")
+        XCTAssertTrue(workbench.isArchived(closed.id), "a closed one is archived too")
+        XCTAssertFalse(workbench.isArchived(open.id), "an open pull request keeps its session")
+        XCTAssertFalse(workbench.isArchived(closedWithWork.id), "a worktree with changes keeps its session")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workRoot))
+        XCTAssertFalse(workbench.isArchived(inView.id), "the session the reader has open stays")
+        XCTAssertFalse(asked.ids.contains(unlinked.id), "a session with no pull request is not asked about")
+        XCTAssertFalse(asked.ids.contains(inView.id))
+
+        asked.ids = []
+        _ = await workbench.archiveFinishedPullRequests()
+        XCTAssertFalse(asked.ids.contains(merged.id), "an archived session is not asked about again")
+    }
+
+    @MainActor
+    private final class AskedSessions {
+        var ids: [CodeSessionID] = []
+    }
+
+    func testOnlyAGitHubPullRequestLinkIsLookedUp() {
+        XCTAssertTrue(GitHubCIClient.isPullRequestURL("https://github.com/o/r/pull/42"))
+        XCTAssertFalse(GitHubCIClient.isPullRequestURL("https://github.com/o/r/pull/42?x=1"))
+        XCTAssertFalse(GitHubCIClient.isPullRequestURL("http://github.com/o/r/pull/42"))
+        XCTAssertFalse(GitHubCIClient.isPullRequestURL("https://github.com/o/r/issues/42"))
+        XCTAssertFalse(GitHubCIClient.isPullRequestURL("--repo=x"))
+    }
 }

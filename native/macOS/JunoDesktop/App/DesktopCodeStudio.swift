@@ -473,6 +473,7 @@ struct DesktopCodeSidebar: View {
     @State private var collapsed: Set<WorkspaceID> = []
     @State private var projectPendingRemoval: WorkspaceRecord?
     @State private var hoveringProjectsHeader = false
+    @State private var showsArchived = false
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -585,6 +586,28 @@ struct DesktopCodeSidebar: View {
                     ForEach(elsewhere) { row($0) }
                 } header: {
                     DesktopSidebarHeading("Cloud")
+                }
+            }
+
+            // Archived sessions (§5.17): out of the way, never out of reach.
+            // Folded under their heading, the count in words; a search shows
+            // the ones it matches.
+            let archived = workbench.filteredArchivedSessions
+            if !archived.isEmpty {
+                Section {
+                    if showsArchived || isSearching {
+                        ForEach(archivedRuns(archived)) { row($0) }
+                    }
+                } header: {
+                    Button {
+                        showsArchived.toggle()
+                    } label: {
+                        DesktopSidebarHeading("Archived (\(archived.count))")
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .help(showsArchived ? "Hide archived sessions" : "Show archived sessions")
+                    .accessibilityValue(showsArchived || isSearching ? "Shown" : "Hidden")
                 }
             }
 
@@ -814,6 +837,19 @@ struct DesktopCodeSidebar: View {
             .contextMenu { menu(for: run) }
     }
 
+    /// Archived sessions as sidebar rows, newest first.
+    private func archivedRuns(_ sessions: [CodeSession]) -> [DesktopCodeRun] {
+        sorted(DesktopCodeRunBuilder.runs(
+            sessions: sessions,
+            workspaceNames: Dictionary(
+                workbench.workspaces.map { ($0.id, $0.descriptor.displayName) },
+                uniquingKeysWith: { first, _ in first }
+            ),
+            tasks: [],
+            query: workbench.sessionSearchText
+        ))
+    }
+
     /// A Runs row's menu: open it, fork it, archive it.
     @ViewBuilder
     private func runMenu(_ id: CodeSessionID) -> some View {
@@ -845,11 +881,21 @@ struct DesktopCodeSidebar: View {
             Task { await DesktopSessionExport.save(id, from: workbench) }
         }
         .contentShape(.rect)
-        Button("Archive") {
-            if selection == .session(id) { selection = nil }
-            Task { _ = await workbench.archive(id) }
+        if workbench.isArchived(id) {
+            Button("Unarchive") { workbench.unarchive(id) }
+                .contentShape(.rect)
+        } else {
+            Button("Archive") {
+                Task {
+                    // A refusal (a worktree with changes, a run working) is
+                    // said in the footer, and the session stays.
+                    if case .done = await workbench.archive(id), selection == .session(id) {
+                        selection = nil
+                    }
+                }
+            }
+            .contentShape(.rect)
         }
-        .contentShape(.rect)
     }
 
     @ViewBuilder
