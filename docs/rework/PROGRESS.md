@@ -326,3 +326,49 @@ Debug `xcodebuild … CODE_SIGNING_ALLOWED=NO build` succeeded (DerivedData
 changed file, recorded checks, review findings; light and dark, reviewed by
 eye). `CodeToolProviderTests` and `AutonomousLoopSurfaceTests` were updated
 for the provider and rows that are no longer empty placeholders.
+
+#### Lane B adversarial review (2026-10-01)
+
+Every DONE claim above was traced end to end and holds; the review found
+and fixed eleven defects, in five commits on the branch:
+
+| Defect | Severity | Fix |
+|---|---|---|
+| "Run these without asking" wrote a `Bash(...)` rule for every recipe command, so a `git push --force`, `npm publish` or `curl \| sh` in a cloned repo's verify.json became a standing permission with one tick | P1, permission widening | Rules only for lines graded as a check with no destructive or refused part (`VerifyRecipe.permissionRules`) |
+| `run_checks` and the stop check ran any accepted recipe command by the mode: under Full Access a `git push` in verify.json ran silently | P1, floor | Non-check recipe commands pinned to asking, every time (`CheckRunner.approvalPolicy(for:)`), never "allowed without prompt" |
+| The card listed 8 checks and counted the rest, and cut commands in the middle, so the reader accepted commands they never saw | P1, consent | Every check listed in full; past 8 the list scrolls and says so |
+| A `targeted` template could carry `; curl …`; ids, paths, routes and folder or scheme names could carry sentences and line breaks into the `<verify>` session state the model reads as Juno's | P1, injection | Templates must be one plain command; ids are names; text fields are one line; discovery skips odd names and keeps ids ≤ 64 |
+| Background sub-agents kept their starting mode after the reader lowered the parent's (or left Code) | P1, stale authority | `SubagentControlRegistry.capModes`, called from `setPermissionMode` and `setBehavior`; lowers and revokes pending approvals, never raises |
+| Unbounded background sub-agents (each a model run, a write child a worktree) and finished entries kept forever | P2, resource | At most 4 running per parent, reserved in one step; newest 32 finished kept |
+| `git_diff` with a path filter, or an empty staged diff, marked the whole diff read | P2, fakeable evidence | Counts only when it could show the whole change (unfiltered, or paths covering every changed file since the last edit) |
+| A record stamped above its place in the transcript (rewind race) would turn fresh later | P2, fakeable evidence | Fold clamps each record to its position's revision; a stale refold is retried |
+| A reviewer that kept failing recorded no round, so the stop check could restart it forever | P2, loop | Attempts count against the 2 rounds, checked and counted atomically |
+| Grading counted `cd /elsewhere && npm test`, `make test deploy`, `./gradlew build publish`, `mvn install deploy`; recipe checks that start servers ran until timeout | P2 | Workspace-relative `cd` only; every build-tool target must be a check; servers and `&` refused and never runnable unasked |
+| Discovery ran `xcodebuild -list` with package resolution (network clones, package builds) before any acceptance; accepting found checks overwrote a verify.json that appeared meanwhile; the report divider could render a model command as a link; ledgers of deleted sessions were never released | P2/P3 | `-disableAutomaticPackageResolution`; `VerifyRecipeAcceptError.fileAppeared`; links stripped; release on `.sessionRemoved` |
+
+Also: `ToolRegistry.restricted(to:)` keeps the context provider when an agent
+narrows a child's tools; write children use the session's own step limit;
+seven more credential stores (hosting CLIs, more shell and REPL histories)
+join the S3 deny-list; check records name the folder they ran in.
+
+**Still open for Lane A.** The gate must treat a `runCheck` that recorded
+nothing (an approval declined, a hook's ask) as fired at that revision, or it
+can re-issue it; `resume(note:)` must not append a `.userPrompt` event (the
+ledger starts a run there); the always-confirm floor for commands is not in
+`PermissionCoordinator` on this base, so `run_command git push` under Full
+Access still runs (Lane B no longer adds any path to it). **For Lane F:**
+check commands run through `PermissionCoordinator` but not `PreToolUse`
+hooks for `run_command`. **Residual:** evidence can still be gamed by
+changing what a check runs (a `"test": "true"` script, a binstub,
+`--passWithNoTests`), which shows in the diff and to the reviewer; agent
+commands can still reach `securityd` over Mach (keychain items with open
+ACLs, or a system prompt for the rest): the file deny-list cannot cover it.
+
+Gates after the review (through `gate.sh`): `npm run native:test JunoCode`
+passes, 1,458 XCTests (17 skipped: the snapshot tests without
+`JUNO_SNAPSHOT_DIR`; 0 failures; 19 new) + 78 Swift Testing; the lane
+filter with `JUNO_SNAPSHOT_DIR` set passes and the PNGs (recipe card short,
+long and changed, run report, rows, findings; light and dark) were read:
+words only. JunoDesktop Debug `xcodebuild … CODE_SIGNING_ALLOWED=NO build`:
+BUILD SUCCEEDED. `check-code-runtime-wiring`, `check-code-preview-wiring`,
+`check-approval-dispatch` pass.
