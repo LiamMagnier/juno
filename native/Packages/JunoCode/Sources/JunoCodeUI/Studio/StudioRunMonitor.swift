@@ -13,6 +13,11 @@ public enum CodeNotificationCategory: String, CaseIterable, Sendable {
     case done = "code.done"
     /// An approval is pending and the session is not in view.
     case needsApproval = "code.needs-approval"
+    /// A screen action's card is pending. It is allowed only on the card in
+    /// the session, which shows the frame with the target marked and keeps
+    /// the grant sheet's choices (CU-07, Lane C), so the banner offers
+    /// Decline and Open, never Allow once.
+    case needsScreenApproval = "code.needs-approval.screen"
     /// `ask_user` is pending.
     case question = "code.question"
     /// `checksFailing`, `blocked`, or a goal that needs the reader.
@@ -30,12 +35,18 @@ public enum CodeNotificationCategory: String, CaseIterable, Sendable {
         switch self {
         case .done: [.open, .reviewChanges]
         case .needsApproval: [.allowOnce, .decline, .open]
+        case .needsScreenApproval: [.decline, .open]
         case .question: [.reply, .open]
         case .needsYou: [.open]
         case .needsYouKeepGoing: [.keepGoing, .open]
         case .ci: [.fixIt, .open]
         case .failed: [.retry, .open]
         }
+    }
+
+    /// The banner for a pending approval: a screen card's has no Allow once.
+    public static func forApproval(_ approval: ApprovalRequest) -> CodeNotificationCategory {
+        ComputerUseToolName.allowedOnlyAtTheMac.contains(approval.toolName) ? .needsScreenApproval : .needsApproval
     }
 }
 
@@ -151,10 +162,11 @@ public enum RunNotificationPlanner {
             guard previous?.approval?.id != approval.id, preferences.whenNeedsYou else { return nil }
             info[CodeNotificationKey.approvalID] = approval.id
             info[CodeNotificationKey.digest] = approval.actionDigest
-            info[CodeNotificationKey.category] = CodeNotificationCategory.needsApproval.rawValue
+            let category = CodeNotificationCategory.forApproval(approval)
+            info[CodeNotificationKey.category] = category.rawValue
             return CodeNotification(
                 identifier: "juno.code.approval.\(approval.id)",
-                category: .needsApproval,
+                category: category,
                 title: "Allow \(RunIndex.approvalSubject(approval))?",
                 body: approvalBody(approval, entry: current),
                 userInfo: info
@@ -212,15 +224,21 @@ public enum RunNotificationPlanner {
     /// The approval banner's body: the exact command or action, then where.
     static func approvalBody(_ approval: ApprovalRequest, entry: RunIndexEntry) -> String {
         let place = entry.project.isEmpty ? entry.title : "\(entry.title) · \(entry.project)"
-        return "\(approval.summary)\n\(place)"
+        guard CodeNotificationCategory.forApproval(approval) == .needsScreenApproval else {
+            return "\(approval.summary)\n\(place)"
+        }
+        return "\(approval.summary)\n\(place)\n\(screenApprovalNote)"
     }
+
+    /// Why a screen card's banner has no Allow once.
+    static let screenApprovalNote = "Open the session to allow it: its card shows what Juno will click."
 
     static func title(for category: CodeNotificationCategory, entry: RunIndexEntry) -> String {
         switch category {
         case .done: "Finished: \(entry.title)"
         case .failed: "Stopped with an error: \(entry.title)"
         case .needsYou, .needsYouKeepGoing: "Needs you: \(entry.title)"
-        case .needsApproval, .question, .ci: entry.title
+        case .needsApproval, .needsScreenApproval, .question, .ci: entry.title
         }
     }
 
@@ -255,7 +273,8 @@ public enum ApprovalReminderSchedule {
         entry: RunIndexEntry,
         now: Date
     ) -> [CodeNotification] {
-        offsets.enumerated().compactMap { index, offset in
+        let category = CodeNotificationCategory.forApproval(approval)
+        return offsets.enumerated().compactMap { index, offset in
             let delay = approval.requestedAt.addingTimeInterval(offset).timeIntervalSince(now)
             guard delay > 0 else { return nil }
             let minutes = Int(offset / 60)
@@ -264,14 +283,14 @@ public enum ApprovalReminderSchedule {
                 : "\(minutes) minutes"
             return CodeNotification(
                 identifier: reminderIdentifier(approvalID: approval.id, index: index),
-                category: .needsApproval,
+                category: category,
                 title: "Still waiting: allow \(RunIndex.approvalSubject(approval))?",
                 body: "Waiting for \(waited). " + RunNotificationPlanner.approvalBody(approval, entry: entry),
                 userInfo: [
                     CodeNotificationKey.sessionID: entry.sessionID.value,
                     CodeNotificationKey.approvalID: approval.id,
                     CodeNotificationKey.digest: approval.actionDigest,
-                    CodeNotificationKey.category: CodeNotificationCategory.needsApproval.rawValue,
+                    CodeNotificationKey.category: category.rawValue,
                 ],
                 delay: delay
             )
@@ -501,7 +520,11 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
             guard let id = userInfo[CodeNotificationKey.approvalID],
                   let digest = userInfo[CodeNotificationKey.digest]
             else { return }
-            guard answersFromBanner(approvalID: id) else {
+            // A screen card is allowed on its card (the session's controller
+            // refuses it from here too): open the session instead.
+            guard answersFromBanner(approvalID: id),
+                  userInfo[CodeNotificationKey.category] != CodeNotificationCategory.needsScreenApproval.rawValue
+            else {
                 NSApp?.activate()
                 responder.open(session)
                 return
