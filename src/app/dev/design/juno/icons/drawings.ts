@@ -660,15 +660,15 @@ const TILE_B = rr(12.75, 12.75, 7.5, 7.5, 2.25);
 
 
 /**
- * Deep Field (D-038, "Deep research"): one long look into a field. The
- * viewfinder's corners hold four points of falling size, set on a spiral so
- * they read as found, not scattered (no starfield: four points, one frame).
+ * Deep Field (D-038, "Deep research"): one long look into a field. Two
+ * opposed corners of a viewfinder hold four points of falling size, set on a
+ * spiral so they read as found, not scattered (no starfield: four points, one
+ * frame). Two corners, not four: four empty corners are the screenshot, which
+ * sits beside it in the + menu (revision 1 close, self-critique).
  */
 const FIELD_CORNERS = [
-  "M3.75 8.25V6.75A3 3 0 0 1 6.75 3.75H8.25",
-  "M15.75 3.75H17.25A3 3 0 0 1 20.25 6.75V8.25",
-  "M20.25 15.75V17.25A3 3 0 0 1 17.25 20.25H15.75",
-  "M8.25 20.25H6.75A3 3 0 0 1 3.75 17.25V15.75",
+  "M3.75 9.75V6.75A3 3 0 0 1 6.75 3.75H9.75",
+  "M20.25 14.25V17.25A3 3 0 0 1 17.25 20.25H14.25",
 ];
 
 /* —————————————————————————————— The set —————————————————————————————— */
@@ -1256,8 +1256,8 @@ export const ICONS = {
   }),
   browser: I({
     group: "Code",
-    elements: [p(FRAME), p(poly(3, 9, 21, 9)), g([p(poly(7.5, 13.5, 16.5, 13.5), { draw: true })], { anim: "draw", rest: 0, op: 1 })],
-    motion: "A line of the page loads.",
+    elements: [p(FRAME), p(poly(3, 9.75, 21, 9.75)), dot(6.375, 7.125, 0.9), dot(9, 7.125, 0.9), g([p(poly(7.5, 14.25, 16.5, 14.25), { draw: true })], { anim: "draw", rest: 0, op: 1 })],
+    motion: "A line of the page loads. (Two window points in the bar: without them a bar over a frame is billing's card stripe at 16 px.)",
   }),
   repo: I({
     group: "Code",
@@ -1691,7 +1691,7 @@ export const ICONS = {
   "deep-field": I({
     group: "Work and evidence",
     elements: [...FIELD_CORNERS.map((d) => p(d)), dot(10.125, 10.875, 1.875), dot(15, 9, 1.125), dot(14.25, 15, 1.5), dot(9, 15.75, 0.9)],
-    motion: "Deep Field (D-038, deep research): the viewfinder holding four points of falling size. None: a long look is still.",
+    motion: "Deep Field (D-038, deep research): two opposed viewfinder corners holding four points of falling size. None: a long look is still.",
   }),
 } satisfies Record<string, IconDrawing>;
 
