@@ -433,6 +433,9 @@ function ThinkingBench() {
   const [reduced, setReduced] = useState(false);
   const [sent, setSent] = useState(0);
   const [passes, setPasses] = useState<number[]>([]);
+  // A fresh run remounts the marks, the way a new work row mounts one in the product,
+  // so the 200 ms show delay is part of what the bench shows.
+  const [run, setRun] = useState(0);
   const t0 = useRef(0);
   const burst = useRef<ReturnType<typeof setInterval> | null>(null);
   const watched = useRef<HTMLDivElement>(null);
@@ -462,6 +465,7 @@ function ThinkingBench() {
         t0.current = performance.now();
         setPasses([]);
         setSent(0);
+        setRun((r) => r + 1);
       }
     }
     setPhase(p);
@@ -502,11 +506,11 @@ function ThinkingBench() {
       <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2 text-ui" aria-live="polite">
-            <ThinkingMark phase={phase} eventKey={eventKey} size={16} reducedMotion={reduced || undefined} />
+            <ThinkingMark key={`s${run}`} phase={phase} eventKey={eventKey} size={16} reducedMotion={reduced || undefined} />
             <span style={PHASE_STYLE[phase]}>{PHASE_WORDS[phase]}</span>
           </div>
           <div className="flex items-center gap-2.5 text-body">
-            <ThinkingMark phase={phase} eventKey={eventKey} size={20} reducedMotion={reduced || undefined} />
+            <ThinkingMark key={`m${run}`} phase={phase} eventKey={eventKey} size={20} reducedMotion={reduced || undefined} />
             <span style={PHASE_STYLE[phase]}>{PHASE_WORDS[phase]}</span>
           </div>
           <p className="mt-2 font-mono text-label tabular-nums text-muted-foreground" data-testid="thinking-log">
@@ -515,7 +519,7 @@ function ThinkingBench() {
           </p>
         </div>
         <div ref={watched} className="flex items-center justify-center rounded-xl border border-border bg-card p-6" data-testid="thinking-large">
-          <ThinkingMark phase={phase} eventKey={eventKey} size={96} reducedMotion={reduced || undefined} />
+          <ThinkingMark key={`l${run}`} phase={phase} eventKey={eventKey} size={96} reducedMotion={reduced || undefined} />
         </div>
       </div>
     </div>
