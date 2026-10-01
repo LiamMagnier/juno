@@ -250,7 +250,7 @@ function OrbitMoment() {
 const MEMBER_SEQ: { at: number; state: CrewState; words?: string }[] = [
   { at: 0, state: "thinking" },
   { at: 1700, state: "working", words: "Reading seat usage…" },
-  { at: 5200, state: "available", words: "Here" },
+  { at: 5200, state: "available", words: "Ready" },
 ];
 
 function MemberMoment({ tall }: { tall?: boolean }) {

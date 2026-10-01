@@ -204,13 +204,13 @@ export function OrbitConstruction() {
   const W = 640;
   const H = 400;
   const cx = W / 2;
-  const cy = H / 2 - 18;
-  const rx = 200;
+  const cy = H / 2 - 34;
+  const rx = 172;
   const ry = rx * 0.618;
   const rot = -22;
   const c = rx * 0.786;
   const s = rx / 9.5;
-  const mark = 150;
+  const mark = 128;
   return (
     <figure className="jn-brand__orbit" aria-label="Alevr Orbit: the Continuum inside the Orbit ellipse, with its construction">
       <svg viewBox={`0 0 ${W} ${H}`} className="jn-brand__orbitsvg" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
@@ -304,7 +304,7 @@ const ROWS: { words: string; state: ThinkingState; note: string; secs?: number }
   { words: "Running Python, 2 of 3 cells", state: "active", note: "Counts are real or absent." },
   { words: "Waiting for your answer", state: "waiting", note: "Still. The words carry it." },
   { words: "Finished, read 3 sources", state: "done", note: "Settles once, then yields to the result." },
-  { words: "Couldn’t reach Stripe. Try again", state: "error", note: "Still, with the way forward." },
+  { words: "Couldn’t reach Stripe", state: "error", note: "Still, with the way forward." },
 ];
 
 function ThinkingRows({ run, events }: { run: number; events: number }) {
@@ -318,6 +318,11 @@ function ThinkingRows({ run, events }: { run: number; events: number }) {
             </span>
             <span className={r.state === "error" ? "jn-live__text jn-brand__err" : r.state === "waiting" ? "jn-live__text jn-attn" : "jn-live__text"}>{r.words}</span>
             {r.secs ? <span className="jn-live__secs num">{r.secs}s</span> : null}
+            {r.state === "error" ? (
+              <button type="button" className="jb jb--link">
+                Try again
+              </button>
+            ) : null}
           </span>
           <span className="jn-brand__thinknote">{r.note}</span>
         </li>

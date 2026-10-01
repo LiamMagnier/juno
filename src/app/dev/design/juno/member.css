@@ -257,6 +257,23 @@
 .jn .jn-crewsheet[data-kind="add"] .jcc__head {
   margin-right: 44px;
 }
+/* Create agent: the character system's flow keeps its layout and steps; the sheet sets the heading in
+   Alevr's words over the flow's own (hidden, so it is neither seen nor read). Same metrics as the flow's title. */
+.jn .jn-crewsheet__body {
+  position: relative;
+}
+.jn .jn-crewsheet__title--create {
+  position: absolute;
+  top: 28px;
+  left: 32px;
+  margin: 0;
+  font-size: 30px;
+  line-height: 36px;
+  letter-spacing: -0.012em;
+}
+.jn .jn-crewsheet[data-kind="add"] .jcc__title {
+  visibility: hidden;
+}
 
 /* ———————————————————————————— Phone ———————————————————————————— */
 

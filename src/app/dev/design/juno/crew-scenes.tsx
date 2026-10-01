@@ -208,7 +208,11 @@ function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () 
               <AvatarEditor value={look} onChange={setLook} name={name} onName={setName} onSave={onClose} onCancel={onClose} />
             </>
           ) : (
-            <CrewCreate onCancel={onClose} onDone={onClose} initial={{ name: "Nova", role: "Product analytics", seed: "nova-3c1d" }} />
+            <>
+              {/* The flow is the character system's; the sheet names it in Alevr's words (its own heading is hidden here). */}
+              <h2 className="t-display jn-crewsheet__title jn-crewsheet__title--create">Create agent</h2>
+              <CrewCreate onCancel={onClose} onDone={onClose} initial={{ name: "Nova", role: "Product analytics", seed: "nova-3c1d" }} />
+            </>
           )}
         </div>
       </motion.div>
