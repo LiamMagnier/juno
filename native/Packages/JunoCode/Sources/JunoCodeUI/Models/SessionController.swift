@@ -2100,6 +2100,18 @@ public final class SessionController {
         await live.permissions.resolve(approvalID: approvalID, decision: .approved)
     }
 
+    /// Whether another device may allow this approval. A screen card is
+    /// allowed at the Mac only (CU-07): read from the permission coordinator,
+    /// which knows a request the moment it is raised, not from the mirrored
+    /// list the window draws.
+    public func mayAllowRemotely(_ approvalID: String) async -> Bool {
+        guard let live else { return true }
+        guard let request = await live.permissions.pendingApprovals.first(where: { $0.id == approvalID }) else {
+            return true
+        }
+        return !ComputerUseToolName.allowedOnlyAtTheMac.contains(request.toolName)
+    }
+
     public func deny(_ approvalID: String) async {
         guard let live else {
             #if DEBUG

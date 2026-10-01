@@ -148,6 +148,17 @@ public enum ComputerUseToolName {
     /// and per session (D-021), and the floor can never be saved.
     public static let neverSavedAsRule: Set<String> = all
 
+    /// Tools whose cards may be allowed only at the Mac, where the card shows
+    /// the frame with the target marked and Esc is within reach (CU-07). A
+    /// phone sees the sentence, not the screen, and nobody may be at the Mac
+    /// to stop what it allowed. Declining from anywhere stays open.
+    public static let allowedOnlyAtTheMac: Set<String> = Set([computer, batch, apps, menu, display])
+        .union(legacy.subtracting(["computer_screenshot"]))
+
+    /// What a phone is told when it tries to allow one of those.
+    public static let allowAtTheMacSentence =
+        "Screen actions are allowed on the Mac, where the card shows what Juno will click and Esc stops it. You can still decline from here."
+
     /// Whether a tool is one of the screen tools.
     public static func isScreenTool(_ name: String) -> Bool {
         all.contains(name)

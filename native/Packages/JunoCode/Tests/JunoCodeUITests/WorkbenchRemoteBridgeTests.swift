@@ -361,6 +361,49 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
         }
     }
 
+    /// A screen card shows the frame with the target marked, and Esc is at
+    /// the Mac: a phone may decline one but never allow it (CU-07).
+    func testAPhoneCannotAllowAScreenActionButCanDeclineIt() async throws {
+        let shared = try await sharedWorkspace()
+        let session = try await newSession(in: shared.id, mode: .askBeforeChanges)
+        let bridge = makeBridge(shared: [shared.id.value], ceiling: .askBeforeChanges)
+        let adapter = RemoteCommandAdapter(bridge: bridge)
+        let found = await model.controller(for: session.id)
+        let controller = try XCTUnwrap(found)
+        let deadline = Date().addingTimeInterval(5)
+        while controller.live == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        let permissions = try XCTUnwrap(controller.live?.permissions)
+        let answer = Task {
+            await permissions.authorize(
+                toolName: ComputerUseToolName.computer, actionDigest: "click-send", risk: .destructive,
+                summary: "Click the “Send” button in Mail", approvalPolicy: .alwaysRequiresApproval, subject: nil
+            )
+        }
+        var pending: [ApprovalRequest] = []
+        while pending.isEmpty, Date() < deadline {
+            pending = await permissions.pendingApprovals
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let request = try XCTUnwrap(pending.first)
+        do {
+            _ = try await adapter.execute(CodeRemoteCommand(
+                id: "c-3", sessionID: session.id.value, kind: "approval_decision",
+                payload: ["requestId": .string(request.id), "approved": .bool(true)], status: "claimed"
+            ))
+            XCTFail("a phone allowed a screen action")
+        } catch let error as CodeRemoteCommandError {
+            XCTAssertEqual(error, .notAvailableRemotely(ComputerUseToolName.allowAtTheMacSentence))
+        }
+        let stillPending = await permissions.pendingApprovals
+        XCTAssertEqual(stillPending.map(\.id), [request.id], "the card still waits for the Mac")
+        _ = try await adapter.execute(CodeRemoteCommand(
+            id: "c-4", sessionID: session.id.value, kind: "approval_decision",
+            payload: ["requestId": .string(request.id), "approved": .bool(false)], status: "claimed"
+        ))
+        let outcome = await answer.value
+        XCTAssertEqual(outcome, .denied(reason: "The user declined this action."))
+    }
+
     func testASessionAboveTheReadersCeilingRefusesThePhone() async throws {
         let shared = try await sharedWorkspace()
         let session = try await newSession(in: shared.id, mode: .fullAccess)
