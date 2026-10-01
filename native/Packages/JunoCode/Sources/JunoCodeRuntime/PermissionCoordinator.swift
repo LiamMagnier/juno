@@ -11,10 +11,20 @@ public enum AuthorizationOutcome: Equatable, Sendable {
 
 /// Per-session permission gate. `authorize` truly suspends while an approval
 /// is pending: the tool has not started, and both approve and deny resume the
-/// agent loop cleanly. Requests expire closed and cancellation denies
-/// everything pending.
+/// agent loop cleanly. Cancellation denies everything pending.
+///
+/// An unanswered approval parks rather than expiring into a denial
+/// (CODE_AGENT_SPEC §1.11): the call stays pending and bound to its digest for
+/// as long as the reader takes, and `expiresAt` is when the first reminder is
+/// due, not when the request dies.
 public actor PermissionCoordinator {
+    /// When an unanswered approval is first due a reminder. The request stays
+    /// pending past it.
     public static let approvalTimeToLiveSeconds: Double = 15 * 60
+    /// How long an approval the reader gave stays good for the call to start.
+    /// Counted from the decision, so a parked approval answered hours later
+    /// is as good as one answered at once.
+    public static let approvedExecutionWindowSeconds: Double = 5 * 60
 
     private enum PendingResolution: Sendable {
         case decided(ApprovalDecision)
@@ -35,9 +45,18 @@ public actor PermissionCoordinator {
         case resolved(id: String, decision: ApprovalDecision)
     }
 
-    public init(sessionID: CodeSessionID, mode: PermissionMode) {
+    /// The coordinator's clock: when a request was raised and when it was
+    /// decided. Injected by tests that park an approval for hours.
+    private let now: @Sendable () -> Date
+
+    public init(
+        sessionID: CodeSessionID,
+        mode: PermissionMode,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.sessionID = sessionID
         self.mode = mode
+        self.now = now
     }
 
     public var permissionMode: PermissionMode { mode }
@@ -125,7 +144,7 @@ public actor PermissionCoordinator {
             guard !Task.isCancelled else {
                 return .denied(reason: "The run was stopped.")
             }
-            let now = Date()
+            let now = self.now()
             let request = ApprovalRequest(
                 sessionID: sessionID,
                 actionDigest: actionDigest,
@@ -169,10 +188,27 @@ public actor PermissionCoordinator {
             ) {
                 return .denied(reason: reason)
             }
-            guard request.authorizes(digest: actionDigest, at: Date()) else {
-                return .denied(reason: "The approval expired before the action ran.")
+            // Bound to the digest it was asked about, whenever it was given: a
+            // parked approval does not decay, and an answer to a different
+            // action never carries this one out.
+            guard request.actionDigest == actionDigest else {
+                return .denied(reason: "The approval no longer matches the action.")
             }
-            return .approved(request)
+            let decidedAt = self.now()
+            return .approved(
+                ApprovalRequest(
+                    id: request.id,
+                    sessionID: request.sessionID,
+                    actionDigest: request.actionDigest,
+                    toolName: request.toolName,
+                    summary: request.summary,
+                    risk: request.risk,
+                    approvalPolicy: request.approvalPolicy,
+                    requestedAt: request.requestedAt,
+                    expiresAt: decidedAt.addingTimeInterval(Self.approvedExecutionWindowSeconds),
+                    suggestedRule: request.suggestedRule
+                )
+            )
         }
     }
 
@@ -270,8 +306,8 @@ public actor PermissionCoordinator {
         continuation.resume(returning: resolution)
     }
 
-    /// Denies every pending approval (session stop, cancellation, expiry
-    /// sweep, or app termination). Approvals always fail closed.
+    /// Denies every pending approval (session stop, cancellation, or app
+    /// termination). Approvals always fail closed.
     public func denyAll(reason: String = "Cancelled") {
         let ids = Array(pending.keys)
         for id in ids {
@@ -283,16 +319,18 @@ public actor PermissionCoordinator {
         }
     }
 
-    /// Denies pending approvals that have outlived their expiry.
-    public func sweepExpired(now: Date = Date()) {
-        let expired = pendingRequests.values.filter { $0.expiresAt <= now }
-        for request in expired {
-            resolve(
-                approvalID: request.id,
-                resolution: .revoked(reason: "The approval expired before the action ran."),
-                observerDecision: .denied
-            )
-        }
+    /// The pending approvals whose first reminder is due: parked, not denied.
+    ///
+    /// This used to deny them, so a reader away for fifteen minutes came back
+    /// to a run that had read "declined" and moved on without the action. Now
+    /// the call waits, bound to its digest, and the caller reminds the reader
+    /// (the run monitor repeats at 15, 60 and 240 minutes).
+    @discardableResult
+    public func sweepExpired(now: Date? = nil) -> [ApprovalRequest] {
+        let moment = now ?? self.now()
+        return pendingRequests.values
+            .filter { $0.expiresAt <= moment }
+            .sorted { $0.requestedAt < $1.requestedAt }
     }
 
     private func notify(_ update: ApprovalUpdate) {

@@ -277,7 +277,10 @@ final class PermissionCoordinatorTests: XCTestCase {
         XCTAssertEqual(allowed, .allowed)
     }
 
-    func testExpirySweepDeniesStaleApprovals() async {
+    /// An approval past its reminder time parks: the sweep reports it and
+    /// leaves it pending (CODE_AGENT_SPEC §1.11), and the reader's answer
+    /// still decides it.
+    func testExpirySweepParksStaleApprovals() async {
         let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
         let requested = expectation(description: "approval requested")
         await coordinator.addObserver { update in
@@ -295,8 +298,12 @@ final class PermissionCoordinatorTests: XCTestCase {
             )
         }
         await fulfillment(of: [requested], timeout: 5)
-        // Far-future sweep: everything pending is expired.
-        await coordinator.sweepExpired(now: Date().addingTimeInterval(24 * 3_600))
+        // Far-future sweep: everything pending is past its reminder time.
+        let parked = await coordinator.sweepExpired(now: Date().addingTimeInterval(24 * 3_600))
+        XCTAssertEqual(parked.map(\.actionDigest), [staleDigest])
+        let pending = await coordinator.pendingApprovals
+        XCTAssertEqual(pending.count, 1, "a parked approval stays pending")
+        await coordinator.resolve(approvalID: pending[0].id, decision: .denied)
         let outcome = await authorization.value
         guard case .denied = outcome else {
             return XCTFail("expected denial, got \(outcome)")
