@@ -97,13 +97,23 @@ function markRatio(size: number, shape: Shape): number {
   return 0.64;
 }
 
-function tileSvg(size: number, shape: Shape): string {
+/**
+ * `relief` (macOS only, per the identity brief): the tile lifts 4% at the top and settles 3%
+ * at the bottom. Rounded tiles from 64 px carry a hairline rim of white (9%, 6% at 64), so the charcoal keeps
+ * an edge on a dark Dock, a dark page or a dark wallpaper; masked tiles get neither (the
+ * system draws their edge).
+ */
+function tileSvg(size: number, shape: Shape, relief = false): string {
   const radius = shape === "rounded" ? size * 0.22 : shape === "favicon" ? Math.round(size * 0.19) : 0;
   const markW = Math.round(size * markRatio(size, shape));
   const m = markFor(markW);
   const off = (size - markW) / 2;
+  const rim = Math.max(1, size / 256);
+  const fill = relief ? "url(#relief)" : TILE;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
-    `<rect width="${size}" height="${size}" rx="${radius}" fill="${TILE}"/>` +
+    (relief ? `<defs><linearGradient id="relief" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1f22"/><stop offset="1" stop-color="#151618"/></linearGradient></defs>` : "") +
+    `<rect width="${size}" height="${size}" rx="${radius}" fill="${fill}"/>` +
+    (shape === "rounded" && size >= 64 ? `<rect x="${rim / 2}" y="${rim / 2}" width="${size - rim}" height="${size - rim}" rx="${radius - rim / 2}" fill="none" stroke="#ffffff" stroke-opacity="${size >= 128 ? 0.09 : 0.06}" stroke-width="${rim}"/>` : "") +
     `<svg x="${off}" y="${off}" width="${markW}" height="${markW}" viewBox="${m.viewBox}" fill="${INK_DARK}">${m.paths.map((p) => `<path d="${p.d}"/>`).join("")}</svg>` +
     `</svg>`;
 }
@@ -156,7 +166,7 @@ async function writeRasters() {
     write("public/brand/icon-192.png", await render(browser, tileSvg(192, "rounded"), 192, false));
     write("public/brand/icon-512.png", await render(browser, tileSvg(512, "rounded"), 512, false));
     write("public/brand/icon-maskable-512.png", await opaquePng(await render(browser, tileSvg(512, "square"), 512, true)));
-    write("public/brand/app-icon-mac.png", await render(browser, tileSvg(512, "rounded"), 512, false));
+    write("public/brand/app-icon-mac.png", await render(browser, tileSvg(512, "rounded", true), 512, false));
 
     const mac = "native/macOS/JunoDesktop/Resources/Assets.xcassets/AppIcon.appiconset";
     const macContents = JSON.parse(fs.readFileSync(path.join(ROOT, mac, "Contents.json"), "utf8")) as { images: { filename?: string; size: string; scale: string }[] };
@@ -165,7 +175,7 @@ async function writeRasters() {
       if (!img.filename) continue;
       macFiles.set(img.filename, Number.parseFloat(img.size) * Number.parseInt(img.scale, 10));
     }
-    for (const [file, px] of macFiles) write(`${mac}/${file}`, await render(browser, tileSvg(px, "rounded"), px, false));
+    for (const [file, px] of macFiles) write(`${mac}/${file}`, await render(browser, tileSvg(px, "rounded", true), px, false));
 
     const ios = "native/iOS/JunoMobile/Resources/Assets.xcassets/AppIcon.appiconset";
     const iosContents = JSON.parse(fs.readFileSync(path.join(ROOT, ios, "Contents.json"), "utf8")) as { images: { filename?: string; size: string; scale?: string }[] };
