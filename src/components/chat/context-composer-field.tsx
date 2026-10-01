@@ -97,16 +97,19 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     if (document.activeElement === root) setEditorSelection(root, value.length);
   }, [value, onTokensChange]);
 
+  // The lookup reruns when the typed text changes, not when the caret moves
+  // inside the same @query (its start/end change, its text does not).
+  const queryText = query?.text ?? null;
   React.useEffect(() => {
-    if (!query) { setItems([]); setLoading(false); setFailure(null); return; }
+    if (queryText === null) { setItems([]); setLoading(false); setFailure(null); return; }
     const abort = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoading(true); setFailure(null);
       try {
-        const params = new URLSearchParams({ q: query.text, limit: "5" });
+        const params = new URLSearchParams({ q: queryText, limit: "5" });
         if (conversationId) params.set("conversationId", conversationId);
         let result: MentionSearchResult;
-        if (loadMentions) result = await loadMentions(query.text, abort.signal);
+        if (loadMentions) result = await loadMentions(queryText, abort.signal);
         else {
           const response = await fetch(`/api/mentions?${params}`, { signal: abort.signal });
           if (!response.ok) throw new Error(response.status === 401 ? "Sign in to find your files, apps and agents." : "Could not find your context. Type @ to try again.");
@@ -117,7 +120,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
       finally { if (!abort.signal.aborted) setLoading(false); }
     }, 120);
     return () => { abort.abort(); window.clearTimeout(timer); };
-  }, [query?.text, conversationId, loadMentions]);
+  }, [queryText, conversationId, loadMentions]);
 
   function makeToken(token: ContextToken) {
     const node = document.createElement("span");
@@ -182,7 +185,9 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
       })}
       <div {...Object.fromEntries(Object.entries(aria).filter(([key]) => key.startsWith("aria-")))} ref={rootRef} id={id}
         contentEditable={!disabled} suppressContentEditableWarning role="combobox" aria-label={label}
-        aria-multiline="true" aria-autocomplete="list" aria-expanded={Boolean(query) || aria["aria-expanded"]}
+        // No aria-multiline: combobox does not support it, and Enter sends here
+        // (Shift+Enter breaks the line), as the textarea combobox this replaced.
+        aria-autocomplete="list" aria-expanded={Boolean(query) || aria["aria-expanded"]}
         aria-controls={query ? paletteId : aria["aria-controls"]} aria-activedescendant={query && items.length ? `${paletteId}-${active}` : aria["aria-activedescendant"]}
         aria-disabled={disabled} data-placeholder={placeholder} className={cn(className, "context-composer-field whitespace-pre-wrap break-words")}
         style={style} tabIndex={disabled ? -1 : 0} onInput={publish} onKeyDown={keyDown}

@@ -27,11 +27,13 @@ Working design direction · 2026-10-01. This is the editorial replacement map fo
 | Projects / Project | Unchanged | Context container |
 | Library | Unchanged | Made things and uploaded files |
 | Artifacts / Design (separate navigation) | Library | Keep artifact/design editor labels inside the relevant item |
+| Artifacts (things Alevr makes) | Folio / Folios ("What Alevr made") | D-038: Library filter "Folios", "Open folio"; running copy names the real type (deck, document, site) |
+| Research / Deep research | Deep Field ("Deep research") | D-038: always two words; quick lookups stay Search |
 | Customize | Unchanged | One home for extensions and personalization |
 | Connections / Integrations (service settings) | Apps | Retain Connection inside an app's connection details |
 | Apps / Skills | Unchanged | Distinct services and reusable behavior |
 | Automations (scheduled work destination) | Routines | Keep trigger/schedule terminology in detailed controls |
-| Routines / Memory / Instructions | Unchanged | Predictable settings nouns |
+| Routines / Memory / Instructions | Unchanged | Predictable settings nouns (D-038: Memory stays Memory; Locus not adopted) |
 | Work (separate conversational mode) | Work inside Chat or an agent thread | Do not require a mode switch to carry out work |
 | Research | Unchanged | Capability and editable plan inside conversation |
 | Voice / Dictation | Unchanged | Speaking with the assistant / entering text remain distinct |

@@ -155,9 +155,18 @@ describe("(a) running code or typing on a crew computer always asks", () => {
     }
     assert.equal(docker.isAgentWorkAreaPath("/home/agent/work/report.csv"), true);
     assert.equal(docker.isAgentWorkAreaPath("/home/agent/work/downloads/a.pdf"), true);
+    // In the provider, the resolved-path check comes before ANY docker exec
+    // in writeFile: the parent mkdir and the stdin write alike.
     const source = readFileSync("src/lib/computer/docker.ts", "utf8");
-    const write = source.slice(source.indexOf("async writeFile("));
-    assert.ok(write.indexOf("isAgentWorkAreaPath(resolved)") < write.indexOf("spawnDockerWithStdin("));
+    const start = source.indexOf("async writeFile(");
+    const write = source.slice(start, source.indexOf("\n  async ", start + 1));
+    const check = write.indexOf("if (!isAgentWorkAreaPath(resolved))");
+    assert.ok(check > 0, "writeFile re-checks the resolved path");
+    for (const call of ["runDockerText(", "spawnWithStdin("]) {
+      assert.ok(write.indexOf(call) > check, `${call} runs only after the check`);
+    }
+    // spawnWithStdin is the docker stdin path, with its errors scrubbed.
+    assert.match(source, /function spawnWithStdin\([^)]*\): Promise<void> \{\s*return spawnDockerWithStdin\(/);
   });
 
   it("Skip's own sentence no longer promises the floor covers everything", () => {

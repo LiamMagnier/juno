@@ -233,6 +233,11 @@ test("the pupils follow the level only while listening, and only where motion is
   const motion = css.indexOf("@media (prefers-reduced-motion: no-preference)", still);
   const driven = css.indexOf('.agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }');
   assert.ok(still > 0 && motion > still && driven > motion, "the level-driven scale sits inside the motion block, after the still one");
+  // Reduced motion keeps the still face: no level, and no eased state changes.
+  const reduced = css.indexOf("@media (prefers-reduced-motion: reduce)");
+  assert.ok(reduced > 0, "a reduced-motion block exists");
+  assert.match(css.slice(reduced), /^@media \(prefers-reduced-motion: reduce\) \{\s*\.agent-face :is\([^)]*\.agent-face__eye[^)]*\) \{ transition: none; \}/);
+  assert.doesNotMatch(css.slice(reduced, css.indexOf("}\n", css.indexOf("transition: none;", reduced)) + 2), /--level/);
 });
 
 test("the server still never reports listening", () => {

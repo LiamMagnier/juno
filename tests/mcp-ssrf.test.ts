@@ -522,11 +522,24 @@ test("probe failures map to fixed sentences, and only Juno's own refusals pass t
 
 test("every user MCP request path uses the safe fetcher and re-checks the stored URL", () => {
   const mcp = src("src/lib/mcp.ts");
-  // The chat/Work/agent transport: user servers get the safe fetcher, and a
-  // URL that fails today's rules is not dialled even if it was saved earlier.
-  assert.match(mcp, /const userServer = isUserMcpConnectorId\(c\.id\);\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) return;/);
+  // The chat/Work/agent transport: user servers and custom connectors (both a
+  // URL typed into a form) get the safe fetcher, decided by the id rather than
+  // by an optional field a caller rebuilding ActiveConnector can drop (the Work
+  // runner does), and a URL that fails today's rules is not dialled even if it
+  // was saved earlier.
+  assert.match(
+    mcp,
+    /const userServer = isUserMcpConnectorId\(c\.id\) \|\| isCustomConnectorId\(c\.id\);\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) return;/
+  );
   assert.match(mcp, /\.\.\.\(userServer \? \{ fetch: safeMcpFetch \} : \{\}\)/);
+  assert.doesNotMatch(mcp, /c\.custom \? \{ fetch/, "the fetcher is not chosen by the optional `custom` field");
   assert.match(mcp, /if \(userMcpUrlProblem\(server\.url\)\) continue;/);
+  assert.match(mcp, /if \(userMcpUrlProblem\(connector\.url\)\) continue;/, "a saved custom connector URL is re-judged too");
+  // The Work runner rebuilds each connector from parts; it carries a custom
+  // connector's switched-off tools so a run never offers them.
+  const runner = src("scripts/work-runner.ts");
+  assert.match(runner, /\.\.\.\(endpoint\.custom \? \{ custom: endpoint\.custom \} : \{\}\)/);
+  assert.match(runner, /\.\.\.\(entry\.custom \? \{ custom: entry\.custom \} : \{\}\)/);
   // …and a sealed header that no longer opens is not dialled anonymously.
   assert.match(mcp, /if \(server\.authHeader && !authHeader\) continue;/);
   // Exactly one transport in mcp.ts, so there is no second, unguarded one.

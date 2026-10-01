@@ -330,7 +330,10 @@ test("startAgentTask can be asked to stop at the estimate, and hands back the dr
 test("the chat route offers the handoff only in an agent's thread, on the task gate, and never announces its task", () => {
   const route = read("../src/app/api/chat/route.ts");
   assert.match(route, /const handoffGateOpen = chatTaskToolEnabled\(\{\s*\.\.\.taskGate,\s*skillPermits: narrowRuntimeToolsForSkill\(\[HAND_OFF_TOOL_ID\], appliedSkill\)/);
-  assert.match(route, /agentChatContext\(user, conversation\.agentId, \{\s*taskHandoff: taskToolOn,\s*handoff: handoffGateOpen,\s*\}\)/);
+  // The agent answering is the thread's own, or in a room the member picked
+  // for this turn; a private turn never has one.
+  assert.match(route, /const turnAgentId = roomSetup \? roomSetup\.speaker\.agentId : conversation\.agentId;/);
+  assert.match(route, /turnAgentId && !input\.privateMode\s*\? await agentChatContext\(user, turnAgentId, \{\s*taskHandoff: taskToolOn,\s*handoff: handoffGateOpen,\s*\}\)/);
   const call = route.slice(route.indexOf("createHandoffTool({"));
   const args = call.slice(0, call.indexOf("})"));
   assert.match(route, /agentContext\?\.handoff && userMessageId\s*\? createHandoffTool\(\{/);

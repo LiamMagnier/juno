@@ -1195,7 +1195,6 @@ export function AppSidebar({
           <MoreFlyout
             collapsed={collapsed}
             product={product}
-            pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
             onOpenArchived={() => setArchivedOpen(true)}
             transition={layoutTransition}
@@ -2008,7 +2007,6 @@ const LIST_ROW_TRANSITION =
 function MoreFlyout({
   collapsed,
   product,
-  pathname,
   onNavigate,
   onOpenArchived,
   transition: t,
@@ -2016,7 +2014,6 @@ function MoreFlyout({
 }: {
   collapsed: boolean;
   product: ProductSurface;
-  pathname: string | null;
   onNavigate: () => void;
   onOpenArchived: () => void;
   /** The column's layout transition, so Archived slides with the rows around it. */

@@ -440,9 +440,15 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
-  // The task tool, handoff tool and agent config tools ride one list, each only
-  // when its own gate opened; an empty list is no native tools at all.
-  assert.match(route, /const nativeTools = \[taskTool, handoffTool(?:, \.\.\.agentConfigTools)?(?:, setupChangeTool)?\]\.filter\(/);
+  // The task tool, handoff tool, agent config tools, setup change and the room
+  // tools ride one list, each only when its own gate opened (a tool that did
+  // not is null and filtered out); an empty list is no native tools at all.
+  assert.match(
+    route,
+    /const nativeTools = \[\s*taskTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
+  );
+  assert.match(route, /const taskTool =\s*taskToolOn && !agentContext\?\.paused && userMessageId\s*\? createStartTaskTool\(\{/);
+  assert.match(route, /const createRoomTool =\s*agentConfigToolsOn && userMessageId\s*\? createCreateRoomTool\(\{/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
   assert.match(route, /send\(\{ type: "work", session \}\);/);
   // The private branch builds no task or handoff tool: it sits above the saved
