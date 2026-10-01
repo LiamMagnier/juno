@@ -157,6 +157,35 @@ public actor ScreenTurnTracker {
     }
 }
 
+/// While the reader has taken the Mac over, a screen tool waits for Resume
+/// instead of answering at once: an immediate "the reader took over" let the
+/// model call again and again with nothing changing (CODE_AGENT_SPEC §3.7:
+/// reader input *pauses* the agent). Stop cancels the wait; a wait that
+/// outlives an approval's lifetime ends the turn.
+enum ScreenTakeoverWait {
+    static let poll: Duration = .milliseconds(250)
+    static let limit: TimeInterval = PermissionCoordinator.approvalTimeToLiveSeconds
+
+    static func untilResumed(
+        _ computer: any ScreenControlling,
+        sessionID: String,
+        poll: Duration = Self.poll,
+        limit: TimeInterval = Self.limit
+    ) async throws {
+        let deadline = Date().addingTimeInterval(limit)
+        while case .paused = await computer.state(sessionID: sessionID) {
+            guard Date() < deadline else { throw ScreenTakeoverWait.Expired() }
+            try await Task.sleep(for: poll)
+        }
+    }
+
+    struct Expired: Error, LocalizedError {
+        var errorDescription: String? {
+            "The reader took over the Mac and has not pressed Resume. Stop here and say what is left to do."
+        }
+    }
+}
+
 /// The shared prepare → approve → perform path every screen tool takes.
 struct ScreenActionRunner: Sendable {
     let computer: any ScreenControlling
@@ -173,6 +202,7 @@ struct ScreenActionRunner: Sendable {
         attachFrame: Bool
     ) async throws -> ScreenActionResult {
         await computer.setImageBudget(sessionID: context.sessionID.value, budget: budget)
+        try await ScreenTakeoverWait.untilResumed(computer, sessionID: context.sessionID.value)
         let prepared = try await computer.prepare(sessionID: context.sessionID.value, action: action)
         if prepared.isInput {
             do {
@@ -255,6 +285,12 @@ struct ScreenToolDenial: Error {
 func screenToolFailure(_ error: Error) -> ToolResult {
     if let denial = error as? ScreenToolDenial {
         return ToolResult(content: "Not done: \(denial.reason)", isError: true)
+    }
+    if let expired = error as? ScreenTakeoverWait.Expired {
+        return ToolResult(content: expired.errorDescription ?? "", isError: true, endsRun: "The reader took over the Mac.")
+    }
+    if error is CancellationError {
+        return ToolResult(content: "Stopped.", isError: true)
     }
     if let screen = error as? ScreenControlError {
         return ToolResult(
@@ -570,6 +606,7 @@ public struct ComputerAppsTool: CodeTool {
             case "open":
                 guard let app = apps.first else { return ToolResult(content: "Name the app to open in apps.", isError: true) }
                 await computer.setImageBudget(sessionID: sessionID, budget: budget)
+                try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
                 let result = try await computer.open(sessionID: sessionID, app: app)
                 return ToolResult(content: result.text, images: ScreenActionRunner.images(result))
             case "release":
@@ -679,6 +716,7 @@ public struct ComputerAccessibilityTool: CodeTool {
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         do {
             await computer.setImageBudget(sessionID: context.sessionID.value, budget: budget)
+            try await ScreenTakeoverWait.untilResumed(computer, sessionID: context.sessionID.value)
             let text = try await computer.accessibility(
                 sessionID: context.sessionID.value,
                 app: input["app"]?.stringValue,
@@ -733,6 +771,7 @@ public struct ComputerMenuTool: CodeTool {
         let runner = ScreenActionRunner(computer: computer, permissions: permissions, budget: budget)
         do {
             await computer.setImageBudget(sessionID: context.sessionID.value, budget: budget)
+            try await ScreenTakeoverWait.untilResumed(computer, sessionID: context.sessionID.value)
             let prepared = try await computer.prepareMenu(sessionID: context.sessionID.value, app: input["app"]?.stringValue, path: path)
             try await runner.approve(prepared, toolName: name, input: input, sessionID: context.sessionID.value)
             let result = try await computer.performMenu(

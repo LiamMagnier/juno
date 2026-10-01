@@ -17,12 +17,20 @@ final class FakeScreen: ScreenControlling, @unchecked Sendable {
     private(set) var settledCalls = 0
     /// Set to report screen control as stopped by the reader.
     var stoppedBy: ScreenControlStopReason?
+    /// How many more state reads say the reader has taken over.
+    var pausedReads = 0
     private(set) var discarded: [String] = []
 
     static let frame = EncodedFrame(data: Data([0x89, 0x50, 0x4E, 0x47]), mediaType: "image/png", size: PixelSize(width: 1372, height: 887))
 
     func state(sessionID: String) async -> ScreenSessionState {
         if let reason = lock.withLock({ stoppedBy }) { return .stopped(reason) }
+        let paused = lock.withLock { () -> Bool in
+            guard pausedReads > 0 else { return false }
+            pausedReads -= 1
+            return true
+        }
+        if paused { return .paused }
         return .running(mode: .background, app: "TextEdit")
     }
     func discard(sessionID: String, preparedID: String) async {
@@ -244,6 +252,30 @@ final class ComputerUseToolsTests: XCTestCase {
         2. Not executed: an earlier computer action in this turn failed.
         """)
         XCTAssertTrue(screen.performed.isEmpty, "nothing ran on a screen the model had not seen")
+    }
+
+    // MARK: Take over
+
+    func testWhileTheReaderHasTheMacAToolWaitsForResumeInsteadOfFailing() async throws {
+        let screen = FakeScreen()
+        screen.pausedReads = 1
+        let tool = ComputerTool(computer: screen, permissions: PermissionCoordinator(sessionID: sessionID, mode: .fullAccess), budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "left_click", "coordinate": [1, 1]], context: context())
+        XCTAssertFalse(result.isError, result.content)
+        XCTAssertEqual(screen.performed, [.leftClick], "the click ran once the reader resumed")
+    }
+
+    func testATakeoverThatNeverResumesEndsTheTurnInsteadOfLooping() async throws {
+        let screen = FakeScreen()
+        screen.pausedReads = 1_000_000
+        do {
+            try await ScreenTakeoverWait.untilResumed(screen, sessionID: "s", poll: .milliseconds(1), limit: 0.05)
+            XCTFail("waited forever")
+        } catch let expired as ScreenTakeoverWait.Expired {
+            let answer = screenToolFailure(expired)
+            XCTAssertNotNil(answer.endsRun)
+            XCTAssertTrue(answer.content.contains("has not pressed Resume"))
+        }
     }
 
     // MARK: Approvals
