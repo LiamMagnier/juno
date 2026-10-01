@@ -75,6 +75,7 @@ public struct StudioSessionView: View {
                 StudioApprovalPrompt(controller: controller)
                 StudioQuestionPrompt(controller: controller)
                 StudioPlanApprovalPrompt(controller: controller)
+                goalSurfaces
                 composer
             }
             .frame(maxWidth: Studio.Metrics.measure)
@@ -104,6 +105,63 @@ public struct StudioSessionView: View {
                 isRewindPickerPresented = false
             }
             .junoSheetSurface(.fitted)
+        }
+        .sheet(isPresented: Binding(
+            get: { controller.goal.isSheetPresented },
+            set: { controller.goal.isSheetPresented = $0 }
+        )) {
+            StudioGoalSheet(
+                goal: controller.goal.current,
+                history: controller.goal.history,
+                perform: performGoalAction,
+                done: { controller.goal.isSheetPresented = false }
+            )
+            .junoSheetSurface(.fitted)
+        }
+    }
+
+    /// The goal's start card while one is being drafted or edited, else its
+    /// progress row, directly above the composer (§2.8).
+    @ViewBuilder
+    private var goalSurfaces: some View {
+        let goal = controller.goal
+        if goal.draft != nil {
+            StudioGoalStartCard(
+                draft: Binding(
+                    get: { goal.draft ?? GoalDraft(objective: "") },
+                    set: { goal.draft = $0 }
+                ),
+                isEditing: goal.draftEditsCurrent,
+                isDrafting: goal.isDrafting,
+                replacesCurrent: goal.startReplacesCurrent,
+                errorMessage: goal.errorMessage,
+                start: { Task { await goal.confirmDraft() } },
+                cancel: { Task { await goal.cancelDraft() } }
+            )
+            .transition(.opacity)
+        } else if let row = goal.row {
+            StudioGoalRow(
+                content: row,
+                isWorking: goal.isWorking && row.status == .active,
+                perform: performGoalAction,
+                openSheet: { goal.isSheetPresented = true }
+            )
+            .transition(.opacity)
+        }
+    }
+
+    private func performGoalAction(_ action: GoalRowContent.Action) {
+        let goal = controller.goal
+        Task {
+            switch action {
+            case .pause: await goal.perform(.pause)
+            case .resume: await goal.perform(.resume)
+            case .keepGoing: await goal.perform(.resume)
+            case .edit:
+                goal.isSheetPresented = false
+                await goal.perform(.edit)
+            case .clear: await goal.perform(.clear)
+            }
         }
     }
 
@@ -219,6 +277,11 @@ public struct StudioSessionView: View {
                 } else {
                     controller.explainRewindUnavailable()
                 }
+                return true
+            case .goal:
+                // Typing `/goal` is the reader's approval of the goal itself;
+                // the start card asks only for Start.
+                Task { await controller.goal.perform(GoalCommand.parse(argument)) }
                 return true
             }
         }

@@ -55,6 +55,9 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         /// Choose one of the reader's messages to go back to: `/rewind`, the
         /// typed twin of esc esc.
         case rewind
+        /// Set, show, pause, resume, edit or clear the session's goal:
+        /// `/goal <objective>`, `/goal`, `/goal pause` … (CODE_AGENT_SPEC §2.8).
+        case goal
     }
 
     /// The verb this command performs, or nil for an ordinary saved prompt.
@@ -277,16 +280,11 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
         ),
         CodeSlashCommand(
             name: "goal",
-            summary: "Run a durable, verified multi-step goal",
-            prompt: """
-                Create a durable goal for the request below with a concise \
-                objective and concrete ordered steps using update_goal. Then \
-                carry it through, updating each step as it changes. Record \
-                specific verification evidence before marking it complete.
-
-                $ARGUMENTS
-                """,
-            behavior: .code
+            summary: "Keep working until an objective is met and checked",
+            prompt: "",
+            behavior: .code,
+            action: .goal,
+            argumentHint: "objective, or pause, resume, edit, clear"
         ),
         CodeSlashCommand(
             name: "compact",

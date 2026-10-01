@@ -381,11 +381,13 @@ struct CodeSlashActionTests {
     @Test
     func theLandingLibraryHasNoSessionVerbs() {
         let landing = CodeSlashCommandLibrary.builtIn.excludingActions()
-        // Both verbs need a session: nothing to fold, nothing to go back to.
+        // The verbs need a session: nothing to fold, nothing to go back to,
+        // no session for a goal to belong to.
         #expect(landing.command(named: "compact") == nil)
         #expect(landing.command(named: "rewind") == nil)
+        #expect(landing.command(named: "goal") == nil)
         #expect(landing.command(named: "review") != nil)
-        #expect(landing.commands.count == CodeSlashCommandLibrary.builtIn.commands.count - 2)
+        #expect(landing.commands.count == CodeSlashCommandLibrary.builtIn.commands.count - 3)
     }
 
     @Test
@@ -411,9 +413,11 @@ struct CodeBuiltInCommandsVerificationTests {
         let boost = library.command(named: "boost")
         let teamworkPreview = library.command(named: "teamwork-preview")
 
+        // `/goal` is a session verb now, handled by the goal model rather
+        // than sent to the model as a prompt (CODE_AGENT_SPEC §2.8).
         #expect(goal != nil)
-        #expect(goal?.summary.contains("goal") == true)
-        #expect(goal?.prompt.contains("update_goal") == true)
+        #expect(goal?.action == .goal)
+        #expect(goal?.summary.contains("objective") == true)
 
         #expect(boost != nil)
         #expect(boost?.summary.contains("Boost") == true)
