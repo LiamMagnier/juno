@@ -225,6 +225,81 @@ final class PreviewVerificationTests: XCTestCase {
         XCTAssertEqual(verify.workspaceRevision, 1, "the revision keeps counting across runs")
     }
 
+    // MARK: - Adversarial review
+
+    private func failing(_ revision: Int, viewport: String = "desktop", detail: String = "TypeError: menu is undefined") -> UIVerificationRecord {
+        PreviewEvidence.mint(PreviewObservation(
+            route: "/settings", viewport: viewport, httpStatus: 200, newConsoleErrors: [detail],
+            errorOverlay: nil, newServerErrors: [], screenshotHash: "h", workspaceRevision: revision
+        ))
+    }
+
+    /// The desktop and phone screenshots of one broken page are one attempt,
+    /// not the same failure twice; the repeat is the same failure after a fix.
+    func testFailuresWithinOneRevisionAreOneAttempt() {
+        XCTAssertFalse(PreviewVerifyPolicy.repeatsFailure([failing(3), failing(3, viewport: "phone")]))
+        XCTAssertTrue(PreviewVerifyPolicy.repeatsFailure([failing(3), failing(3, viewport: "phone"), failing(4)]))
+        XCTAssertFalse(PreviewVerifyPolicy.repeatsFailure([failing(3), failing(4, detail: "ReferenceError: x")]))
+        XCTAssertFalse(
+            PreviewVerifyPolicy.repeatsFailure([failing(3), record(passed: true, revision: 4), failing(5)]),
+            "a revision that passed breaks the chain"
+        )
+    }
+
+    /// Two failing screenshots in the first round, then a fix: the agent is
+    /// asked to look again, not stopped as if the fix had failed.
+    func testAFixAfterOneFailingRoundIsCheckedAgain() async {
+        let verify = state()
+        verify.observe(changed("web/app/settings/page.tsx"))
+        verify.observe(.uiVerificationRecorded(failing(verify.workspaceRevision)))
+        verify.observe(.uiVerificationRecorded(failing(verify.workspaceRevision, viewport: "phone")))
+        verify.observe(changed("web/app/settings/page.tsx"))
+        let decision = await PreviewUIGate(base: ReportOnlyCompletionGate(), advisor: verify)
+            .evaluate(context(files: ["web/app/settings/page.tsx"], continuations: [.uiUnchecked]))
+        XCTAssertEqual(decision.reason, .uiUnchecked)
+    }
+
+    func testCheckedRoutesMatchThePageRoutes() {
+        XCTAssertTrue(PreviewUIEdits.route("/settings?tab=2", matches: "/settings"))
+        XCTAssertTrue(PreviewUIEdits.route("/settings/", matches: "/settings"))
+        XCTAssertTrue(PreviewUIEdits.route("/blog/hello", matches: "/blog/[slug]"))
+        XCTAssertTrue(PreviewUIEdits.route("/docs/a/b", matches: "/docs/[...path]"))
+        XCTAssertTrue(PreviewUIEdits.route("/docs", matches: "/docs/[[...path]]"))
+        XCTAssertTrue(PreviewUIEdits.route("/about", matches: "/about.html"), "the static server answers /about for about.html")
+        XCTAssertTrue(PreviewUIEdits.route("/index.html", matches: "/"))
+        XCTAssertFalse(PreviewUIEdits.route("/", matches: "/settings"))
+        XCTAssertFalse(PreviewUIEdits.route("/blog", matches: "/blog/[slug]"))
+        XCTAssertFalse(PreviewUIEdits.route("/docs", matches: "/docs/[...path]"))
+        XCTAssertFalse(PreviewUIEdits.route("/settings/billing", matches: "/settings"))
+    }
+
+    /// A passing look at another route does not cover an edited page: the
+    /// evidence has to be of the page that changed.
+    func testAPassOnAnotherRouteDoesNotCoverAChangedPage() async {
+        let verify = state()
+        verify.observe(changed("web/app/settings/page.tsx"))
+        let home = PreviewEvidence.mint(PreviewObservation(
+            route: "/", viewport: "desktop", httpStatus: 200, newConsoleErrors: [], errorOverlay: nil,
+            newServerErrors: [], screenshotHash: "h", workspaceRevision: verify.workspaceRevision
+        ))
+        verify.observe(.uiVerificationRecorded(home))
+        let gate = PreviewUIGate(base: ReportOnlyCompletionGate(), advisor: verify)
+        let decision = await gate.evaluate(context(files: ["web/app/settings/page.tsx"]))
+        XCTAssertEqual(decision.reason, .uiUnchecked)
+
+        verify.observe(.uiVerificationRecorded(record(passed: true, revision: verify.workspaceRevision)))
+        let covered = await gate.evaluate(context(files: ["web/app/settings/page.tsx"]))
+        XCTAssertEqual(covered, .finish(.doneUnchecked))
+
+        // A component edit names no page: a pass anywhere counts.
+        let component = state()
+        component.observe(changed("web/components/Menu.tsx"))
+        component.observe(.uiVerificationRecorded(home))
+        let anywhere = await PreviewUIGate(base: ReportOnlyCompletionGate(), advisor: component)
+            .evaluate(context(files: ["web/components/Menu.tsx"]))
+        XCTAssertEqual(anywhere, .finish(.doneUnchecked))
+    }
+
     func testTheNoteAsksToStartTheServerWhenNoneRuns() async {
         let verify = state(live: false)
         verify.observe(changed("web/app/settings/page.tsx"))

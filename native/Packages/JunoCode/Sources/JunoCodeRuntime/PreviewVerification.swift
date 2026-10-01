@@ -78,6 +78,52 @@ public enum PreviewUIEdits {
         return Array(routes.prefix(4))
     }
 
+    /// The routes of the page files among `paths` (not the fallback): what a
+    /// passing check must have looked at when an edit changed a page itself.
+    public static func pageRoutes(for paths: [String], webRoots: [String]) -> [String] {
+        var routes: [String] = []
+        for path in paths {
+            guard let relative = webRoots.lazy.compactMap({ Self.relative(path, to: $0) }).first,
+                  let route = route(forFile: relative), !routes.contains(route)
+            else { continue }
+            routes.append(route)
+        }
+        return routes
+    }
+
+    /// Whether a checked route (`/settings?tab=2`, `/blog/hello`) is the page
+    /// `pattern` names (`/settings`, `/blog/[slug]`, `/docs/[...path]`).
+    /// `.html`, a trailing `/index` and a trailing slash are ignored, since a
+    /// static server answers `/about` for `about.html`.
+    public static func route(_ checked: String, matches pattern: String) -> Bool {
+        func segments(_ route: String) -> [String] {
+            var path = String(route.split(separator: "?", maxSplits: 1).first ?? "")
+            path = String(path.split(separator: "#", maxSplits: 1).first ?? "")
+            var parts = path.split(separator: "/").map(String.init)
+            if let last = parts.last {
+                if last.lowercased() == "index.html" || last.lowercased() == "index" {
+                    parts.removeLast()
+                } else if last.lowercased().hasSuffix(".html") {
+                    parts[parts.count - 1] = String(last.dropLast(5))
+                }
+            }
+            return parts.map { $0.lowercased() }
+        }
+        let have = segments(checked)
+        let want = segments(pattern)
+        func match(_ h: ArraySlice<String>, _ w: ArraySlice<String>) -> Bool {
+            guard let first = w.first else { return h.isEmpty }
+            if first.hasPrefix("[[..."), first.hasSuffix("]]") { return true }
+            if first.hasPrefix("[..."), first.hasSuffix("]") { return !h.isEmpty }
+            guard let next = h.first else { return false }
+            if (first.hasPrefix("[") && first.hasSuffix("]")) || first == next {
+                return match(h.dropFirst(), w.dropFirst())
+            }
+            return false
+        }
+        return match(have[...], want[...])
+    }
+
     /// The route a page file serves, or nil when the file is not a page.
     public static func route(forFile relative: String) -> String? {
         var components = relative.split(separator: "/").map(String.init)
@@ -132,11 +178,24 @@ public enum PreviewVerifyPolicy {
         return "\(record.surface.rawValue)|\(record.target)|\(failing.joined(separator: ";"))"
     }
 
-    /// Whether the newest two failing web records share a signature.
+    /// Whether the same failure came back after an attempted fix: the newest
+    /// two workspace revisions with web checks share a failing signature.
+    /// Checks within one revision are one attempt (the desktop and phone
+    /// screenshots of one broken page fail alike, and that is not a repeat),
+    /// and a revision that passed breaks the chain.
     public static func repeatsFailure(_ records: [UIVerificationRecord]) -> Bool {
-        let failing = records.filter { !$0.passed && $0.surface == .web }
-        guard failing.count >= 2 else { return false }
-        return signature(of: failing[failing.count - 1]) == signature(of: failing[failing.count - 2])
+        var revisions: [Int] = []
+        var failures: [Int: Set<String>] = [:]
+        for record in records where record.surface == .web {
+            if !revisions.contains(record.workspaceRevision) { revisions.append(record.workspaceRevision) }
+            if !record.passed {
+                failures[record.workspaceRevision, default: []].insert(signature(of: record))
+            }
+        }
+        guard revisions.count >= 2 else { return false }
+        let latest = failures[revisions[revisions.count - 1]] ?? []
+        let previous = failures[revisions[revisions.count - 2]] ?? []
+        return !latest.isEmpty && !latest.isDisjoint(with: previous)
     }
 }
 
@@ -395,7 +454,13 @@ public final class PreviewVerifyState: @unchecked Sendable {
         // an edit to a test file later does not change what the page shows.
         let since = lastRevision(of: edits) ?? currentRevision
         let fresh = records.filter { $0.workspaceRevision >= since && $0.surface == .web }
-        if fresh.contains(where: \.passed) { return .none }
+        // A pass counts when it looked at a changed page's own route; a
+        // component or style edit (no page route) takes a pass anywhere.
+        let pageRoutes = PreviewUIEdits.pageRoutes(for: edits, webRoots: environment.webRoots)
+        let covers: (UIVerificationRecord) -> Bool = { record in
+            pageRoutes.isEmpty || pageRoutes.contains { PreviewUIEdits.route(record.target, matches: $0) }
+        }
+        if fresh.contains(where: { $0.passed && covers($0) }) { return .none }
         if PreviewVerifyPolicy.repeatsFailure(records) { return .stopFailing }
         let rounds = context.continuations.filter { $0 == .uiUnchecked }.count
         let latestFailure = fresh.last(where: { !$0.passed })
