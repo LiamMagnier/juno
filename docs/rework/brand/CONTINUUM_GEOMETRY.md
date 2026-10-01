@@ -159,9 +159,9 @@ The timing is a pure state machine (`thinking-schedule.ts`) with 18 unit tests. 
 | `public/brand/wordmark-{light,dark}.svg`, `lockup-{light,dark}.svg` | Outlined, tight bounds |
 | `public/brand/orbit-{16,20,24}.svg`, `code-{16,20,24}.svg` | Per-size masters, `currentColor` stroke |
 | `src/app/favicon.ico` | PNG frames 16, 32, 48: charcoal tile (19% corner), pale mark at 14/26/38 px using the 16 and 24 optical masters and the master |
-| `src/app/icon.png`, `public/brand/icon-{192,512}.png`, `public/brand/app-icon-mac.png` | Rounded tile (22% corner, the existing catalog's), transparent corners |
+| `src/app/icon.png`, `public/brand/icon-{192,512}.png` | Rounded tile (22% corner, the existing catalog's), transparent corners, hairline white rim (9%; 6% at 64 px) so the charcoal keeps an edge on dark surfaces |
 | `src/app/apple-icon.png` (180), `public/brand/icon-maskable-512.png` | Full-bleed opaque square without alpha; the mark's box stays inside the 80% safe circle |
-| macOS `AppIcon.appiconset` (16, 32, 64, 128, 256, 512, 1024) | Rounded full-bleed tile, as the existing catalog draws it; file names kept |
+| macOS `AppIcon.appiconset` (16, 32, 64, 128, 256, 512, 1024), `public/brand/app-icon-mac.png` | Rounded full-bleed tile, as the existing catalog draws it, with the rim and the brief's optional macOS-only relief (#1e1f22 to #151618 top to bottom); file names kept |
 | iOS `AppIcon.appiconset/AppIcon.png` (1024) | Opaque square, no alpha, no pre-rounded corners |
 
 The tile is V3 dark ground #18191b with the mark in V3 dark ink #e8e9eb at 64% of the width, more of the width below 128 px (66% at 64, 69% at 32, 75% at 16), always drawn with a master whose channels stay near a pixel or wider. `src/app/manifest.ts` now names the app Alevr and lists the any and maskable icons.
