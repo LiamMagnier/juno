@@ -1,8 +1,7 @@
 import * as React from "react";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import type { Provider } from "@/lib/providers";
-import { CrewFace } from "./crew/face";
-import { crewMember } from "./crew-bridge";
+import { CrewMark, crewMember } from "./crew-bridge";
 import { crew, TOKENS, type TokenRef } from "./fixtures";
 import { Icon } from "./icons";
 
@@ -188,14 +187,10 @@ export function FileMark({ name, className, size }: { name: string } & MarkProps
       </svg>
     );
   }
-  // Text and code: the page in the ink, so it reads as a neutral document.
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className} style={box(size)}>
-      <path d={PAGE} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d={FOLD} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M8.5 12.6h7M8.5 15.8h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
+  // Text and code: the set's own page (fitted to the pixel grid, optical line), in the second ink.
+  const code = ext === "ts" || ext === "tsx" || ext === "js" || ext === "json" || ext === "py" || ext === "swift";
+  const px = size && size <= 18 ? 16 : 20;
+  return <Icon name={code ? "file-code" : "document"} size={px} className={className ? `${className} jn-mark--ink` : "jn-mark--ink"} />;
 }
 
 export function ModelMark({ provider, className }: { provider: Provider; className?: string }) {
@@ -206,7 +201,7 @@ export function ModelMark({ provider, className }: { provider: Provider; classNa
 export function TokenMark({ token, size = 16 }: { token: TokenRef; size?: number }) {
   if (token.kind === "crew") {
     const m = crew(token.id);
-    return <CrewFace member={crewMember(m)} state="available" size={size} live={false} />;
+    return <CrewMark member={crewMember(m)} state="available" size={size} />;
   }
   if (token.kind === "file") return <FileMark name={token.label} size={size} className="jn-mark" />;
   if (token.kind === "app") return <AppMark id={token.id} size={size} className="jn-mark" />;

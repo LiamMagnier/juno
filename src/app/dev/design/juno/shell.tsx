@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CrewFace } from "./crew/face";
-import { crewMember } from "./crew-bridge";
-import { ACCOUNT, CODE_SESSIONS, CREW, PINNED, RECENT, WORKSPACES, type CrewRow, type SessionState } from "./fixtures";
+import { CrewMark, crewMember } from "./crew-bridge";
+import { ACCOUNT, CODE_SESSIONS, CREW, PINNED, RECENT, SIDE_STATE, WORKSPACES, type CrewRow, type SessionState } from "./fixtures";
 import { Icon } from "./icons";
-import { R, T, useReduced } from "./motion";
+import { fromKeyboard, usePopoverKeys } from "./layers";
+import { POP_IN, R, T, useReduced } from "./motion";
 
 /*
  * The shell in the Refoundation IA (§4.1, §4.2), on the framed layout (D-033):
@@ -34,24 +34,31 @@ export const useFrame = () => React.useContext(FrameCtx);
 
 type SidePop = "account" | "activity" | null;
 
-/** A sidebar popover: on the material, grown from its trigger, dismissed by Escape or a press outside. */
-function SidePopover({ open, onClose, className, label, below, children }: { open: boolean; onClose: () => void; className: string; label: string; below: boolean; children: React.ReactNode }) {
+/**
+ * A sidebar popover: on the material, grown from its trigger, dismissed by Escape or a press outside.
+ * Opened from the keyboard it appears in the same frame (F0) and focus moves to its first item;
+ * Escape returns focus to the trigger.
+ */
+function SidePopover({
+  open,
+  onClose,
+  className,
+  label,
+  below,
+  kbd,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  className: string;
+  label: string;
+  below: boolean;
+  kbd?: boolean;
+  children: React.ReactNode;
+}) {
   const reduced = useReduced();
   const ref = React.useRef<HTMLDivElement | null>(null);
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Element | null;
-      if (ref.current && t && !ref.current.contains(t) && !t.closest("[data-sidepop-trigger]")) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("pointerdown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("pointerdown", onDown);
-    };
-  }, [open, onClose]);
+  usePopoverKeys(ref, open, onClose, kbd, "[data-sidepop-trigger]");
   return (
     <AnimatePresence>
       {open ? (
@@ -60,10 +67,11 @@ function SidePopover({ open, onClose, className, label, below, children }: { ope
           role="dialog"
           aria-label={label}
           className={`jn-pop jn-sidepop ${className}`}
-          initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
+          data-opened-by={kbd ? "keyboard" : "pointer"}
+          initial={kbd ? false : reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, transition: reduced ? R : T.exit }}
-          transition={reduced ? R : T.base}
+          transition={reduced ? R : POP_IN}
         >
           {children}
         </motion.div>
@@ -78,16 +86,16 @@ const ACTIVITY = [
   { who: "rhea", text: "Rhea closed 14 escalations", when: "Monday" },
 ];
 
-function Activity({ open, onClose }: { open: boolean; onClose: () => void }) {
+function Activity({ open, onClose, kbd }: { open: boolean; onClose: () => void; kbd?: boolean }) {
   return (
-    <SidePopover open={open} onClose={onClose} className="jn-sidepop--activity" label="Activity" below>
+    <SidePopover open={open} onClose={onClose} className="jn-sidepop--activity" label="Activity" below kbd={kbd}>
       <p className="jn-pop__label">Activity</p>
       {ACTIVITY.map((a) => {
         const m = CREW.find((c) => c.id === a.who) ?? CREW[0];
         return (
           <a key={a.text} href="#" className="jn-pop__row jn-pop__row--tall jn-sidepop__item">
             <span className="jn-pop__mark">
-              <CrewFace member={face(m)} state="available" size={20} live={false} />
+              <CrewMark member={face(m)} state="available" size={20} />
             </span>
             <span className="jn-pop__stack">
               <span className="jn-sidepop__text">{a.text}</span>
@@ -104,12 +112,12 @@ function Activity({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
-function AccountMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AccountMenu({ open, onClose, kbd }: { open: boolean; onClose: () => void; kbd?: boolean }) {
   const [theme, setTheme] = React.useState<"Light" | "Dark" | "System">("System");
   return (
-    <SidePopover open={open} onClose={onClose} className="jn-sidepop--account" label="Account" below={false}>
+    <SidePopover open={open} onClose={onClose} className="jn-sidepop--account" label="Account" below={false} kbd={kbd}>
       <p className="jn-sidepop__email">{ACCOUNT.email}</p>
-      <button type="button" className="jn-pop__row jicon-trigger">
+      <button type="button" className="jn-pop__row jicon-trigger jicon-quiet">
         <span className="jn-pop__mark jn-pop__mark--ink">
           <Icon name="settings" size={16} />
         </span>
@@ -118,20 +126,20 @@ function AccountMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
       </button>
       <div className="jn-sidepop__theme" role="radiogroup" aria-label="Appearance">
         {(["Light", "Dark", "System"] as const).map((t) => (
-          <button key={t} type="button" role="radio" aria-checked={theme === t} className="jn-sidepop__themeopt jicon-trigger" onClick={() => setTheme(t)}>
-            <Icon name={t === "Light" ? "sun" : t === "Dark" ? "moon" : "laptop"} size={16} />
+          <button key={t} type="button" role="radio" aria-checked={theme === t} className="jn-sidepop__themeopt jicon-trigger jicon-quiet" onClick={() => setTheme(t)}>
+            <Icon name={t === "Light" ? "sun" : t === "Dark" ? "moon" : "contrast"} size={16} />
             <span>{t}</span>
           </button>
         ))}
       </div>
-      <button type="button" className="jn-pop__row jicon-trigger">
+      <button type="button" className="jn-pop__row jicon-trigger jicon-quiet">
         <span className="jn-pop__mark jn-pop__mark--ink">
           <Icon name="help" size={16} />
         </span>
         <span className="jn-pop__text">Help and shortcuts</span>
       </button>
       <div className="jn-pop__sep" />
-      <button type="button" className="jn-pop__row jicon-trigger">
+      <button type="button" className="jn-pop__row jicon-trigger jicon-quiet">
         <span className="jn-pop__mark jn-pop__mark--ink">
           <Icon name="sign-out" size={16} />
         </span>
@@ -141,24 +149,26 @@ function AccountMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
   );
 }
 
-function SideHead({ pop, setPop }: { pop: SidePop; setPop: (p: SidePop) => void }) {
+function SideHead({ pop, setPop }: { pop: SidePop; setPop: (p: SidePop, kbd?: boolean) => void }) {
   const { toggle } = useFrame();
   return (
     <div className="jn-side__head">
       <Wordmark />
-      <span className="jn-side__headtools">
-        {/* S10: unseen records turn the bell's glyph solid. No dot, no count. */}
+      <span className="jn-side__headtools jicon-quiet">
+        {/* S10: unseen records lift the bell from the third ink to the first. No dot, no count, no fill. */}
         <button
           type="button"
-          className="jib jib--sm jicon-trigger"
+          className="jib jib--sm jicon-trigger jtip"
           aria-label="Activity, 2 unseen"
+          data-tip="Activity"
+          data-unseen=""
           aria-expanded={pop === "activity"}
           data-sidepop-trigger=""
-          onClick={() => setPop(pop === "activity" ? null : "activity")}
+          onClick={(e) => setPop(pop === "activity" ? null : "activity", fromKeyboard(e))}
         >
-          <Icon name="bell" size={16} state={pop === "activity" ? "rest" : "active"} />
+          <Icon name="bell" size={16} />
         </button>
-        <button type="button" className="jib jib--sm jicon-trigger" aria-label="Hide sidebar" aria-keyshortcuts="Meta+Backslash" onClick={toggle}>
+        <button type="button" className="jib jib--sm jicon-trigger jtip" aria-label="Hide sidebar" data-tip="Hide sidebar" data-tip-align="end" data-kbd={"⌘\\"} aria-keyshortcuts="Meta+Backslash" onClick={toggle}>
           <Icon name="sidebar" size={16} />
         </button>
       </span>
@@ -179,9 +189,13 @@ function WorkspaceSwitch({ active }: { active: "chat" | "code" }) {
   );
 }
 
-function NavRow({ icon, label, kbd, current }: { icon: string; label: string; kbd?: string; current?: boolean }) {
+/**
+ * A destination row. Only the four places you go to (New chat, Projects, Library, Customize)
+ * let their glyph articulate on hover (INTERACTION_SPEC I-7); every other row is quiet.
+ */
+function NavRow({ icon, label, kbd, current, moves = false }: { icon: string; label: string; kbd?: string; current?: boolean; moves?: boolean }) {
   return (
-    <a href="#" className="jrow jicon-trigger jn-side__nav" aria-current={current ? "page" : undefined}>
+    <a href="#" className={moves ? "jrow jicon-trigger jn-side__nav" : "jrow jicon-trigger jicon-quiet jn-side__nav"} aria-current={current ? "page" : undefined} aria-keyshortcuts={kbd ? kbd.replace("⌘", "Meta+") : undefined}>
       <span className="jn-side__lead">
         <Icon name={icon} size={16} />
       </span>
@@ -203,27 +217,43 @@ function Section({ label, action, children }: { label: string; action?: React.Re
   );
 }
 
-export function CrewRowItem({ m, current, now }: { m: CrewRow; current?: boolean; now?: string }) {
+/**
+ * A crew row: the member's head on its disc, the name, and on the right the
+ * state in one or two words (as in the owner's frame). Available is the rest
+ * state and says nothing; "Needs you" is the one amber in the sidebar.
+ */
+export function CrewRowItem({ m, current }: { m: CrewRow; current?: boolean }) {
+  const word = SIDE_STATE[m.state];
   return (
-    <a href="#" className="jrow jn-side__crew" aria-current={current ? "page" : undefined}>
+    <a
+      href="#"
+      className="jrow jn-side__crew"
+      data-state={m.state}
+      aria-current={current ? "page" : undefined}
+      aria-label={`${m.name}, ${word ? word.toLowerCase() : "available"}. ${m.long}`}
+    >
       <span className="jn-side__lead">
-        <CrewFace member={face(m)} state={m.state} size={20} live={false} />
+        <CrewMark member={face(m)} state={m.state} size={20} />
       </span>
-      <span className="jn-side__crewname">{m.name}</span>
-      <span className="jrow__text jn-side__crewnow">{now ?? m.now}</span>
+      <span className="jrow__text jn-side__crewname">{m.name}</span>
+      {word ? (
+        <span className={m.state === "waiting" ? "jn-side__state jn-attn" : "jn-side__state"} aria-hidden="true">
+          {word}
+        </span>
+      ) : null}
     </a>
   );
 }
 
-function Account({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+function Account({ open, onToggle }: { open: boolean; onToggle: (kbd: boolean) => void }) {
   return (
     <button
       type="button"
-      className="jrow jicon-trigger jn-side__account"
+      className="jrow jicon-trigger jicon-quiet jn-side__account"
       aria-label={`${ACCOUNT.name}, ${ACCOUNT.plan} plan. Account menu`}
       aria-expanded={open}
       data-sidepop-trigger=""
-      onClick={onToggle}
+      onClick={(e) => onToggle(fromKeyboard(e))}
     >
       <span className="jn-avatar" aria-hidden="true">
         {ACCOUNT.initials}
@@ -238,66 +268,77 @@ function Account({ open, onToggle }: { open: boolean; onToggle: () => void }) {
 }
 
 function useSidePop(initial?: SidePop) {
-  const [pop, setPop] = React.useState<SidePop>(initial ?? null);
-  const close = React.useCallback(() => setPop(null), []);
-  return { pop, setPop, close };
+  const [state, setState] = React.useState<{ pop: SidePop; kbd: boolean }>({ pop: initial ?? null, kbd: false });
+  const setPop = React.useCallback((pop: SidePop, kbd = false) => setState({ pop, kbd }), []);
+  const close = React.useCallback(() => setState({ pop: null, kbd: false }), []);
+  return { pop: state.pop, kbd: state.kbd, setPop, close };
 }
 
-export function ChatSidebar({ current, crewCurrent, pop: initialPop }: { current?: "thread" | "library" | "customize" | "crew"; crewCurrent?: string; pop?: SidePop }) {
-  const mira = CREW[0];
-  const { pop, setPop, close } = useSidePop(initialPop);
+/** Rows that carry the attention word on the right, in amber (a thread with a pending approval). */
+function TextRow({ label, current, needs }: { label: string; current?: boolean; needs?: boolean }) {
+  return (
+    <a href="#" className="jrow jrow--text" aria-current={current ? "page" : undefined} aria-label={needs ? `${label}, needs you` : undefined}>
+      <span className="jrow__text">{label}</span>
+      {needs ? (
+        <span className="jn-side__state jn-attn" aria-hidden="true">
+          Needs you
+        </span>
+      ) : null}
+    </a>
+  );
+}
+
+export function ChatSidebar({
+  current,
+  crewCurrent,
+  pop: initialPop,
+  threadNeeds = false,
+}: {
+  current?: "thread" | "library" | "customize" | "crew";
+  crewCurrent?: string;
+  pop?: SidePop;
+  /** The open thread has something waiting on the person (an approval): its row says so. */
+  threadNeeds?: boolean;
+}) {
+  const { pop, kbd, setPop, close } = useSidePop(initialPop);
   return (
     <nav className="jn-side" aria-label="Juno">
       <SideHead pop={pop} setPop={setPop} />
-      <Activity open={pop === "activity"} onClose={close} />
+      <Activity open={pop === "activity"} onClose={close} kbd={kbd} />
       <WorkspaceSwitch active="chat" />
       <div className="jn-side__nav-group">
-        <NavRow icon="new-chat" label="New chat" kbd="⌘N" />
+        <NavRow icon="new-chat" label="New chat" kbd="⌘N" moves />
         <NavRow icon="search" label="Search" kbd="⌘K" />
-        <NavRow icon="folder" label="Projects" />
-        <NavRow icon="library" label="Library" current={current === "library"} />
-        <NavRow icon="customize" label="Customize" current={current === "customize"} />
+        <NavRow icon="folder" label="Projects" moves />
+        <NavRow icon="library" label="Library" current={current === "library"} moves />
+        <NavRow icon="customize" label="Customize" current={current === "customize"} moves />
       </div>
       <div className="jn-side__scroll">
-        <Section label="Needs you">
-          <a href="#" className="jrow jn-side__need">
-            <span className="jn-side__lead">
-              <CrewFace member={face(mira)} state="waiting" size={20} live={false} />
-            </span>
-            <span className="jrow__text">
-              Mira <span className="jn-attn">wants your answer</span>
-            </span>
-          </a>
-        </Section>
         <Section
           label="Crew"
           action={
-            <button type="button" className="jib jib--sm jicon-trigger jn-side__labelbtn" aria-label="Add to crew">
+            <button type="button" className="jib jib--sm jicon-trigger jicon-quiet jn-side__labelbtn jtip" aria-label="Add to crew" data-tip="Add to crew">
               <Icon name="plus" size={16} />
             </button>
           }
         >
           {CREW.slice(0, 4).map((m) => (
-            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id} now={m.state === "waiting" ? "Waiting on you" : undefined} />
+            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id} />
           ))}
         </Section>
         <Section label="Pinned">
           {PINNED.map((p) => (
-            <a key={p} href="#" className="jrow jrow--text">
-              <span className="jrow__text">{p}</span>
-            </a>
+            <TextRow key={p} label={p} />
           ))}
         </Section>
         <Section label="Recent">
           {RECENT.slice(0, 6).map((r, i) => (
-            <a key={r} href="#" className="jrow jrow--text" aria-current={current === "thread" && i === 0 ? "page" : undefined}>
-              <span className="jrow__text">{r}</span>
-            </a>
+            <TextRow key={r} label={r} current={current === "thread" && i === 0} needs={threadNeeds && i === 0} />
           ))}
         </Section>
       </div>
-      <AccountMenu open={pop === "account"} onClose={close} />
-      <Account open={pop === "account"} onToggle={() => setPop(pop === "account" ? null : "account")} />
+      <AccountMenu open={pop === "account"} onClose={close} kbd={kbd} />
+      <Account open={pop === "account"} onToggle={(k) => setPop(pop === "account" ? null : "account", k)} />
     </nav>
   );
 }
@@ -309,59 +350,72 @@ const SESSION_GLYPH: Record<SessionState, string> = {
   failed: "alert",
 };
 
+/** A Code session: its glyph, its title, and under it what it is doing in words (never a glyph alone). */
+function SessionRow({ s, current }: { s: (typeof CODE_SESSIONS)[number]; current?: boolean }) {
+  return (
+    <a href="#" className="jrow jn-side__session" data-state={s.state} aria-current={current ? "page" : undefined}>
+      <span className="jn-side__lead jn-side__glyph" data-state={s.state}>
+        <Icon name={SESSION_GLYPH[s.state]} size={16} state={s.state === "working" ? "active" : "rest"} value={s.state === "working" ? 0.32 : undefined} />
+      </span>
+      <span className="jn-side__sessiontext">
+        <span className="jn-side__sessiontitle">{s.title}</span>
+        <span className={s.state === "waiting" ? "jn-side__sessionline jn-attn" : "jn-side__sessionline"}>{s.line}</span>
+      </span>
+    </a>
+  );
+}
+
 export function CodeSidebar({ current = 0 }: { current?: number }) {
-  const { pop, setPop, close } = useSidePop();
+  const { pop, kbd, setPop, close } = useSidePop();
   return (
     <nav className="jn-side jn-side--code" aria-label="Juno Code">
       <SideHead pop={pop} setPop={setPop} />
-      <Activity open={pop === "activity"} onClose={close} />
+      <Activity open={pop === "activity"} onClose={close} kbd={kbd} />
       <WorkspaceSwitch active="code" />
       <div className="jn-side__nav-group">
-        <NavRow icon="new-chat" label="New session" kbd="⌘N" />
+        <NavRow icon="new-chat" label="New session" kbd="⌘N" moves />
         <NavRow icon="search" label="Search" kbd="⌘K" />
-        <NavRow icon="customize" label="Customize" />
+        <NavRow icon="customize" label="Customize" moves />
       </div>
       <div className="jn-side__scroll">
-        <Section label="Needs you">
-          <a href="#" className="jrow jn-side__need">
-            <span className="jn-side__lead jn-side__glyph" data-state="waiting">
-              <Icon name="hand" size={16} />
-            </span>
-            <span className="jrow__text">
-              Postgres index <span className="jn-attn">wants approval</span>
-            </span>
-          </a>
-        </Section>
         <Section label="Sessions">
           {CODE_SESSIONS.map((s, i) => (
-            <a key={s.title} href="#" className="jrow jn-side__session" aria-current={i === current ? "page" : undefined}>
-              <span className="jn-side__lead jn-side__glyph" data-state={s.state === "waiting" ? "waiting-quiet" : s.state}>
-                <Icon name={SESSION_GLYPH[s.state]} size={16} state={s.state === "working" ? "active" : "rest"} value={s.state === "working" ? 0.62 : undefined} />
-              </span>
-              <span className="jrow__text">{s.title}</span>
-              {s.where === "This Mac" ? null : <span className="jn-side__sessionwhere">{s.where}</span>}
-            </a>
+            <SessionRow key={s.title} s={s} current={i === current} />
           ))}
         </Section>
         <Section label="Workspaces">
           {WORKSPACES.map((w) => (
-            <a key={w.name} href="#" className="jrow">
+            <a key={w.name} href="#" className="jrow jicon-quiet jn-side__ws">
               <span className="jn-side__lead">
-                <Icon name={w.kind === "cloud" ? "cloud" : "laptop"} size={16} />
+                <Icon name={w.kind === "cloud" ? "cloud" : w.kind === "desktop" ? "computer" : "laptop"} size={16} />
               </span>
               <span className="jrow__text">{w.name}</span>
+              <span className="jn-side__state">{w.state}</span>
             </a>
           ))}
         </Section>
       </div>
-      <AccountMenu open={pop === "account"} onClose={close} />
-      <Account open={pop === "account"} onToggle={() => setPop(pop === "account" ? null : "account")} />
+      <AccountMenu open={pop === "account"} onClose={close} kbd={kbd} />
+      <Account open={pop === "account"} onToggle={(k) => setPop(pop === "account" ? null : "account", k)} />
     </nav>
   );
 }
 
 /* The frame: the sidebar on the window, the content in an inset panel that scrolls on its own. At phone width the sidebar leaves and the panel goes full bleed. */
-export function AppFrame({ sidebar, children, className, collapsed: initialCollapsed = false }: { sidebar: React.ReactNode; children: React.ReactNode; className?: string; collapsed?: boolean }) {
+export function AppFrame({
+  sidebar,
+  children,
+  className,
+  collapsed: initialCollapsed = false,
+  skip = { href: "#jn-main", label: "Skip to content" },
+}: {
+  sidebar: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  collapsed?: boolean;
+  /** The skip link: the first stop in the frame, to the message field where there is one, else the content. */
+  skip?: { href: string; label: string };
+}) {
   const [collapsed, setCollapsed] = React.useState(initialCollapsed);
   const toggle = React.useCallback(() => setCollapsed((c) => !c), []);
   React.useEffect(() => {
@@ -378,12 +432,28 @@ export function AppFrame({ sidebar, children, className, collapsed: initialColla
   return (
     <FrameCtx.Provider value={ctx}>
       <div className={className ? `jn-frame ${className}` : "jn-frame"} data-collapsed={collapsed ? "" : undefined}>
+        <a className="jn-skip" href={skip.href}>
+          {skip.label}
+        </a>
         <div className="jn-frame__side" inert={collapsed}>
           {sidebar}
         </div>
-        <main className="jn-main">{children}</main>
+        <main className="jn-main" id="jn-main" tabIndex={-1}>
+          {children}
+        </main>
         {/* The way back: one button where the sidebar's own button was, on the frame's top-left. */}
-        <button type="button" className="jib jib--sm jicon-trigger jn-reveal" aria-label="Show sidebar" aria-keyshortcuts="Meta+Backslash" tabIndex={collapsed ? 0 : -1} aria-hidden={!collapsed} onClick={toggle}>
+        <button
+          type="button"
+          className="jib jib--sm jicon-trigger jicon-quiet jtip jn-reveal"
+          aria-label="Show sidebar"
+          data-tip="Show sidebar"
+          data-kbd={"⌘\\"}
+          data-tip-align="start"
+          aria-keyshortcuts="Meta+Backslash"
+          tabIndex={collapsed ? 0 : -1}
+          aria-hidden={!collapsed}
+          onClick={toggle}
+        >
           <Icon name="sidebar" size={16} />
         </button>
       </div>
@@ -410,13 +480,32 @@ export function usePanelAtEnd(enabled: boolean) {
   }, [enabled]);
 }
 
-export function MobileBar({ title, back }: { title?: string; back?: boolean }) {
+/**
+ * The phone's bar, on the bar material. On pages with a large title (Library,
+ * Customize, Crew) the bar is empty at rest and the title collapses into it
+ * once the large one scrolls under the bar (an IntersectionObserver, no
+ * scroll listener), so a title is never shown twice.
+ */
+export function MobileBar({ title, back, collapse = false }: { title?: string; back?: boolean; collapse?: boolean }) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [shown, setShown] = React.useState(!collapse);
+  React.useEffect(() => {
+    if (!collapse) return;
+    const root = panelOf(ref.current);
+    const big = root?.querySelector(".jn-page__head .t-title, .jn-page__head h1");
+    if (!root || !big) return;
+    const io = new IntersectionObserver(([e]) => setShown(!e.isIntersecting), { root, rootMargin: "-52px 0px 0px 0px", threshold: 0 });
+    io.observe(big);
+    return () => io.disconnect();
+  }, [collapse]);
   return (
-    <div className="jn-mbar">
+    <div className="jn-mbar jicon-quiet" ref={ref} data-titled={shown ? "" : undefined}>
       <button type="button" className="jib jicon-trigger" aria-label={back ? "Back" : "Open sidebar"}>
         <Icon name={back ? "chevron-left" : "menu"} size={20} />
       </button>
-      <span className="jn-mbar__title">{title ?? <Wordmark />}</span>
+      <span className="jn-mbar__title" aria-hidden={!shown}>
+        {title ?? <Wordmark />}
+      </span>
       <button type="button" className="jib jicon-trigger" aria-label="New chat">
         <Icon name="new-chat" size={20} />
       </button>
@@ -446,7 +535,7 @@ export function TopBar({ title, children }: { title?: React.ReactNode; children?
   return (
     <header className="jn-top">
       {title ? (
-        <button type="button" className="jn-top__title jicon-trigger">
+        <button type="button" className="jn-top__title jicon-trigger jicon-quiet">
           <span>{title}</span>
           <Icon name="chevron-down" size={16} />
         </button>
@@ -456,10 +545,10 @@ export function TopBar({ title, children }: { title?: React.ReactNode; children?
       <span className="jn-top__actions">
         {children ?? (
           <>
-            <button type="button" className="jib jicon-trigger" aria-label="Share">
+            <button type="button" className="jib jicon-trigger jicon-quiet jtip" aria-label="Share" data-tip="Share">
               <Icon name="share" size={20} />
             </button>
-            <button type="button" className="jib jicon-trigger" aria-label="More">
+            <button type="button" className="jib jicon-trigger jicon-quiet jtip" aria-label="More" data-tip="More" data-tip-align="end">
               <Icon name="more" size={20} />
             </button>
           </>

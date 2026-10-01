@@ -1,0 +1,352 @@
+/*
+ * Voice and dictation: what the composer adds when it speaks. Everything else
+ * is the system's composer (composer.css), unchanged.
+ *
+ * One new colour, for one job. The owner's voice rule (premium pass 1.8.1)
+ * is warm for you, cool for Juno. Cool is the presence colour already
+ * (Juno acting now). Warm is EMBER, a voice-only token: oklch(0.60 0.14 48)
+ * in light (4.2:1 on the composer surface), oklch(0.75 0.11 55) in dark
+ * (6.9:1), used only as a 1.5 px line (the string, the listening caret, the
+ * mic's live bars) and never as a fill or as text, so it never competes with
+ * attention (amber words) or danger (red). Muted is the fourth ink.
+ */
+
+.jn.jv {
+  --voice-you: light-dark(#c16229, #e49b68);
+  --vs-you: var(--voice-you);
+  --vs-answer: var(--presence);
+  --vs-quiet: var(--ink-4);
+}
+/* In a member's thread the member is the presence: their voice wears their thread colour. */
+.jn.jv [data-member-theme] {
+  --vs-answer: var(--m-disc);
+}
+
+/* ———————————————————————————— The string ———————————————————————————— */
+
+.jn .jv-mid {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  align-self: stretch;
+  padding: 0 12px 0 8px;
+}
+.jn .jv-mid__string {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+.jn .jv-string {
+  display: block;
+  width: 100%;
+  height: 34px;
+  overflow: visible;
+  color: var(--vs-quiet);
+  transition: color var(--d-fast) var(--e-out);
+}
+.jn .jv-string[data-tone="you"] {
+  color: var(--vs-you);
+}
+.jn .jv-string[data-tone="juno"] {
+  color: var(--vs-answer);
+}
+
+/* ———————————————————————————— The row ———————————————————————————— */
+
+.jn .jv-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.jn .jv-row .jn-model {
+  margin-right: 2px;
+}
+/* Muted is the pressed mute control, in the first ink, and nothing else on screen. */
+.jn .jv-mute[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+/* The disc in a call is End: the same ink disc (in a member's thread, the member's colour), the voice glyph turned to a close. */
+.jn .jv-composer .jn-disc[data-end] {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.jn [data-member-theme] .jv-composer .jn-disc[data-end] {
+  background: var(--m-disc);
+  color: var(--m-on-disc);
+}
+/* While you dictate, the disc waits: a quiet well that arms when the words are final (dictation never sends). */
+.jn .jv-composer .jn-disc[data-quiet] {
+  background: var(--well-2);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+/* ———————————————————————————— Dictation ———————————————————————————— */
+
+/* The mic, live: its glyph is the system's waveform, its bars your voice, in ember on an ember wash. */
+.jn .jn-crow .jv-dict[data-live] {
+  color: var(--vs-you);
+  background: color-mix(in oklab, var(--vs-you) 11%, transparent);
+}
+/* Asking the browser: pressed, still a mic, nothing moving yet. */
+.jn .jn-crow .jv-dict[data-waiting] {
+  color: var(--ink);
+  background: var(--fill-press);
+}
+
+/* The listening caret: still (no blink), ember, its height the level. */
+.jn .jv-caret {
+  background: var(--vs-you);
+  animation: none;
+  transform-origin: 50% 55%;
+  will-change: transform;
+}
+.jn[data-rm] .jv-caret {
+  will-change: auto;
+}
+
+/* Words that may still change: the third ink, until the recogniser settles them; then the first ink on fast. */
+.jn .jv-interim,
+.jn .jv-provisional {
+  color: var(--ink-3);
+}
+.jn .jv-final {
+  color: var(--ink);
+  transition: color var(--d-fast) var(--e-out);
+}
+.jn [data-member-theme] .jv-provisional {
+  color: color-mix(in srgb, var(--m-on-bubble) 62%, transparent);
+}
+
+/* A tooltip held open for a still (dictation-idle shows the shortcut). */
+.jn .jtip.jv-tip-on::after {
+  opacity: 1;
+  translate: -50% 0;
+  transition: none;
+}
+
+/* ———————————————————————————— Errors ———————————————————————————— */
+
+/* An error is a dock row on the composer's top edge: what happened in plain words, one way forward. */
+.jn .jv-err {
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 14px;
+}
+.jn .jv-err__icon {
+  display: inline-grid;
+  flex: none;
+  color: var(--ink-3);
+}
+.jn .jv-err__text {
+  white-space: normal;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+}
+
+/* In a call, typed words get their own send in the field row; the row stays the call. */
+.jn .jv-field {
+  position: relative;
+}
+.jn .jv-fieldsend {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  color: var(--ink-2);
+}
+
+/* ———————————————————————————— Transcript ———————————————————————————— */
+
+.jn .jv-callmark {
+  margin: 26px 0 16px;
+}
+.jn .jv-reply {
+  margin-bottom: 18px;
+}
+.jn .jv-cut {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jv-spoken {
+  margin-bottom: 18px;
+}
+.jn .jv-member-reply {
+  margin-top: 2px;
+}
+.jn .jv-reply--member {
+  margin-bottom: 4px;
+}
+
+/* ———————————————————————————— The browser's prompt (drawn for the flow) ———————————————————————————— */
+
+.jn .jv-browser {
+  position: fixed;
+  top: 10px;
+  left: 18px;
+  z-index: 80;
+  width: 330px;
+  padding: 14px 16px 12px;
+  border-radius: 12px;
+  background: light-dark(#ffffff, #2b2c30);
+  color: light-dark(#1f1f1f, #e8e9eb);
+  box-shadow:
+    0 0 0 1px light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.1)),
+    0 8px 28px -6px light-dark(rgb(0 0 0 / 0.25), rgb(0 0 0 / 0.6));
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+}
+.jn .jv-browser__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.jn .jv-browser__head > svg {
+  margin-top: 1px;
+  flex: none;
+}
+.jn .jv-browser__verbs {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.jn .jv-browser__btn {
+  display: inline-grid;
+  place-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px light-dark(rgb(0 0 0 / 0.16), rgb(255 255 255 / 0.18));
+  font-weight: 500;
+}
+.jn .jv-browser__btn--main {
+  background: light-dark(#0b57d0, #a8c7fa);
+  color: light-dark(#ffffff, #062e6f);
+  box-shadow: none;
+}
+
+/* ———————————————————————————— The lab ———————————————————————————— */
+
+.jn .jv-lab {
+  padding: 40px 40px 56px;
+  min-height: 100dvh;
+  background: var(--ground);
+}
+.jn .jv-lab__head {
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+.jn .jv-lab__head p {
+  margin-top: 6px;
+  font-size: 14px;
+}
+.jn .jv-lab__grid {
+  display: grid;
+  grid-template-columns: 132px repeat(3, minmax(0, 1fr));
+  gap: 16px 22px;
+  align-items: center;
+}
+.jn .jv-lab__col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: end;
+  padding-bottom: 4px;
+}
+.jn .jv-lab__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.jn .jv-lab__col[data-chosen] .jv-lab__name {
+  color: var(--ink);
+}
+.jn .jv-lab__line {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jv-lab__rowhead {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.jn .jv-lab__rowhead .ink-3 {
+  font-weight: 400;
+  font-size: 12px;
+}
+.jn .jv-lab__verdict {
+  align-self: start;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--ink-3);
+}
+.jn .jv-lab__verdict[data-chosen] {
+  color: var(--ink-2);
+}
+.jn .jv-labcomp {
+  cursor: default;
+}
+.jn .jv-labcomp .jn-field {
+  min-height: 45px;
+  padding-top: 13px;
+}
+.jn .jv-labcomp .jib[data-pressed] {
+  background: var(--fill-press);
+  color: var(--ink);
+}
+.jn .jv-labcomp[data-edge] {
+  box-shadow: none;
+}
+.jn .jv-edge-sig {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.jn .jv-field-sig,
+.jn .jv-edge-sig__line {
+  color: var(--vs-quiet);
+}
+.jn .jv-field-sig {
+  display: block;
+  width: 100%;
+}
+.jn :is(.jv-field-sig, .jv-edge-sig__line)[data-tone="you"] {
+  color: var(--vs-you);
+}
+.jn :is(.jv-field-sig, .jv-edge-sig__line)[data-tone="juno"] {
+  color: var(--vs-answer);
+}
+.jn :is(.jv-field-sig, .jv-edge-sig__line)[data-tone="mix"] {
+  color: color-mix(in oklab, var(--vs-you) 50%, var(--vs-answer));
+}
+
+/* ———————————————————————————— Phone ———————————————————————————— */
+
+@media (max-width: 760px) {
+  .jn .jv-mid {
+    padding: 0 8px 0 4px;
+  }
+  .jn .jv-browser {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+  .jn .jv-err {
+    padding-left: 12px;
+  }
+  .jn .jv-err__text {
+    font-size: 13px;
+    line-height: 18px;
+  }
+}

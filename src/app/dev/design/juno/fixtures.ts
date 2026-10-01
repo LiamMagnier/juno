@@ -29,7 +29,7 @@ export interface CrewRow {
 
 export const CREW: CrewRow[] = [
   { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", now: "Needs your answer", long: "Needs your answer on the Halvorsen renewal", when: "4 min ago" },
-  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", now: "Free", long: "Finished the Q3 forecast review, 1 h ago", when: "1 h ago" },
+  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", now: "Available", long: "Available. Finished the Q3 forecast review 1 h ago", when: "1 h ago" },
   { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", now: "Reconciling invoices", roster: "Reconciling invoices, 206 of 214", long: "Reconciling September invoices, 206 of 214 matched", when: "now" },
   { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", now: "Reading escalations", roster: "Reading this week’s escalations", long: "Reading this week’s escalations", when: "now" },
   { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", now: "Paused", long: "Paused until Monday", when: "Friday" },
@@ -38,6 +38,16 @@ export const CREW: CrewRow[] = [
 
 export const crew = (id: string): CrewRow => CREW.find((m) => m.id === id) ?? CREW[0];
 export const MIRA = CREW[0];
+
+/** The sidebar's right-hand word for a crew row. Available is the rest state and says nothing. */
+export const SIDE_STATE: Record<CrewState, string | null> = {
+  available: null,
+  thinking: "Thinking",
+  working: "Working",
+  waiting: "Needs you",
+  paused: "Paused",
+  offline: "Offline",
+};
 
 export const STATE_WORD: Record<CrewState, string> = {
   available: "Available",
@@ -87,7 +97,7 @@ export const TOKENS: Record<string, TokenRef> = {
   linear: { id: "linear", kind: "app", label: "Linear", connected: false, detail: "Not connected" },
   notion: { id: "notion", kind: "app", label: "Notion", connected: true, detail: "Connected as Northwind wiki" },
   mira: { id: "mira", kind: "crew", label: "Mira", detail: "Accounts, needs your answer" },
-  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, free" },
+  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, available" },
   otto: { id: "otto", kind: "crew", label: "Otto", detail: "Finance operations, reconciling invoices" },
   atlas: { id: "atlas", kind: "project", label: "Atlas launch", detail: "14 chats" },
   renewals: { id: "renewals", kind: "project", label: "Renewals 2026", detail: "6 chats" },
@@ -223,6 +233,8 @@ export const TRACE_SUMMARY = "Worked 12s, searched the web and read 3 sources";
 
 /** The live line's phases (M1), each held at least a second. */
 export const PRESENCE_WORDS = ["Reading Q3 Forecast.xlsx", "Checking Stripe subscriptions", "Comparing renewals with the forecast"];
+/** The glyph that leads each phase, in the presence colour: what kind of work it is. */
+export const PRESENCE_GLYPHS = ["research", "search", "sheet"];
 
 /** How the sent message's tokens resolved (M23). */
 export const RECEIPT = "Q3 Forecast.xlsx and Stripe added. Mira takes the renewal check. Posting to Slack asks you first.";
@@ -261,18 +273,18 @@ export const EFFORT_LINE: Record<Effort, string> = { Light: "Answers right away"
 
 export type SessionState = "working" | "waiting" | "done" | "failed";
 
-export const CODE_SESSIONS: { title: string; where: string; state: SessionState; when: string }[] = [
-  { title: "Sync worker drops cursors on retry", where: "This Mac", state: "working", when: "now" },
-  { title: "Postgres index for the search endpoint", where: "Cloud", state: "waiting", when: "12 min" },
-  { title: "Pricing page copy pass", where: "This Mac", state: "done", when: "1 h" },
-  { title: "Upgrade Next to 15.5", where: "Cloud", state: "done", when: "3 h" },
-  { title: "Flaky upload test on CI", where: "Studio Mac", state: "failed", when: "Yesterday" },
+export const CODE_SESSIONS: { title: string; where: string; state: SessionState; when: string; line: string }[] = [
+  { title: "Sync worker drops cursors on retry", where: "This Mac", state: "working", when: "now", line: "Running tests, 41 of 128" },
+  { title: "Postgres index for the search endpoint", where: "Cloud", state: "waiting", when: "12 min", line: "Needs your approval to migrate" },
+  { title: "Pricing page copy pass", where: "This Mac", state: "done", when: "1 h", line: "Done 1 h ago, 3 files" },
+  { title: "Upgrade Next to 15.5", where: "Cloud", state: "done", when: "3 h", line: "Pull request #489 open" },
+  { title: "Flaky upload test on CI", where: "Studio Mac", state: "failed", when: "Yesterday", line: "Failed yesterday on Studio Mac" },
 ];
 
 export const WORKSPACES = [
-  { name: "This Mac", kind: "mac" as const, line: "juno-web, 3 sessions" },
-  { name: "Studio Mac", kind: "mac" as const, line: "Paired, asleep" },
-  { name: "Cloud", kind: "cloud" as const, line: "juno-web, node 22" },
+  { name: "This Mac", kind: "mac" as const, line: "juno-web, 3 sessions", state: "3 sessions" },
+  { name: "Studio Mac", kind: "desktop" as const, line: "Paired, asleep", state: "Asleep" },
+  { name: "Cloud", kind: "cloud" as const, line: "juno-web, node 22", state: "Ready" },
 ];
 
 export interface DiffLine {
@@ -313,7 +325,7 @@ export const CODE_STEPS: { verb: string; object: string; extra?: string; state: 
   { verb: "Searched for", object: "writeCursor", extra: "4 files", state: "done" },
   { verb: "Edited", object: "src/sync/worker.ts", extra: "+14 −4", state: "done" },
   { verb: "Edited", object: "src/sync/store.ts", extra: "+22 −0", state: "done" },
-  { verb: "Ran", object: "npm test -- sync", extra: "12 passed", state: "done" },
+  { verb: "Ran", object: "npm test -- sync/worker", extra: "12 passed", state: "done" },
 ];
 
 /* ———————————————————————— Library ———————————————————————— */
@@ -324,19 +336,44 @@ export interface LibItem {
   id: string;
   kind: LibKind;
   title: string;
+  /** What it is, in a few words (kind and size). */
   meta: string;
+  /** When it last changed. */
+  when: string;
   by?: string;
+  /** The chat it came from: the way back to where it was made or given. */
+  chat?: string;
+  size: string;
+  /** Something wrong with the file, said plainly, with the fix as a verb. */
+  problem?: { text: string; fix: string };
 }
 
 export const LIBRARY: LibItem[] = [
-  { id: "l1", kind: "document", title: "Q3 renewal risk, summary", meta: "Document, today", by: "mira" },
-  { id: "l2", kind: "deck", title: "Board deck, October", meta: "Deck, 18 slides, yesterday" },
-  { id: "l3", kind: "design", title: "Pricing page, second pass", meta: "Design, 3 frames, Monday" },
-  { id: "l4", kind: "sheet", title: "Q3 Forecast.xlsx", meta: "From you, edited today" },
-  { id: "l5", kind: "document", title: "Lisbon offsite shortlist", meta: "Document, 12 Sep", by: "scout" },
-  { id: "l6", kind: "pdf", title: "Halvorsen annual report 2026.pdf", meta: "From the web, 64 pages" },
-  { id: "l7", kind: "deck", title: "Support escalations, week 38", meta: "Deck, 6 slides, Friday", by: "rhea" },
-  { id: "l8", kind: "image", title: "Office floor plan.png", meta: "From you, 2.4 MB" },
+  { id: "l1", kind: "document", title: "Q3 renewal risk, summary", meta: "Document, 2 pages", when: "Today", by: "mira", chat: "Q3 forecast against Stripe revenue", size: "48 KB" },
+  { id: "l2", kind: "deck", title: "Board deck, October", meta: "Deck, 18 slides", when: "Yesterday", chat: "Board deck outline for October", size: "6.2 MB" },
+  { id: "l3", kind: "design", title: "Pricing page, second pass", meta: "Design, 3 frames", when: "Monday", chat: "Pricing page copy, second pass", size: "1.1 MB" },
+  { id: "l4", kind: "sheet", title: "Q3 Forecast.xlsx", meta: "Spreadsheet, from you", when: "Today", chat: "Q3 forecast against Stripe revenue", size: "312 KB" },
+  { id: "l5", kind: "document", title: "Lisbon offsite shortlist", meta: "Document, 1 page", when: "12 Sep", by: "scout", chat: "Lisbon offsite venues under €4k", size: "22 KB" },
+  {
+    id: "l6",
+    kind: "pdf",
+    title: "Halvorsen annual report 2026.pdf",
+    meta: "PDF, 64 pages, from the web",
+    when: "Today",
+    chat: "Q3 forecast against Stripe revenue",
+    size: "8.4 MB",
+    problem: { text: "No text layer, so it can’t be searched", fix: "Make searchable" },
+  },
+  { id: "l7", kind: "deck", title: "Support escalations, week 38", meta: "Deck, 6 slides", when: "Friday", by: "rhea", size: "2.3 MB" },
+  { id: "l8", kind: "image", title: "Office floor plan.png", meta: "Image, from you", when: "3 Sep", size: "2.4 MB" },
 ];
 
 export const LIB_FILTERS = ["All", "Documents", "Decks", "Designs", "Files"] as const;
+export const LIB_FILTER_KINDS: Record<(typeof LIB_FILTERS)[number], LibKind[] | null> = {
+  All: null,
+  Documents: ["document"],
+  Decks: ["deck"],
+  Designs: ["design"],
+  Files: ["sheet", "pdf", "image"],
+};
+export const LIB_STORAGE = { used: "2.1 GB", of: "10 GB", deleted: 3 };

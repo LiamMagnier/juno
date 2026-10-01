@@ -18,13 +18,15 @@ import "./member.css";
  *   /dev/design/juno                               index
  *   /dev/design/juno?scene=home&theme=dark         one scene, filling the viewport
  *
- *   scene   home | thread | menus | crew | code | library | customize | system | motion
+ *   scene   home | thread | menus | crew | code | library | customize | system | motion | states
  *   theme   light | dark (absent: the OS decides, prefers-color-scheme)
  *   rm      1 renders the reduced-motion form
- *   home    focus=1 (focused composer), app=stripe (token panel open), empty=1, pop=account|activity (a sidebar popover)
- *   thread  at=top, plan=1, stage=thinking|streaming
+ *   home    empty at rest; draft=1 (the sentence with tokens), focus=1, app=stripe (token panel), model=1, plus=1, pop=account|activity
+ *   thread  at=top (the dock names what needs you), plan=1, stage=thinking|streaming
  *   crew    member=mira (the member's own thread), flow=add | flow=customize&member=mira (the editor)
- *   code    state=start
+ *   code    state=start, pane=changes (the diff as the one pane, narrow windows)
+ *   library view=list, q=<search>
+ *   states  loading, empty, error, blocked, offline, slow
  *   customize  app=slack (the app's sheet open)
  *   motion  m=<moment id> (one moment, large, for recording)
  *   font    inter | geologica | commissioner | franklin | manrope | wix (the sans lab)
@@ -33,15 +35,16 @@ import "./member.css";
 export const metadata = { title: "Juno design" };
 
 const SCENES: { id: SceneId; label: string; extra?: string[] }[] = [
-  { id: "home", label: "Home, Chat at rest", extra: ["focus=1", "app=stripe", "pop=account", "pop=activity"] },
-  { id: "thread", label: "Thread after send", extra: ["stage=thinking", "stage=streaming", "plan=1"] },
+  { id: "home", label: "Home, Chat at rest", extra: ["draft=1", "focus=1", "app=stripe", "model=1", "plus=1", "pop=account", "pop=activity"] },
+  { id: "thread", label: "Thread after send", extra: ["stage=thinking", "stage=streaming", "plan=1", "at=top"] },
   { id: "menus", label: "@ palette, model, app panel" },
   { id: "crew", label: "Crew roster and a member's thread", extra: ["member=mira", "flow=add", "flow=customize&member=mira"] },
-  { id: "code", label: "Juno Code, start and working session", extra: ["state=start"] },
-  { id: "library", label: "Library" },
+  { id: "code", label: "Juno Code, start and working session", extra: ["state=start", "pane=changes"] },
+  { id: "library", label: "Library", extra: ["view=list", "q=invoice"] },
   { id: "customize", label: "Customize, Apps", extra: ["app=slack"] },
   { id: "system", label: "Component sheet" },
   { id: "motion", label: "Motion moments" },
+  { id: "states", label: "Loading, empty, error, blocked, offline" },
 ];
 
 export default async function JunoDesignPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

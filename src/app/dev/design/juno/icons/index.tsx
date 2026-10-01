@@ -13,20 +13,41 @@
  * <Icon name="voice" levels={[.2,.8,.5,.9,.3]} />   the bars follow live input
  * <Icon name="progress" value={0.42} />       the arc shows real progress
  *
- * MOTION CONTRACT. An icon articulates when an ancestor with the class
- * `jicon-trigger` is hovered with a fine pointer (or carries
- * `data-force="hover"`, for stills), and presses in while that ancestor is
- * `:active` (or `data-force="press"`). Per INTERACTION_SPEC I-7 it never
- * articulates on keyboard focus, and surfaces used tens of times a day (the
- * composer, the message action row, menus) wrap themselves in `jicon-quiet`:
- * hover articulation off, press and state changes kept. `state="active"` shows
- * the icon's on form (filled, turned, swapped or drawn, per drawing). Reduced
- * motion keeps every state and changes it with a short cross-fade, never a
- * transform.
+ * MOTION CONTRACT (revision 1: hover is opt-in, INTERACTION_SPEC I-7).
+ *
+ *   .jicon-trigger           the control that owns the icon. Gives the press
+ *                            dip (scale 0.9, 70 ms) only when the control is the
+ *                            icon alone (an icon button: the Icon detects it and
+ *                            marks itself data-solo); a row or a labelled button
+ *                            presses tonally and its glyph stays still. State
+ *                            changes (state="active", a name change) always run.
+ *   .jicon-hover             opt-in hover articulation, on the trigger itself or
+ *                            on a region of triggers. For F2 destinations only
+ *                            (New chat, Projects, Library, Customize) and the
+ *                            gallery; never the composer, the action row, menus
+ *                            or rows scanned in lists. Fine pointer only, never
+ *                            on keyboard focus.
+ *   .jicon-quiet             turns hover off for everything inside (wins over
+ *                            .jicon-hover). Kept for older call sites.
+ *   .jicon-press             forces the press dip on a trigger that has a label.
+ *   data-force="hover|press" on a trigger, or pose="hover|press" on the Icon,
+ *                            draws a pose without a pointer (stills).
+ *
+ * `state="active"` shows the icon's on form (filled, turned, swapped or drawn,
+ * per drawing). Reduced motion keeps every state and changes it with a short
+ * cross-fade, never a transform.
+ *
+ * CRISPNESS. fitDrawing hints each drawing to the device pixel grid for its
+ * size; Chrome and WebKit paint an inline SVG at a whole device pixel whatever
+ * its layout position, so the only thing that can still leave a glyph between
+ * pixels is a fractional translate on an ancestor (a centring -50%, a popover
+ * mid-flight). The Icon measures that and cancels it on its own .jsnap group
+ * (useCrispPlacement), re-measuring when an ancestor's transition or animation
+ * ends and on resize.
  */
 import * as React from "react";
 import type { CSSProperties, SVGProps } from "react";
-import { ICON_ALIASES, ICONS, resolveIcon, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
+import { ICON_ALIASES, ICONS, resolveIcon, resolveIconAt, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
 import "./icons.css";
 
 export type KnownIconName = keyof typeof ICONS | keyof typeof ICON_ALIASES;
@@ -57,15 +78,15 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
 /* —————————————————————————————— Optical sizing —————————————————————————————— */
 
 /**
- * One optical line. 20 px and up draw 1.5 px; 16 px draws 1.25 px, which is
+ * One optical line. 18 px and up draw 1.5 px; 16 px draws 1.25 px, which is
  * where Inter's 14 px stem sits, so a sidebar row's glyph and its label carry
  * the same weight (the stroke lab, ?view=lab, shows 1, 1.25 and 1.5 side by
  * side). Relative weight falls gently as the glyph grows: 7.8% of the box at
  * 16, 7.5% at 20, 6.25% at 24, the optical sizing type uses.
  */
 export function iconStrokePx(size: number): number {
-  if (size >= 20) return 1.5;
-  if (size >= 18) return 1.375;
+  // 18 px draws 1.5 too: 1.375 px is 2.75 device pixels at 2x and can never be crisp; 1.5 is 3.
+  if (size >= 18) return 1.5;
   if (size >= 16) return 1.25;
   if (size >= 14) return 1.125;
   return 1;
@@ -176,12 +197,27 @@ function axisMap(stems: Set<number>, k: number, frac: number, off: number): Axis
   };
 }
 
-function fitEls(els: IconElement[], mx: AxisMap, my: AxisMap): IconElement[] {
+/**
+ * A point (a filled dot with no stroke: the dots of more, a list's bullets,
+ * an i's dot) is fitted on its own: its diameter rounds to whole device pixels
+ * (never below one) and its centre goes to a pixel boundary when that diameter
+ * is even, a pixel centre when odd, so a 2 dp dot is a clean 2 x 2 block at 1x
+ * instead of a grey smudge across four pixels.
+ */
+function fitDot(cx: number, cy: number, r: number, k: number): [number, number, number] {
+  const n = Math.max(1, Math.round(2 * r * k));
+  const at = (v: number) => (n % 2 ? Math.floor(v * k) + 0.5 : Math.round(v * k)) / k;
+  return [r3(at(cx)), r3(at(cy)), r3(n / (2 * k))];
+}
+
+function fitEls(els: IconElement[], mx: AxisMap, my: AxisMap, k: number): IconElement[] {
   return els.map((el) => {
-    if (el.tag === "g") return { ...el, children: fitEls(el.children ?? [], mx, my) };
+    if (el.tag === "g") return { ...el, children: fitEls(el.children ?? [], mx, my, k) };
     const a = { ...el.attrs };
     if (el.tag === "path") a.d = xform(String(a.d), (x, y) => [mx(x), my(y)]);
-    else if (el.tag === "circle") {
+    else if (el.tag === "circle" && a.stroke === "none" && !el.knockout) {
+      [a.cx, a.cy, a.r] = fitDot(mx(Number(a.cx)), my(Number(a.cy)), Number(a.r), k);
+    } else if (el.tag === "circle") {
       a.cx = mx(Number(a.cx));
       a.cy = my(Number(a.cy));
     } else if (el.tag === "rect") {
@@ -218,7 +254,7 @@ export function fitDrawing(d: IconDrawing, size: number, dpr: number, strokePx: 
   if (d.fill) stemsOf(d.fill, xs, ys);
   const mx = axisMap(xs, k, frac, off);
   const my = axisMap(ys, k, frac, off);
-  const out: IconDrawing = { ...d, elements: fitEls(d.elements, mx, my), fill: d.fill ? fitEls(d.fill, mx, my) : undefined };
+  const out: IconDrawing = { ...d, elements: fitEls(d.elements, mx, my, k), fill: d.fill ? fitEls(d.fill, mx, my, k) : undefined };
   if (!bySize) {
     bySize = new Map();
     fitCache.set(d, bySize);
@@ -260,6 +296,8 @@ const TIGHT_GROW = 0.75;
 
 type Ctx = {
   uid: string;
+  /** The rendered size: picks the small cut for swap and hover targets too. */
+  size: number;
   /** Device pixels per grid unit when fitted (a held hover pose then moves by whole device pixels), else 0. */
   k: number;
   sw: number;
@@ -404,13 +442,19 @@ function Wrap({ move, k, children }: { move?: IconMove; k: number; children: Rea
 type Fit = (d: IconDrawing) => IconDrawing;
 const noFit: Fit = (d) => d;
 
-/** One drawing's layers: base, hover swap, fill, and the swap target, each fitted to the rendered size. */
-function Layers({ d: raw, ctx, fit }: { d: IconDrawing; ctx: Ctx; fit: Fit }) {
+/**
+ * One drawing's layers: base, hover swap, fill, and the swap target, each
+ * fitted to the rendered size. A glyph on its way out (`exiting`) paints its
+ * base only: its own on layers would otherwise answer the new state (a copy
+ * leaving with state="active" would draw a second check).
+ */
+function Layers({ d: raw, ctx, fit, exiting }: { d: IconDrawing; ctx: Ctx; fit: Fit; exiting?: boolean }) {
   const d = fit(raw);
-  const on = d.on;
-  const turn = on?.kind === "turn" ? ({ "--on-turn": `${on.deg}deg`, transformOrigin: "12px 12px" } as CSSProperties) : undefined;
-  const altRaw = on?.kind === "swap" ? resolveIcon(on.to) : undefined;
-  const hoverRaw = d.hoverSwap ? resolveIcon(d.hoverSwap) : undefined;
+  const on = exiting ? undefined : d.on;
+  const [ox, oy] = on?.kind === "turn" && on.o ? on.o : [12, 12];
+  const turn = on?.kind === "turn" ? ({ "--on-turn": `${on.deg}deg`, transformOrigin: `${ox}px ${oy}px` } as CSSProperties) : undefined;
+  const altRaw = on?.kind === "swap" ? resolveIconAt(on.to, ctx.size) : undefined;
+  const hoverRaw = d.hoverSwap && !exiting ? resolveIconAt(d.hoverSwap, ctx.size) : undefined;
   const alt = altRaw ? fit(altRaw) : undefined;
   const hoverAlt = hoverRaw ? fit(hoverRaw) : undefined;
   return (
@@ -423,7 +467,7 @@ function Layers({ d: raw, ctx, fit }: { d: IconDrawing; ctx: Ctx; fit: Fit }) {
           <Wrap move={hoverAlt.hover} k={ctx.k}>{renderList(hoverAlt.elements, { ...ctx, uid: `${ctx.uid}h` }, "h")}</Wrap>
         </g>
       ) : null}
-      {d.fill ? (
+      {d.fill && on?.kind === "fill" ? (
         <g className="jg jg-fill">
           <Wrap move={d.hover} k={ctx.k}>{renderList(d.fill, { ...ctx, uid: `${ctx.uid}f` }, "f")}</Wrap>
         </g>
@@ -518,17 +562,144 @@ function useCalmLevels(levels: number[] | undefined, svg: React.RefObject<SVGSVG
   return reduced ? (held ?? levels) : levels;
 }
 
+/* —————————————————————————————— Placement —————————————————————————————— */
+
+/**
+ * The translation an icon's ancestors add, in CSS px, or null while one of
+ * them scales or rotates (mid-animation: nothing to fit to). Layout offsets
+ * are not counted: the browser already paints an SVG root at a whole device
+ * pixel (tools/snaptest*.mjs in the icon scratchpad prove it for Chrome).
+ */
+function ancestorShift(svg: SVGSVGElement): [number, number] | null {
+  let tx = 0;
+  let ty = 0;
+  for (let el = svg.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+    const cs = getComputedStyle(el);
+    const t = cs.transform;
+    const tr = cs.translate;
+    const sc = cs.scale;
+    const ro = cs.rotate;
+    if ((!t || t === "none") && (!tr || tr === "none") && (!sc || sc === "none") && (!ro || ro === "none")) continue;
+    if (sc && sc !== "none" && sc.split(/\s+/).some((v) => Number(v) !== 1)) return null;
+    if (ro && ro !== "none" && parseFloat(ro) !== 0) return null;
+    if (tr && tr !== "none") {
+      const parts = tr.split(/\s+(?![^(]*\))/);
+      const one = (v: string | undefined, ref: number): number => (v == null ? 0 : v.endsWith("%") ? (parseFloat(v) / 100) * ref : v.endsWith("px") || v === "0" ? parseFloat(v) : NaN);
+      const x = one(parts[0], el.offsetWidth);
+      const y = one(parts[1], el.offsetHeight);
+      if (Number.isNaN(x) || Number.isNaN(y)) return null;
+      tx += x;
+      ty += y;
+    }
+    if (t && t !== "none") {
+      const m = new DOMMatrixReadOnly(t);
+      if (!m.is2D || m.a !== 1 || m.d !== 1 || m.b !== 0 || m.c !== 0) return null;
+      tx += m.e;
+      ty += m.f;
+    }
+  }
+  return [tx, ty];
+}
+
+const placed = new Map<SVGSVGElement, () => void>();
+let settledTargets: Set<Element> | null = null;
+let listening = false;
+
+function flushSettled() {
+  const targets = settledTargets;
+  settledTargets = null;
+  if (!targets) return;
+  for (const [svg, place] of placed) {
+    for (const t of targets) {
+      if (t.contains(svg)) {
+        place();
+        break;
+      }
+    }
+  }
+}
+
+function onSettled(e: Event) {
+  const t = e.target;
+  // An icon's own parts moving never move the icon.
+  if (!(t instanceof Element) || t.closest("svg.ji")) return;
+  if (!settledTargets) {
+    settledTargets = new Set();
+    requestAnimationFrame(flushSettled);
+  }
+  settledTargets.add(t);
+}
+
+function onResize() {
+  requestAnimationFrame(() => placed.forEach((place) => place()));
+}
+
+function listen() {
+  if (listening || typeof document === "undefined") return;
+  listening = true;
+  document.addEventListener("transitionend", onSettled, true);
+  document.addEventListener("animationend", onSettled, true);
+  window.addEventListener("resize", onResize, { passive: true });
+}
+
+/**
+ * After mount and whenever its trigger or size changes: (1) mark the icon
+ * data-solo when its .jicon-trigger holds nothing but this glyph (an icon
+ * button, which gets the press dip; a row or a labelled button does not), and
+ * (2) cancel any fractional translate its ancestors add, on the .jsnap group,
+ * so the fitted drawing lands on whole device pixels where it is painted.
+ */
+function useCrispPlacement(svgRef: React.RefObject<SVGSVGElement | null>, snapRef: React.RefObject<SVGGElement | null>, size: number, name: string) {
+  React.useLayoutEffect(() => {
+    const svg = svgRef.current;
+    const snap = snapRef.current;
+    if (!svg || !snap) return;
+    const trigger = svg.closest(".jicon-trigger");
+    if (trigger) {
+      const own = svg.textContent ?? "";
+      const text = (trigger.textContent ?? "").replace(own, "").trim();
+      svg.toggleAttribute("data-solo", !text && trigger.querySelectorAll("svg.ji").length === 1);
+    }
+    const place = () => {
+      const shift = ancestorShift(svg);
+      if (!shift) return;
+      const dpr = window.devicePixelRatio || 1;
+      const fix = (v: number) => {
+        const d = v * dpr;
+        const c = (Math.round(d) - d) / dpr;
+        return Math.abs(c) < 0.004 ? 0 : Math.round(((c * 24) / size) * 1000) / 1000;
+      };
+      const x = fix(shift[0]);
+      const y = fix(shift[1]);
+      const next = x || y ? `${x}px ${y}px` : "";
+      if (snap.style.translate !== next) snap.style.translate = next;
+    };
+    place();
+    placed.set(svg, place);
+    listen();
+    return () => {
+      placed.delete(svg);
+    };
+  }, [svgRef, snapRef, size, name]);
+}
+
 export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, line, fit: fitOn = true, px, className, style, ...rest }: IconProps) {
   const rawId = React.useId();
   const uid = `ji${rawId.replace(/[^a-zA-Z0-9]/g, "")}`;
   const svgRef = React.useRef<SVGSVGElement | null>(null);
+  const snapRef = React.useRef<SVGGElement | null>(null);
   const shownLevels = useCalmLevels(levels, svgRef);
+  useCrispPlacement(svgRef, snapRef, size, name);
 
-  // A name change is remembered for one swap: the old glyph leaves while the new one enters.
+  /*
+   * A name change starts a swap: the old glyph leaves while the new one enters.
+   * The entering group keeps its key (and its class) after the swap settles,
+   * so nothing remounts: a check that drew itself in does not draw again.
+   */
   const [shown, setShown] = React.useState<string>(name);
-  const [leaving, setLeaving] = React.useState<{ name: string; turn: number | null; n: number } | null>(null);
+  const [swap, setSwap] = React.useState<{ n: number; from: string; turn: number | null; done: boolean } | null>(null);
   if (name !== shown) {
-    setLeaving({ name: shown, turn: turnBetween(shown, name), n: (leaving?.n ?? 0) + 1 });
+    setSwap({ n: (swap?.n ?? 0) + 1, from: shown, turn: turnBetween(shown, name), done: false });
     setShown(name);
   }
 
@@ -537,19 +708,19 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
   const dpr = React.useSyncExternalStore(subscribeDpr, dprNow, dprServer);
   const fits = fitOn && line == null && size >= 12 && size <= 32;
   const fit = React.useMemo<Fit>(() => (fits ? (x) => fitDrawing(x, size, dpr, strokePx) : noFit), [fits, size, dpr, strokePx]);
-  const d = resolveIcon(name);
-  const ctx: Ctx = { uid, k: fits ? (size * dpr) / 24 : 0, sw, value, levels: shownLevels, levelIndex: { i: 0 } };
+  const d = resolveIconAt(name, size);
+  const ctx: Ctx = { uid, size, k: fits ? (size * dpr) / 24 : 0, sw, value, levels: shownLevels, levelIndex: { i: 0 } };
 
   if (!d && process.env.NODE_ENV !== "production" && !warned.has(name)) {
     warned.add(name);
     console.warn(`[juno icons] no drawing named "${name}"`);
   }
 
-  const prev = leaving && leaving.turn == null ? resolveIcon(leaving.name) : undefined;
-  const enterCls = leaving ? (leaving.turn != null ? "jg-turnin" : "jg-enter") : undefined;
-  const enterStyle = leaving?.turn != null ? ({ "--from": `${leaving.turn}deg` } as CSSProperties) : undefined;
+  const prev = swap && !swap.done && swap.turn == null ? resolveIconAt(swap.from, size) : undefined;
+  const enterCls = swap ? (swap.turn != null ? "jg-turnin" : "jg-enter") : undefined;
+  const enterStyle = swap?.turn != null ? ({ "--from": `${swap.turn}deg` } as CSSProperties) : undefined;
   const settle = (e: React.AnimationEvent<SVGGElement>) => {
-    if (e.target === e.currentTarget) setLeaving(null);
+    if (e.target === e.currentTarget) setSwap((sw0) => (sw0 && !sw0.done ? { ...sw0, done: true } : sw0));
   };
 
   return (
@@ -575,17 +746,17 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
       {...rest}
     >
       {title ? <title>{title}</title> : null}
-      <g className="jsnap">
+      <g className="jsnap" ref={snapRef}>
         {d ? (
-          <g key={`in${leaving?.n ?? 0}`} className={enterCls ? `jl ${enterCls}` : "jl"} style={enterStyle} onAnimationEnd={leaving ? settle : undefined}>
+          <g key={`in${swap?.n ?? 0}`} className={enterCls ? `jl ${enterCls}` : "jl"} style={enterStyle} onAnimationEnd={swap && !swap.done ? settle : undefined}>
             <Layers d={d} ctx={ctx} fit={fit} />
           </g>
         ) : (
           <rect x={5.25} y={5.25} width={13.5} height={13.5} rx={3} strokeDasharray="2 2" opacity={0.5} />
         )}
         {prev ? (
-          <g key={`out${leaving?.n ?? 0}`} className="jl jg-exit">
-            <Layers d={prev} ctx={{ ...ctx, uid: `${uid}p`, levelIndex: { i: 0 } }} fit={fit} />
+          <g key={`out${swap?.n ?? 0}`} className="jl jg-exit">
+            <Layers d={prev} ctx={{ ...ctx, uid: `${uid}p`, levelIndex: { i: 0 } }} fit={fit} exiting />
           </g>
         ) : null}
       </g>
@@ -602,6 +773,6 @@ export function IconSwap({ from, to, swapped, ...rest }: Omit<IconProps, "name">
   return <Icon name={swapped ? to : from} {...rest} />;
 }
 
-export function iconDrawing(name: string): IconDrawing | undefined {
-  return resolveIcon(name);
+export function iconDrawing(name: string, size?: number): IconDrawing | undefined {
+  return size == null ? resolveIcon(name) : resolveIconAt(name, size);
 }

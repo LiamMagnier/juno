@@ -3,14 +3,15 @@
 import * as React from "react";
 import { CrewFace, type CrewState } from "./crew/face";
 import { CREW, DRAFT, PALETTE_GROUPS, RECEIPT, TOKENS, type Segment } from "./fixtures";
-import { AppPanel, Composer, ModelPopover, Palette, Segmented, TokenChip } from "./composer";
+import { AppPanel, Composer, ModelPopover, Palette, PlusMenu, Segmented, TokenChip } from "./composer";
 import { ContextRow } from "./code";
 import { PolicyControl } from "./customize";
 import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { AppMark, FileMark } from "./marks";
 import { COLOURS, contrast, hex, INKS, PLANES, type Swatch, type Theme } from "./palette";
-import { face, Toast } from "./shell";
+import { CrewRowItem, face, Toast } from "./shell";
+import { CrewMark } from "./crew-bridge";
 import { Approval, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
@@ -104,6 +105,35 @@ function MaterialSample() {
 
 const STATES: CrewState[] = ["available", "thinking", "working", "waiting", "paused", "offline"];
 
+/** `?scene=system&lab=cmark`: the small-slot framing lab (zoom × eyeline × size, every member). */
+export function CrewMarkLab({ zooms = [1.6, 1.75, 1.9], eyes = [0.44, 0.47, 0.5] }: { zooms?: number[]; eyes?: number[] }) {
+  return (
+    <main className="jn-sys" style={{ padding: 32 }}>
+      {zooms.map((z) =>
+        eyes.map((e) => (
+          <div key={`${z}-${e}`} style={{ display: "flex", alignItems: "center", gap: 18, margin: "10px 0" }}>
+            <span className="mono ink-3" style={{ width: 120 }}>
+              zoom {z} eye {e}
+            </span>
+            {[16, 20, 24].map((size) => (
+              <span key={size} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "6px 10px", background: "var(--side)", borderRadius: 8 }}>
+                {CREW.map((m) => (
+                  <CrewMark key={m.id} member={face(m)} state={m.state} size={size} zoom={z} eyeline={e} />
+                ))}
+              </span>
+            ))}
+          </div>
+        )),
+      )}
+      <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+        {CREW.map((m) => (
+          <CrewFace key={m.id} member={face(m)} state={m.state} size={64} live={false} facing="front" />
+        ))}
+      </div>
+    </main>
+  );
+}
+
 export function SystemScene() {
   const theme = useTheme();
   const tokenSegs: Segment[] = [{ t: "text", v: "Ask " }, { t: "token", id: "mira" }, { t: "text", v: " about " }, { t: "token", id: "forecast" }];
@@ -149,12 +179,14 @@ export function SystemScene() {
             <span className="t-display">Slack</span>
           </div>
           <div className="jn-sys__typerow">
-            <span className="jn-sys__typemeta">Heading, 17/26 medium</span>
-            <span style={{ fontSize: 17, lineHeight: "26px", fontWeight: 500 }}>Renewal risk this quarter</span>
+            <span className="jn-sys__typemeta">Heading, 19/26 medium (t-h)</span>
+            <span className="t-h">Renewal risk this quarter</span>
           </div>
           <div className="jn-sys__typerow">
-            <span className="jn-sys__typemeta">Reading, 16/27</span>
-            <span style={{ fontSize: 16, lineHeight: "27px", maxWidth: "58ch" }}>Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.</span>
+            <span className="jn-sys__typemeta">Reading, 16/27 (t-body)</span>
+            <span className="t-body" style={{ maxWidth: "58ch" }}>
+              Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.
+            </span>
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Interface, 14/20</span>
@@ -162,7 +194,7 @@ export function SystemScene() {
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Small, 13/18</span>
-            <span className="t-small ink-2">Stopped at step 2 of 4 for your answer</span>
+            <span className="t-small ink-2">Waiting for your answer at step 2 of 4</span>
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Meta, 12/16</span>
@@ -275,7 +307,7 @@ export function SystemScene() {
                 </a>
               </div>
             </Cell>
-            <Cell label="A section: label, its action, a crew row, a plain row">
+            <Cell label="A section: its label and action, crew rows with their state on the right (Available says nothing)">
               <div className="jn-side jn-sys__siderows">
                 <div className="jn-side__label">
                   <span>Crew</span>
@@ -283,27 +315,16 @@ export function SystemScene() {
                     <Icon name="plus" size={16} />
                   </span>
                 </div>
-                <a href="#" className="jrow jn-side__crew">
-                  <span className="jn-side__lead">
-                    <CrewFace member={face(CREW[2])} state="working" size={20} live={false} />
-                  </span>
-                  <span className="jn-side__crewname">Otto</span>
-                  <span className="jrow__text jn-side__crewnow">Reconciling invoices</span>
-                </a>
-                <a href="#" className="jrow jrow--text">
-                  <span className="jrow__text">Pricing page copy, second pass</span>
-                </a>
+                <CrewRowItem m={CREW[0]} />
+                <CrewRowItem m={CREW[1]} />
+                <CrewRowItem m={CREW[2]} />
               </div>
             </Cell>
-            <Cell label="Needs you, and the account">
+            <Cell label="A chat waiting on you, and the account">
               <div className="jn-side jn-sys__siderows">
-                <a href="#" className="jrow jn-side__need">
-                  <span className="jn-side__lead">
-                    <CrewFace member={face(CREW[0])} state="waiting" size={20} live={false} />
-                  </span>
-                  <span className="jrow__text">
-                    Mira <span className="jn-attn">wants your answer</span>
-                  </span>
+                <a href="#" className="jrow jrow--text">
+                  <span className="jrow__text">Q3 forecast against Stripe revenue</span>
+                  <span className="jn-side__state jn-attn">Needs you</span>
                 </a>
                 <span className="jrow jn-side__account">
                   <span className="jn-avatar">LM</span>
@@ -555,17 +576,20 @@ export function SystemScene() {
           <Cell label="Keyboard focus, with words: the ring, and the ink disc (send)" wide>
             <Composer initial={tokenSegs} still={{ focused: true }} />
           </Cell>
-          <Cell label="Docked while Juno works: stop, with the needs-you row in the dock" wide>
-            <Composer initial={[]} variant="dock" busy placeholder="Reply…" dockRow={<NeedsYouRow />} />
+          <Cell label="Docked while Juno works: stop, and the dock naming what needs you out of view" wide>
+            <Composer initial={[]} variant="dock" busy placeholder="Reply…" dockRow={<NeedsYouRow count={2} />} />
           </Cell>
-          <Cell label="Code: the quiet context row" wide>
+          <Cell label="Code: the quiet context row, permission mode as words" wide>
             <Composer initial={[]} variant="code" placeholder="Describe the change. @ files, / commands" context={<ContextRow mode="Plan" />} />
           </Cell>
         </div>
       </Section>
 
-      <Section id="layers" title="Menus and popovers" note="On the material. Pointer-opened layers grow from their trigger (220 ms, from 0.96). The @ palette is keyboard-born and appears in the same frame.">
+      <Section id="layers" title="Menus and popovers" note="On the material, always outside the composer. Pointer-opened layers grow from their trigger (220 ms from 0.96, opacity in 80 ms); keyboard-opened ones appear in the same frame with focus inside. The @ palette is keyboard-born.">
         <div className="jn-sys__layers">
+          <Cell label="+ menu">
+            <PlusMenu style={{ position: "relative", width: 280 }} />
+          </Cell>
           <Cell label="@ palette">
             <Palette groups={paletteGroups} active={0} onChoose={() => {}} onHover={() => {}} style={{ position: "relative", width: 340 }} />
           </Cell>
@@ -581,15 +605,15 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="transcript" title="Transcript" note="Replies are plain text on the page. The live line is the only colour while Juno works; words fade in where they stay.">
+      <Section id="transcript" title="Transcript" note="Replies are plain text on the page. While Juno works, a glyph for the kind of work is the one colour, the words stay in the second ink, and words fade in where they stay.">
         <div className="jn-sys__stack jn-sys__stack--narrow">
           <Cell label="The person’s turn and its receipt" wide>
             <UserMessage segments={DRAFT} receipt={RECEIPT} />
           </Cell>
           <Cell label="The live line, then with seconds" wide>
             <span style={{ display: "grid", gap: 8 }}>
-              <LiveLine text="Reading Q3 Forecast.xlsx" />
-              <LiveLine text="Comparing renewals with the forecast" seconds={4} />
+              <LiveLine text="Reading Q3 Forecast.xlsx" glyph="research" />
+              <LiveLine text="Comparing renewals with the forecast" glyph="sheet" seconds={4} />
               <LiveLine text="Mira is checking renewal usage" who="mira" />
             </span>
           </Cell>
@@ -621,7 +645,11 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="crew" title="Crew faces" note="Each member is a character its person made. State is pose and expression, and always also words beside it. Sizes: 16 inline, 20 rows and tokens, 32 card headers, 64 profile, 72 over its own thread, 96 to 112 roster.">
+      <Section
+        id="crew"
+        title="Crew faces"
+        note="Each member is a character its person made. State is pose and expression, and always also words beside it. From 32 px up the whole character; at 24 px and below (rows, tokens, task headers) only the head, on a soft disc in the member's own colour, like an app's mark on its tile."
+      >
         <div className="jn-sys__faces">
           <span />
           {STATES.map((s) => (
@@ -629,12 +657,22 @@ export function SystemScene() {
               {s === "waiting" ? "Needs you" : s[0].toUpperCase() + s.slice(1)}
             </span>
           ))}
-          {[96, 64, 32, 20, 16].map((size) => (
+          {[96, 64, 32].map((size) => (
             <React.Fragment key={size}>
               <span className="jn-sys__rowh num">{size}</span>
               {STATES.map((s, i) => (
                 <span key={s} className="jn-sys__face">
                   <CrewFace member={face(CREW[i])} state={s} size={size} live={size >= 32} />
+                </span>
+              ))}
+            </React.Fragment>
+          ))}
+          {[24, 20, 16].map((size) => (
+            <React.Fragment key={size}>
+              <span className="jn-sys__rowh num">{size}, head</span>
+              {STATES.map((s, i) => (
+                <span key={s} className="jn-sys__face">
+                  <CrewMark member={face(CREW[i])} state={s} size={size} />
                 </span>
               ))}
             </React.Fragment>

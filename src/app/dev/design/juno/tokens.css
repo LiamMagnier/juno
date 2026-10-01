@@ -35,6 +35,11 @@
   --raised: light-dark(#ffffff, #27282b);
   --card: light-dark(#f5f6f7, #1f2023);
   --well: light-dark(#eff0f1, #2d2e31);
+  /* The person's turn. In dark it is a half step above the panel (1.16:1), not a
+     full well, so it never outweighs the answer; tokens inside it sit one step
+     lighter (well-2), as chips on it rather than holes in it. */
+  --bubble: light-dark(#eff0f1, #252629);
+  --bubble-token: light-dark(#ffffff, #37383c);
   --well-2: light-dark(#e6e7e9, #37383c);
   --well-3: light-dark(#dcdee1, #414246);
   --scrim: light-dark(rgb(25 27 30 / 0.14), rgb(8 8 10 / 0.4));
@@ -51,6 +56,8 @@
   /* The member's peek band sits over coloured bubbles: more opaque and barely
      saturated, so a thread colour never turns into a haze behind the character. */
   --mat-band: light-dark(rgb(252 252 253 / 0.9), rgb(24 25 27 / 0.9));
+  /* The dock's backdrop: nearly the panel, so nothing reads through as a slab. */
+  --mat-dock: light-dark(rgb(252 252 253 / 0.95), rgb(24 25 27 / 0.96));
   --mat-toast: light-dark(rgb(25 27 30 / 0.86), rgb(58 59 63 / 0.82));
   --mat-edge: light-dark(rgb(25 27 30 / 0.085), rgb(255 255 255 / 0.1));
   --mat-sheen: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.05));
@@ -86,8 +93,11 @@
   --presence-wash: light-dark(rgb(45 73 201 / 0.06), rgb(151 166 230 / 0.09));
   --presence-ring: light-dark(rgb(45 73 201 / 0.34), rgb(151 166 230 / 0.42));
 
-  /* Attention: the words that say someone needs you. Nowhere else. */
-  --attn: light-dark(#8f5406, #e6bd7e);
+  /* Attention: the words that say someone needs you. Nowhere else. Dark is a
+     quieter honey at regular weight (light text on charcoal reads heavier), so
+     it is found but never shouts: 8.1:1 on the panel, 8.6:1 on the frame (light: 6.0 and 5.6). */
+  --attn: light-dark(#8f5406, #d6a865);
+  --attn-w: 500;
 
   /* Consequence colours, Code and destructive only. */
   --add-ink: light-dark(#1b7a3a, #74c68a);
@@ -158,11 +168,13 @@
   color-scheme: dark;
   --mat-filter: blur(20px) saturate(1.3);
   --mat-filter-bar: blur(22px) saturate(1.2);
+  --attn-w: 400;
 }
 @media (prefers-color-scheme: dark) {
   .jn:not([data-theme="light"]) {
     --mat-filter: blur(20px) saturate(1.3);
     --mat-filter-bar: blur(22px) saturate(1.2);
+    --attn-w: 400;
   }
 }
 
@@ -235,6 +247,9 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+.jn [role="dialog"]:focus {
+  outline: none;
+}
 .jn ::selection {
   background: var(--presence-soft);
 }
@@ -287,16 +302,17 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   line-height: 30px;
   letter-spacing: -0.008em;
 }
+/* Reading: an answer's heading is a clear step over its text (19/26 over 16/27), never just bolder. */
 .jn .t-h {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 19px;
+  line-height: 26px;
   font-weight: 500;
-  letter-spacing: -0.006em;
+  letter-spacing: -0.012em;
 }
 .jn .t-body {
-  font-size: 15px;
-  line-height: 24px;
-  letter-spacing: -0.004em;
+  font-size: 16px;
+  line-height: 27px;
+  letter-spacing: -0.006em;
 }
 .jn .t-ui {
   font-size: 14px;
@@ -310,6 +326,11 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   font-size: 12px;
   line-height: 16px;
   color: var(--ink-3);
+}
+.jn .jn-attn,
+.jn .t-attn {
+  color: var(--attn);
+  font-weight: var(--attn-w);
 }
 .jn .t-label {
   font-size: 12px;
@@ -762,6 +783,112 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
     0 0 0 3px var(--presence-soft);
 }
 
+/* ——————————————————————————————— Tooltips ——————————————————————————————— */
+
+/* Every icon-only control names itself: on the toast material (inverted,
+   translucent), 12 px, after 600 ms of hover, at once on keyboard focus, and
+   with its shortcut when it has one. A tooltip never shows over its own open
+   menu, and touch has none (the label is in the accessible name). */
+.jn .jtip {
+  position: relative;
+}
+.jn .jtip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  z-index: 60;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: pre;
+  color: light-dark(#f3f4f5, #ecedef);
+  background: var(--mat-toast);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
+  box-shadow:
+    0 0 0 1px light-dark(rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.08)),
+    0 6px 16px -6px light-dark(rgb(25 27 30 / 0.35), rgb(0 0 0 / 0.6));
+  opacity: 0;
+  translate: -50% -2px;
+  pointer-events: none;
+  transition:
+    opacity var(--d-fast) var(--e-out),
+    translate var(--d-fast) var(--e-out);
+}
+.jn .jtip[data-kbd]::after {
+  content: attr(data-tip) "   " attr(data-kbd);
+}
+.jn .jtip[data-tip-side="top"]::after {
+  top: auto;
+  bottom: calc(100% + 6px);
+  translate: -50% 2px;
+}
+.jn .jtip[data-tip-align="end"]::after {
+  left: auto;
+  right: 0;
+  translate: 0 -2px;
+}
+.jn .jtip[data-tip-align="start"]::after {
+  left: 0;
+  translate: 0 -2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jtip:hover::after {
+    opacity: 1;
+    translate: -50% 0;
+    transition-delay: 600ms;
+  }
+  .jn .jtip:is([data-tip-align="end"], [data-tip-align="start"]):hover::after {
+    translate: 0 0;
+  }
+}
+.jn .jtip:focus-visible::after {
+  opacity: 1;
+  translate: -50% 0;
+  transition-delay: 0ms;
+}
+.jn .jtip:is([data-tip-align="end"], [data-tip-align="start"]):focus-visible::after {
+  translate: 0 0;
+}
+.jn .jtip[aria-expanded="true"]::after,
+.jn .jtip:active::after {
+  opacity: 0 !important;
+  transition-delay: 0ms !important;
+}
+@media (hover: none) {
+  .jn .jtip::after {
+    display: none;
+  }
+}
+
+/* Skip to the message (or the content): the first stop in every frame, shown only when focused. */
+.jn .jn-skip {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  z-index: 100;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 32px;
+  opacity: 0;
+  pointer-events: none;
+}
+.jn .jn-skip:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* ——————————————————————————————— Marks ——————————————————————————————— */
 
 .jn .jn-mark {
@@ -790,6 +917,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
     --mat-sheet: var(--raised);
     --mat-bar: var(--ground);
     --mat-band: var(--ground);
+    --mat-dock: var(--ground);
     --mat-toast: light-dark(#26282c, #3a3b3f);
   }
 }
@@ -799,6 +927,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
     --mat-sheet: var(--raised);
     --mat-bar: var(--ground);
     --mat-band: var(--ground);
+    --mat-dock: var(--ground);
     --mat-toast: light-dark(#26282c, #3a3b3f);
     --mat-filter: none;
     --mat-filter-bar: none;
@@ -812,6 +941,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   --mat-sheet: var(--raised);
   --mat-bar: var(--ground);
   --mat-band: var(--ground);
+  --mat-dock: var(--ground);
   --mat-toast: light-dark(#26282c, #3a3b3f);
   --mat-filter: none;
   --mat-filter-bar: none;

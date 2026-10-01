@@ -144,6 +144,10 @@
 .jn .jn-side__headtools .jib {
   color: var(--ink-3);
 }
+/* Unseen activity: the bell steps up one ink. No fill, no dot, no count. */
+.jn .jn-side__headtools .jib[data-unseen] {
+  color: var(--ink);
+}
 .jn .jn-side__switch {
   flex: none;
   width: 100%;
@@ -347,29 +351,65 @@
 .jn .jn-side__crew {
   gap: 10px;
 }
-.jn .jn-side__crewname {
+/* The state word on the right of a row: 12 px, the third ink; "Needs you"
+   in amber is the only colour in the sidebar's text. */
+.jn .jn-side__state {
   flex: none;
-}
-.jn .jn-side__crewnow {
+  margin-left: 8px;
+  font-size: 12px;
+  line-height: 16px;
   color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
-.jn .jn-side .jrow:hover .jn-side__crewnow,
-.jn .jn-side .jrow[aria-current="page"] .jn-side__crewnow {
+.jn .jn-side__state.jn-attn {
+  color: var(--attn);
+  font-weight: var(--attn-w);
+}
+.jn .jn-side__crew[data-state="paused"],
+.jn .jn-side__crew[data-state="offline"] {
   color: var(--ink-3);
-}
-.jn .jn-side__need {
-  color: var(--ink);
 }
 .jn .jn-side__glyph[data-state="working"] {
-  color: var(--ink-2);
+  color: var(--presence);
 }
 .jn .jn-side__glyph[data-state="waiting"] {
-  color: var(--ink-2);
+  color: var(--attn);
 }
-.jn .jn-side__sessionwhere {
-  flex: none;
+.jn .jn-side__glyph[data-state="failed"] {
+  color: var(--danger);
+}
+/* A Code session is two lines: its title, and what it is doing in words. */
+.jn .jn-side .jrow.jn-side__session {
+  height: 48px;
+  align-items: flex-start;
+  padding-top: 7px;
+}
+.jn .jn-side .jrow.jn-side__session::before {
+  inset: 2px 0;
+}
+.jn .jn-side__sessiontext {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-side__sessiontitle,
+.jn .jn-side__sessionline {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jn .jn-side__sessiontitle {
+  font-size: 14px;
+  line-height: 18px;
+}
+.jn .jn-side__sessionline {
   font-size: 12px;
+  line-height: 16px;
   color: var(--ink-3);
+}
+.jn .jn-side__session .jn-side__lead {
+  height: 18px;
 }
 
 /* The account: the person, their plan, and the menu's affordance. */
@@ -718,6 +758,30 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    transition: opacity var(--d-fast) var(--e-out);
+  }
+  /* A page with a large title keeps the bar empty until that title has scrolled under it. */
+  .jn .jn-mbar:not([data-titled]) .jn-mbar__title {
+    opacity: 0;
+  }
+  .jn .jn-mbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: var(--line);
+    opacity: 0;
+    transition: opacity var(--d-fast) var(--e-out);
+  }
+  /* The hairline appears only once something has scrolled under the bar. */
+  @supports (animation-timeline: scroll()) {
+    .jn .jn-mbar::after {
+      animation: jn-top-edge linear both;
+      animation-timeline: scroll(nearest);
+      animation-range: 0 24px;
+    }
   }
   .jn .jn-toast-slot {
     bottom: 112px;

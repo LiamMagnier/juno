@@ -36,8 +36,12 @@
   align-self: end;
   padding-top: 56px;
 }
-.jn .jn-home__stack > .jn-composer-wrap {
+.jn .jn-home__stack > .jn-composer-wrap,
+.jn .jn-home__stack > .jn-home__composer {
   grid-row: 2;
+}
+.jn .jn-ghost__suggest .jn-suggest {
+  margin: 0;
 }
 .jn .jn-home__suggest {
   grid-row: 3;
@@ -108,14 +112,14 @@
   max-width: 82%;
   padding: 10px 16px 11px;
   border-radius: 20px;
-  background: var(--well);
+  background: var(--bubble);
   font-size: 16px;
   line-height: 26px;
   letter-spacing: -0.006em;
 }
 .jn .jn-umsg .jn-token {
-  background: var(--thumb);
-  box-shadow: 0 0 0 1px var(--line);
+  background: var(--bubble-token);
+  box-shadow: 0 0 0 1px light-dark(var(--line), transparent);
 }
 /* How the tokens resolved (M23): one quiet line under the turn. */
 .jn .jn-receipt {
@@ -128,7 +132,10 @@
   text-align: right;
 }
 
-/* The live line (M1): presence-coloured words, and real seconds after three. */
+/* The live line (M1): what Juno is doing, in words in the second ink, led by
+   a glyph for the kind of work in the presence colour (the one colour that
+   means "acting now"), and real seconds after three. The words are never the
+   blue: blue words read as a link. */
 .jn .jn-live {
   display: flex;
   align-items: center;
@@ -136,6 +143,14 @@
   min-height: 24px;
   font-size: 14px;
   line-height: 20px;
+  color: var(--ink-2);
+}
+.jn .jn-live__glyph {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
   color: var(--presence);
 }
 .jn .jn-live--slot {
@@ -160,14 +175,22 @@
   display: inline-grid;
   flex: none;
 }
+/* The hand-off line is already set as the card's title (15/22, medium, ink),
+   so when it travels into the card header it only moves: nothing scales. */
 .jn .jn-handoff {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-top: 22px;
+  min-height: 24px;
 }
 .jn .jn-handoff__line {
   margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  letter-spacing: -0.006em;
+  color: var(--ink);
 }
 
 /* The answer: reading type, no bubble. */
@@ -181,11 +204,15 @@
 .jn .jn-answer > * + * {
   margin-top: 14px;
 }
+/* The heading is a real step (19/26 medium over 16/27), with 20 px above it. */
 .jn .jn-answer h3 {
-  font-size: 17px;
+  font-size: 19px;
   line-height: 26px;
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
+}
+.jn .jn-answer > * + h3 {
+  margin-top: 20px;
 }
 .jn .jn-answer h3 + * {
   margin-top: 6px;
@@ -198,19 +225,19 @@
   flex-direction: column;
   gap: 6px;
 }
+/* A typographic bullet in the third ink, on a hanging indent: wrapped lines
+   align with the first word, never with the bullet. */
 .jn .jn-answer li {
   position: relative;
-  padding-left: 20px;
+  padding-left: 22px;
 }
 .jn .jn-answer li::before {
-  content: "";
+  content: "\2022";
   position: absolute;
-  left: 5px;
-  top: 13px;
-  width: 5px;
-  height: 1.5px;
-  border-radius: 1px;
-  background: var(--ink-3);
+  left: 6px;
+  top: 0;
+  color: var(--ink-3);
+  font-weight: 400;
 }
 .jn .jn-w {
   animation: jn-word 160ms var(--e-out) both;
@@ -295,7 +322,13 @@
 .jn .jn-trace__chev[data-open] {
   transform: rotate(90deg);
 }
+/* The disclosure animates its outer box; the padding lives on the inner one,
+   so the first frame starts at zero height instead of jumping by the padding. */
 .jn .jn-trace__list {
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-trace__inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -384,7 +417,7 @@
   color: var(--ink-2);
 }
 .jn .jn-task__verb {
-  color: var(--presence);
+  color: var(--ink);
 }
 .jn .jn-task__ctl {
   display: flex;
@@ -394,10 +427,6 @@
 .jn .jn-task__ctl .jb {
   padding: 0 10px;
   font-weight: 400;
-}
-.jn .jn-attn {
-  color: var(--attn);
-  font-weight: 500;
 }
 .jn .jn-task__need {
   padding: 0 16px 14px 52px;
@@ -540,7 +569,10 @@
   border-radius: 0;
 }
 .jn .jn-plan {
-  padding: 0 16px 10px 16px;
+  display: block;
+}
+.jn .jn-plan__inner {
+  padding: 2px 16px 10px 16px;
   display: flex;
   flex-direction: column;
 }
@@ -565,7 +597,18 @@
   color: var(--ink-3);
 }
 .jn .jn-plan__step[data-state="active"] .jn-plan__mark {
+  color: var(--presence);
+}
+.jn .jn-plan__step[data-state="waiting"] {
   color: var(--ink);
+}
+.jn .jn-plan__step[data-state="waiting"] .jn-plan__mark {
+  color: var(--attn);
+}
+.jn .jn-plan__note {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-3);
 }
 
 /* ———————————— The approval card (T6) ———————————— */
@@ -574,6 +617,8 @@
   position: relative;
   border-radius: var(--r-card);
   background: var(--card);
+}
+.jn .jn-approve__ask {
   padding: 14px 16px 16px;
 }
 .jn .jn-approve__head {
@@ -624,7 +669,6 @@
 }
 .jn .jn-approve__instead {
   margin-left: auto;
-  font-size: 13px;
 }
 .jn .jn-approve__redirect {
   display: flex;
@@ -634,14 +678,12 @@
 .jn .jn-approve__redirect .jfield {
   flex: 1;
 }
-.jn .jn-approve[data-outcome] {
-  padding: 10px 16px;
-}
 .jn .jn-approve__receipt {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 32px;
+  min-height: 52px;
+  padding: 10px 16px;
   font-size: 14px;
   color: var(--ink);
 }
@@ -658,24 +700,29 @@
  * composer itself stays a solid surface with its hairline (D-030). Under
  * Reduce Transparency the same mask fades the ground instead. */
 
+/* The dock's backdrop spans the whole panel width and is nearly the panel
+   itself: whatever scrolls under the composer (a card, a table) never shows
+   through as a slab. The material lives in the 36 px fade above the
+   composer, where text blurs and dims as it slides under: the soft scroll
+   edge. */
 .jn .jn-dock {
   position: sticky;
   bottom: 0;
   z-index: 4;
   flex: none;
   isolation: isolate;
-  padding: 28px 32px 10px;
+  padding: 32px 32px calc(10px + env(safe-area-inset-bottom, 0px));
 }
 .jn .jn-dock::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--mat-bar);
+  background: var(--mat-dock);
   -webkit-backdrop-filter: var(--mat-filter-bar);
   backdrop-filter: var(--mat-filter-bar);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 36px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 36px);
   pointer-events: none;
 }
 .jn .jn-dock__note {
@@ -725,17 +772,32 @@
     grid-row: 2;
     padding-bottom: 0;
   }
-  .jn .jn-home__stack > .jn-composer-wrap {
+  .jn .jn-home__stack > .jn-composer-wrap,
+  .jn .jn-home__stack > .jn-home__composer {
     grid-row: 3;
-    margin-bottom: 12px;
+    margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
+  /* The chips scroll as a row that runs under the screen's edge on purpose:
+     16 px of scroll padding at both ends, and a soft fade where it is cut. */
   .jn .jn-suggest {
     justify-content: flex-start;
     flex-wrap: nowrap;
     overflow-x: auto;
     margin: 0 -16px 10px;
     padding: 2px 16px;
+    scroll-padding-inline: 16px;
+    scroll-snap-type: x proximity;
     scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .jn .jn-suggest > * {
+    scroll-snap-align: start;
+  }
+  .jn .jn-suggest::after {
+    content: "";
+    flex: none;
+    width: 8px;
   }
   .jn .jn-chip {
     flex: none;
@@ -749,7 +811,7 @@
     max-width: 88%;
   }
   .jn .jn-dock {
-    padding: 24px 12px 8px;
+    padding: 24px 12px calc(8px + env(safe-area-inset-bottom, 0px));
   }
   .jn .jn-dock__note {
     display: none;
@@ -768,7 +830,7 @@
     padding-left: 14px;
     padding-right: 14px;
   }
-  .jn .jn-approve {
+  .jn .jn-approve__ask {
     padding: 14px;
   }
   .jn .jn-approve__payload,
@@ -782,9 +844,6 @@
   }
   .jn .jn-approve__instead {
     margin-left: 0;
-    width: 100%;
-    text-align: left;
-    height: 32px !important;
   }
   .jn .jn-answer {
     font-size: 16px;

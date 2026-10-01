@@ -7,11 +7,30 @@ import { DRAFT, type Segment } from "./fixtures";
 import { AppFrame, ChatSidebar, usePanelAtEnd } from "./shell";
 import { Answer, UserMessage } from "./thread";
 
-/* Home: Chat at rest, the draft written with tokens. `focus=1` shows the focused composer; `app=stripe` opens its panel. */
-export function HomeScene({ focused, panel, empty, pop }: { focused?: boolean; panel?: string; empty?: boolean; pop?: "account" | "activity" }) {
+/*
+ * Home: Chat at rest, empty, so the placeholder teaches @ and / (a new viewer
+ * never mistakes a pre-typed draft for their own words). `draft=1` shows the
+ * sentence written with tokens; `focus=1` the focused composer; `app=stripe`
+ * opens its panel; `model=1` the model list; `plus=1` the + menu.
+ */
+export function HomeScene({
+  focused,
+  panel,
+  draft,
+  pop,
+  model,
+  plus,
+}: {
+  focused?: boolean;
+  panel?: string;
+  draft?: boolean;
+  pop?: "account" | "activity";
+  model?: boolean;
+  plus?: boolean;
+}) {
   return (
-    <AppFrame sidebar={<ChatSidebar pop={pop} />}>
-      <ChatSurface initialPhase="home" initialSegs={empty ? [] : DRAFT} composerStill={{ focused, pointerFocused: !!panel, panel }} />
+    <AppFrame sidebar={<ChatSidebar pop={pop} />} skip={{ href: "#jn-message", label: "Skip to message" }}>
+      <ChatSurface initialPhase="home" initialSegs={draft || panel ? DRAFT : []} composerStill={{ focused, pointerFocused: !!panel || model || plus, panel, model, plus }} />
     </AppFrame>
   );
 }
@@ -26,8 +45,8 @@ export function ThreadScene({ top, planOpen, stage, menu }: { top?: boolean; pla
         ? { stage: "streaming" as const, revealed: 38 }
         : undefined;
   return (
-    <AppFrame sidebar={<ChatSidebar current="thread" />}>
-      <ChatSurface initialPhase="thread" initialStage="approval" auto={false} planOpen={planOpen} stillStage={still} dockNeeds={!!top && !still} approvalMenu={menu} />
+    <AppFrame sidebar={<ChatSidebar current="thread" threadNeeds />} skip={{ href: "#jn-message", label: "Skip to message" }}>
+      <ChatSurface initialPhase="thread" initialStage="approval" auto={false} planOpen={planOpen} stillStage={still} approvalMenu={menu} />
     </AppFrame>
   );
 }

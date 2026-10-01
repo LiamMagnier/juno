@@ -16,7 +16,7 @@
  */
 
 import * as React from "react";
-import { CREW_BY_ID, CrewPeek, getCrewTheme, MessageReaction, themeForColor, useAvatar, type CrewMember, type CrewState } from "./crew";
+import { CREW_BY_ID, CrewFace, CrewPeek, getCrewTheme, MessageReaction, themeForColor, useAvatar, type CrewMember, type CrewState } from "./crew";
 import type { CrewRow } from "./fixtures";
 
 /* ———————————————————————————— Identity ———————————————————————————— */
@@ -38,6 +38,47 @@ export function threadColour(color: string): React.CSSProperties {
 export function useMemberTheme(member: CrewMember): { family: string; style: React.CSSProperties } {
   const cfg = useAvatar(member);
   return { family: String(cfg.color), style: getCrewTheme(cfg).style as React.CSSProperties };
+}
+
+/* ———————————————————————————— Small slots ———————————————————————————— */
+
+/**
+ * A member at row and token sizes (14 to 28 px), where a whole character
+ * reads as a blob: the head only, cropped by a soft disc in the member's own
+ * colour, the way an app's mark sits on its tile. The face is the crew
+ * designer's sprite rendered larger and framed on the eyes, so whatever the
+ * character system draws, the slot shows the part that carries the identity.
+ * Paused and offline quiet the disc with the face. Decorative: rows print the
+ * name beside it.
+ */
+export function CrewMark({
+  member,
+  state = "available",
+  size = 20,
+  zoom = size <= 16 ? 1.55 : 1.45,
+  eyeline = 0.6,
+  className,
+  label,
+}: {
+  member: CrewMember;
+  state?: CrewState;
+  size?: number;
+  /** How much larger than the slot the character is drawn (the crop). */
+  zoom?: number;
+  /** Where in the drawn frame the eyes sit, as a fraction of its height; the slot's centre goes there. */
+  eyeline?: number;
+  className?: string;
+  label?: string;
+}) {
+  const theme = useMemberTheme(member);
+  const inner = Math.round(size * zoom);
+  const top = Math.round(size / 2 - inner * eyeline);
+  const style = { ...theme.style, width: size, height: size, "--cm-top": `${top}px` } as React.CSSProperties;
+  return (
+    <span className={className ? `jn-cmark ${className}` : "jn-cmark"} data-state={state} style={style} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      <CrewFace member={member} state={state} size={inner} live={false} facing="front" />
+    </span>
+  );
 }
 
 /* ———————————————————————————— The peek ———————————————————————————— */

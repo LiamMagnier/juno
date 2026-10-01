@@ -11,9 +11,13 @@
  * 200 ms and comes back in 150 ms; the press dip is 70 ms on out-strong; state
  * swaps are `fast` (120 ms); a turn to an on state (plus to close, a chevron
  * opening) is `base` (220 ms) on in-out. One-shots are 200 to 240 ms, except
- * the three that travel furthest (the bell's damped swing, the hand's wave,
- * retry's full turn), which take 280 to 300 ms: under the spec's 360 ms cap
- * for UI transitions, and never looped. Only transform and opacity move.
+ * the two that travel furthest (the bell's damped swing, the hand's wave) and
+ * the crew's hop, which take 280 to 300 ms: under the spec's 360 ms cap for UI
+ * transitions, and never looped. Only transform and opacity move.
+ *
+ * Revision 1: hover articulation is opt-in (.jicon-hover), the press dip is
+ * for icon buttons only, and no hover pose is a turn that lands where it
+ * started (plus, close) or a full spin (retry).
  */
 
 .ji {
@@ -59,11 +63,14 @@
 }
 
 /* ——————————————————————————— Hover articulation ———————————————————————————
- * A fine pointer over a .jicon-trigger (not inside .jicon-quiet), or a forced
- * pose for stills. Never on keyboard focus (INTERACTION_SPEC I-7).            */
+ * Opt-in (INTERACTION_SPEC I-7): a fine pointer over a .jicon-trigger that is
+ * itself, or sits inside, .jicon-hover (and not inside .jicon-quiet), or a
+ * forced pose for stills. Never on keyboard focus. F2 destinations and the
+ * gallery opt in; the composer, the action row, menus and list rows do not,
+ * so a list never shimmers as the pointer scans down it.                     */
 
 @media (hover: hover) and (pointer: fine) {
-  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
+  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
     translate: var(--hx, 0) var(--hy, 0);
     rotate: var(--hr, 0deg);
     scale: var(--hsx, 1) var(--hsy, 1);
@@ -71,15 +78,15 @@
     transition-duration: 200ms, 200ms, 200ms, 120ms;
     transition-delay: var(--hd, 0ms);
   }
-  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
+  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
     opacity: var(--ho, 1);
     animation: var(--ji-anim) var(--ji-anim-dur, 320ms) var(--ji-soft) var(--hd, 0ms) 1 both;
   }
-  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover {
+  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover {
     opacity: 1;
   }
-  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
-  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
+  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
+  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
     opacity: 0;
   }
 }
@@ -134,11 +141,15 @@
   --ji-anim: ji-spin;
   --ji-anim-dur: 300ms;
 }
+.ji .jp[data-anim="hop"] {
+  --ji-anim: ji-hop;
+  --ji-anim-dur: 280ms;
+}
 .ji .jp[data-anim="draw"] {
   --ji-anim: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
+  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
     animation: ji-draw 240ms var(--ji-soft) var(--hd, 0ms) 1 both;
   }
 }
@@ -221,6 +232,20 @@
     rotate: -360deg;
   }
 }
+@keyframes ji-hop {
+  0% {
+    translate: 0 0;
+  }
+  38% {
+    translate: 0 var(--hy, -1px);
+  }
+  72% {
+    translate: 0 calc(var(--hy, -1px) * -0.12);
+  }
+  100% {
+    translate: 0 0;
+  }
+}
 @keyframes ji-draw {
   0% {
     stroke-dashoffset: 1.05;
@@ -237,9 +262,14 @@
   animation: none !important;
 }
 
-/* ——————————————————————————— Press ——————————————————————————— */
+/* ——————————————————————————— Press ———————————————————————————
+ * The glyph dips only in an icon button (the Icon marks itself data-solo when
+ * its trigger holds nothing else) or a trigger that asks for it with
+ * .jicon-press. A row or a labelled button presses tonally (its own
+ * background step) and its glyph stays still (INTERACTION_SPEC press token).  */
 
-.jicon-trigger:active .ji:not([data-state="disabled"]),
+.jicon-trigger:active .ji[data-solo]:not([data-state="disabled"]),
+.jicon-press:active .ji:not([data-state="disabled"]),
 .jicon-trigger[data-force="press"] .ji,
 .ji[data-pose="press"] {
   scale: 0.9;
@@ -270,11 +300,11 @@
 /* fill: the on drawing grows into the outline (a pinned pin, a starred star)
  * while the outline gives way, so holes cut in the fill (a member's eyes, the
  * thumb's cuff) show the ground, not the outline under them. */
-.ji[data-state="active"] .jg-fill {
+.ji[data-state="active"][data-on="fill"] .jg-fill {
   opacity: 1;
   scale: 1;
 }
-.ji[data-state="active"][data-on="fill"] > .jsnap > .jl > .jg-base {
+.ji[data-state="active"][data-on="fill"] > .jsnap > .jl:not(.jg-exit) > .jg-base {
   opacity: 0;
 }
 
@@ -283,7 +313,7 @@
   opacity: 1;
   scale: 1;
 }
-.ji[data-state="active"][data-on="swap"] > .jsnap > .jl > .jg-base {
+.ji[data-state="active"][data-on="swap"] > .jsnap > .jl:not(.jg-exit) > .jg-base {
   opacity: 0;
   scale: 0.8;
 }

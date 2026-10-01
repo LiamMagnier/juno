@@ -197,6 +197,19 @@
   gap: 2px;
   padding: 8px 10px 0;
   min-height: 40px;
+  white-space: nowrap;
+  min-width: 0;
+}
+.jn .jn-composer__context .jn-ctx {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.jn .jn-composer__context .jn-ctx .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jn .jn-composer__context .jn-mode {
+  flex: none;
 }
 .jn .jn-ctx {
   display: inline-flex;
@@ -233,6 +246,7 @@
   gap: 1px;
 }
 .jn .jn-mode__opt {
+  white-space: nowrap;
   height: 26px;
   padding: 0 10px;
   border-radius: var(--r-pill);
@@ -334,6 +348,33 @@
   overflow: auto;
   scrollbar-width: none;
 }
+/* A layer is capped to the room the panel has (composer.tsx); the palette's list shrinks inside it, the footer stays. */
+.jn .jn-palette {
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-palette .jn-pop__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.jn .jn-palette .jn-pop__foot {
+  flex: none;
+}
+.jn .jn-modelpop,
+.jn .jn-apppanel,
+.jn .jn-plusmenu {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.jn .jn-plusmenu .jn-pop__text {
+  max-width: none;
+}
+.jn .jkbd--glyph {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 1px;
+  color: var(--ink-2);
+}
 .jn .jn-pop__group + .jn-pop__group {
   margin-top: 4px;
 }
@@ -377,9 +418,13 @@
   height: 20px;
   flex: none;
 }
-.jn .jn-pop__mark > * {
-  width: 18px;
-  height: 18px;
+.jn .jn-pop__mark > :is(svg, img) {
+  width: 20px;
+  height: 20px;
+}
+.jn .jn-pop__mark > svg.ji {
+  width: auto;
+  height: auto;
 }
 .jn .jn-pop__mark--ink {
   color: var(--ink-2);
@@ -522,6 +567,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 2px;
   margin: 10px -16px -12px;
   padding: 10px 16px 11px;
   border-top: 1px solid var(--line);
@@ -543,7 +590,11 @@
   padding: 0 10px;
 }
 
-/* The dock (§2.1): one row attached to the composer's top edge. */
+/* The dock (§2.1): one row attached to the composer's top edge, arriving
+   (height and opacity, 240 ms) when the thing it names is out of view. */
+.jn .jn-dockrow-wrap {
+  border-radius: var(--r-composer) var(--r-composer) 0 0;
+}
 .jn .jn-dockrow {
   display: flex;
   align-items: center;
@@ -583,5 +634,21 @@
   .jn .jn-disc {
     width: 40px;
     height: 40px;
+  }
+}
+/* Touch: every control in the composer and the action row is a 44 px target
+   (the drawn disc stays 40; its hit area grows past it). */
+@media (pointer: coarse) {
+  .jn .jn-crow .jib,
+  .jn .jn-actions .jib {
+    width: 44px;
+    height: 44px;
+  }
+  .jn .jn-disc {
+    width: 44px;
+    height: 44px;
+  }
+  .jn .jn-model {
+    height: 44px;
   }
 }

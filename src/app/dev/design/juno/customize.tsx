@@ -6,7 +6,8 @@ import { APP_ORDER_AVAILABLE, APP_ORDER_CONNECTED, APPS, POLICY_LABEL, type Poli
 import { Icon } from "./icons";
 import { AppMark } from "./marks";
 import { Segmented } from "./composer";
-import { R, T, useReduced } from "./motion";
+import { useDialogFocus } from "./layers";
+import { R, SHEET_OUT, T, useReduced } from "./motion";
 import { AppFrame, ChatSidebar, MobileBar } from "./shell";
 
 /*
@@ -39,19 +40,26 @@ function Switch({ on: initial }: { on: boolean }) {
 
 export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) {
   const reduced = useReduced();
+  const ref = React.useRef<HTMLElement | null>(null);
+  const close = React.useCallback(() => onClose?.(), [onClose]);
+  // A sheet is the whole conversation while it is open: focus moves in, Tab stays in, Escape closes, focus returns.
+  useDialogFocus(ref, true, close);
   const app = APPS[id];
   const reads = app.actions.filter((a) => a.kind === "read");
   const changes = app.actions.filter((a) => a.kind === "change");
   return (
     <>
-      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fade} onClick={onClose} />
+      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: reduced ? R : SHEET_OUT }} transition={reduced ? R : T.fade} onClick={onClose} />
+      {/* In on the drawer curve (360 ms); out on exit timing (160 ms, ease-in), never the entrance's. */}
       <motion.aside
+        ref={ref}
         className="jn-sheet"
         role="dialog"
+        aria-modal="true"
         aria-label={`${app.name} settings`}
         initial={reduced ? { opacity: 0 } : { x: 40, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        exit={reduced ? { opacity: 0 } : { x: 40, opacity: 0 }}
+        exit={reduced ? { opacity: 0, transition: R } : { x: 24, opacity: 0, transition: SHEET_OUT }}
         transition={reduced ? R : T.sheet}
       >
         <header className="jn-sheet__head">
@@ -60,7 +68,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
             <h2 className="t-display">{app.name}</h2>
             <p className="t-meta">Connected {app.id === "slack" ? "since 3 June" : "this month"}</p>
           </div>
-          <button type="button" className="jib jicon-trigger jn-sheet__close" aria-label="Close" onClick={onClose}>
+          <button type="button" className="jib jicon-trigger jicon-quiet jtip jn-sheet__close" aria-label="Close" data-tip="Close" data-kbd="esc" data-tip-align="end" onClick={onClose}>
             <Icon name="close" size={20} />
           </button>
         </header>
@@ -117,7 +125,7 @@ function AppRow({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
   const app = APPS[id];
   return (
     <li>
-      <button type="button" className="jn-approw jicon-trigger" onClick={() => onOpen(id)}>
+      <button type="button" className="jn-approw jicon-trigger jicon-quiet" onClick={() => onOpen(id)}>
         <span className="jn-approw__mark">
           <AppMark id={id} size={22} />
         </span>
@@ -142,7 +150,7 @@ export function CustomizeScene({ app }: { app?: string }) {
   const [open, setOpen] = React.useState<string | null>(app && APPS[app] ? app : null);
   return (
     <AppFrame sidebar={<ChatSidebar current="customize" />}>
-      <MobileBar title="Apps" />
+      <MobileBar title="Apps" collapse />
       <div className="jn-page jn-page--customize">
         <nav className="jn-subnav" aria-label="Customize">
           <p className="jn-subnav__title">Customize</p>
@@ -159,7 +167,7 @@ export function CustomizeScene({ app }: { app?: string }) {
               <h1 className="t-title">Apps</h1>
               <p className="jn-page__lede">The services Juno can work in. You decide what each one may do.</p>
             </div>
-            <button type="button" className="jb jb--secondary jicon-trigger">
+            <button type="button" className="jb jb--secondary jicon-trigger jicon-quiet">
               <Icon name="plus" size={16} />
               Add a custom app
             </button>

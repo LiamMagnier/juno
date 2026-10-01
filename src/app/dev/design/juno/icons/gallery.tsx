@@ -15,6 +15,9 @@ import "./gallery.css";
 
 const GROUPS: IconGroup[] = ["Navigation", "Composer", "Message", "States", "Files", "Apps", "Crew and time", "Code", "Library", "Arrows", "Theme"];
 
+/** The F2 destinations whose glyph may articulate on hover (INTERACTION_SPEC I-7, revision 1). */
+const DESTINATIONS = new Set(["new-chat", "folder", "library", "customize"]);
+
 const byGroup = (group: IconGroup) => Object.entries(ICONS).filter(([, d]) => d.group === group) as [string, IconDrawing][];
 
 export type GalleryView = "sheet" | "proof" | "lab" | "context" | "shell" | "reel" | "states" | "focus" | "pixels";
@@ -58,8 +61,9 @@ function Sheet({ group }: { group?: string }) {
       <header className="jig-head">
         <h1 className="jig-title">Icons</h1>
         <p className="jig-lede">
-          {count} drawings on one 24 unit grid, one optically sized line (1.25 px at 16, 1.5 px from 20), fitted to the pixel grid at every size, and one
-          motion each. Hover any of them; the right-hand three show the hover pose, the on state and the disabled state.
+          {count} drawings on one 24 unit grid, one optically sized line (1.25 px at 16, 1.5 px from 18), fitted to the pixel grid at every size, with a
+          small cut below 18 px where detail would turn to mud, and one motion each. In the product, hover motion is opt-in (destinations only); here
+          every cell opts in. Hover any of them; the right-hand three show the hover pose, the on state and the disabled state.
         </p>
       </header>
       {groups.map((g) => (
@@ -83,7 +87,7 @@ function Cell({ name, d }: { name: string; d: IconDrawing }) {
     <div className="jig-cell" title={d.motion}>
       <div className="jig-sizes">
         {[16, 20, 24].map((s) => (
-          <button key={s} type="button" className="jig-btn jicon-trigger" data-size={s} aria-label={`${name}, ${s} px`}>
+          <button key={s} type="button" className="jig-btn jicon-trigger jicon-hover" data-size={s} aria-label={`${name}, ${s} px`}>
             <Icon name={name} size={s} />
           </button>
         ))}
@@ -274,7 +278,13 @@ function ContextBody() {
           ["library", "Library"],
           ["customize", "Customize"],
         ].map(([icon, label], i) => (
-          <a key={icon} href="#" className="jig-row jicon-trigger" aria-current={i === 3 ? "page" : undefined} onClick={(e) => e.preventDefault()}>
+          <a
+            key={icon}
+            href="#"
+            className={DESTINATIONS.has(icon) ? "jig-row jicon-trigger jicon-hover" : "jig-row jicon-trigger"}
+            aria-current={i === 3 ? "page" : undefined}
+            onClick={(e) => e.preventDefault()}
+          >
             <Icon name={icon} size={16} />
             <span>{label}</span>
           </a>
@@ -454,7 +464,13 @@ function ShellBody() {
           ["library", "Library"],
           ["customize", "Customize"],
         ].map(([icon, label, kbd], i) => (
-          <a key={icon} href="#" className="jig-sh-row jicon-trigger" data-hover={i === 1 ? "" : undefined} onClick={(e) => e.preventDefault()}>
+          <a
+            key={icon}
+            href="#"
+            className={DESTINATIONS.has(icon) ? "jig-sh-row jicon-trigger jicon-hover" : "jig-sh-row jicon-trigger"}
+            data-hover={i === 1 ? "" : undefined}
+            onClick={(e) => e.preventDefault()}
+          >
             <span className="jig-sh-lead">
               <Icon name={icon} size={16} />
             </span>
@@ -612,7 +628,7 @@ function States() {
           <button
             key={p.name}
             type="button"
-            className="jig-statebtn jicon-trigger"
+            className="jig-statebtn jicon-trigger jicon-press"
             data-name={p.name}
             aria-pressed={!!on[p.name]}
             onClick={() => setOn((s) => ({ ...s, [p.name]: !s[p.name] }))}
@@ -631,7 +647,7 @@ function States() {
 function SwapDemo() {
   const [open, setOpen] = React.useState(false);
   return (
-    <button type="button" className="jig-statebtn jicon-trigger" data-name="name-turn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+    <button type="button" className="jig-statebtn jicon-trigger jicon-press" data-name="name-turn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
       <Icon name={open ? "chevron-down" : "chevron-right"} size={20} />
       <span>Name change turns</span>
     </button>
@@ -662,7 +678,7 @@ function LiveDemo() {
     requestAnimationFrame(tick);
   };
   return (
-    <button type="button" className="jig-statebtn jicon-trigger" data-name="live" aria-pressed={levels != null} onClick={start}>
+    <button type="button" className="jig-statebtn jicon-trigger jicon-press" data-name="live" aria-pressed={levels != null} onClick={start}>
       <Icon name="mic" size={20} state={levels ? "active" : "rest"} levels={levels ?? undefined} />
       <span>Listening, live levels</span>
     </button>
@@ -680,7 +696,7 @@ function Reel({ group }: { group?: string }) {
           <h2 className="jig-h2">{g}</h2>
           <div className="jig-reelgrid">
             {byGroup(g).map(([name]) => (
-              <button key={name} type="button" className="jig-reelbtn jicon-trigger" data-name={name} aria-label={name}>
+              <button key={name} type="button" className="jig-reelbtn jicon-trigger jicon-hover jicon-press" data-name={name} aria-label={name}>
                 <Icon name={name} size={20} />
                 <span>{name}</span>
               </button>

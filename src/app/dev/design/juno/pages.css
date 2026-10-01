@@ -154,7 +154,7 @@
 }
 .jn .jn-portrait__state[data-state="waiting"] {
   color: var(--attn);
-  font-weight: 500;
+  font-weight: var(--attn-w);
 }
 .jn .jn-portrait__state[data-state="paused"],
 .jn .jn-portrait__state[data-state="offline"] {
@@ -426,6 +426,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 44%);
 }
+.jn .jn-codeswitch {
+  display: none;
+}
+/* Ready later: drawn quieter, but it still names itself on hover and focus. */
+.jn .jb[data-ready="false"] {
+  opacity: 0.5;
+  pointer-events: auto;
+}
 .jn .jn-codework__main {
   position: relative;
   display: flex;
@@ -522,8 +530,15 @@
   height: 44px;
   flex: none;
   padding: 0 8px 0 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.jn .jn-diff__tabs::-webkit-scrollbar {
+  display: none;
 }
 .jn .jn-diff__tab {
+  flex: none;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -580,7 +595,8 @@
   color: var(--ink);
   transition: background-color var(--d-fast) var(--e-out);
 }
-.jn .jn-diff__filehead > svg {
+.jn .jn-diff__filehead > svg,
+.jn .jn-diff__filehead .jn-trace__chev {
   color: var(--ink-3);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -604,7 +620,6 @@
   padding: 4px 0 6px;
   font-size: 12px;
   line-height: 20px;
-  overflow-x: auto;
 }
 .jn .jn-code__hunk {
   padding: 4px 12px;
@@ -614,7 +629,7 @@
 .jn .jn-code__line {
   display: grid;
   grid-template-columns: 36px 36px 16px minmax(0, 1fr);
-  white-space: pre;
+  white-space: pre-wrap;
 }
 .jn .jn-code__n {
   text-align: right;
@@ -640,232 +655,390 @@
 .jn .jn-code__line[data-kind="del"] .jn-code__n {
   color: var(--del-ink);
 }
+/* A long line wraps on a 4ch hanging indent under its own text: nothing is cut at the pane's edge. */
 .jn .jn-code__text {
   color: var(--ink);
   padding-right: 12px;
+  padding-left: 4ch;
+  text-indent: -4ch;
+  overflow-wrap: anywhere;
 }
 
 /* ——————————————————————————————— Library ——————————————————————————————— */
 
-.jn .jn-lib__filter {
+.jn .jn-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.jn .jn-page__actions .jb--ghost {
+  font-weight: 400;
+}
+
+/* One row of controls: the filter on the left; search, made by, sort and the
+   view on the right, so search sits with the things it narrows. */
+.jn .jn-libbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-top: 32px;
+}
+.jn .jn-libbar__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.jn .jn-libbar__search {
+  width: 220px;
+  height: 32px;
+  margin-right: 4px;
+}
+.jn .jn-sort .ink-3 {
+  margin-right: 2px;
+}
+.jn .jn-view {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-left: 4px;
+  border-radius: 9px;
+  background: var(--well);
+}
+.jn .jn-view__opt {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-view__opt:hover {
+    color: var(--ink);
+  }
+}
+.jn .jn-view__opt[aria-checked="true"] {
+  background: var(--thumb);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.2));
+}
+.jn .jseg.jn-lib__filter {
   grid-auto-columns: auto;
 }
+
 .jn .jn-lib {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
   gap: 28px 20px;
-  margin-top: 22px;
+  margin-top: 24px;
 }
 .jn .jn-lib__item {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 8px;
-  margin: -8px;
-  border-radius: 16px;
-  transition: background-color var(--d-fast) var(--e-out);
 }
-@media (hover: hover) and (pointer: fine) {
-  .jn .jn-lib__item:hover {
-    background: var(--fill-hover);
-  }
-}
-.jn .jn-lib__item:active {
-  background: var(--fill-press);
+.jn .jn-lib__open {
+  display: block;
+  border-radius: 10px;
 }
 .jn .jn-lib__text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding: 0 2px;
+  min-width: 0;
 }
+/* The name wraps to two lines before it truncates, its mark hung on the first line. */
 .jn .jn-lib__title {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   gap: 8px;
+  align-items: start;
   font-size: 14px;
   line-height: 20px;
   color: var(--ink);
-  min-width: 0;
+}
+.jn .jn-lib__title:hover .jn-lib__name {
+  text-decoration: underline;
+  text-decoration-color: var(--line-3);
+  text-underline-offset: 3px;
 }
 .jn .jn-lib__mark {
   flex: none;
+  margin-top: 2px;
 }
 .jn .jn-lib__mark--ink {
   color: var(--ink-2);
 }
 .jn .jn-lib__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .jn .jn-lib__meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px 10px;
   padding-left: 24px;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 18px;
+  color: var(--ink-3);
+  min-width: 0;
+}
+.jn .jn-lib__by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+}
+.jn .jn-lib__chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--ink-3);
+  border-radius: 4px;
+  transition: color var(--d-fast) var(--e-out);
+}
+.jn .jn-lib__chat > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jn .jn-lib__chat > svg {
+  flex: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-lib__chat:hover {
+    color: var(--ink);
+  }
+  .jn .jn-lib__chat:hover > span {
+    text-decoration: underline;
+    text-decoration-color: var(--line-3);
+    text-underline-offset: 3px;
+  }
+}
+/* A file's problem, in words, with its fix inline: the second ink, never alarm red. Its glyph hangs in the title's mark column. */
+.jn .jn-lib__problem {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+.jn .jn-lib__problem > svg {
+  margin-top: 1px;
   color: var(--ink-3);
 }
+.jn .jn-lib__problem .jb--link {
+  display: inline;
+  font-size: 12px;
+  line-height: 18px;
+  margin-left: 4px;
+}
 
-/* Previews: the thing itself, drawn small, on a tone step. */
+/* Previews: the thing itself as a miniature (library.tsx draws each on a
+   320 x 240 canvas and scales it to the tile), on a tone step. */
 .jn .jn-lp {
+  position: relative;
   aspect-ratio: 4 / 3;
   border-radius: 10px;
   background: var(--card);
+  box-shadow: inset 0 0 0 1px light-dark(transparent, rgb(255 255 255 / 0.03));
   overflow: hidden;
-  position: relative;
+  transition: background-color var(--d-fast) var(--e-out);
 }
-.jn .jn-lp--page {
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-lib__open:hover .jn-lp {
+    background: var(--well);
+  }
+}
+.jn .jn-lp__canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 320px;
+  height: 240px;
+  transform-origin: 0 0;
   display: flex;
   justify-content: center;
-  padding: 16px 24px 0;
+}
+.jn .jn-lp[data-kind="document"] .jn-lp__canvas,
+.jn .jn-lp[data-kind="pdf"] .jn-lp__canvas {
+  padding: 22px 34px 0;
 }
 .jn .jn-lp__page {
   width: 100%;
   height: 100%;
-  border-radius: 3px 3px 0 0;
+  border-radius: 4px 4px 0 0;
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
-  padding: 16px 16px 0;
+  padding: 22px 22px 0;
   overflow: hidden;
+}
+.jn .jn-lp__page[data-report] {
+  background: light-dark(#f3f5f8, #26282c);
 }
 .jn .jn-lp__doctitle {
   font-family: var(--font-serif);
-  font-size: 13px;
-  line-height: 16px;
+  font-size: 18px;
+  line-height: 22px;
   color: var(--ink);
-  margin-bottom: 7px;
+  margin-bottom: 10px;
 }
 .jn .jn-lp__doctitle--big {
-  font-size: 17px;
-  line-height: 20px;
-  margin-top: 26px;
+  font-size: 24px;
+  line-height: 28px;
+  margin-top: 36px;
 }
 .jn .jn-lp__eyebrow {
-  font-size: 7px;
-  line-height: 10px;
+  font-size: 10px;
+  line-height: 14px;
   color: var(--ink-3);
-  letter-spacing: 0.02em;
-}
-.jn .jn-lp__page--report {
-  background: light-dark(#f3f5f8, #26282c);
 }
 .jn .jn-lp__docline {
-  font-size: 7.5px;
-  line-height: 11px;
+  font-size: 10.5px;
+  line-height: 15px;
   color: var(--ink-2);
-  margin-bottom: 5px;
+  margin-bottom: 7px;
 }
-.jn .jn-lp--deck {
-  display: grid;
-  place-items: center;
-  padding: 18px;
+.jn .jn-lp[data-kind="deck"] .jn-lp__canvas {
+  align-items: center;
+  padding: 0 26px;
 }
 .jn .jn-lp__slide {
+  position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 4px;
+  border-radius: 5px;
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
-  padding: 12px 14px;
-  position: relative;
+  padding: 18px 20px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .jn .jn-lp__slidetitle {
   font-family: var(--font-serif);
-  font-size: 13px;
-  line-height: 15px;
+  font-size: 18px;
+  line-height: 21px;
 }
 .jn .jn-lp__slidesub {
-  margin-top: 3px;
-  font-size: 7px;
-  line-height: 10px;
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 14px;
   color: var(--ink-3);
 }
+/* The chart sits in the slide's lower half, in its own box under the subtitle: it can never reach the words. */
 .jn .jn-lp__bars {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 10px;
-  height: 36%;
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
   display: flex;
   align-items: flex-end;
-  gap: 5px;
+  gap: 7px;
 }
 .jn .jn-lp__bars span {
   flex: 1;
-  border-radius: 1.5px 1.5px 0 0;
+  border-radius: 2px 2px 0 0;
   background: var(--well-3);
 }
 .jn .jn-lp__bars span[data-last] {
   background: var(--ink-2);
 }
-.jn .jn-lp--design {
-  display: grid;
-  place-items: center;
-  padding: 14px;
+.jn .jn-lp__stats {
+  margin-top: auto;
+  display: flex;
+  gap: 18px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ink-3);
+}
+.jn .jn-lp__stats b {
+  display: block;
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.jn .jn-lp[data-kind="design"] .jn-lp__canvas {
+  padding: 20px;
 }
 .jn .jn-lp__frame {
   width: 100%;
   height: 100%;
-  border-radius: 4px;
+  border-radius: 5px;
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
-  padding: 12px;
+  padding: 18px;
 }
 .jn .jn-lp__frametitle {
-  font-size: 9px;
-  line-height: 12px;
+  font-size: 13px;
+  line-height: 17px;
   font-weight: 500;
   text-align: center;
 }
 .jn .jn-lp__tiers {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-  margin-top: 9px;
+  gap: 8px;
+  margin-top: 14px;
 }
 .jn .jn-lp__tier {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 6px;
-  border-radius: 3px;
+  gap: 5px;
+  padding: 9px;
+  border-radius: 5px;
   box-shadow: 0 0 0 1px var(--line);
-  font-size: 6px;
-  line-height: 8px;
+  font-size: 9px;
+  line-height: 12px;
   color: var(--ink-3);
 }
 .jn .jn-lp__tier b {
-  font-size: 10px;
-  line-height: 12px;
+  font-size: 15px;
+  line-height: 18px;
   font-weight: 500;
   color: var(--ink);
 }
 .jn .jn-lp__tier i {
   display: block;
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
   background: var(--well-2);
 }
 .jn .jn-lp__tier[data-featured] {
   box-shadow: 0 0 0 1px var(--ink-3);
 }
-.jn .jn-lp--sheet {
-  padding: 14px 0 0 14px;
+.jn .jn-lp[data-kind="sheet"] .jn-lp__canvas {
+  justify-content: flex-start;
+  padding: 20px 0 0 20px;
 }
 .jn .jn-lp__sheet {
   border-collapse: collapse;
-  font-size: 8px;
-  line-height: 11px;
+  font-size: 11px;
+  line-height: 15px;
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
   font-variant-numeric: tabular-nums;
+  align-self: flex-start;
 }
 .jn .jn-lp__sheet td {
-  padding: 3px 8px;
+  padding: 4px 11px;
   border: 1px solid var(--line);
   color: var(--ink-2);
   white-space: nowrap;
@@ -881,9 +1054,8 @@
   color: var(--ink-4) !important;
   background: var(--card);
 }
-.jn .jn-lp--image {
-  display: grid;
-  place-items: center;
+.jn .jn-lp[data-kind="image"] .jn-lp__canvas {
+  align-items: center;
 }
 .jn .jn-lp__plan {
   width: 76%;
@@ -894,6 +1066,100 @@
 .jn .jn-lp__door {
   stroke: var(--ink-3);
   stroke-dasharray: 2 2;
+}
+
+/* The list view: the same items as rows with the facts in columns. */
+.jn .jn-librows {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-librow {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) 96px 120px minmax(0, 1.6fr) 84px 64px;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 10px;
+  margin: 0 -10px;
+  border-radius: var(--r-row);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jn .jn-librow + .jn-librow:not(.jn-librow--head) {
+  box-shadow: 0 -1px 0 var(--line);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-librow:not(.jn-librow--head):hover {
+    background: var(--fill-hover);
+  }
+}
+.jn .jn-librow--head {
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.jn .jn-librow__name {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.jn .jn-librow__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.jn .jn-librow__title {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jn .jn-librow .jn-lib__problem {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+.jn .jn-librow__by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jn .jn-librow__chat {
+  min-width: 0;
+}
+.jn .jn-librow__when,
+.jn .jn-librow__size {
+  text-align: right;
+  color: var(--ink-3);
+}
+
+/* An empty result: a display line, what search covers, and the way back. */
+.jn .jn-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 72px 24px 56px;
+  text-align: center;
+}
+.jn .jn-empty__line {
+  max-width: 44ch;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+.jn .jn-libfoot {
+  margin-top: 40px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
 }
 
 /* ——————————————————————————————— Customize ——————————————————————————————— */
@@ -1099,11 +1365,32 @@
   .jn .jn-lineup {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  /* One pane at a time, switched by Session and Changes, so the diff is always one press away. */
   .jn .jn-codework {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
-  .jn .jn-diff {
+  .jn .jn-codeswitch {
+    display: block;
+  }
+  .jn .jn-codeswitch__seg {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .jn .jn-codeswitch__seg .jseg {
+    width: 100%;
+  }
+  .jn .jn-codework[data-pane="session"] .jn-diff {
     display: none;
+  }
+  .jn .jn-codework[data-pane="changes"] .jn-codework__main {
+    display: none;
+  }
+  .jn .jn-codework[data-pane="changes"] .jn-diff {
+    box-shadow: none;
+  }
+  .jn .jn-codework[data-pane="changes"] .jn-diff__body {
+    padding-top: 8px;
   }
 }
 
@@ -1153,7 +1440,53 @@
   }
   .jn .jn-lib {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 20px 12px;
+    gap: 22px 12px;
+  }
+  .jn .jn-lib__meta {
+    padding-left: 0;
+  }
+  .jn .jn-lib__chat {
+    display: none;
+  }
+  /* The filter scrolls as a row on purpose: 16 px of scroll padding, a soft fade where it is cut. */
+  .jn .jn-libbar {
+    margin-top: 16px;
+  }
+  .jn .jn-libbar__filters {
+    width: calc(100% + 32px);
+    margin: 0 -16px;
+    padding: 0 16px;
+    overflow-x: auto;
+    scroll-padding-inline: 16px;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .jn .jn-libbar__filters::-webkit-scrollbar {
+    display: none;
+  }
+  .jn .jn-libbar__filters .jseg {
+    margin-right: 16px;
+  }
+  .jn .jn-libbar__tools {
+    width: 100%;
+    margin-left: 0;
+  }
+  .jn .jn-libbar__search {
+    flex: 1;
+    width: auto;
+  }
+  .jn .jn-libbar__tools .jn-sort {
+    display: none;
+  }
+  .jn .jn-page__actions .jb--ghost {
+    display: none;
+  }
+  .jn .jn-librow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .jn .jn-librow > :is(.jn-librow__kind, .jn-librow__by, .jn-librow__chat, .jn-librow__size) {
+    display: none;
   }
   .jn .jn-page--customize {
     grid-template-columns: minmax(0, 1fr);

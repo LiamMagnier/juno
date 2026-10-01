@@ -7,14 +7,25 @@
  * web renders. So: no enums, no namespaces, no parameter properties.
  *
  * THE GRID. A 24-unit box. The live area is 3 to 21. Key horizontals and
- * verticals sit on a 1.5-unit lattice, which lands on whole device pixels at
- * 16 and 24 px on a 2x screen (and on the 3-unit lattice at 20 px); the renderer
- * then offsets the glyph by half a device pixel so a 1.5 px stroke has crisp
- * edges. Every primary silhouette encloses about 215 square units: a 15 unit
- * square, a 16.5 unit circle, a 12 x 18 page, an 18 x 12 landscape frame.
+ * verticals sit on a 1.5-unit lattice; the renderer (index.tsx, fitDrawing)
+ * then fits every straight stem and every point to the device pixel grid per
+ * rendered size and pixel ratio, the way a font's hinting does. Every primary
+ * silhouette encloses about 215 square units: a 15 unit square, a 16.5 unit
+ * circle, a 12 x 18 page, an 18 x 12 landscape frame.
  *
- * THE LINE. One stroke: 1.5 px on screen at every size (the renderer sets the
- * stroke width in units from the rendered size). Round caps and joins.
+ * THE LINE. One optical stroke: 1.25 px at 16, 1.5 px from 18 (the renderer
+ * sets the width in units from the rendered size). Round caps and joins.
+ *
+ * THE HOUSE TRAITS (what makes a glyph Juno's rather than Lucide's):
+ *   1. The gap. Where two parts meet or overlap, the front one is cut clear
+ *      by 1.5 units (search's handle, the crew, customize's fader caps, the
+ *      corner plus, the PDF label, offline's slash).
+ *   2. Continuous corners on every container (rr), never plain arcs.
+ *   3. Bracketed joins: a tab, a tail or a shoulder meets its edge in a soft
+ *      S, the way Newsreader's serifs meet their stems (the folder, the bell).
+ *   4. "New" is the thing with the house plus cut into its bottom-right
+ *      corner (new chat, add member, connect).
+ *   5. Small cuts: below 18 px a drawing may drop detail (IconSmallCut).
  * Points (the dot of an i, the knob of a slider) are filled circles, lines are
  * strokes; nothing else is filled except the "on" drawings.
  *
@@ -43,7 +54,7 @@ export type IconMove = {
   o?: [number, number];
   rest?: number;
   op?: number;
-  anim?: "swing" | "levels" | "wave" | "blink" | "draw" | "pop" | "nod" | "spin";
+  anim?: "swing" | "levels" | "wave" | "blink" | "draw" | "pop" | "nod" | "spin" | "hop";
   delay?: number;
 };
 
@@ -68,9 +79,17 @@ export type IconElement = {
 
 export type IconOn =
   | { kind: "fill" }
-  | { kind: "turn"; deg: number }
+  /** The glyph turns `deg` about `o` (grid units; default the centre) and holds there: plus to close, a chevron opening, the bell ringing. */
+  | { kind: "turn"; deg: number; o?: [number, number] }
   | { kind: "swap"; to: string }
   | { kind: "draw" };
+
+/**
+ * The small optical cut: what a drawing becomes below 18 px, where a detail
+ * smaller than about two device pixels turns to mud (the deck's chart). Only the listed layers change; the silhouette, the line and
+ * the motion stay. The native projection maps it to the symbol's small scale.
+ */
+export type IconSmallCut = { elements?: IconElement[]; fill?: IconElement[] };
 
 export type IconGroup =
   | "Navigation"
@@ -98,6 +117,8 @@ export type IconDrawing = {
   hover?: IconMove;
   /** On hover, cross-fade to another drawing (the folder opens). */
   hoverSwap?: string;
+  /** Below 18 px, these layers replace the regular ones (see IconSmallCut). */
+  small?: IconSmallCut;
   group: IconGroup;
   /** One line for the gallery: what moves and why. */
   motion?: string;
@@ -448,24 +469,58 @@ const ARROW_SHAFT = poly(4.5, 12, 19.5, 12);
 const ARROW_HEAD = head(19.5, 12, 0, 7.425);
 
 const BUBBLE = "M6.75 4.5H17.25A3 3 0 0 1 20.25 7.5V13.5A3 3 0 0 1 17.25 16.5H11.25L7.5 19.875V16.5H6.75A3 3 0 0 1 3.75 13.5V7.5A3 3 0 0 1 6.75 4.5Z";
-const FOLDER = "M3.75 7.5A2.25 2.25 0 0 1 6 5.25H9.19L11.44 7.5H18A2.25 2.25 0 0 1 20.25 9.75V16.5A2.25 2.25 0 0 1 18 18.75H6A2.25 2.25 0 0 1 3.75 16.5Z";
+/**
+ * The folder: continuous corners, and a tab whose shoulder is a soft S (a
+ * bracketed join, the way Newsreader's serifs meet their stems) instead of a
+ * straight diagonal.
+ */
+/** A continuous corner (rr's construction) from the end of one edge to the start of the next; `dx, dy` point from the corner along the incoming edge. */
+function corner(vx: number, vy: number, inX: number, inY: number, outX: number, outY: number, r: number): string {
+  const e = r * 1.18;
+  const k = r * 0.32;
+  return `C${P(vx + inX * k, vy + inY * k)} ${P(vx + outX * k, vy + outY * k)} ${P(vx + outX * e, vy + outY * e)}`;
+}
+/** The tab's soft S, from the tab's top edge at x down to the body's top edge. */
+const tabS = (x: number, yTab: number, yTop: number): string => {
+  const s = (yTop - yTab) * 0.9;
+  return `H${fmt(x)}C${P(x + s, yTab)} ${P(x + 1.25 * s - 0.6, yTop)} ${P(x + 2 * s, yTop)}`;
+};
+function folderBody(x0: number, x1: number, yTab: number, yTop: number, y1: number, tabEnd: number, r = 2.25): string {
+  const e = r * 1.18;
+  return (
+    `M${P(x0, yTab + e)}${corner(x0, yTab, 0, 1, 1, 0, r)}${tabS(tabEnd, yTab, yTop)}H${fmt(x1 - e)}${corner(x1, yTop, -1, 0, 0, 1, r)}` +
+    `V${fmt(y1 - e)}${corner(x1, y1, 0, -1, -1, 0, r)}H${fmt(x0 + e)}${corner(x0, y1, 1, 0, 0, -1, r)}Z`
+  );
+}
+const FOLDER = folderBody(3.75, 20.25, 5.25, 7.5, 18.75, 8.25);
+/** The open folder's back: up the left, over the tab, along the top, down to where the front leaf covers it. */
+const FOLDER_BACK = `M3.75 18.75V${fmt(5.25 + 2.655)}${corner(3.75, 5.25, 0, 1, 1, 0, 2.25)}${tabS(8.25, 5.25, 7.5)}H${fmt(18.75 - 2.655)}${corner(18.75, 7.5, -1, 0, 0, 1, 2.25)}V10.5`;
 /** The bell's shoulders are round, its waist straight, and its lip flares a little: cast, not extruded. */
 const BELL = "M4.875 16.5C6 15.6 6.75 14.4 6.75 12.75V10.5A5.25 5.25 0 0 1 17.25 10.5V12.75C17.25 14.4 18 15.6 19.125 16.5";
 const MIC = "M9 6.75A3 3 0 0 1 15 6.75V11.25A3 3 0 0 1 9 11.25Z";
 const EYE = "M3 12C5.2 7.9 8.4 5.625 12 5.625C15.6 5.625 18.8 7.9 21 12C18.8 16.1 15.6 18.375 12 18.375C8.4 18.375 5.2 16.1 3 12Z";
-const BOOKMARK = "M6.75 5.25A1.5 1.5 0 0 1 8.25 3.75H15.75A1.5 1.5 0 0 1 17.25 5.25V20.25L12 16.5L6.75 20.25Z";
 const PIN = "M9.75 3.75V9L6.375 13.5H17.625L14.25 9V3.75";
 const THUMB = "M7.5 10.5L10.6 4.45A1.8 1.8 0 0 1 14 5.55L13.4 9H18.35A1.9 1.9 0 0 1 20.2 11.35L18.8 17.95A2 2 0 0 1 16.85 19.5H7.5Z";
-const CUFF = "M7.5 10.5H5.25A1.5 1.5 0 0 0 3.75 12V18A1.5 1.5 0 0 0 5.25 19.5H7.5";
-/* The crew: two members standing on one ground line, the nearer one shorter and looking at you. */
-const CREW_FRONT = gumdrop(8.625, 9.75, 20.25, 11.25);
+/** The sleeve: one bar standing the house gap off the hand (a cuff that shares the hand's edge is everyone else's thumb). */
+const SLEEVE = poly(4.5, 11.25, 4.5, 18.75);
+/*
+ * The crew: two members on one ground line, the nearer one shorter, wider and
+ * smiling at you. D-029 retired the two-dot face and D-034 drew the crew with
+ * graphic eyes; at icon size those are closed arcs (the content, eyes-shut
+ * smile), set low and wide, the way the cuteness rules in D-033 place them.
+ * Nothing in the glyph can read as a pair of staring dots.
+ */
+const CREW_FRONT = gumdrop(9, 8.25, 20.25, 12.75);
 const CREW_BACK = gumdrop(15.375, 5.25, 20.25, 11.25);
-/** A member's eyes: two short upright strokes, which the round caps make into the 3D crew's pill eyes. */
-const eyes = (cx: number, y: number, apart: number): string => `${poly(cx - apart / 2, y, cx - apart / 2, y + 1.5)}${poly(cx + apart / 2, y, cx + apart / 2, y + 1.5)}`;
-const CREW_EYES = eyes(8.625, 13.875, 3.75);
+/** Closed eyes: two upper half circles, `apart` between their centres. */
+const smile = (cx: number, y: number, apart: number, r = 1.125): string => `${arc(cx - apart / 2, y, r, 180, 360)}${arc(cx + apart / 2, y, r, 180, 360)}`;
+const CREW_EYES = smile(9, 15, 5.25);
 const MEMBER = gumdrop(10.5, 5.625, 20.25, 14.25);
-const MEMBER_EYES = eyes(10.5, 10.875, 4.5);
-const blink = (cx: number, y: number) => ({ anim: "blink" as const, sy: 0.15, o: [cx, y + 0.75] as [number, number] });
+const MEMBER_EYES = smile(10.5, 13.125, 6, 1.3);
+/** One hop: up a unit and a half and down, once (hello). */
+const hop = { anim: "hop" as const, y: -1.25 };
+/** The house plus, for a corner: arms `a` either side of (cx, cy). */
+const plusAt = (cx: number, cy: number, a = 3): string => `${poly(cx, cy - a, cx, cy + a)}${poly(cx - a, cy, cx + a, cy)}`;
 const SLASH = poly(4.5, 4.5, 19.5, 19.5);
 /** A cloud on a flat base: a right lobe, a tall middle lobe, a left lobe. */
 const CLOUD = "M7.125 18.75H17.25A3.75 3.75 0 0 0 17.9 11.31A5.625 5.625 0 0 0 7.05 10.6A4.125 4.125 0 0 0 7.125 18.75Z";
@@ -474,20 +529,22 @@ const HAND =
   "M8.25 20.25C6.9 19.4 6.2 18.4 5.5 17.1L3.9 14.25A1.5 1.5 0 0 1 6.3 12.6L6.75 13.35V8.25A1.875 1.875 0 0 1 10.5 8.25V12" +
   "V6A1.875 1.875 0 0 1 14.25 6V12V7.5A1.875 1.875 0 0 1 18 7.5V15C18 18 16.2 20.25 13.5 20.25Z";
 
-/** The leaning volume on the library shelf: 6 x 12, standing on its bottom-left corner, leaning 14.5 degrees onto the upright. */
-const LEAN = -14.5;
-const leanPt = (x: number, y: number) => rot(x, y, 13.5, 19.5, LEAN);
+/**
+ * The library shelf: one volume standing on the shelf line (the shelf is its
+ * bottom edge), and one leaning, resting on its own corner. No spine bands:
+ * at 16 px a band made the pair read as "0lb". The two stand a house gap
+ * apart at the top, so they never merge into one blob.
+ */
+const SHELF_Y = 19.5;
+const LEAN = -12;
+const UPRIGHT = `M${P(3.75, SHELF_Y)}V${fmt(4.5 + 1.77)}${corner(3.75, 4.5, 0, 1, 1, 0, 1.5)}H${fmt(9 - 1.77)}${corner(9, 4.5, -1, 0, 0, 1, 1.5)}V${fmt(SHELF_Y)}`;
 const leanBook = (() => {
-  const [ax, ay] = leanPt(13.5, 19.5);
-  const [bx, by] = leanPt(19.5, 19.5);
-  const [cx_, cy_] = leanPt(19.5, 7.5);
-  const [dx, dy] = leanPt(13.5, 7.5);
+  const q = (x: number, y: number) => rot(x, y, 15, SHELF_Y, LEAN);
+  const [ax, ay] = q(15, SHELF_Y);
+  const [bx, by] = q(20.25, SHELF_Y);
+  const [cx_, cy_] = q(20.25, SHELF_Y - 12);
+  const [dx, dy] = q(15, SHELF_Y - 12);
   return roundPoly(1.5, ax, ay, bx, by, cx_, cy_, dx, dy);
-})();
-const leanBand = (() => {
-  const [ax, ay] = leanPt(13.5, 11.25);
-  const [bx, by] = leanPt(19.5, 11.25);
-  return poly(ax, ay, bx, by);
 })();
 
 const PLUG = ["M7.5 9H16.5V12A4.5 4.5 0 0 1 7.5 12Z", poly(9.75, 9, 9.75, 4.5), poly(14.25, 9, 14.25, 4.5), poly(12, 16.5, 12, 20.25)];
@@ -502,12 +559,20 @@ const ENTER_HEAD = head(5.25, 15, 180, 4.773);
 const HANDS = poly(12, 8.25, 12, 12, 14.625, 13.5);
 /** The bell's parts, so the muted bell is the bell. */
 const BELL_PARTS = [BELL, poly(4.5, 16.5, 19.5, 16.5), poly(10.125, 19.5, 13.875, 19.5)];
+/**
+ * Memory: two hemispheres with one fold each side. The bookmark it replaces
+ * was a third "save" idea beside pin and star.
+ */
+const BRAIN_L = "M12 5.25C10.9 4.1 8.4 4 7.6 6.2C5.4 6.3 4.3 8.6 5 10.4C3.6 11.6 3.8 14.4 5.6 15.2C5.7 17.6 8.2 19.2 10.1 18.4C10.8 19.3 11.6 19.5 12 19.5";
+const BRAIN_R = flipX(BRAIN_L);
+const BRAIN_FOLDS = ["M7.6 6.2C7.6 7.5 8.4 8.6 9.75 8.6", "M5.6 15.2C7 15.2 8.25 14.25 8.25 12.75"].flatMap((d) => [d, flipX(d)]);
 /** The pin's parts, so the unpin is the pin. */
 const PIN_PARTS = [poly(8.25, 3.75, 15.75, 3.75), PIN, poly(12, 13.5, 12, 20.25)];
 
 /* —————————————————————————————— The set —————————————————————————————— */
 
 const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => ({ viewBox: 24, line: 1.5, ...d });
+
 
 export const ICONS = {
   /* ——— Navigation ——— */
@@ -530,17 +595,15 @@ export const ICONS = {
   }),
   "new-chat": I({
     group: "Navigation",
-    elements: [
-      p("M11.25 4.5H7.5A3 3 0 0 0 4.5 7.5V16.5A3 3 0 0 0 7.5 19.5H16.5A3 3 0 0 0 19.5 16.5V12.75"),
-      g([p(pencil(10.125, 13.875, -45, 12.2, 3.6, 3))], { x: 0.75, y: -0.75 }),
-    ],
-    motion: "The pencil lifts off the page, ready to write.",
+    elements: [p(BUBBLE), ko(plusAt(18.75, 17.625, 2.625)), p(plusAt(18.75, 17.625, 2.625))],
+    hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
+    motion: "A new chat is the chat bubble with the house plus cut into its corner. It speaks: a small pop from the tail.",
   }),
   search: I({
     group: "Navigation",
-    elements: [c(10.5, 10.5, 6.375), p(poly(15.2, 15.2, 19.5, 19.5))],
-    hover: { r: -14, o: [10.5, 10.5] },
-    motion: "The lens tilts about its own centre, so only the handle swings.",
+    elements: [c(10.125, 10.125, 6.375), p(poly(17.063, 17.063, 20.25, 20.25))],
+    hover: { r: -14, o: [10.125, 10.125] },
+    motion: "The handle stands a house gap off the lens (Juno's join). The lens tilts about its own centre, so only the handle swings.",
   }),
   folder: I({
     group: "Navigation",
@@ -552,18 +615,12 @@ export const ICONS = {
   }),
   "folder-open": I({
     group: "Navigation",
-    elements: [
-      p("M3.75 18.75V7.5A2.25 2.25 0 0 1 6 5.25H9.19L11.44 7.5H16.5A2.25 2.25 0 0 1 18.75 9.75V10.5"),
-      g([p(roundPoly(1.2, 6.75, 10.5, 20.625, 10.5, 17.25, 18.75, 3.75, 18.75))], { y: -0.5 }),
-    ],
+    elements: [p(FOLDER_BACK), g([p(roundPoly(1.2, 6.75, 10.5, 20.625, 10.5, 17.25, 18.75, 3.75, 18.75))], { y: -0.5 })],
     motion: "The front leaf lifts half a unit.",
   }),
   library: I({
     group: "Navigation",
-    elements: [
-      p(rr(4.5, 4.5, 5.25, 15, 1.5)),
-      g([p(leanBook), p(leanBand)], { r: -LEAN, o: [13.5, 19.5], y: -1 }),
-    ],
+    elements: [p(poly(3, SHELF_Y, 21, SHELF_Y)), p(UPRIGHT), g([p(leanBook)], { r: -LEAN, o: [15, SHELF_Y], y: -1 })],
     motion: "The leaning volume straightens and lifts, as a book comes off the shelf.",
   }),
   customize: I({
@@ -571,35 +628,31 @@ export const ICONS = {
     elements: [
       p(poly(4.5, 7.5, 19.5, 7.5)),
       p(poly(4.5, 16.5, 19.5, 16.5)),
-      g([solidCircle(15, 7.5, 2.25)], { x: -2.25 }),
-      g([solidCircle(9, 16.5, 2.25)], { x: 2.25 }),
+      { ...ko(rr(13.875, 4.875, 2.25, 5.25, 1.125)), hover: { x: -2.25 } },
+      g([solid(rr(13.875, 4.875, 2.25, 5.25, 1.125))], { x: -2.25 }),
+      { ...ko(rr(7.875, 13.875, 2.25, 5.25, 1.125)), hover: { x: 2.25 } },
+      g([solid(rr(7.875, 13.875, 2.25, 5.25, 1.125))], { x: 2.25 }),
     ],
-    motion: "The two knobs slide toward each other along their tracks.",
+    motion: "Two faders, their caps cut clear of the track by the house gap. The caps slide toward each other.",
   }),
   crew: I({
     group: "Navigation",
     elements: [
       g([p(CREW_BACK)], { y: -0.75 }),
-      ko(CREW_FRONT),
-      p(CREW_FRONT),
-      g([p(CREW_EYES)], blink(8.625, 13.875)),
+      { ...ko(CREW_FRONT), hover: hop },
+      g([p(CREW_FRONT), p(CREW_EYES)], hop),
     ],
-    fill: [
-      g([solid(CREW_BACK)], { y: -0.75 }),
-      ko(CREW_FRONT),
-      solid(CREW_FRONT),
-      { ...koTight(CREW_EYES), hover: blink(8.625, 13.875) },
-    ],
+    fill: [g([solid(CREW_BACK)], { y: -0.75 }), { ...ko(CREW_FRONT), hover: hop }, g([solid(CREW_FRONT), koTight(CREW_EYES)], hop)],
     on: { kind: "fill" },
-    motion: "The one behind stands up; the one in front blinks at you, once.",
+    motion: "The one behind stands up; the one in front, eyes closed in a smile, hops once: hello.",
   }),
   bell: I({
     group: "Navigation",
     elements: BELL_PARTS.map((d) => p(d)),
     fill: [solid(`${BELL}Z`), p(BELL_PARTS[1]), p(BELL_PARTS[2])],
-    on: { kind: "fill" },
+    on: { kind: "turn", deg: 14, o: [12, 4.5] },
     hover: { r: 10, o: [12, 4.5], anim: "swing" },
-    motion: "One swing from the hanger, damped, then still.",
+    motion: "One swing from the hanger, damped, then still. Active (something new): it holds the swing, tilted as it rings, at its usual weight. Never a fill or a dot.",
   }),
   sidebar: I({
     group: "Navigation",
@@ -636,8 +689,8 @@ export const ICONS = {
   }),
   menu: I({
     group: "Navigation",
-    elements: [g([p(poly(4.5, 9, 19.5, 9))], { y: -0.75 }), g([p(poly(4.5, 15, 19.5, 15))], { y: 0.75 })],
-    motion: "The two lines part.",
+    elements: [p(poly(4.5, 8.25, 19.5, 8.25)), g([p(poly(4.5, 15.75, 12.75, 15.75))], { sx: 1.818, o: [4.5, 15.75] })],
+    motion: "A long line over a short one (never an equals sign); the short one runs out to full length, as the panel it opens.",
   }),
   more: I({
     group: "Navigation",
@@ -654,9 +707,8 @@ export const ICONS = {
   plus: I({
     group: "Composer",
     elements: [p(poly(12, 5.25, 12, 18.75)), p(poly(5.25, 12, 18.75, 12))],
-    hover: { r: 90, o: [12, 12] },
     on: { kind: "turn", deg: 45 },
-    motion: "Turns a quarter (it lands where it started). Active: turns 45 degrees into a close.",
+    motion: "No hover pose (a quarter turn lands where it started and steals the real turn). Active: turns 45 degrees into a close.",
   }),
   attach: I({
     group: "Composer",
@@ -742,17 +794,20 @@ export const ICONS = {
   }),
   memory: I({
     group: "Composer",
-    elements: [p(BOOKMARK)],
-    fill: [solid(BOOKMARK)],
+    elements: [p(BRAIN_L), p(BRAIN_R), p(poly(12, 5.25, 12, 19.5)), g(BRAIN_FOLDS.map((d) => p(d, { draw: true })), { anim: "draw" })],
+    fill: [solid(`${BRAIN_L}Z`), solid(`${BRAIN_R}Z`), koTight(poly(12, 6, 12, 18.75)), ...BRAIN_FOLDS.map((d) => koTight(d))],
     on: { kind: "fill" },
-    hover: { y: 0.75 },
-    motion: "The ribbon settles a little lower. Active: filled, memory on.",
+    motion: "What Juno remembers: two hemispheres, not a third save mark beside pin and star. The folds draw in, a memory forming (they stay at 16 px: without them the outline reads as a ball). Active (memory on): filled, its folds cut through.",
   }),
   research: I({
     group: "Composer",
-    elements: [c(10.5, 10.5, 6.375), p(poly(15.2, 15.2, 19.5, 19.5)), g([p(poly(7.875, 9, 13.125, 9)), p(poly(7.875, 12, 11.625, 12))], { x: 0.75 })],
-    hover: { r: -8, o: [10.5, 10.5] },
-    motion: "The lens reads: its lines move under it as it tilts.",
+    elements: [
+      p(rr(3.75, 3, 11.25, 15, 2.25)),
+      p(poly(7.5, 7.5, 11.25, 7.5)),
+      { ...koCircle(15.375, 14.625, 4.125), hover: { x: -0.75, y: -0.75 } },
+      g([c(15.375, 14.625, 4.125), p(poly(18.292, 17.542, 20.25, 19.5))], { x: -0.75, y: -0.75 }),
+    ],
+    motion: "A lens over a page, not the bare search lens: it reads its way up the page.",
   }),
   auto: I({
     group: "Composer",
@@ -764,11 +819,12 @@ export const ICONS = {
   copy: I({
     group: "Message",
     elements: [
-      g([p("M15 9V5.25A2.25 2.25 0 0 0 12.75 3H5.25A2.25 2.25 0 0 0 3 5.25V12.75A2.25 2.25 0 0 0 5.25 15H9")], { x: -0.75, y: -0.75 }),
+      g([p(rr(3, 3, 12, 12, 2.25))], { x: -0.75, y: -0.75 }),
+      ko(rr(9, 9, 12, 12, 2.25)),
       p(rr(9, 9, 12, 12, 2.25)),
     ],
     on: { kind: "swap", to: "check" },
-    motion: "The sheet behind steps out. Active: becomes a check that draws itself.",
+    motion: "Two sheets, the front one cut clear of the back by the house gap. The sheet behind steps out. Active: becomes a check that draws itself, once.",
   }),
   check: I({
     group: "Message",
@@ -778,16 +834,16 @@ export const ICONS = {
   }),
   "thumbs-up": I({
     group: "Message",
-    elements: [p(THUMB), p(CUFF)],
-    fill: [solid(THUMB), solid(`${CUFF}Z`), koTight(poly(7.5, 11.25, 7.5, 18.75))],
+    elements: [p(THUMB), p(SLEEVE)],
+    fill: [solid(THUMB), p(SLEEVE)],
     on: { kind: "fill" },
     hover: { r: -8, o: [7.5, 19.5] },
     motion: "The thumb tips up. Active: filled.",
   }),
   "thumbs-down": I({
     group: "Message",
-    elements: [p(flipY(THUMB)), p(flipY(CUFF))],
-    fill: [solid(flipY(THUMB)), solid(`${flipY(CUFF)}Z`), koTight(poly(7.5, 5.25, 7.5, 12.75))],
+    elements: [p(flipY(THUMB)), p(flipY(SLEEVE))],
+    fill: [solid(flipY(THUMB)), p(flipY(SLEEVE))],
     on: { kind: "fill" },
     hover: { r: 8, o: [7.5, 4.5] },
     motion: "The thumb tips down. Active: filled.",
@@ -795,8 +851,8 @@ export const ICONS = {
   retry: I({
     group: "Message",
     elements: [p(arc(12, 12, 7.5, 130, -150)), p(head(...pt(12, 12, 7.5, -150), 120, 4.5))],
-    hover: { r: -60, o: [12, 12], anim: "spin" },
-    motion: "Turns once, the way it points, and settles where it started.",
+    hover: { r: -40, o: [12, 12] },
+    motion: "Winds back forty degrees, the way it points, and holds; never a full turn (that is a spinner).",
   }),
   edit: I({
     group: "Message",
@@ -903,12 +959,13 @@ export const ICONS = {
   deck: I({
     group: "Files",
     elements: [p(rr(3, 4.5, 18, 11.25, 2.25)), p(poly(7.5, 12, 10.5, 9.375, 13.125, 11.25, 16.5, 8.25)), p(poly(9.375, 20.25, 10.875, 15.75)), p(poly(14.625, 20.25, 13.125, 15.75))],
-    motion: "None.",
+    small: { elements: [p(rr(3, 4.5, 18, 11.25, 2.25)), p(poly(9.375, 20.25, 10.875, 15.75)), p(poly(14.625, 20.25, 13.125, 15.75))] },
+    motion: "None. At 16 px the chart goes (the small cut): a screen on its stand.",
   }),
   pdf: I({
     group: "Files",
-    elements: page(p(poly(9, 12, 15, 12)), p(rr(9, 15, 6, 3, 1.5))),
-    motion: "None.",
+    elements: page(ko(rr(3.75, 12, 10.5, 5.25, 1.875)), p(rr(3.75, 12, 10.5, 5.25, 1.875)), p(poly(9, 8.25, 12, 8.25))),
+    motion: "None. The label overhangs the page's edge, so a PDF never reads as a plain document at 16 px.",
   }),
   "file-image": I({
     group: "Files",
@@ -936,8 +993,8 @@ export const ICONS = {
   }),
   design: I({
     group: "Files",
-    elements: [g([c(15, 9, 5.25)], { x: 0.75, y: -0.75 }), ko(rr(4.5, 9.75, 9.75, 9.75, 2.25)), p(rr(4.5, 9.75, 9.75, 9.75, 2.25))],
-    motion: "The circle slides out from behind the square: two layers parting.",
+    elements: [g([p(roundPoly(1.5, 9, 4.5, 15, 4.5, 18, 11.25, 12, 20.25, 6, 11.25)), dot(12, 12, 1.3), p(poly(12, 14.625, 12, 17.25))], { y: 0.75 })],
+    motion: "A pen nib (a design, not a copy of two shapes). It touches down.",
   }),
 
   /* ——— Apps ——— */
@@ -949,12 +1006,8 @@ export const ICONS = {
   }),
   connect: I({
     group: "Apps",
-    elements: [
-      ...PLUG.map((d) => p(shift(d, -2.25, -0.75))),
-      ko(`${poly(18, 15, 18, 21)}${poly(15, 18, 21, 18)}`),
-      g([p(poly(18, 15, 18, 21)), p(poly(15, 18, 21, 18))], { r: 90, o: [18, 18] }),
-    ],
-    motion: "The plus turns a quarter: add a connection.",
+    elements: [g(PLUG.map((d) => p(shift(d, -2.25, -0.75))), { y: -1 }), ko(plusAt(18, 18)), p(plusAt(18, 18))],
+    motion: "The plug pushes up into its socket; the corner plus says it is a new connection.",
   }),
   disconnect: I({
     group: "Apps",
@@ -979,13 +1032,8 @@ export const ICONS = {
   /* ——— Crew and time ——— */
   "add-member": I({
     group: "Crew and time",
-    elements: [
-      p(MEMBER),
-      g([p(MEMBER_EYES)], blink(10.5, 10.875)),
-      ko(`${poly(18, 14.25, 18, 20.25)}${poly(15, 17.25, 21, 17.25)}`),
-      g([p(poly(18, 14.25, 18, 20.25)), p(poly(15, 17.25, 21, 17.25))], { r: 90, o: [18, 17.25] }),
-    ],
-    motion: "The plus turns a quarter and the new member blinks.",
+    elements: [g([p(MEMBER), p(MEMBER_EYES)], hop), ko(plusAt(18, 17.25)), p(plusAt(18, 17.25))],
+    motion: "The new member hops once beside the corner plus.",
   }),
   routine: I({
     group: "Crew and time",
@@ -1027,8 +1075,8 @@ export const ICONS = {
   }),
   diff: I({
     group: "Code",
-    elements: [g([p(poly(12, 4.5, 12, 12)), p(poly(8.25, 8.25, 15.75, 8.25))], { r: 90, o: [12, 8.25] }), p(poly(8.25, 17.25, 15.75, 17.25))],
-    motion: "The plus turns a quarter.",
+    elements: [g([p(poly(12, 4.5, 12, 12)), p(poly(8.25, 8.25, 15.75, 8.25))], { y: -0.75 }), g([p(poly(8.25, 17.25, 15.75, 17.25))], { y: 0.75 })],
+    motion: "The plus and the minus part, a unit and a half apart.",
   }),
   branch: I({
     group: "Code",
@@ -1036,9 +1084,10 @@ export const ICONS = {
       c(7.5, 6, 2.25),
       c(7.5, 18, 2.25),
       p(poly(7.5, 8.25, 7.5, 15.75)),
-      g([c(16.5, 6, 2.25, { draw: true }), p("M16.5 8.25C16.5 12.75 7.5 11.25 7.5 15.75", { draw: true })], { anim: "draw" }),
+      c(16.5, 6, 2.25),
+      g([p("M7.5 15.75C7.5 11.25 16.5 12.75 16.5 8.25", { draw: true })], { anim: "draw" }),
     ],
-    motion: "The branch draws itself off the trunk.",
+    motion: "The branch draws itself off the trunk, out to its tip. (The ring is never dashed: a dash round a circle leaves a seam.)",
   }),
   "pull-request": I({
     group: "Code",
@@ -1047,9 +1096,9 @@ export const ICONS = {
       c(6, 18, 2.25),
       p(poly(6, 8.25, 6, 15.75)),
       c(18, 18, 2.25),
-      g([p("M18 15.75V9A3 3 0 0 0 15 6H11.25", { draw: true }), p(head(11.25, 6, 180, 3.182), { draw: true })], { anim: "draw" }),
+      g([p("M18 15.75V9A3 3 0 0 0 15 6H11.25", { draw: true }), p(head(11.25, 6, 180, 4.243), { draw: true })], { anim: "draw" }),
     ],
-    motion: "The request's path draws itself back to the trunk.",
+    motion: "The request's path draws itself back to the trunk. The arrowhead is three units a side, so it still reads at 16 px.",
   }),
   run: I({
     group: "Code",
@@ -1214,7 +1263,7 @@ export const ICONS = {
     elements: [g([p(poly(8.25, 9, 12, 5.25, 15.75, 9))], { y: -0.75 }), g([p(poly(8.25, 15, 12, 18.75, 15.75, 15))], { y: 0.75 })],
     motion: "The pair parts.",
   }),
-  close: I({ group: "Arrows", elements: [p(poly(6.375, 6.375, 17.625, 17.625)), p(poly(17.625, 6.375, 6.375, 17.625))], hover: { r: 90, o: [12, 12] }, motion: "Turns a quarter." }),
+  close: I({ group: "Arrows", elements: [p(poly(6.375, 6.375, 17.625, 17.625)), p(poly(17.625, 6.375, 6.375, 17.625))], motion: "None: a quarter turn lands where it started. The press says it." }),
   minus: I({ group: "Arrows", elements: [p(poly(5.25, 12, 18.75, 12))], motion: "None." }),
   expand: I({
     group: "Arrows",
@@ -1240,11 +1289,11 @@ export const ICONS = {
       c(12, 12, 3.75),
       g(
         [0, 45, 90, 135, 180, 225, 270, 315].map((a) => p(poly(...pt(12, 12, 6.75, a), ...pt(12, 12, 9, a)))),
-        { r: 45, o: [12, 12] },
+        { r: 22.5, o: [12, 12] },
       ),
     ],
     on: { kind: "swap", to: "moon" },
-    motion: "The rays turn an eighth. Active: becomes the moon.",
+    motion: "The rays turn half a step (a whole step would land where they started). Active: becomes the moon.",
   }),
   moon: I({
     group: "Theme",
@@ -1327,8 +1376,8 @@ export const ICONS = {
   }),
   "folder-plus": I({
     group: "Library",
-    elements: [p(FOLDER), g([p(poly(12, 11.25, 12, 15.75)), p(poly(9.75, 13.5, 14.25, 13.5))], { r: 90, o: [12, 13.5] })],
-    motion: "The plus turns a quarter: a new project.",
+    elements: [p(FOLDER), p(poly(12, 10.5, 12, 15.75)), p(poly(9.375, 13.125, 14.625, 13.125))],
+    motion: "None: a menu verb (menus are quiet).",
   }),
   "folder-move": I({
     group: "Library",
@@ -1399,12 +1448,30 @@ export const ICON_ALIASES = {
   return: "enter",
   shortcuts: "keyboard",
   publish: "globe",
+  desktop: "computer",
+  studio: "computer",
 } satisfies Record<string, string>;
 
 export function resolveIcon(name: string): IconDrawing | undefined {
   const icons: Record<string, IconDrawing> = ICONS;
   const aliases: Record<string, string> = ICON_ALIASES;
   return icons[name] ?? icons[aliases[name] ?? ""];
+}
+
+/** Below this rendered size a drawing's small cut, when it has one, replaces its regular layers. */
+export const SMALL_CUT_BELOW = 18;
+const smallCache = new WeakMap<IconDrawing, IconDrawing>();
+
+/** The drawing for a rendered size: the small cut merged in below 18 px (one object per drawing, so fits cache). */
+export function resolveIconAt(name: string, size: number): IconDrawing | undefined {
+  const d = resolveIcon(name);
+  if (!d?.small || size >= SMALL_CUT_BELOW) return d;
+  let out = smallCache.get(d);
+  if (!out) {
+    out = { ...d, elements: d.small.elements ?? d.elements, fill: d.small.fill ?? d.fill };
+    smallCache.set(d, out);
+  }
+  return out;
 }
 
 /* —————————————————————————————— Native projection —————————————————————————————— */
@@ -1440,17 +1507,19 @@ function stillElements(els: IconElement[]): IconElement[] {
  * and motion-only attributes dropped. `fill` is the on drawing. A knockout
  * keeps its fill and its cut width in `attrs` (4.5 units for the gap, 2.25
  * for a tight hole), which is what the outliner subtracts. Undefined for a
- * live control (progress) or a cut the icon does not have.
+ * live control (progress) or a cut the icon does not have. `scale: "small"`
+ * reads the small optical cut (the SF Symbol's small scale), which equals the
+ * regular drawing for every icon without one.
  */
-export function nativeDrawing(name: string, cut: "regular" | "fill" = "regular"): NativeDrawing | undefined {
-  const d = resolveIcon(name);
+export function nativeDrawing(name: string, cut: "regular" | "fill" = "regular", scale: "regular" | "small" = "regular"): NativeDrawing | undefined {
+  const d = scale === "small" ? resolveIconAt(name, 16) : resolveIcon(name);
   if (!d || d.live) return undefined;
   const els = cut === "fill" ? d.fill : d.elements;
   if (!els) return undefined;
   return { viewBox: 24, line: 1.5, elements: stillElements(els) };
 }
 
-/** Every symbol the native apps would ship: `juno.<name>`, and `juno.<name>.fill` where there is an on drawing. */
+/** Every symbol the native apps would ship: `juno.<name>`, and `juno.<name>.fill` where there is an on drawing (small cuts ride inside the same symbol as its small scale). */
 export function nativeSymbolNames(): string[] {
   const out: string[] = [];
   for (const [name, d] of Object.entries(ICONS) as [string, IconDrawing][]) {

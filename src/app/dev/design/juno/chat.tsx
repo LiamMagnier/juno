@@ -2,29 +2,35 @@
 
 import * as React from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { CrewFace } from "./crew/face";
-import { ACCOUNT, DRAFT, MIRA, PRESENCE_WORDS, RECEIPT, THREAD_TITLE, type Segment } from "./fixtures";
+import { CrewMark } from "./crew-bridge";
+import { ACCOUNT, DRAFT, MIRA, PRESENCE_GLYPHS, PRESENCE_WORDS, RECEIPT, THREAD_TITLE, type Segment } from "./fixtures";
 import { Composer, type ComposerApi, type ComposerStill } from "./composer";
 import { Icon } from "./icons";
-import { FileMark, SlackMark } from "./marks";
-import { R, SPRING, T, useReduced } from "./motion";
+import { FileMark, GmailMark, SlackMark } from "./marks";
+import { EASE_OUT, R, SPRING, T, useReduced } from "./motion";
 import { face, MobileBar, panelOf, TopBar } from "./shell";
-import { Answer, ANSWER_WORDS, Approval, HANDOFF_ID, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
+import { Answer, ANSWER_WORDS, Approval, HANDOFF_FACE_ID, HANDOFF_ID, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
  * Chat, from the empty home to a working thread, as ONE surface, so the first
  * send is a continuous event rather than a page change (C12, C18, M1, M2, T1):
  *
  *   send      in the same frame the person's turn is drawn in its final place
- *             (a 120 ms settle from 0.6 opacity); the greeting and suggestions
- *             leave on exit (160 ms, ease-in); the composer travels from the
- *             centre to the dock on the layout spring (0.36 s, no bounce).
- *   wait      after 200 ms, the live line in the presence colour says what Juno
- *             is doing; after 3 s it counts seconds.
+ *             (a 120 ms settle from 0.6 opacity); the suggestions leave first
+ *             (100 ms, out-soft) so the composer never crosses them; the
+ *             greeting fades where it stood (160 ms, ease-in); the composer
+ *             travels from the centre to the dock on the layout spring
+ *             (0.36 s, no bounce), its position only: nothing in it stretches.
+ *   wait      after 200 ms, the live line says what Juno is doing; after 3 s
+ *             it counts seconds.
  *   answer    the first word replaces the line in the same frame; words fade in
  *             where they stay (160 ms each); the trace folds into one line.
- *   hand-off  the line that says what Mira is doing becomes the task card's
- *             title (emphasized spring), and the card opens beneath it.
+ *             The view does not chase the stream: the person's message stays
+ *             where they last saw it, and what lands below the fold is named
+ *             in the dock ("2 things need you", with Show).
+ *   hand-off  the line that says what Mira is doing (already set as a card
+ *             title) moves into the task card's header on the emphasized
+ *             spring, position only, and the card opens beneath it.
  *   approval  the approval card arrives (base, 6 px rise) and arms after 500 ms.
  */
 
@@ -35,32 +41,76 @@ export function Greeting() {
   return <h1 className="t-greet jn-greet">What’s next, {ACCOUNT.first}?</h1>;
 }
 
-/** Up to three suggestions from the person's own state (§3.3): who needs them, what moved, what they touched today. */
+/**
+ * Up to three suggestions from the person's own state (§3.3): what moved since
+ * they looked, what they left half done, who wrote to them. Never a crew
+ * member who is already asking in the sidebar: one ask, one place.
+ */
 export function Suggestions() {
   return (
     <div className="jn-suggest">
       <button type="button" className="jn-chip">
-        <CrewFace member={face(MIRA)} state="waiting" size={16} live={false} />
-        Answer Mira on Halvorsen
-      </button>
-      <button type="button" className="jn-chip">
-        <SlackMark size={15} />
+        <SlackMark size={16} />
         Catch up on #design
       </button>
       <button type="button" className="jn-chip">
         <FileMark name="Board deck, October.pdf" size={16} />
         Finish the board deck
       </button>
+      <button type="button" className="jn-chip">
+        <GmailMark size={16} />
+        Reply to Kari at Halvorsen
+      </button>
     </div>
   );
 }
 
-type Ghost = { greet: React.CSSProperties; suggest: React.CSSProperties } | null;
+type Ghost = { greet: React.CSSProperties; suggest: React.CSSProperties; composer?: React.CSSProperties; segs: Segment[] } | null;
+
+/** How many of the thread's asks (a question, an approval) are out of view: the dock names them. */
+function useNeedsOutOfView(enabled: boolean, chat: React.RefObject<HTMLElement | null>, scroller: () => HTMLElement | null, deps: unknown[]) {
+  const [out, setOut] = React.useState(0);
+  React.useEffect(() => {
+    const root = scroller();
+    const host = chat.current;
+    if (!enabled || !root || !host) {
+      setOut(0);
+      return;
+    }
+    const seen = new Map<Element, boolean>();
+    const count = () => setOut([...seen.values()].filter((v) => !v).length);
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) seen.set(e.target, e.isIntersecting && e.intersectionRatio > 0.3);
+        count();
+      },
+      { root, rootMargin: "0px 0px -150px 0px", threshold: [0, 0.3, 0.6, 1] },
+    );
+    const observe = () => {
+      io.disconnect();
+      seen.clear();
+      host.querySelectorAll(".jn-task[data-waiting], .jn-approve:not([data-outcome])").forEach((el) => {
+        seen.set(el, true);
+        io.observe(el);
+      });
+      count();
+    };
+    observe();
+    const mo = new MutationObserver(observe);
+    mo.observe(host, { subtree: true, attributes: true, attributeFilter: ["data-waiting", "data-outcome"] });
+    return () => {
+      io.disconnect();
+      mo.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, ...deps]);
+  return out;
+}
 
 export function ChatSurface({
   initialPhase = "home",
   initialStage = "approval",
-  initialSegs = DRAFT,
+  initialSegs = [],
   composerStill,
   auto = true,
   planOpen = false,
@@ -68,7 +118,6 @@ export function ChatSurface({
   onPhase,
   scrollRef,
   stillStage,
-  dockNeeds = false,
   approvalMenu = false,
   playThread = false,
 }: {
@@ -81,12 +130,10 @@ export function ChatSurface({
   planOpen?: boolean;
   apiRef?: React.MutableRefObject<ComposerApi | null>;
   onPhase?: (p: string) => void;
-  /** The element that scrolls (a motion stage); the page scrolls when omitted. */
+  /** The element that scrolls (a motion stage); the panel scrolls when omitted. */
   scrollRef?: React.RefObject<HTMLElement | null>;
   /** Freeze the thread at a stage (for stills). */
   stillStage?: { stage: Stage; revealed?: number; presence?: number; seconds?: number };
-  /** Show the dock's needs-you row (the task card is out of view). */
-  dockNeeds?: boolean;
   approvalMenu?: boolean;
   /** Start in the thread and play its timeline from the send (the motion page). */
   playThread?: boolean;
@@ -102,24 +149,31 @@ export function ChatSurface({
   const [seconds, setSeconds] = React.useState(stillStage?.seconds ?? 0);
   const [receipt, setReceipt] = React.useState(settled);
   const [ghost, setGhost] = React.useState<Ghost>(null);
+  const [justSent, setJustSent] = React.useState(false);
+  const [travel, setTravel] = React.useState(false);
   const dockApi = React.useRef<ComposerApi | null>(null);
   const chatRef = React.useRef<HTMLDivElement | null>(null);
   const greetRef = React.useRef<HTMLDivElement | null>(null);
   const suggestRef = React.useRef<HTMLDivElement | null>(null);
+  const composerRef = React.useRef<HTMLDivElement | null>(null);
   const live = initialPhase !== "thread" || playThread;
+  const scroller = React.useCallback(() => scrollRef?.current ?? panelOf(chatRef.current), [scrollRef]);
 
   const onSend = React.useCallback(
     (segs: Segment[]) => {
-      // Snapshot where the greeting and suggestions stood, so they can leave from there while the thread takes the page.
+      // Snapshot where the greeting (the heading itself, not its grid track) and the chips stood, so they leave from there.
       const c = chatRef.current?.getBoundingClientRect();
-      const g = greetRef.current?.getBoundingClientRect();
-      const s = suggestRef.current?.getBoundingClientRect();
+      const g = greetRef.current?.querySelector(".jn-greet")?.getBoundingClientRect();
+      const s = suggestRef.current?.querySelector(".jn-suggest")?.getBoundingClientRect();
+      const k = composerRef.current?.querySelector(".jn-composer-wrap")?.getBoundingClientRect();
       if (c && g && s) {
         const at = (r: DOMRect): React.CSSProperties => ({ position: "absolute", left: r.left - c.left, top: r.top - c.top, width: r.width });
-        setGhost({ greet: at(g), suggest: at(s) });
+        setGhost({ greet: at(g), suggest: at(s), composer: reduced && k ? at(k) : undefined, segs });
       }
       setSent(segs);
       setPhase("thread");
+      setJustSent(true);
+      setTravel(true);
       setStage("thinking");
       setRevealed(0);
       setPresence(0);
@@ -128,15 +182,23 @@ export function ChatSurface({
       setReceipt(false);
       onPhase?.("thread");
     },
-    [onPhase],
+    [onPhase, reduced],
   );
 
   // The ghost leaves on exit, then is gone.
   React.useEffect(() => {
     if (!ghost) return;
-    const t = window.setTimeout(() => setGhost(null), 200);
+    const t = window.setTimeout(() => setGhost(null), 220);
     return () => window.clearTimeout(t);
   }, [ghost]);
+
+  // The dock composer shares the home composer's layout identity only for the journey, so later changes
+  // to its own height (the needs row arriving) never turn into a layout animation.
+  React.useEffect(() => {
+    if (!travel) return;
+    const t = window.setTimeout(() => setTravel(false), 700);
+    return () => window.clearTimeout(t);
+  }, [travel]);
 
   // The thread's timeline after a live send.
   React.useEffect(() => {
@@ -171,15 +233,23 @@ export function ChatSurface({
     return () => window.clearTimeout(t);
   }, [stage, auto, stillStage, live]);
 
-  // Keep the newest thing in view while a live thread grows.
+  // On send the person's message is the top of the view, and the view stays there: no chasing the stream.
   React.useEffect(() => {
     if (phase !== "thread" || !live) return;
-    const el = scrollRef?.current ?? panelOf(chatRef.current);
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: reduced ? "auto" : "smooth" });
-  }, [phase, stage, revealed, live, scrollRef, reduced]);
+    const el = scroller();
+    if (el) el.scrollTop = 0;
+  }, [phase, live, scroller]);
 
   const home = phase === "home";
   const past = (s: Stage) => ORDER.indexOf(stage) >= ORDER.indexOf(s);
+  const needsOut = useNeedsOutOfView(!home && (past("task") || settled), chatRef, scroller, [stage, phase]);
+  const showNeeds = React.useCallback(() => {
+    const el = chatRef.current?.querySelector(".jn-task[data-waiting], .jn-approve:not([data-outcome])");
+    el?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+  }, [reduced]);
+
+  // The thread fades in under a reduced send instead of the composer travelling (a 160 ms cross-fade, §1.7).
+  const threadIn = reduced && justSent ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: R } : {};
 
   return (
     <LayoutGroup>
@@ -193,7 +263,9 @@ export function ChatSurface({
               <div ref={greetRef} className="jn-home__greet">
                 <Greeting />
               </div>
-              <Composer initial={initialSegs} layoutId="jn-composer" still={composerStill} onSend={onSend} apiRef={apiRef} />
+              <div ref={composerRef} className="jn-home__composer">
+                <Composer initial={initialSegs} layoutId="jn-composer" still={composerStill} onSend={onSend} apiRef={apiRef} fieldId="jn-message" />
+              </div>
               <div ref={suggestRef} className="jn-home__suggest">
                 <Suggestions />
               </div>
@@ -201,10 +273,10 @@ export function ChatSurface({
           </div>
         ) : (
           <>
-            <div className="jn-thread" role="log" aria-relevant="additions">
+            <motion.div className="jn-thread" role="log" aria-relevant="additions" {...threadIn}>
               <UserMessage segments={sent} receipt={receipt ? RECEIPT : null} animateIn={live} />
               {stage === "thinking" ? (
-                lineShown ? <LiveLine text={PRESENCE_WORDS[presence]} seconds={seconds} /> : <div className="jn-live jn-live--slot" aria-hidden="true" />
+                lineShown ? <LiveLine text={PRESENCE_WORDS[presence]} glyph={PRESENCE_GLYPHS[presence]} seconds={seconds} /> : <div className="jn-live jn-live--slot" aria-hidden="true" />
               ) : (
                 <Trace />
               )}
@@ -215,61 +287,97 @@ export function ChatSurface({
                 </motion.div>
               ) : null}
               {stage === "handoff" ? (
-                <div className="jn-handoff">
-                  <span className="jn-live__face">
-                    <CrewFace member={face(MIRA)} state="working" size={16} live={false} />
-                  </span>
-                  <motion.p className="jn-live jn-handoff__line" layoutId={reduced ? undefined : HANDOFF_ID} transition={SPRING.emphasized} role="status">
+                <div className="jn-handoff" role="status">
+                  <motion.span className="jn-live__face" layoutId={reduced ? undefined : HANDOFF_FACE_ID} layout="position" transition={SPRING.emphasized}>
+                    <CrewMark member={face(MIRA)} state="working" size={24} />
+                  </motion.span>
+                  <motion.p className="jn-handoff__line" layoutId={reduced ? undefined : HANDOFF_ID} layout="position" transition={SPRING.emphasized}>
                     Mira is checking renewal usage for three accounts
                   </motion.p>
                 </div>
               ) : null}
               {past("task") ? (
-                <motion.div
-                  initial={live ? { opacity: 0 } : false}
-                  animate={{ opacity: 1 }}
-                  transition={reduced ? R : { duration: 0.22, ease: [0.33, 1, 0.68, 1] }}
-                  className="jn-thread__card"
-                >
+                <TaskReveal live={live} reduced={reduced}>
                   <TaskCard planOpen={planOpen} handoff={live} />
-                </motion.div>
+                </TaskReveal>
               ) : null}
               {past("approval") ? (
                 <div className="jn-thread__card">
                   <Approval animate={live} menuOpen={approvalMenu} onInstead={() => dockApi.current?.focus()} />
                 </div>
               ) : null}
-            </div>
-            <div className="jn-dock">
+            </motion.div>
+            <motion.div className="jn-dock" {...threadIn}>
               <Composer
-                layoutId="jn-composer"
+                layoutId={travel ? "jn-composer" : undefined}
                 variant="dock"
                 apiRef={dockApi}
                 busy={stage === "thinking" || stage === "streaming"}
                 placeholder="Reply…"
                 label="Message Juno"
-                dockRow={dockNeeds ? <NeedsYouRow /> : null}
+                fieldId="jn-message"
+                dockRow={
+                  <AnimatePresence initial={false}>
+                    {needsOut > 0 ? (
+                      <motion.div
+                        key="needs"
+                        className="jn-dockrow-wrap"
+                        initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                        animate={reduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+                        exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0, transition: T.exit }}
+                        transition={reduced ? R : { duration: 0.24, ease: EASE_OUT }}
+                        style={{ overflow: "hidden" }}
+                      >
+                        <NeedsYouRow count={needsOut} onShow={showNeeds} />
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                }
               />
               <p className="jn-dock__note">Juno can make mistakes. Check what matters.</p>
-            </div>
+            </motion.div>
           </>
         )}
 
-        {/* The greeting and suggestions leave from where they stood (exit: 160 ms, ease-in). */}
+        {/* The home leaves from where it stood: the chips first (100 ms), the greeting on exit (160 ms, ease-in). */}
         <AnimatePresence>
           {ghost ? (
-            <motion.div key="ghost" className="jn-ghost" aria-hidden="true" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : T.exit}>
-              <div style={ghost.greet}>
+            <motion.div key="ghost" className="jn-ghost" aria-hidden="true" initial={{ opacity: 1 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div style={ghost.greet} initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : T.exit}>
                 <Greeting />
-              </div>
-              <div style={ghost.suggest}>
+              </motion.div>
+              <motion.div style={ghost.suggest} className="jn-ghost__suggest" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : { duration: 0.1, ease: EASE_OUT }}>
                 <Suggestions />
-              </div>
+              </motion.div>
+              {ghost.composer ? (
+                <motion.div style={ghost.composer} initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={R}>
+                  <Composer initial={ghost.segs} />
+                </motion.div>
+              ) : null}
             </motion.div>
           ) : null}
         </AnimatePresence>
       </div>
     </LayoutGroup>
+  );
+}
+
+/**
+ * The task card opens beneath the title that just moved into its header: its
+ * box is revealed from the header down (a clip on base), so the card grows out
+ * of the line instead of fading in around it. Reduced: a fade.
+ */
+function TaskReveal({ live, reduced, children }: { live: boolean; reduced: boolean; children: React.ReactNode }) {
+  if (!live) return <div className="jn-thread__card">{children}</div>;
+  return (
+    <motion.div
+      className="jn-thread__card"
+      initial={reduced ? { opacity: 0 } : { clipPath: "inset(0% 0% 78% 0% round 12px)" }}
+      animate={reduced ? { opacity: 1 } : { clipPath: "inset(0% 0% 0% 0% round 12px)" }}
+      transition={reduced ? R : { duration: 0.36, ease: [0.32, 0.72, 0, 1] }}
+    >
+      {children}
+    </motion.div>
   );
 }
 

@@ -81,6 +81,17 @@ export const T = {
   instant: { duration: 0 } satisfies Transition,
 };
 
+/**
+ * A floating layer from its trigger (F2): it grows from 0.96 on `base`, but its
+ * opacity arrives in 80 ms. The layer sits on the blurred material, and a
+ * half-transparent material lets the text behind it read through sharp, so
+ * the translucent frames are kept to the first few.
+ */
+export const POP_IN: Transition = { duration: D.base, ease: EASE_OUT, opacity: { duration: 0.08, ease: EASE_OUT } };
+
+/** A sheet leaving (the person closed it): exit timing on the drawer's direction, never the entrance's. */
+export const SHEET_OUT: Transition = { duration: D.exit, ease: EASE_IN };
+
 /** The reduced form of any transition: a short crossfade (§1.7). */
 export const R = { duration: D.exit, ease: EASE_OUT } satisfies Transition;
 

@@ -15,8 +15,9 @@ import {
   type TokenRef,
 } from "./fixtures";
 import { Icon } from "./icons";
+import { fromKeyboard, usePopoverKeys } from "./layers";
 import { AppMark, ModelMark, TokenMark } from "./marks";
-import { R, SPRING, T, useReduced } from "./motion";
+import { POP_IN, R, SPRING, T, useReduced } from "./motion";
 
 /*
  * The composer (PRODUCT_REFOUNDATION §5): one field and four objects on one
@@ -143,6 +144,9 @@ interface State {
   fresh: { id: string; key: string } | null;
   panel: string | null;
   model: boolean;
+  plus: boolean;
+  /** The open layer came from the keyboard: it appears in the same frame and takes focus (F0). */
+  kbdLayer: boolean;
   focus: boolean;
   selected: string | null;
 }
@@ -154,8 +158,9 @@ type Action =
   | { type: "move"; delta: number; count: number }
   | { type: "hover"; index: number }
   | { type: "escape" }
-  | { type: "panel"; id: string | null }
-  | { type: "model"; open: boolean }
+  | { type: "panel"; id: string | null; kbd?: boolean }
+  | { type: "model"; open: boolean; kbd?: boolean }
+  | { type: "plus"; open: boolean; kbd?: boolean }
   | { type: "focus"; on: boolean; kbd?: boolean }
   | { type: "reset"; segs: Segment[] };
 
@@ -169,7 +174,7 @@ function reducer(s: State, a: Action): State {
   switch (a.type) {
     case "char":
       if (s.query !== null) return { ...s, query: s.query + a.c, active: 0 };
-      if (a.c === "@") return { ...s, query: "", active: 0, session: s.session + 1, panel: null, model: false, selected: null };
+      if (a.c === "@") return { ...s, query: "", active: 0, session: s.session + 1, panel: null, model: false, plus: false, selected: null };
       return { ...s, segs: appendText(s.segs, a.c), selected: null };
     case "backspace": {
       if (s.query !== null) return s.query.length ? { ...s, query: s.query.slice(0, -1), active: 0 } : { ...s, query: null };
@@ -193,15 +198,17 @@ function reducer(s: State, a: Action): State {
       return { ...s, active: a.index };
     case "escape":
       if (s.query !== null) return { ...s, query: null, segs: appendText(s.segs, `@${s.query}`) };
-      return { ...s, panel: null, model: false, selected: null };
+      return { ...s, panel: null, model: false, plus: false, selected: null };
     case "panel":
-      return { ...s, panel: a.id, selected: a.id, model: false };
+      return { ...s, panel: a.id, selected: a.id, model: false, plus: false, kbdLayer: !!a.kbd };
     case "model":
-      return { ...s, model: a.open, panel: null };
+      return { ...s, model: a.open, panel: null, plus: false, kbdLayer: !!a.kbd };
+    case "plus":
+      return { ...s, plus: a.open, panel: null, model: false, kbdLayer: !!a.kbd };
     case "focus":
       return { ...s, focus: a.on, kbd: a.on ? (a.kbd ?? s.kbd) : false };
     case "reset":
-      return { ...s, segs: a.segs, query: null, panel: null, model: false, selected: null, fresh: null };
+      return { ...s, segs: a.segs, query: null, panel: null, model: false, plus: false, selected: null, fresh: null };
   }
 }
 
@@ -231,7 +238,9 @@ export interface ComposerApi {
   type: (text: string, perChar?: number) => Promise<void>;
   key: (k: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Backspace") => void;
   openPanel: (id: string | null) => void;
-  openModel: (open: boolean) => void;
+  /** `kbd`: as if opened with Enter (instant, focus moves in). */
+  openModel: (open: boolean, kbd?: boolean) => void;
+  openPlus: (open: boolean, kbd?: boolean) => void;
   send: () => void;
   reset: (segs: Segment[]) => void;
 }
@@ -244,6 +253,7 @@ export interface ComposerStill {
   palette?: { query: string; active?: number };
   model?: boolean;
   panel?: string;
+  plus?: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
@@ -264,6 +274,7 @@ export function Composer({
   modelLabel = "Auto",
   effortLabel,
   onType,
+  fieldId,
 }: {
   initial?: Segment[];
   placeholder?: string;
@@ -285,6 +296,8 @@ export function Composer({
   effortLabel?: string;
   /** The person typed a character (a member's thread blinks its character, P4). */
   onType?: () => void;
+  /** The field's id (the skip link's target). */
+  fieldId?: string;
 }) {
   const reduced = useReduced();
   const [s, dispatch] = React.useReducer(reducer, undefined, () => ({
@@ -295,6 +308,8 @@ export function Composer({
     fresh: null,
     panel: still?.panel ?? null,
     model: !!still?.model,
+    plus: !!still?.plus,
+    kbdLayer: false,
     focus: !!still?.focused || !!still?.pointerFocused || !!still?.palette || !!still?.panel,
     kbd: !!still?.focused || !!still?.palette,
     selected: still?.panel ?? null,
@@ -306,6 +321,8 @@ export function Composer({
   const fieldRef = React.useRef<HTMLDivElement | null>(null);
   const caretRef = React.useRef<HTMLSpanElement | null>(null);
   const modelRef = React.useRef<HTMLButtonElement | null>(null);
+  const plusRef = React.useRef<HTMLButtonElement | null>(null);
+  const boxRef = React.useRef<HTMLDivElement | null>(null);
   const tokenEls = React.useRef(new Map<string, HTMLSpanElement>());
   const register = React.useCallback((id: string, el: HTMLSpanElement | null) => {
     if (el) tokenEls.current.set(id, el);
@@ -380,7 +397,8 @@ export function Composer({
       },
       key: (k) => handleKey(k),
       openPanel: (id) => dispatch({ type: "panel", id }),
-      openModel: (open) => dispatch({ type: "model", open }),
+      openModel: (open, kbd) => dispatch({ type: "model", open, kbd }),
+      openPlus: (open, kbd) => dispatch({ type: "plus", open, kbd }),
       send: () => send(),
       reset: (segs) => dispatch({ type: "reset", segs }),
     };
@@ -388,15 +406,26 @@ export function Composer({
 
   // A click outside closes the floating layers.
   React.useEffect(() => {
-    if (!s.panel && !s.model) return;
+    if (!s.panel && !s.model && !s.plus) return;
     const onDown = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) dispatch({ type: "escape" });
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [s.panel, s.model]);
+  }, [s.panel, s.model, s.plus]);
 
-  /* Anchors: the palette at the caret, the panel at its token, the model list at its control. */
+  /*
+   * Anchors. Every layer opens OUTSIDE the composer, so nothing ever covers
+   * the words being written or the row of controls (C7, MP1):
+   *   the @ palette   its bottom edge 8 px above the composer's top edge, at the caret's x
+   *   an app's panel  at its token's x, beyond the composer's edge, grown from the token
+   *   the model list  at its control, beyond the composer's edge
+   *   the + menu      at the + button, beyond the composer's edge
+   * "Beyond the edge" is below on the home (the greeting is above, the
+   * suggestions below are disposable) and above in the dock (the transcript is
+   * above, the panel's edge below); a layer flips only when its side has no
+   * room. Heights are capped to the room the panel actually has.
+   */
   const [anchor, setAnchor] = React.useState<{
     palette?: React.CSSProperties;
     paletteOrigin?: string;
@@ -406,58 +435,89 @@ export function Composer({
     model?: React.CSSProperties;
     modelOrigin?: string;
     modelBelow?: boolean;
+    plus?: React.CSSProperties;
+    plusOrigin?: string;
+    plusBelow?: boolean;
   }>({});
   React.useLayoutEffect(() => {
     const wrap = wrapRef.current;
-    if (!wrap) return;
+    const box = boxRef.current;
+    if (!wrap || !box) return;
     const w = wrap.getBoundingClientRect();
-    const vh = window.innerHeight;
+    const k = box.getBoundingClientRect();
+    const host = wrap.closest(".jn-main, .jn-mframe, .jn-board__panel, .jn-sys__demo, .jn-mstage") as HTMLElement | null;
+    const hb = host?.getBoundingClientRect();
+    const roomTop = Math.max(0, k.top - (hb ? Math.max(hb.top, 0) : 0) - 16);
+    const roomBottom = Math.max(0, (hb ? Math.min(hb.bottom, window.innerHeight) : window.innerHeight) - k.bottom - 16);
     const vw = window.innerWidth;
+    const preferBelow = variant === "home";
+    const side = (need: number) => {
+      const below = preferBelow ? roomBottom >= need || roomBottom >= roomTop : !(roomTop >= need || roomTop >= roomBottom);
+      return { below, room: below ? roomBottom : roomTop };
+    };
+    const vert = (below: boolean, room: number): React.CSSProperties =>
+      below ? { top: k.bottom - w.top + 8, maxHeight: room } : { bottom: w.bottom - k.top + 8, maxHeight: room };
+    const clampLeft = (left: number, width: number) => Math.max(-4, Math.min(left, vw - 12 - w.left - width, w.width - width + 4));
     const next: typeof anchor = {};
     if (paletteOpen && caretRef.current) {
       const c = caretRef.current.getBoundingClientRect();
       const width = Math.min(372, vw - 24);
-      let left = c.left - w.left - 20;
-      left = Math.max(-4, Math.min(left, w.width - width + 8, vw - 12 - w.left - width));
-      const below = vh - c.bottom > 420 || vh - c.bottom > c.top;
-      next.palette = below ? { left, top: c.bottom - w.top + 10, width } : { left, bottom: w.bottom - c.top + 10, width };
+      const left = clampLeft(c.left - w.left - 20, width);
+      // The palette is born at the caret, so it always sits above the composer unless there is truly no room there.
+      const below = roomTop < 220 && roomBottom > roomTop;
+      next.palette = { left, width, ...vert(below, below ? roomBottom : roomTop) };
       next.paletteOrigin = `${c.left - w.left - left}px ${below ? "0%" : "100%"}`;
     }
     if (s.panel) {
       const el = tokenEls.current.get(s.panel);
       if (el) {
         const t = el.getBoundingClientRect();
-        const width = Math.min(344, vw - 24);
-        let left = t.left - w.left - 8;
-        left = Math.max(-4, Math.min(left, vw - 12 - w.left - width));
-        const below = vh - t.bottom > 320 || vh - t.bottom > t.top;
-        next.panel = below ? { left, top: t.bottom - w.top + 8, width } : { left, bottom: w.bottom - t.top + 8, width };
+        const width = Math.min(360, vw - 24);
+        const left = clampLeft(t.left - w.left - 8, width);
+        const { below, room } = side(260);
+        next.panel = { left, width, ...vert(below, room) };
         next.panelOrigin = `${t.left + 14 - w.left - left}px ${below ? "0%" : "100%"}`;
         next.panelBelow = below;
       }
     }
     if (s.model && modelRef.current) {
       const m = modelRef.current.getBoundingClientRect();
-      const below = vh - m.bottom > 440;
-      const right = Math.max(-4, w.right - m.right - 60);
-      next.model = below ? { right, top: m.bottom - w.top + 8 } : { right, bottom: w.bottom - m.top + 8 };
-      next.modelOrigin = `calc(100% - ${m.width / 2 + 60 - (w.right - m.right - right)}px) ${below ? "0%" : "100%"}`;
+      const width = Math.min(344, vw - 24);
+      const right = Math.max(-4, Math.min(w.right - m.right - 60, w.width - width + 4));
+      const { below, room } = side(400);
+      next.model = { right, width, ...vert(below, room) };
+      next.modelOrigin = `${width - (w.right - m.right - right) - m.width / 2}px ${below ? "0%" : "100%"}`;
       next.modelBelow = below;
+    }
+    if (s.plus && plusRef.current) {
+      const p = plusRef.current.getBoundingClientRect();
+      const width = Math.min(280, vw - 24);
+      const left = clampLeft(p.left - w.left - 4, width);
+      const { below, room } = side(240);
+      next.plus = { left, width, ...vert(below, room) };
+      next.plusOrigin = `${p.left + p.width / 2 - w.left - left}px ${below ? "0%" : "100%"}`;
+      next.plusBelow = below;
     }
     setAnchor(next);
     // Recompute whenever something that moves an anchor changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paletteOpen, s.panel, s.model, s.segs, s.query]);
+  }, [paletteOpen, s.panel, s.model, s.plus, s.segs, s.query]);
+
+  const closeLayer = React.useCallback(() => dispatch({ type: "escape" }), []);
 
   const empty = s.segs.length === 0 && s.query === null;
   const mode: "voice" | "send" | "stop" = busy ? "stop" : s.segs.length ? "send" : "voice";
 
   return (
     <div ref={wrapRef} className={["jn-composer-wrap", className].filter(Boolean).join(" ")} data-variant={variant}>
+      {/* The composer travels between the home and the dock by its position only (layout="position"): its height
+          snaps, so the send disc never stretches into an oval on the way (C18). */}
       <motion.div
+        ref={boxRef}
         className="jn-composer"
         layoutId={reduced ? undefined : layoutId}
-        transition={T.travel}
+        layout={layoutId && !reduced ? "position" : undefined}
+        transition={{ ...T.travel, delay: 0.03 }}
         data-focus={s.focus ? "" : undefined}
         data-kbd={s.focus && s.kbd ? "" : undefined}
         data-variant={variant}
@@ -476,6 +536,7 @@ export function Composer({
         {context ? <div className="jn-composer__context">{context}</div> : null}
         <div
           ref={fieldRef}
+          id={fieldId}
           className="jn-field"
           role="textbox"
           aria-multiline="true"
@@ -517,31 +578,50 @@ export function Composer({
             </Sentence>
           )}
         </div>
-        <div className="jn-crow">
-          <button type="button" className="jib jicon-trigger jn-crow__add" aria-label="Add files, photos and more">
-            <Icon name="plus" size={20} />
+        {/* Used a hundred times a day, so the row is quiet (I-7): no hover articulation; press and state changes stay. */}
+        <div className="jn-crow jicon-quiet">
+          <button
+            ref={plusRef}
+            type="button"
+            className="jib jicon-trigger jn-crow__add jtip"
+            data-tip="Add files and more"
+            data-tip-side={variant === "home" ? undefined : "top"}
+            data-tip-align="start"
+            data-layer-trigger=""
+            aria-label="Add files, photos and more"
+            aria-haspopup="menu"
+            aria-expanded={s.plus}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => dispatch({ type: "plus", open: !s.plus, kbd: fromKeyboard(e) })}
+          >
+            <Icon name="plus" size={20} state={s.plus ? "active" : "rest"} />
           </button>
           <span className="jn-crow__spacer" />
           <button
             ref={modelRef}
             type="button"
             className="jn-model jicon-trigger"
+            data-layer-trigger=""
             aria-haspopup="dialog"
             aria-expanded={s.model}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => dispatch({ type: "model", open: !s.model })}
+            onClick={(e) => dispatch({ type: "model", open: !s.model, kbd: fromKeyboard(e) })}
           >
             <span className="jn-model__name">{modelLabel}</span>
             {effortLabel ? <span className="jn-model__effort">{effortLabel}</span> : null}
             <Icon name="chevron-down" size={16} state={s.model ? "active" : "rest"} />
           </button>
-          <button type="button" className="jib jicon-trigger" aria-label="Dictate">
+          <button type="button" className="jib jicon-trigger jtip" aria-label="Dictate" data-tip="Dictate" data-tip-side={variant === "home" ? undefined : "top"}>
             <Icon name="mic" size={20} />
           </button>
           <button
             type="button"
-            className="jn-disc jicon-trigger"
+            className="jn-disc jicon-trigger jtip"
             data-mode={mode}
+            data-tip={mode === "stop" ? "Stop" : mode === "send" ? "Send" : "Talk with Juno"}
+            data-kbd={mode === "send" ? "↵" : mode === "stop" ? "esc" : undefined}
+            data-tip-side={variant === "home" ? undefined : "top"}
+            data-tip-align="end"
             aria-label={mode === "stop" ? "Stop response" : mode === "send" ? "Send message" : "Start a voice conversation"}
             onClick={mode === "send" ? send : undefined}
           >
@@ -577,9 +657,16 @@ export function Composer({
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
-        {s.panel ? <AppPanel key={`panel-${s.panel}`} id={s.panel} style={anchor.panel} origin={anchor.panelOrigin} below={anchor.panelBelow} /> : null}
+        {s.panel ? (
+          <AppPanel key={`panel-${s.panel}`} id={s.panel} style={anchor.panel} origin={anchor.panelOrigin} below={anchor.panelBelow} kbd={s.kbdLayer} onClose={closeLayer} />
+        ) : null}
       </AnimatePresence>
-      <AnimatePresence>{s.model ? <ModelPopover key="model" style={anchor.model} origin={anchor.modelOrigin} below={anchor.modelBelow} /> : null}</AnimatePresence>
+      <AnimatePresence>
+        {s.model ? <ModelPopover key="model" style={anchor.model} origin={anchor.modelOrigin} below={anchor.modelBelow} kbd={s.kbdLayer} onClose={closeLayer} /> : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {s.plus ? <PlusMenu key="plus" style={anchor.plus} origin={anchor.plusOrigin} below={anchor.plusBelow} kbd={s.kbdLayer} onClose={closeLayer} /> : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -639,7 +726,7 @@ export function Palette({
                   onMouseEnter={() => onHover(i)}
                 >
                   <span className="jn-pop__mark" data-needs={needs ? "" : undefined}>
-                    <TokenMark token={item.token} size={18} />
+                    <TokenMark token={item.token} size={20} />
                   </span>
                   <span className="jn-pop__text">{item.token.label}</span>
                   <span className="jn-pop__detail" data-needs={needs ? "" : undefined}>
@@ -651,14 +738,21 @@ export function Palette({
           </div>
         ))}
       </div>
+      {/* The hints are drawn with the set's own arrows and return glyph, on the solid footer of the palette. */}
       <div className="jn-pop__foot" aria-hidden="true">
         <span>
-          <span className="jkbd">↑</span>
-          <span className="jkbd">↓</span>
+          <span className="jkbd jkbd--glyph">
+            <Icon name="arrow-up" size={16} />
+          </span>
+          <span className="jkbd jkbd--glyph">
+            <Icon name="arrow-down" size={16} />
+          </span>
           to move
         </span>
         <span>
-          <span className="jkbd">↵</span>
+          <span className="jkbd jkbd--glyph">
+            <Icon name="enter" size={16} />
+          </span>
           to add
         </span>
         <span>
@@ -677,22 +771,40 @@ export function Palette({
  * to 1, origin at the token). For an app it resolves connection and approval
  * before send, in words: who it acts as, what it may read, what asks first.
  */
-export function AppPanel({ id, style, origin, below = true }: { id: string; style?: React.CSSProperties; origin?: string; below?: boolean }) {
+export function AppPanel({
+  id,
+  style,
+  origin,
+  below = true,
+  kbd = false,
+  onClose,
+}: {
+  id: string;
+  style?: React.CSSProperties;
+  origin?: string;
+  below?: boolean;
+  kbd?: boolean;
+  onClose?: () => void;
+}) {
   const reduced = useReduced();
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  usePopoverKeys(ref, !!onClose, onClose ?? noop, kbd, "[data-layer-trigger], .jn-token");
   const app = APPS[id];
   if (!app) return null;
   const reads = app.actions.filter((a) => a.kind === "read" && a.policy !== "off");
   const changes = app.actions.filter((a) => a.kind === "change");
   return (
     <motion.div
+      ref={ref}
       className="jn-pop jn-apppanel"
       role="dialog"
       aria-label={`${app.name}, in this message`}
+      data-opened-by={kbd ? "keyboard" : "pointer"}
       style={{ ...style, transformOrigin: origin, visibility: style ? "visible" : "hidden" }}
-      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
+      initial={kbd ? false : reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, transition: reduced ? R : T.exit }}
-      transition={reduced ? R : T.base}
+      transition={reduced ? R : POP_IN}
     >
       <div className="jn-appanel__head">
         <AppMark id={id} size={24} />
@@ -724,14 +836,14 @@ export function AppPanel({ id, style, origin, below = true }: { id: string; styl
           <div className="jn-appanel__foot">
             <span className="jn-appanel__verbs">
               <button type="button" className="jb jb--ghost jb--sm">
-                Open {app.name}
+                Remove from message
               </button>
               <button type="button" className="jb jb--ghost jb--sm">
-                Remove
+                Open {app.name}
               </button>
             </span>
             <a className="jb jb--link" href="#customize">
-              Change in Customize
+              Customize
             </a>
           </div>
         </>
@@ -752,25 +864,44 @@ export function AppPanel({ id, style, origin, below = true }: { id: string; styl
 
 /* ———————————————————————————— Model popover (MP1–MP3) ———————————————————————————— */
 
-export function ModelPopover({ style, origin, below = true, className }: { style?: React.CSSProperties; origin?: string; below?: boolean; className?: string }) {
+export function ModelPopover({
+  style,
+  origin,
+  below = true,
+  className,
+  kbd = false,
+  onClose,
+}: {
+  style?: React.CSSProperties;
+  origin?: string;
+  below?: boolean;
+  className?: string;
+  /** Opened from the keyboard: appears in the same frame, focus on the chosen model. */
+  kbd?: boolean;
+  onClose?: () => void;
+}) {
   const reduced = useReduced();
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  usePopoverKeys(ref, !!onClose, onClose ?? noop, kbd, "[data-layer-trigger]");
   const [effort, setEffort] = React.useState<Effort>("Standard");
   const [chosen, setChosen] = React.useState("auto");
   return (
     <motion.div
-      className={["jn-pop jn-modelpop", className].filter(Boolean).join(" ")}
+      ref={ref}
+      className={["jn-pop jn-modelpop jicon-quiet", className].filter(Boolean).join(" ")}
       role="dialog"
       aria-label="Model"
+      data-opened-by={kbd ? "keyboard" : "pointer"}
       style={{ ...style, transformOrigin: origin, visibility: style ? "visible" : "hidden" }}
-      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
+      initial={kbd ? false : reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, transition: reduced ? R : T.exit }}
-      transition={reduced ? R : T.base}
+      transition={reduced ? R : POP_IN}
     >
       <div role="radiogroup" aria-label="Model" className="jn-modelpop__list">
         <button type="button" role="radio" aria-checked={chosen === "auto"} className="jn-pop__row jn-pop__row--tall jicon-trigger" onClick={() => setChosen("auto")}>
           <span className="jn-pop__mark jn-pop__mark--ink">
-            <Icon name="auto" size={18} />
+            <Icon name="auto" size={20} />
           </span>
           <span className="jn-pop__stack">
             <span>Auto</span>
@@ -811,6 +942,64 @@ export function ModelPopover({ style, origin, below = true, className }: { style
     </motion.div>
   );
 }
+
+/* ———————————————————————————— The + menu ———————————————————————————— */
+
+const PLUS_ITEMS: { icon: string; label: string; hint?: string }[] = [
+  { icon: "attach", label: "Add photos and files", hint: "⌘U" },
+  { icon: "screenshot", label: "Take a screenshot" },
+  { icon: "library", label: "Add from Library" },
+  { icon: "at", label: "Mention a file or app", hint: "@" },
+  { icon: "skill", label: "Run a skill", hint: "/" },
+];
+
+/** What + offers: things to add to the message, then the two ways to name context in the sentence. */
+export function PlusMenu({
+  style,
+  origin,
+  below = true,
+  kbd = false,
+  onClose,
+}: {
+  style?: React.CSSProperties;
+  origin?: string;
+  below?: boolean;
+  kbd?: boolean;
+  onClose?: () => void;
+}) {
+  const reduced = useReduced();
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  usePopoverKeys(ref, !!onClose, onClose ?? noop, kbd, "[data-layer-trigger]");
+  return (
+    <motion.div
+      ref={ref}
+      className="jn-pop jn-menu jn-plusmenu jicon-quiet"
+      role="menu"
+      aria-label="Add to your message"
+      data-opened-by={kbd ? "keyboard" : "pointer"}
+      style={{ ...style, transformOrigin: origin, visibility: style ? "visible" : "hidden" }}
+      initial={kbd ? false : reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, transition: reduced ? R : T.exit }}
+      transition={reduced ? R : POP_IN}
+    >
+      {PLUS_ITEMS.map((it, i) => (
+        <React.Fragment key={it.label}>
+          {i === 3 ? <div className="jn-pop__sep" role="separator" /> : null}
+          <button type="button" role="menuitem" className="jn-pop__row jicon-trigger" onClick={onClose}>
+            <span className="jn-pop__mark jn-pop__mark--ink">
+              <Icon name={it.icon} size={16} />
+            </span>
+            <span className="jn-pop__text">{it.label}</span>
+            {it.hint ? <kbd className="jn-pop__detail">{it.hint}</kbd> : null}
+          </button>
+        </React.Fragment>
+      ))}
+    </motion.div>
+  );
+}
+
+const noop = () => {};
 
 /* ———————————————————————————— Segmented (MP3, K4) ———————————————————————————— */
 

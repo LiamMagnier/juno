@@ -653,3 +653,266 @@
     overflow-x: auto;
   }
 }
+
+
+/* ——————————————————————————————— States ——————————————————————————————— */
+
+.jn:has(> .jn-states) {
+  background: var(--side);
+}
+.jn .jn-states {
+  min-height: 100dvh;
+  padding: 56px 48px 96px;
+  background: var(--side);
+}
+.jn .jn-states__head {
+  max-width: 1180px;
+  margin: 0 auto 32px;
+}
+/* Two columns that pack like a page of notes (each state keeps its own height). */
+.jn .jn-states__grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  columns: 2;
+  column-gap: 24px;
+}
+.jn .jn-state {
+  break-inside: avoid;
+  margin-bottom: 28px;
+}
+.jn .jn-state__cap {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-3);
+  margin: 0 4px 10px;
+  max-width: 62ch;
+}
+.jn .jn-state__cap b {
+  font-weight: 500;
+  color: var(--ink);
+}
+.jn .jn-state__panel {
+  position: relative;
+  border-radius: var(--r-panel);
+  background: var(--ground);
+  box-shadow:
+    0 0 0 1px var(--panel-edge),
+    0 1px 2px var(--panel-lift);
+  padding: 24px;
+  overflow: hidden;
+  isolation: isolate;
+}
+.jn .jn-state__strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* Loading: static shapes in the panel's tones. */
+.jn .jn-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.jn .jn-skel > span {
+  display: block;
+  border-radius: 6px;
+  background: var(--well);
+}
+.jn .jn-skel__bubble {
+  align-self: flex-end;
+  width: 46%;
+  height: 44px;
+  border-radius: 20px !important;
+  background: var(--bubble) !important;
+}
+.jn .jn-skel__line {
+  height: 12px;
+}
+.jn .jn-skel__card {
+  height: 64px;
+  margin-top: 12px;
+  border-radius: var(--r-card) !important;
+  background: var(--card) !important;
+}
+
+.jn .jn-stateblock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.jn .jn-stateblock__text {
+  font-size: 15px;
+  line-height: 25px;
+  color: var(--ink);
+}
+.jn .jn-stateline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ink);
+}
+.jn .jn-stateline > svg {
+  flex: none;
+  margin-top: 1.5px;
+  color: var(--ink-3);
+}
+.jn .jn-stateline--quiet {
+  color: var(--ink-2);
+  flex-wrap: wrap;
+}
+.jn .jn-stateactions {
+  display: flex;
+  gap: 6px;
+}
+
+.jn .jn-blocked {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--card);
+}
+.jn .jn-blocked > svg {
+  flex: none;
+}
+.jn .jn-blocked__main {
+  flex: 1;
+  min-width: 0;
+}
+.jn .jn-blocked__title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.jn .jn-blocked__line {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+.jn .jn-statedock {
+  margin: -8px -8px -8px;
+}
+
+.jn .jn-firstrun {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+.jn .jn-firstrun__line {
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--ink-2);
+  max-width: 44ch;
+}
+.jn .jn-firstrun__apps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.jn .jn-firstrun__side {
+  align-self: stretch;
+  margin-top: 20px;
+  padding: 12px 12px 14px;
+  border-radius: 12px;
+  background: var(--side);
+  text-align: left;
+}
+.jn .jn-firstrun__side .jn-side__label {
+  padding-left: 2px;
+}
+.jn .jn-firstrun__empty {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+  margin: 0 2px 10px;
+}
+.jn .jn-empty--compact {
+  padding: 24px 12px;
+}
+
+.jn .jn-uploads {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.jn .jn-upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+}
+.jn .jn-upload__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-upload__name {
+  font-size: 14px;
+  line-height: 20px;
+}
+.jn .jn-upload__line {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-upload[data-failed] .jn-upload__line {
+  color: var(--ink-2);
+}
+.jn .jn-upload__glyph {
+  color: var(--presence);
+  display: inline-grid;
+}
+
+.jn .jn-approw--state {
+  width: 100%;
+  margin: 0;
+  cursor: default;
+}
+.jn .jn-approw__line--warn {
+  color: var(--ink-2);
+  white-space: normal;
+}
+
+.jn .jn-step[data-state="failed"] .jn-step__glyph {
+  color: var(--danger);
+}
+.jn .jn-crewstate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+.jn .jn-crewstate__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-crewstate__name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.jn .jn-crewstate__line {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-3);
+}
+
+@media (max-width: 900px) {
+  .jn .jn-states {
+    padding: 24px 16px 64px;
+  }
+  .jn .jn-states__grid {
+    columns: 1;
+  }
+}

@@ -5,11 +5,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CrewFace } from "./crew/face";
 import { CREW, crew, type CrewRow, type Segment } from "./fixtures";
 import { Composer } from "./composer";
-import { MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
+import { CrewMark, MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
 import { AvatarEditor, CrewCreate, normalizeAvatar, type AvatarConfig } from "./crew";
 import { Icon } from "./icons";
 import { FileMark } from "./marks";
-import { R, SPRING, T, useReduced } from "./motion";
+import { useDialogFocus } from "./layers";
+import { R, SHEET_OUT, SPRING, T, useReduced } from "./motion";
 import { AppFrame, ChatSidebar, face, MobileBar, usePanelAtEnd } from "./shell";
 
 /*
@@ -29,7 +30,7 @@ import { AppFrame, ChatSidebar, face, MobileBar, usePanelAtEnd } from "./shell";
 
 function Portrait({ m, onCustomize }: { m: CrewRow; onCustomize: (id: string) => void }) {
   const member = face(m);
-  const words = m.state === "waiting" ? "Needs your answer" : m.state === "available" ? "Free" : (m.roster ?? m.long);
+  const words = m.state === "waiting" ? "Needs your answer" : m.state === "available" ? "Available" : (m.roster ?? m.long);
   return (
     <div className="jn-portrait" data-state={m.state}>
       <a href="#" className="jn-portrait__link" aria-label={`${m.name}, ${m.role}. ${words}. Open thread`}>
@@ -42,7 +43,7 @@ function Portrait({ m, onCustomize }: { m: CrewRow; onCustomize: (id: string) =>
           {words}
         </span>
       </a>
-      <button type="button" className="jib jib--sm jicon-trigger jn-portrait__edit" aria-label={`Customize ${m.name}`} onClick={() => onCustomize(m.id)}>
+      <button type="button" className="jib jib--sm jicon-trigger jtip jn-portrait__edit" aria-label={`Customize ${m.name}`} data-tip="Customize" onClick={() => onCustomize(m.id)}>
         <Icon name="edit" size={16} />
       </button>
     </div>
@@ -101,7 +102,7 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
   const [sheet, setSheet] = React.useState<Sheet>(initial);
   return (
     <AppFrame sidebar={<ChatSidebar current="crew" />}>
-      <MobileBar title="Crew" />
+      <MobileBar title="Crew" collapse />
       <div className="jn-page jn-page--crew">
         <header className="jn-page__head">
           <div>
@@ -129,7 +130,7 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
           <ul className="jn-nowlist">
             {now.map((m) => (
               <li key={m.id} className="jn-now">
-                <CrewFace member={face(m)} state={m.state} size={24} live={false} />
+                <CrewMark member={face(m)} state={m.state} size={24} />
                 <span className="jn-now__name">{m.name}</span>
                 <span className="jn-now__what">{m.long}</span>
                 <span className="jn-now__when">{m.state === "working" ? "for 18 min" : "for 2 min"}</span>
@@ -148,7 +149,7 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
                   <Icon name="routine" size={16} className="ink-3" />
                   <span className="jn-now__what jn-now__what--ink">{r.name}</span>
                   <span className="jn-now__owner">
-                    <CrewFace member={face(o)} state="available" size={16} live={false} /> {o.name}
+                    <CrewMark member={face(o)} state="available" size={16} /> {o.name}
                   </span>
                   <span className="jn-now__when">{r.when}</span>
                 </li>
@@ -173,15 +174,13 @@ function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () 
   const member = m ? face(m) : null;
   const [look, setLook] = React.useState<AvatarConfig | null>(() => (member ? normalizeAvatar(member.avatar, member.seed) : null));
   const [name, setName] = React.useState(m?.name ?? "");
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  useDialogFocus(ref, true, onClose);
   return (
     <>
-      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fade} onClick={onClose} />
+      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: reduced ? R : SHEET_OUT }} transition={reduced ? R : T.fade} onClick={onClose} />
       <motion.div
+        ref={ref}
         className="jn-crewsheet"
         role="dialog"
         aria-modal="true"
@@ -189,10 +188,10 @@ function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () 
         data-kind={sheet.kind}
         initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.99 }}
+        exit={reduced ? { opacity: 0, transition: R } : { opacity: 0, y: 8, scale: 0.99, transition: SHEET_OUT }}
         transition={reduced ? R : T.slow}
       >
-        <button type="button" className="jib jicon-trigger jn-crewsheet__close" aria-label="Close" onClick={onClose}>
+        <button type="button" className="jib jicon-trigger jicon-quiet jtip jn-crewsheet__close" aria-label="Close" data-tip="Close" data-kbd="esc" data-tip-align="end" onClick={onClose}>
           <Icon name="close" size={20} />
         </button>
         <div className="jn-crewsheet__body">
@@ -216,7 +215,7 @@ function CrewRun({ m, time, children }: { m: CrewRow; time: string; children: Re
   return (
     <div className="jn-cmsg">
       <p className="jn-cmsg__who">
-        <CrewFace member={face(m)} state="available" size={20} live={false} facing="front" />
+        <CrewMark member={face(m)} state="available" size={20} />
         <b>{m.name}</b> <span className="ink-3 num">{time}</span>
       </p>
       <div className="jn-cmsg__body">{children}</div>
@@ -270,10 +269,10 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
                 <Icon name="customize" size={16} />
                 <span>Customize</span>
               </button>
-              <button type="button" className="jib jicon-trigger" aria-label={`Pause ${m.name}`}>
+              <button type="button" className="jib jicon-trigger jicon-quiet jtip" aria-label={`Pause ${m.name}`} data-tip={`Pause ${m.name}`}>
                 <Icon name="pause" size={20} />
               </button>
-              <button type="button" className="jib jicon-trigger" aria-label="More">
+              <button type="button" className="jib jicon-trigger jicon-quiet jtip" aria-label="More" data-tip="More" data-tip-align="end">
                 <Icon name="more" size={20} />
               </button>
             </span>
@@ -332,7 +331,7 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
 
           {answered ? (
             <motion.div className="jn-mlive" initial={reduced ? false : { opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={reduced ? R : SPRING.layout}>
-              <CrewFace member={member} state="thinking" size={20} live={false} facing="front" />
+              <CrewMark member={member} state="thinking" size={20} />
               <span className="jn-mlive__text">
                 <b>{m.name}</b> is reading 90 days of seat usage for Halvorsen AS in Stripe
               </span>

@@ -10,8 +10,8 @@ import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { R, SPRING, T, useReduced } from "./motion";
 import { face, TopBar } from "./shell";
-import { MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
-import { Answer, Approval, HANDOFF_ID, MessageActions, TaskCard, Trace, UserMessage } from "./thread";
+import { CrewMark, MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
+import { Answer, Approval, HANDOFF_FACE_ID, HANDOFF_ID, MessageActions, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
  * Motion, one moment at a time. Each plays on its own and replays on demand;
@@ -139,20 +139,25 @@ function HandoffMoment() {
         <p className="jn-mstage__prose">I’ve asked Mira to check usage on all three and flag the ones worth a call.</p>
         {!card ? (
           <div className="jn-handoff">
-            <span className="jn-live__face">
-              <CrewFace member={face(MIRA)} state="working" size={16} live={false} />
-            </span>
-            <motion.p className="jn-live jn-handoff__line" layoutId={reduced ? undefined : HANDOFF_ID} transition={SPRING.emphasized}>
+            <motion.span className="jn-live__face" layoutId={reduced ? undefined : HANDOFF_FACE_ID} layout="position" transition={SPRING.emphasized}>
+              <CrewMark member={face(MIRA)} state="working" size={24} />
+            </motion.span>
+            <motion.p className="jn-handoff__line" layoutId={reduced ? undefined : HANDOFF_ID} layout="position" transition={SPRING.emphasized}>
               Mira is checking renewal usage for three accounts
             </motion.p>
           </div>
         ) : (
-          <motion.div className="jn-thread__card" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={reduced ? R : T.base}>
+          <motion.div
+            className="jn-thread__card"
+            initial={reduced ? { opacity: 0 } : { clipPath: "inset(0% 0% 78% 0% round 12px)" }}
+            animate={reduced ? { opacity: 1 } : { clipPath: "inset(0% 0% 0% 0% round 12px)" }}
+            transition={reduced ? R : { duration: 0.36, ease: [0.32, 0.72, 0, 1] }}
+          >
             <TaskCard handoff />
           </motion.div>
         )}
       </LayoutGroup>
-      <p className="jn-mstage__cap">The line that says what Mira is doing becomes the card’s title on the emphasized spring (0.36 s, bounce 0.1); the card opens beneath it.</p>
+      <p className="jn-mstage__cap">The line is already set as a card title, so it only moves: into the card’s header on the emphasized spring (0.36 s, bounce 0.1), position only, nothing scales. The card opens beneath it, revealed from the header down over 360 ms.</p>
     </div>
   );
 }
@@ -169,7 +174,7 @@ function ApprovalMoment() {
   return (
     <div className="jn-mstage jn-mstage--top jn-mstage--thread" ref={host}>
       <AnimatePresence>{shown ? <Approval key="a" animate /> : null}</AnimatePresence>
-      <p className="jn-mstage__cap">It arrives on base with a 6 px rise and ignores presses for 500 ms (drawn at half ink). Allowed, it collapses to a receipt that settles on the reward spring.</p>
+      <p className="jn-mstage__cap">It arrives on base with a 6 px rise and ignores presses for 500 ms (drawn at half ink). Allowed, its height eases down to the one-line receipt over 220 ms while the ask fades out and the receipt settles on the reward spring.</p>
     </div>
   );
 }
@@ -181,13 +186,17 @@ function MenuMoment() {
   useTimeline(() => [
     [700, () => api.current?.openModel(true)],
     [2600, () => api.current?.openModel(false)],
-    [3300, () => api.current?.openModel(true)],
-    [5200, () => api.current?.openModel(false)],
+    [3400, () => api.current?.openModel(true, true)],
+    [5000, () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))],
+    [5800, () => api.current?.openPlus(true)],
+    [7300, () => api.current?.openPlus(false)],
   ]);
   return (
     <div className="jn-mstage jn-mstage--bottom">
-      <Composer initial={DRAFT} apiRef={api} />
-      <p className="jn-mstage__cap">Opened with a pointer: 220 ms from the label, from 0.96. Closed: 160 ms, opacity-led, ease-in. Opened from the keyboard: instant.</p>
+      <Composer initial={DRAFT} apiRef={api} variant="dock" />
+      <p className="jn-mstage__cap">
+        Every layer opens outside the composer, never over the words. With a pointer: grows from its control in 220 ms from 0.96, its opacity in the first 80 ms so the text behind never reads through. From the keyboard: in the same frame, with focus on the chosen model; Escape closes it and focus returns. The + menu follows the same rules.
+      </p>
     </div>
   );
 }
@@ -195,7 +204,7 @@ function MenuMoment() {
 /* ———————————————————————— 9 · Crew presence ———————————————————————— */
 
 const PRESENCE_SEQ: { state: CrewState; words: string }[] = [
-  { state: "available", words: "Free" },
+  { state: "available", words: "Available" },
   { state: "thinking", words: "Mira is thinking" },
   { state: "working", words: "Mira is matching Stripe customers" },
   { state: "waiting", words: "Mira needs your answer" },
@@ -266,7 +275,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
         <div className="jn-thread jn-member">
           <div className="jn-cmsg">
             <p className="jn-cmsg__who">
-              <CrewFace member={member} state="available" size={20} live={false} facing="front" />
+              <CrewMark member={member} state="available" size={20} />
               <b>Mira</b> <span className="ink-3 num">13:52</span>
             </p>
             <div className="jn-cmsg__body">
@@ -388,11 +397,11 @@ const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType
   { id: "focus", title: "Composer focus", spec: "hairline 120 ms · ring opacity 120 ms · disc glyph swap 120 ms, scale 0.8 to 1", C: FocusMoment },
   { id: "palette", title: "@ palette and a token landing", spec: "palette F0, same frame · token fill settles over 220 ms, out-soft", C: PaletteMoment },
   { id: "panel", title: "An app’s panel from its token", spec: "in 220 ms from 0.96, out-soft · out 160 ms, ease-in", C: PanelMoment },
-  { id: "send", title: "The first send, home to thread", spec: "turn same frame · greeting exits 160 ms · composer to the dock on the layout spring, 0.36 s, no bounce", C: SendMoment, tall: true },
+  { id: "send", title: "The first send, home to thread", spec: "turn same frame · chips leave 100 ms · greeting fades 160 ms · composer to the dock on the layout spring, 0.36 s, position only", C: SendMoment, tall: true },
   { id: "wait", title: "Waiting, then a calm answer", spec: "live line after 200 ms · phases hold 1 s · seconds after 3 s · words fade 160 ms", C: WaitMoment, tall: true },
-  { id: "handoff", title: "The hand-off", spec: "live line to card title on the emphasized spring, 0.36 s, bounce 0.1", C: HandoffMoment },
-  { id: "approval", title: "Approval: arrive, arm, land", spec: "arrive 220 ms, 6 px rise · arm 500 ms · receipt on the reward spring", C: ApprovalMoment },
-  { id: "menu", title: "A menu opens and closes", spec: "open 220 ms from the trigger · close 160 ms ease-in · keyboard instant", C: MenuMoment },
+  { id: "handoff", title: "The hand-off", spec: "line to card title on the emphasized spring, position only · card revealed from its header, 360 ms", C: HandoffMoment },
+  { id: "approval", title: "Approval: arrive, arm, land", spec: "arrive 220 ms, 6 px rise · arm 500 ms · height to the receipt 220 ms · receipt on the reward spring", C: ApprovalMoment },
+  { id: "menu", title: "Menus open and close", spec: "pointer: 220 ms from the trigger, opacity in 80 ms · keyboard: same frame, focus inside · close 160 ms ease-in", C: MenuMoment },
   { id: "crew", title: "Crew presence", spec: "pose on the standard spring · words cross-fade 120 ms · attention turn once", C: CrewMoment },
   { id: "member", title: "A member’s own thread", spec: "arrival on the character spring, 0.5 s, bounce 0.24 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
   { id: "icons", title: "Icons on hover and state", spec: "each icon’s own motion, 120 to 240 ms, reduced to a cross-fade", C: IconsMoment },
