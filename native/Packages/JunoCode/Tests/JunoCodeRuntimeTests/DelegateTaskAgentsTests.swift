@@ -198,6 +198,54 @@ final class DelegateTaskAgentsTests: XCTestCase {
         XCTAssertNotNil(snapshots.first?.finishedAt, "the child really stopped")
     }
 
+    /// Each background child is a model run (a write child a worktree too),
+    /// so a model cannot keep starting them: a call over the cap starts none.
+    func testBackgroundChildrenAreCappedAndACallOverTheCapStartsNothing() async throws {
+        let model = ScriptedModelClient(steps: Array(repeating: .neverFinishes, count: 8))
+        let background = BackgroundSubagents()
+        let delegate = tool(model, background: background)
+        _ = try await delegate.execute(
+            input: ["tasks": [
+                ["prompt": "One", "title": "One", "background": true],
+                ["prompt": "Two", "title": "Two", "background": true],
+                ["prompt": "Three", "title": "Three", "background": true],
+            ]],
+            context: context("first")
+        )
+        do {
+            _ = try await delegate.execute(
+                input: ["tasks": [
+                    ["prompt": "Four", "title": "Four", "background": true],
+                    ["prompt": "Five", "title": "Five", "background": true],
+                ]],
+                context: context("second")
+            )
+            XCTFail("a call that would pass the cap is refused")
+        } catch let ToolError.invalidInput(message) {
+            XCTAssertTrue(message.contains("At most 4 background sub-agents"), message)
+        }
+        var running = await background.snapshots(parentSessionID: parent.id).count
+        XCTAssertEqual(running, 3, "the refused call started none of its children")
+
+        _ = try await delegate.execute(input: ["task": "Four", "background": true], context: context("third"))
+        running = await background.snapshots(parentSessionID: parent.id).count
+        XCTAssertEqual(running, 4, "the last slot is still there")
+        await background.cancelAll(parentSessionID: parent.id)
+    }
+
+    func testAParentKeepsOnlyItsNewestFinishedChildren() async {
+        let background = BackgroundSubagents()
+        let ids = (0..<40).map { "c\($0)" }
+        for id in ids {
+            await background.start(id: id, parentSessionID: parent.id, title: id) { (.completed, "done") }
+        }
+        _ = await background.wait(ids: ids, parentSessionID: parent.id, timeout: .seconds(10))
+        let kept = await background.snapshots(parentSessionID: parent.id).map(\.id)
+        XCTAssertEqual(kept.count, BackgroundSubagents.maximumFinishedPerParent)
+        XCTAssertFalse(kept.contains("c0"), "the oldest are forgotten")
+        XCTAssertTrue(kept.contains("c39"))
+    }
+
     func testThePromptFieldIsTheSameAsTask() throws {
         let specs = try DelegateTaskTool.specs(from: ["prompt": "Read the README", "agent": "explorer"], toolCallID: "c")
         XCTAssertEqual(specs.first?.task, "Read the README")

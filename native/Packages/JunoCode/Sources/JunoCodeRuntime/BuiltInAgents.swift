@@ -65,8 +65,8 @@ public struct SubagentDefinition: Hashable, Sendable {
     /// `registry` narrowed to the agent's tools.
     public func narrowing(_ registry: ToolRegistry) -> ToolRegistry {
         guard let tools else { return registry }
-        let allowed = Set(tools)
-        return ToolRegistry(tools: registry.allTools.filter { allowed.contains($0.name) })
+        // The folder instructions a child meets as it reads stay with it.
+        return registry.restricted(to: Set(tools))
     }
 }
 

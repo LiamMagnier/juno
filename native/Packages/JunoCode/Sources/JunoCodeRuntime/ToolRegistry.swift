@@ -102,6 +102,12 @@ public struct ToolRegistry: Sendable {
         tools[name]
     }
 
+    /// Only the tools named, keeping whatever adds context to their results:
+    /// how an agent's tool list narrows a sub-agent's registry.
+    public func restricted(to names: Set<String>) -> ToolRegistry {
+        ToolRegistry(tools: allTools.filter { names.contains($0.name) }, contextProvider: contextProvider)
+    }
+
     public func inspectionOnly() -> ToolRegistry {
         ToolRegistry(
             tools: allTools.filter { Self.inspectionToolNames.contains($0.name) },

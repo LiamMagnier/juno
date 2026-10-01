@@ -89,6 +89,20 @@ public actor SubagentControlRegistry {
     public func hasControl(for childSessionID: CodeSessionID) -> Bool {
         entries[childSessionID] != nil
     }
+
+    /// Lowers every running child of the parent to at most `mode`, never
+    /// raising one: what the reader lowering the parent's mode, or leaving
+    /// Code for Ask or Plan, does to the work it delegated. A background
+    /// child outlives the turn that started it, and must not keep authority
+    /// its parent no longer has. Lowering revokes the child's pending
+    /// approvals, as it does the parent's.
+    public func capModes(ownedBy parentSessionID: CodeSessionID, at mode: PermissionMode) async {
+        for entry in entries.values where entry.parentSessionID == parentSessionID {
+            let current = await entry.permissions.permissionMode
+            let capped = current.capped(at: mode)
+            if capped != current { await entry.permissions.setMode(capped) }
+        }
+    }
 }
 
 // MARK: - Background sub-agents (CODE_AGENT_SPEC §5.2)
@@ -128,7 +142,33 @@ public actor BackgroundSubagents {
     private var order: [String] = []
     private var stopWatchers: [CodeSessionID: UUID] = [:]
 
+    /// How many of one parent's children may work at once. Each is a model
+    /// run of its own, and a write child a worktree, so a model that keeps
+    /// starting them must collect or stop some first.
+    public static let maximumRunningPerParent = 4
+    /// How many finished children a parent keeps for `await_subagents` and
+    /// `inspect_subagent`; older ones are forgotten (their transcripts stay).
+    public static let maximumFinishedPerParent = 32
+
     public init() {}
+
+    /// Slots promised to calls that are about to start children.
+    private var reserved: [CodeSessionID: Int] = [:]
+
+    /// How many more children the parent may start now.
+    public func capacity(parentSessionID: CodeSessionID) -> Int {
+        let running = entries.values.filter { $0.parentSessionID == parentSessionID && $0.finishedAt == nil }.count
+        return max(0, Self.maximumRunningPerParent - running - reserved[parentSessionID, default: 0])
+    }
+
+    /// Holds `count` slots for children about to start, all or none, so two
+    /// calls running side by side cannot both take the last ones. Each
+    /// `start` uses one.
+    public func reserve(_ count: Int, parentSessionID: CodeSessionID) -> Bool {
+        guard count <= capacity(parentSessionID: parentSessionID) else { return false }
+        reserved[parentSessionID, default: 0] += count
+        return true
+    }
 
     /// Starts `work` as a child of `parentSessionID`.
     public func start(
@@ -137,6 +177,9 @@ public actor BackgroundSubagents {
         title: String,
         work: @escaping @Sendable () async -> (SubagentStatus, String)
     ) {
+        if let held = reserved[parentSessionID], held > 0 {
+            reserved[parentSessionID] = held > 1 ? held - 1 : nil
+        }
         let task = Task { await work() }
         entries[id] = Entry(parentSessionID: parentSessionID, title: title, task: task, startedAt: Date())
         order.append(id)
@@ -152,6 +195,20 @@ public actor BackgroundSubagents {
         entry.answer = answer
         entry.finishedAt = Date()
         entries[id] = entry
+        forgetOldFinished(parentSessionID: entry.parentSessionID)
+    }
+
+    /// Keeps a parent's newest finished children only.
+    private func forgetOldFinished(parentSessionID: CodeSessionID) {
+        let finished = order.filter { id in
+            guard let entry = entries[id] else { return false }
+            return entry.parentSessionID == parentSessionID && entry.finishedAt != nil
+        }
+        let excess = finished.count - Self.maximumFinishedPerParent
+        guard excess > 0 else { return }
+        let forgotten = Set(finished.prefix(excess))
+        for id in forgotten { entries.removeValue(forKey: id) }
+        order.removeAll { forgotten.contains($0) }
     }
 
     public func snapshot(id: String, parentSessionID: CodeSessionID) -> Snapshot? {
