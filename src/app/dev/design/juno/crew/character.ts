@@ -1,15 +1,23 @@
 /**
- * One crew character in the scene graph (three.js, client only).
+ * One crew character in the scene graph (three.js, client only), built from
+ * the Blender kit (kit.ts) and fitted with the same rules as the Cycles
+ * stills (fit.ts mirrors tools/crew/blender/crew_fit.py).
  *
- *   root ─ shadow                       the soft contact shadow on the ground
- *        ─ hearts                       the happy reaction (not turned with the body)
- *        ─ base (squash, lift)          scales about the ground, keeps volume
- *            └ pivot (yaw, pitch, roll) turns about a point low in the body
- *                └ content
- *                    ├ body             skin + fur shells (plush, velvet) or one solid mesh
- *                    ├ eyes ×2          dome, catchlights, iris or pupil, a lid that closes
- *                    ├ brows, mouth     embroidered thread
- *                    └ accessories      fitted to the body's anchors
+ *   root ─ shadow                        the soft contact shadow on the ground
+ *        ─ hearts                        the happy reaction (not turned with the body)
+ *        ─ base (squash, lift)           scales about the ground, keeps volume
+ *            └ pivot (yaw, pitch, roll)  turns about a point low in the body
+ *                └ form (stretch)        taller and slimmer, or rounder and lower
+ *                    └ content
+ *                        ├ body          skin + fur shells (plush, velvet) or one solid mesh
+ *                        ├ eyes ×2       dark domes with a catchlight (or whites and pupils,
+ *                        │               or stitched thread); blink by squashing, closed as a curve
+ *                        ├ brows, mouth  embroidered thread
+ *                        └ accessories   canonical parts, fitted to the body's anchors
+ *
+ * The cuteness rules (D-033) live in the kit's face data: eyes large, low and
+ * wide apart, one soft mass, a plush pile; the avatar's eye controls only move
+ * within those ranges.
  *
  * Everything that changes with state (lids, look, brows, desaturation, fur
  * lag, hearts) is a transform or a uniform, so a state change never rebuilds
@@ -17,23 +25,27 @@
  */
 
 import * as THREE from "three";
-import { buildAccessory, type BuiltAccessory } from "./accessories";
+import { defaultAccessoryColor } from "./accessory-colors";
 import { avatarKey, formKey, furLengthOf, type AvatarConfig, type EyeStyle } from "./avatar2";
-import { makeFurMaterial, makeSolidMaterial, heartGeometry, makeAccMaterial, type FurMaterial, type SolidMaterial, type AccMaterial } from "./materials";
-import { blush, colorHex, featureInk, hexToOklch, oklchToHex, patternPartner } from "./palette";
+import { EYE_SHAPE, basisZ, eyeFrames, fitAccessories, type EyeFrame, type MatKey, type Placement } from "./fit";
+import { kitSync, type Kit, type Lod, type ShapeId } from "./kit";
+import { SHAPE_DATA } from "./kit-data";
+import { heartGeometry, makeAccMaterial, makeFurMaterial, makeSolidMaterial, type AccMaterial, type AccMaterialKind, type FurMaterial, type SolidMaterial } from "./materials";
+import { blush, colorHex, featureInk, hexToOklch, mixHex, patternPartner } from "./palette";
 import type { Pose } from "./rig";
-import { anchors as anchorsOf, bodyField, coreOf, castRay, fieldNormal, surfaceBasis, type Anchors, type BodyField, type Frame } from "./shapes";
 
 /* ——————————————————————————— Tuning ——————————————————————————— */
 
 export interface Tuning {
   /** Eye size multiplier (small faces need bigger eyes to read). */
   eye: number;
-  /** Body mesh subdivisions per cube face. */
+  /** The body's level of detail. */
+  lod: Lod;
+  /** Kept for callers of the first engine. */
   detail: number;
   /** Fur shells (plush). */
   shells: number;
-  /** Feature stroke multiplier (brows, mouth, lash lines). */
+  /** Feature stroke multiplier (brows, mouth, closed eyes). */
   stroke: number;
   /** Relief multiplier (bumps alias when tiny). */
   bump: number;
@@ -42,112 +54,20 @@ export interface Tuning {
 
 /** Optical compensation and level of detail by rendered size (CSS px). */
 export function tuning(size: number): Tuning {
-  if (size <= 16) return { eye: 1.5, detail: 20, shells: 8, stroke: 1.9, bump: 0.2, small: true };
-  if (size <= 20) return { eye: 1.4, detail: 22, shells: 9, stroke: 1.7, bump: 0.25, small: true };
-  if (size <= 28) return { eye: 1.26, detail: 24, shells: 10, stroke: 1.45, bump: 0.35, small: true };
-  if (size <= 48) return { eye: 1.14, detail: 28, shells: 14, stroke: 1.2, bump: 0.6, small: false };
-  if (size <= 80) return { eye: 1.06, detail: 32, shells: 18, stroke: 1.08, bump: 0.8, small: false };
-  if (size <= 140) return { eye: 1.0, detail: 40, shells: 24, stroke: 1, bump: 1, small: false };
-  if (size <= 220) return { eye: 1.0, detail: 48, shells: 30, stroke: 1, bump: 1, small: false };
-  return { eye: 1.0, detail: 56, shells: 36, stroke: 1, bump: 1, small: false };
+  if (size <= 16) return { eye: 1.5, lod: "lod1", detail: 12, shells: 6, stroke: 1.9, bump: 0.2, small: true };
+  if (size <= 20) return { eye: 1.42, lod: "lod1", detail: 12, shells: 7, stroke: 1.7, bump: 0.25, small: true };
+  if (size <= 28) return { eye: 1.24, lod: "lod1", detail: 12, shells: 8, stroke: 1.45, bump: 0.35, small: true };
+  if (size <= 48) return { eye: 1.12, lod: "lod1", detail: 12, shells: 12, stroke: 1.2, bump: 0.6, small: false };
+  if (size <= 80) return { eye: 1.05, lod: "lod0", detail: 25, shells: 16, stroke: 1.08, bump: 0.8, small: false };
+  if (size <= 140) return { eye: 1.0, lod: "lod0", detail: 25, shells: 22, stroke: 1, bump: 1, small: false };
+  if (size <= 220) return { eye: 1.0, lod: "lod0", detail: 25, shells: 28, stroke: 1, bump: 1, small: false };
+  return { eye: 1.0, lod: "lod0", detail: 25, shells: 34, stroke: 1, bump: 1, small: false };
 }
 
-/** Fur length in body units for a config. */
+/** Visible fur thickness in body units for a config. */
 export const furLength = furLengthOf;
 
-/* ——————————————————————————— Geometry ——————————————————————————— */
-
-const geoCache = new Map<string, THREE.BufferGeometry>();
-
-/**
- * The body mesh: a subdivided cube, welded, each vertex direction pushed out
- * from the body's core until it meets the surface of the shape's distance
- * field, with the field's own gradient as its normal. Every shape has the
- * same topology, so one can morph into another vertex for vertex.
- */
-function bodyGeometry(f: BodyField, detail: number): THREE.BufferGeometry {
-  const k = `${formKey(f)}|${detail}`;
-  const hit = geoCache.get(k);
-  if (hit) return hit;
-  let g: THREE.BufferGeometry = new THREE.BoxGeometry(2, 2, 2, detail, detail, detail);
-  g.deleteAttribute("normal");
-  g.deleteAttribute("uv");
-  g = mergeByPosition(g);
-  const pos = g.attributes.position as THREE.BufferAttribute;
-  const nor = new Float32Array(pos.count * 3);
-  const c = coreOf(f);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    // Spherified cube: even spacing, no poles.
-    let dx = x * Math.sqrt(1 - (y * y) / 2 - (z * z) / 2 + (y * y * z * z) / 3);
-    let dy = y * Math.sqrt(1 - (z * z) / 2 - (x * x) / 2 + (z * z * x * x) / 3);
-    let dz = z * Math.sqrt(1 - (x * x) / 2 - (y * y) / 2 + (x * x * y * y) / 3);
-    const l = Math.hypot(dx, dy, dz) || 1;
-    dx /= l;
-    dy /= l;
-    dz /= l;
-    const t = castRay(f, c[0], c[1], c[2], dx, dy, dz, 3.2);
-    const px = c[0] + dx * t;
-    const py = c[1] + dy * t;
-    const pz = c[2] + dz * t;
-    pos.setXYZ(i, px, py, pz);
-    const n = fieldNormal(f, px, py, pz);
-    nor[i * 3] = n[0];
-    nor[i * 3 + 1] = n[1];
-    nor[i * 3 + 2] = n[2];
-  }
-  g.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
-  g.computeBoundingSphere();
-  g.computeBoundingBox();
-  if (geoCache.size > 80) {
-    const first = geoCache.keys().next().value;
-    if (first) {
-      geoCache.get(first)?.dispose();
-      geoCache.delete(first);
-    }
-  }
-  geoCache.set(k, g);
-  return g;
-}
-
-/** Weld coincident vertices (BoxGeometry duplicates its edges). */
-function mergeByPosition(g: THREE.BufferGeometry): THREE.BufferGeometry {
-  const pos = g.attributes.position as THREE.BufferAttribute;
-  const idx = g.index!;
-  const map = new Map<string, number>();
-  const remap = new Uint32Array(pos.count);
-  const out: number[] = [];
-  for (let i = 0; i < pos.count; i++) {
-    const key = `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
-    let j = map.get(key);
-    if (j === undefined) {
-      j = out.length / 3;
-      map.set(key, j);
-      out.push(pos.getX(i), pos.getY(i), pos.getZ(i));
-    }
-    remap[i] = j;
-  }
-  const index: number[] = [];
-  for (let i = 0; i < idx.count; i++) index.push(remap[idx.getX(i)]);
-  const m = new THREE.BufferGeometry();
-  m.setAttribute("position", new THREE.BufferAttribute(new Float32Array(out), 3));
-  m.setIndex(index);
-  g.dispose();
-  return m;
-}
-
-function shellGeometry(base: THREE.BufferGeometry, shells: number): THREE.InstancedBufferGeometry {
-  const g = new THREE.InstancedBufferGeometry();
-  g.index = base.index;
-  g.setAttribute("position", base.attributes.position);
-  g.setAttribute("normal", base.attributes.normal);
-  g.instanceCount = shells;
-  g.boundingSphere = base.boundingSphere?.clone() ?? null;
-  if (g.boundingSphere) g.boundingSphere.radius += 0.3;
-  return g;
-}
+/* ——————————————————————————— Shared pieces ——————————————————————————— */
 
 let shadowTex: THREE.Texture | null = null;
 function shadowTexture() {
@@ -158,7 +78,7 @@ function shadowTexture() {
   const ctx = c.getContext("2d")!;
   const wide = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
   wide.addColorStop(0, "rgba(0,0,0,0.3)");
-  wide.addColorStop(0.5, "rgba(0,0,0,0.13)");
+  wide.addColorStop(0.5, "rgba(0,0,0,0.12)");
   wide.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = wide;
   ctx.fillRect(0, 0, 256, 256);
@@ -173,264 +93,122 @@ function shadowTexture() {
   return shadowTex;
 }
 
-/* Shared unit geometries for features. */
-const unit = {
-  sphere: null as THREE.SphereGeometry | null,
-  hemi: null as THREE.SphereGeometry | null,
-  disc: null as THREE.CircleGeometry | null,
-  capsule: null as THREE.CapsuleGeometry | null,
-};
-const U = {
-  sphere: () => (unit.sphere ??= new THREE.SphereGeometry(1, 40, 24)),
-  hemi: () => (unit.hemi ??= new THREE.SphereGeometry(1, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2)),
-  disc: () => (unit.disc ??= new THREE.CircleGeometry(1, 40)),
-  capsule: () => (unit.capsule ??= new THREE.CapsuleGeometry(0.5, 1, 6, 12)),
-};
-const lashCache = new Map<number, THREE.TubeGeometry>();
-function lashGeometry(stroke: number) {
-  const k = Math.round(stroke * 100);
-  let g = lashCache.get(k);
-  if (!g) {
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 24; i++) {
-      const t = 0.08 + (i / 24) * (Math.PI - 0.16);
-      pts.push(new THREE.Vector3(Math.cos(t) * 1.03, 0, Math.sin(t) * 1.03));
-    }
-    g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.075 * stroke, 8, false);
-    lashCache.set(k, g);
+let glintGeo: THREE.CircleGeometry | null = null;
+const glint = () => (glintGeo ??= new THREE.CircleGeometry(1, 24));
+
+/** Raycast targets for placing features on a body (LOD0, one per shape). */
+const rayMeshes = new Map<ShapeId, THREE.Mesh>();
+let rayMat: THREE.MeshBasicMaterial | null = null;
+function rayMesh(kit: Kit, shape: ShapeId) {
+  let m = rayMeshes.get(shape);
+  if (!m) {
+    rayMat ??= new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    m = new THREE.Mesh(kit.body(shape, "lod0"), rayMat);
+    m.updateMatrixWorld(true);
+    rayMeshes.set(shape, m);
   }
-  return g;
+  return m;
 }
-const smileCache = new Map<number, THREE.TubeGeometry>();
-function smileGeometry(stroke: number) {
-  const k = Math.round(stroke * 100);
-  let g = smileCache.get(k);
-  if (!g) {
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 16; i++) {
-      const t = Math.PI * (0.18 + (i / 16) * 0.64);
-      pts.push(new THREE.Vector3(Math.cos(t), -Math.sin(t) * 0.62 + 0.3, 0));
-    }
-    g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.11 * stroke, 8, false);
-    smileCache.set(k, g);
-  }
-  return g;
+const raycaster = new THREE.Raycaster();
+const tri = new THREE.Triangle();
+const bary = new THREE.Vector3();
+
+function frontHit(kit: Kit, shape: ShapeId) {
+  const mesh = rayMesh(kit, shape);
+  const geo = mesh.geometry;
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const nor = geo.attributes.normal as THREE.BufferAttribute;
+  return (x: number, y: number) => {
+    raycaster.set(new THREE.Vector3(x, y, 3), new THREE.Vector3(0, 0, -1));
+    const hit = raycaster.intersectObject(mesh, false)[0];
+    if (!hit || !hit.face) return null;
+    const { a, b, c } = hit.face;
+    tri.set(new THREE.Vector3().fromBufferAttribute(pos, a), new THREE.Vector3().fromBufferAttribute(pos, b), new THREE.Vector3().fromBufferAttribute(pos, c));
+    tri.getBarycoord(hit.point, bary);
+    const n = new THREE.Vector3()
+      .addScaledVector(new THREE.Vector3().fromBufferAttribute(nor, a), bary.x)
+      .addScaledVector(new THREE.Vector3().fromBufferAttribute(nor, b), bary.y)
+      .addScaledVector(new THREE.Vector3().fromBufferAttribute(nor, c), bary.z)
+      .normalize();
+    return { p: hit.point.clone(), n };
+  };
 }
 
-const arcCache = new Map<string, THREE.TubeGeometry>();
-/** A closed eye drawn as one stitched curve: ‿ asleep, ∩ when smiling shut. */
-function closedArc(stroke: number, up: boolean) {
-  const k = `${Math.round(stroke * 100)}|${up ? 1 : 0}`;
-  let g = arcCache.get(k);
-  if (!g) {
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 18; i++) {
-      const t = Math.PI * (0.14 + (i / 18) * 0.72);
-      const y = Math.sin(t) * 0.5;
-      pts.push(new THREE.Vector3(Math.cos(t), up ? y - 0.22 : 0.22 - y, 0));
-    }
-    g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 28, 0.13 * stroke, 8, false);
-    arcCache.set(k, g);
+/* ——————————————————————————— Materials by key ——————————————————————————— */
+
+/** Texture frequency per body unit for soft goods (felt fibres, knit stitches, canvas weave). */
+const SOFT: Partial<Record<AccMaterialKind, { base: number; body: number }>> = {
+  felt: { base: 3, body: 7 },
+  knit: { base: 7, body: 22 },
+  canvas: { base: 9, body: 26 },
+  velvet: { base: 3, body: 7 },
+  thread: { base: 14, body: 40 },
+};
+
+function kindOf(key: MatKey): { kind: AccMaterialKind; color?: string; adjust?: (c: string) => string } {
+  switch (key) {
+    case "eye":
+      return { kind: "gloss", color: "#141113" };
+    case "eye_white":
+      return { kind: "gloss", color: "#f6f4ef" };
+    case "thread":
+      return { kind: "thread", color: "#1d1816" };
+    case "thread_hi":
+      return { kind: "thread", color: "#f3f0ea" };
+    case "glass":
+      return { kind: "glass", color: "#ffffff" };
+    case "shade":
+      return { kind: "gloss", color: "#18161a" };
+    case "metal":
+      return { kind: "metal" };
+    case "acetate":
+      return { kind: "acetate" };
+    case "vinyl_white":
+      return { kind: "vinyl" };
+    case "stem":
+      return { kind: "vinyl", color: "#5f8f3f" };
+    case "leaf":
+      return { kind: "felt", color: "#78b04a" };
+    case "stem_dark":
+      return { kind: "vinyl", color: "#2e2f33" };
+    case "petal":
+      return { kind: "felt", color: "#fbf9f4" };
+    case "acc_dark":
+      return { kind: "felt", adjust: (c) => mixHex(c, "#000000", 0.22) };
+    case "acc_light":
+    case "pom":
+      return { kind: "felt", adjust: (c) => mixHex(c, "#ffffff", key === "pom" ? 0.12 : 0.3) };
+    case "knit":
+      return { kind: "knit" };
+    case "canvas":
+      return { kind: "canvas" };
+    case "velvet":
+      return { kind: "velvet" };
+    default:
+      return { kind: "felt" };
   }
-  return g;
+}
+
+function maxScale(m: THREE.Matrix4) {
+  const e = m.elements;
+  return Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10]));
 }
 
 /* ——————————————————————————— Eyes ——————————————————————————— */
 
-const EYE_INK = "#15110f";
-
-/** Where on the surface a feature sits, facing mostly forward. */
-function placeOn(obj: THREE.Object3D, f: Frame, out: number, forward: number) {
-  const n = new THREE.Vector3(f.n[0], f.n[1], f.n[2]);
-  const nf = n.clone();
-  nf.z += forward;
-  nf.normalize();
-  const b = surfaceBasis([nf.x, nf.y, nf.z]);
-  const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(...b.x), new THREE.Vector3(...b.y), new THREE.Vector3(...b.z));
-  m.setPosition(new THREE.Vector3(f.p[0], f.p[1], f.p[2]).addScaledVector(n, out));
-  obj.matrix.copy(m);
-  obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
-}
-
 interface EyeParts {
   group: THREE.Group;
-  /** Moves with the look (dome eyes). */
+  /** Moves with the look. */
   look: THREE.Group;
-  /** Moves inside the eye (iris, pupil). */
-  inner: THREE.Object3D | null;
-  lidRot: THREE.Group | null;
-  lid: THREE.Mesh | null;
-  lash: THREE.Mesh | null;
-  /** The eye's scale, for blinking without a lid. */
+  /** Squashes to blink. */
   squash: THREE.Group;
+  /** Moves inside the eye (pupils of wide and googly eyes). */
+  inner: THREE.Object3D | null;
   /** Closed: asleep (‿) and smiling shut (∩). */
   asleep: THREE.Mesh;
   smiling: THREE.Mesh;
   r: number;
-  depth: number;
   style: EyeStyle;
-}
-
-interface EyeMats {
-  dark: THREE.MeshPhysicalMaterial;
-  /** Flat discs (pupils) must be matte: a glossy disc facing the camera mirrors the studio light and turns white. */
-  pupil: THREE.MeshStandardMaterial;
-  white: THREE.MeshPhysicalMaterial;
-  iris: THREE.MeshPhysicalMaterial;
-  glint: THREE.MeshBasicMaterial;
-  cover: THREE.MeshPhysicalMaterial;
-  lid: THREE.MeshPhysicalMaterial;
-  ink: AccMaterial;
-  thread: AccMaterial;
-  stitchHi: AccMaterial;
-}
-
-function eyeMaterials(bodyHex: string): EyeMats {
-  const lch = hexToOklch(bodyHex);
-  const irisHex = oklchToHex({ l: 0.42, c: Math.min(0.1, Math.max(0.05, lch.c)), h: lch.c < 0.03 ? 60 : (lch.h + 200) % 360 });
-  return {
-    dark: new THREE.MeshPhysicalMaterial({ color: EYE_INK, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05, metalness: 0 }),
-    white: new THREE.MeshPhysicalMaterial({ color: "#f7f5f0", roughness: 0.32, clearcoat: 0.6, clearcoatRoughness: 0.1 }),
-    iris: new THREE.MeshPhysicalMaterial({ color: irisHex, roughness: 0.7, envMapIntensity: 0.5, clearcoat: 1e-4 }),
-    pupil: new THREE.MeshStandardMaterial({ color: "#0d0b0a", roughness: 0.85, envMapIntensity: 0.3 }),
-    glint: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-    cover: new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.03, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.12, depthWrite: false }),
-    lid: new THREE.MeshPhysicalMaterial({
-      color: oklchToHex({ l: Math.max(0.18, lch.l - 0.09), c: lch.c * 0.95, h: lch.h }),
-      roughness: 0.92,
-      sheen: 0.7,
-      sheenRoughness: 0.5,
-      sheenColor: new THREE.Color(1, 1, 1),
-      clearcoat: 1e-4,
-    }),
-    ink: makeAccMaterial("thread", featureInk(bodyHex)),
-    thread: makeAccMaterial("thread", "#1c1613"),
-    stitchHi: makeAccMaterial("thread", "#f4f1ea"),
-  };
-}
-
-function buildEye(style: EyeStyle, r: number, stroke: number, mats: EyeMats, side: number): EyeParts {
-  const group = new THREE.Group();
-  const look = new THREE.Group();
-  const squash = new THREE.Group();
-  group.add(look);
-  look.add(squash);
-  let inner: THREE.Object3D | null = null;
-  let depth = r * 0.6;
-  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D = squash) => {
-    const m = new THREE.Mesh(geo, mat);
-    parent.add(m);
-    return m;
-  };
-  const glint = (x: number, y: number, s: number, z: number, parent: THREE.Object3D = squash) => {
-    const g = add(U.disc(), mats.glint, parent);
-    g.scale.setScalar(s);
-    g.position.set(x, y, z);
-  };
-  let dome = new THREE.Vector3(r, r, r * 0.6);
-  switch (style) {
-    case "button":
-    case "sleepy": {
-      dome = new THREE.Vector3(r, r, r * 0.62);
-      const d = add(U.sphere(), mats.dark);
-      d.scale.copy(dome);
-      glint(-r * 0.32, r * 0.36, r * 0.24, r * 0.5);
-      glint(r * 0.3, -r * 0.3, r * 0.09, r * 0.5);
-      depth = r * 0.62;
-      break;
-    }
-    case "oval": {
-      dome = new THREE.Vector3(r * 0.76, r * 1.12, r * 0.55);
-      const d = add(U.sphere(), mats.dark);
-      d.scale.copy(dome);
-      glint(-r * 0.22, r * 0.46, r * 0.22, r * 0.44);
-      glint(r * 0.24, -r * 0.4, r * 0.08, r * 0.46);
-      depth = r * 0.55;
-      break;
-    }
-    case "bead": {
-      const rb = r * 0.58;
-      dome = new THREE.Vector3(rb, rb, rb * 0.85);
-      const d = add(U.sphere(), mats.dark);
-      d.scale.copy(dome);
-      glint(-rb * 0.34, rb * 0.36, rb * 0.26, rb * 0.76);
-      depth = rb * 0.85;
-      break;
-    }
-    case "wide": {
-      dome = new THREE.Vector3(r * 1.12, r * 1.2, r * 0.6);
-      const d = add(U.sphere(), mats.white);
-      d.scale.copy(dome);
-      const iris = new THREE.Group();
-      squash.add(iris);
-      const i = add(U.disc(), mats.iris, iris);
-      i.scale.setScalar(r * 0.62);
-      const p = add(U.disc(), mats.pupil, iris);
-      p.scale.setScalar(r * 0.34);
-      p.position.z = 0.002;
-      glint(-r * 0.2, r * 0.24, r * 0.15, 0.004, iris);
-      iris.position.z = r * 0.6 + 0.002;
-      inner = iris;
-      depth = r * 0.6;
-      break;
-    }
-    case "googly": {
-      dome = new THREE.Vector3(r * 1.22, r * 1.22, r * 0.7);
-      const d = add(U.sphere(), mats.white);
-      d.scale.copy(dome);
-      const pupil = new THREE.Group();
-      squash.add(pupil);
-      const p = add(U.disc(), mats.pupil, pupil);
-      p.scale.setScalar(r * 0.6);
-      pupil.position.z = r * 0.7 + 0.003;
-      inner = pupil;
-      const cover = add(U.sphere(), mats.cover);
-      cover.scale.set(r * 1.24, r * 1.24, r * 0.82);
-      cover.renderOrder = 2;
-      glint(-r * 0.5, r * 0.55, r * 0.16, r * 0.66);
-      depth = r * 0.82;
-      break;
-    }
-    case "stitched": {
-      dome = new THREE.Vector3(r * 0.74, r * 1.0, r * 0.24);
-      const d = add(U.sphere(), mats.thread.mat);
-      d.scale.copy(dome);
-      // The white highlight stitch embroidered plush eyes carry.
-      const hi = add(U.capsule(), mats.stitchHi.mat);
-      hi.scale.set(r * 0.16, r * 0.3, r * 0.06);
-      hi.rotation.z = -0.5;
-      hi.position.set(-r * 0.24, r * 0.4, r * 0.21);
-      depth = r * 0.24;
-      break;
-    }
-  }
-  void side;
-  // The lid: a hemisphere in the body's colour that rotates down over the eye.
-  let lidRot: THREE.Group | null = null;
-  let lid: THREE.Mesh | null = null;
-  let lash: THREE.Mesh | null = null;
-  if (style !== "stitched") {
-    const lidScale = new THREE.Group();
-    lidScale.scale.copy(dome).multiplyScalar(1.055);
-    lidScale.scale.z = dome.z * 1.12;
-    squash.add(lidScale);
-    lidRot = new THREE.Group();
-    lidScale.add(lidRot);
-    lid = new THREE.Mesh(U.hemi(), mats.lid);
-    lidRot.add(lid);
-    lash = new THREE.Mesh(lashGeometry(stroke), mats.ink.mat);
-    lidRot.add(lash);
-  }
-  const arcW = style === "googly" || style === "wide" ? r * 1.05 : style === "bead" ? r * 0.75 : r * 0.92;
-  const asleep = new THREE.Mesh(closedArc(stroke * (0.9 / Math.max(0.6, arcW / r)), false), mats.ink.mat);
-  const smiling = new THREE.Mesh(closedArc(stroke * (0.9 / Math.max(0.6, arcW / r)), true), mats.ink.mat);
-  for (const m of [asleep, smiling]) {
-    m.scale.set(arcW, arcW, arcW);
-    m.position.z = Math.min(depth, r * 0.45);
-    m.visible = false;
-    look.add(m);
-  }
-  return { group, look, inner, lidRot, lid, lash, squash, asleep, smiling, r, depth, style };
 }
 
 /* ——————————————————————————— The character ——————————————————————————— */
@@ -448,6 +226,12 @@ interface Morph {
   t0: number;
 }
 
+interface BuiltAcc {
+  node: THREE.Object3D;
+  springy: number;
+  rest: THREE.Euler;
+}
+
 const HEART_STARTS = [0.05, 0.16, 0.27];
 const HEART_X = [-0.42, 0.06, 0.44];
 
@@ -455,6 +239,7 @@ export class Character {
   root = new THREE.Group();
   private base = new THREE.Group();
   private pivot = new THREE.Group();
+  private form = new THREE.Group();
   private content = new THREE.Group();
   private shadow: THREE.Mesh;
   private hearts = new THREE.Group();
@@ -464,28 +249,30 @@ export class Character {
   cfg: AvatarConfig | null = null;
   key = "";
   private detailKey = "";
-  field: BodyField | null = null;
-  anchors: Anchors | null = null;
   tune: Tuning = tuning(64);
   fur = 0;
-  bounds: Bounds = { top: 1, bottom: -1, half: 1 };
+  bounds: Bounds = { top: 1, bottom: 0, half: 0.5 };
+  private shape: ShapeId = "pebble";
 
   private skin: THREE.Mesh | null = null;
   private furMat: FurMaterial | null = null;
   private solidMat: SolidMaterial | null = null;
   private baseGeo: THREE.BufferGeometry | null = null;
+  private press: THREE.BufferAttribute | null = null;
   private eyes: EyeParts[] = [];
-  private eyeMats: EyeMats | null = null;
-  private lidBase = new THREE.Color();
+  private frames: EyeFrame[] = [];
   private features = new THREE.Group();
   private brows: THREE.Group[] = [];
   private mouthSmile: THREE.Mesh | null = null;
   private mouthO: THREE.Group | null = null;
-  private accs: BuiltAccessory[] = [];
   private accGroup = new THREE.Group();
+  private accs: BuiltAcc[] = [];
+  private mats = new Map<string, AccMaterial>();
   private morph: Morph | null = null;
   private working: THREE.BufferGeometry | null = null;
   private imageTex: THREE.Texture | null = null;
+  private shadowBase = { w: 1, d: 1 };
+  private glintMatCache: THREE.MeshBasicMaterial | null = null;
   shadowOpacity = 1;
   onChange?: () => void;
   ready: Promise<void> = Promise.resolve();
@@ -500,15 +287,33 @@ export class Character {
     this.shadow.renderOrder = -1;
     this.root.add(this.shadow, this.base, this.hearts);
     this.base.add(this.pivot);
-    this.pivot.add(this.content);
+    this.pivot.add(this.form);
+    this.form.add(this.content);
     this.content.add(this.features, this.accGroup);
+  }
+
+  private mat(key: MatKey, color: string | undefined, partScale: number): AccMaterial {
+    const k = kindOf(key);
+    let c = k.color ?? color ?? "#3e4045";
+    if (k.adjust) c = k.adjust(c);
+    const soft = SOFT[k.kind];
+    const scale = soft ? Math.max(0.15, Math.min(6, (soft.body * partScale) / soft.base)) : 1;
+    const id = `${k.kind}|${c}|${scale.toFixed(2)}`;
+    let m = this.mats.get(id);
+    if (!m) {
+      m = makeAccMaterial(k.kind, c, scale);
+      this.mats.set(id, m);
+    }
+    return m;
   }
 
   /** Configure for a size. `morphAt` (ms) morphs the body from its current shape. */
   set(cfg: AvatarConfig, size: number, morphAt?: number) {
+    const kit = kitSync();
+    if (!kit) return;
     const tune = tuning(size);
     const key = avatarKey(cfg);
-    const dk = `${tune.detail}|${tune.shells}|${tune.eye}`;
+    const dk = `${tune.lod}|${tune.shells}|${tune.eye}`;
     if (key === this.key && dk === this.detailKey) return;
     const prev = this.cfg;
     const formChanged = !prev || formKey(prev) !== formKey(cfg) || dk !== this.detailKey;
@@ -518,58 +323,65 @@ export class Character {
     this.detailKey = dk;
     this.tune = tune;
     this.fur = furLength(cfg);
-    const f = bodyField(cfg.shape, cfg.stretch);
-    this.field = f;
-    this.anchors = anchorsOf(cfg.shape, cfg.stretch, cfg.eyes);
+    const shape = cfg.shape as ShapeId;
+    this.shape = shape;
+    const data = SHAPE_DATA[shape];
     const bodyHex = colorHex(cfg.color);
 
     /* Body geometry (morph when asked). */
-    const geo = bodyGeometry(f, tune.detail);
+    const geo = kit.body(shape, tune.lod);
     if (formChanged) {
-      if (morphAt !== undefined && this.baseGeo && this.baseGeo !== geo && (this.baseGeo.attributes.position as THREE.BufferAttribute).count === (geo.attributes.position as THREE.BufferAttribute).count) {
-        const cur = this.working && this.morph ? this.working : this.baseGeo;
+      const prevGeo = this.baseGeo;
+      if (morphAt !== undefined && prevGeo && prevGeo !== geo && prevGeo.attributes.position.count === geo.attributes.position.count) {
+        const cur = this.working && this.morph ? this.working : prevGeo;
         const from = new Float32Array((cur.attributes.position as THREE.BufferAttribute).array as Float32Array);
         const fromN = new Float32Array((cur.attributes.normal as THREE.BufferAttribute).array as Float32Array);
-        if (!this.working || (this.working.attributes.position as THREE.BufferAttribute).count !== (geo.attributes.position as THREE.BufferAttribute).count) {
+        if (!this.working || this.working.attributes.position.count !== geo.attributes.position.count) {
           this.working?.dispose();
-          this.working = geo.clone();
+          this.working = new THREE.BufferGeometry();
+          this.working.setIndex(geo.index);
+          this.working.setAttribute("position", new THREE.BufferAttribute(new Float32Array(from), 3));
+          this.working.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(fromN), 3));
+          this.working.setAttribute("uv", geo.attributes.uv);
         }
+        this.working.setAttribute("ao", geo.attributes.ao);
+        this.working.setAttribute("fur", geo.attributes.fur);
         this.morph = { from, fromN, to: geo, t0: morphAt };
-        this.baseGeo = geo;
-      } else {
-        this.morph = null;
-        this.baseGeo = geo;
-      }
+      } else this.morph = null;
+      this.baseGeo = geo;
     }
 
-    /* Body material. */
+    /* Features and accessories are fitted first: the pile is pressed under them. */
+    this.frames = eyeFrames(shape, cfg.eyes, this.fur, tune.eye, frontHit(kit, shape));
+    const placements = fitAccessories(shape, cfg.accessories, this.fur, this.frames, (spec) => (spec.color ? colorHex(spec.color) : defaultAccessoryColor(spec.id, bodyHex)));
+
+    /* Body material and the shells. */
     const kind = cfg.material.kind;
     const furry = kind === "plush" || kind === "velvet";
-    if (matChanged || formChanged) {
-      if (this.skin) {
-        this.content.remove(this.skin);
-        if (this.skin.geometry instanceof THREE.InstancedBufferGeometry) this.skin.geometry.dispose();
-      }
-      if (matChanged) {
-        this.furMat?.mat.dispose();
-        this.solidMat?.mat.dispose();
-        this.furMat = null;
-        this.solidMat = null;
-        if (furry) this.furMat = makeFurMaterial(kind === "velvet");
-        else this.solidMat = makeSolidMaterial(kind as "knit" | "felt" | "vinyl" | "ceramic");
-      }
-      const drawGeo = this.morph && this.working ? this.working : geo;
-      const shells = kind === "velvet" ? Math.max(4, Math.round(tune.shells * 0.3)) : tune.shells;
-      this.skin = new THREE.Mesh(furry ? shellGeometry(drawGeo, shells) : drawGeo, furry ? this.furMat!.mat : this.solidMat!.mat);
-      this.skin.frustumCulled = false;
-      this.content.add(this.skin);
-      if (this.furMat) this.furMat.u.uShells.value = shells;
+    if (matChanged) {
+      this.furMat?.mat.dispose();
+      this.solidMat?.mat.dispose();
+      this.furMat = null;
+      this.solidMat = null;
+      if (furry) this.furMat = makeFurMaterial(kind === "velvet", kit.strands);
+      else this.solidMat = makeSolidMaterial(kind as "knit" | "felt" | "vinyl" | "ceramic");
     }
+    const drawGeo = this.morph && this.working ? this.working : geo;
+    const shells = kind === "velvet" ? Math.max(4, Math.round(tune.shells * 0.35)) : tune.shells;
+    this.press = new THREE.BufferAttribute(pressFor(geo, placements, kit, this.fur, data, cfg), 2);
+    if (this.skin) {
+      this.content.remove(this.skin);
+      this.skin.geometry.dispose();
+    }
+    this.skin = new THREE.Mesh(furry ? shellGeometry(drawGeo, shells, this.press) : solidGeometry(drawGeo, this.press), furry ? this.furMat!.mat : this.solidMat!.mat);
+    this.skin.frustumCulled = false;
+    this.content.add(this.skin);
+    if (this.furMat) this.furMat.u.uShells.value = shells;
 
     /* Surface uniforms (colour, pattern, cheeks, fur). */
     const u = (this.furMat ?? this.solidMat)!.u;
     u.uBase.value.set(bodyHex);
-    u.uBounds.value.set(f.bottom, f.top, f.halfWidth, f.halfDepth);
+    u.uBounds.value.set(data.bounds.bottom, data.bounds.top, data.bounds.halfWidth, data.bounds.halfDepth);
     const p = cfg.pattern;
     const kinds = { none: 0, dip: 1, belly: 2, spots: 3, stripes: 4, image: 5 } as const;
     u.uPatKind.value = kinds[p.kind];
@@ -578,12 +390,14 @@ export class Character {
       u.uPat.value.set(colorHex(p.color));
       u.uPatScale.value = p.scale;
     }
-    const a = this.anchors;
-    const blushR = a.eyeRadius * tune.eye * 1.0;
-    if (cfg.cheeks) {
+    const fr = this.frames;
+    if (cfg.cheeks && fr.length === 2) {
       u.uBlushCol.value.set(blush(bodyHex));
-      u.uBlush0.value.set(a.cheeks[0].p[0], a.cheeks[0].p[1], a.cheeks[0].p[2], blushR);
-      u.uBlush1.value.set(a.cheeks[1].p[0], a.cheeks[1].p[1], a.cheeks[1].p[2], blushR);
+      const at = (f: EyeFrame) => new THREE.Vector3(f.side * f.r * 1.15, -f.r * 1.25, -f.r * 0.35).add(f.c);
+      const b0 = at(fr[0]);
+      const b1 = at(fr[1]);
+      u.uBlush0.value.set(b0.x, b0.y, b0.z, fr[0].r * 1.25);
+      u.uBlush1.value.set(b1.x, b1.y, b1.z, fr[1].r * 1.25);
     } else {
       u.uBlush0.value.set(0, -99, 0, 0.001);
       u.uBlush1.value.set(0, -99, 0, 0.001);
@@ -592,56 +406,67 @@ export class Character {
       const fu = this.furMat.u;
       const velvet = kind === "velvet";
       const dens = velvet ? 1 : cfg.material.furDensity;
-      fu.uFurLen.value = this.fur;
-      // Longer fur reads as fewer, thicker locks; density adds strands.
-      fu.uFreq.value = velvet ? 6 : (1.5 + dens * 1.3) / (0.7 + cfg.material.furLength * 0.8);
-      fu.uCover.value = velvet ? 0.95 : 0.62 + dens * 0.36;
-      fu.uGravity.value = velvet ? 0 : 0.25 + cfg.material.furLength * 0.35;
-      fu.uAO.value = velvet ? 0.72 : 0.5 - cfg.material.furLength * 0.12;
-      fu.uTip.value = velvet ? 0.05 : 0.1;
-      const er = a.eyeRadius * tune.eye;
-      const eyeF = (i: number) => a.eyes[i].p;
+      fu.uFurLen.value = this.fur * 1.2;
+      fu.uCover.value = velvet ? 1.0 : 0.78 + dens * 0.2;
+      fu.uSpread.value = velvet ? 0.004 : 0.022 + cfg.material.furLength * 0.02;
+      fu.uTuftF.value = velvet ? 3.2 : 0.95 - cfg.material.furLength * 0.35;
+      fu.uGravity.value = velvet ? 0 : 0.06 + cfg.material.furLength * 0.12;
+      // Pale fur reads dirty with deep roots: its pile shadow is gentler.
+      const lum = hexToOklch(bodyHex).l;
+      fu.uAO.value = velvet ? 0.72 : 0.34 + Math.max(0, lum - 0.75) * 1.1;
+      fu.uTip.value = velvet ? 0.05 : 0.12;
       const style = cfg.eyes.style;
-      const k = style === "wide" ? 1.18 : style === "googly" ? 1.28 : style === "oval" ? 1.1 : style === "bead" ? 0.62 : 1;
-      fu.uFeat0.value.set(eyeF(0)[0], eyeF(0)[1], eyeF(0)[2], er * k);
-      fu.uFeat1.value.set(eyeF(1)[0], eyeF(1)[1], eyeF(1)[2], er * k);
-      if (cfg.mouth !== "none") fu.uFeat2.value.set(a.mouth.p[0], a.mouth.p[1], a.mouth.p[2], er * 0.7);
-      else fu.uFeat2.value.set(0, -99, 0, 0.001);
-      this.furMat.mat.sheenColor.set(bodyHex).lerp(new THREE.Color(1, 1, 1), 0.55);
+      const [sx, sy] = EYE_SHAPE[style];
+      const er = (f: EyeFrame) => (style === "sleepy" ? f.r * 0.7 : f.r * Math.max(sx, sy) * 0.94);
+      if (fr[0]) fu.uFeat0.value.set(fr[0].skin.x, fr[0].skin.y, fr[0].skin.z, er(fr[0]));
+      else fu.uFeat0.value.set(0, -99, 0, 0.001);
+      if (fr[1]) fu.uFeat1.value.set(fr[1].skin.x, fr[1].skin.y, fr[1].skin.z, er(fr[1]));
+      else fu.uFeat1.value.set(0, -99, 0, 0.001);
+      this.furMat.mat.sheenColor.set(bodyHex).lerp(new THREE.Color(1, 1, 1), 0.6);
     }
     if (this.solidMat) {
       const su = this.solidMat.u;
       su.uBumpK.value = (kind === "knit" ? 0.022 : kind === "felt" ? 0.006 : kind === "vinyl" ? 0.0015 : 0.0022) * tune.bump;
-      const circ = Math.PI * (f.halfWidth + f.halfDepth);
-      // Chunky stitches; the column count is a multiple of 8 so the seam trick tiles.
+      const circ = Math.PI * (data.bounds.halfWidth + data.bounds.halfDepth);
       su.uKnitCols.value = Math.max(24, Math.round((circ * 7) / 8) * 8);
       su.uKnitRows.value = 7.5;
       if (kind === "felt" || kind === "knit") this.solidMat.mat.sheenColor.set(bodyHex).lerp(new THREE.Color(1, 1, 1), 0.5);
     }
     this.loadImage(cfg);
 
-    /* Features and accessories. */
-    this.buildFeatures(cfg, bodyHex);
-    this.buildAccessories(cfg, bodyHex);
+    /* Eyes, features, accessories. */
+    this.buildEyes(cfg, kit);
+    this.buildFeatures(cfg, kit, bodyHex);
+    this.buildAccessories(placements, kit);
     this.buildHearts(bodyHex);
 
-    /* Shadow and framing. */
-    this.shadow.scale.set(f.halfWidth * 2.5 + this.fur * 2, f.halfDepth * 2.3 + this.fur * 2, 1);
-    this.shadow.position.y = f.bottom + 0.004;
-    // Frame by the body: headwear may add a little headroom, but a big hat never shrinks the character.
-    const bodyTop = f.top + this.fur;
-    const bodyHalf = f.halfWidth + this.fur;
+    /* Stretch, shadow and framing. */
+    const st = cfg.stretch;
+    const sy = 1 + 0.16 * st;
+    const sxz = 1 / Math.sqrt(sy);
+    this.form.scale.set(sxz, sy, sxz);
+    const half = data.bounds.halfWidth * sxz;
+    const furPad = this.fur * 0.9;
+    this.shadow.position.y = data.bounds.bottom + 0.004;
+    const bodyTop = data.bounds.top * sy + furPad;
+    const bodyHalf = half + furPad;
     let top = bodyTop;
-    let half = bodyHalf;
-    for (const acc of this.accs) {
-      top = Math.max(top, Math.min(acc.top, bodyTop + (f.top - f.bottom) * 0.16));
-      half = Math.max(half, Math.min(acc.half, bodyHalf * 1.06));
+    let hw = bodyHalf;
+    for (const pl of placements) {
+      const g = kit.part(pl.part);
+      if (!g?.boundingBox) continue;
+      const bb = g.boundingBox.clone().applyMatrix4(pl.matrix);
+      top = Math.max(top, Math.min(bb.max.y * sy, bodyTop + data.bounds.top * (tune.small ? 0.1 : 0.26)));
+      hw = Math.max(hw, Math.min(Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x)) * sxz, bodyHalf * 1.06));
     }
-    this.bounds = { top, bottom: f.bottom, half };
-    const h = f.top - f.bottom;
-    this.base.position.y = f.bottom;
+    this.bounds = { top, bottom: data.bounds.bottom, half: hw };
+    const h = data.bounds.top * sy - data.bounds.bottom;
+    this.base.position.y = data.bounds.bottom;
     this.pivot.position.y = h * 0.4;
-    this.content.position.y = -h * 0.4 - f.bottom;
+    this.form.position.y = -h * 0.4;
+    this.content.position.y = -data.bounds.bottom;
+    this.shadowBase = { w: half * 2.5 + this.fur * 2, d: data.bounds.halfDepth * sxz * 2.3 + this.fur * 2 };
+    this.shadow.scale.set(this.shadowBase.w, this.shadowBase.d, 1);
   }
 
   private loadImage(cfg: AvatarConfig) {
@@ -651,9 +476,9 @@ export class Character {
       this.ready = Promise.resolve();
       return;
     }
-    const f = this.field!;
-    const w = Math.max(f.halfWidth * 2, f.top - f.bottom) * 1.02;
-    u.uImageBox.value.set(-w / 2, (f.top + f.bottom) / 2 - w / 2, w, w);
+    const b = SHAPE_DATA[this.shape].bounds;
+    const w = Math.max(b.halfWidth * 2, b.top - b.bottom) * 1.02;
+    u.uImageBox.value.set(-w / 2, (b.top + b.bottom) / 2 - w / 2, w, w);
     u.uImageTint.value = p.tint;
     const token = ++this.loadToken;
     this.ready = new Promise<void>((resolve) => {
@@ -676,104 +501,170 @@ export class Character {
     });
   }
 
-  private buildFeatures(cfg: AvatarConfig, bodyHex: string) {
+  private glintMat() {
+    this.glintMatCache ??= new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.92 });
+    return this.glintMatCache;
+  }
+
+  private buildEyes(cfg: AvatarConfig, kit: Kit) {
     for (const e of this.eyes) this.features.remove(e.group);
+    this.eyes = [];
+    const style = cfg.eyes.style;
+    const [sx, sy, sd] = EYE_SHAPE[style];
+    const part = (n: string) => kit.part(n) ?? new THREE.SphereGeometry(1, 24, 12);
+    const stroke = this.tune.stroke;
+    const ink = style === "stitched" ? this.mat("thread", undefined, 0.1) : this.mat("eye", undefined, 0.1);
+    const glintMat = this.glintMat();
+    for (const f of this.frames) {
+      const group = new THREE.Group();
+      group.position.copy(f.c);
+      group.quaternion.setFromRotationMatrix(f.basis);
+      const look = new THREE.Group();
+      const squash = new THREE.Group();
+      group.add(look);
+      look.add(squash);
+      const r = f.r;
+      let inner: THREE.Object3D | null = null;
+      const add = (geo: THREE.BufferGeometry, m: THREE.Material, s: [number, number, number], p: [number, number, number] = [0, 0, 0], parent: THREE.Object3D = squash) => {
+        const mesh = new THREE.Mesh(geo, m);
+        mesh.scale.set(...s);
+        mesh.position.set(...p);
+        parent.add(mesh);
+        return mesh;
+      };
+      const domeZ = (x: number, y: number, ax: number, ay: number, az: number) => az * Math.sqrt(Math.max(0, 1 - (x / ax) ** 2 - (y / ay) ** 2));
+      if (style === "oval" || style === "button" || style === "bead") {
+        const ax = r * sx;
+        const ay = r * sy;
+        const az = r * sd;
+        add(part("eye.dome"), this.mat("eye", undefined, 0.1).mat, [ax, ay, az]);
+        // One soft catchlight up and to the left, and a small one below.
+        const gx = -ax * 0.34;
+        const gy = ay * 0.4;
+        add(glint(), glintMat, [ax * 0.26, ay * 0.26, 1], [gx, gy, domeZ(gx, gy, ax, ay, az) + 0.0015]);
+        const hx = ax * 0.3;
+        const hy = -ay * 0.36;
+        add(glint(), glintMat, [ax * 0.1, ay * 0.1, 1], [hx, hy, domeZ(hx, hy, ax, ay, az) + 0.0015]);
+      } else if (style === "stitched") {
+        add(part("eye.dome"), this.mat("thread", undefined, r).mat, [r * sx, r * sy, r * sd]);
+        add(part("eye.stitch_hi"), this.mat("thread_hi", undefined, r).mat, [r * sx, r * sy, r * sd]);
+      } else if (style === "wide" || style === "googly") {
+        const ax = r * sx;
+        const ay = r * sy;
+        const az = r * sd;
+        add(part("eye.white"), this.mat("eye_white", undefined, 0.1).mat, [ax, ay, az]);
+        const pupil = new THREE.Group();
+        squash.add(pupil);
+        const pr = style === "wide" ? 0.62 : 0.56;
+        add(part("eye.pupil"), this.mat("eye", undefined, 0.1).mat, [r * pr, r * pr, r * 0.2], [0, 0, 0], pupil);
+        add(glint(), glintMat, [r * 0.16, r * 0.16, 1], [-r * 0.2, r * 0.22, r * 0.06], pupil);
+        pupil.position.z = az * 0.98;
+        inner = pupil;
+        if (style === "googly") add(part("eye.cover"), this.mat("glass", undefined, 0.1).mat, [ax * 1.02, ay * 1.02, az * 1.25]);
+      }
+      // Closed eyes: one soft stroke. Sleepy eyes are closed at rest.
+      const arcK = 0.85 * (style === "googly" || style === "wide" ? 1.1 : 1);
+      const asleep = new THREE.Mesh(part("eye.closed"), ink.mat);
+      const smiling = new THREE.Mesh(part("eye.smiling"), ink.mat);
+      for (const m of [asleep, smiling]) {
+        m.scale.set(r * arcK, r * arcK, r * arcK * (0.9 + 0.1 * stroke));
+        m.position.z = r * 0.1;
+        m.visible = false;
+        look.add(m);
+      }
+      this.eyes.push({ group, look, squash, inner, asleep, smiling, r, style });
+      this.features.add(group);
+    }
+  }
+
+  private buildFeatures(cfg: AvatarConfig, kit: Kit, bodyHex: string) {
     for (const b of this.brows) this.features.remove(b);
     if (this.mouthSmile) this.features.remove(this.mouthSmile);
     if (this.mouthO) this.features.remove(this.mouthO);
     this.brows = [];
     this.mouthSmile = null;
     this.mouthO = null;
-    if (this.eyeMats) {
-      for (const m of [this.eyeMats.dark, this.eyeMats.pupil, this.eyeMats.white, this.eyeMats.iris, this.eyeMats.glint, this.eyeMats.cover, this.eyeMats.lid]) m.dispose();
-      this.eyeMats.ink.mat.dispose();
-      this.eyeMats.thread.mat.dispose();
-      this.eyeMats.stitchHi.mat.dispose();
-    }
-    const mats = eyeMaterials(bodyHex);
-    this.eyeMats = mats;
-    this.lidBase.copy(mats.lid.color);
-    const a = this.anchors!;
-    const t = this.tune;
-    const r = a.eyeRadius * t.eye;
-    const out = this.fur * 0.22;
-    this.eyes = a.eyes.map((frame, i) => {
-      const e = buildEye(cfg.eyes.style, r, t.stroke, mats, i === 0 ? -1 : 1);
-      placeOn(e.group, frame, out, 0.55);
-      this.features.add(e.group);
-      return e;
-    });
-    // Brows: short embroidered strokes above the eyes.
+    if (this.furMat) this.furMat.u.uFeat2.value.set(0, -99, 0, 0.001);
+    const fr = this.frames;
+    if (fr.length < 2) return;
+    const ink = this.mat("thread", featureInk(bodyHex), 0.1);
+    ink.mat.color.set(featureInk(bodyHex));
+    const r = fr[0].r;
+    const stroke = this.tune.stroke;
     if (cfg.brows !== "none") {
-      a.brows.forEach((frame, i) => {
+      fr.forEach((f) => {
         const g = new THREE.Group();
-        placeOn(g, frame, this.fur * 0.55 + 0.004, 0.5);
+        g.position.copy(f.c).addScaledVector(new THREE.Vector3(0, 1, 0), r * 1.6).addScaledVector(f.n, this.fur * 0.35);
+        g.quaternion.setFromRotationMatrix(f.basis);
         const inner = new THREE.Group();
         g.add(inner);
-        const m = new THREE.Mesh<THREE.BufferGeometry, THREE.Material>(U.capsule(), mats.ink.mat);
-        const len = r * (cfg.brows === "straight" ? 1.05 : 0.95);
-        const th = r * 0.26 * t.stroke;
-        m.scale.set(th, len, th * 0.7);
-        m.rotation.z = Math.PI / 2;
-        if (cfg.brows === "arched") {
-          // One soft arc.
-          m.geometry = closedArc(t.stroke * 0.95, true);
-          m.scale.setScalar(len * 0.62);
-          m.rotation.z = 0;
-          m.position.y = -len * 0.05;
-        } else if (cfg.brows === "soft") {
-          m.scale.x = th * 1.15;
-          m.scale.y = len * 0.85;
-        }
+        const m = new THREE.Mesh(kit.part("brow") ?? new THREE.CapsuleGeometry(0.2, 1), ink.mat);
+        const arch = cfg.brows === "arched" ? 1.4 : cfg.brows === "straight" ? 0.15 : 0.8;
+        m.scale.set(r * 0.62, r * 0.62 * arch, r * 0.5 * stroke);
         inner.add(m);
-        g.userData.side = i === 0 ? -1 : 1;
+        g.userData.side = f.side;
         this.brows.push(g);
         this.features.add(g);
       });
     }
-    // Mouth.
-    const mf = a.mouth;
+    // The mouth: under the eyes, between them, on the surface.
+    const y = (fr[0].skin.y + fr[1].skin.y) / 2 - r * 1.45;
+    const hit = frontHit(kit, this.shape)(0, y);
+    if (!hit) return;
+    const R = basisZ(hit.n.clone().multiplyScalar(0.6).add(new THREE.Vector3(0, 0, 0.4)));
+    const at = hit.p.clone().addScaledVector(hit.n, this.fur * 0.35);
     if (cfg.mouth === "smile") {
-      const m = new THREE.Mesh(smileGeometry(t.stroke), mats.ink.mat);
-      placeOn(m, mf, this.fur * 0.45 + 0.004, 0.45);
-      m.scale.setScalar(r * 0.72);
+      const m = new THREE.Mesh(kit.part("mouth.smile") ?? new THREE.TorusGeometry(1, 0.1), ink.mat);
+      m.position.copy(at);
+      m.quaternion.setFromRotationMatrix(R);
+      m.scale.set(r * 0.5, r * 0.5, r * 0.4 * stroke);
       this.mouthSmile = m;
       this.features.add(m);
     }
-    // The "o" mouth: shown as the mouth style, and while talking.
     const o = new THREE.Group();
-    placeOn(o, mf, this.fur * 0.4 + 0.004, 0.45);
-    const om = new THREE.Mesh(U.sphere(), mats.dark);
-    om.scale.set(r * 0.32, r * 0.25, r * 0.14);
+    o.position.copy(at);
+    o.quaternion.setFromRotationMatrix(R);
+    const om = new THREE.Mesh(kit.part("mouth.o") ?? new THREE.SphereGeometry(1), this.mat("eye", undefined, 0.1).mat);
+    om.scale.set(r * 0.3, r * 0.24, r * 0.14);
     o.add(om);
     o.userData.base = cfg.mouth === "dot" ? 1 : 0;
     o.visible = cfg.mouth === "dot";
     this.mouthO = o;
     this.features.add(o);
+    if (this.furMat && cfg.mouth !== "none") this.furMat.u.uFeat2.value.set(hit.p.x, hit.p.y, hit.p.z, r * 0.6);
   }
 
-  private buildAccessories(cfg: AvatarConfig, bodyHex: string) {
-    for (const acc of this.accs) {
-      this.accGroup.remove(acc.group);
-      acc.dispose();
-    }
+  private buildAccessories(placements: Placement[], kit: Kit) {
+    for (const a of this.accs) this.accGroup.remove(a.node);
     this.accs = [];
-    const a = this.anchors!;
-    const r = a.eyeRadius * this.tune.eye;
-    const eyeDepth = this.eyes[0]?.depth ?? r * 0.6;
-    for (const spec of cfg.accessories) {
-      const built = buildAccessory(spec.id, {
-        anchors: a,
-        field: this.field!,
-        fur: this.fur,
-        bodyHex,
-        color: spec.color ? colorHex(spec.color) : undefined,
-        eyeDepth: eyeDepth + this.fur * 0.22,
-        eyeRadius: r,
-        detail: Math.max(24, Math.round(this.tune.detail * 1.1)),
-      });
-      this.accs.push(built);
-      this.accGroup.add(built.group);
+    // Springy parts of one accessory swing about one pivot.
+    const pivots = new Map<string, THREE.Group>();
+    for (const pl of placements) {
+      const geo = kit.part(pl.part);
+      if (!geo) continue;
+      const s = maxScale(pl.matrix);
+      const m = this.mat(pl.material, pl.color, s);
+      const mesh = new THREE.Mesh(geo, m.mat);
+      mesh.matrixAutoUpdate = false;
+      if (pl.springy) {
+        const key = `${pl.acc}|${pl.matrix.elements[12].toFixed(3)}`;
+        let pivot = pivots.get(key);
+        if (!pivot) {
+          pivot = new THREE.Group();
+          pivot.position.setFromMatrixPosition(pl.matrix);
+          pivots.set(key, pivot);
+          this.accGroup.add(pivot);
+          this.accs.push({ node: pivot, springy: pl.springy, rest: pivot.rotation.clone() });
+        }
+        mesh.matrix.makeTranslation(-pivot.position.x, -pivot.position.y, -pivot.position.z).multiply(pl.matrix);
+        pivot.add(mesh);
+      } else {
+        mesh.matrix.copy(pl.matrix);
+        this.accGroup.add(mesh);
+        this.accs.push({ node: mesh, springy: 0, rest: new THREE.Euler() });
+      }
+      // Lenses are see-through: draw them after the eyes.
+      if (pl.material === "glass") mesh.renderOrder = 2;
     }
   }
 
@@ -788,8 +679,7 @@ export class Character {
       }
     }
     const lch = hexToOklch(bodyHex);
-    // Very pale bodies get a deeper heart so it reads against a light ground.
-    this.heartMat.color.set(lch.l > 0.88 ? patternPartner(bodyHex) : bodyHex);
+    this.heartMat.color.set(lch.l > 0.86 ? patternPartner(bodyHex) : bodyHex);
   }
 
   morphing(now: number) {
@@ -815,26 +705,23 @@ export class Character {
     nor.needsUpdate = true;
     if (t >= 1) {
       this.morph = null;
-      // Swap to the cached target geometry.
       const skin = this.skin;
-      if (skin) {
-        if (skin.geometry instanceof THREE.InstancedBufferGeometry) {
-          const shells = skin.geometry.instanceCount;
-          skin.geometry.dispose();
-          skin.geometry = shellGeometry(m.to, shells);
-        } else skin.geometry = m.to;
+      if (skin && this.press) {
+        const shells = skin.geometry instanceof THREE.InstancedBufferGeometry ? skin.geometry.instanceCount : 0;
+        skin.geometry.dispose();
+        skin.geometry = shells ? shellGeometry(m.to, shells, this.press) : solidGeometry(m.to, this.press);
       }
     }
   }
 
   pose(p: Pose, now: number) {
     const cfg = this.cfg;
-    const f = this.field;
-    if (!cfg || !f) return;
+    if (!cfg) return;
     this.stepMorph(now);
+    const data = SHAPE_DATA[this.shape];
     const s = Math.max(0.5, p.squash);
     const w = 1 / Math.sqrt(s);
-    this.base.position.y = f.bottom + p.lift;
+    this.base.position.y = data.bounds.bottom + p.lift;
     this.base.scale.set(w * p.scale, s * p.scale, w * p.scale);
     this.pivot.rotation.set(p.pitch, p.yaw, p.roll, "YXZ");
     // Shadow: shrinks and fades as the body leaves the ground.
@@ -842,83 +729,61 @@ export class Character {
     const sm = this.shadow.material as THREE.MeshBasicMaterial;
     sm.opacity = Math.max(0, (1 - lifted * 1.8) * this.shadowOpacity) * Math.min(1, p.scale * 1.2);
     const sk = (1 - Math.min(0.5, lifted * 0.9)) * p.scale * w;
-    this.shadow.scale.set((f.halfWidth * 2.5 + this.fur * 2) * sk, (f.halfDepth * 2.3 + this.fur * 2) * sk, 1);
+    this.shadow.scale.set(this.shadowBase.w * sk, this.shadowBase.d * sk, 1);
 
     // Surface.
     const u = (this.furMat ?? this.solidMat)!.u;
     u.uDesat.value = p.desat;
     if (this.furMat) {
       const fu = this.furMat.u;
-      fu.uFurLen.value = this.fur * (1 - 0.4 * p.matte);
+      fu.uFurLen.value = this.fur * 1.2 * (1 - 0.4 * p.matte);
       fu.uLag.value.set(p.lagX * 0.9, p.lagY * 0.6, 0);
-      this.furMat.mat.sheen = (cfg.material.kind === "velvet" ? 1 : 0.85) * (1 - 0.55 * p.matte);
+      fu.uSquashInv.value.set(1 / w, 1 / s, 1 / w);
+      this.furMat.mat.sheen = (cfg.material.kind === "velvet" ? 1 : 0.45) * (1 - 0.55 * p.matte);
     }
     if (this.solidMat) {
       const sb = this.solidMat.base;
       this.solidMat.mat.roughness = sb.roughness + (1 - sb.roughness) * p.matte * 0.7;
       this.solidMat.mat.clearcoat = Math.max(1e-4, sb.clearcoat * (1 - p.matte));
     }
-    const em = this.eyeMats!;
-    em.lid.color.copy(this.lidBase);
-    // Lids share the desaturation.
-    if (p.desat > 0.001) {
-      const c = em.lid.color;
-      const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-      c.lerp(new THREE.Color(l, l, l), p.desat);
-    }
-    em.ink.desat.value = p.desat;
-    for (const acc of this.accs) for (const m of acc.mats) m.desat.value = p.desat;
+    for (const m of this.mats.values()) m.desat.value = p.desat;
 
     // Eyes.
     const lookX = Math.max(-1, Math.min(1, p.lookX));
     const lookY = Math.max(-1, Math.min(1, p.lookY));
     for (const e of this.eyes) {
       const r = e.r;
-      const open = e.style === "sleepy" ? Math.min(1, p.eyeOpen) * 0.52 + Math.max(0, p.eyeOpen - 1) * 0.6 : p.eyeOpen;
+      const open = p.eyeOpen;
       if (e.inner) {
         if (e.style === "googly") {
           const gx = Math.max(-1, Math.min(1, p.googX + lookX * 0.4));
           const gy = Math.max(-1, Math.min(1, p.googY + lookY * 0.4));
           const l = Math.hypot(gx, gy);
           const k = l > 1 ? 1 / l : 1;
-          e.inner.position.x = gx * k * r * 0.55;
-          e.inner.position.y = gy * k * r * 0.55;
+          e.inner.position.x = gx * k * r * 0.5;
+          e.inner.position.y = gy * k * r * 0.5;
         } else {
-          e.inner.position.x = lookX * r * 0.38;
-          e.inner.position.y = lookY * r * 0.34;
-          // Stay on the dome's surface.
-          const dx = e.inner.position.x / (r * 1.12);
-          const dy = e.inner.position.y / (r * 1.2);
-          e.inner.position.z = r * 0.6 * Math.sqrt(Math.max(0, 1 - dx * dx - dy * dy)) + 0.002;
+          e.inner.position.x = lookX * r * 0.34;
+          e.inner.position.y = lookY * r * 0.3;
         }
-        e.look.position.set(lookX * r * 0.08, lookY * r * 0.06, 0);
+        e.look.position.set(lookX * r * 0.06, lookY * r * 0.05, 0);
       } else {
-        e.look.position.set(lookX * r * 0.26, lookY * r * 0.2, 0);
+        e.look.position.set(lookX * r * 0.24, lookY * r * 0.18, 0);
       }
-      // Fully closed eyes are drawn as a stitched curve instead of a lid over the dome.
-      const shut = open < 0.14;
+      // Sleepy eyes rest closed (content); every eye closes into a soft stroke.
+      const closedAtRest = e.style === "sleepy" && open <= 1.04;
+      const shut = closedAtRest || open < 0.14;
       e.squash.visible = !shut;
       e.asleep.visible = shut && p.hearts < 0;
       e.smiling.visible = shut && p.hearts >= 0;
-      if (e.lidRot && e.lid && e.lash) {
-        const o = Math.max(0, Math.min(1, open));
-        const theta = -Math.PI / 2 + (1 - o) * Math.PI;
-        e.lidRot.rotation.x = theta;
-        const shown = o < 0.97;
-        e.lid.visible = shown;
-        e.lash.visible = o < 0.55;
-        // Wider than open: the eye grows a touch.
-        const wide = Math.max(0, p.eyeOpen - 1);
-        e.squash.scale.setScalar(1 + wide * 0.5);
-      } else {
-        // Stitched eyes blink by squashing.
-        e.squash.scale.set(1, Math.max(0.08, Math.min(1.1, open)), 1);
-      }
+      const o = Math.max(0.08, Math.min(1.12, open));
+      const wide = Math.max(0, open - 1);
+      e.squash.scale.set(1 + wide * 0.3, o * (1 + wide * 0.3), 1);
     }
     // Brows.
     for (const b of this.brows) {
       const side = b.userData.side as number;
-      const r = this.eyes[0]?.r ?? 0.12;
+      const r = this.eyes[0]?.r ?? 0.1;
       const inner = b.children[0];
       inner.position.y = p.brow * r * 0.34;
       inner.rotation.z = -side * p.browTilt * 0.4;
@@ -932,10 +797,10 @@ export class Character {
       if (this.mouthSmile) this.mouthSmile.visible = p.mouth < 0.08;
     }
     // Springy accessories swing with the lag.
-    for (const acc of this.accs)
-      for (const sp of acc.springs) {
-        sp.node.rotation.z = sp.rest.z - p.lagX * sp.k * 2.2;
-        sp.node.rotation.x = sp.rest.x + p.lagY * sp.k * 1.2;
+    for (const a of this.accs)
+      if (a.springy) {
+        a.node.rotation.z = a.rest.z - p.lagX * a.springy * 2.2;
+        a.node.rotation.x = a.rest.x + p.lagY * a.springy * 1.2;
       }
     // Hearts.
     const t = p.hearts;
@@ -948,9 +813,10 @@ export class Character {
       }
       m.visible = true;
       const pop = lt < 0.2 ? backOut(lt / 0.2) : lt > 0.72 ? 1 - (lt - 0.72) / 0.28 : 1;
-      const hs = 0.2 + (i === 1 ? 0.04 : 0);
+      const hs = 0.16 + (i === 1 ? 0.03 : 0);
       m.scale.setScalar(Math.max(0.001, pop) * hs);
-      m.position.set(HEART_X[i] * (this.bounds.half * 0.95), this.bounds.top * 0.85 + 0.12 + lt * 0.55, 0.25);
+      // Hearts rise from the head and fade before they leave the frame.
+      m.position.set(HEART_X[i] * (this.bounds.half * 0.9), this.bounds.top * 0.72 + lt * 0.3, 0.3);
       m.rotation.set(0, 0, Math.sin(lt * Math.PI * 2 + i) * 0.25);
     }
   }
@@ -958,18 +824,110 @@ export class Character {
   dispose() {
     this.furMat?.mat.dispose();
     this.solidMat?.mat.dispose();
-    if (this.skin?.geometry instanceof THREE.InstancedBufferGeometry) this.skin.geometry.dispose();
+    this.skin?.geometry.dispose();
     this.working?.dispose();
     (this.shadow.material as THREE.Material).dispose();
-    for (const acc of this.accs) acc.dispose();
-    if (this.eyeMats) {
-      for (const m of [this.eyeMats.dark, this.eyeMats.pupil, this.eyeMats.white, this.eyeMats.iris, this.eyeMats.glint, this.eyeMats.cover, this.eyeMats.lid]) m.dispose();
-      this.eyeMats.ink.mat.dispose();
-      this.eyeMats.thread.mat.dispose();
-    }
+    for (const m of this.mats.values()) m.mat.dispose();
+    this.mats.clear();
+    this.glintMatCache?.dispose();
     this.heartMat?.dispose();
     this.imageTex?.dispose();
   }
+}
+
+/* ——————————————————————————— Geometry helpers ——————————————————————————— */
+
+function shellGeometry(base: THREE.BufferGeometry, shells: number, press: THREE.BufferAttribute): THREE.InstancedBufferGeometry {
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = base.index;
+  g.setAttribute("position", base.attributes.position);
+  g.setAttribute("normal", base.attributes.normal);
+  g.setAttribute("ao", base.attributes.ao);
+  g.setAttribute("fur", base.attributes.fur);
+  g.setAttribute("press", press);
+  g.instanceCount = shells;
+  g.boundingSphere = base.boundingSphere?.clone() ?? null;
+  if (g.boundingSphere) g.boundingSphere.radius += 0.3;
+  return g;
+}
+
+/** Solid bodies (felt, knit, vinyl, ceramic) share the attributes but draw once. */
+function solidGeometry(base: THREE.BufferGeometry, press: THREE.BufferAttribute): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.index = base.index;
+  g.setAttribute("position", base.attributes.position);
+  g.setAttribute("normal", base.attributes.normal);
+  g.setAttribute("ao", base.attributes.ao);
+  g.setAttribute("fur", base.attributes.fur);
+  g.setAttribute("press", press);
+  g.boundingSphere = base.boundingSphere?.clone() ?? null;
+  return g;
+}
+
+/**
+ * Where accessories sit, the pile is pressed down: per vertex (density,
+ * length). Mirrors crew_compose.covered + accessory_distance: hats clear the
+ * crown, headphone cups clear the ears, and anything touching the body
+ * flattens the fur under it.
+ */
+function pressFor(geo: THREE.BufferGeometry, placements: Placement[], kit: Kit, fur: number, data: (typeof SHAPE_DATA)[ShapeId], cfg: AvatarConfig): Float32Array {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const n = pos.count;
+  const out = new Float32Array(n * 2).fill(1);
+  if (!placements.length) return out;
+  // A spatial hash of the accessory surfaces (eyewear floats in front: skipped).
+  const cell = 0.06;
+  const grid = new Map<string, number[]>();
+  const v = new THREE.Vector3();
+  for (const pl of placements) {
+    if (pl.part.startsWith("eyewear")) continue;
+    const g = kit.part(pl.part);
+    if (!g) continue;
+    const pp = g.attributes.position as THREE.BufferAttribute;
+    const step = pp.count > 1200 ? 2 : 1;
+    for (let i = 0; i < pp.count; i += step) {
+      v.fromBufferAttribute(pp, i).applyMatrix4(pl.matrix);
+      const k = `${Math.floor(v.x / cell)},${Math.floor(v.y / cell)},${Math.floor(v.z / cell)}`;
+      let arr = grid.get(k);
+      if (!arr) grid.set(k, (arr = []));
+      arr.push(v.x, v.y, v.z);
+    }
+  }
+  const ids = new Set(cfg.accessories.map((a) => a.id));
+  const hat = ids.has("cap") || ids.has("beanie") || ids.has("bucket");
+  const capY = data.anchors.crown.capY - 0.05;
+  const ears = data.anchors.ears;
+  for (let i = 0; i < n; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    let best = 9;
+    const cx = Math.floor(x / cell);
+    const cy = Math.floor(y / cell);
+    const cz = Math.floor(z / cell);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const arr = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
+          if (!arr) continue;
+          for (let j = 0; j < arr.length; j += 3) {
+            const d = (arr[j] - x) ** 2 + (arr[j + 1] - y) ** 2 + (arr[j + 2] - z) ** 2;
+            if (d < best) best = d;
+          }
+        }
+    const d = Math.sqrt(best);
+    let dens = Math.min(1, Math.max(0, (d - 0.004) / 0.03));
+    const len = Math.min(1, Math.max(0.2, (d - 0.01) / (fur * 1.6)));
+    if (hat) dens *= 1 - Math.min(1, Math.max(0, (y - capY) / 0.04));
+    if (ids.has("headphones"))
+      for (const e of ears) {
+        const de = Math.hypot(x - e.p[0], y - e.p[1], z - e.p[2]);
+        dens *= Math.min(1, Math.max(0, (de - 0.2) / 0.06));
+      }
+    out[i * 2] = dens;
+    out[i * 2 + 1] = len;
+  }
+  return out;
 }
 
 function backOut(t: number) {

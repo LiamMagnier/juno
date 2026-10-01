@@ -98,7 +98,7 @@ function Sec({ title, note, children, wide }: { title: string; note?: string; ch
 
 function Roster() {
   return (
-    <Sec title="The crew" note="Twelve members of one account, each a character its person made their own.">
+    <Sec title="The crew" note="Twelve members of one account, each a character its person made their own. Modelled in Blender, drawn live in the browser.">
       <div className="jcg-roster">
         {CREW.map((m) => (
           <figure key={m.id} className="jcg-member">
@@ -117,7 +117,7 @@ function Roster() {
 function Matrix() {
   const base = MIRA.avatar;
   return (
-    <Sec title="Shapes in each material" note="Ten bodies, six materials. One colour and one face, so the form and the surface are what change.">
+    <Sec title="Shapes in each material" note="Twelve bodies, six materials. One colour and one face, so the form and the surface are what change.">
       <div className="jcg-matrix" style={{ gridTemplateColumns: `92px repeat(${MATERIAL_KINDS.length}, minmax(0, 1fr))` }}>
         <span />
         {MATERIAL_KINDS.map((k) => (
@@ -168,7 +168,7 @@ function Eyes() {
     ["orb", "sky"],
   ];
   return (
-    <Sec title="Eyes and expression" note="Seven eye styles, each with lids that close over it; brows, cheeks and a mouth where they help.">
+    <Sec title="Eyes and expression" note="Seven eye styles, always low and wide apart; they blink by squashing and close into a soft stroke. Brows, cheeks and a mouth where they help.">
       {bodies.map(([shape, color]) => (
         <div key={shape} className="jcg-strip">
           {EYE_STYLES.map((style) => (

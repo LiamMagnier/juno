@@ -1,0 +1,268 @@
+{
+  "note": "Juno's own crew (D-032, D-033). The live fixtures (src/app/dev/design/juno/crew/fixtures.ts) mirror these looks. None of them is a blue cloud in a beret, a green frog with googly eyes, a yellow triangle in round glasses and a bow tie, or a pink heart in sunglasses.",
+  "members": [
+    {
+      "id": "mira",
+      "name": "Mira",
+      "role": "Accounts",
+      "shape": "pebble",
+      "stretch": 0.05,
+      "color": "#f2b840",
+      "fur": 0.45,
+      "eyes": {
+        "style": "oval",
+        "size": 0.55,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": true,
+      "accessories": [
+        {
+          "id": "flower",
+          "color": "#e9566d"
+        }
+      ]
+    },
+    {
+      "id": "otto",
+      "name": "Otto",
+      "role": "Finance operations",
+      "shape": "marshmallow",
+      "stretch": 0.0,
+      "color": "#9a6a52",
+      "fur": 0.35,
+      "eyes": {
+        "style": "button",
+        "size": 0.45,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": false,
+      "accessories": [
+        {
+          "id": "round",
+          "color": "#c9a660"
+        }
+      ]
+    },
+    {
+      "id": "scout",
+      "name": "Scout",
+      "role": "Research",
+      "shape": "bean",
+      "stretch": 0.1,
+      "color": "#7f84e6",
+      "fur": 0.4,
+      "eyes": {
+        "style": "oval",
+        "size": 0.6,
+        "gap": 0.5,
+        "y": 0.4
+      },
+      "cheeks": false,
+      "accessories": [
+        {
+          "id": "antenna",
+          "color": "#f4a07a"
+        }
+      ]
+    },
+    {
+      "id": "rhea",
+      "name": "Rhea",
+      "role": "Support",
+      "shape": "cub",
+      "stretch": 0.0,
+      "color": "#9fd8bf",
+      "fur": 0.5,
+      "eyes": {
+        "style": "button",
+        "size": 0.5,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": true,
+      "accessories": [
+        {
+          "id": "headphones",
+          "color": "#3e4045"
+        }
+      ]
+    },
+    {
+      "id": "ines",
+      "name": "Ines",
+      "role": "Recruiting",
+      "shape": "drop",
+      "stretch": 0.0,
+      "color": "#bba8e8",
+      "fur": 0.3,
+      "eyes": {
+        "style": "sleepy",
+        "size": 0.55,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": true,
+      "accessories": [
+        {
+          "id": "headband",
+          "color": "#f0b545"
+        }
+      ]
+    },
+    {
+      "id": "tomas",
+      "name": "Tomas",
+      "role": "On-call engineering",
+      "shape": "kit",
+      "stretch": 0.0,
+      "color": "#8fbfe3",
+      "fur": 0.45,
+      "eyes": {
+        "style": "oval",
+        "size": 0.5,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": false,
+      "accessories": [
+        {
+          "id": "cap",
+          "color": "#3e4045"
+        }
+      ]
+    },
+    {
+      "id": "nadia",
+      "name": "Nadia",
+      "role": "Partnerships",
+      "shape": "gumdrop",
+      "stretch": 0.0,
+      "color": "#f3a27c",
+      "fur": 0.45,
+      "eyes": {
+        "style": "button",
+        "size": 0.5,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": false,
+      "accessories": [
+        {
+          "id": "bucket",
+          "color": "#e8dcc6"
+        }
+      ]
+    },
+    {
+      "id": "bram",
+      "name": "Bram",
+      "role": "Release notes",
+      "shape": "peanut",
+      "stretch": 0.0,
+      "color": "#2f9a90",
+      "fur": 0.4,
+      "eyes": {
+        "style": "bead",
+        "size": 0.6,
+        "gap": 0.5,
+        "y": 0.4
+      },
+      "cheeks": false,
+      "accessories": [
+        {
+          "id": "square",
+          "color": "#2c2d31"
+        }
+      ]
+    },
+    {
+      "id": "wren",
+      "name": "Wren",
+      "role": "Design review",
+      "shape": "star",
+      "stretch": 0.0,
+      "color": "#efb3c4",
+      "fur": 0.4,
+      "eyes": {
+        "style": "oval",
+        "size": 0.55,
+        "gap": 0.5,
+        "y": 0.4
+      },
+      "cheeks": true,
+      "accessories": [
+        {
+          "id": "bow",
+          "color": "#c9486b"
+        }
+      ]
+    },
+    {
+      "id": "kit",
+      "name": "Kit",
+      "role": "Data",
+      "shape": "mochi",
+      "stretch": 0.0,
+      "color": "#8db35e",
+      "fur": 0.5,
+      "eyes": {
+        "style": "button",
+        "size": 0.5,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": true,
+      "accessories": [
+        {
+          "id": "sprout"
+        }
+      ]
+    },
+    {
+      "id": "pia",
+      "name": "Pia",
+      "role": "Travel",
+      "shape": "orb",
+      "stretch": 0.0,
+      "color": "#d0506f",
+      "fur": 0.45,
+      "eyes": {
+        "style": "oval",
+        "size": 0.5,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": false,
+      "accessories": [
+        {
+          "id": "beanie",
+          "color": "#ece3d2"
+        }
+      ]
+    },
+    {
+      "id": "sol",
+      "name": "Sol",
+      "role": "Legal",
+      "shape": "lop",
+      "stretch": 0.0,
+      "color": "#e9dcc5",
+      "fur": 0.35,
+      "eyes": {
+        "style": "stitched",
+        "size": 0.5,
+        "gap": 0.5,
+        "y": 0.35
+      },
+      "cheeks": true,
+      "accessories": [
+        {
+          "id": "monocle",
+          "color": "#c9a660"
+        }
+      ]
+    }
+  ]
+}

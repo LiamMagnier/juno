@@ -19,7 +19,8 @@ export const AVATAR_VERSION = 2 as const;
 
 /* ——————————————————————————— Vocabulary ——————————————————————————— */
 
-export const BODY_SHAPES = ["pebble", "mochi", "bean", "drop", "gumdrop", "marshmallow", "peanut", "star", "orb", "cub"] as const;
+/** The body shapes, modeled in Blender (tools/crew/blender/crew_shapes.py); the order matches the kit's morph targets. */
+export const BODY_SHAPES = ["pebble", "mochi", "bean", "drop", "gumdrop", "marshmallow", "peanut", "star", "orb", "cub", "kit", "lop"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 /** Kept for callers of the first engine. */
 export type AvatarShape = BodyShape;
@@ -35,6 +36,8 @@ export const SHAPE_LABEL: Record<BodyShape, string> = {
   star: "Soft star",
   orb: "Orb",
   cub: "Cub",
+  kit: "Kit",
+  lop: "Lop",
 };
 
 export const MATERIAL_KINDS = ["plush", "velvet", "knit", "felt", "vinyl", "ceramic"] as const;
@@ -63,7 +66,7 @@ export type EyeStyle = (typeof EYE_STYLES)[number];
 export const EYE_LABEL: Record<EyeStyle, string> = {
   button: "Glossy button",
   oval: "Soft oval",
-  sleepy: "Sleepy lids",
+  sleepy: "Sleepy",
   wide: "Wide awake",
   bead: "Little beads",
   googly: "Googly",
@@ -125,7 +128,7 @@ export const ACCESSORIES = {
   headphones: { label: "Headphones", slot: "ears", material: "vinyl" },
   earbuds: { label: "Earbuds", slot: "ears", material: "vinyl" },
   hoops: { label: "Earrings", slot: "ears", material: "metal" },
-  bow: { label: "Bow", slot: "neck", material: "velvet" },
+  bow: { label: "Bow", slot: "pin", material: "velvet" },
   scarf: { label: "Scarf", slot: "neck", material: "knit" },
   bandana: { label: "Bandana", slot: "neck", material: "canvas" },
 } as const satisfies Record<string, { label: string; slot: AccessorySlot; material: string }>;
@@ -179,7 +182,7 @@ const SEED_COLORS: PaletteId[] = PALETTE_IDS.filter((c) => c !== "cloud" && c !=
  */
 export function avatarFromSeed(seed: string, color?: ColorValue): AvatarConfig {
   const r = prng(hashSeed(`avatar2:${seed}`));
-  const shape = pick(r, ["pebble", "mochi", "bean", "orb", "gumdrop", "peanut"] as const);
+  const shape = pick(r, ["pebble", "mochi", "bean", "orb", "gumdrop", "cub"] as const);
   return {
     v: AVATAR_VERSION,
     shape,
@@ -187,7 +190,7 @@ export function avatarFromSeed(seed: string, color?: ColorValue): AvatarConfig {
     color: color ?? SEED_COLORS[hashSeed(`color:${seed}`) % SEED_COLORS.length],
     pattern: { kind: "none" },
     material: { kind: "plush", furLength: r2(0.35 + r() * 0.3), furDensity: r2(0.55 + r() * 0.3) },
-    eyes: { style: pick(r, ["oval", "button", "oval"] as const), size: r2(0.4 + r() * 0.25), gap: r2(0.35 + r() * 0.3), y: r2(0.4 + r() * 0.2) },
+    eyes: { style: pick(r, ["oval", "button", "oval"] as const), size: r2(0.45 + r() * 0.25), gap: r2(0.4 + r() * 0.25), y: r2(0.25 + r() * 0.25) },
     brows: "none",
     cheeks: r() < 0.4,
     mouth: "none",
@@ -444,10 +447,14 @@ export function formKey(cfg: Pick<AvatarConfig, "shape" | "stretch">): string {
 
 /* ——————————————————————————— Geometry hints ——————————————————————————— */
 
-/** Fur length in body units (plush 0.035..0.135, velvet a fixed short pile, others none). */
+/**
+ * The pile's visible thickness in body units: the strand length the Cycles
+ * renders use (0.024 + 0.032 per unit of furLength) times 1.5, because
+ * strands lean and frizz past their length. Velvet is a fixed short pile.
+ */
 export function furLengthOf(cfg: Pick<AvatarConfig, "material">): number {
-  if (cfg.material.kind === "plush") return 0.045 + cfg.material.furLength * 0.12;
-  if (cfg.material.kind === "velvet") return 0.014;
+  if (cfg.material.kind === "plush") return (0.024 + cfg.material.furLength * 0.032) * 1.5;
+  if (cfg.material.kind === "velvet") return 0.012;
   return 0;
 }
 

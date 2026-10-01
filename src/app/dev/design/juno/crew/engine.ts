@@ -30,6 +30,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { avatarKey, formKey, type AvatarConfig } from "./avatar2";
 import { Character, tuning } from "./character";
+import { loadKit } from "./kit";
 import { hashSeed } from "./identity";
 import { Rig, restingPose, type CrewState, type Facing, type Pose } from "./rig";
 import { prefersReduced, readStore, resolveTheme, spriteDpr, spriteKey, writeStore, type Theme } from "./sprite-store";
@@ -40,7 +41,7 @@ export type { Theme };
 
 /** Studio light per theme. Dark is its own lighting (a cooler, stronger rim to hold the silhouette), not a darker copy. */
 const LOOK = {
-  light: { exposure: 1.0, env: 0.62, key: 2.3, keyColor: 0xfff6ee, rim: 1.2, rimColor: 0xffffff, fill: 0.35, shadow: 0.9 },
+  light: { exposure: 1.12, env: 0.58, key: 2.7, keyColor: 0xfff4ea, rim: 1.6, rimColor: 0xffffff, fill: 0.32, shadow: 0.9 },
   dark: { exposure: 1.0, env: 0.5, key: 2.2, keyColor: 0xfff3ea, rim: 2.6, rimColor: 0xdde5ff, fill: 0.25, shadow: 1 },
 } as const;
 
@@ -626,6 +627,11 @@ function nextPow2(n: number) {
   let p = 256;
   while (p < n) p *= 2;
   return p;
+}
+
+/** The Blender kit must be loaded before any character is built. */
+export function ensureKit() {
+  return loadKit();
 }
 
 let engine: Engine | null = null;

@@ -66,7 +66,8 @@ export function CrewPeek({ member, state, words, size = 120, arrive, cheer, leve
     return () => clearTimeout(t);
   }, [said, shown]);
 
-  const stageH = Math.round(size * 0.8);
+  // The edge cuts the body just under the eyes (they sit low on every shape), so the face always shows.
+  const stageH = Math.round(size * 0.82);
   return (
     <div className={className ? `jcp ${className}` : "jcp"} data-state={state} style={{ "--jcp-size": `${size}px`, "--jcp-stage": `${stageH}px` } as React.CSSProperties}>
       <div className="jcp__stage" aria-hidden="true">
@@ -80,7 +81,7 @@ export function CrewPeek({ member, state, words, size = 120, arrive, cheer, leve
           arrive={arrive}
           cheer={cheer}
           level={level}
-          offsetY={0.03}
+          offsetY={-0.1}
           onHandle={(h) => {
             handle.current = h;
           }}

@@ -380,14 +380,19 @@ function albedoUniforms(): AlbedoUniforms {
 
 export interface FurUniforms extends AlbedoUniforms {
   uShells: { value: number };
+  /** The visible pile thickness, body units. */
   uFurLen: { value: number };
-  uFreq: { value: number };
+  /** Tuft field frequency (tufts about 0.03 body units apart). */
+  uTuftF: { value: number };
+  /** How far tufts lean as they rise (fluff), in strand-texture units. */
+  uSpread: { value: number };
   uCover: { value: number };
   uGravity: { value: number };
   uLag: { value: THREE.Vector3 };
   uStrands: { value: THREE.Texture };
   uAO: { value: number };
   uTip: { value: number };
+  /** The eyes and the mouth part the pile: xyz centre, w radius. */
   uFeat0: { value: THREE.Vector4 };
   uFeat1: { value: THREE.Vector4 };
   uFeat2: { value: THREE.Vector4 };
@@ -400,22 +405,35 @@ export interface FurMaterial {
 }
 
 /**
- * The fur (and velvet flock) material, for an InstancedBufferGeometry whose
- * instances are the shells. Instance 0 is the skin (solid); instance i of N
- * sits at height h = i / (N - 1) of the fur length.
+ * Plush fur by shell texturing, matched by eye to the Cycles hair renders
+ * (tools/crew/blender): a fine fleece of tufts that lean every which way, so
+ * the pile reads soft and dense from the front, frizzes into a halo at the
+ * silhouette, and is darker deep down where light does not reach.
+ *
+ * The geometry is an InstancedBufferGeometry: instance 0 is the skin (opaque,
+ * the pile's shadow colour), instance i of N sits at height i / (N - 1) of the
+ * pile. Per vertex, `fur` (the body's own mask: shorter on the base, on thin
+ * parts and ears), `press` (x density, y length: accessories press the pile
+ * flat under them) and `ao` (the body's crevices) shape it. The tuft field is
+ * the kit's strand texture, sampled triplanar in object space.
+ *
+ * Shells blend inner to outer with premultiplied "over"; depth is tested but
+ * not written, so opaque parts drawn first (eyes, accessories) stay in front
+ * where they are in front.
  */
-export function makeFurMaterial(velvet: boolean): FurMaterial {
+export function makeFurMaterial(velvet: boolean, strands?: THREE.Texture): FurMaterial {
   const u: FurUniforms = {
     ...albedoUniforms(),
     uShells: { value: 24 },
-    uFurLen: { value: 0.07 },
-    uFreq: { value: 2.2 },
-    uCover: { value: 0.8 },
-    uGravity: { value: 0.35 },
+    uFurLen: { value: 0.06 },
+    uTuftF: { value: 0.72 },
+    uSpread: { value: 0.03 },
+    uCover: { value: 0.9 },
+    uGravity: { value: 0.18 },
     uLag: { value: new THREE.Vector3() },
-    uStrands: { value: strandTexture() },
-    uAO: { value: 0.42 },
-    uTip: { value: 0.12 },
+    uStrands: { value: strands ?? strandTexture() },
+    uAO: { value: 0.5 },
+    uTip: { value: 0.1 },
     uFeat0: { value: new THREE.Vector4(0, -99, 0, 0.001) },
     uFeat1: { value: new THREE.Vector4(0, -99, 0, 0.001) },
     uFeat2: { value: new THREE.Vector4(0, -99, 0, 0.001) },
@@ -425,13 +443,9 @@ export function makeFurMaterial(velvet: boolean): FurMaterial {
     color: 0xffffff,
     roughness: 1,
     metalness: 0,
-    sheen: velvet ? 1 : 0.85,
-    sheenRoughness: velvet ? 0.32 : 0.46,
+    sheen: velvet ? 1 : 0.6,
+    sheenRoughness: velvet ? 0.3 : 0.55,
     sheenColor: new THREE.Color(1, 1, 1),
-    // Shells blend inner to outer (instances draw in order) with premultiplied "over":
-    // the skin is opaque, each shell adds fibre, and the silhouette's fuzz fades into
-    // whatever the page is. Depth is tested but not written, so the opaque parts drawn
-    // first (eyes, accessories) stay in front where they are in front.
     transparent: true,
     premultipliedAlpha: true,
     depthWrite: false,
@@ -448,9 +462,15 @@ uniform float uFurLen;
 uniform float uGravity;
 uniform vec3 uLag;
 uniform vec3 uSquashInv;
+attribute float ao;
+attribute float fur;
+attribute vec2 press;
 varying vec3 vJP;
 varying vec3 vJN;
-varying float vJH;`,
+varying float vJH;
+varying float vJAO;
+varying float vJDens;
+varying float vJLen;`,
       )
       .replace(
         "#include <begin_vertex>",
@@ -459,18 +479,22 @@ float jcH = float(gl_InstanceID) / max(1.0, uShells - 1.0);
 vJH = jcH;
 vJP = position;
 vJN = normal;
-float jcL = uFurLen * jcH;
-// Out along the normal; gravity and the rig's lag bend the upper part of each fibre.
-transformed += normal * jcL;
+vJAO = ao;
+vJDens = press.x;
+float jcLen = uFurLen * fur * press.y;
+vJLen = jcLen / max(uFurLen, 1e-4);
+transformed += normal * jcLen * jcH;
+// Gravity and the rig's lag bend the upper part of the pile.
 vec3 jcBend = vec3(0.0, -uGravity, 0.0) + uLag;
-transformed += jcBend * (jcH * jcH) * uFurLen * 1.6 * uSquashInv;`,
+transformed += jcBend * (jcH * jcH) * jcLen * 1.4 * uSquashInv;`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
         /* glsl */ `#include <common>
 ${ALBEDO_GLSL}
-uniform float uFreq;
+uniform float uTuftF;
+uniform float uSpread;
 uniform float uCover;
 uniform sampler2D uStrands;
 uniform float uAO;
@@ -479,12 +503,27 @@ uniform vec4 uFeat0;
 uniform vec4 uFeat1;
 uniform vec4 uFeat2;
 varying float vJH;
-float jcStrand(vec2 uv, float h, out float tone) {
-  vec4 s = texture2D(uStrands, uv);
+varying float vJAO;
+varying float vJDens;
+varying float vJLen;
+// One triplanar plane of the pile: is there fibre here, at height h?
+float jcTuft(vec2 uv, float h, out float tone) {
+  vec4 c0 = texture2D(uStrands, uv);
+  // The tuft whose root is behind us: tufts lean as they rise (per-tuft direction).
+  vec2 lean = (vec2(c0.b, fract(c0.b * 13.7)) - 0.5) * uSpread;
+  vec4 s = texture2D(uStrands, uv - lean * h * 2.0);
   tone = s.b;
-  float len = s.r;
-  float rad = mix(1.0, 0.18, clamp(h / len, 0.0, 1.0)) * uCover;
-  return (1.0 - smoothstep(rad - 0.12, rad + 0.04, s.g)) * step(h, len);
+  // Tufts of different lengths: the short ones leave dark gaps between the tall ones.
+  float L = mix(0.32, 1.0, s.r * s.r);
+  float hh = h / L;
+  if (hh > 1.0) return 0.0;
+  float rad = mix(0.98, 0.3, pow(hh, 0.9)) * uCover;
+  float a = 1.0 - smoothstep(rad - 0.14, rad + 0.04, s.g);
+  // Fine fibres: dense at the root, sparse toward the tips (the frizz at the silhouette).
+  vec4 f = texture2D(uStrands, uv * 4.7 + 0.37);
+  float fr = mix(1.2, 0.36, pow(hh, 0.8));
+  float fine = 1.0 - smoothstep(fr - 0.2, fr + 0.04, f.g);
+  return a * mix(1.0, fine, smoothstep(0.08, 0.7, hh));
 }`,
       )
       .replace(
@@ -492,32 +531,34 @@ float jcStrand(vec2 uv, float h, out float tone) {
         /* glsl */ `#include <color_fragment>
 float jcTone = 0.5;
 float jcAlpha = 1.0;
+vec3 jcN = normalize(vJN);
 {
-  // Features (eyes, mouth) sit in the fur: it parts around them.
-  float m0 = smoothstep(uFeat0.w * 0.92, uFeat0.w * 1.45, distance(vJP, uFeat0.xyz));
-  float m1 = smoothstep(uFeat1.w * 0.92, uFeat1.w * 1.45, distance(vJP, uFeat1.xyz));
-  float m2 = smoothstep(uFeat2.w * 0.8, uFeat2.w * 1.3, distance(vJP, uFeat2.xyz));
+  // The eyes and the mouth sit in the pile: it parts around them.
+  float m0 = smoothstep(uFeat0.w * 0.95, uFeat0.w * 1.35, distance(vJP, uFeat0.xyz));
+  float m1 = smoothstep(uFeat1.w * 0.95, uFeat1.w * 1.35, distance(vJP, uFeat1.xyz));
+  float m2 = smoothstep(uFeat2.w * 0.8, uFeat2.w * 1.25, distance(vJP, uFeat2.xyz));
   float room = min(m0, min(m1, m2));
-  float h = vJH / max(0.05, room);
-  vec3 w = pow(abs(normalize(vJN)), vec3(4.0));
-  w /= (w.x + w.y + w.z);
-  vec3 P = vJP * uFreq;
-  float t0; float t1; float t2;
-  float a = jcStrand(P.zy, h, t0) * w.x + jcStrand(P.xz + 0.37, h, t1) * w.y + jcStrand(P.xy + 0.71, h, t2) * w.z;
-  jcTone = t0 * w.x + t1 * w.y + t2 * w.z;
-  jcAlpha = vJH < 0.001 ? 1.0 : a;
+  float h = vJH;
+  if (h > 0.001) {
+    vec3 w = pow(abs(jcN), vec3(4.0));
+    w /= (w.x + w.y + w.z);
+    vec3 P = vJP * uTuftF;
+    float t0; float t1; float t2;
+    float a = jcTuft(P.zy, h, t0) * w.x + jcTuft(P.xz + 0.37, h, t1) * w.y + jcTuft(P.xy + 0.71, h, t2) * w.z;
+    jcTone = t0 * w.x + t1 * w.y + t2 * w.z;
+    // Thin and pressed areas: fewer fibres; parted areas: none.
+    jcAlpha = a * room * smoothstep(0.0, 0.35, vJDens) * step(0.02, vJLen);
+  }
 }
-vec3 jcCol = jcAlbedo(vJP, normalize(vJN));
-// Fibres vary a little in tone; deep in the pile it is darker (self-occlusion), tips are a touch lighter.
-jcCol *= mix(0.88, 1.08, jcTone);
-float jcOcc = mix(uAO, 1.0, pow(vJH, 0.7));
-jcCol *= jcOcc * (1.0 + uTip * smoothstep(0.6, 1.0, vJH));
+vec3 jcCol = jcAlbedo(vJP, jcN);
+float jcOcc = mix(uAO, 1.0, pow(vJH, 0.8)) * mix(0.5, 1.0, vJAO);
+jcCol *= jcOcc * mix(0.8, 1.12, jcTone) * (1.0 + uTip * smoothstep(0.55, 1.0, vJH));
 diffuseColor.rgb = jcDesat(jcCol);
 diffuseColor.a = jcAlpha;
 if (jcAlpha < 0.01) discard;`,
       );
   };
-  mat.customProgramCacheKey = () => (velvet ? "jc-fur-velvet-1" : "jc-fur-1");
+  mat.customProgramCacheKey = () => (velvet ? "jc-fur2-velvet" : "jc-fur2");
   return { mat, u };
 }
 
@@ -571,13 +612,14 @@ export function makeSolidMaterial(kind: SolidKind): SolidMaterial {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vJP;\nvarying vec3 vJN;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvJP = position;\nvJN = normal;");
+      .replace("#include <common>", "#include <common>\nattribute float ao;\nvarying vec3 vJP;\nvarying vec3 vJN;\nvarying float vJAO;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvJP = position;\nvJN = normal;\nvJAO = ao;");
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
         /* glsl */ `#include <common>
 ${ALBEDO_GLSL}
+varying float vJAO;
 uniform sampler2D uBumpTex;
 uniform float uBumpK;
 uniform float uGroove;
@@ -613,7 +655,7 @@ ${BUMP_GLSL}`,
   jcHeight = t.r;
   jcMottle = t.g;`
   }
-  vec3 col = jcAlbedo(vJP, n0);
+  vec3 col = jcAlbedo(vJP, n0) * mix(0.62, 1.0, vJAO);
   col *= 1.0 - uGroove * (${kind === "knit" ? "jcMottle" : "(1.0 - jcHeight) * 0.6 + (jcMottle - 0.5) * 0.5"});
   if (uSpeckle > 0.0) {
     vec3 h = jcHash3(floor(vJP * 90.0));
@@ -628,13 +670,13 @@ ${BUMP_GLSL}`,
 normal = jcBump(normal, jcHeight * uBumpK, faceDirection);`,
       );
   };
-  mat.customProgramCacheKey = () => `jc-solid-${kind}-1`;
+  mat.customProgramCacheKey = () => `jc-solid-${kind}-2`;
   return { mat, u, base: { roughness: spec.roughness, clearcoat: spec.clearcoat, sheen: spec.sheen } };
 }
 
 /* ——————————————————————————— Accessory materials ——————————————————————————— */
 
-export type AccMaterialKind = "felt" | "knit" | "canvas" | "velvet" | "vinyl" | "metal" | "acetate" | "thread" | "lens" | "gloss";
+export type AccMaterialKind = "felt" | "knit" | "canvas" | "velvet" | "vinyl" | "metal" | "acetate" | "thread" | "lens" | "gloss" | "glass";
 
 export interface AccMaterial {
   mat: THREE.MeshPhysicalMaterial;
@@ -662,6 +704,10 @@ export function makeAccMaterial(kind: AccMaterialKind, color: THREE.ColorReprese
       break;
     case "lens":
       mat = new THREE.MeshPhysicalMaterial({ color: c, metalness: 0, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.88 });
+      break;
+    case "glass":
+      // Clear lenses: a faint tint and a crisp reflection, nothing that hides the eyes.
+      mat = new THREE.MeshPhysicalMaterial({ color: c, metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.16, depthWrite: false });
       break;
     case "vinyl":
       mat = new THREE.MeshPhysicalMaterial({ color: c, metalness: 0, roughness: 0.4, clearcoat: 0.4, clearcoatRoughness: 0.3 });

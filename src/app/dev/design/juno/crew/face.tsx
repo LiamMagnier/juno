@@ -96,9 +96,15 @@ export interface CrewFaceProps {
 }
 
 let enginePromise: Promise<typeof import("./engine")> | null = null;
-/** three.js arrives in its own chunk, the first time a face needs it. */
+/**
+ * three.js and the Blender kit (bodies, parts, the fur's strand field) arrive
+ * in their own chunk and files, the first time a face needs them.
+ */
 export function loadEngine() {
-  enginePromise ??= import("./engine");
+  enginePromise ??= import("./engine").then(async (m) => {
+    await m.ensureKit();
+    return m;
+  });
   return enginePromise;
 }
 
