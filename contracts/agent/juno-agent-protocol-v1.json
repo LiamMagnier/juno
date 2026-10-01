@@ -1,7 +1,7 @@
 {
   "$comment": "The canonical Juno agent session protocol: one vocabulary for a coding or agent session, whichever engine runs it (the Swift runtime on a Mac, runner/agent-core in the cloud) and whichever surface shows it. Hand-authored; everything else is generated from it by scripts/generate-agent-protocol.mjs — runner/agent-core/src/protocol.generated.ts, src/lib/agent-protocol/protocol.generated.ts and native/Packages/JunoNativeKit/Sources/JunoAgentProtocol/Generated/JunoAgentProtocol.swift — and `npm run agent:protocol:check` fails on drift. Rules: a minor version only ever adds (an event, a command, an optional field, an enum value); a reader skips an event type it does not know and reads an enum value it does not know as `unknown`, which is why every enum lists one. Field types: string, integer, number, boolean, timestamp (ISO-8601 string), json (any JSON value), enum:<Name>, type:<Name>, array:<type>. Keys on the wire are exactly the field names here, in every language. Golden transcripts live in contracts/agent/fixtures; every reducer of this protocol must fold each one to its .folded.json.",
   "protocol": "juno-agent-protocol",
-  "version": { "major": 1, "minor": 0 },
+  "version": { "major": 1, "minor": 1 },
   "enums": {
     "SessionTarget": {
       "summary": "Where a session runs.",
@@ -55,6 +55,8 @@
         { "value": "failed", "summary": "Stopped because something went wrong." },
         { "value": "interrupted", "summary": "Ended before it finished, without anyone asking: a crash, a quit, a lost host." },
         { "value": "cancelled", "summary": "Stopped because somebody asked it to." },
+        { "value": "paused", "summary": "A goal is paused; nothing runs until the reader resumes it." },
+        { "value": "waiting_background", "summary": "The run waits for background work (a shell, a sub-agent) to report before it goes on." },
         { "value": "unknown", "summary": "A state this reader does not know." }
       ]
     },
@@ -67,6 +69,10 @@
         { "value": "hook", "summary": "A hook that asked the agent to keep going." },
         { "value": "remote", "summary": "A message sent from another device." },
         { "value": "schedule", "summary": "A routine that fired." },
+        { "value": "gate", "summary": "The runtime's stop check sent the agent back to work before it could finish." },
+        { "value": "goal", "summary": "The goal runtime continued toward an active goal." },
+        { "value": "checkin", "summary": "Background work reported, or a check-in on it was due." },
+        { "value": "ci", "summary": "A pull request's CI finished and the agent follows up." },
         { "value": "unknown", "summary": "An origin this reader does not know." }
       ]
     },
@@ -79,6 +85,9 @@
         { "value": "cancelled", "summary": "Somebody stopped it." },
         { "value": "refusal", "summary": "The model declined." },
         { "value": "hook", "summary": "A hook ended the run." },
+        { "value": "budget", "summary": "A run or goal budget was reached and a wrap-up turn ran." },
+        { "value": "stalled", "summary": "Continuation turns in a row made no progress." },
+        { "value": "blocked", "summary": "The agent marked the remaining work blocked, or a goal was judged impossible." },
         { "value": "unknown", "summary": "A reason this reader does not know." }
       ]
     },
@@ -250,6 +259,153 @@
         { "value": "cancelled", "summary": "Withdrawn by its sender." },
         { "value": "unknown", "summary": "A disposition this reader does not know." }
       ]
+    },
+    "RunEndReason": {
+      "summary": "Why a run ended. Every run ends with exactly one.",
+      "values": [
+        { "value": "done_checked", "summary": "The stop check passed and fresh passing checks cover the change." },
+        { "value": "done_unchecked", "summary": "The stop check passed, but no check is known or the change needs none." },
+        { "value": "checks_failing", "summary": "The agent finished after being sent back once, and a check still fails." },
+        { "value": "blocked", "summary": "The remaining work is blocked, with a reason, or a goal was judged impossible." },
+        { "value": "needs_you", "summary": "Waiting for an approval or an answer, parked until the reader decides." },
+        { "value": "step_limit", "summary": "The step limit was reached and a wrap-up turn ran." },
+        { "value": "budget", "summary": "A run or goal budget was reached and a wrap-up turn ran. Never done." },
+        { "value": "stalled", "summary": "Two continuation turns in a row made no tool call." },
+        { "value": "waiting_on_background", "summary": "Background work still runs; the run resumes when it reports." },
+        { "value": "stopped", "summary": "The reader pressed Stop." },
+        { "value": "interrupted", "summary": "The host quit or crashed mid-run." },
+        { "value": "error", "summary": "An error the retry policy could not clear." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "ContinueReason": {
+      "summary": "Why the runtime kept a run going with no new reader message.",
+      "values": [
+        { "value": "todos_open", "summary": "Todo items were still open." },
+        { "value": "unverified", "summary": "Files changed and no check has run since the last edit." },
+        { "value": "checks_failing", "summary": "The latest check after the last edit failed." },
+        { "value": "ui_unchecked", "summary": "A visible change was not yet looked at in the running result." },
+        { "value": "diff_unreviewed", "summary": "The diff was not read since the last edit." },
+        { "value": "review_findings", "summary": "The self-review found problems that are not yet answered." },
+        { "value": "goal_not_met", "summary": "The active goal is not met yet." },
+        { "value": "output_limit", "summary": "The model's output was cut off at its limit." },
+        { "value": "retry", "summary": "The reader asked to try a failed turn again." },
+        { "value": "after_quit", "summary": "The host quit mid-run and the reader resumed it." },
+        { "value": "keep_going", "summary": "The reader granted another block of steps or budget." },
+        { "value": "wrap_up", "summary": "The last turn before a limit: summarise and stop." },
+        { "value": "checkin", "summary": "Background work reported, or a check-in on it was due." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "CheckKind": {
+      "summary": "What a check is for.",
+      "values": [
+        { "value": "build", "summary": "Builds the project." },
+        { "value": "test", "summary": "Runs tests." },
+        { "value": "lint", "summary": "Runs a linter." },
+        { "value": "typecheck", "summary": "Runs a type checker." },
+        { "value": "custom", "summary": "Anything else the project records as a check." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "VerifySurface": {
+      "summary": "Where a UI check looked.",
+      "values": [
+        { "value": "web", "summary": "A web page in the preview." },
+        { "value": "ios", "summary": "An app in the iOS Simulator." },
+        { "value": "mac", "summary": "A Mac app, through app-scoped screen control." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "ReviewPriority": {
+      "summary": "How serious a review finding is.",
+      "values": [
+        { "value": "p0", "summary": "Breaks something that matters now." },
+        { "value": "p1", "summary": "A real correctness, security or requirement problem." },
+        { "value": "p2", "summary": "Worth fixing; does not block." },
+        { "value": "p3", "summary": "A note." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "ReviewOverall": {
+      "summary": "The reviewer's overall judgement of a diff.",
+      "values": [
+        { "value": "correct", "summary": "No blocking problems." },
+        { "value": "incorrect", "summary": "At least one blocking problem." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "GoalStatus": {
+      "summary": "Where a goal stands.",
+      "values": [
+        { "value": "active", "summary": "Being worked toward." },
+        { "value": "paused", "summary": "Kept, not worked on until resumed." },
+        { "value": "needs_you", "summary": "Waiting on the reader, with a reason." },
+        { "value": "budget_reached", "summary": "Its budget ran out; Keep going adds another." },
+        { "value": "achieved", "summary": "Met, with evidence." },
+        { "value": "impossible", "summary": "Judged impossible, with a reason." },
+        { "value": "cleared", "summary": "Dropped by the reader." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "GoalVerdict": {
+      "summary": "What a check of a goal concluded.",
+      "values": [
+        { "value": "not_met", "summary": "Not met yet." },
+        { "value": "met", "summary": "Met." },
+        { "value": "impossible", "summary": "Cannot be met." },
+        { "value": "gate_blocked", "summary": "The deterministic checks found something missing before any judge was asked." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "GoalOrigin": {
+      "summary": "Who set a goal.",
+      "values": [
+        { "value": "reader", "summary": "The reader, with /goal." },
+        { "value": "plan", "summary": "An approved plan carried out as a goal." },
+        { "value": "ci", "summary": "Fixing a pull request's failing checks." },
+        { "value": "proposed_by_model", "summary": "The agent proposed it and the reader started it." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "CriterionCheck": {
+      "summary": "How one goal criterion is checked.",
+      "values": [
+        { "value": "command", "summary": "A fresh passing run of a recorded check." },
+        { "value": "ui", "summary": "A fresh UI check of a target." },
+        { "value": "judged", "summary": "Judged from the conversation." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "CICheckState": {
+      "summary": "Where one CI check stands.",
+      "values": [
+        { "value": "queued", "summary": "Waiting to start." },
+        { "value": "running", "summary": "Running." },
+        { "value": "passed", "summary": "Passed." },
+        { "value": "failed", "summary": "Failed." },
+        { "value": "cancelled", "summary": "Cancelled." },
+        { "value": "skipped", "summary": "Skipped." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "BudgetScope": {
+      "summary": "Whose budget a limit belongs to.",
+      "values": [
+        { "value": "run", "summary": "One run's." },
+        { "value": "goal", "summary": "A goal's, across its runs." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
+    },
+    "BudgetLimit": {
+      "summary": "Which ceiling of a budget was reached.",
+      "values": [
+        { "value": "minutes", "summary": "Time." },
+        { "value": "turns", "summary": "Continuation turns." },
+        { "value": "tokens", "summary": "Model tokens." },
+        { "value": "cost", "summary": "Spend." },
+        { "value": "unknown", "summary": "A value this reader does not know." }
+      ]
     }
   },
   "types": {
@@ -293,6 +449,72 @@
       "fields": {
         "id": { "type": "string", "summary": "What the answer sends back." },
         "label": { "type": "string", "summary": "What the reader sees." }
+      }
+    },
+    "Budget": {
+      "summary": "A ceiling on what a run or goal may spend. An absent field is unlimited.",
+      "fields": {
+        "minutes": { "type": "integer", "optional": true, "summary": "Wall-clock minutes." },
+        "turns": { "type": "integer", "optional": true, "summary": "Continuation turns." },
+        "tokens": { "type": "integer", "optional": true, "summary": "Model tokens, children included." },
+        "costMicroUsd": { "type": "integer", "optional": true, "summary": "Spend, in millionths of a US dollar." }
+      }
+    },
+    "BudgetUsage": {
+      "summary": "What a run or goal has spent so far, children included.",
+      "fields": {
+        "minutes": { "type": "number", "optional": true, "summary": "Wall-clock minutes." },
+        "turns": { "type": "integer", "optional": true, "summary": "Continuation turns." },
+        "tokens": { "type": "integer", "optional": true, "summary": "Model tokens." },
+        "costMicroUsd": { "type": "integer", "optional": true, "summary": "Spend, in millionths of a US dollar." }
+      }
+    },
+    "RunCheck": {
+      "summary": "One row of a run report's Checked section, rendered only from recorded evidence.",
+      "fields": {
+        "label": { "type": "string", "summary": "What was checked: a command, a preview route, the review." },
+        "passed": { "type": "boolean", "summary": "Whether it passed." },
+        "detail": { "type": "string", "optional": true, "summary": "More, in words: duration, test count, after the last edit." }
+      }
+    },
+    "UICheck": {
+      "summary": "One condition a UI check tested.",
+      "fields": {
+        "name": { "type": "string", "summary": "The condition, in words: HTTP 200, no new console errors." },
+        "passed": { "type": "boolean", "summary": "Whether it held." },
+        "detail": { "type": "string", "optional": true, "summary": "Why it failed, or a detail worth keeping." }
+      }
+    },
+    "ReviewFinding": {
+      "summary": "One problem a self-review found in the diff.",
+      "fields": {
+        "priority": { "type": "enum:ReviewPriority", "summary": "How serious it is." },
+        "title": { "type": "string", "summary": "The problem in one line." },
+        "confidence": { "type": "number", "optional": true, "summary": "0 to 1, as the reviewer reported it." },
+        "path": { "type": "string", "optional": true, "summary": "The file, relative to the workspace." },
+        "line": { "type": "integer", "optional": true, "summary": "The line." },
+        "body": { "type": "string", "optional": true, "summary": "The explanation, bounded." },
+        "criterion": { "type": "string", "optional": true, "summary": "The goal criterion it concerns, for a requirement gap." }
+      }
+    },
+    "GoalCriterion": {
+      "summary": "One criterion of a goal.",
+      "fields": {
+        "id": { "type": "string", "summary": "Stable for the goal: c1, c2." },
+        "text": { "type": "string", "summary": "What must be true." },
+        "check": { "type": "enum:CriterionCheck", "summary": "How it is checked." },
+        "checkId": { "type": "string", "optional": true, "summary": "The recorded check, for a command criterion." },
+        "surface": { "type": "enum:VerifySurface", "optional": true, "summary": "Where to look, for a UI criterion." },
+        "target": { "type": "string", "optional": true, "summary": "The route or app, for a UI criterion." },
+        "met": { "type": "boolean", "optional": true, "summary": "Whether the evidence satisfies it now, when known." }
+      }
+    },
+    "CICheck": {
+      "summary": "One CI check on a pull request.",
+      "fields": {
+        "name": { "type": "string", "summary": "The check's name." },
+        "state": { "type": "enum:CICheckState", "summary": "Where it stands." },
+        "url": { "type": "string", "optional": true, "summary": "Its page, when the forge gave one." }
       }
     }
   },
@@ -600,6 +822,141 @@
         "error": { "type": "type:ErrorInfo", "summary": "What went wrong." }
       }
     },
+    "run.continued": {
+      "group": "run",
+      "summary": "The runtime kept the run going with no new reader message: the stop check sent the agent back, or the reader resumed. A quiet caption, never the reader's words.",
+      "fields": {
+        "reason": { "type": "enum:ContinueReason", "summary": "Why." },
+        "detail": { "type": "string", "summary": "The concrete fact, for the caption: 2 todos were open." },
+        "revision": { "type": "integer", "optional": true, "summary": "The workspace revision it was decided at." }
+      }
+    },
+    "run.outcome": {
+      "group": "run",
+      "summary": "How a run ended, with the report the runtime built from its recorded evidence.",
+      "fields": {
+        "endReason": { "type": "enum:RunEndReason", "summary": "Why it ended." },
+        "summary": { "type": "string", "summary": "The outcome in one sentence." },
+        "verification": { "type": "string", "optional": true, "summary": "What was checked, in words: Checked with swift test; Not checked: no test command." },
+        "checks": { "type": "array:type:RunCheck", "optional": true, "summary": "The Checked rows, only from recorded evidence." },
+        "notChecked": { "type": "array:string", "optional": true, "summary": "What was not checked, plainly." },
+        "left": { "type": "array:string", "optional": true, "summary": "What is left or recommended next." },
+        "filesChanged": { "type": "integer", "optional": true, "summary": "How many files the run changed." },
+        "durationMs": { "type": "integer", "optional": true, "summary": "How long the run took." }
+      }
+    },
+    "verify.result": {
+      "group": "verify",
+      "summary": "A check ran and its result counts as evidence. Recorded by the runtime, never claimed by the model.",
+      "fields": {
+        "command": { "type": "string", "summary": "The command that ran." },
+        "passed": { "type": "boolean", "summary": "Whether it passed." },
+        "exitCode": { "type": "integer", "summary": "Its exit status." },
+        "revision": { "type": "integer", "summary": "The workspace revision it ran at; it counts only while the workspace is still there." },
+        "check": { "type": "string", "optional": true, "summary": "The recorded check it matched, when it matched one." },
+        "kind": { "type": "enum:CheckKind", "optional": true, "summary": "What the check is for." },
+        "durationMs": { "type": "integer", "optional": true, "summary": "How long it ran." },
+        "excerpt": { "type": "string", "optional": true, "summary": "The failing tail or a pass summary, bounded and redacted." }
+      }
+    },
+    "verify.ui": {
+      "group": "verify",
+      "summary": "The running result was looked at: a preview route, a Simulator screen, a Mac app.",
+      "fields": {
+        "surface": { "type": "enum:VerifySurface", "summary": "Where." },
+        "target": { "type": "string", "summary": "The route, the bundle id or the app." },
+        "passed": { "type": "boolean", "summary": "Whether every condition held." },
+        "revision": { "type": "integer", "summary": "The workspace revision it was checked at." },
+        "viewport": { "type": "string", "optional": true, "summary": "The viewport or device, when there is more than one." },
+        "checks": { "type": "array:type:UICheck", "optional": true, "summary": "Each condition and whether it held." },
+        "screenshotHash": { "type": "string", "optional": true, "summary": "SHA-256 of the screenshot kept as evidence." }
+      }
+    },
+    "review.findings": {
+      "group": "review",
+      "summary": "A self-review of the diff finished.",
+      "fields": {
+        "round": { "type": "integer", "summary": "1 for a run's first review." },
+        "overall": { "type": "enum:ReviewOverall", "summary": "The overall judgement." },
+        "findings": { "type": "array:type:ReviewFinding", "optional": true, "summary": "What it found. Empty is a clean review." },
+        "summary": { "type": "string", "optional": true, "summary": "The reviewer's summary." },
+        "revision": { "type": "integer", "optional": true, "summary": "The workspace revision it reviewed." }
+      }
+    },
+    "goal.set": {
+      "group": "goal",
+      "summary": "A goal was set. Setting one never changes the permission mode.",
+      "fields": {
+        "goalId": { "type": "string", "summary": "Stable for the goal." },
+        "objective": { "type": "string", "summary": "What the goal is." },
+        "criteria": { "type": "array:type:GoalCriterion", "optional": true, "summary": "What must be true for it to be met." },
+        "constraints": { "type": "array:string", "optional": true, "summary": "What must not happen along the way." },
+        "budget": { "type": "type:Budget", "optional": true, "summary": "Its budget." },
+        "origin": { "type": "enum:GoalOrigin", "optional": true, "summary": "Who set it." }
+      }
+    },
+    "goal.updated": {
+      "group": "goal",
+      "summary": "A goal's objective, criteria, constraints or budget changed. Only the fields that are set changed.",
+      "fields": {
+        "goalId": { "type": "string", "summary": "The goal." },
+        "objective": { "type": "string", "optional": true, "summary": "The new objective." },
+        "criteria": { "type": "array:type:GoalCriterion", "optional": true, "summary": "The new criteria, whole." },
+        "constraints": { "type": "array:string", "optional": true, "summary": "The new constraints, whole." },
+        "budget": { "type": "type:Budget", "optional": true, "summary": "The new budget." }
+      }
+    },
+    "goal.verdict": {
+      "group": "goal",
+      "summary": "A goal was checked: the deterministic part, then the judge. The judge can only say keep working, met or impossible; it never allows anything.",
+      "fields": {
+        "goalId": { "type": "string", "summary": "The goal." },
+        "verdict": { "type": "enum:GoalVerdict", "summary": "What the check concluded." },
+        "reason": { "type": "string", "summary": "Why, in at most 300 characters." },
+        "unmetCriteria": { "type": "array:string", "optional": true, "summary": "The criteria not yet met." },
+        "revision": { "type": "integer", "optional": true, "summary": "The workspace revision it was checked at." }
+      }
+    },
+    "goal.status": {
+      "group": "goal",
+      "summary": "A goal's status or spend changed.",
+      "fields": {
+        "goalId": { "type": "string", "summary": "The goal." },
+        "status": { "type": "enum:GoalStatus", "summary": "Where it stands." },
+        "reason": { "type": "string", "optional": true, "summary": "Why, in words, above all when it needs the reader." },
+        "usage": { "type": "type:BudgetUsage", "optional": true, "summary": "What it has spent." },
+        "budget": { "type": "type:Budget", "optional": true, "summary": "Its budget." }
+      }
+    },
+    "checkin.due": {
+      "group": "checkin",
+      "summary": "Background work kept the run waiting long enough that the agent is asked to read it, keep waiting, or stop what is stuck.",
+      "fields": {
+        "running": { "type": "array:string", "summary": "What is still running, in words." },
+        "waitedMs": { "type": "integer", "optional": true, "summary": "How long the run has waited." },
+        "idleCheckIns": { "type": "integer", "optional": true, "summary": "Idle check-ins since the reader's last message." }
+      }
+    },
+    "ci.status": {
+      "group": "ci",
+      "summary": "CI for a pull request the agent opened moved.",
+      "fields": {
+        "checks": { "type": "array:type:CICheck", "summary": "Every check, as it now stands." },
+        "prNumber": { "type": "integer", "optional": true, "summary": "The pull request's number." },
+        "prUrl": { "type": "string", "optional": true, "summary": "The pull request." }
+      }
+    },
+    "budget.reached": {
+      "group": "budget",
+      "summary": "A run or goal budget was reached. A wrap-up turn follows; reaching a budget is never done, and Keep going adds the same budget again.",
+      "fields": {
+        "scope": { "type": "enum:BudgetScope", "summary": "Whose budget." },
+        "limit": { "type": "enum:BudgetLimit", "summary": "Which ceiling." },
+        "goalId": { "type": "string", "optional": true, "summary": "The goal, for a goal's budget." },
+        "usage": { "type": "type:BudgetUsage", "optional": true, "summary": "What was spent." },
+        "budget": { "type": "type:Budget", "optional": true, "summary": "The budget that was reached." }
+      }
+    },
     "code.pull_request": {
       "group": "code",
       "summary": "Code extension: a cloud run pushed a branch, and opened or reused a pull request.",
@@ -678,6 +1035,54 @@
         "mode": { "type": "enum:PermissionMode", "optional": true, "summary": "The permission mode." },
         "model": { "type": "string", "optional": true, "summary": "The model." },
         "effort": { "type": "enum:ReasoningEffort", "optional": true, "summary": "The thinking level." }
+      }
+    },
+    "goal.set": {
+      "summary": "Set a goal. The reader sending it is the approval for the goal itself; it never changes the permission mode, and every action still asks as the mode says.",
+      "fields": {
+        "objective": { "type": "string", "summary": "What the goal is." },
+        "criteria": { "type": "array:string", "optional": true, "summary": "What must be true, when the sender has criteria." },
+        "budget": { "type": "type:Budget", "optional": true, "summary": "Its budget; absent takes the host's default." }
+      }
+    },
+    "goal.pause": {
+      "summary": "Pause the active goal. The turn in flight finishes its current tool wave; no continuation starts.",
+      "fields": {
+        "goalId": { "type": "string", "optional": true, "summary": "The goal; absent means the active one." }
+      }
+    },
+    "goal.resume": {
+      "summary": "Resume a paused goal, or one that needs the reader.",
+      "fields": {
+        "goalId": { "type": "string", "optional": true, "summary": "The goal; absent means the current one." }
+      }
+    },
+    "goal.edit": {
+      "summary": "Change a goal. Only the fields that are set change; the next check uses them.",
+      "fields": {
+        "goalId": { "type": "string", "optional": true, "summary": "The goal; absent means the current one." },
+        "objective": { "type": "string", "optional": true, "summary": "The new objective." },
+        "criteria": { "type": "array:string", "optional": true, "summary": "The new criteria, whole." },
+        "constraints": { "type": "array:string", "optional": true, "summary": "The new constraints, whole." },
+        "budget": { "type": "type:Budget", "optional": true, "summary": "The new budget." }
+      }
+    },
+    "goal.clear": {
+      "summary": "Clear the goal. It stays readable as history.",
+      "fields": {
+        "goalId": { "type": "string", "optional": true, "summary": "The goal; absent means the current one." }
+      }
+    },
+    "run.resume": {
+      "summary": "Carry a run on with no new message: retry a failed turn, or resume one the host lost. Refused while a turn runs.",
+      "fields": {
+        "note": { "type": "enum:ContinueReason", "summary": "Why: retry or after_quit." }
+      }
+    },
+    "run.keep_going": {
+      "summary": "Grant another block of steps or budget to a run that stopped at a limit, and resume it.",
+      "fields": {
+        "goalId": { "type": "string", "optional": true, "summary": "The goal whose budget was reached, when it was a goal's." }
       }
     }
   },

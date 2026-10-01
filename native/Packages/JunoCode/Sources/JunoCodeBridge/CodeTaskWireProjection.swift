@@ -112,7 +112,8 @@ public struct CodeTaskWireProjection: Sendable {
         case .completed: "done"
         case .failed: "failed"
         case .cancelled, .interrupted: "cancelled"
-        case .idle, .running, .awaitingInput, .unknown: "running"
+        // A paused goal and a run waiting on background work are not over.
+        case .idle, .running, .awaitingInput, .paused, .waitingBackground, .unknown: "running"
         }
     }
 
@@ -237,6 +238,13 @@ public struct CodeTaskWireProjection: Sendable {
         case .sessionCreated, .sessionConfigured, .turnStarted, .turnFailed, .turnInterrupted,
              .transcriptRestarted, .itemAssistantTextDelta, .itemThinkingDelta,
              .questionAnswered, .planResolved, .usageUpdated, .codePullRequest, .unknown:
+            return []
+
+        // The autonomous loop (protocol v1.1) has no legacy word either; a
+        // reader that wants it reads the protocol events beside these.
+        case .runContinued, .runOutcome, .verifyResult, .verifyUi, .reviewFindings,
+             .goalSet, .goalUpdated, .goalVerdict, .goalStatus, .checkinDue, .ciStatus,
+             .budgetReached:
             return []
         }
     }

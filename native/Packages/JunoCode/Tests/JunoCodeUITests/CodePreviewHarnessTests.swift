@@ -523,6 +523,20 @@ final class CodePreviewHarnessTests: XCTestCase {
                 case .questionResolved: payloadKinds.insert("questionResolved")
                 case .planSubmitted: payloadKinds.insert("planSubmitted")
                 case .planResolved: payloadKinds.insert("planResolved")
+                // The autonomous loop's records. No preview fixture shows them
+                // yet; each lane adds its scenario with its designed rows.
+                case .runContinued: payloadKinds.insert("runContinued")
+                case .runOutcome: payloadKinds.insert("runOutcome")
+                case .verificationRecorded: payloadKinds.insert("verificationRecorded")
+                case .uiVerificationRecorded: payloadKinds.insert("uiVerificationRecorded")
+                case .reviewCompleted: payloadKinds.insert("reviewCompleted")
+                case .goalSet: payloadKinds.insert("goalSet")
+                case .goalEdited: payloadKinds.insert("goalEdited")
+                case .goalVerdict: payloadKinds.insert("goalVerdict")
+                case .goalStatus: payloadKinds.insert("goalStatus")
+                case .checkInDue: payloadKinds.insert("checkInDue")
+                case .ciStatus: payloadKinds.insert("ciStatus")
+                case .budgetReached: payloadKinds.insert("budgetReached")
                 }
             }
             sawRunningTool = sawRunningTool || !startedTools.subtracting(completedTools).isEmpty

@@ -7,3 +7,10 @@
 {"v":"1.0","id":"cmd-7","idempotencyKey":"key-7","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:07.000Z","type":"plan.decide","planId":"plan-1","decision":"approved"}
 {"v":"1.0","id":"cmd-8","idempotencyKey":"key-8","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:08.000Z","type":"session.set_mode","mode":"auto_edit","model":"gpt-5.2","effort":"high"}
 {"v":"1.0","id":"cmd-9","idempotencyKey":"key-9","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:09.000Z","expiresAt":"2026-09-30T10:30:09.000Z","type":"approval.decide","approvalId":"apr-2","decision":"redirect","feedback":"Use npm version patch."}
+{"v":"1.1","id":"cmd-10","idempotencyKey":"key-10","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:10.000Z","type":"goal.set","objective":"Make the settings menu open on click and on keyboard.","criteria":["SettingsMenu tests pass","Menu opens at phone width"],"budget":{"minutes":240,"turns":60}}
+{"v":"1.1","id":"cmd-11","idempotencyKey":"key-11","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:11.000Z","type":"goal.pause","goalId":"g1"}
+{"v":"1.1","id":"cmd-12","idempotencyKey":"key-12","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:12.000Z","type":"goal.resume","goalId":"g1"}
+{"v":"1.1","id":"cmd-13","idempotencyKey":"key-13","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:13.000Z","type":"goal.edit","goalId":"g1","constraints":["Do not modify other test files."],"budget":{"minutes":120}}
+{"v":"1.1","id":"cmd-14","idempotencyKey":"key-14","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:14.000Z","type":"goal.clear"}
+{"v":"1.1","id":"cmd-15","idempotencyKey":"key-15","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:15.000Z","type":"run.resume","note":"after_quit"}
+{"v":"1.1","id":"cmd-16","idempotencyKey":"key-16","sessionId":"mac_session_9","issuedAt":"2026-09-30T11:00:16.000Z","type":"run.keep_going","goalId":"g1"}

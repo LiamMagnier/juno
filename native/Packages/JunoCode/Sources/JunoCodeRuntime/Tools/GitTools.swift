@@ -182,3 +182,18 @@ public struct GitCommitTool: CodeTool {
         return ToolResult(content: "Committed \(commit.shortHash): \(commit.subject)")
     }
 }
+
+/// The shipping tools: `git_push`, the pull request and CI tools (§5.3).
+///
+/// Owned by Lane E (review, ship, sessions and away).
+/// Empty in the seams commit (CODE_AGENT_SPEC §6.0): the lane registers its
+/// tools here and the session reaches them through `CodeToolProviders`, so no
+/// shared file changes when they land. The Git tools above stay in the
+/// workspace's standard registry.
+public struct ShipToolProvider: CodeToolProvider {
+    public init() {}
+
+    public func tools(for _: CodeToolProviderContext) async -> [any CodeTool] {
+        []
+    }
+}

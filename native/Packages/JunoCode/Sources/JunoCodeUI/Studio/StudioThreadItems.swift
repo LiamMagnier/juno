@@ -38,6 +38,28 @@ enum StudioThreadItem: Identifiable, Equatable {
     /// A plan handed over from Plan mode, and what the reader decided.
     case planReview(id: String, request: PlanApprovalRequest, decision: PlanDecision?)
 
+    // The autonomous loop's rows (CODE_AGENT_SPEC §6.0). Each is drawn by a
+    // placeholder view in its owning lane's file, which that lane replaces.
+
+    /// The runtime kept the run going. Lane A, `StudioLoopRows.swift`.
+    case continued(id: String, event: RunContinuedEvent)
+    /// The goal was checked. Lane A, `StudioLoopRows.swift`.
+    case goalVerdict(id: String, event: GoalVerdictEvent)
+    /// A check the runtime recorded. Lane B, `StudioVerificationRows.swift`.
+    case verification(id: String, record: VerificationRecord)
+    /// The running result was looked at. Lane D,
+    /// `Views/Preview/PreviewCheckRow.swift`.
+    case uiCheck(id: String, record: UIVerificationRecord)
+    /// A self-review of the diff. Lane B, `StudioVerificationRows.swift`.
+    case reviewFindings(id: String, record: ReviewRecord)
+    /// One screen-control action. Lane C, `StudioScreenStepRows.swift`.
+    case screenStep(id: String, step: StudioScreenStep)
+    /// CI for the session's pull request, where it last moved. Lane E,
+    /// `StudioCIBar.swift`.
+    case ciStatus(id: String, event: CIStatusEvent)
+    /// The run's report, built from its ledger. Lane B, `StudioRunReport.swift`.
+    case runReport(id: String, event: RunOutcomeEvent)
+
     var id: String {
         switch self {
         case let .user(id, _), let .instruction(id, _, _), let .assistant(id, _),
@@ -45,7 +67,10 @@ enum StudioThreadItem: Identifiable, Equatable {
              let .subagent(id, _), let .tests(id, _), let .error(id, _),
              let .compaction(id, _), let .hook(id, _), let .modeChange(id, _),
              let .summary(id, _, _), let .todos(id, _), let .question(id, _, _),
-             let .planReview(id, _, _):
+             let .planReview(id, _, _),
+             let .continued(id, _), let .goalVerdict(id, _), let .verification(id, _),
+             let .uiCheck(id, _), let .reviewFindings(id, _), let .screenStep(id, _),
+             let .ciStatus(id, _), let .runReport(id, _):
             id
         case let .activity(group, _):
             group.id
@@ -79,6 +104,7 @@ enum StudioThreadItems {
         var questionResolutions: [String: QuestionResolution] = [:]
         var planDecisions: [String: PlanDecision] = [:]
         var lastTodosEventID: String?
+        var lastCIStatusEventID: String?
         for event in events {
             switch event.payload {
             case let .questionResolved(resolved):
@@ -93,10 +119,14 @@ enum StudioThreadItems {
                 latestSubagent[update.agentID] = update
             case let .goalUpdated(update):
                 latestGoal = update.goal
+            case .ciStatus:
+                lastCIStatusEventID = event.id
             default:
                 break
             }
         }
+        // Screen-control steps Lane C draws as rows of their own, by event.
+        let screenSteps = StudioScreenStep.steps(in: events)
 
         var items: [StudioThreadItem] = []
         var placedGroups: Set<Int> = []
@@ -115,6 +145,10 @@ enum StudioThreadItems {
         }
 
         for event in events {
+            if let step = screenSteps[event.id] {
+                items.append(.screenStep(id: event.id, step: step))
+                continue
+            }
             if let index = owner[event.id] {
                 if case let .fileChanged(change) = event.payload {
                     totals.files.insert(change.path.value)
@@ -220,6 +254,35 @@ enum StudioThreadItems {
                 ))
 
             case .questionResolved, .planResolved:
+                continue
+
+            // The autonomous loop. Goal changes and spend show in the goal
+            // row above the composer, not in the thread.
+            case let .runContinued(continued):
+                items.append(.continued(id: event.id, event: continued))
+
+            case let .goalVerdict(verdict):
+                items.append(.goalVerdict(id: event.id, event: verdict))
+
+            case let .verificationRecorded(record):
+                items.append(.verification(id: event.id, record: record))
+
+            case let .uiVerificationRecorded(record):
+                items.append(.uiCheck(id: event.id, record: record))
+
+            case let .reviewCompleted(record):
+                items.append(.reviewFindings(id: event.id, record: record))
+
+            case let .ciStatus(status):
+                // One row, where CI last moved.
+                guard event.id == lastCIStatusEventID else { continue }
+                items.append(.ciStatus(id: event.id, event: status))
+
+            case let .runOutcome(outcome):
+                flushReasoning(id: event.id)
+                items.append(.runReport(id: event.id, event: outcome))
+
+            case .goalSet, .goalEdited, .goalStatus, .checkInDue, .budgetReached:
                 continue
             }
         }

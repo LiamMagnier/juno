@@ -363,6 +363,14 @@ public final class SessionProjection {
             if verificationOutcome == nil {
                 verificationOutcome = evaluated
             }
+
+        // The autonomous loop's records have rows of their own in the thread
+        // and change nothing here yet; Lane A folds them into the execution
+        // state when it lands (CODE_AGENT_SPEC §6.1).
+        case .runContinued, .runOutcome, .verificationRecorded, .uiVerificationRecorded,
+             .reviewCompleted, .goalSet, .goalEdited, .goalVerdict, .goalStatus, .checkInDue,
+             .ciStatus, .budgetReached:
+            break
         }
     }
 

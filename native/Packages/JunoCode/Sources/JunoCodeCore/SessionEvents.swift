@@ -65,6 +65,45 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     case planSubmitted(PlanApprovalRequest)
     case planResolved(PlanResolvedEvent)
 
+    // MARK: The autonomous loop (CODE_AGENT_SPEC §1.13)
+    //
+    // Recorded by the loop, the recorders and the goal runtime from what
+    // actually happened, never from model text. Each maps to one protocol
+    // event (named after the case). A build that predates them does not
+    // record any, so a transcript without them reads exactly as before.
+
+    /// The stop check, or a resume, sent the agent back to work with a runtime
+    /// note and no new reader message. `run.continued`.
+    case runContinued(RunContinuedEvent)
+    /// How a run ended, with the report the runtime built from the ledger.
+    /// `run.outcome`.
+    case runOutcome(RunOutcomeEvent)
+    /// A check ran and its result counts as evidence. `verify.result`.
+    case verificationRecorded(VerificationRecord)
+    /// The running result was looked at: a Preview route, a Simulator screen,
+    /// a Mac app. `verify.ui`.
+    case uiVerificationRecorded(UIVerificationRecord)
+    /// A self-review of the diff finished. `review.findings`.
+    case reviewCompleted(ReviewRecord)
+    /// A goal was set. `goal.set`.
+    case goalSet(GoalSetEvent)
+    /// A goal's objective, criteria, constraints or budget changed.
+    /// `goal.updated`; named apart from ``goalUpdated(_:)``, the older
+    /// ``SessionGoal`` audit entry.
+    case goalEdited(GoalEditedEvent)
+    /// The goal was checked: the deterministic part, then the judge.
+    /// `goal.verdict`.
+    case goalVerdict(GoalVerdictEvent)
+    /// The goal's status or spend changed. `goal.status`.
+    case goalStatus(GoalStatusEvent)
+    /// Background work kept the run waiting long enough for a check-in.
+    /// `checkin.due`.
+    case checkInDue(CheckInDueEvent)
+    /// CI for a pull request Juno opened moved. `ci.status`.
+    case ciStatus(CIStatusEvent)
+    /// A run or goal budget was reached. `budget.reached`.
+    case budgetReached(BudgetReachedEvent)
+
     /// Whether this event replaces everything before it in the stream, so a
     /// reader keeping its place by sequence drops what it holds and rebuilds
     /// from here rather than treating the jump in numbering as a hole.
@@ -711,5 +750,326 @@ public struct RunCompletedEvent: Hashable, Codable, Sendable {
         self.filesChanged = filesChanged
         self.testsPassed = testsPassed
         self.durationSeconds = durationSeconds
+    }
+}
+
+// MARK: - The autonomous loop's events (CODE_AGENT_SPEC §1.13)
+
+/// The runtime kept the run going: the stop check did not let a turn end, or
+/// the reader resumed one. Shown as a quiet caption ("Kept going: 2 todos were
+/// open"), never as the reader's message.
+public struct RunContinuedEvent: Hashable, Codable, Sendable {
+    public let reason: RuntimeNote.Reason
+    /// The concrete fact, for the caption: "2 todos were open",
+    /// "`swift test` had not run since the last edit".
+    public let detail: String
+    /// The workspace revision it was decided at, when one is known.
+    public let revision: Int?
+    /// What starts the turn that follows.
+    public let origin: TurnOrigin
+
+    public init(reason: RuntimeNote.Reason, detail: String, revision: Int? = nil, origin: TurnOrigin) {
+        self.reason = reason
+        self.detail = detail
+        self.revision = revision
+        self.origin = origin
+    }
+}
+
+/// One row of a run report's "Checked" section. Rendered only from ledger
+/// records, so a check the model claims but the runtime never saw cannot
+/// appear here.
+public struct RunOutcomeCheck: Hashable, Codable, Sendable {
+    /// `npm run typecheck`, `Preview /settings, desktop and phone`, `Review`.
+    public let label: String
+    public let passed: Bool
+    /// `passed · 11 s · after the last edit`.
+    public let detail: String?
+    /// The ledger record it was rendered from.
+    public let recordID: String?
+
+    public init(label: String, passed: Bool, detail: String? = nil, recordID: String? = nil) {
+        self.label = label
+        self.passed = passed
+        self.detail = detail
+        self.recordID = recordID
+    }
+}
+
+/// How a run ended, and the report built from its ledger: the record the
+/// divider, the notification, the runs list, the phone and the web all read.
+public struct RunOutcomeEvent: Hashable, Codable, Sendable {
+    public let endReason: RunEndReason
+    /// The outcome in one sentence, from the model's report when it wrote one.
+    public let summary: String
+    /// The divider's words about checks: "Checked with `swift test`",
+    /// "Not checked: no test command for this project".
+    public let verification: String?
+    public let checks: [RunOutcomeCheck]
+    public let notChecked: [String]
+    public let left: [String]
+    public let filesChanged: Int
+    public let durationSeconds: Double
+
+    public init(
+        endReason: RunEndReason,
+        summary: String,
+        verification: String? = nil,
+        checks: [RunOutcomeCheck] = [],
+        notChecked: [String] = [],
+        left: [String] = [],
+        filesChanged: Int = 0,
+        durationSeconds: Double = 0
+    ) {
+        self.endReason = endReason
+        self.summary = summary
+        self.verification = verification
+        self.checks = checks
+        self.notChecked = notChecked
+        self.left = left
+        self.filesChanged = filesChanged
+        self.durationSeconds = durationSeconds
+    }
+}
+
+/// Where a goal stands. Lane A's `GoalRun` (JunoCodeCore/GoalModels.swift)
+/// carries it; the raw values are the protocol's `GoalStatus`.
+public enum GoalStatus: String, Codable, CaseIterable, Sendable {
+    case active
+    case paused
+    /// Waiting on the reader, always with a reason in words.
+    case needsYou = "needs_you"
+    case budgetReached = "budget_reached"
+    case achieved
+    case impossible
+    case cleared
+
+    /// Achieved, impossible and cleared goals stay readable but never run.
+    public var isFinal: Bool {
+        switch self {
+        case .achieved, .impossible, .cleared: true
+        case .active, .paused, .needsYou, .budgetReached: false
+        }
+    }
+}
+
+/// What a goal check concluded. The judge can only say not met, met or
+/// impossible; the deterministic gate adds `gateBlocked`, which is decided
+/// before any judge is asked.
+public enum GoalVerdictKind: String, Codable, CaseIterable, Sendable {
+    case notMet = "not_met"
+    case met
+    case impossible
+    case gateBlocked = "gate_blocked"
+}
+
+/// Who set a goal.
+public enum GoalOrigin: String, Codable, CaseIterable, Sendable {
+    case reader
+    case plan
+    case ci
+    case proposedByModel = "proposed_by_model"
+}
+
+/// How one goal criterion is checked.
+public enum CriterionCheck: Hashable, Codable, Sendable {
+    /// A fresh passing run of this recipe check.
+    case command(checkID: String)
+    /// A fresh UI check of this target on this surface.
+    case ui(surface: UIVerificationSurface, target: String)
+    /// Judged from the conversation.
+    case judged
+}
+
+/// One goal criterion as an event records it.
+public struct GoalCriterionSnapshot: Hashable, Codable, Sendable, Identifiable {
+    /// `c1`, `c2` …
+    public let id: String
+    public let text: String
+    public let check: CriterionCheck
+    /// Whether the evidence satisfies it at the time of the event, when known.
+    public let met: Bool?
+
+    public init(id: String, text: String, check: CriterionCheck, met: Bool? = nil) {
+        self.id = id
+        self.text = text
+        self.check = check
+        self.met = met
+    }
+}
+
+/// A goal was set: from `/goal`, an approved plan, CI, or a model proposal the
+/// reader started.
+public struct GoalSetEvent: Hashable, Codable, Sendable {
+    public let goalID: String
+    public let objective: String
+    public let criteria: [GoalCriterionSnapshot]
+    public let constraints: [String]
+    public let budget: Budget
+    public let origin: GoalOrigin
+
+    public init(
+        goalID: String,
+        objective: String,
+        criteria: [GoalCriterionSnapshot],
+        constraints: [String] = [],
+        budget: Budget = Budget(),
+        origin: GoalOrigin
+    ) {
+        self.goalID = goalID
+        self.objective = objective
+        self.criteria = criteria
+        self.constraints = constraints
+        self.budget = budget
+        self.origin = origin
+    }
+}
+
+/// A goal as it stands after the reader edited it. The whole of it, so each
+/// event is readable on its own.
+public struct GoalEditedEvent: Hashable, Codable, Sendable {
+    public let goalID: String
+    public let objective: String
+    public let criteria: [GoalCriterionSnapshot]
+    public let constraints: [String]
+    public let budget: Budget
+
+    public init(
+        goalID: String,
+        objective: String,
+        criteria: [GoalCriterionSnapshot],
+        constraints: [String] = [],
+        budget: Budget = Budget()
+    ) {
+        self.goalID = goalID
+        self.objective = objective
+        self.criteria = criteria
+        self.constraints = constraints
+        self.budget = budget
+    }
+}
+
+/// One check of the goal, shown as a collapsed caption ("Checked the goal: not
+/// yet — c2 has no Preview evidence").
+public struct GoalVerdictEvent: Hashable, Codable, Sendable {
+    public let goalID: String
+    public let verdict: GoalVerdictKind
+    /// At most 300 characters, shown in the thread.
+    public let reason: String
+    public let unmetCriteria: [String]
+    public let revision: Int
+
+    public static let maximumReasonCharacters = 300
+
+    public init(goalID: String, verdict: GoalVerdictKind, reason: String, unmetCriteria: [String] = [], revision: Int) {
+        self.goalID = goalID
+        self.verdict = verdict
+        self.reason = String(reason.prefix(Self.maximumReasonCharacters))
+        self.unmetCriteria = unmetCriteria
+        self.revision = revision
+    }
+}
+
+/// The goal's status or spend changed.
+public struct GoalStatusEvent: Hashable, Codable, Sendable {
+    public let goalID: String
+    public let status: GoalStatus
+    /// Why, in words, for `needsYou` above all: "Waiting for you to allow
+    /// `npm install`".
+    public let reason: String?
+    public let usage: BudgetUsage
+    public let budget: Budget
+
+    public init(goalID: String, status: GoalStatus, reason: String? = nil, usage: BudgetUsage = BudgetUsage(), budget: Budget = Budget()) {
+        self.goalID = goalID
+        self.status = status
+        self.reason = reason
+        self.usage = usage
+        self.budget = budget
+    }
+}
+
+/// Background work kept a run waiting long enough that the model is asked to
+/// read it, keep waiting, or stop what is stuck.
+public struct CheckInDueEvent: Hashable, Codable, Sendable {
+    /// What is still running, in words: "`xcodebuild test` (12 min)".
+    public let running: [String]
+    public let waitedSeconds: Double
+    /// Idle check-ins since the reader's last message; at most 3.
+    public let idleCheckIns: Int
+
+    public init(running: [String], waitedSeconds: Double, idleCheckIns: Int) {
+        self.running = running
+        self.waitedSeconds = waitedSeconds
+        self.idleCheckIns = idleCheckIns
+    }
+}
+
+/// Where one CI check stands. The raw values are the protocol's `CICheckState`.
+public enum CICheckState: String, Codable, CaseIterable, Sendable {
+    case queued
+    case running
+    case passed
+    case failed
+    case cancelled
+    case skipped
+
+    public var isSettled: Bool {
+        switch self {
+        case .passed, .failed, .cancelled, .skipped: true
+        case .queued, .running: false
+        }
+    }
+}
+
+/// One CI check on a pull request.
+public struct CICheck: Hashable, Codable, Sendable {
+    public let name: String
+    public let state: CICheckState
+    public let url: String?
+
+    public init(name: String, state: CICheckState, url: String? = nil) {
+        self.name = name
+        self.state = state
+        self.url = url
+    }
+}
+
+/// CI for a pull request Juno opened moved: "3 of 4 checks passed; `test
+/// (ubuntu)` failed".
+public struct CIStatusEvent: Hashable, Codable, Sendable {
+    public let pullRequestNumber: Int?
+    public let pullRequestURL: String?
+    public let checks: [CICheck]
+
+    public init(pullRequestNumber: Int? = nil, pullRequestURL: String? = nil, checks: [CICheck]) {
+        self.pullRequestNumber = pullRequestNumber
+        self.pullRequestURL = pullRequestURL
+        self.checks = checks
+    }
+}
+
+/// Whose budget was reached.
+public enum BudgetScope: String, Codable, CaseIterable, Sendable {
+    case run
+    case goal
+}
+
+/// A run or goal budget was reached. A wrap-up turn follows; reaching a budget
+/// is never "done", and Keep going adds the same budget again.
+public struct BudgetReachedEvent: Hashable, Codable, Sendable {
+    public let scope: BudgetScope
+    public let limit: BudgetLimit
+    public let budget: Budget
+    public let usage: BudgetUsage
+    /// The goal, when `scope` is `.goal`.
+    public let goalID: String?
+
+    public init(scope: BudgetScope, limit: BudgetLimit, budget: Budget, usage: BudgetUsage, goalID: String? = nil) {
+        self.scope = scope
+        self.limit = limit
+        self.budget = budget
+        self.usage = usage
+        self.goalID = goalID
     }
 }

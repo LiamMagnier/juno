@@ -102,6 +102,53 @@ final class StudioSnapshotTests: XCTestCase {
         }
     }
 
+    /// The autonomous loop's placeholder rows from the seams commit, one of
+    /// each, so a lane replacing one can compare. Words only: no pills, no dots.
+    func testRenderAutonomousLoopPlaceholderRows() async throws {
+        let rows = VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            StudioAssistantMessage(text: "The menu now opens on pointerdown.")
+            StudioContinuedRow(event: RunContinuedEvent(
+                reason: .gate(.checksFailing), detail: "`npm test` failed after the last edit", revision: 3, origin: .gate
+            ))
+            StudioVerificationRow(record: VerificationRecord(
+                command: "npm test", kind: .test, exitCode: 1, passed: false, workspaceRevision: 3, durationMs: 9_200
+            ))
+            StudioVerificationRow(record: VerificationRecord(
+                command: "npx vitest run src/components", kind: .test, exitCode: 0, passed: true, workspaceRevision: 4, durationMs: 8_100
+            ))
+            PreviewCheckRow(record: UIVerificationRecord(
+                surface: .web, target: "/settings", viewport: "desktop and phone", checks: [], passed: true, workspaceRevision: 4
+            ))
+            StudioReviewFindingsRow(record: ReviewRecord(
+                round: 1,
+                findings: [ReviewFinding(priority: .p3, confidence: 0.7, path: "src/components/SettingsMenu.tsx", line: 12, title: "The onOpenChange prop is unused")],
+                overall: .correct,
+                workspaceRevision: 4
+            ))
+            StudioScreenStepRow(step: StudioScreenStep(eventID: "s", verb: "Clicked", app: "TextEdit", element: "Save button", succeeded: true))
+            StudioGoalVerdictRow(event: GoalVerdictEvent(goalID: "g1", verdict: .met, reason: "Both criteria have fresh evidence.", revision: 4))
+            StudioCIStatusRow(event: CIStatusEvent(checks: [CICheck(name: "lint", state: .passed), CICheck(name: "test (ubuntu)", state: .failed)]))
+            StudioRunReportRow(event: RunOutcomeEvent(
+                endReason: .doneChecked,
+                summary: "Done: the settings menu opens on click again.",
+                verification: "Worked for 4m 12s · Checked with `npm test`",
+                checks: [
+                    RunOutcomeCheck(label: "npm run typecheck", passed: true, detail: "passed · 11 s · after the last edit"),
+                    RunOutcomeCheck(label: "Preview /settings, desktop and phone", passed: true, detail: "no new console errors"),
+                ],
+                notChecked: ["Safari (the Preview is WebKit)"]
+            ))
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: Studio.Metrics.measure)
+        .padding(Studio.Metrics.gutter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Studio.Surface.canvas)
+        for dark in [false, true] {
+            try await render(rows, size: CGSize(width: 860, height: 760), dark: dark, name: "loop-rows-\(dark ? "dark" : "light")")
+        }
+    }
+
     /// The `/` menu with `/compact` offered, and dimmed while a run works.
     func testRenderCompactInTheSlashMenu() async throws {
         for (scenario, name) in [(CodePreviewScenario.transcript, "idle"), (.streaming, "running")] {

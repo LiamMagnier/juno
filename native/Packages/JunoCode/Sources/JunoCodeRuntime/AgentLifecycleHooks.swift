@@ -41,6 +41,30 @@ public enum AgentHookNotificationKind: String, Sendable {
     case idlePrompt = "idle_prompt"
 }
 
+/// What started a compaction, for `PreCompact` and `PostCompact` hooks, in
+/// Claude Code's vocabulary.
+public enum AgentCompactionTrigger: String, Sendable {
+    /// The reader asked (`/compact`).
+    case manual
+    /// The runtime did it on its own ahead of a provider limit, or after the
+    /// window overflowed.
+    case auto
+}
+
+/// One call of a finished batch, for `PostToolBatch` hooks.
+public struct AgentToolBatchResult: Equatable, Sendable {
+    public let toolCallID: String
+    public let toolName: String
+    /// False for a call that failed, was refused, or never ran.
+    public let succeeded: Bool
+
+    public init(toolCallID: String, toolName: String, succeeded: Bool) {
+        self.toolCallID = toolCallID
+        self.toolName = toolName
+        self.succeeded = succeeded
+    }
+}
+
 /// A hook's view of the approval prompt for one tool call.
 public enum AgentHookPermission: Equatable, Sendable {
     /// Skip the prompt — but only where the reader's own allow rule could:
@@ -136,6 +160,41 @@ public protocol AgentLifecycleHooks: Sendable {
     /// Told when a run has ended, however it ended.
     func sessionStopped(sessionID: CodeSessionID, status: SessionStatus) async
 
+    // The four points below are seams Lane F fills with hook handlers
+    // (CODE_AGENT_SPEC §5.8). The runtime already calls each at its point and
+    // records what the hooks ask the thread to show; the defaults do nothing,
+    // so until an integration answers, nothing changes.
+
+    /// Runs before the conversation is compacted (`PreCompact`). It cannot
+    /// stop the fold: the provider's limit does not wait.
+    func compactionStarting(
+        sessionID: CodeSessionID,
+        trigger: AgentCompactionTrigger,
+        focus: String?
+    ) async -> AgentHookResponse
+
+    /// Runs after the conversation was compacted (`PostCompact`).
+    func compactionFinished(
+        sessionID: CodeSessionID,
+        trigger: AgentCompactionTrigger,
+        event: CompactionEvent
+    ) async -> AgentHookResponse
+
+    /// Runs once every call of a model turn's batch has its result
+    /// (`PostToolBatch`). `"continue": false` ends the run there.
+    func toolBatchFinished(
+        sessionID: CodeSessionID,
+        results: [AgentToolBatchResult]
+    ) async -> AgentHookResponse
+
+    /// Runs after a tool call ran and failed (`PostToolUseFailure`): an error
+    /// result or a throw, never a refusal. Its context reaches the model with
+    /// the result; `"continue": false` ends the run once the batch is answered.
+    func toolFailed(
+        _ invocation: AgentToolHookInvocation,
+        error: String
+    ) async -> AgentHookResponse
+
     /// Told when the session needs the reader.
     func notify(
         sessionID: CodeSessionID,
@@ -184,6 +243,33 @@ public extension AgentLifecycleHooks {
 
     func sessionStopped(sessionID _: CodeSessionID, status _: SessionStatus) async {}
 
+    func compactionStarting(
+        sessionID _: CodeSessionID,
+        trigger _: AgentCompactionTrigger,
+        focus _: String?
+    ) async -> AgentHookResponse {
+        .empty
+    }
+
+    func compactionFinished(
+        sessionID _: CodeSessionID,
+        trigger _: AgentCompactionTrigger,
+        event _: CompactionEvent
+    ) async -> AgentHookResponse {
+        .empty
+    }
+
+    func toolBatchFinished(
+        sessionID _: CodeSessionID,
+        results _: [AgentToolBatchResult]
+    ) async -> AgentHookResponse {
+        .empty
+    }
+
+    func toolFailed(_: AgentToolHookInvocation, error _: String) async -> AgentHookResponse {
+        .empty
+    }
+
     func notify(
         sessionID _: CodeSessionID,
         kind _: AgentHookNotificationKind,
@@ -231,10 +317,15 @@ public enum AgentHookContext {
         stopFeedbackPrefix + reason
     }
 
-    /// Whether a user-role message is one a hook wrote whole.
+    /// Whether a user-role message is one a hook, or Juno's own runtime, wrote
+    /// whole. A `<juno_runtime>` note (the stop check's continuation, a
+    /// resume) is Juno speaking, never the reader.
     static func isHookMessage(_ text: String) -> Bool {
-        text.hasPrefix(stopFeedbackPrefix)
+        text.hasPrefix(stopFeedbackPrefix) || RuntimeNote.isRuntimeNote(text)
     }
+
+    /// The label a runtime note carries where hook output is noted apart.
+    static let runtimeNoteEvent = "Juno runtime"
 
     /// A user-role message taken apart by who wrote it.
     ///
@@ -247,6 +338,13 @@ public enum AgentHookContext {
     /// marker is Juno's own note about an attachment, written after the
     /// block when the message was saved, and stays with the reader's part.
     static func authorship(of text: String) -> UserTurnAuthorship {
+        if RuntimeNote.isRuntimeNote(text) {
+            return UserTurnAuthorship(
+                reader: nil,
+                hook: RuntimeNote.body(of: text) ?? text,
+                hookEvent: runtimeNoteEvent
+            )
+        }
         if isHookMessage(text) {
             return UserTurnAuthorship(
                 reader: nil,

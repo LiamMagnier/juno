@@ -183,6 +183,23 @@ public struct StudioThreadView: View {
                 openReview: { openReview(nil) },
                 openFile: { openReview($0) }
             )
+        // The autonomous loop's rows; each view lives in its owning lane's file.
+        case let .continued(_, event):
+            StudioContinuedRow(event: event)
+        case let .goalVerdict(_, event):
+            StudioGoalVerdictRow(event: event)
+        case let .verification(_, record):
+            StudioVerificationRow(record: record)
+        case let .uiCheck(_, record):
+            PreviewCheckRow(record: record)
+        case let .reviewFindings(_, record):
+            StudioReviewFindingsRow(record: record)
+        case let .screenStep(_, step):
+            StudioScreenStepRow(step: step)
+        case let .ciStatus(_, event):
+            StudioCIStatusRow(event: event)
+        case let .runReport(_, event):
+            StudioRunReportRow(event: event)
         }
     }
 
