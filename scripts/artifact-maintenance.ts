@@ -80,6 +80,10 @@ async function main(): Promise<void> {
       }
     }
     tick++;
+    // Give the connection back between passes. Production's pooler runs in
+    // session mode with 15 clients for every process on the VM, and a daemon
+    // that wakes once a minute must not hold one of them while it sleeps.
+    if (DAEMON) await prismaUnguarded.$disconnect().catch(() => undefined);
     if (DAEMON && !stopping) {
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, TICK_MS);

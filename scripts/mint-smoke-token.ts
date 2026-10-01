@@ -43,6 +43,32 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * The deploy reloads every PM2 app just before this runs, and production's
+ * pooler is in session mode with a small client cap, so the first query can
+ * meet "max clients reached" for a few seconds while old and new processes
+ * overlap. That is transient: wait for a connection instead of failing the
+ * whole release smoke on it.
+ */
+const TRANSIENT_DB = /max clients|EMAXCONNSESSION|too many clients|remaining connection slots|P1001|P2024|Can't reach database/i;
+
+async function connectWithRetry(prisma: PrismaClient, attempts = 8): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await prisma.$connect();
+      await prisma.$queryRaw`SELECT 1`;
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= attempts || !TRANSIENT_DB.test(message)) throw error;
+      const waitMs = Math.min(15_000, 3_000 * attempt);
+      console.error(`[smoke-token] database busy (attempt ${attempt}/${attempts}); retrying in ${Math.round(waitMs / 1000)} s`);
+      await prisma.$disconnect().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
 async function main() {
   const authSecret = required("AUTH_SECRET");
   const issuer = new URL(required("NEXT_PUBLIC_APP_URL")).origin;
@@ -55,6 +81,7 @@ async function main() {
   );
 
   try {
+    await connectWithRetry(prisma);
     let userId: string | null = null;
     let sessionVersion = 0;
     let deviceSessionId: string | null = null;
