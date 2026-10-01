@@ -49,6 +49,11 @@ struct DesktopConnectionsScreen: View {
     /// the web's `connectingId` hold after the OAuth redirect (the page's
     /// signature, Phase 4 B2).
     @State private var settlingID: String?
+    /// The add flow while its sheet is open. Made fresh each time, so a
+    /// second visit starts from an empty address rather than the last refusal.
+    @State private var serverDraft: NativeCustomConnectorDraft?
+    /// The server whose manage sheet is open.
+    @State private var serverEditor: NativeCustomConnectorEditor?
     @Environment(\.junoToast) private var toast
 
     private let backend = URL(string: JunoBackend.productionURLString)
@@ -91,6 +96,29 @@ struct DesktopConnectionsScreen: View {
             .sheet(isPresented: $showsMCP) {
                 DesktopMCPServerSheet(model: model, editing: editingMCP)
             }
+            .sheet(item: $serverDraft) { draft in
+                DesktopAddServerSheet(
+                    draft: draft,
+                    signIn: { connector in
+                        serverDraft = nil
+                        beginCustomSignIn(connector.id)
+                        // The new tile, not yet signed in, holding
+                        // "Connecting" while the browser has it.
+                        Task { await model.refresh() }
+                    },
+                    close: { serverDraft = nil }
+                )
+            }
+            .sheet(item: $serverEditor) { editor in
+                DesktopManageServerSheet(
+                    editor: editor,
+                    signIn: { id in
+                        serverEditor = nil
+                        beginCustomSignIn(id)
+                    },
+                    close: { serverEditor = nil }
+                )
+            }
             .accessibilityIdentifier("juno.desktop.connections")
     }
 
@@ -128,6 +156,12 @@ struct DesktopConnectionsScreen: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .accessibilityIdentifier("connections.refresh")
+                // Bring your own: the page's one header action, beside the
+                // quiet refresh — the web's "Add MCP server".
+                DesktopOutlineButton(title: "Add MCP Server", icon: .plus) { addServer() }
+                    .disabled(model.phase != .ready)
+                    .help("Add a remote MCP server by its address")
+                    .accessibilityIdentifier("connections.add-server")
             }
         } controls: {
             if model.phase == .ready {
@@ -308,7 +342,7 @@ struct DesktopConnectionsScreen: View {
     /// once, so they are two labelled bands instead of two tabs.
     @ViewBuilder
     private var results: some View {
-        if connectedConnectors.isEmpty, availableConnectors.isEmpty {
+        if connectedConnectors.isEmpty, availableConnectors.isEmpty, !showsAddTile {
             emptyState
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, JunoSpace.region)
@@ -317,17 +351,32 @@ struct DesktopConnectionsScreen: View {
                 if !connectedConnectors.isEmpty {
                     section("Connected", "Linked and available to your chats.", connectedConnectors)
                 }
-                if !availableConnectors.isEmpty, !model.showsConnectedOnly {
+                if !model.showsConnectedOnly, !availableConnectors.isEmpty || showsAddTile {
                     // No count on this band: it holds one page of a catalog with
                     // hundreds more behind the cursor, so a number here would be a
                     // lie about how many apps exist.
-                    section("Available", "Connect an app to let Juno work inside it.", availableConnectors)
+                    section(
+                        "Available", "Connect an app to let Juno work inside it.", availableConnectors,
+                        endsWithAddTile: showsAddTile
+                    )
                 }
             }
         }
     }
 
-    private func section(_ title: String, _ lede: String, _ connectors: [NativeConnector]) -> some View {
+    /// Bring your own is always the last tile of Available, so the way to add
+    /// a server is where the reader is already looking for an app — except
+    /// while searching, where it would read as a result.
+    private var showsAddTile: Bool {
+        !model.showsConnectedOnly && trimmedQuery.isEmpty
+    }
+
+    private func section(
+        _ title: String,
+        _ lede: String,
+        _ connectors: [NativeConnector],
+        endsWithAddTile: Bool = false
+    ) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(title)
@@ -340,6 +389,9 @@ struct DesktopConnectionsScreen: View {
             }
             LazyVGrid(columns: DesktopConnectorGrid.columns, alignment: .leading, spacing: JunoSpace.regular) {
                 ForEach(connectors) { card($0) }
+                if endsWithAddTile {
+                    DesktopAddServerTile(minimumHeight: DesktopConnectorGrid.cardMinimumHeight) { addServer() }
+                }
             }
         }
     }
@@ -358,7 +410,7 @@ struct DesktopConnectionsScreen: View {
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: JunoSpace.snug)
-                DesktopConnectorStatusPill(state: cardState)
+                DesktopConnectorStatusPill(state: cardState, isCustom: connector.isCustom)
             }
             // Under the name and pill, at the tile's full width: squeezed
             // beside the pill it truncated after four words above a gap.
@@ -381,7 +433,9 @@ struct DesktopConnectionsScreen: View {
 
     @ViewBuilder
     private func action(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
-        if connector.isCustomMCP {
+        if connector.isCustom {
+            customAction(connector, state: state)
+        } else if connector.isCustomMCP {
             HStack {
                 Toggle("Use in chats", isOn: Binding(
                     get: { connector.connected },
@@ -395,7 +449,37 @@ struct DesktopConnectionsScreen: View {
                     .buttonStyle(.bordered)
                     .contentShape(.rect)
             }
-        } else { switch state {
+        } else {
+            builtInAction(connector, state: state)
+        }
+    }
+
+    /// A custom server's footer. Its tools are chosen one by one and signing
+    /// out lives with them, so a linked server gets one Manage door rather
+    /// than a Disconnect that would leave those choices unreachable; one not
+    /// yet signed in gets Sign In beside it.
+    @ViewBuilder
+    private func customAction(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            wideButton("Manage") { manageServer(connector) }
+                .help("Rename \(connector.label), choose its tools, sign out or remove it")
+                .accessibilityLabel("Manage \(connector.label)")
+                .accessibilityIdentifier("connections.manage.\(connector.id)")
+            if !connector.connected {
+                wideButton(state == .connecting ? "Waiting…" : "Sign In") {
+                    beginCustomSignIn(connector.id)
+                }
+                .disabled(state == .connecting)
+                .help("Juno opens this server’s sign-in page in your browser. You approve Juno there, then choose its tools here.")
+                .accessibilityLabel("Sign in to \(connector.label)")
+                .accessibilityIdentifier("connections.sign-in.\(connector.id)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func builtInAction(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
+        switch state {
         case .connected:
             wideButton("Disconnect", role: .destructive) { disconnectTarget = connector }
                 .disabled(model.isMutating)
@@ -442,13 +526,33 @@ struct DesktopConnectionsScreen: View {
     /// answering to one identifier makes a UI test ambiguous.
     @ViewBuilder
     private func cardMenu(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
-        if connector.isCustomMCP {
+        if connector.isCustom {
+            Button("Manage \(connector.label)…") { manageServer(connector) }
+            if !connector.connected {
+                Button("Sign In to \(connector.label)") { beginCustomSignIn(connector.id) }
+                    .disabled(state == .connecting)
+            }
+            if let url = connector.url {
+                Divider()
+                Button("Copy Address") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url, forType: .string)
+                }
+            }
+        } else if connector.isCustomMCP {
             Button("Manage MCP server") { editingMCP = connector; showsMCP = true }
                 .contentShape(.rect)
             Button("Remove server", role: .destructive) { disconnectTarget = connector }
                 .disabled(model.isMutating)
                 .contentShape(.rect)
-        } else { switch state {
+        } else {
+            builtInMenu(connector, state: state)
+        }
+    }
+
+    @ViewBuilder
+    private func builtInMenu(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
+        switch state {
         case .connected:
             Button("Disconnect \(connector.label)", role: .destructive) {
                 disconnectTarget = connector
@@ -690,10 +794,25 @@ struct DesktopConnectionsScreen: View {
         _ connector: NativeConnector,
         state: DesktopConnectorState
     ) -> String {
+        if connector.isCustom {
+            // The web's custom line: how many tools, and where, once linked;
+            // what is left to do before then.
+            let host = connector.accountLabel ?? ""
+            switch state {
+            case .connected:
+                guard let count = connector.toolCount else { return host }
+                return "\(count) \(count == 1 ? "tool" : "tools") · \(host)"
+            case .connecting:
+                return "Finishing sign-in…"
+            default:
+                return "Sign in to finish adding · \(host)"
+            }
+        }
         if connector.isCustomMCP {
             if connector.mcpStatus == "error" { return connector.lastError ?? "Connection failed. Manage this server to test again." }
             let count = connector.toolCount ?? 0
             return "\(count) \(count == 1 ? "tool" : "tools") · \(connector.connected ? "Enabled" : "Disabled")"
+        }
         }
         switch state {
         case .connected:
@@ -723,6 +842,8 @@ struct DesktopConnectionsScreen: View {
             return "Juno opens \(connector.label)'s authorisation page in your browser. You approve the permissions there, and Juno keeps only the resulting token, encrypted."
         case .composio:
             return "Juno opens \(connector.label)'s authorisation page in your browser through Composio, the managed connector service. You approve the permissions there."
+        case .custom:
+            return "Juno opens this server’s sign-in page in your browser. You approve Juno there."
         }
     }
 
@@ -775,7 +896,27 @@ struct DesktopConnectionsScreen: View {
         case .composio:
             guard let slug = connector.slug else { return nil }
             return backend.appendingPathComponent("api/connectors/composio/\(slug)/connect")
+        case .custom:
+            return NativeCustomConnectorPath.connectURL(backend: backend, id: connector.id)
         }
+    }
+
+    // MARK: Custom servers
+
+    private func addServer() {
+        serverDraft = model.makeCustomConnectorDraft()
+    }
+
+    private func manageServer(_ connector: NativeConnector) {
+        serverEditor = model.makeCustomConnectorEditor(id: connector.id)
+    }
+
+    /// A custom server's sign-in, in the reader's browser like every other
+    /// connector's: the same wait, the same re-read on return.
+    private func beginCustomSignIn(_ id: String) {
+        guard let backend, let url = NativeCustomConnectorPath.connectURL(backend: backend, id: id) else { return }
+        awaitingAuthorization = id
+        NSWorkspace.shared.open(url)
     }
 
     private func composioSetupURL(_ connector: NativeConnector) -> URL? {
@@ -876,13 +1017,22 @@ private struct DesktopConnectorMark: View {
     /// installed Mac app's icon, then Juno's bundled brand artwork, then the
     /// catalog's own logo, then a monogram — so there is one place to reason
     /// about what a connector looks like.
+    @ViewBuilder
     private var content: some View {
-        JunoConnectorMark(
-            connectorID: connector.id,
-            connectorName: connector.label,
-            logoURL: connector.logoURL,
-            size: DesktopConnectorGrid.markGlyphSize
-        )
+        if connector.isCustom {
+            // A server the reader added has no brand mark to borrow: its
+            // monogram, in the foreground ink, on the same well.
+            Text(NativeCustomConnectorPath.monogram(connector.label))
+                .font(.system(size: DesktopConnectorGrid.markSize * 0.42, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.junoForeground)
+        } else {
+            JunoConnectorMark(
+                connectorID: connector.id,
+                connectorName: connector.label,
+                logoURL: connector.logoURL,
+                size: DesktopConnectorGrid.markGlyphSize
+            )
+        }
     }
 }
 
@@ -891,6 +1041,9 @@ private struct DesktopConnectorMark: View {
 /// that asks something of the reader.
 private struct DesktopConnectorStatusPill: View {
     let state: DesktopConnectorState
+    /// A custom server that is not linked was added and never signed in (or
+    /// signed out): "Available" would claim it is something to discover.
+    var isCustom = false
 
     var body: some View {
         DesktopStatusText(label, kind: kind)
@@ -908,7 +1061,7 @@ private struct DesktopConnectorStatusPill: View {
         switch state {
         case .connected: "Connected"
         case .connecting: "Connecting"
-        case .available: "Available"
+        case .available: isCustom ? "Not signed in" : "Available"
         case .setup: "Setup needed"
         case .unavailable: "Unavailable"
         }

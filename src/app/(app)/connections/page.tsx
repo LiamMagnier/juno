@@ -12,9 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { type ConnectorStatus, type UserMcpServerStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { AddMcpServerDialog } from "@/components/connections/add-mcp-server-dialog";
-import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
+import { ConnectorDirectory, tileAnchor, type DirectoryItem } from "@/components/connections/connector-directory";
 import { StandingGrants } from "@/components/connections/standing-grants";
 import { queueSettingsPatch } from "@/components/settings/use-settings-save";
+import { AddCustomConnectorDialog } from "@/components/connections/add-custom-connector-dialog";
+import { CustomConnectorDialog } from "@/components/connections/custom-connector-dialog";
+import { beginCustomConnectorSignIn } from "@/components/connections/custom-connector-api";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
@@ -33,6 +36,7 @@ const ERRORS: Record<string, string> = {
   use_credentials: "That app connects with credentials, not OAuth — use its Connect button here.",
   invalid_credentials: "Apple didn’t accept those credentials. Check the Apple ID and app-specific password.",
   unknown: "Unknown connector.",
+  custom_unreachable: "Juno couldn’t start signing in to that server. Check it’s up and try again.",
 };
 
 
@@ -71,6 +75,10 @@ export default function ConnectionsPage() {
   const [permissionsReady, setPermissionsReady] = React.useState(false);
   const [permissionTarget, setPermissionTarget] = React.useState<string | null>(null);
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [manageId, setManageId] = React.useState<string | null>(null);
+  const [landedId, setLandedId] = React.useState<string | null>(null);
+  const [justConnected, setJustConnected] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setError(false);
@@ -100,9 +108,9 @@ export default function ConnectionsPage() {
     const err = params.get("error");
     let settle: ReturnType<typeof setTimeout> | undefined;
     if (connected) {
-      const label = connectorResultLabel(connected);
-      toast.success(`${label} is connected and ready to use.`);
-      // Hold the completed connection while the account list refreshes.
+      // The toast waits for the list: a custom server's id is not its name.
+      setJustConnected(connected);
+      // Brief "Connecting" hold so the tile visibly settles into Connected.
       setConnectingId(connected);
       settle = setTimeout(() => setConnectingId(null), 1400);
     }
@@ -110,6 +118,22 @@ export default function ConnectionsPage() {
     if (connected || err) router.replace("/connections");
     return () => clearTimeout(settle);
   }, [router]);
+
+  // Once the list is in: say what connected, by name, and show where it went.
+  React.useEffect(() => {
+    if (!justConnected || !connectors) return;
+    const match = connectors.find((c) => c.id === justConnected);
+    const label = match?.label ?? connectorResultLabel(justConnected);
+    toast.success(`${label} is connected and ready to use.`);
+    setJustConnected(null);
+    setLandedId(justConnected);
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById(tileAnchor(justConnected))?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    });
+    const clear = setTimeout(() => setLandedId(null), 2600);
+    return () => clearTimeout(clear);
+  }, [connectors, justConnected]);
 
   // The same account policy the tool broker checks; this setting travels
   // across browsers and devices rather than only changing a local switch.
@@ -197,7 +221,7 @@ export default function ConnectionsPage() {
         ? `/api/mcp/servers/${encodeURIComponent(rowId!)}`
         : target.source === "composio"
           ? `/api/connectors/composio/${encodeURIComponent(target.slug!)}`
-          : `/api/connectors/${target.id}`;
+          : `/api/connectors/${encodeURIComponent(target.id)}`;
       const r = await fetch(url, { method: "DELETE" });
       if (!r.ok) throw new Error();
       if (isUserMcp) {
@@ -311,13 +335,21 @@ export default function ConnectionsPage() {
           onDisconnect={setDisconnectTarget}
           onTestUserMcp={(item) => void testUserMcp(item)}
           connectingId={connectingId}
+          onAddCustom={() => setAddOpen(true)}
+          onManageCustom={setManageId}
+          onConnectCustom={(id) => {
+            setConnectingId(id);
+            beginCustomConnectorSignIn(id);
+          }}
+          landedId={landedId}
         />
       )}
 
       <StandingGrants />
 
       <p className="mt-8 text-caption text-muted-foreground">
-        Connected tools are available to the model when you enable them in a chat. Provider permissions appear in App details when the provider returned them.
+        Connected tools are available to the model when you enable them in a chat, and Juno asks before any tool
+        that changes something. Provider permissions appear in App details when the provider returned them.
       </p>
 
       <Dialog open={permissionTarget !== null} onOpenChange={(open) => !open && setPermissionTarget(null)}>
@@ -337,6 +369,27 @@ export default function ConnectionsPage() {
         open={addMcpOpen}
         onOpenChange={setAddMcpOpen}
         onSaved={userMcpSaved}
+      />
+
+      <AddCustomConnectorDialog open={addOpen} onOpenChange={setAddOpen} />
+
+      <CustomConnectorDialog
+        connectorId={manageId}
+        onOpenChange={(open) => !open && setManageId(null)}
+        onChanged={load}
+        onDisconnect={(c) => {
+          setManageId(null);
+          setDisconnectTarget({
+            key: `custom:${c.id}`,
+            source: "custom",
+            id: c.id,
+            label: c.name,
+            description: c.host,
+            connected: true,
+            connecting: false,
+            configured: true,
+          });
+        }}
       />
 
       <CredentialsDialog

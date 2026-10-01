@@ -10,6 +10,8 @@ export interface ConnectorStatus {
   connected: boolean;
   accountLabel: string | null;
   connectedAt: string | null;
+  /** Custom MCP servers / user_mcp: the endpoint URL */
+  url?: string;
   /**
    * user_mcp only. Tool names from the last successful test, so a picker or
    * the directory can say what the server offers without opening a connection.
@@ -21,7 +23,7 @@ export interface ConnectorStatus {
   status?: string | null;
   /** user_mcp: why the last test failed. Cleared when a test passes. */
   lastError?: string | null;
-  toolCount?: number;
+  toolCount?: number | null;
   lastCheckedAt?: string | null;
 }
 

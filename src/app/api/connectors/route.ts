@@ -5,6 +5,7 @@ import { listConnectors, isConnectorConfigured } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { listConnectedComposioApps } from "@/lib/composio";
 import { serializeUserMcpServer, userMcpConnectorId } from "@/lib/user-mcp";
+import { toCustomConnectorView } from "@/lib/custom-connectors";
 
 export const runtime = "nodejs";
 
@@ -37,7 +38,6 @@ export async function GET() {
   });
 
   const composioApps = isComposioConfigured() ? await listConnectedComposioApps(user.id) : [];
-
   // User-registered MCP servers project here as connected `user_mcp:<id>`
   // entries so every connector picker (chat +, agents, Work) already filters
   // `connected` sees them without a second list. Only ENABLED rows count as
@@ -73,8 +73,30 @@ export async function GET() {
     };
   });
 
+  // Servers the user added by URL. Listed whether or not they are signed in,
+  // so a half-finished add shows up with a Connect button rather than vanishing.
+  const customs = await prisma.customConnector.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+  const customConnectors = customs.map((custom) => {
+    const view = toCustomConnectorView(custom, byProvider.get(custom.id));
+    const toolCount = view.tools ? view.tools.filter((t) => !view.disabledTools.includes(t.name)).length : null;
+    return {
+      id: custom.id,
+      kind: "custom_mcp",
+      label: custom.name,
+      description: custom.description?.split("\n")[0]?.slice(0, 200) || `MCP server at ${view.host}`,
+      capability: `Let the model use the tools on ${view.host}.`,
+      configured: true,
+      connected: view.connected,
+      accountLabel: view.host,
+      connectedAt: view.connectedAt,
+      url: view.url,
+      toolCount,
+    };
+  });
+
   const connectors = [
     ...directConnectors,
+    ...customConnectors,
     ...composioApps.map((app) => ({
       id: app.id,
       kind: "composio_app",

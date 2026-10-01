@@ -23,6 +23,16 @@ import { createHash, randomBytes } from "crypto";
  * (access tokens are short-lived — Notion's expire after one hour).
  */
 
+/**
+ * How this module reaches the network. The built-in connectors point at
+ * servers Juno chose, so plain `fetch` is fine; a server a USER typed in can
+ * advertise metadata, registration and token endpoints anywhere, including
+ * loopback and cloud metadata addresses, so those callers pass an SSRF-safe
+ * fetcher (`safeMcpFetch`) and every hop of the handshake goes through it.
+ */
+export type McpFetch = (url: string, init?: RequestInit) => Promise<Response>;
+const defaultFetch: McpFetch = (url, init) => fetch(url, init);
+
 export interface McpOAuthClient {
   clientId: string;
   clientSecret?: string;
@@ -94,11 +104,11 @@ function wellKnownCandidates(base: string, name: string): URL[] {
 }
 
 /** Fetch JSON metadata, trying each well-known candidate until one responds. */
-async function fetchMetadata<T>(base: string, name: string, what: string): Promise<T> {
+async function fetchMetadata<T>(base: string, name: string, what: string, fetcher: McpFetch): Promise<T> {
   let lastError: unknown;
   for (const url of wellKnownCandidates(base, name)) {
     try {
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      const res = await fetcher(url.href, { headers: { Accept: "application/json" } });
       if (res.ok) return (await res.json()) as T;
       lastError = new Error(`${what} at ${url.href} returned ${res.status}`);
     } catch (err) {
@@ -120,16 +130,16 @@ function canonicalResource(mcpUrl: string): string {
  * Falls back to treating the MCP origin itself as the issuer when the server
  * doesn't advertise a separate authorization server.
  */
-export async function discoverEndpoints(mcpUrl: string): Promise<McpOAuthEndpoints> {
+export async function discoverEndpoints(mcpUrl: string, fetcher: McpFetch = defaultFetch): Promise<McpOAuthEndpoints> {
   let issuer = new URL(mcpUrl).origin;
   try {
-    const prm = await fetchMetadata<ProtectedResourceMetadata>(mcpUrl, "oauth-protected-resource", "protected resource metadata");
+    const prm = await fetchMetadata<ProtectedResourceMetadata>(mcpUrl, "oauth-protected-resource", "protected resource metadata", fetcher);
     if (prm.authorization_servers?.[0]) issuer = prm.authorization_servers[0];
   } catch {
     // No protected-resource metadata — assume the MCP origin is its own issuer.
   }
 
-  const meta = await fetchMetadata<AuthServerMetadata>(issuer, "oauth-authorization-server", "authorization server metadata");
+  const meta = await fetchMetadata<AuthServerMetadata>(issuer, "oauth-authorization-server", "authorization server metadata", fetcher);
   if (!meta.authorization_endpoint || !meta.token_endpoint) {
     throw new Error("MCP authorization server metadata is missing required endpoints");
   }
@@ -144,12 +154,13 @@ export async function discoverEndpoints(mcpUrl: string): Promise<McpOAuthEndpoin
 /** Register a public PKCE client via Dynamic Client Registration (RFC 7591). */
 export async function registerClient(
   endpoints: McpOAuthEndpoints,
-  opts: { clientName: string; clientUri: string; redirectUri: string }
+  opts: { clientName: string; clientUri: string; redirectUri: string },
+  fetcher: McpFetch = defaultFetch
 ): Promise<McpOAuthClient> {
   if (!endpoints.registrationEndpoint) {
     throw new Error("MCP authorization server does not support Dynamic Client Registration");
   }
-  const res = await fetch(endpoints.registrationEndpoint, {
+  const res = await fetcher(endpoints.registrationEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -200,8 +211,8 @@ function parseTokens(data: TokenResponse): McpTokens {
   };
 }
 
-async function postToken(tokenEndpoint: string, body: URLSearchParams, what: string): Promise<McpTokens> {
-  const res = await fetch(tokenEndpoint, {
+async function postToken(tokenEndpoint: string, body: URLSearchParams, what: string, fetcher: McpFetch): Promise<McpTokens> {
+  const res = await fetcher(tokenEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -225,7 +236,7 @@ export function exchangeMcpCode(opts: {
   codeVerifier: string;
   redirectUri: string;
   resource: string;
-}): Promise<McpTokens> {
+}, fetcher: McpFetch = defaultFetch): Promise<McpTokens> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: opts.code,
@@ -235,7 +246,7 @@ export function exchangeMcpCode(opts: {
     resource: opts.resource,
   });
   if (opts.client.clientSecret) body.set("client_secret", opts.client.clientSecret);
-  return postToken(opts.tokenEndpoint, body, "token exchange");
+  return postToken(opts.tokenEndpoint, body, "token exchange", fetcher);
 }
 
 /** Exchange a refresh token for a fresh access token. */
@@ -244,7 +255,7 @@ export function refreshMcpToken(opts: {
   client: McpOAuthClient;
   refreshToken: string;
   resource: string;
-}): Promise<McpTokens> {
+}, fetcher: McpFetch = defaultFetch): Promise<McpTokens> {
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: opts.refreshToken,
@@ -252,5 +263,5 @@ export function refreshMcpToken(opts: {
     resource: opts.resource,
   });
   if (opts.client.clientSecret) body.set("client_secret", opts.client.clientSecret);
-  return postToken(opts.tokenEndpoint, body, "token refresh");
+  return postToken(opts.tokenEndpoint, body, "token refresh", fetcher);
 }

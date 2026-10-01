@@ -17,6 +17,10 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
     public enum Source: String, Equatable, Sendable {
         case native
         case composio
+        /// An MCP server the reader added by its address (`kind: "custom_mcp"`,
+        /// ids like `mcp:abc123def4`). Signed in with the server's own OAuth,
+        /// managed through ``NativeCustomConnectorEditor``.
+        case custom
     }
 
     /// `"github"` for a first-party connector, `"composio:gmail"` for a catalog
@@ -48,6 +52,7 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
     public let toolCount: Int?
     public let mcpStatus: String?
     public let lastError: String?
+    public let url: String?
     public var isCustomMCP: Bool { kind == "user_mcp" }
     public var mcpRowID: String? {
         isCustomMCP && id.hasPrefix("user_mcp:") ? String(id.dropFirst("user_mcp:".count)) : nil
@@ -70,7 +75,8 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
         hasAuthHeader: Bool = false,
         toolCount: Int? = nil,
         mcpStatus: String? = nil,
-        lastError: String? = nil
+        lastError: String? = nil,
+        url: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -84,19 +90,26 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
         self.managedAuth = managedAuth
         self.accountLabel = accountLabel
         self.categories = categories
-        self.mcpURL = mcpURL
+        self.mcpURL = mcpURL ?? url
         self.hasAuthHeader = hasAuthHeader
         self.toolCount = toolCount
         self.mcpStatus = mcpStatus
         self.lastError = lastError
+        self.url = url ?? mcpURL
     }
 
     /// Whether Connect can plausibly succeed right now. A row that cannot
     /// connect still appears — hiding it would leave the reader hunting for an
     /// app that exists — but it says why instead of offering a dead button.
     public var canConnect: Bool {
-        source == .native ? configured : managedAuth
+        switch source {
+        case .native: configured
+        case .composio: managedAuth
+        case .custom: true
+        }
     }
+
+    public var isCustom: Bool { source == .custom }
 
     /// The reason Connect is unavailable, or nil when it is available.
     public var blockedReason: String? {
@@ -141,7 +154,7 @@ public enum NativeConnectorError: Error, Equatable, LocalizedError, Sendable {
 /// dashboard uses. They are all `getCurrentUser()`-authenticated, so a native
 /// bearer works on every one of them without a parallel v1 surface.
 public struct NativeConnectorClient: Sendable {
-    private let sender: any NativeAuthenticatedRequestSending
+    let sender: any NativeAuthenticatedRequestSending
 
     public init(sender: any NativeAuthenticatedRequestSending) {
         self.sender = sender
@@ -164,23 +177,33 @@ public struct NativeConnectorClient: Sendable {
 
         let connectors = wire.connectors.map { item -> NativeConnector in
             let isComposio = item.kind == "composio_app"
+            let isCustom = item.kind == "custom_mcp"
             let slug = isComposio ? String(item.id.dropFirst("composio:".count)) : nil
             return NativeConnector(
                 id: item.id,
                 slug: slug,
-                source: isComposio ? .composio : .native,
+                source: isComposio ? .composio : isCustom ? .custom : .native,
                 kind: item.kind,
                 label: item.label,
-                detail: item.capability ?? item.description ?? "",
+                // A custom server's own description (or "MCP server at host")
+                // is the more useful line: its capability sentence only
+                // restates the host.
+                detail: isCustom
+                    ? item.description ?? item.capability ?? ""
+                    : item.capability ?? item.description ?? "",
                 connected: item.connected,
                 configured: item.configured,
+                // For a custom server this is its host, which is what its tile
+                // names under the title — never an account the reader signed
+                // in as, which the server does not report.
                 accountLabel: item.accountLabel,
                 categories: item.kind == "user_mcp" ? ["developer-tools"] : NativeConnectorCatalog.nativeCategories[item.id] ?? [],
                 mcpURL: item.url,
                 hasAuthHeader: item.hasAuthHeader ?? false,
                 toolCount: item.toolCount,
                 mcpStatus: item.status,
-                lastError: item.lastError
+                lastError: item.lastError,
+                url: item.url
             )
         }
         return (connectors, wire.composioConfigured ?? false)
@@ -253,6 +276,10 @@ public struct NativeConnectorClient: Sendable {
         case .composio:
             guard let slug = connector.slug else { throw NativeConnectorError.malformedResponse }
             path = "/api/connectors/composio/\(slug)"
+        case .custom:
+            // Signs out and keeps the entry, so it can sign in again; removing
+            // it altogether is ``removeCustomConnector(id:for:)``.
+            path = NativeCustomConnectorPath.signOut(connector.id)
         }
         }
         let response = try await sender.send(
@@ -306,7 +333,7 @@ public struct NativeConnectorClient: Sendable {
         try requireSuccess(response)
     }
 
-    private func requireSuccess(_ response: HTTPResponse) throws {
+    func requireSuccess(_ response: HTTPResponse) throws {
         guard !(200...299).contains(response.statusCode) else { return }
         let message = (try? JSONDecoder().decode(ErrorWire.self, from: response.body))?.message
             ?? (try? JSONDecoder().decode(ErrorWire.self, from: response.body))?.error
@@ -447,6 +474,24 @@ public final class NativeConnectorModel {
     }
 
     public var connectedCount: Int { linked.filter(\.connected).count }
+
+    // MARK: Custom MCP servers
+
+    /// The add flow for a server by its address, bound to this account. Nil
+    /// before ``start(for:)``: there is no one to add it for.
+    public func makeCustomConnectorDraft() -> NativeCustomConnectorDraft? {
+        guard let accountID else { return nil }
+        return NativeCustomConnectorDraft(client: client, accountID: accountID)
+    }
+
+    /// One added server's manage sheet. Every change it saves re-reads the
+    /// directory, so a rename or a tool count lands on the tile behind it.
+    public func makeCustomConnectorEditor(id: String) -> NativeCustomConnectorEditor? {
+        guard let accountID else { return nil }
+        return NativeCustomConnectorEditor(id: id, client: client, accountID: accountID) { [weak self] in
+            await self?.refresh()
+        }
+    }
 
     public func refresh() async {
         guard let accountID else { return }
