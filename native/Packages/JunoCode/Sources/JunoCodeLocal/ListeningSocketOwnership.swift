@@ -50,9 +50,12 @@ public enum ListeningSocketOwnership {
     /// Every process in the group `pgid`, plus the descendants of its leader
     /// that moved to a group of their own.
     public static func processes(inGroup pgid: pid_t) -> [pid_t] {
-        guard pgid > 0 else { return [] }
+        // Group 1 is launchd's: its "descendants" are every process.
+        guard pgid > 1 else { return [] }
         var members = Set(groupMembers(pgid))
-        if isAlive(pgid) {
+        // Walk descendants only from a leader that is not this process's own
+        // ancestor, so a stray pgid can never claim Juno's own sockets.
+        if isAlive(pgid), !isAncestorOfCurrentProcess(pgid) || pgid == getpgrp() {
             members.insert(pgid)
             var frontier = [pgid]
             var visited: Set<pid_t> = []
@@ -64,6 +67,20 @@ public enum ListeningSocketOwnership {
             }
         }
         return members.sorted()
+    }
+
+    static func isAncestorOfCurrentProcess(_ pid: pid_t) -> Bool {
+        var current = getppid()
+        var hops = 0
+        while current > 1, hops < 64 {
+            if current == pid { return true }
+            var info = proc_bsdinfo()
+            let size = proc_pidinfo(current, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size))
+            guard size == Int32(MemoryLayout<proc_bsdinfo>.size) else { return false }
+            current = pid_t(info.pbi_ppid)
+            hops += 1
+        }
+        return false
     }
 
     static func groupMembers(_ pgid: pid_t) -> [pid_t] {
