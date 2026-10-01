@@ -665,6 +665,12 @@ public struct DelegateTaskTool: CodeTool {
             // hold the parent open indefinitely.
             try await withTaskCancellationHandler {
                 try await orchestrator.submit(prompt: spec.task)
+                // A cancel that came before the run existed ran its `stop()`
+                // against nothing (the handler fires at once for a task
+                // already cancelled, and its hop can land before `submit`):
+                // stop the run that exists now. Cancelling a background child
+                // straight after starting it is exactly that case.
+                if Task.isCancelled { await orchestrator.stop() }
                 let watchdog = Task {
                     try? await Task.sleep(until: deadline, clock: .continuous)
                     await orchestrator.stop()
