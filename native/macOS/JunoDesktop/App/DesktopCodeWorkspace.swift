@@ -540,7 +540,7 @@ struct DesktopCodeWorkspace: View {
                 // As `/compact`: between runs only, and once at a time.
                 .disabled(controller == nil || controller?.isRunning == true || controller?.isCompacting == true)
                 Divider()
-                Button(controller?.computerUseActive == true ? "Stop Screen Control" : "Start Screen Control",
+                Button(controller?.computerUseActive == true ? "Stop Juno Using Apps" : "Let Juno Use Apps",
                        action: toggleComputerUse)
                     .disabled(controller?.computerUseUnavailableReason != nil)
                 Button("Voice Conversation") {

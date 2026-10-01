@@ -42,7 +42,7 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notRunning:
-            "Screen control is not running in this session. Ask the reader to press Start screen control in the session menu."
+            "Screen control is not running in this session. Ask the reader to choose Let Juno Use Apps in the session's More menu."
         case .stoppedByReader:
             "The reader stopped screen control. Do not retry; say what you still need."
         case .readerTookOver:

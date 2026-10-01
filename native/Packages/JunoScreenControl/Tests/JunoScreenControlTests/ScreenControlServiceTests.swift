@@ -12,7 +12,7 @@ final class ScreenControlServiceTests: XCTestCase {
             XCTFail()
         } catch let error as ScreenControlError {
             XCTAssertEqual(error, .notRunning)
-            XCTAssertTrue(error.errorDescription!.contains("press Start screen control"))
+            XCTAssertTrue(error.errorDescription!.contains("choose Let Juno Use Apps"))
         }
     }
 
