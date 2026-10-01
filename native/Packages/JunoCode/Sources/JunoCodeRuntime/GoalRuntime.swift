@@ -288,11 +288,28 @@ public actor GoalRuntime {
         case .blocked:
             guard let goal = await currentGoal(), goal.isActive else { return }
             await markNeedsYou(detail ?? "Blocked")
-        case .doneChecked, .doneUnchecked, .checksFailing, .needsYou, .budget,
-             .waitingOnBackground, .interrupted:
+        case .doneChecked, .doneUnchecked, .checksFailing, .needsYou:
+            // The run ended without the goal deciding: the judge said nothing
+            // (Plan or Ask mode, the continuation backstop, a tool that ends
+            // the run). A goal left active would keep spending its minutes
+            // with nothing working toward it and read as working; it waits on
+            // the reader, who resumes it. A met goal is already achieved, and
+            // one waiting on an approval keeps saying so.
+            await endedWhileActive("The run ended before the goal was met")
+        case .budget, .waitingOnBackground, .interrupted:
             break
         }
         await accrueUsage()
+    }
+
+    /// Moves a goal that is still active when its run ends to waiting on the
+    /// reader, with `reason`.
+    private func endedWhileActive(_ reason: String) async {
+        let now = clock()
+        await updateCurrent(.status) { goal in
+            guard goal.isActive else { return }
+            try goal.transition(to: .needsYou, reason: reason, at: now)
+        }
     }
 
     // MARK: - The judge
@@ -315,6 +332,11 @@ public actor GoalRuntime {
             }
         }
         let now = clock()
+        // Stopped while the judge was asked: nothing was judged, and a judge
+        // the reader interrupted has not failed.
+        if verdict == nil, Task.isCancelled {
+            return .finish(.stopped)
+        }
         guard var verdict else {
             let failures = goal.consecutiveJudgeFailures + 1
             if failures >= 2 {

@@ -32,6 +32,14 @@ public struct CodeToolProviderContext: Sendable {
     /// The session's run ledger, for recorders that mint evidence (checks,
     /// UI checks, reviews) through ``VerificationLedgerWriting``. Nil where
     /// the session keeps none.
+    ///
+    /// A tool call should return its evidence as a side effect
+    /// (`.verificationRecorded`, `.uiVerificationRecorded`) instead: the loop
+    /// takes those in call order after the batch, so a check made after an
+    /// edit in the same batch counts against it. A write here lands mid-batch,
+    /// before that batch's edits are counted, and so reads as stale. It is for
+    /// evidence minted outside a tool call: the runtime's own check runner,
+    /// a Preview check that settles later.
     public var runLedger: RunLedgerRecorder?
 
     public init(

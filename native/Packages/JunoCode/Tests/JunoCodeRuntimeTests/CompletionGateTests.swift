@@ -416,6 +416,21 @@ final class CompletionGateTests: XCTestCase {
         XCTAssertEqual(RuntimeContinuation.quoted(String(repeating: "x", count: 200), limit: 10), "“xxxxxxxxxx…”")
     }
 
+    // MARK: - The run's minutes
+
+    /// The run's minutes count only time it was working: an hour between an
+    /// error and its Retry, or a night Juno was closed, is not spent budget.
+    func testTheRunBudgetCountsOnlyWorkingTime() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        var ledger = RunLedger(startedAt: start)
+        ledger.stopWorking(at: start.addingTimeInterval(30 * 60))
+        ledger.startWorking(at: start.addingTimeInterval(5 * 3_600))
+        let later = start.addingTimeInterval(5 * 3_600 + 10 * 60)
+        XCTAssertEqual(ledger.minutes(at: later), 40, accuracy: 0.01)
+        XCTAssertNil(ledger.budgetReached(Budget(minutes: 60), at: later))
+        XCTAssertEqual(ledger.budgetReached(Budget(minutes: 60), at: later.addingTimeInterval(21 * 60)), .minutes)
+    }
+
     // MARK: - The ledger
 
     func testTheLedgerStampsEvidenceWithTheRevisionItWasTakenInAt() {

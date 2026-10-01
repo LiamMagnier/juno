@@ -68,7 +68,7 @@ public enum RuntimeContinuation {
     public static func wrapUp(_ ending: RunEndReason, limitWords: String) -> RuntimeNote {
         RuntimeNote(
             reason: .wrapUp,
-            text: "You have reached \(limitWords), so this is your last turn and your tools are off. Summarise where you got to, what remains and the next step."
+            text: "You have reached \(limitWords), so this is your last turn and your tools are off: do not call any, Juno will not run them. Summarise where you got to, what remains and the next step."
         )
     }
 

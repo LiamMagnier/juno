@@ -1097,7 +1097,13 @@ public actor CodeSessionStore {
               var goal = file.current,
               goal.status == .active || goal.status == .needsYou
         else { return }
-        try? goal.transition(to: .paused, reason: GoalRun.interruptedReason, at: Date())
+        // Its minutes stop when Juno did, not when it opened again: the last
+        // step boundary the run journal saw, or the goal's own last change.
+        // Counting the hours Juno was closed would spend the budget on
+        // nothing and end the run as soon as the reader resumed it.
+        let lastSeen = [runJournal(for: id)?.updatedAt, goal.activeSince, goal.updatedAt].compactMap { $0 }.max()
+        let stoppedAt = min(Date(), lastSeen ?? Date())
+        try? goal.transition(to: .paused, reason: GoalRun.interruptedReason, at: stoppedAt)
         file.current = goal
         try? writeGoalFile(file, for: id)
     }

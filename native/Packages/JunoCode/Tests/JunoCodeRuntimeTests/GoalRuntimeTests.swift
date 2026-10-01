@@ -228,6 +228,43 @@ final class GoalRuntimeTests: XCTestCase {
         XCTAssertEqual(goal?.statusReason, "Stopped after two turns without progress")
     }
 
+    /// Resume after a stall gives the run a fresh start: the first reply
+    /// without a tool call is not a third try in a row.
+    func testResumingAStalledGoalDoesNotStallAgainOnTheFirstReply() async throws {
+        try await setGoal()
+        let judge = ScriptedJudge([
+            .verdict(.notMet, "not yet"), .verdict(.notMet, "still not"),
+            .verdict(.notMet, "show it working"), .verdict(.met, "done"),
+        ])
+        let model = ScriptedModelClient(steps: [
+            .text("Done."),
+            .text("Really done."),
+            .text("I insist."),
+            .text("Picking it up again."),
+            .call("noop_stub"),
+            .text("Shown working."),
+        ])
+        let (runtime, _, _) = orchestrator(model, judge: judge)
+
+        try await runtime.submit(prompt: "Go")
+        await runtime.awaitCompletion()
+        var ended = await endReasons()
+        XCTAssertEqual(ended, [.stalled])
+
+        // The reader presses Resume.
+        let now = clock.now
+        _ = try await store.updateCurrentGoal(for: session.id, record: .status) { goal in
+            try goal.transition(to: .active, at: now)
+        }
+        try await runtime.resume(note: RuntimeContinuation.goalResumed, origin: .user)
+        await runtime.awaitCompletion()
+
+        ended = await endReasons()
+        XCTAssertEqual(ended, [.stalled, .doneChecked], "the resumed goal got its continuation and was met")
+        let goal = await currentGoal()
+        XCTAssertEqual(goal?.status, .achieved)
+    }
+
     // MARK: - Budgets
 
     func testAGoalBudgetEndsInAWrapUpThenBudgetReachedAndKeepGoingAddsItAgain() async throws {
@@ -247,7 +284,10 @@ final class GoalRuntimeTests: XCTestCase {
         await runtime.awaitCompletion()
 
         let wrapUp = try XCTUnwrap(model.receivedRequests.first)
-        XCTAssertTrue(wrapUp.tools.isEmpty, "the run wraps up with tools off")
+        // Tools stay declared (a history with calls needs them) and are off:
+        // the note says so, and the run ends after this one turn.
+        XCTAssertFalse(wrapUp.tools.isEmpty)
+        XCTAssertTrue(lastRuntimeNote(wrapUp)?.contains("tools are off") == true, "the run wraps up with tools off")
         XCTAssertTrue(lastRuntimeNote(wrapUp)?.contains("budget") == true)
         XCTAssertEqual(model.receivedRequests.count, 1)
         var goal = await currentGoal()
@@ -399,7 +439,7 @@ final class GoalRuntimeTests: XCTestCase {
         XCTAssertEqual(ended, [.needsYou])
     }
 
-    // MARK: - What wakes a waiting goal
+    // MARK: - The goal's clock and what wakes it
 
     /// Answering an approval re-activates only a goal that was waiting on
     /// that approval. A goal the agent marked blocked, or that stalled, keeps
@@ -423,6 +463,46 @@ final class GoalRuntimeTests: XCTestCase {
         await goals.clearNeedsYou(ifReasonHasPrefix: GoalRuntime.approvalWaitPrefix)
         goal = await currentGoal()
         XCTAssertEqual(goal?.status, .active)
+    }
+
+    /// A run that ends without the goal deciding — Plan mode, the backstop,
+    /// a tool that ends the run — leaves the goal waiting on the reader, so
+    /// its minutes stop rather than spending the budget on nothing.
+    func testARunThatEndsWithoutAVerdictStopsTheGoalsClock() async throws {
+        try await setGoal(budget: Budget(minutes: 240))
+        let goals = GoalRuntime(sessionID: session.id, store: store, judge: nil, clock: { [clock] in clock!.now })
+        clock.advance(minutes: 10)
+        await goals.runEnded(.doneUnchecked, detail: nil)
+        var goal = await currentGoal()
+        XCTAssertEqual(goal?.status, .needsYou)
+        XCTAssertEqual(goal?.statusReason, "The run ended before the goal was met")
+        XCTAssertEqual(goal?.usage.minutes ?? 0, 10, accuracy: 0.01)
+        clock.advance(minutes: 600)
+        await goals.accrueUsage()
+        goal = await currentGoal()
+        XCTAssertEqual(goal?.usage.minutes ?? 0, 10, accuracy: 0.01, "ten idle hours spent none of the budget")
+        let reached = await goals.budgetReached()
+        XCTAssertNil(reached)
+    }
+
+    /// Juno quit while a goal ran and opened again five hours later: the goal
+    /// comes back paused, and the hours Juno was closed are not spent.
+    func testAGoalInterruptedByAQuitDoesNotCountTheHoursJunoWasClosed() async throws {
+        let started = Date().addingTimeInterval(-5 * 3_600)
+        let goal = GoalRun(objective: "Ship it", budget: Budget(minutes: 240), createdAt: started)
+        try await store.setGoal(goal, for: session.id)
+        try await store.setStatus(id: session.id, status: .running)
+        try await store.saveRunJournal(
+            RunJournal(ledger: RunLedger(startedAt: started), active: true, updatedAt: started.addingTimeInterval(10 * 60)),
+            for: session.id
+        )
+
+        let reopened = CodeSessionStore(directoryURL: base.appendingPathComponent("store"))
+        let restored = await reopened.currentGoalRun(for: session.id)
+        XCTAssertEqual(restored?.status, .paused)
+        XCTAssertEqual(restored?.statusReason, GoalRun.interruptedReason)
+        XCTAssertEqual(restored?.usage.minutes ?? 0, 10, accuracy: 0.5, "minutes stop when Juno did")
+        XCTAssertNil(restored?.budgetReached(now: Date()))
     }
 
     // MARK: - What the judge reads and what it says

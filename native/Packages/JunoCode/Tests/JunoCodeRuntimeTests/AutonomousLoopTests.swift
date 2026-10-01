@@ -42,17 +42,20 @@ final class AutonomousLoopTests: XCTestCase {
         checkRunner: (any GateCheckRunning)? = nil,
         compactionSummary: CompactionSummarizer.Limits? = nil,
         sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
-        retries: Int = 4
+        retries: Int = 4,
+        clock: TestClock? = nil
     ) -> AgentOrchestrator {
         let settings = settings ?? self.settings()
         let recipe = recipe ?? self.recipe
         let permissions = permissions ?? PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
         let ledger = RunLedgerRecorder(sessionID: session.id, store: store)
+        let now: @Sendable () -> Date = { clock?.now ?? Date() }
         let autonomy = AutonomyConfiguration(
             settings: settings,
             ledger: ledger,
             recipe: { recipe },
-            checkRunner: checkRunner
+            checkRunner: checkRunner,
+            clock: now
         )
         return AgentOrchestrator(
             sessionID: session.id,
@@ -238,9 +241,14 @@ final class AutonomousLoopTests: XCTestCase {
 
         XCTAssertEqual(model.receivedRequests.count, 10)
         let wrapUp = model.receivedRequests[9]
-        XCTAssertTrue(wrapUp.tools.isEmpty, "the wrap-up request has no tools")
+        // The tools stay declared: a history with tool calls is refused
+        // without their definitions, and they are part of the cached prefix.
+        // They are off all the same: the note says so and the call never runs.
+        XCTAssertEqual(wrapUp.tools.map(\.name), model.receivedRequests[8].tools.map(\.name))
         XCTAssertTrue(lastRuntimeNote(wrapUp)?.hasPrefix("<juno_runtime reason=\"wrap_up\"") == true)
-        XCTAssertFalse(model.receivedRequests[8].tools.isEmpty)
+        XCTAssertTrue(lastRuntimeNote(wrapUp)?.contains("tools are off") == true)
+        let started = await payloads().filter { if case .toolStarted = $0 { return true } else { return false } }.count
+        XCTAssertEqual(started, 9, "the call the wrap-up turn made never ran")
         var ended = await endReasons()
         XCTAssertEqual(ended, [.stepLimit])
         let status = try await store.session(id: session.id).status
@@ -256,6 +264,25 @@ final class AutonomousLoopTests: XCTestCase {
 
         XCTAssertEqual(model.receivedRequests.count, 11)
         XCTAssertFalse(model.receivedRequests[10].tools.isEmpty, "Keep going granted another block")
+        XCTAssertFalse(
+            lastRuntimeNote(model.receivedRequests[10])?.contains("reason=\"wrap_up\"") == true,
+            "the turn after Keep going is a working turn, not another wrap-up"
+        )
+        let history = model.receivedRequests[10].messages
+        let callIDs = history.compactMap { message -> String? in
+            switch message {
+            case let .toolCall(id, _, _), let .toolCallWithExtra(id, _, _, _): id
+            default: nil
+            }
+        }
+        let resultIDs = Set(history.compactMap { message -> String? in
+            switch message {
+            case let .toolResult(id, _, _), let .toolResultWithImages(id, _, _, _): id
+            default: nil
+            }
+        })
+        let unanswered = callIDs.contains { !resultIDs.contains($0) }
+        XCTAssertFalse(unanswered, "the dropped wrap-up call left no unanswered call in the history")
         ended = await endReasons()
         XCTAssertEqual(ended, [.stepLimit, .doneUnchecked])
         let prompts = await userPrompts()
@@ -326,6 +353,55 @@ final class AutonomousLoopTests: XCTestCase {
         XCTAssertTrue(notes[1].contains("Run swift test"))
         ended = await endReasons()
         XCTAssertEqual(ended, [.error, .doneUnchecked, .doneUnchecked])
+    }
+
+    /// The run budget counts working time only. A Retry three hours after an
+    /// error carries on working; it does not wrap up at once because the
+    /// clock kept running while nothing did.
+    func testARetryHoursAfterAnErrorDoesNotWrapUpAtOnce() async throws {
+        let clock = TestClock()
+        let model = ScriptedModelClient(steps: [
+            .failure(AgentModelClientError.transport(message: "offline")),
+            .text("Recovered."),
+        ])
+        let runtime = orchestrator(
+            model,
+            settings: AutonomySettings(reviewBeforeFinish: .off, runBudget: Budget(minutes: 60)),
+            retries: 0,
+            clock: clock
+        )
+
+        try await runtime.submit(prompt: "Fix it")
+        await runtime.awaitCompletion()
+        clock.advance(minutes: 180)
+        try await runtime.resume(note: .retry)
+        await runtime.awaitCompletion()
+
+        let retried = try XCTUnwrap(model.receivedRequests.last)
+        XCTAssertTrue(lastRuntimeNote(retried)?.contains("reason=\"retry\"") == true, "a working turn, not a wrap-up")
+        let ended = await endReasons()
+        XCTAssertEqual(ended, [.error, .doneUnchecked])
+        let ledger = await runtime.ledgerSnapshot()
+        XCTAssertLessThan(ledger.minutes(at: clock.now), 1, "three idle hours are not the run's minutes")
+    }
+
+    /// Juno quit mid-run: the journal's last step boundary is when the run
+    /// stopped working, not the moment it is resumed.
+    func testAJournalFromAQuitStopsCountingAtItsLastStep() async throws {
+        let started = Date(timeIntervalSince1970: 1_800_000_000)
+        var ledger = RunLedger(startedAt: started)
+        ledger.steps = 4
+        try await store.saveRunJournal(
+            RunJournal(ledger: ledger, active: true, updatedAt: started.addingTimeInterval(20 * 60)),
+            for: session.id
+        )
+        let relaunched = RunLedgerRecorder(sessionID: session.id, store: store)
+        let resumedAt = started.addingTimeInterval(10 * 3_600)
+        await relaunched.resumeRun(stepAllowance: 200, at: resumedAt)
+        let restored = await relaunched.snapshot()
+        XCTAssertEqual(restored.steps, 4, "the run carries on from its journal")
+        XCTAssertEqual(restored.minutes(at: resumedAt.addingTimeInterval(5 * 60)), 25, accuracy: 0.01)
+        XCTAssertNil(restored.budgetReached(Budget(minutes: 60), at: resumedAt.addingTimeInterval(5 * 60)))
     }
 
     // MARK: - Compaction

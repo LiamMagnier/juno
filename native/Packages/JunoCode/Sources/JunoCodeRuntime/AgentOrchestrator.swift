@@ -536,7 +536,7 @@ public actor AgentOrchestrator {
         )
         try await store.setStatus(id: sessionID, status: .running)
         // A message from the reader is a new task: a new ledger.
-        await ledger.begin(stepAllowance: configuration.stepLimit)
+        await ledger.begin(stepAllowance: configuration.stepLimit, at: autonomyNow)
         runTokens = 0
         runCost = nil
         await noteGoalTurn()
@@ -632,7 +632,13 @@ public actor AgentOrchestrator {
         // The same task carries on: the ledger with it, read back from the
         // journal after a relaunch. Keep going grants another block of steps
         // and budget, and clears the run's count of turns without progress.
-        await ledger.resumeRun(stepAllowance: configuration.stepLimit)
+        await ledger.resumeRun(stepAllowance: configuration.stepLimit, at: autonomyNow)
+        // The run's spend so far, as the ledger kept it: this orchestrator may
+        // be new (a relaunch, a model switch), and its own counters start at
+        // zero.
+        let carried = await ledger.snapshot().usage
+        runTokens = carried.tokens ?? 0
+        runCost = carried.costUSD
         if note.reason == .keepGoing {
             let block = configuration.stepLimit
             await ledger.update { ledger in
@@ -640,6 +646,12 @@ public actor AgentOrchestrator {
                 ledger.budgetGrants += 1
                 ledger.turnsSinceToolCall = 0
             }
+        } else if origin == .user {
+            // The reader carried the run on — Resume, Retry. Turns without a
+            // tool call before that are not "two tries in a row" any more: a
+            // goal they resumed after a stall must not stall again on the
+            // first reply.
+            await ledger.update { $0.turnsSinceToolCall = 0 }
         }
         await noteGoalTurn()
         conversation.append(.user(note.rendered))
@@ -1079,8 +1091,13 @@ public actor AgentOrchestrator {
                     sessionID: sessionID,
                     systemPrompt: configuration.systemPrompt,
                     messages: conversation,
-                    // The wrap-up turn has no tools: it can only report.
-                    tools: wrapUp == nil ? toolDescriptors : [],
+                    // The wrap-up turn keeps the tools declared: a history
+                    // holding tool calls is refused without their definitions
+                    // (Anthropic answers 400), and the declarations are part
+                    // of the cached prefix. Its tools are off all the same:
+                    // the note says so, and any call it makes is dropped
+                    // below without running.
+                    tools: toolDescriptors,
                     modelID: activeModelID,
                     reasoningEffort: activeReasoningEffort
                 )
@@ -1381,8 +1398,9 @@ public actor AgentOrchestrator {
                 return
             }
 
-            // The wrap-up turn was the last: whatever it said is the report,
-            // and any call it tried was never offered a tool to make.
+            // The wrap-up turn was the last: whatever it said is the report.
+            // Any call it tried is dropped unrun — it never joined the
+            // history, which keeps only the narrative — and the run ends.
             if let ending = wrapUp {
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 await finish(
@@ -2360,6 +2378,12 @@ public actor AgentOrchestrator {
         case finish(RunEndReason, detail: String?)
     }
 
+    /// What time the loop's budgets read: the injected clock when there is
+    /// one.
+    private var autonomyNow: Date {
+        configuration.autonomy?.clock() ?? Date()
+    }
+
     /// The step limit or a budget this run has reached, or nil.
     private func limitReached() async -> WrapUp? {
         let snapshot = await ledger.snapshot()
@@ -2683,7 +2707,7 @@ public actor AgentOrchestrator {
             waitingOn: waitingOn,
             errorSummary: endReason == .error ? summary : nil
         )
-        await ledger.end(endReason)
+        await ledger.end(endReason, at: autonomyNow)
         if wrapUp?.scope == .goal, let limit = wrapUp?.limit {
             await autonomy?.goals?.markBudgetReached(limit: limit)
         }

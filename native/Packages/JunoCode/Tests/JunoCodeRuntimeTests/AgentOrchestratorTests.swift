@@ -1031,10 +1031,19 @@ final class AgentOrchestratorTests: XCTestCase {
         await orchestrator.awaitCompletion()
         let final = try await store.session(id: session.id)
         // The limit is soft (CODE_AGENT_SPEC §1.6): a tools-off wrap-up turn,
-        // then the run ends as `stepLimit`, never as failed.
+        // then the run ends as `stepLimit`, never as failed. The wrap-up keeps
+        // the tools declared — a history with calls is refused without them —
+        // and the call it makes anyway never runs.
         XCTAssertEqual(final.status, .completed)
         XCTAssertLessThanOrEqual(model.receivedRequests.count, 3)
-        XCTAssertEqual(model.receivedRequests.last?.tools.isEmpty, true)
+        XCTAssertEqual(model.receivedRequests.last?.tools.isEmpty, false)
+        let wrapUpNote = model.receivedRequests.last?.messages.last.flatMap { message -> String? in
+            if case let .user(text) = message { return text }
+            return nil
+        }
+        XCTAssertTrue(wrapUpNote?.contains("reason=\"wrap_up\"") == true)
+        let started = await payloads().filter { if case .toolStarted = $0 { return true } else { return false } }.count
+        XCTAssertEqual(started, model.receivedRequests.count - 1, "every turn but the wrap-up ran its call")
         let ended = await payloads().compactMap { payload -> RunEndReason? in
             guard case let .runCompleted(run) = payload else { return nil }
             return run.endReason

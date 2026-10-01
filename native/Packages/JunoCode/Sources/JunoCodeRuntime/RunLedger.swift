@@ -85,6 +85,14 @@ public struct RunLedger: Hashable, Codable, Sendable, VerificationLedgerReading 
     /// runs the same checks twice for the same state.
     public var autoCheckRevisions: [Int]
     public var endReason: RunEndReason?
+    /// Seconds the run worked in its earlier stretches, before a Retry, a
+    /// Keep going or a Resume after quit carried it on. The run's minutes
+    /// count only time it was working: an hour between an error and its
+    /// Retry, or a night Juno was closed, is not spent budget.
+    public var workedSeconds: Double?
+    /// When the stretch of work under way began; nil while the run is not
+    /// working.
+    public var workingSince: Date?
 
     public init(
         runID: String = UUID().uuidString.lowercased(),
@@ -112,6 +120,8 @@ public struct RunLedger: Hashable, Codable, Sendable, VerificationLedgerReading 
         self.budgetGrants = 0
         self.autoCheckRevisions = []
         self.endReason = nil
+        self.workedSeconds = 0
+        self.workingSince = startedAt
     }
 
     // MARK: - Recording
@@ -235,9 +245,27 @@ public struct RunLedger: Hashable, Codable, Sendable, VerificationLedgerReading 
         return .doneUnchecked
     }
 
-    /// The run's minutes so far.
+    /// The minutes the run has worked so far: its earlier stretches, and the
+    /// one under way up to `date`.
     public func minutes(at date: Date) -> Double {
-        max(0, date.timeIntervalSince(startedAt) / 60)
+        let current = workingSince.map { max(0, date.timeIntervalSince($0)) } ?? 0
+        return max(0, (workedSeconds ?? 0) + current) / 60
+    }
+
+    /// A stretch of work begins: a run carried on by Retry, Keep going or
+    /// Resume.
+    public mutating func startWorking(at date: Date) {
+        guard workingSince == nil else { return }
+        workingSince = date
+    }
+
+    /// The stretch of work under way ends at `date`: the run ended, or Juno
+    /// quit and `date` is the last moment the journal saw it working.
+    public mutating func stopWorking(at date: Date) {
+        if let since = workingSince {
+            workedSeconds = (workedSeconds ?? 0) + max(0, date.timeIntervalSince(since))
+        }
+        workingSince = nil
     }
 
     /// The first ceiling of the run budget, raised by each Keep going, that
@@ -323,14 +351,19 @@ public actor RunLedgerRecorder: VerificationLedgerWriting {
     /// Carries the current ledger on for a resumed run: Retry, Keep going,
     /// Resume after quit. Reads the journal when this recorder has nothing
     /// yet, as after a relaunch.
-    public func resumeRun(stepAllowance: Int) async {
+    public func resumeRun(stepAllowance: Int, at date: Date = Date()) async {
         let fresh = ledger.steps == 0 && ledger.verifications.isEmpty && ledger.filesChanged.isEmpty
         if fresh, let store, let journal = await store.runJournal(for: sessionID) {
             ledger = journal.ledger
+            // A journal still working belongs to a run Juno quit in the
+            // middle of: it stopped at the journal's last step boundary, not
+            // now.
+            ledger.stopWorking(at: min(journal.updatedAt, date))
         } else if fresh {
             ledger.stepAllowance = stepAllowance
         }
         ledger.endReason = nil
+        ledger.startWorking(at: date)
         isActive = true
         await persist()
     }
@@ -347,8 +380,9 @@ public actor RunLedgerRecorder: VerificationLedgerWriting {
 
     /// The run ended: the journal says so and keeps the ledger for the report
     /// and for a later Keep going.
-    public func end(_ reason: RunEndReason) async {
+    public func end(_ reason: RunEndReason, at date: Date = Date()) async {
         ledger.endReason = reason
+        ledger.stopWorking(at: date)
         isActive = false
         await persist()
     }
