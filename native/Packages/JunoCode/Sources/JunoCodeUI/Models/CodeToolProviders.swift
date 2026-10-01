@@ -1,4 +1,5 @@
 import Foundation
+import JunoCodeLocal
 import JunoCodeRuntime
 
 /// Every lane's tool provider, in the order their tools are offered to a Code
@@ -10,7 +11,10 @@ enum CodeToolProviders {
         // Lane A: JunoCodeRuntime/Tools/GoalTools.swift
         GoalToolProvider(),
         // Lane B: JunoCodeRuntime/Tools/RunChecksTool.swift
-        VerificationToolProvider(),
+        VerificationToolProvider(
+            recipes: { VerifyRecipeStore(workspaceRoot: $0) },
+            changes: { WorkspaceChangeDetector(rootURL: $0) }
+        ),
         // Lane C: JunoCodeRuntime/Tools/SimulatorTools.swift
         ScreenToolProvider(),
         // Lane D: JunoCodeUI/Views/Preview/CodePreviewInspectionTool.swift

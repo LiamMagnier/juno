@@ -49,7 +49,8 @@ public struct ToolRegistry: Sendable {
         shells: (any ShellSessionManaging)? = nil,
         workingDirectories: SessionWorkingDirectories? = nil,
         workspaceRoot: String = "",
-        additionalTools: [any CodeTool] = []
+        additionalTools: [any CodeTool] = [],
+        checkEvidence: CheckEvidenceRecorder? = nil
     ) -> ToolRegistry {
         var tools: [any CodeTool] = [
             ReadFileTool(files: files),
@@ -67,13 +68,14 @@ public struct ToolRegistry: Sendable {
                 executor: executor,
                 changes: changes,
                 directories: workingDirectories,
-                workspaceRoot: workspaceRoot
+                workspaceRoot: workspaceRoot,
+                evidence: checkEvidence
             ),
             GitStatusTool(git: git),
             GitDiffTool(git: git),
             GitLogTool(git: git),
             GitCommitTool(git: git),
-            RunTestsTool(tests: tests),
+            RunTestsTool(tests: tests, evidence: checkEvidence),
         ]
         if let shells {
             tools.append(ShellStartTool(shells: shells, directories: workingDirectories))
@@ -162,7 +164,7 @@ public struct ToolRegistry: Sendable {
             actionDigest: digest,
             risk: risk,
             summary: tool.summary(input: input),
-            approvalPolicy: tool.approvalPolicy,
+            approvalPolicy: tool.approvalPolicy(input: input),
             subject: ToolRuleSubjects.subject(toolName: toolName, input: input),
             hookPermission: hookPermission
         )
