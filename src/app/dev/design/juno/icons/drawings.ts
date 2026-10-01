@@ -592,7 +592,7 @@ export function ellArc(cx: number, cy: number, a: number, b: number, phi: number
  * meet. Each arc is the other turned half a turn (equilibrium), so the glyph
  * has no start and no end to chase: it can never read as a spinner.
  */
-const ORBIT_A = 9;
+const ORBIT_A = 9.375;
 const ORBIT_B = n3(ORBIT_A * 0.618);
 const ORBIT_TILT = -24;
 const orbitArcs = (gapA: number, gapB: number): string[] => [
@@ -616,20 +616,22 @@ const turnedRect = (x: number, y: number, w: number, h: number, r: number, deg: 
 
 /**
  * Memory: recall cards, held fanned. The one in front is upright and carries
- * what is remembered; the one behind leans back from the same foot, the way
- * the library's second volume leans (things you keep lean). Copy is two
- * sheets offset, versions a cascade; neither leans.
+ * what is remembered; the one behind leans, its top and its side showing,
+ * the way the library's second volume leans (things you keep lean). Copy is
+ * two sheets offset, versions a cascade; neither leans.
  */
-const MEM_FRONT = rr(9.75, 6.75, 10.5, 13.5, 2.25);
-const MEM_PIVOT: [number, number] = [9, 20.25];
-const MEM_BACK = turnedRect(6, 6.75, 10.5, 13.5, 2.1, -10, ...MEM_PIVOT);
-const MEM_LINES = [poly(12.75, 11.25, 17.25, 11.25), poly(12.75, 15, 15.75, 15)];
+const MEM_FRONT = rr(3.75, 8.25, 11.25, 12.75, 2.25);
+/** Leaning right, as the library's second volume does (copy's second sheet sits up and left, square). */
+const MEM_BACK = flipX(turnedRect(5.25, 4.125, 11.25, 12.75, 2.1, -10, 10.875, 10.5));
+/** The back card leans further from its foot (its lower right corner) on hover. */
+const MEM_PIVOT: [number, number] = [17.25, 18];
+const MEM_LINES = [poly(6.75, 12.75, 12, 12.75), poly(6.75, 16.5, 9.75, 16.5)];
 
 /** Instructions: a ruled sheet (no fold: it is not a file) whose last line is set in. */
 const SHEET_RULED = rr(5.25, 3, 13.5, 18, 2.25);
 
 /** A small microphone for dictation, beside the insertion cursor. */
-const MIC_SMALL = "M6.75 6A2.625 2.625 0 0 1 12 6V10.5A2.625 2.625 0 0 1 6.75 10.5Z";
+const MIC_SMALL = "M6.75 6A3 3 0 0 1 12.75 6V10.5A3 3 0 0 1 6.75 10.5Z";
 /** The text cursor: a stem with two serifs (the I-beam), Newsreader's own construction at icon size. */
 const ibeam = (x: number, y0: number, y1: number, w = 3): string =>
   `${poly(x, y0, x, y1)}${poly(x - w / 2, y0, x + w / 2, y0)}${poly(x - w / 2, y1, x + w / 2, y1)}`;
@@ -678,7 +680,7 @@ export const ICONS = {
   }),
   "new-chat": I({
     group: "Navigation",
-    elements: [p(BUBBLE), ko(plusAt(18.75, 17.625, 2.625)), p(plusAt(18.75, 17.625, 2.625))],
+    elements: [p(BUBBLE), ko(plusAt(18.75, 17.25, 2.625)), p(plusAt(18.75, 17.25, 2.625))],
     hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
     motion: "A new chat is the chat bubble with the house plus cut into its corner. It speaks: a small pop from the tail.",
   }),
@@ -877,8 +879,8 @@ export const ICONS = {
   }),
   memory: I({
     group: "Composer",
-    elements: [g([p(MEM_BACK)], { r: -6, o: MEM_PIVOT }), ko(MEM_FRONT), p(MEM_FRONT), ...MEM_LINES.map((d) => p(d))],
-    fill: [g([p(MEM_BACK)], { r: -6, o: MEM_PIVOT }), ko(MEM_FRONT), solid(MEM_FRONT), ...MEM_LINES.map((d) => koTight(d))],
+    elements: [g([p(MEM_BACK)], { r: 6, o: MEM_PIVOT }), ko(MEM_FRONT), p(MEM_FRONT), ...MEM_LINES.map((d) => p(d))],
+    fill: [g([p(MEM_BACK)], { r: 6, o: MEM_PIVOT }), ko(MEM_FRONT), solid(MEM_FRONT), ...MEM_LINES.map((d) => koTight(d))],
     on: { kind: "fill" },
     motion: "Layered recall cards, held fanned: what Alevr remembers (not a third save mark beside pin and star, not a brain). The card behind leans further back, as you look back through them. Active (memory on): the front card fills, its lines cut through.",
   }),
@@ -1469,7 +1471,7 @@ export const ICONS = {
   }),
   "folder-plus": I({
     group: "Library",
-    elements: [p(FOLDER), p(poly(12, 10.5, 12, 15.75)), p(poly(9.375, 13.125, 14.625, 13.125))],
+    elements: [p(FOLDER), p(poly(12, 10.875, 12, 16.125)), p(poly(9.375, 13.5, 14.625, 13.5))],
     motion: "None: a menu verb (menus are quiet).",
   }),
   "folder-move": I({
@@ -1525,9 +1527,9 @@ export const ICONS = {
     group: "Composer",
     elements: [
       p(MIC_SMALL),
-      p("M4.125 10.5A5.25 5.25 0 0 0 14.625 10.5"),
-      p(poly(9.375, 15.75, 9.375, 19.5)),
-      g([p(ibeam(18.75, 6, 18))], { anim: "blink" }),
+      p("M4.5 10.5A5.25 5.25 0 0 0 15 10.5"),
+      p(poly(9.75, 15.75, 9.75, 20.25)),
+      g([p(ibeam(18.75, 6, 18, 2.25))], { anim: "blink" }),
     ],
     motion: "The microphone beside the text cursor (speech becomes text, not a conversation). The cursor blinks once.",
   }),
@@ -1581,7 +1583,7 @@ export const ICONS = {
   }),
   receipt: I({
     group: "Work and evidence",
-    elements: [p(SLIP), p(poly(9, 8.25, 15, 8.25)), p(poly(9, 12.375, 13.5, 12.375))],
+    elements: [p(SLIP), p(poly(9, 8.25, 15, 8.25)), p(poly(9, 12, 13.5, 12))],
     hover: { y: -0.75 },
     motion: "A slip with a torn foot, its lines the evidence. It feeds up, as a receipt prints.",
   }),
