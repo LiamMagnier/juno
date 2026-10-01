@@ -254,3 +254,128 @@ tests, 4,416 pass, 67 skipped, 2 fail, both outside this change and failing
 on the trunk too since 2026-10-01: `google:gemini-omni-flash-preview` passed
 its `retiresOn: 2026-09-30` and left the catalog
 (`tests/model-catalog-fidelity.test.ts`, `tests/video-gen.test.ts`).
+
+### Lane D: Preview and browser (`rf/code-preview`, §4, §5.15, §6.4)
+
+Worktree `../juno-rf-code-preview`, branched from the trunk at `e1fde2fa`.
+Nine commits, `d473d57c`…`f051bfa1`; nothing pushed. The Preview now belongs
+to the session, not the view: a registry owns every dev server and sessions
+lease them; one hardened page per preview is re-parented between the dock and
+the window and kept in a host window when neither shows it; the agent drives
+it with `preview_server` and `preview_browser`; UI edits are checked in the
+running page before a Code run may end, and the runtime mints the evidence.
+
+#### Offscreen-host spike (measured before the registry work, §6.4)
+
+Harness: `swift test` (xctest process), a fixture page from
+`StaticPreviewServer` with an rAF counter, a 16 ms `setInterval` counter and
+capture-phase listeners recording `isTrusted`; synthesized `NSEvent`s
+delivered to the `WKWebView` (never posted to the window server).
+
+| Host window | `visibilityState` | rAF / s | timer ticks / s | `takeSnapshot` | NSEvent click → page events |
+|---|---|---|---|---|---|
+| never ordered | hidden | 0 | 1 | 800×600 | pointerdown, mousedown, pointerup, mouseup, click, all `isTrusted: true` |
+| ordered at −20000,−20000 | hidden | 0 | 1–2 | 800×600 | same |
+| 1-pt on screen, alpha 0.01, floating | hidden | 0 | 1 | 800×600 | same |
+| 800×600 with 1 pt on screen | hidden | 0 | 1 | 800×600 | same |
+| any of the above with `inactiveSchedulingPolicy = .none`, or as an accessory app | hidden | 0 | 1 | works | same |
+
+Findings: WebKit hides and throttles an offscreen page (no rAF, timers at
+1 Hz), while snapshots, script evaluation and trusted synthesized input keep
+working. The HMR-socket analogue (the static server's SSE live-reload stream)
+stays connected and delivers reloads (`StaticPreviewServerTests`). The xctest
+process never sees an occlusion state of "visible", even for an on-screen
+window, so the harness cannot show whether the 1-pt host un-throttles. Per
+D-025 the fallback applies: the app calls `PreviewHost.configureForApp()`,
+which sets `PreviewPage.backgroundHostMode = .onePoint`; tests keep
+`.offscreen` and never put a window on screen. Settling is polled from Swift
+(page timers are throttled), and the snapshot says when the page is hidden.
+**Manual probe before release:** with a background session's preview, turn on
+"Allow inspection scripts" and run `preview_browser eval document.visibilityState`
+(expect `visible` with the 1-pt host).
+
+#### Spec items
+
+| Item | Status | Notes |
+|---|---|---|
+| §4.8 P0: PV-29/30/31 static server | DONE | dotfiles, `node_modules`, `.git`, `*.pem`, `*.key`, `.env*` → 404 on the asked and the symlink-resolved path; no `Access-Control-Allow-Origin`; foreign `Host` → 421; `SO_NOSIGPIPE`; `poll` writes, 64 KB streaming, single byte `Range`; SSE live reload via `WorkspaceChangeDetector` |
+| §4.8 P0: PV-33 show the command | DONE | start card and `PreviewConfigApprovalCard`: argv, folder, env keys, port, network, source, warnings |
+| §4.8 P0: PV-2, PV-3, PV-4, PV-38, PV-39 | DONE | honest `open_preview` alias; restart and stop tools; one page re-parented on appear; reload keeps the route; wiring check rewritten |
+| §4.8 P0: PV-11 (`&&`, `vitest`) | SKIPPED | Lane B owns `CommandAndTestTools.swift` (§4.5, §6.2); not touched here |
+| §4.1 registry, leases, idle stop, sharing, worktrees | DONE | `JunoCodeLocal/PreviewRegistry.swift`; a view never stops a server; a deleted session's leases end; 30 min idle with no lease and no view |
+| §4.1 one page per preview, offscreen host + 1-pt fallback (D-025) | DONE | `PreviewPage`, `PreviewPageRegistry`, `PreviewHost.configureForApp()`; see the spike |
+| §4.1 PGID ledger and orphan reaping | DONE | `PreviewServerLedger`: start-time check before any signal; reaped at the shared registry's first use; SIGTERM to this process's servers on quit |
+| §4.1 `DevServerService.start` async | DONE | `start(_ launch:) async`; the old synchronous API stays for its tests |
+| §4.1 durable shells as the process layer | PARTIAL | `preview_server attach shell_id` promotes a shell whose process group listens on the printed loopback port; servers Juno starts still run under `DevServerService`, not as `role: server` shells |
+| §4.2 `.juno/launch.json` + read-only `.claude/launch.json` import | DONE | Claude's fields plus `network`, `ready`, `autoVerify`, `allowedExternalOrigins`; `${workspaceFolder}` and `${port}`; issues in words |
+| §4.2 discovery writes the first file | DONE | Node (nested, root lockfile), Django, Flask, FastAPI, Rails, PHP/Laravel, Hugo, Go, static from the folder holding `index.html` (PV-16); "Save as .juno/launch.json" in the pane |
+| §4.2 URL truth (PV-8, PV-9) | DONE | `ListeningSocketOwnership` (libproc); every printed URL is a candidate, only a port the group listens on counts; LAN rewritten to loopback only when the group listens there |
+| §4.2 ports (PV-15) | PARTIAL | `autoPort: true` picks a free port and passes `PORT`; a fixed taken port fails naming its owner. "Unset asks once and saves" is not built: unset behaves as fixed and the message suggests `autoPort` |
+| §4.2 network ask (PV-7), ready, logs (PV-12) | DONE | blocked outbound host read from the log, asked once per configuration hash, stored on this Mac; `ready.path`/`timeoutSeconds`; 5,000-line ring buffer with cursors, level and search |
+| §4.2 env secrets from the Keychain | DONE | `PreviewSecrets`: server secrets injected into that configuration's child only and scrubbed from its log; the pane's Secrets sheet shows names only |
+| §4.3 `preview_server` | DONE | list, start, stop, restart, logs, attach |
+| §4.3 `preview_browser` (~20 actions) | DONE | navigate, snapshot, find, text, click, hover, drag, type (with `secret`), key, select, scroll, scroll_to, wait_for, screenshot, zoom, resize (presets, dark mode), console, network (body by id), dialog, upload, eval, batch; legacy `wait`, `assert_text` |
+| §4.3 effects per action, snapshot, real input, diagnostics | DONE | isolated world `juno-preview`, shadow roots and same-origin iframes, on-screen first, 300 refs, overlays; NSEvent input (JS only for `select`); console/fetch/XHR/WebSocket/resource diagnostics accepted only from preview-origin frames |
+| §4.4 permissions table | DONE, one deviation, one gap | `eval` is `.destructive` (spec: `.critical`) so no saved tool-wide "Always allow" can silence page script that can reach any host. "Always for this preview, offered once per session" is not built; the standard Always-allow rule applies to non-floor input |
+| Always-confirm floor in the Preview | DONE (beyond §4.4) | a seen send/delete/buy/sign-in control, accepting such a page question, or typing a credential is `.destructive`; clicks by coordinates, Enter and covering elements are checked when they run and refused unless approved so |
+| §4.5 WebKit hardening | DONE | navigation policy, UI delegate (dialogs, same-origin popups in place, open panel only via `upload`), downloads cancelled, `file:`/`javascript:`/top-level `data:` refused, Keep sign-in per checkout with Clear site data |
+| §4.6 autoVerify loop | DONE | trigger rules, settle and compile-error scan, `PreviewUIGate` (rule 8) with ≤ 3 rounds and the repeated-failure stop, evidence minted as the browser tool's `uiVerificationRecorded` side effect, `PreviewCheckRow` |
+| §4.7 pane | DONE | one chrome (servers, back/forward, reload, address, device, appearance, log, Keep sign-in, Secrets, inspection scripts, annotate), state in words, no capsule or badges, agent glow + Stop (Esc), Simulator copy points to its pane. Visual redesign waits for the new design system |
+| §5.15 annotate | PARTIAL | pick, note, cropped screenshot as an image attachment and the element details as composer text; not a structured `CodeAttachment` kind (Lane F owns that file) |
+| `scripts/check-code-preview-wiring.mjs` | DONE | see commit `2afa69ec` |
+
+#### Integration notes for the other lanes
+
+- **Lane A**: `SessionController` now passes
+  `completionGate: previewLease.completionGate(wrapping: ReportOnlyCompletionGate(), …)`
+  for Code turns. Swap the base for `CompletionGate` and keep the wrapper, or
+  call `PreviewSessionHub.shared.entry(…).verify.uiDecision(for:)` at rule 8.
+  UI freshness is "at or after the last UI edit" (a later test-file edit does
+  not stale UI evidence); the revision is one per `fileChanged`, counted by
+  `PreviewVerifyState` from the store, until the run ledger lands.
+- **Lane B**: UI records reach the transcript as the tool's side effect; when
+  `VerificationLedger` lands it should absorb `uiVerificationRecorded`
+  side effects (or the hub can call `recordUIVerification`).
+- **Shared files touched, additively**: `CodeToolProvider.swift` (optional
+  `shells`), `SessionController.swift` (three tool lines removed, `shells`
+  passed, the gate wrapper), `WorkspaceContext.swift` (the preview sentence of
+  the Code prompt), `CommandClassifier.swift` (the preview-server refusal names
+  `preview_server` and exposes its marker), `DesktopCodeWorkspace.swift`,
+  `DesktopCodePreviewDock.swift`.
+- Test runs use throwaway ledger and settings files and never reap or signal
+  the reader's processes.
+
+#### Tests (new or rewritten)
+
+`StaticPreviewServerTests` 12, `LaunchConfigurationTests` 12,
+`PreviewServerLedgerTests` 5, `PreviewRegistryTests` 15,
+`PreviewVerificationTests` 14 (runtime), `PreviewBrowserTests` 18 (offscreen
+WebKit), `PreviewVerifyLoopTests` 4 (scripted model end to end),
+`PreviewToolPermissionTests` 7, `PreviewSnapshotTests` 5 (rendered with
+`JUNO_SNAPSHOT_DIR`, reviewed by eye: pane stopped and running, config card,
+banners, check rows, annotate toolbar, light and dark; toolbar glyphs are
+asset symbols SwiftPM does not compile, so they are blank in these PNGs only),
+`CodePreviewHarnessTests` (preview-tool cases rewritten). The spike is kept as
+`testTheOffscreenHostTakesSnapshotsAndTrustedInput`.
+
+#### Gates (on `f051bfa1`, through `gate.sh`)
+
+| Gate | Result |
+|---|---|
+| `npm run native:test JunoCode` | pass: 1,409 XCTests (18 skipped, snapshot tests among them), 78 Swift Testing, 0 failures (seams baseline 1,322 / 78) |
+| `xcodebuild … -scheme JunoDesktop -configuration Debug CODE_SIGNING_ALLOWED=NO build` | BUILD SUCCEEDED (DerivedData `/private/tmp/juno-rf-dd-code-preview`) |
+| `JUNO_SNAPSHOT_DIR=… JUNO_SWIFT_FILTER=PreviewSnapshotTests npm run native:test JunoCode` | 5 tests, 12 PNGs reviewed by eye |
+| `node scripts/check-code-preview-wiring.mjs`, `check-code-runtime-wiring.mjs`, `check-tracked-secrets.mjs` | pass |
+| `npm run typecheck`, `npm test` | not run: no TypeScript changed in this lane |
+
+#### Risks
+
+- The 1-pt background host is unverified in a real app session (the
+  harness never reports a visible occlusion state); manual probe above.
+- `wasApprovedAnywhere`: an approved start card covers the same bytes in
+  every session of the same checkout for the rest of the app run.
+- Floor words are a list (English plus French); a control named otherwise
+  ("Nuke it") is input at `.execute`. Clicks by coordinates are resolved to
+  their element and checked, never trusted.
+- Merge points with Lanes A and B listed above (`SessionController` gate
+  wrapper, UI records as side effects, `CommandClassifier` copy).
