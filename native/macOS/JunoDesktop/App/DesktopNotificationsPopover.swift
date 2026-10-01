@@ -19,7 +19,9 @@ import SwiftUI
 /// only news, nothing when all is read. The number rides the accessibility
 /// value and the help, where a dot cannot say it.
 struct DesktopNotificationsRow: View {
-    /// The row's name: the web's action row (the shell contract).
+    /// The row's name: the web's header action (the shell contract's
+    /// `headerActions`, which the Mac projection does not generate yet, so
+    /// the words and the drawing are named here rather than read from it).
     private static let label: String = "Notifications"
 
     let model: NativeNotificationsModel
@@ -52,7 +54,7 @@ struct DesktopNotificationsRow: View {
         Label {
             title
         } icon: {
-            JunoSymbol(JunoShellChatSidebar.Action.notifications.icon)
+            JunoSymbol(.notifications)
                 .foregroundStyle(Color.junoSidebarInk)
         }
         .foregroundStyle(Color.junoSidebarInk)

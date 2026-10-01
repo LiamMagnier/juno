@@ -171,8 +171,7 @@ struct DesktopAddServerSheet: View {
 
             VStack(alignment: .leading, spacing: JunoSpace.close) {
                 DesktopServerFact(icon: .key, index: 0) {
-                    Text("You’ll sign in on ") + Text(candidate.authHost).fontWeight(.medium)
-                        .foregroundColor(Color.junoForeground) + Text(" and approve Juno there.")
+                    Text("You’ll sign in on \(Text(candidate.authHost).fontWeight(.medium).foregroundStyle(Color.junoForeground)) and approve Juno there.")
                 }
                 DesktopServerFact(icon: .sliders, index: 1) {
                     Text("Then choose which of its tools Juno may use.")
