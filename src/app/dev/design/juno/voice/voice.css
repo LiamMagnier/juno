@@ -8,8 +8,9 @@
  * (4.2:1 on the composer surface), #e49b68 in dark (6.9:1), used only for the
  * channel's path, the listening caret and the mic's live bars, never as a
  * fill behind text or as text, so it never competes with attention (amber
- * words) or danger (red). A path at rest is the decorative ink (non-text
- * ornament, by the brand's own role table).
+ * words) or danger (red). A path at rest is the interactive-edge ink
+ * (--line-ui): its form still says connected, open or withdrawn, so it is a
+ * meaningful graphic and must clear 3:1 (the decorative ink, 2.75:1, would not).
  */
 
 .jn.jv {
@@ -17,7 +18,8 @@
   --vs-you: var(--voice-you);
   --vs-answer: var(--presence);
   --vs-quiet: var(--ink-4);
-  --vs-rest: var(--ink-4);
+  /* A path at rest still carries form (connected, open, withdrawn): the interactive edge, 3.5:1 light, 3.3:1 dark. */
+  --vs-rest: var(--line-ui);
 }
 /*
  * In an agent's thread the agent is the presence: its voice wears its thread
