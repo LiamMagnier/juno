@@ -17,10 +17,10 @@ export interface Swatch {
 }
 
 export const PLANES: Swatch[] = [
-  { key: "ground", name: "Ground", role: "The content plane, the brightest in light", light: "#fcfcfd", dark: "#18191b" },
-  { key: "side", name: "Side", role: "The sidebar and docked panels, one whisper below", light: "#f5f6f7", dark: "#121314" },
+  { key: "side", name: "Frame", role: "The window: the sidebar sits on it (D-033)", light: "#f3f4f5", dark: "#111213" },
+  { key: "ground", name: "Panel", role: "The inset content panel, the brightest in light", light: "#fcfcfd", dark: "#18191b" },
   { key: "surface", name: "Surface", role: "The composer and payloads: the one defined object", light: "#ffffff", dark: "#222326" },
-  { key: "raised", name: "Raised", role: "Menus, popovers, sheets (floating layers)", light: "#ffffff", dark: "#27282b" },
+  { key: "raised", name: "Raised", role: "Floating layers when the material is off", light: "#ffffff", dark: "#27282b" },
   { key: "card", name: "Card", role: "Real outputs in the transcript: tasks, approvals", light: "#f5f6f7", dark: "#1f2023" },
   { key: "well", name: "Well", role: "Tokens, the person’s turn, quiet fills", light: "#eff0f1", dark: "#2d2e31" },
   { key: "well-2", name: "Well 2", role: "Hover on a well, the selected token", light: "#e6e7e9", dark: "#37383c" },

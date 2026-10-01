@@ -97,7 +97,7 @@ function MaterialSample() {
           <b>Halvorsen</b> moved to monthly billing in August. <b>Brightline Studio</b> dropped two seats. <b>Oakridge Health</b> has an unpaid invoice from July.
         </p>
       </div>
-      <ModelPopover style={{ position: "absolute", right: 12, top: 44, width: 300 }} />
+      <ModelPopover style={{ position: "absolute", right: 12, top: 40, width: 344 }} />
     </div>
   );
 }

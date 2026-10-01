@@ -14,11 +14,65 @@
 
 .jn .jn-frame {
   --side-w: 260px;
+  position: relative;
   display: grid;
   grid-template-columns: var(--side-w) minmax(0, 1fr);
   height: 100dvh;
   background: var(--side);
   overflow: hidden;
+  transition: grid-template-columns var(--d-base) var(--e-drawer);
+}
+.jn .jn-frame__side {
+  min-width: 0;
+  overflow: hidden;
+}
+/* The sidebar keeps its width while its column closes, so it slides out under
+   the panel's edge instead of squeezing; its contents fade on `fast`. */
+.jn .jn-frame__side > .jn-side {
+  width: var(--side-w);
+  transition: opacity var(--d-fast) var(--e-out);
+}
+.jn .jn-frame[data-collapsed] {
+  grid-template-columns: 0px minmax(0, 1fr);
+}
+.jn .jn-frame[data-collapsed] .jn-frame__side > .jn-side {
+  opacity: 0;
+}
+.jn .jn-frame .jn-main {
+  transition: margin-left var(--d-base) var(--e-drawer);
+}
+.jn .jn-frame[data-collapsed] .jn-main {
+  margin-left: var(--gutter);
+}
+/* Collapsed, the panel's headers make room for the way back. */
+.jn .jn-frame[data-collapsed] :is(.jn-top, .jn-mhead__bar) {
+  padding-left: 44px;
+}
+.jn .jn-reveal {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-fast) var(--e-out);
+}
+.jn .jn-frame[data-collapsed] .jn-reveal {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 120ms;
+}
+.jn[data-rm] .jn-frame,
+.jn[data-rm] .jn-frame .jn-main,
+.jn[data-rm] .jn-frame__side > .jn-side {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jn .jn-frame,
+  .jn .jn-frame .jn-main,
+  .jn .jn-frame__side > .jn-side {
+    transition: none;
+  }
 }
 .jn .jn-main {
   position: relative;
@@ -548,8 +602,15 @@
     border-radius: 0;
     box-shadow: none;
   }
-  .jn .jn-side {
+  .jn .jn-frame__side,
+  .jn .jn-reveal {
     display: none;
+  }
+  .jn .jn-frame[data-collapsed] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jn .jn-frame[data-collapsed] .jn-main {
+    margin-left: 0;
   }
   .jn .jn-top {
     display: none;

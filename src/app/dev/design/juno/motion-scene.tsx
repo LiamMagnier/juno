@@ -3,15 +3,15 @@
 import * as React from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { CrewFace, type CrewState } from "./crew/face";
-import { CREW, DRAFT, MIRA, type Segment } from "./fixtures";
+import { CREW, DRAFT, MIRA, THREAD_TITLE, type Segment } from "./fixtures";
 import { ChatSurface } from "./chat";
 import { Composer, type ComposerApi } from "./composer";
 import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { R, SPRING, T, useReduced } from "./motion";
-import { face } from "./shell";
+import { face, TopBar } from "./shell";
 import { MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
-import { Approval, HANDOFF_ID, TaskCard } from "./thread";
+import { Answer, Approval, HANDOFF_ID, MessageActions, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
  * Motion, one moment at a time. Each plays on its own and replays on demand;
@@ -324,6 +324,64 @@ function IconsMoment() {
   );
 }
 
+/* ———————————————————————— 12 · Material and scroll edges ———————————————————————— */
+
+/** Glide a scroller to a position over a fixed time (the recording needs a steady, readable pace). */
+function glideScroll(el: HTMLElement | null, to: number, ms: number, reduced: boolean) {
+  if (!el) return;
+  if (reduced) {
+    el.scrollTop = to;
+    return;
+  }
+  const from = el.scrollTop;
+  const t0 = performance.now();
+  const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const step = (now: number) => {
+    const k = Math.min(1, (now - t0) / ms);
+    el.scrollTop = from + (to - from) * ease(k);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function MaterialMoment({ tall }: { tall?: boolean }) {
+  const api = React.useRef<ComposerApi | null>(null);
+  const scroll = React.useRef<HTMLDivElement | null>(null);
+  const reduced = useReduced();
+  useTimeline(() => [
+    [100, () => scroll.current && (scroll.current.scrollTop = 0)],
+    [700, () => glideScroll(scroll.current, scroll.current ? scroll.current.scrollHeight : 0, 2800, reduced)],
+    [4000, () => api.current?.focus(true)],
+    [4300, () => void api.current?.type("@", 0)],
+    [4900, () => api.current?.key("ArrowDown")],
+    [5300, () => api.current?.key("ArrowDown")],
+    [6100, () => api.current?.key("Escape")],
+    [6250, () => api.current?.key("Backspace")],
+    [6400, () => api.current?.blur()],
+    [6800, () => api.current?.openModel(true)],
+    [8600, () => api.current?.openModel(false)],
+  ]);
+  return (
+    <div className={tall ? "jn-mframe jn-mframe--tall jn-mframe--material" : "jn-mframe jn-mframe--material"} ref={scroll}>
+      <div className="jn-chat">
+        <TopBar title={THREAD_TITLE} />
+        <div className="jn-thread">
+          <UserMessage segments={DRAFT} />
+          <Trace />
+          <Answer />
+          <MessageActions />
+          <div className="jn-thread__card">
+            <TaskCard />
+          </div>
+        </div>
+        <div className="jn-dock">
+          <Composer variant="dock" apiRef={api} placeholder="Reply…" label="Message Juno" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ———————————————————————— The page ———————————————————————— */
 
 const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType<{ tall?: boolean }>; tall?: boolean }[] = [
@@ -338,6 +396,7 @@ const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType
   { id: "crew", title: "Crew presence", spec: "pose on the standard spring · words cross-fade 120 ms · attention turn once", C: CrewMoment },
   { id: "member", title: "A member’s own thread", spec: "arrival on the character spring, 0.5 s, bounce 0.24 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
   { id: "icons", title: "Icons on hover and state", spec: "each icon’s own motion, 120 to 240 ms, reduced to a cross-fade", C: IconsMoment },
+  { id: "material", title: "Material and scroll edges", spec: "content blurs under the header and the dock · palette and menu on the material · the material itself never animates", C: MaterialMoment, tall: true },
 ];
 
 function MomentCard({ m, large }: { m: (typeof MOMENTS)[number]; large?: boolean }) {
@@ -358,7 +417,11 @@ function MomentCard({ m, large }: { m: (typeof MOMENTS)[number]; large?: boolean
         </button>
       </header>
       <div className="jn-moment__stage">
-        <C key={run} tall={large || m.tall} />
+        {/* Each run gets its own layout namespace, so a replay starts in place instead of
+            animating from where the previous run's shared elements ended. */}
+        <LayoutGroup id={`${m.id}-${run}`} key={run}>
+          <C tall={large || m.tall} />
+        </LayoutGroup>
       </div>
     </section>
   );

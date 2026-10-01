@@ -134,7 +134,7 @@
   box-shadow: 0 0 0 1px var(--line);
   overflow: hidden;
 }
-.jn .jn-sys__frameside {
+.jn .jn-side.jn-sys__frameside {
   height: auto;
 }
 .jn .jn-sys__framepanel {
@@ -156,7 +156,7 @@
   font-size: 15px;
   line-height: 24px;
 }
-.jn .jn-sys__siderows {
+.jn .jn-side.jn-sys__siderows {
   width: 260px;
   height: auto;
   padding: 8px;
@@ -166,7 +166,7 @@
 .jn .jn-sys__matstage,
 .jn .jn-sys__matbar {
   position: relative;
-  height: 300px;
+  height: 456px;
   border-radius: var(--r-panel);
   background: var(--ground);
   box-shadow: 0 0 0 1px var(--panel-edge);
@@ -473,10 +473,13 @@
   position: relative;
   height: 440px;
   margin: 0 8px 8px;
-  border-radius: 12px;
+  border-radius: var(--r-panel);
   background: var(--ground);
-  box-shadow: 0 0 0 1px var(--line);
+  box-shadow:
+    0 0 0 1px var(--panel-edge),
+    0 1px 2px var(--panel-lift);
   overflow: hidden;
+  isolation: isolate;
 }
 .jn .jn-moment[data-tall] .jn-moment__stage {
   height: 560px;
@@ -542,15 +545,20 @@
   height: 100%;
   overflow: auto;
   scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
 }
 .jn .jn-mframe .jn-chat {
-  min-height: 100%;
+  flex: 1 0 auto;
 }
 .jn .jn-mframe .jn-home {
   margin-top: 0;
 }
-.jn .jn-mframe .jn-home__stack {
-  margin-top: 14%;
+.jn .jn-mframe .jn-home__greet {
+  padding-top: 24px;
+}
+.jn .jn-mframe .jn-home__suggest {
+  padding-bottom: 24px;
 }
 .jn .jn-mframe .jn-mbar {
   display: none;

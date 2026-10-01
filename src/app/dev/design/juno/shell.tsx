@@ -25,7 +25,13 @@ export function Wordmark() {
   return <span className="jn-wordmark">Juno</span>;
 }
 
+/* S6: the sidebar collapses and returns (Command-Backslash or the head's button), a CSS transition on the frame's
+   columns so a second press reverses it midway; the panel then takes the whole window, 8 px in. */
+const FrameCtx = React.createContext<{ collapsed: boolean; toggle: () => void }>({ collapsed: false, toggle: () => {} });
+export const useFrame = () => React.useContext(FrameCtx);
+
 function SideHead() {
+  const { toggle } = useFrame();
   return (
     <div className="jn-side__head">
       <Wordmark />
@@ -34,7 +40,7 @@ function SideHead() {
         <button type="button" className="jib jib--sm jicon-trigger" aria-label="Activity, 2 unseen">
           <Icon name="bell" size={16} state="active" />
         </button>
-        <button type="button" className="jib jib--sm jicon-trigger" aria-label="Hide sidebar">
+        <button type="button" className="jib jib--sm jicon-trigger" aria-label="Hide sidebar" aria-keyshortcuts="Meta+Backslash" onClick={toggle}>
           <Icon name="sidebar" size={16} />
         </button>
       </span>
@@ -218,12 +224,33 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
 }
 
 /* The frame: the sidebar on the window, the content in an inset panel that scrolls on its own. At phone width the sidebar leaves and the panel goes full bleed. */
-export function AppFrame({ sidebar, children, className }: { sidebar: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function AppFrame({ sidebar, children, className, collapsed: initialCollapsed = false }: { sidebar: React.ReactNode; children: React.ReactNode; className?: string; collapsed?: boolean }) {
+  const [collapsed, setCollapsed] = React.useState(initialCollapsed);
+  const toggle = React.useCallback(() => setCollapsed((c) => !c), []);
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+        e.preventDefault();
+        setCollapsed((c) => !c);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const ctx = React.useMemo(() => ({ collapsed, toggle }), [collapsed, toggle]);
   return (
-    <div className={className ? `jn-frame ${className}` : "jn-frame"}>
-      {sidebar}
-      <main className="jn-main">{children}</main>
-    </div>
+    <FrameCtx.Provider value={ctx}>
+      <div className={className ? `jn-frame ${className}` : "jn-frame"} data-collapsed={collapsed ? "" : undefined}>
+        <div className="jn-frame__side" inert={collapsed}>
+          {sidebar}
+        </div>
+        <main className="jn-main">{children}</main>
+        {/* The way back: one button where the sidebar's own button was, on the frame's top-left. */}
+        <button type="button" className="jib jib--sm jicon-trigger jn-reveal" aria-label="Show sidebar" aria-keyshortcuts="Meta+Backslash" tabIndex={collapsed ? 0 : -1} aria-hidden={!collapsed} onClick={toggle}>
+          <Icon name="sidebar" size={16} />
+        </button>
+      </div>
+    </FrameCtx.Provider>
   );
 }
 
