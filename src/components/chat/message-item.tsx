@@ -7,7 +7,8 @@ import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
-import { ActionIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
+import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -1316,6 +1317,9 @@ export const MessageItem = React.memo(function MessageItem({
   const canForkPrivate = !!onFork && !busy && !privateMode;
   const canShare = !!message.conversationId && !privateMode;
   const canCopyLink = !!message.conversationId;
+  // Only on a settled answer: a streaming one would offer a half-written skill.
+  // A plain call, not a memo: this sits past the component's early returns.
+  const skillMarkdown = !message.streaming && hasTextContent ? extractSkillMarkdown(view.content) : null;
   const showMore = canBranchSaved || canForkPrivate || canShare || hasTextContent || canCopyLink || hasMeta;
   const finishNote =
     view.finishReason === "length"
@@ -1723,6 +1727,24 @@ export const MessageItem = React.memo(function MessageItem({
                         }}
                       >
                         <TextQuote className="size-4" /> Quote in composer
+                      </DropdownMenuItem>
+                    )}
+                    {skillMarkdown && !privateMode && (
+                      // "Create with Juno" drafts a SKILL.md in chat; this
+                      // hands it to the importer, which reads it, scans it and
+                      // lets the reader name it before anything is saved.
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          try {
+                            window.sessionStorage.setItem(PENDING_SKILL_MARKDOWN_KEY, skillMarkdown);
+                          } catch {
+                            toast.error("Couldn’t hand that to the importer. Copy it and paste it into Import skills.");
+                            return;
+                          }
+                          router.push("/skills/import");
+                        }}
+                      >
+                        <AppIcons.skills className="size-4" /> Save as skill…
                       </DropdownMenuItem>
                     )}
                     {canCopyLink && (

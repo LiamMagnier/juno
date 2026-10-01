@@ -7,6 +7,7 @@ export const SKILLS_GALLERY_VIEWS = [
   "error",
   "import",
   "choose",
+  "choose-file",
   "dialog",
   "update",
   "update-new",
