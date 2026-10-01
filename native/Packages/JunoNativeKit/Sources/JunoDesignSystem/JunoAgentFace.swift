@@ -1021,7 +1021,11 @@ extension JunoAgentFaceRig {
 @Observable
 public final class JunoAgentGazeField {
     /// The coordinate space the region names.
-    public static let space = "juno.agent-gaze"
+    ///
+    /// `nonisolated`: a constant string, read from `onGeometryChange`'s
+    /// `@Sendable` transform. Swift 6.3 (Xcode 26) rejects a main-actor
+    /// static there, which is what kept every native CI job red.
+    public nonisolated static let space = "juno.agent-gaze"
 
     /// The pointer in the region's space, or nil when it is outside it.
     public internal(set) var pointer: CGPoint?

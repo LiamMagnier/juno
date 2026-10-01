@@ -766,9 +766,14 @@ public extension EnvironmentValues {
     /// environment values do.
     var junoAccessibility: JunoAccessibilityPreferences {
         var crossFade = false
+        // The environment value is annotated 26.4 but only exists in the
+        // 27 SDK (Swift 6.4); the Xcode 26 toolchain CI builds with cannot
+        // see it at all, so the compiler check comes before the runtime one.
+        #if compiler(>=6.4)
         if #available(macOS 26.4, iOS 26.4, *) {
             crossFade = accessibilityPrefersCrossFadeTransitions
         }
+        #endif
         return JunoAccessibilityPreferences(
             reduceMotion: accessibilityReduceMotion,
             reduceTransparency: accessibilityReduceTransparency,
