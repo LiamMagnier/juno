@@ -32,7 +32,7 @@ type Option = "string" | "channel" | "mark" | "trace" | "glow" | "orb";
 /** The lab's still is frozen at 3920 ms (both voices mid-phrase). Thinking passes start so each is mid-pass at the still. */
 const STILL = 3920;
 const THINK_SINCE_STRING = STILL - 575;
-const THINK_SINCE = STILL - 640;
+const THINK_SINCE = STILL - 820;
 
 const COLS: { phase: LabPhase; label: string }[] = [
   { phase: "listening", label: "You speaking" },
@@ -106,14 +106,6 @@ export function VoiceLab({ theme }: { theme?: "light" | "dark" }) {
           region says them in words.
         </p>
       </header>
-      <div className="jv-lab__cols" aria-hidden="true">
-        <span />
-        {COLS.map((c) => (
-          <span key={c.phase} className="jv-lab__colhead">
-            {c.label}
-          </span>
-        ))}
-      </div>
       <div className="jv-lab__rows">
         {OPTIONS.map((o) => (
           <section key={o.id} className="jv-lab__row" data-chosen={o.chosen ? "" : undefined} data-reference={o.reference ? "" : undefined} aria-label={`${o.tag} · ${o.name}`}>
@@ -124,12 +116,14 @@ export function VoiceLab({ theme }: { theme?: "light" | "dark" }) {
               <p className="jv-lab__line">{o.line}</p>
               <p className="jv-lab__verdict">{o.verdict}</p>
             </div>
-            {COLS.map((c) => (
-              <div key={c.phase} className="jv-lab__cell">
-                <span className="jv-lab__cellhead">{c.label}</span>
-                <LabComposer option={o.id} phase={c.phase} theme={resolved} />
-              </div>
-            ))}
+            <div className="jv-lab__cells">
+              {COLS.map((c) => (
+                <div key={c.phase} className="jv-lab__cell">
+                  <span className="jv-lab__cellhead">{c.label}</span>
+                  <LabComposer option={o.id} phase={c.phase} theme={resolved} />
+                </div>
+              ))}
+            </div>
           </section>
         ))}
       </div>

@@ -19,9 +19,15 @@
   --vs-quiet: var(--ink-4);
   --vs-rest: var(--ink-4);
 }
-/* In an agent's thread the agent is the presence: its voice wears its thread colour. */
+/*
+ * In an agent's thread the agent is the presence: its voice wears its thread
+ * colour. An agent's colour can be any hue (Mira's ochre sits next to ember),
+ * so there your voice is the first ink instead: you are the ink, the agent is
+ * its colour, and the two can never be confused.
+ */
 .jn.jv [data-member-theme] {
   --vs-answer: var(--m-disc);
+  --vs-you: var(--ink);
 }
 
 /* ———————————————————————————— The string ———————————————————————————— */
@@ -275,32 +281,32 @@
   font-size: 14px;
   line-height: 20px;
 }
-.jn .jv-lab__cols,
-.jn .jv-lab__row {
-  display: grid;
-  grid-template-columns: 300px repeat(4, minmax(0, 1fr));
-  gap: 0 18px;
-}
-.jn .jv-lab__colhead {
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 500;
-  color: var(--ink-3);
-  padding: 0 0 8px 4px;
-}
-.jn .jv-lab__cellhead {
-  display: none;
-}
 .jn .jv-lab__rows {
   display: grid;
 }
 .jn .jv-lab__row {
-  align-items: center;
-  padding: 18px 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 0 32px;
+  align-items: start;
+  padding: 22px 0 24px;
   border-top: 1px solid var(--line);
 }
 .jn .jv-lab__row[data-chosen] {
   border-top-color: var(--line-3);
+}
+.jn .jv-lab__cells {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+.jn .jv-lab__cellhead {
+  display: block;
+  margin: 0 0 6px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ink-3);
 }
 .jn .jv-lab__about {
   display: grid;
@@ -410,21 +416,14 @@
   .jn .jv-lab {
     padding: 28px 16px 48px;
   }
-  .jn .jv-lab__cols {
-    display: none;
-  }
   .jn .jv-lab__row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
-  .jn .jv-lab__about {
-    grid-column: 1 / -1;
-  }
-  .jn .jv-lab__cellhead {
-    display: block;
-    font-size: 12px;
-    color: var(--ink-3);
-    margin: 0 0 6px 4px;
+}
+@media (max-width: 640px) {
+  .jn .jv-lab__cells {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -29,7 +29,7 @@ const STILL_AT: Partial<Record<VoiceState, number>> = {
   "voice-connecting": 900,
   "voice-listening": LOUD_AT.you,
   // Mid-pass: the handoff has carried your tone to the middle of the row (it starts at 0 and crosses in about 1.35 s).
-  "voice-thinking": 640,
+  "voice-thinking": 820,
   "voice-answering": LOUD_AT.alevr,
   "voice-interrupted": 3890,
   "voice-tool-approval": 1200,

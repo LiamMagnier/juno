@@ -33,9 +33,9 @@ import type { StringPhase } from "./voice-string";
  *   answering     Alevr's path in presence ink, carrying its voice toward you
  *   muted         your path withdraws to its anchor (220 ms) and greys: you are off the line; Alevr's stays
  *   interrupted   Alevr's voice dies (90 ms decay) and greys (120 ms) as yours takes the line
- *   approval      the ends draw back a little (220 ms) and hold, yours still ember (the mic is open): the call waits on screen
+ *   approval      the ends draw back until they only meet (220 ms) and hold, yours still ember (the mic is open): the call waits on screen
  *   reconnecting  both grey and drawn back; each real reconnect attempt reaches once toward the other end
- *   error         both grey, drawn back further, still
+ *   error         both grey, drawn far apart, still (the dock row says what happened and offers Resume)
  *   ended         both paths draw back into their anchors (360 ms) and the row is the composer again
  *
  * Every state is also words (the voice row's live region, voice-composer.tsx):
@@ -50,23 +50,29 @@ import type { StringPhase } from "./voice-string";
 export type VoicePhase = StringPhase;
 
 type Tone = "you" | "them" | "rest";
+/**
+ * How far a path's end reaches, measured at the centre of the row in units of the overlap: 1 passes the
+ * other end fully (connected), 0 just meets it (held), below 0 leaves the channel open (not connected).
+ * A `stub` instead is a length in px from the anchor (withdrawn: muted, ended).
+ */
+type Reach = { r: number } | { stub: number };
 interface Role {
-  you: { tone: "you" | "rest"; ext: number };
-  them: { tone: "them" | "rest"; ext: number };
+  you: { tone: "you" | "rest"; reach: Reach };
+  them: { tone: "them" | "rest"; reach: Reach };
 }
 
 /** Each phase's settled pose: each path's tone and how far its end reaches (1: past the other end). */
 const ROLE: Record<VoicePhase, Role> = {
-  connecting: { you: { tone: "rest", ext: 0.84 }, them: { tone: "rest", ext: 0.84 } },
-  listening: { you: { tone: "you", ext: 1 }, them: { tone: "rest", ext: 1 } },
-  thinking: { you: { tone: "rest", ext: 1 }, them: { tone: "rest", ext: 1 } },
-  answering: { you: { tone: "rest", ext: 1 }, them: { tone: "them", ext: 1 } },
-  muted: { you: { tone: "rest", ext: 0.14 }, them: { tone: "rest", ext: 1 } },
-  interrupted: { you: { tone: "you", ext: 1 }, them: { tone: "rest", ext: 1 } },
-  approval: { you: { tone: "you", ext: 0.9 }, them: { tone: "rest", ext: 0.9 } },
-  reconnecting: { you: { tone: "rest", ext: 0.78 }, them: { tone: "rest", ext: 0.78 } },
-  error: { you: { tone: "rest", ext: 0.7 }, them: { tone: "rest", ext: 0.7 } },
-  ended: { you: { tone: "rest", ext: 0 }, them: { tone: "rest", ext: 0 } },
+  connecting: { you: { tone: "rest", reach: { r: -0.7 } }, them: { tone: "rest", reach: { r: -0.7 } } },
+  listening: { you: { tone: "you", reach: { r: 1 } }, them: { tone: "rest", reach: { r: 1 } } },
+  thinking: { you: { tone: "rest", reach: { r: 1 } }, them: { tone: "rest", reach: { r: 1 } } },
+  answering: { you: { tone: "rest", reach: { r: 1 } }, them: { tone: "them", reach: { r: 1 } } },
+  muted: { you: { tone: "rest", reach: { stub: 26 } }, them: { tone: "rest", reach: { r: 1 } } },
+  interrupted: { you: { tone: "you", reach: { r: 1 } }, them: { tone: "rest", reach: { r: 1 } } },
+  approval: { you: { tone: "you", reach: { r: 0 } }, them: { tone: "rest", reach: { r: 0 } } },
+  reconnecting: { you: { tone: "rest", reach: { r: -0.7 } }, them: { tone: "rest", reach: { r: -0.7 } } },
+  error: { you: { tone: "rest", reach: { r: -1.7 } }, them: { tone: "rest", reach: { r: -1.7 } } },
+  ended: { you: { tone: "rest", reach: { stub: 0 } }, them: { tone: "rest", reach: { stub: 0 } } },
 };
 
 /** Where a phase is entered from when nothing preceded it on screen (a state URL): connecting draws from nothing. */
@@ -302,22 +308,23 @@ export function channelFrame({
   for (const side of ["you", "them"] as const) {
     const role = now[side];
     const was = prev[side];
-    let ext = lerp(was.ext, role.ext, reachK);
-    // Reconnecting: each real attempt reaches once toward the other end (360 out, 360 back).
-    if (phase === "reconnecting" && !reduced) {
-      for (const a of starts) {
-        const k = t - a;
-        if (k >= 0 && k < D_WITHDRAW * 2) ext = Math.max(ext, role.ext + 0.16 * Math.sin((Math.PI * k) / (D_WITHDRAW * 2)));
-      }
-    }
     // Weight: a path carrying a voice is broad; at rest it is the hairline; while Alevr thinks both carry the handoff at 2 px.
     const weightOf = (ph: VoicePhase, tone: "you" | "them" | "rest") => (ph === "thinking" ? W_THINK : toneTint(tone) ? W_ACTIVE : W_REST);
     const w0 = lerp(weightOf(phase === "interrupted" ? "answering" : from, was.tone), weightOf(phase, role.tone), toneK);
 
     const dir = side === "you" ? 1 : -1;
     const headX = side === "you" ? pad + w0 / 2 : W - pad - w0 / 2;
-    const fullTip = xc + dir * ov;
-    const tipX = headX + (fullTip - headX) * ext;
+    const tipAt = (reach: Reach) => ("stub" in reach ? headX + dir * reach.stub : xc + dir * ov * reach.r);
+    let tipX = lerp(tipAt(was.reach), tipAt(role.reach), reachK);
+    // Reconnecting: each real attempt reaches once toward the other end (360 out, 360 back).
+    if (phase === "reconnecting" && !reduced) {
+      for (const a of starts) {
+        const k = t - a;
+        if (k >= 0 && k < D_WITHDRAW * 2) tipX += dir * ov * 0.6 * Math.sin((Math.PI * k) / (D_WITHDRAW * 2));
+      }
+    }
+    // How much of the full path is drawn (the ends' curl and the empty path follow it).
+    const ext = clamp01(Math.abs(tipX - headX) / Math.max(1, Math.abs(xc + dir * ov - headX)));
     const base = y0 + (side === "you" ? g : -g);
     const plen = Math.abs(tipX - headX);
 
