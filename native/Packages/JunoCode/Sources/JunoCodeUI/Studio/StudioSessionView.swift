@@ -75,6 +75,8 @@ public struct StudioSessionView: View {
                 StudioApprovalPrompt(controller: controller)
                 StudioQuestionPrompt(controller: controller)
                 StudioPlanApprovalPrompt(controller: controller)
+                // The verify recipe card (CODE_AGENT_SPEC §1.8). Lane B.
+                StudioVerifyRecipeSlot(controller: controller)
                 composer
             }
             .frame(maxWidth: Studio.Metrics.measure)
