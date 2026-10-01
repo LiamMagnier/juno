@@ -29,6 +29,10 @@ public struct CodeToolProviderContext: Sendable {
     public var executor: any CommandExecuting
     public var git: any GitServicing
     public var tests: any TestRunning
+    /// The session's run ledger, for recorders that mint evidence (checks,
+    /// UI checks, reviews) through ``VerificationLedgerWriting``. Nil where
+    /// the session keeps none.
+    public var runLedger: RunLedgerRecorder?
 
     public init(
         sessionID: CodeSessionID,
@@ -42,7 +46,8 @@ public struct CodeToolProviderContext: Sendable {
         files: any FileOperating,
         executor: any CommandExecuting,
         git: any GitServicing,
-        tests: any TestRunning
+        tests: any TestRunning,
+        runLedger: RunLedgerRecorder? = nil
     ) {
         self.sessionID = sessionID
         self.workspaceID = workspaceID
@@ -56,6 +61,7 @@ public struct CodeToolProviderContext: Sendable {
         self.executor = executor
         self.git = git
         self.tests = tests
+        self.runLedger = runLedger
     }
 }
 

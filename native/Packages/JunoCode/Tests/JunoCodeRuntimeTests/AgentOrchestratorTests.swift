@@ -915,10 +915,16 @@ final class AgentOrchestratorTests: XCTestCase {
         })
     }
 
+    /// The first cut-off is resumed on its own (CODE_AGENT_SPEC §1.6); a
+    /// second in a row surfaces the error.
     func testMaximumTokenStopIsRecoverableFailure() async throws {
         let model = ScriptedModelClient(steps: [
             .events([
                 .textDelta("I started but"),
+                .turnCompleted(.maxTokens),
+            ]),
+            .events([
+                .textDelta("and again"),
                 .turnCompleted(.maxTokens),
             ]),
         ])
@@ -984,8 +990,11 @@ final class AgentOrchestratorTests: XCTestCase {
     }
 
     func testMissingCompletionReasonFailsInsteadOfCompleting() async throws {
+        // Resumed once on its own; the second stream that ends without a
+        // reason fails the run.
         let model = ScriptedModelClient(steps: [
             .events([.textDelta("Partial response")]),
+            .events([.textDelta("Partial again")]),
         ])
         let (orchestrator, _) = makeOrchestrator(model: model)
 
@@ -1021,8 +1030,16 @@ final class AgentOrchestratorTests: XCTestCase {
         try await orchestrator.submit(prompt: "Loop forever")
         await orchestrator.awaitCompletion()
         let final = try await store.session(id: session.id)
-        XCTAssertEqual(final.status, .failed)
+        // The limit is soft (CODE_AGENT_SPEC §1.6): a tools-off wrap-up turn,
+        // then the run ends as `stepLimit`, never as failed.
+        XCTAssertEqual(final.status, .completed)
         XCTAssertLessThanOrEqual(model.receivedRequests.count, 3)
+        XCTAssertEqual(model.receivedRequests.last?.tools.isEmpty, true)
+        let ended = await payloads().compactMap { payload -> RunEndReason? in
+            guard case let .runCompleted(run) = payload else { return nil }
+            return run.endReason
+        }
+        XCTAssertEqual(ended, [.stepLimit])
     }
 
     func testSubmitWhileRunningThrows() async throws {

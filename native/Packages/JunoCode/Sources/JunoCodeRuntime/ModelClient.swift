@@ -145,6 +145,9 @@ public enum ModelCallPurpose: String, Equatable, Sendable {
     case turn
     /// The summary written when older turns are folded away.
     case compactionSummary
+    /// The goal judge, or drafting a goal's criteria: small-model calls that
+    /// count toward the session's and the goal's spend.
+    case goalJudge
 }
 
 /// What one model call was billed for, as the provider reported it.

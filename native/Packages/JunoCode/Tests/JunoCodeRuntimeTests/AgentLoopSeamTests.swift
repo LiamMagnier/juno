@@ -234,12 +234,17 @@ final class AgentLoopSeamTests: XCTestCase {
         guard case let .user(note)? = model.receivedRequests[1].messages.last else {
             return XCTFail("the second request should end in the runtime note")
         }
-        XCTAssertEqual(note, "<juno_runtime reason=\"todos_open\">\n2 todos were open: c1, c2.\n</juno_runtime>")
+        // The gate's fact inside the reason's template (RuntimeContinuation),
+        // at the revision it was decided.
+        XCTAssertEqual(
+            note,
+            "<juno_runtime reason=\"todos_open\" revision=\"0\">\nBefore finishing: 2 todos were open: c1, c2. Finish them, or mark each one you cannot do as blocked with todo_write and say why.\n</juno_runtime>"
+        )
         XCTAssertFalse(ModelMessage.user(note).isReaderMessage, "Juno wrote it, not the reader")
         XCTAssertNil(ModelMessage.user(note).userText, "a rewind never counts it as the reader's")
 
         let recorded = await continuations()
-        XCTAssertEqual(recorded, [RunContinuedEvent(reason: .gate(.todosOpen), detail: "2 todos were open: c1, c2.", origin: .gate)])
+        XCTAssertEqual(recorded, [RunContinuedEvent(reason: .gate(.todosOpen), detail: "2 todos were open: c1, c2.", revision: 0, origin: .gate)])
         let prompts = await userPrompts()
         XCTAssertEqual(prompts, 1, "a continuation adds no reader message")
 

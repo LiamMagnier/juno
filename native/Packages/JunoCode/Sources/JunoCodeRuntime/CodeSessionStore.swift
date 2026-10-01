@@ -57,6 +57,8 @@ public actor CodeSessionStore {
     /// Each session's spend as read from or written to `usage.json`, so a
     /// session's ledger is read from disk once.
     private var usageLedgers: [CodeSessionID: SessionUsageLedger] = [:]
+    /// Each session's goals as read from or written to `goal.json`.
+    private var goalFiles: [CodeSessionID: GoalFile] = [:]
 
     public enum StoreUpdate: Sendable {
         case sessionChanged(CodeSession)
@@ -316,6 +318,178 @@ public actor CodeSessionStore {
         )
     }
 
+    // MARK: - Goals (CODE_AGENT_SPEC §2)
+
+    /// The session's goals: the current one, a proposal the reader has not
+    /// started, and past goals. Read from `goal.json`; a step-based goal an
+    /// earlier build stored is migrated the first time it is read, its
+    /// objective becoming a paused (or achieved) goal and its steps the
+    /// checklist.
+    public func goalFile(for sessionID: CodeSessionID) -> GoalFile {
+        if let cached = goalFiles[sessionID] { return cached }
+        try? loadIfNeeded()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let data = try? Data(contentsOf: goalURL(sessionID)),
+           let file = try? decoder.decode(GoalFile.self, from: data)
+        {
+            goalFiles[sessionID] = file
+            return file
+        }
+        var file = GoalFile()
+        if let legacy = sessions[sessionID]?.goal {
+            file.current = GoalRun.migrated(from: legacy)
+            let todos = GoalRun.todos(from: legacy)
+            if !todos.isEmpty {
+                _ = try? appendEvent(sessionID: sessionID, payload: .todosUpdated(TodoListEvent(items: todos)))
+            }
+            try? writeGoalFile(file, for: sessionID)
+        }
+        goalFiles[sessionID] = file
+        return file
+    }
+
+    /// The goal the session is working toward, if any is current.
+    public func currentGoalRun(for sessionID: CodeSessionID) -> GoalRun? {
+        goalFile(for: sessionID).current
+    }
+
+    /// Makes `goal` the session's current goal. A current goal it replaces
+    /// moves to history, readable in the goal sheet: one active goal per
+    /// session, replaceable (this lifts the old "goal already exists" refusal
+    /// for the new goals). Records `goal.set`.
+    @discardableResult
+    public func setGoal(_ goal: GoalRun, for sessionID: CodeSessionID) throws -> GoalRun {
+        try loadIfNeeded()
+        guard sessions[sessionID] != nil else {
+            throw SessionStoreError.sessionNotFound(id: sessionID.value)
+        }
+        var file = goalFile(for: sessionID)
+        if var previous = file.current, previous.id != goal.id {
+            if !previous.status.isFinal {
+                try? previous.transition(to: .cleared, reason: "Replaced by a new goal", at: goal.createdAt)
+            }
+            file.current = previous
+            file.retireCurrent()
+        }
+        if file.proposal?.id == goal.id {
+            file.proposal = nil
+        }
+        file.current = goal
+        try writeGoalFile(file, for: sessionID)
+        _ = try appendEvent(sessionID: sessionID, payload: .goalSet(goal.setEvent))
+        _ = try appendEvent(sessionID: sessionID, payload: .goalStatus(goal.statusEvent))
+        return goal
+    }
+
+    /// Changes the current goal and records what `record` says. Returns the
+    /// goal as it now stands, or nil when there is none.
+    @discardableResult
+    public func updateCurrentGoal(
+        for sessionID: CodeSessionID,
+        record: GoalChangeRecord,
+        _ change: @Sendable (inout GoalRun) throws -> Void
+    ) throws -> GoalRun? {
+        var file = goalFile(for: sessionID)
+        guard var goal = file.current else { return nil }
+        let before = goal
+        try change(&goal)
+        guard goal != before else { return goal }
+        if goal.status == .cleared {
+            file.current = goal
+            file.retireCurrent()
+        } else {
+            file.current = goal
+        }
+        try writeGoalFile(file, for: sessionID)
+        switch record {
+        case .silent:
+            break
+        case .status:
+            _ = try appendEvent(sessionID: sessionID, payload: .goalStatus(goal.statusEvent))
+        case let .verdict(verdict):
+            _ = try appendEvent(sessionID: sessionID, payload: .goalVerdict(Self.verdictEvent(verdict, goalID: goal.id)))
+            if goal.status != before.status {
+                _ = try appendEvent(sessionID: sessionID, payload: .goalStatus(goal.statusEvent))
+            }
+        case let .verdictAndStatus(verdict):
+            _ = try appendEvent(sessionID: sessionID, payload: .goalVerdict(Self.verdictEvent(verdict, goalID: goal.id)))
+            _ = try appendEvent(sessionID: sessionID, payload: .goalStatus(goal.statusEvent))
+        case .edited:
+            _ = try appendEvent(sessionID: sessionID, payload: .goalEdited(goal.editedEvent))
+        }
+        return goal
+    }
+
+    /// Keeps a goal the model proposed with `propose_goal`. Nothing starts
+    /// until the reader presses Start on its card.
+    public func proposeGoal(_ goal: GoalRun, for sessionID: CodeSessionID) throws {
+        try loadIfNeeded()
+        guard sessions[sessionID] != nil else {
+            throw SessionStoreError.sessionNotFound(id: sessionID.value)
+        }
+        var file = goalFile(for: sessionID)
+        file.proposal = goal
+        try writeGoalFile(file, for: sessionID)
+        notify(.sessionChanged(sessions[sessionID]!))
+    }
+
+    /// Drops the proposal the reader dismissed.
+    public func clearGoalProposal(for sessionID: CodeSessionID) throws {
+        var file = goalFile(for: sessionID)
+        guard file.proposal != nil else { return }
+        file.proposal = nil
+        try writeGoalFile(file, for: sessionID)
+    }
+
+    private static func verdictEvent(_ verdict: GoalVerdict, goalID: String) -> GoalVerdictEvent {
+        GoalVerdictEvent(
+            goalID: goalID,
+            verdict: verdict.kind,
+            reason: verdict.reason,
+            unmetCriteria: verdict.unmetCriteria,
+            revision: verdict.revision
+        )
+    }
+
+    private func writeGoalFile(_ file: GoalFile, for sessionID: CodeSessionID) throws {
+        do {
+            try FileManager.default.createDirectory(at: sessionDirectory(sessionID), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(file).write(to: goalURL(sessionID), options: .atomic)
+            goalFiles[sessionID] = file
+        } catch {
+            throw SessionStoreError.persistenceFailed(message: String(describing: error))
+        }
+    }
+
+    // MARK: - The run journal (CODE_AGENT_SPEC §1.12)
+
+    /// Saves the run's ledger and whether it is still going, at every step
+    /// boundary, so a run Juno quit in the middle of can be resumed.
+    public func saveRunJournal(_ journal: RunJournal, for sessionID: CodeSessionID) throws {
+        try loadIfNeeded()
+        guard sessions[sessionID] != nil else { return }
+        do {
+            try FileManager.default.createDirectory(at: sessionDirectory(sessionID), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(journal).write(to: runJournalURL(sessionID), options: .atomic)
+        } catch {
+            throw SessionStoreError.persistenceFailed(message: String(describing: error))
+        }
+    }
+
+    /// The last saved run journal, if the session has one.
+    public func runJournal(for sessionID: CodeSessionID) -> RunJournal? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let data = try? Data(contentsOf: runJournalURL(sessionID)) else { return nil }
+        return try? decoder.decode(RunJournal.self, from: data)
+    }
+
     public func deleteSession(id: CodeSessionID) throws {
         try loadIfNeeded()
         guard sessions[id] != nil else { return }
@@ -328,6 +502,7 @@ public actor CodeSessionStore {
         sessions.removeValue(forKey: id)
         transcripts.removeValue(forKey: id)
         unsavedTranscripts.remove(id)
+        goalFiles.removeValue(forKey: id)
         usageLedgers.removeValue(forKey: id)
         notify(.sessionRemoved(id))
     }
@@ -887,6 +1062,7 @@ public actor CodeSessionStore {
                         ]
                     )
                 }
+                pauseGoalAfterInterruption(session.id)
                 repairedSessions.append(session)
             }
 
@@ -908,6 +1084,22 @@ public actor CodeSessionStore {
             }
             throw SessionStoreError.persistenceFailed(message: String(describing: error))
         }
+    }
+
+    /// A goal that was active when Juno quit comes back paused: the reader
+    /// presses Resume to carry on (§1.12). Read before `loaded` is set, so
+    /// from the file alone.
+    private func pauseGoalAfterInterruption(_ id: CodeSessionID) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let data = try? Data(contentsOf: goalURL(id)),
+              var file = try? decoder.decode(GoalFile.self, from: data),
+              var goal = file.current,
+              goal.status == .active || goal.status == .needsYou
+        else { return }
+        try? goal.transition(to: .paused, reason: GoalRun.interruptedReason, at: Date())
+        file.current = goal
+        try? writeGoalFile(file, for: id)
     }
 
     private enum InterruptionRepairState {
@@ -1017,5 +1209,13 @@ public actor CodeSessionStore {
 
     private func usageURL(_ id: CodeSessionID) -> URL {
         sessionDirectory(id).appendingPathComponent("usage.json")
+    }
+
+    private nonisolated func goalURL(_ id: CodeSessionID) -> URL {
+        sessionDirectory(id).appendingPathComponent("goal.json")
+    }
+
+    private nonisolated func runJournalURL(_ id: CodeSessionID) -> URL {
+        sessionDirectory(id).appendingPathComponent("run.json")
     }
 }
