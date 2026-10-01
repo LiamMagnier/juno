@@ -2,7 +2,9 @@
 """Authenticated WebSocket CDP adapter for Chromium's private fd 3/4 pipe.
 
 Runs as browser (1001), separately from the agent shell (1000). No raw TCP
-DevTools port exists; profile and bearer file are inaccessible to the agent.
+DevTools port exists, and the agent's SHELL cannot read the profile or the bearer
+file (both are 0700 uid 1001). The agent does drive the shared display, so the
+browser window's own UI is reachable by GUI input; see the Dockerfile header.
 """
 import asyncio
 import ctypes
@@ -15,7 +17,7 @@ from http import HTTPStatus
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-TOKEN_FILE = "/tmp/.juno-cdp-token"
+TOKEN_FILE = "/run/juno/cdp-token"
 TOKEN = b""
 LOCK = threading.Lock()
 

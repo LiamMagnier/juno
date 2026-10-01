@@ -24,6 +24,9 @@ import type {
 
 let loggedMissingImage = false;
 
+/** The `juno.security` label the image must carry (deploy/agent-computers/Dockerfile). */
+export const COMPUTER_IMAGE_SECURITY_LABEL = "pipe-v3";
+
 export interface DockerCreateArgvOptions {
   agentId: string;
   userId: string;
@@ -205,7 +208,9 @@ export class DockerProvider implements ComputerProvider {
       allowNonZero: true,
       timeoutMs: 8_000,
     });
-    if (res.exitCode !== 0 || res.stdout.trim() !== "pipe-v2") {
+    // pipe-v3: no desktop session or GUI apps as the browser uid, private
+    // /run/juno handover directory. An older image fails closed here.
+    if (res.exitCode !== 0 || res.stdout.trim() !== COMPUTER_IMAGE_SECURITY_LABEL) {
       if (!loggedMissingImage) {
         loggedMissingImage = true;
         console.warn(
@@ -329,10 +334,13 @@ export class DockerProvider implements ComputerProvider {
   }
 
   /**
-   * Hands the CDP gate its token after a start. Written to tmpfs through
-   * stdin (never argv, never env), renamed into place so the gate never reads
-   * half a token, and waited on until the gate has taken and deleted it, so
-   * the first browser connection after a wake is not refused.
+   * Hands the CDP gate its token after a start. Written through stdin (never
+   * argv, never env) into /run/juno, a tmpfs directory only uid 1001 can enter
+   * (the entrypoint creates it 0700 or refuses to start), created exclusively
+   * (`set -C`), renamed into place so the gate never reads half a token, and
+   * waited on until the gate has taken and deleted it, so the first browser
+   * connection after a wake is not refused. Nothing the agent can write is on
+   * that path, on a start or on an unpause while its processes are alive.
    */
   async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
     await spawnDockerWithStdin(
@@ -344,13 +352,16 @@ export class DockerProvider implements ComputerProvider {
         handle.name,
         "sh",
         "-c",
-        "umask 077 && cat > /tmp/.juno-cdp-token.part && mv -f /tmp/.juno-cdp-token.part /tmp/.juno-cdp-token",
+        // The entrypoint creates /run/juno a moment after a start; wait for it
+        // rather than create it here (only the entrypoint checks its mode).
+        "for i in $(seq 1 50); do [ -d /run/juno ] && break; sleep 0.1; done; " +
+          "umask 077 && rm -f /run/juno/cdp-token.part && set -C && cat > /run/juno/cdp-token.part && mv -f /run/juno/cdp-token.part /run/juno/cdp-token",
       ],
       Buffer.from(token, "utf8")
     );
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const left = await runDockerText(
-        ["exec", "--user", "1001", handle.name, "test", "-e", "/tmp/.juno-cdp-token"],
+        ["exec", "--user", "1001", handle.name, "test", "-e", "/run/juno/cdp-token"],
         { allowNonZero: true, timeoutMs: 5_000 }
       );
       if (left.exitCode !== 0) return;
@@ -761,10 +772,11 @@ export class DockerProvider implements ComputerProvider {
     handle: ComputerHandle,
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void> {
-    // The password file goes to tmpfs, never the agent's volume, and x11vnc
-    // deletes it the moment it has read it (`rm:`). A file left in
-    // /home/agent/.juno was readable by the agent's shell, which runs as the
-    // same uid, so the model could have read the control password.
+    // The password file goes to /run/juno (tmpfs, 0700 uid 1001), never the
+    // agent's volume or the shared /tmp, and x11vnc deletes it the moment it
+    // has read it (`rm:`). A file left in /home/agent/.juno was readable by the
+    // agent's shell, which runs as the same uid, so the model could have read
+    // the control password.
     const passFileContent = Buffer.from(
       `${opts.controlPassword}\n__BEGIN_VIEWONLY__\n${opts.viewPassword}\n`,
       "utf8"
@@ -782,7 +794,7 @@ export class DockerProvider implements ComputerProvider {
         handle.name,
         "sh",
         "-c",
-        "umask 077 && rm -f /tmp/.juno-vncpass /home/agent/.juno/vncpass && cat > /tmp/.juno-vncpass",
+        "umask 077 && rm -f /run/juno/vncpass && set -C && cat > /run/juno/vncpass",
       ],
       passFileContent
     );
@@ -802,7 +814,7 @@ export class DockerProvider implements ComputerProvider {
       "5900",
       "-noipv6",
       "-passwdfile",
-      "rm:/tmp/.juno-vncpass",
+      "rm:/run/juno/vncpass",
       "-bg",
       "-o",
       "/tmp/x11vnc.log",

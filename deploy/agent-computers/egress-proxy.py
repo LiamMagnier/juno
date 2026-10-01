@@ -9,10 +9,42 @@ import ipaddress
 import select
 import socket
 import threading
+import time
 from urllib.parse import urlsplit
 
 DENIED = ipaddress.ip_network("168.63.129.16/32")
-SLOTS = threading.BoundedSemaphore(16)
+# One proxy serves every computer on the host. The unit's TasksMax is 32 (one
+# thread per connection plus the accept loop), so the host-wide ceiling stays
+# under it, and no single computer may hold more than its share: a busy or
+# hostile one used to be able to take all of them and cut everyone else off.
+TOTAL_LIMIT = 24
+PER_SOURCE_LIMIT = 6
+HEADER_DEADLINE_SECONDS = 10
+TUNNEL_LIFETIME_SECONDS = 30 * 60
+SLOTS = threading.BoundedSemaphore(TOTAL_LIMIT)
+ACTIVE = {}
+ACTIVE_LOCK = threading.Lock()
+
+
+def admit(source):
+    """Take a slot for this source address, or refuse without waiting."""
+    with ACTIVE_LOCK:
+        if ACTIVE.get(source, 0) >= PER_SOURCE_LIMIT:
+            return False
+        if not SLOTS.acquire(blocking=False):
+            return False
+        ACTIVE[source] = ACTIVE.get(source, 0) + 1
+        return True
+
+
+def leave(source):
+    with ACTIVE_LOCK:
+        remaining = ACTIVE.get(source, 1) - 1
+        if remaining > 0:
+            ACTIVE[source] = remaining
+        else:
+            ACTIVE.pop(source, None)
+        SLOTS.release()
 
 
 def public_ip(value):
@@ -47,7 +79,8 @@ def connect_public(host, port):
 
 
 def relay(client, upstream):
-    while True:
+    ends = time.monotonic() + TUNNEL_LIFETIME_SECONDS
+    while time.monotonic() < ends:
         readable, _, _ = select.select([client, upstream], [], [], 60)
         if not readable:
             return
@@ -58,16 +91,23 @@ def relay(client, upstream):
             (upstream if source is client else client).sendall(data)
 
 
-def handle(client):
+def handle(client, source):
     upstream = None
     try:
-        client.settimeout(10)
+        # One deadline for the whole header, not per recv: a byte every nine
+        # seconds used to hold a slot indefinitely.
+        header_ends = time.monotonic() + HEADER_DEADLINE_SECONDS
         pending = b""
         while b"\r\n\r\n" not in pending:
+            remaining = header_ends - time.monotonic()
+            if remaining <= 0:
+                raise ValueError("Request header too slow")
+            client.settimeout(remaining)
             chunk = client.recv(4096)
             if not chunk or len(pending) + len(chunk) > 65536:
                 raise ValueError("Invalid request header")
             pending += chunk
+        client.settimeout(10)
         head, _, rest = pending.partition(b"\r\n\r\n")
         lines = head.decode("iso-8859-1").split("\r\n")
         method, target, version = lines[0].split(" ")
@@ -109,20 +149,21 @@ def handle(client):
         if upstream:
             upstream.close()
         client.close()
-        SLOTS.release()
+        leave(source)
 
 
 def main():
     server = socket.socket()
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(("172.30.0.1", 3128))
-    server.listen(16)
+    server.listen(64)
     while True:
-        client, _ = server.accept()
-        if not SLOTS.acquire(blocking=False):
+        client, address = server.accept()
+        source = address[0]
+        if not admit(source):
             client.close()
             continue
-        threading.Thread(target=handle, args=(client,), daemon=True).start()
+        threading.Thread(target=handle, args=(client, source), daemon=True).start()
 
 
 if __name__ == "__main__":

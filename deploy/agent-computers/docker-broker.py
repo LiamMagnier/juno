@@ -7,6 +7,7 @@ The policy file and this executable must be writable only by root.
 """
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -14,6 +15,22 @@ import sys
 CONFIG = "/etc/juno/computer-broker.json"
 DOCKER = "/usr/bin/docker"
 NAME = re.compile(r"juno-agent-[A-Za-z0-9_-]{1,120}\Z")
+AGENT_ID = re.compile(r"[A-Za-z0-9_-]{1,120}\Z")
+# The provider's two listing calls, exactly (src/lib/computer/docker.ts listOwned).
+PS_ARGV = ["ps", "-a", "--filter", "label=app=juno", "--format",
+           '{{.Names}}\t{{.Label "juno.agent"}}\t{{.Label "juno.user"}}\t{{.State}}']
+VOLUME_LS_ARGV = ["volume", "ls", "--filter", "name=juno-agent-", "--format", "{{.Name}}"]
+
+
+def agent_workdir(value):
+    """A working directory inside the agent's home: absolute, normalized, no
+    `..`, no control characters. The provider resolves it with realpath as uid
+    1000 first; this is the broker refusing anything else on its own."""
+    if not value.startswith("/") or any(ord(c) < 32 for c in value) or len(value) > 4096:
+        return False
+    if posixpath.normpath(value) != value or "/../" in value + "/":
+        return False
+    return value == "/home/agent" or value.startswith("/home/agent/")
 
 
 def validate(argv, policy):
@@ -22,10 +39,17 @@ def validate(argv, policy):
     operation = argv[0]
     if operation == "image" and argv[1:] == ["inspect", "--format", '{{index .Config.Labels "juno.security"}}', policy["image"]]:
         return None
-    if operation == "volume" and len(argv) in (3, 4):
-        if argv[1] == "create" and len(argv) == 3 and NAME.fullmatch(argv[2]):
+    if argv == PS_ARGV or argv == VOLUME_LS_ARGV:
+        return None
+    if operation == "volume" and len(argv) == 7 and argv[1:3] == ["create", "--label"] and argv[3] == "app=juno" and argv[4] == "--label":
+        # The agent's home and browser-profile volumes, labelled with their agent.
+        label, name = argv[5], argv[6]
+        agent = label.removeprefix("juno.agent=")
+        if label.startswith("juno.agent=") and AGENT_ID.fullmatch(agent) and name in ("juno-agent-" + agent, "juno-agent-" + agent + "-browser"):
             return None
-        if argv[1:3] == ["rm", "-f"] and len(argv) == 4 and NAME.fullmatch(argv[3]):
+        raise ValueError("Volume name and agent label do not match")
+    if operation == "volume" and len(argv) == 4:
+        if argv[1:3] == ["rm", "-f"] and NAME.fullmatch(argv[3]):
             return None
     if operation in {"start", "stop", "pause", "unpause"} and len(argv) == 2 and NAME.fullmatch(argv[1]):
         return argv[1]
@@ -42,9 +66,11 @@ def validate(argv, policy):
         if argv[index:index + 2] not in (["--user", "1000"], ["--user", "1001"]):
             raise ValueError("Exec requires an unprivileged numeric user")
         index += 2
-        while argv[index:index + 1] == ["-e"]:
-            if argv[index + 1] not in {"DISPLAY=:0", "HOME=/home/agent"}:
+        while argv[index:index + 1] in (["-e"], ["--workdir"]):
+            if argv[index] == "-e" and argv[index + 1] not in {"DISPLAY=:0", "HOME=/home/agent"}:
                 raise ValueError("Exec environment is not permitted")
+            if argv[index] == "--workdir" and not agent_workdir(argv[index + 1]):
+                raise ValueError("Exec working directory must stay inside /home/agent")
             index += 2
         if index + 1 < len(argv) and NAME.fullmatch(argv[index]):
             return argv[index]
@@ -105,10 +131,13 @@ def main():
     target = validate(argv, policy)
     environment = {"PATH": "/usr/bin:/bin", "HOME": "/root"}
     if target:
-        inspected = subprocess.run([DOCKER, "inspect", "-f", '{{index .Config.Labels "app"}}', target],
+        # Fails closed: a container that cannot be inspected (missing, or a
+        # daemon error) is refused rather than operated on unchecked. Every
+        # provider call that can meet a missing container tolerates the refusal.
+        inspected = subprocess.run([DOCKER, "inspect", "--type", "container", "-f", '{{index .Config.Labels "app"}}', target],
                                    env=environment, capture_output=True, text=True)
-        if inspected.returncode == 0 and inspected.stdout.strip() != "juno":
-            raise ValueError("Container is outside the Juno namespace")
+        if inspected.returncode != 0 or inspected.stdout.strip() != "juno":
+            raise ValueError("Container is missing or outside the Juno namespace")
     os.execve(DOCKER, [DOCKER] + argv, environment)
 
 

@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import socket
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,6 +60,58 @@ class BrokerContainment(unittest.TestCase):
                 broker.validate(args({**options, key: replacement}), POLICY)
 
 
+class BrokerMatchesProvider(unittest.TestCase):
+    """The argv shapes src/lib/computer/docker.ts actually sends. A broker that
+    refused them left the feature broken on first use, and the quick workaround
+    (docker group or a wider sudo rule) would make the app root-equivalent.
+    tests/computer-broker-argv.test.ts runs the real provider against this."""
+
+    def test_labelled_volume_creation_is_accepted_only_for_its_own_agent(self):
+        for name in ("juno-agent-abc", "juno-agent-abc-browser"):
+            self.assertIsNone(broker.validate(["volume", "create", "--label", "app=juno", "--label", "juno.agent=abc", name], POLICY))
+        for argv in (["volume", "create", "--label", "app=juno", "--label", "juno.agent=abc", "juno-agent-other"],
+                     ["volume", "create", "--label", "app=other", "--label", "juno.agent=abc", "juno-agent-abc"],
+                     ["volume", "create", "--label", "app=juno", "--label", "juno.agent=abc", "--driver", "local", "juno-agent-abc"],
+                     ["volume", "create", "--opt", "type=none", "--opt", "device=/", "--opt", "o=bind", "juno-agent-abc"],
+                     ["volume", "create", "production"]):
+            with self.subTest(argv=argv), self.assertRaises((ValueError, IndexError)):
+                broker.validate(argv, POLICY)
+
+    def test_exec_working_directory_stays_in_the_agent_home(self):
+        for workdir in ("/home/agent", "/home/agent/work", "/home/agent/work/sub dir"):
+            self.assertEqual(broker.validate(["exec", "--user", "1000", "--workdir", workdir, "juno-agent-t", "timeout", "5", "bash", "-lc", "pwd"], POLICY), "juno-agent-t")
+        for workdir in ("/home/browser", "/home/agent/../browser", "/home/agentx", "work", "/home/agent/work/\nx", "/", "/home/agent/./work"):
+            with self.subTest(workdir=workdir), self.assertRaises(ValueError):
+                broker.validate(["exec", "--user", "1000", "--workdir", workdir, "juno-agent-t", "pwd"], POLICY)
+
+    def test_only_the_two_fixed_listings_are_allowed(self):
+        self.assertIsNone(broker.validate(list(broker.PS_ARGV), POLICY))
+        self.assertIsNone(broker.validate(list(broker.VOLUME_LS_ARGV), POLICY))
+        for argv in (["ps", "-a"], ["ps", "-a", "--format", "{{json .}}"], ["volume", "ls"],
+                     ["volume", "ls", "--filter", "name=", "--format", "{{.Name}}"],
+                     ["ps", "-a", "--filter", "label=app=juno", "--format", "{{.Mounts}}"]):
+            with self.subTest(argv=argv), self.assertRaises((ValueError, IndexError)):
+                broker.validate(argv, POLICY)
+
+    def test_namespace_check_fails_closed_when_inspect_fails(self):
+        calls = []
+
+        class Result:
+            def __init__(self, code, out):
+                self.returncode, self.stdout = code, out
+
+        for code, out in ((1, ""), (0, "other\n")):
+            with self.subTest(code=code, out=out), \
+                 patch.object(broker, "open", unittest.mock.mock_open(read_data='{"image": "juno-computer:1", "network": "juno-computers", "maxMemoryMb": 2048, "maxCpus": 2}'), create=True), \
+                 patch.object(broker.sys, "argv", ["broker", "start", "juno-agent-t"]), \
+                 patch.object(broker.subprocess, "run", return_value=Result(code, out)) as run, \
+                 patch.object(broker.os, "execve", side_effect=lambda *a: calls.append(a)):
+                with self.assertRaises(ValueError):
+                    broker.main()
+                self.assertIn("--type", run.call_args.args[0])
+        self.assertEqual(calls, [])
+
+
 class PinnedEgress(unittest.TestCase):
     def test_all_private_and_metadata_families_are_denied(self):
         for address in ("127.0.0.1", "10.0.0.1", "172.30.0.1", "192.168.1.1", "100.64.0.1", "169.254.169.254", "168.63.129.16", "0.0.0.0", "224.0.0.1", "240.1.1.1", "::1", "fe80::1", "fc00::1", "::ffff:127.0.0.1"):
@@ -76,6 +129,35 @@ class PinnedEgress(unittest.TestCase):
         for port in (22, 5432, 9222):
             with self.assertRaises(ValueError):
                 proxy.resolve_public("public.example", port)
+
+    def test_one_computer_cannot_take_every_slot(self):
+        self.assertLess(proxy.TOTAL_LIMIT, 32, "must stay under the unit's TasksMax")
+        taken = []
+        try:
+            for _ in range(proxy.PER_SOURCE_LIMIT):
+                self.assertTrue(proxy.admit("172.30.0.2"))
+                taken.append("172.30.0.2")
+            self.assertFalse(proxy.admit("172.30.0.2"), "a seventh connection from one computer is refused")
+            self.assertTrue(proxy.admit("172.30.0.3"), "another computer still gets a slot")
+            taken.append("172.30.0.3")
+        finally:
+            for source in taken:
+                proxy.leave(source)
+        self.assertEqual(proxy.ACTIVE, {})
+
+    def test_a_slow_header_is_cut_off_by_one_deadline(self):
+        server, client = socket.socketpair()
+        try:
+            with patch.object(proxy, "HEADER_DEADLINE_SECONDS", 0.3):
+                self.assertTrue(proxy.admit("slow"))
+                client.sendall(b"CONNECT example.com:443 HTTP/1.1\r\n")  # never finished
+                started = __import__("time").monotonic()
+                proxy.handle(server, "slow")
+                self.assertLess(__import__("time").monotonic() - started, 2)
+            self.assertIn(b"403", client.recv(1024))
+        finally:
+            client.close()
+        self.assertEqual(proxy.ACTIVE, {})
 
     def test_connection_uses_validated_ip_without_resolving_again(self):
         answer = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443))
