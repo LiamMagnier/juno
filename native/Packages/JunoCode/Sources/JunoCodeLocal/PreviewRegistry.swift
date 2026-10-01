@@ -568,7 +568,14 @@ public actor PreviewRegistry {
             )
         }
         let stream = await process.start(launch)
-        guard entry.generation == generation else { return outcome(entry, alreadyRunning: false) }
+        guard entry.generation == generation else {
+            // A stop, restart or changed start won while this one launched.
+            // Its process is no longer the entry's, so nothing else will stop
+            // it, and its stream is never read (nor its group recorded in the
+            // ledger): stop it here rather than leave a server holding a port.
+            await process.stopAndWaitAsync()
+            return outcome(entry, alreadyRunning: false)
+        }
         entry.pump = Task { [weak self] in
             for await event in stream {
                 await self?.handle(event, key: key, generation: generation)

@@ -42,6 +42,11 @@ public final class StaticPreviewServer: @unchecked Sendable {
     private var activeClientSockets: Set<Int32> = []
     private var eventStreamClients: Set<Int32> = []
     private var watcher: Task<Void, Never>?
+    /// Every write to, and every close of, a live-reload stream happens on
+    /// this queue, so a stream is never closed (and its descriptor number
+    /// reused by another file) while a reload or heartbeat is being written
+    /// to it.
+    private let streamQueue = DispatchQueue(label: "juno.static-preview.live-reload", qos: .utility)
     private let changeDetector: WorkspaceChangeDetector
     /// How often the root is rescanned while a page is listening for reloads.
     private let watchInterval: Duration
@@ -55,6 +60,9 @@ public final class StaticPreviewServer: @unchecked Sendable {
     static let readTimeoutMilliseconds: Int32 = 5_000
     /// HTML above this is served as-is, without the live-reload client.
     static let maximumInjectedHTMLBytes = 8 * 1_024 * 1_024
+    /// Live-reload streams held open at once. Each is a descriptor in Juno's
+    /// own process, and any page on the Mac can open one.
+    static let maximumLiveReloadClients = 16
 
     public init(staticRootURL: URL, watchInterval: Duration = .seconds(1)) throws {
         let root = staticRootURL.resolvingSymlinksInPath().standardizedFileURL
@@ -142,8 +150,11 @@ public final class StaticPreviewServer: @unchecked Sendable {
             return
         }
         isRunning = false
-        let clients = activeClientSockets.union(eventStreamClients)
-        activeClientSockets.removeAll()
+        // A request still being answered belongs to its handler, which closes
+        // it: shutting it down here makes the handler's next read or write
+        // fail at once, without freeing the descriptor number under it.
+        let requests = activeClientSockets
+        let streams = eventStreamClients
         eventStreamClients.removeAll()
         let watcher = self.watcher
         self.watcher = nil
@@ -151,8 +162,17 @@ public final class StaticPreviewServer: @unchecked Sendable {
 
         watcher?.cancel()
         dispatchSource.cancel()
-        for clientSock in clients {
-            Darwin.close(clientSock)
+        for clientSock in requests {
+            Darwin.shutdown(clientSock, SHUT_RDWR)
+        }
+        for clientSock in streams {
+            Darwin.shutdown(clientSock, SHUT_RDWR)
+        }
+        // Closed after any write in flight on the stream queue.
+        streamQueue.async {
+            for clientSock in streams {
+                Darwin.close(clientSock)
+            }
         }
     }
 
@@ -165,12 +185,20 @@ public final class StaticPreviewServer: @unchecked Sendable {
 
     /// Tells every listening page to reload now.
     public func notifyReload() {
-        lock.lock()
-        let clients = eventStreamClients
-        lock.unlock()
-        let message = Data("event: reload\ndata: reload\n\n".utf8)
-        for client in clients where !Self.writeAll(message, to: client) {
-            dropEventStream(client)
+        broadcast(Data("event: reload\ndata: reload\n\n".utf8))
+    }
+
+    /// Writes `message` to every live-reload stream, on the stream queue, and
+    /// drops the ones that went away.
+    private func broadcast(_ message: Data) {
+        streamQueue.async { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let clients = self.eventStreamClients
+            self.lock.unlock()
+            for client in clients where !Self.writeAll(message, to: client) {
+                self.dropEventStreamOnQueue(client)
+            }
         }
     }
 
@@ -221,7 +249,8 @@ public final class StaticPreviewServer: @unchecked Sendable {
         lock.lock()
         let wasTracked = activeClientSockets.remove(sock) != nil
         lock.unlock()
-        // `stop()` already closed it when it is no longer tracked.
+        // The handler owns its socket until here; a stream handed to the
+        // live-reload set is closed by that set instead.
         if closing, wasTracked {
             Darwin.close(sock)
         }
@@ -343,7 +372,7 @@ public final class StaticPreviewServer: @unchecked Sendable {
 
     /// Paths that are never served, whatever the root: secrets and the
     /// machinery around a project, not its site. Checked per path component.
-    static func isDenied(_ components: [String]) -> Bool {
+    public static func isDenied(_ components: [String]) -> Bool {
         for component in components {
             let lowered = component.lowercased()
             // `.well-known` is site content by definition; every other dot
@@ -523,6 +552,11 @@ public final class StaticPreviewServer: @unchecked Sendable {
     // MARK: - Live reload
 
     private func openEventStream(_ sock: Int32) -> Bool {
+        let full = lock.withLock { eventStreamClients.count >= Self.maximumLiveReloadClients }
+        if full {
+            respond(sock, status: 503, text: "Too many live-reload streams")
+            return false
+        }
         var headers = Self.commonHeaders
         headers["Connection"] = "keep-alive"
         headers["Content-Type"] = "text/event-stream"
@@ -530,10 +564,11 @@ public final class StaticPreviewServer: @unchecked Sendable {
               Self.writeAll(Data(": connected\n\n".utf8), to: sock)
         else { return false }
         lock.lock()
-        guard isRunning else {
+        guard isRunning, eventStreamClients.count < Self.maximumLiveReloadClients else {
             lock.unlock()
             return false
         }
+        // Handed over: from here the stream set owns and closes it.
         activeClientSockets.remove(sock)
         eventStreamClients.insert(sock)
         let startWatcher = watcher == nil
@@ -542,7 +577,8 @@ public final class StaticPreviewServer: @unchecked Sendable {
         return true
     }
 
-    private func dropEventStream(_ sock: Int32) {
+    /// Removes and closes a stream. Only on the stream queue.
+    private func dropEventStreamOnQueue(_ sock: Int32) {
         lock.lock()
         let removed = eventStreamClients.remove(sock) != nil
         lock.unlock()
@@ -585,12 +621,7 @@ public final class StaticPreviewServer: @unchecked Sendable {
     }
 
     private func heartbeat() {
-        lock.lock()
-        let clients = eventStreamClients
-        lock.unlock()
-        for client in clients where !Self.writeAll(Data(": ping\n\n".utf8), to: client) {
-            dropEventStream(client)
-        }
+        broadcast(Data(": ping\n\n".utf8))
     }
 
     // MARK: - Writing

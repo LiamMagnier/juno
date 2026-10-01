@@ -43,6 +43,9 @@ public struct PreviewLogBuffer: Sendable {
     }
 
     public static let defaultCapacity = 5_000
+    /// A line longer than this is cut (a minified bundle or a base64 payload
+    /// on one line), so 5,000 lines stay a few megabytes, not gigabytes.
+    public static let maximumLineLength = 4_096
 
     public let capacity: Int
     public private(set) var entries: [Entry] = []
@@ -58,7 +61,8 @@ public struct PreviewLogBuffer: Sendable {
 
     @discardableResult
     public mutating func append(channel: ToolOutputChannel, text: String, at: Date = Date()) -> Entry {
-        let entry = Entry(id: nextID, channel: channel, text: text, at: at)
+        let bounded = text.count > Self.maximumLineLength ? String(text.prefix(Self.maximumLineLength)) + " …" : text
+        let entry = Entry(id: nextID, channel: channel, text: bounded, at: at)
         nextID += 1
         entries.append(entry)
         if entries.count > capacity {

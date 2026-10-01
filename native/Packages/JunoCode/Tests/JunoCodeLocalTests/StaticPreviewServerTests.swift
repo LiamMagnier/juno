@@ -291,6 +291,39 @@ final class StaticPreviewServerTests: XCTestCase {
         XCTAssertTrue(pushed.contains("event: reload"), pushed)
     }
 
+    /// Live-reload streams are capped (each is a descriptor in Juno, and any
+    /// page on the Mac can open one), and stopping the server ends every
+    /// stream it holds.
+    func testLiveReloadStreamsAreCappedAndEndOnStop() async throws {
+        try writeFile("index.html", contents: "<html><body></body></html>")
+        let server = try StaticPreviewServer(staticRootURL: workspaceURL, watchInterval: .seconds(30))
+        let request = "GET \(StaticPreviewServer.liveReloadPath) HTTP/1.1\r\nHost: 127.0.0.1:\(server.port)\r\n\r\n"
+        var streams: [Int32] = []
+        defer { streams.forEach { Darwin.close($0) } }
+        for _ in 0..<StaticPreviewServer.maximumLiveReloadClients {
+            let sock = try Self.connect(port: server.port)
+            streams.append(sock)
+            _ = request.withCString { Darwin.write(sock, $0, strlen($0)) }
+            let opening = try Self.read(sock, until: ": connected", timeout: 3)
+            XCTAssertTrue(opening.contains("text/event-stream"), opening)
+        }
+        for _ in 0..<50 where server.liveReloadClientCount < StaticPreviewServer.maximumLiveReloadClients {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(server.liveReloadClientCount, StaticPreviewServer.maximumLiveReloadClients)
+
+        let refused = try Self.rawRequest(port: server.port, request)
+        XCTAssertTrue(refused.hasPrefix("HTTP/1.1 503"), refused)
+        XCTAssertEqual(server.liveReloadClientCount, StaticPreviewServer.maximumLiveReloadClients)
+
+        server.stop()
+        XCTAssertEqual(server.liveReloadClientCount, 0)
+        let ended = try Self.read(streams[0], until: "never", timeout: 3)
+        XCTAssertFalse(ended.contains("never"))
+        var buffer = [UInt8](repeating: 0, count: 64)
+        XCTAssertEqual(Darwin.read(streams[0], &buffer, buffer.count), 0, "the stream sees the server hang up")
+    }
+
     func testStaticPreviewServerStop() throws {
         try writeFile("index.html", contents: "<html></html>")
         let server = try StaticPreviewServer(staticRootURL: workspaceURL)

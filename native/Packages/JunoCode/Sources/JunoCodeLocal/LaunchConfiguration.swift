@@ -536,17 +536,31 @@ public enum LaunchConfigurationStore {
 
 /// Loopback origin rules shared by the registry, the tools and the page.
 public enum PreviewOrigin {
-    /// `localhost`, `127.x.x.x` or `::1`. Never resolved through DNS: a lookup
-    /// would make the decision depend on mutable network state.
+    /// `localhost`, `127.x.x.x` or `::1`, spelled exactly. Never resolved
+    /// through DNS: a lookup would make the decision depend on mutable network
+    /// state.
+    ///
+    /// Two spellings are refused on purpose. `app.localhost` is a name the
+    /// system resolver may send to DNS, so a hostile network could answer it
+    /// with any address. And an octet with a leading zero or a sign (`0127`,
+    /// `+127`) reads as 127 to Swift but as octal (87) to WebKit's URL parser,
+    /// so the check and the load would disagree about the host.
     public static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-        if normalized == "localhost" || normalized == "::1" || normalized.hasSuffix(".localhost") {
+        if normalized == "localhost" || normalized == "::1" {
             return true
         }
         let octets = normalized.split(separator: ".", omittingEmptySubsequences: false)
         guard octets.count == 4 else { return false }
-        let values = octets.compactMap { Int($0) }
-        return values.count == 4 && values[0] == 127 && values.allSatisfy { (0...255).contains($0) }
+        var values: [Int] = []
+        for octet in octets {
+            guard !octet.isEmpty, octet.count <= 3, octet.allSatisfy({ ("0"..."9").contains($0) }),
+                  octet == "0" || octet.first != "0",
+                  let value = Int(octet), (0...255).contains(value)
+            else { return false }
+            values.append(value)
+        }
+        return values[0] == 127
     }
 
     /// Whether `url` is an http(s) address on this Mac, without credentials.

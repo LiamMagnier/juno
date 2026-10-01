@@ -357,6 +357,82 @@ final class PreviewRegistryTests: XCTestCase {
         XCTAssertEqual(compile.count, 1)
     }
 
+    /// A process whose launch waits on the test, and which (like
+    /// `DevServerService`) can only be stopped once it has launched.
+    final class SlowLaunchProcess: PreviewServerProcess, @unchecked Sendable {
+        let lock = NSLock()
+        private var gate: CheckedContinuation<Void, Never>?
+        private(set) var entered = false
+        private(set) var launched = false
+        private(set) var stoppedAfterLaunch = false
+
+        func start(_ launch: DevServerLaunch) async -> AsyncStream<DevServerEvent> {
+            await withCheckedContinuation { continuation in
+                lock.withLock {
+                    gate = continuation
+                    entered = true
+                }
+            }
+            lock.withLock { launched = true }
+            return AsyncStream { $0.yield(.state(.starting)) }
+        }
+
+        func letLaunch() {
+            let gate = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                defer { self.gate = nil }
+                return self.gate
+            }
+            gate?.resume()
+        }
+
+        func stopAndWaitAsync() async {
+            lock.withLock { if launched { stoppedAfterLaunch = true } }
+        }
+
+        var hasEntered: Bool { lock.withLock { entered } }
+        var wasStoppedAfterLaunch: Bool { lock.withLock { stoppedAfterLaunch } }
+        var processIdentity: (pgid: Int32, pid: Int32)? { nil }
+        var isContained: Bool { true }
+        func notifyStaticReload() {}
+    }
+
+    struct SlowLauncher: PreviewServerLaunching {
+        let process: SlowLaunchProcess
+        func makeProcess(checkoutRoot: URL, network: PreviewNetworkPolicy) -> any PreviewServerProcess { process }
+    }
+
+    /// A stop that lands while a start is still launching: the launch that
+    /// lost the race is stopped once it exists, never left holding a port
+    /// with no entry, no pump and no ledger line to find it by.
+    func testAStartThatLostARaceStopsItsProcess() async throws {
+        let process = SlowLaunchProcess()
+        let registry = PreviewRegistry(launcher: SlowLauncher(process: process), settings: settings())
+        let configuration = try configuration()
+        let checkout: URL = root
+        let key = PreviewKey(checkoutRoot: checkout, name: configuration.name)
+        let start = Task {
+            await registry.start(configuration, checkoutRoot: checkout, session: CodeSessionID(value: "s1"), waitUntilReady: false)
+        }
+        for _ in 0..<200 where !process.hasEntered {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(process.hasEntered)
+        await registry.stop(key)
+        XCTAssertFalse(process.wasStoppedAfterLaunch, "nothing had launched yet")
+        process.letLaunch()
+        _ = await start.value
+        XCTAssertTrue(process.wasStoppedAfterLaunch)
+        let phase = await registry.snapshot(key)?.phase
+        XCTAssertEqual(phase, .stopped)
+    }
+
+    func testLogLinesAreBounded() {
+        var buffer = PreviewLogBuffer()
+        let entry = buffer.append(channel: .stdout, text: String(repeating: "x", count: 100_000))
+        XCTAssertEqual(entry.text.count, PreviewLogBuffer.maximumLineLength + 2)
+        XCTAssertTrue(entry.text.hasSuffix(" …"))
+    }
+
     func testRingBufferKeepsTheNewestFiveThousandLines() {
         var buffer = PreviewLogBuffer()
         for index in 0..<5_200 { buffer.append(channel: .stdout, text: "line \(index)") }

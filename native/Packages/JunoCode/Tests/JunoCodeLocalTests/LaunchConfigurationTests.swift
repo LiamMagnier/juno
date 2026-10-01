@@ -312,6 +312,21 @@ final class LaunchConfigurationTests: XCTestCase {
         let urls = DevServerURLDetector.detectAll(in: "API http://127.0.0.1:54321 and Local: http://localhost:3000/")
         XCTAssertEqual(urls.map(\.port), [54_321, 3_000])
     }
+
+    /// The loopback rule is spelled exactly: no name the resolver might send
+    /// to DNS, no octet WebKit would read as octal.
+    func testLoopbackHostsAreSpelledExactly() {
+        XCTAssertTrue(PreviewOrigin.isLoopbackHost("127.0.0.1"))
+        XCTAssertTrue(PreviewOrigin.isLoopbackHost("127.1.2.3"))
+        XCTAssertTrue(PreviewOrigin.isLoopbackHost("localhost"))
+        XCTAssertTrue(PreviewOrigin.isLoopbackHost("[::1]"))
+        XCTAssertFalse(PreviewOrigin.isLoopbackHost("0127.0.0.1"), "WebKit reads a leading zero as octal: 87.0.0.1")
+        XCTAssertFalse(PreviewOrigin.isLoopbackHost("127.0.0.01"))
+        XCTAssertFalse(PreviewOrigin.isLoopbackHost("+127.0.0.1"))
+        XCTAssertFalse(PreviewOrigin.isLoopbackHost("app.localhost"), "a name the resolver may send to DNS")
+        XCTAssertFalse(PreviewOrigin.isLoopbackHost("127.0.0.1.evil.com"))
+        XCTAssertFalse(PreviewOrigin.isLoopback(URL(string: "http://0127.0.0.1:3000/")!))
+    }
 }
 
 /// The PGID ledger: orphans are reaped only when they are provably Juno's.
@@ -426,4 +441,5 @@ final class PreviewServerLedgerTests: XCTestCase {
         ledger.remove(pgid: 4_211)
         XCTAssertEqual(ledger.entries(), [])
     }
+
 }
