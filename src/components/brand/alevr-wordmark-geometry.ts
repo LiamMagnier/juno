@@ -1,0 +1,37 @@
+/**
+ * The Alevr wordmark: "Alevr" in upright Newsreader SemiBold (wght 600, opsz 36),
+ * outlined to paths so it never depends on a loaded font, with optical kerning.
+ *
+ * Pure data, no imports (Node type stripping can read it for exports and native).
+ *
+ * Source: google/fonts, ofl/newsreader/Newsreader[opsz,wght].ttf
+ * (sha256 8a08d13f8a6c0d51be379a60af84f945f65369a67e509ee3c3bdcc421254d7c1), Copyright 2020 The Newsreader Project Authors
+ * (github.com/productiontype/Newsreader), SIL Open Font License 1.1. The OFL
+ * permits embedding outlines in artwork; the outlines are not a font and are
+ * not sold on their own. Provenance: docs/rework/brand/CONTINUUM_GEOMETRY.md.
+ *
+ * Units: font units (2000 per em), y down, baseline at 0. Cap height 1340,
+ * x-height 852. Kerning: the font's kern feature plus [70,-10,-20,-30]
+ * on A|l, l|e, e|v, v|r (A and l's foot serifs touch without it; the lowercase
+ * is set slightly tighter than text, as a display word).
+ */
+
+export type WordmarkGlyph = { readonly ch: string; readonly d: string };
+
+export const ALEVR_WORDMARK = {
+  unitsPerEm: 2000,
+  capHeight: 1340,
+  xHeight: 852,
+  /** Ink bounds of the set word. */
+  bounds: { x: -21, y: -1445, width: 4942.9, height: 1469 },
+  glyphs: [
+    { ch: "A", d: "M341 -478L341 -575L1023 -575L1023 -478ZM1362 -94L1512 -39L1512 0L890 0L890 -39L1060 -92L609 -1147L660 -1154L243 -92L409 -39L409 0L-21 0L-21 -39L132 -93L654 -1382L803 -1382Z" },
+    { ch: "l", d: "M1964.5 -81L2093.5 -36L2093.5 0L1583.5 0L1583.5 -36L1712.5 -81L1712.5 -1205Q1697.5 -1221 1676.5 -1237.5Q1655.5 -1254 1625.5 -1273Q1595.5 -1292 1556.5 -1311L1556.5 -1343L1951.5 -1445L1974.5 -1445L1964.5 -1251Z" },
+    { ch: "e", d: "M2632.5 -939Q2744.5 -939 2824.5 -892.5Q2904.5 -846 2950.5 -756.5Q2996.5 -667 3007.5 -541L2365.5 -541L2367.5 -617L2882.5 -635L2765.5 -587Q2759.5 -679 2741 -738.5Q2722.5 -798 2690 -828Q2657.5 -858 2607.5 -858Q2551.5 -858 2509 -825.5Q2466.5 -793 2442.5 -720Q2418.5 -647 2418.5 -530Q2418.5 -405 2458 -321Q2497.5 -237 2570.5 -195.5Q2643.5 -154 2745.5 -154Q2790.5 -154 2831.5 -164Q2872.5 -174 2912 -195.5Q2951.5 -217 2988.5 -250L3015.5 -217Q2957.5 -137 2897 -83Q2836.5 -29 2768.5 -2.5Q2700.5 24 2621.5 24Q2489.5 24 2389.5 -34.5Q2289.5 -93 2233.5 -198Q2177.5 -303 2177.5 -442Q2177.5 -577 2230.5 -689.5Q2283.5 -802 2385 -870.5Q2486.5 -939 2632.5 -939Z" },
+    { ch: "v", d: "M3994.8 -838L3648.8 13L3515.8 13L3122.8 -830L3004.8 -876L3004.8 -914L3520.8 -914L3520.8 -875L3399.8 -837L3694.8 -173L3642.8 -166L3897.8 -839L3776.8 -875L3776.8 -914L4099.8 -914L4099.8 -875Z" },
+    { ch: "r", d: "M4809.9 -932Q4867.9 -932 4894.9 -900.5Q4921.9 -869 4921.9 -821Q4921.9 -759 4881.4 -723Q4840.9 -687 4785.9 -687Q4751.9 -687 4725.9 -694.5Q4699.9 -702 4674.9 -710Q4649.9 -718 4616.9 -718Q4591.9 -718 4567.9 -711.5Q4543.9 -705 4520.9 -692.5Q4497.9 -680 4476.9 -660L4460.9 -706Q4524.9 -771 4575.4 -814.5Q4625.9 -858 4667.4 -884Q4708.9 -910 4743.4 -921Q4777.9 -932 4809.9 -932ZM4510.9 -743L4510.9 -83L4652.9 -36L4652.9 0L4131.9 0L4131.9 -36L4258.9 -81L4258.9 -707Q4244.9 -724 4226.9 -737Q4208.9 -750 4183.4 -766Q4157.9 -782 4124.9 -801L4124.9 -830L4473.9 -942L4496.9 -942Z" },
+  ] as readonly WordmarkGlyph[],
+} as const;
+
+/** viewBox for the wordmark: the ink bounds, so the word sits flush in its box. */
+export const ALEVR_WORDMARK_VIEWBOX = `${ALEVR_WORDMARK.bounds.x} ${ALEVR_WORDMARK.bounds.y} ${ALEVR_WORDMARK.bounds.width} ${ALEVR_WORDMARK.bounds.height}`;
