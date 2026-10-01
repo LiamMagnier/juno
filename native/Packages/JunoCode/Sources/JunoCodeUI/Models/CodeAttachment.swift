@@ -40,6 +40,10 @@ public struct CodeAttachment: Identifiable, Hashable, Sendable {
     /// shrink when re-encoded; a file past this is not read at all.
     public static let maximumFileBytes = 64 * 1_024 * 1_024
 
+    /// The most pictures one message carries; a paste or drop reads no more
+    /// files than this.
+    public static let maximumPerMessage = 4
+
     /// The image formats every vision model in the catalog accepts.
     ///
     /// Deliberately not "any image UTI": HEIC is the default capture format on

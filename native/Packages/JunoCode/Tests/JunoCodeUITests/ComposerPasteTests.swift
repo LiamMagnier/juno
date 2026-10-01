@@ -15,7 +15,7 @@ final class ComposerPasteTests: XCTestCase {
         store = CodeSessionStore(directoryURL: root)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: root)
     }
 
@@ -121,6 +121,30 @@ final class ComposerPasteTests: XCTestCase {
         let bare = root.appendingPathComponent("capture")
         try Self.png().write(to: bare)
         XCTAssertEqual(CodeAttachment.loadAll(contentsOf: bare).count, 1)
+    }
+
+    /// Finder copies a file's icon with it; a copied file that is not a
+    /// picture attaches nothing rather than its icon.
+    func testACopiedFileIsNeverAttachedAsItsIcon() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let archive = root.appendingPathComponent("notes.zip")
+        try Data("not a picture".utf8).write(to: archive)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("juno.test.paste.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([archive as NSURL])
+        pasteboard.addTypes([.tiff], owner: nil)
+        let icon = try XCTUnwrap(NSBitmapImageRep(data: try Self.png())?.tiffRepresentation)
+        pasteboard.setData(icon, forType: .tiff)
+        XCTAssertNotNil(pasteboard.data(forType: .tiff), "the icon is there to be wrongly taken")
+        XCTAssertTrue(StudioPasteboard.attachments(from: pasteboard).isEmpty)
+
+        // A copied picture file is the picture itself.
+        let shot = root.appendingPathComponent("shot.png")
+        try Self.png().write(to: shot)
+        pasteboard.clearContents()
+        pasteboard.writeObjects([shot as NSURL])
+        XCTAssertEqual(StudioPasteboard.attachments(from: pasteboard).map(\.name), ["shot.png"])
     }
 
     func testANonVisionModelSaysToSwitchInsteadOfAttaching() async throws {

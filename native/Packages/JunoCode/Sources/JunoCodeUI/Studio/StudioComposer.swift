@@ -151,7 +151,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         }
         .fileImporter(isPresented: $isChoosingImage, allowedContentTypes: [.image, .pdf], allowsMultipleSelection: true) { result in
             guard case let .success(urls) = result else { return }
-            for url in urls {
+            for url in urls.prefix(CodeAttachment.maximumPerMessage) {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 CodeAttachment.loadAll(contentsOf: url).forEach { addAttachment?($0) }
@@ -446,7 +446,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     }
 
     private func receive(_ providers: [NSItemProvider]) {
-        for provider in providers {
+        // A message takes a handful of pictures; a drop of a hundred files
+        // reads no more than that many.
+        for provider in providers.prefix(CodeAttachment.maximumPerMessage) {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 // A dropped picture, a PDF, or the screenshot thumbnail macOS
                 // lets the reader drag in, which arrives as a file.
@@ -838,9 +840,20 @@ enum StudioPasteboard {
             let pages = CodeAttachment.pdfPages(data: pdf, name: "Pasted PDF")
             if !pages.isEmpty { return pages }
         }
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
-            let files = urls.filter(\.isFileURL).flatMap { CodeAttachment.loadAll(contentsOf: $0) }
-            if !files.isEmpty { return files }
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] {
+            let files = urls.filter(\.isFileURL)
+            // Finder puts each copied file's icon on the pasteboard beside
+            // it, as a TIFF. Files are answered for themselves: a copied
+            // `.zip` attaches nothing (and the field pastes its name), never
+            // a picture of its icon.
+            if !files.isEmpty {
+                // No more files are read than one message can carry.
+                var found: [CodeAttachment] = []
+                for file in files where found.count < CodeAttachment.maximumPerMessage {
+                    found += CodeAttachment.loadAll(contentsOf: file)
+                }
+                return found
+            }
         }
         return image(from: pasteboard).map { [$0] } ?? []
     }
