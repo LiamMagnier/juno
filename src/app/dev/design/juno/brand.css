@@ -157,3 +157,557 @@
     animation: none !important;
   }
 }
+
+/* —————————————————————————— The brand scene (scene=brand) —————————————————————————— */
+
+.jn .jn-brand__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 24px 0 56px;
+}
+.jn .jn-brand__signature {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 52px;
+  letter-spacing: -0.014em;
+  color: var(--ink);
+  margin-top: 28px;
+}
+.jn .jn-brand__lede {
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ink-2);
+}
+.jn .jn-brand__standin {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 70ch;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-3);
+}
+.jn .jn-brand__standin > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+/* A subtree pinned to one appearance: every token resolves against its own scheme. */
+.jn .jn-brand__themed[data-scheme="light"] {
+  color-scheme: light;
+}
+.jn .jn-brand__themed[data-scheme="dark"] {
+  color-scheme: dark;
+}
+.jn .jn-brand__themed {
+  color: var(--ink);
+}
+
+.jn .jn-brand__pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.jn .jn-brand__pair + .jn-brand__pair,
+.jn .jn-brand__pair + .jn-brand__row2,
+.jn .jn-brand__row2 + *,
+.jn .jn-brand__pair + .jn-brand__icons {
+  margin-top: 16px;
+}
+.jn .jn-brand__tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 40px 24px 20px;
+  border-radius: var(--r-panel);
+  background: var(--ground);
+  box-shadow: 0 0 0 1px var(--panel-edge);
+}
+.jn .jn-brand__themed[data-scheme="dark"].jn-brand__tile {
+  background: var(--ground);
+}
+.jn .jn-brand__tile--mark {
+  min-height: 300px;
+}
+.jn .jn-brand__bigmark {
+  color: var(--ink);
+}
+.jn .jn-brand__tilecap {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.jn .jn-brand__row2 {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.jn .jn-brand__row2 .jn-brand__pair {
+  grid-template-columns: minmax(0, 1fr);
+}
+.jn .jn-brand__clear {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 16px 20px;
+  border-radius: var(--r-panel);
+  background: var(--ground);
+  box-shadow: 0 0 0 1px var(--panel-edge);
+}
+.jn .jn-brand__clearsvg {
+  overflow: visible;
+}
+.jn .jn-brand__clearbox {
+  position: relative;
+  max-width: 100%;
+}
+.jn .jn-brand__clearmark {
+  position: absolute;
+  color: var(--ink);
+  line-height: 0;
+}
+.jn .jn-brand__cl {
+  fill: none;
+  stroke: var(--presence);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+.jn .jn-brand__cl--in {
+  stroke-dasharray: none;
+  opacity: 0.35;
+}
+.jn .jn-brand__cltext {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--presence);
+}
+
+.jn .jn-brand__tile--sizes {
+  padding: 22px 20px 16px;
+  gap: 14px;
+}
+.jn .jn-brand__sizes {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+}
+.jn .jn-brand__size {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+.jn .jn-brand__sizebox {
+  display: grid;
+  place-items: center;
+  height: 34px;
+}
+.jn .jn-brand__size figcaption {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ink-3);
+}
+
+.jn .jn-brand__tile--lockups {
+  align-items: flex-start;
+  padding: 32px 32px 28px;
+}
+.jn .jn-brand__lockups {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 28px;
+}
+.jn .jn-brand__products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.jn .jn-brand__navglyphs {
+  display: flex;
+  gap: 4px;
+}
+.jn .jn-brand__navglyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px 0 10px;
+  border-radius: var(--r-row);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.jn .jn-brand__navglyph > svg {
+  color: var(--ink-3);
+}
+.jn .jn-brand__navglyph:first-child {
+  color: var(--ink);
+  background: var(--fill-selected);
+}
+.jn .jn-brand__navglyph:first-child > svg {
+  color: var(--ink);
+}
+
+.jn .jn-brand__icons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 32px;
+  padding: 28px 28px 20px;
+  border-radius: var(--r-panel);
+  background: var(--side);
+  box-shadow: 0 0 0 1px var(--panel-edge);
+}
+.jn .jn-brand__appicon,
+.jn .jn-brand__favicons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.jn .jn-brand__appicon figcaption,
+.jn .jn-brand__favicons figcaption {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+/* The launcher tile: an opaque square, the pale mark about 64% of its width; the platform applies its own mask. */
+.jn .jn-brand__squircle {
+  display: grid;
+  place-items: center;
+  width: 184px;
+  height: 184px;
+  border-radius: 41px;
+}
+.jn .jn-brand__appicon[data-tone="charcoal"] .jn-brand__squircle {
+  background: #1b1c1f;
+  color: #ebecee;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.06),
+    0 1px 2px rgb(25 27 30 / 0.12);
+}
+.jn .jn-brand__appicon[data-tone="light"] .jn-brand__squircle {
+  background: #fcfcfd;
+  color: #191b1e;
+  box-shadow:
+    inset 0 0 0 1px rgb(25 27 30 / 0.08),
+    0 1px 2px rgb(25 27 30 / 0.06);
+}
+.jn .jn-brand__favrow {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+.jn .jn-brand__fav {
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--ground);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--ink);
+}
+.jn .jn-brand__fav[data-size="32"] {
+  width: 40px;
+  height: 40px;
+}
+.jn .jn-brand__fav[data-size="16"] {
+  width: 24px;
+  height: 24px;
+}
+.jn .jn-brand__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border-radius: 10px 10px 0 0;
+  background: var(--ground);
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.jn .jn-brand__tab > svg:last-child {
+  color: var(--ink-3);
+  margin-left: 14px;
+}
+
+/* The products: their real scenes, framed. */
+.jn .jn-brand__productgrid {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.jn .jn-brand__prodhead {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+.jn .jn-brand__prodtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 28px;
+  color: var(--ink);
+}
+.jn .jn-brand__prodtitle > svg {
+  color: var(--ink-2);
+}
+.jn .jn-brand__prodline {
+  max-width: 64ch;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ink-2);
+}
+.jn .jn-brand__screens {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.jn .jn-brand__screens--orbit {
+  align-items: start;
+}
+.jn .jn-brand__screen {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--side);
+  box-shadow:
+    0 0 0 1px var(--panel-edge),
+    0 1px 2px var(--panel-lift);
+}
+.jn .jn-brand__screen iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* Orbit's charcoal panel, in both themes. */
+.jn .jn-brand__orbit {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #121315;
+  color: #e8e9eb;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+.jn .jn-brand__orbitsvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.jn .jn-brand__constr circle,
+.jn .jn-brand__constr line,
+.jn .jn-brand__constr ellipse {
+  fill: none;
+  stroke: rgb(151 166 230 / 0.32);
+  stroke-width: 0.75;
+  stroke-dasharray: 2 4;
+}
+.jn .jn-brand__constr .jn-brand__constr--ghost {
+  stroke: rgb(151 166 230 / 0.18);
+  stroke-dasharray: none;
+}
+.jn .jn-brand__constr .jn-brand__constr--focus {
+  stroke: rgb(151 166 230 / 0.7);
+  stroke-dasharray: none;
+  stroke-width: 1;
+}
+.jn .jn-brand__arcs path {
+  fill: none;
+  stroke: #97a6e6;
+  stroke-width: 0.15;
+  stroke-linecap: round;
+}
+.jn .jn-brand__orbitmark {
+  position: absolute;
+  color: #e8e9eb;
+  line-height: 0;
+}
+.jn .jn-brand__orbitmark svg {
+  width: 100%;
+  height: auto;
+}
+.jn .jn-brand__orbitcap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 0 20px 18px;
+}
+.jn .jn-brand__orbitlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jn .jn-brand__orbitlock .jn-lockup,
+.jn .jn-brand__orbitlock .jn-alevr {
+  color: #e8e9eb;
+}
+.jn .jn-brand__orbitlock .jn-lockup__product {
+  color: #b4b6ba;
+}
+.jn .jn-brand__orbitdesc {
+  font-size: 13px;
+  line-height: 18px;
+  color: #95979c;
+}
+.jn .jn-brand__orbitmath {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 11px;
+  line-height: 16px;
+  color: #95979c;
+  white-space: nowrap;
+}
+
+/* Thinking. */
+.jn .jn-brand__thinkbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+.jn .jn-brand__thinkspec {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-brand__tile--think {
+  align-items: stretch;
+  padding: 20px 24px;
+}
+.jn .jn-brand__think {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.jn .jn-brand__thinkrow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jn .jn-brand__thinknote {
+  padding-left: 28px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-brand__err {
+  color: var(--ink);
+}
+.jn .jn-brand__tile--bigthink {
+  min-height: 240px;
+}
+
+/* Type and words. */
+.jn .jn-brand__type {
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-brand__typerow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 24px;
+  align-items: baseline;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.jn .jn-brand__typerow:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.jn .jn-brand__ui {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.jn .jn-brand__spec.mono {
+  font-size: 14px;
+}
+.jn .jn-brand__typecap {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-brand__words {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.jn .jn-brand__word {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 24px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.jn .jn-brand__word:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.jn .jn-brand__word dt {
+  font-weight: 500;
+  color: var(--ink);
+}
+.jn .jn-brand__word dd {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+@media (max-width: 900px) {
+  .jn .jn-brand__pair,
+  .jn .jn-brand__row2,
+  .jn .jn-brand__screens,
+  .jn .jn-brand__screens--orbit,
+  .jn .jn-brand__prodhead,
+  .jn .jn-brand__typerow,
+  .jn .jn-brand__word {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jn .jn-brand__sizes {
+    gap: 16px;
+  }
+  .jn .jn-brand__signature {
+    font-size: 34px;
+    line-height: 40px;
+  }
+}

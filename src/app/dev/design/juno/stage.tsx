@@ -10,6 +10,7 @@ import { CustomizeScene } from "./customize";
 import { CrewMarkLab, SystemScene } from "./system";
 import { MotionScene } from "./motion-scene";
 import { StatesScene } from "./states";
+import { BrandScene } from "./brand-scene";
 import type { SceneId } from "./scene-ids";
 
 
@@ -60,6 +61,7 @@ export function JunoStage({
         ) : null}
         {scene === "motion" ? <MotionScene only={params.m} /> : null}
         {scene === "states" ? <StatesScene /> : null}
+        {scene === "brand" ? <BrandScene /> : null}
       </MotionPref>
     </div>
   );

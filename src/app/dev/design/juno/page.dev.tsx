@@ -19,7 +19,7 @@ import "./brand.css";
  *   /dev/design/juno                               index
  *   /dev/design/juno?scene=home&theme=dark         one scene, filling the viewport
  *
- *   scene   home | thread | menus | crew | code | library | customize | system | motion | states
+ *   scene   home | thread | menus | crew | code | library | customize | system | motion | states | brand
  *   theme   light | dark (absent: the OS decides, prefers-color-scheme)
  *   rm      1 renders the reduced-motion form
  *   home    empty at rest; draft=1 (the sentence with tokens), focus=1, app=stripe (token panel), model=1, plus=1, pop=account|activity
@@ -46,6 +46,7 @@ const SCENES: { id: SceneId; label: string; extra?: string[] }[] = [
   { id: "system", label: "Component sheet" },
   { id: "motion", label: "Motion moments" },
   { id: "states", label: "Loading, empty, error, blocked, offline" },
+  { id: "brand", label: "Alevr: the identity in the real system" },
 ];
 
 export default async function JunoDesignPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
