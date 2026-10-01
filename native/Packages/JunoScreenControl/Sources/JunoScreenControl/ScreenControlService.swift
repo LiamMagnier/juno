@@ -139,6 +139,9 @@ public actor ScreenControlService: ScreenControlling {
         var paused = false
         var lastInputEnd: Date?
         var inFlight: UUID?
+        /// A left button `left_mouse_down` pressed and nothing has released:
+        /// where, and where its events went. A stop lets it go.
+        var heldButton: (point: ScreenPoint, target: EventTarget)?
 
         var isRunning: Bool { claim != nil }
     }
@@ -165,6 +168,7 @@ public actor ScreenControlService: ScreenControlling {
     /// frames go. Used on session end, a switch to Plan or Ask, and detach.
     public func deactivate(sessionID: String) async {
         guard var session = sessions[sessionID] else { return }
+        releaseHeldButton(&session)
         if let claim = session.claim { await lock.release(claim) }
         session.claim = nil
         session.generation &+= 1
@@ -214,9 +218,20 @@ public actor ScreenControlService: ScreenControlling {
         await publishPresence()
     }
 
+    /// A mouse button left down by `left_mouse_down` goes up: the stop must
+    /// not leave the app — or, in takeover, the whole session — believing
+    /// the button is still held.
+    private func releaseHeldButton(_ session: inout Session) {
+        guard let held = session.heldButton else { return }
+        session.heldButton = nil
+        let sink = deps.sink
+        Task { try? await sink.post([.mouseUp(.left, held.point, clickCount: 1, modifiers: [])], to: held.target) }
+    }
+
     private func handleStop(_ reason: ScreenControlStopReason) {
         for id in sessions.keys {
             guard var session = sessions[id] else { continue }
+            releaseHeldButton(&session)
             if session.claim != nil { session.stopNotice = reason }
             session.claim = nil
             session.generation &+= 1
@@ -1377,19 +1392,25 @@ public actor ScreenControlService: ScreenControlling {
                 default: (.left, 1)
                 }
                 try await driver.click(at: point, button: button, count: count, modifiers: modifiers, target: eventTarget)
+                if button == .left { sessions[sessionID]?.heldButton = nil }
             }
         case .mouseMove:
             guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
             try await driver.move(to: point, target: eventTarget)
         case .leftMouseDown:
             guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
+            // Recorded first: if the stop lands while the event is posted,
+            // the release still follows.
+            sessions[sessionID]?.heldButton = (point, eventTarget)
             try await driver.mouseDown(at: point, target: eventTarget)
         case .leftMouseUp:
             guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
             try await driver.mouseUp(at: point, target: eventTarget)
+            sessions[sessionID]?.heldButton = nil
         case .leftClickDrag:
             guard let start = prepared.startPoint, let end = prepared.point else { throw ScreenControlError.noFrameYet }
             try await driver.drag(from: start, to: end, target: eventTarget)
+            sessions[sessionID]?.heldButton = nil
         case .scroll:
             guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
             try await driver.scroll(

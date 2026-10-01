@@ -82,7 +82,15 @@ public final class SystemEmergencyStopTap: EmergencyStopTapping, @unchecked Send
     final class Box: @unchecked Sendable {
         let onEscape: @Sendable () -> Void
         let onReaderInput: @Sendable () -> Void
-        var watchesReaderInput: Bool
+        /// Written from the service's executor, read by the callback on
+        /// main: behind a lock, so neither sees a torn value.
+        private let watchLock = NSLock()
+        private var _watchesReaderInput: Bool
+        var watchesReaderInput: Bool {
+            get { watchLock.withLock { _watchesReaderInput } }
+            set { watchLock.withLock { _watchesReaderInput = newValue } }
+        }
+        /// Main thread only (the callback).
         var escapeIsDown = false
         weak var owner: SystemEmergencyStopTap?
         var lastReaderInputReport = Date.distantPast
@@ -92,7 +100,7 @@ public final class SystemEmergencyStopTap: EmergencyStopTapping, @unchecked Send
             onEscape: @escaping @Sendable () -> Void,
             onReaderInput: @escaping @Sendable () -> Void
         ) {
-            self.watchesReaderInput = watchesReaderInput
+            self._watchesReaderInput = watchesReaderInput
             self.onEscape = onEscape
             self.onReaderInput = onReaderInput
         }

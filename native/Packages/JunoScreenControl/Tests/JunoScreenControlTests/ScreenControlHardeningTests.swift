@@ -70,6 +70,23 @@ final class ScreenControlHardeningTests: XCTestCase {
         XCTAssertLessThanOrEqual(fixture.clock.now.timeIntervalSince(before), 0.5 + 0.001)
     }
 
+    func testAStopReleasesAButtonLeftDownByLeftMouseDown() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        let scale = try await screenshot(fixture)
+        let down = try await fixture.service.prepare(
+            sessionID: "s1",
+            action: ScreenAction(kind: .leftMouseDown, coordinate: fixture.framePoint(ScreenFixture.nameField.center, scale: scale))
+        )
+        _ = try await fixture.service.perform(sessionID: "s1", prepared: down, toolCallID: nil, attachFrame: false)
+        await fixture.service.stopAll(reason: .escapeKey)
+        try await waitUntil {
+            await fixture.sink.events.contains { if case .mouseUp(.left, _, _, _) = $0 { return true } else { return false } }
+        }
+        let posted = await fixture.sink.posted
+        XCTAssertEqual(posted.last?.target, .process(pid: 101), "released where it was pressed")
+    }
+
     // MARK: The floor reads what is pressed
 
     private func screenshot(_ fixture: ScreenFixture) async throws -> Double {
