@@ -583,12 +583,18 @@ public enum GitStageHunkError: Error, Equatable, LocalizedError {
     /// The hunk no longer lines up with the file.
     case noMatch
     case notText
+    /// The file is too large to stage one hunk of; Keep the whole file.
+    case tooLarge
+    /// The file has an unresolved merge conflict in the index.
+    case unmerged
 
     public var errorDescription: String? {
         switch self {
         case .alreadyStaged: "That change is already kept (staged)."
         case .noMatch: "That change no longer matches the file. Refresh the diff."
         case .notText: "Only text changes can be kept one hunk at a time."
+        case .tooLarge: "That file is too large to keep one hunk at a time. Keep the whole file instead."
+        case .unmerged: "That file has a merge conflict. Resolve it before keeping part of it."
         }
     }
 }
@@ -703,38 +709,93 @@ extension GitService {
     /// diff that makes the same edit as `hunk`. Written as a blob and placed
     /// in the index with `update-index`, so nothing else in the file, and no
     /// other file, is staged.
+    ///
+    /// Both sides are read as the bytes on disk, never through the command
+    /// executor's output: that output is redacted (a `TOKEN_TTL = 3600` line
+    /// comes back as `[redacted]`), capped at two megabytes, and decoded a
+    /// chunk at a time, so a blob built from it would stage a corrupted copy
+    /// of the file. The working copy is read from the checkout, the index
+    /// copy is checked out by Git into a scratch folder in the Git directory,
+    /// and the new blob is hashed with the file's own path so its filters
+    /// and line endings apply.
     public func stageHunk(path: String, matching hunk: DiffHunk) async throws {
-        guard let working = try await executorCat(path) else {
-            throw GitStageHunkError.notText
-        }
-        guard let index = await show(revision: "", path: path) else {
+        let listed = try await runChecked(["ls-files", "-s", "--", path]).stdout
+        let entries = listed.split(separator: "\n", omittingEmptySubsequences: true)
+        guard let entry = entries.first else {
             // Not in the index yet: the whole file is the change.
             try await stage(paths: [path])
             return
         }
+        // `<mode> <object> <stage>\t<path>`; a stage other than 0 is a conflict.
+        let fields = entry.split(separator: "\t", maxSplits: 1).first?.split(separator: " ") ?? []
+        guard fields.count == 3 else { throw GitStageHunkError.noMatch }
+        guard entries.count == 1, fields[2] == "0" else { throw GitStageHunkError.unmerged }
+        let mode = String(fields[0])
+        // A symlink or a submodule has no lines to keep one of.
+        guard mode == "100644" || mode == "100755" else { throw GitStageHunkError.notText }
+
+        let places = try await runChecked(["rev-parse", "--absolute-git-dir", "--show-toplevel", "--show-prefix"])
+            .stdout.components(separatedBy: "\n")
+        guard places.count >= 3, !places[0].isEmpty, !places[1].isEmpty else {
+            throw GitServiceError.commandFailed(message: "Could not find the repository's folders.")
+        }
+        let gitDir = URL(fileURLWithPath: places[0], isDirectory: true)
+        let top = URL(fileURLWithPath: places[1], isDirectory: true).standardizedFileURL
+        let prefix = places[2].trimmingCharacters(in: .whitespacesAndNewlines)
+        let relative = prefix + path
+        let workingURL = top.appendingPathComponent(relative).standardizedFileURL
+        guard workingURL.path.hasPrefix(top.path.hasSuffix("/") ? top.path : top.path + "/") else {
+            throw GitStageHunkError.noMatch
+        }
+
+        let scratch = gitDir.appendingPathComponent("juno-stage-\(UUID().uuidString.lowercased())", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        _ = try await runChecked(["checkout-index", "--prefix=\(scratch.path)/", "--", path])
+
+        let working = try Self.faithfulText(at: workingURL)
+        let index = try Self.faithfulText(at: scratch.appendingPathComponent(relative))
         let diff = try DiffEngine.diff(old: index, new: working)
         let wanted = Self.changedLines(hunk)
         guard let match = diff.hunks.first(where: { Self.changedLines($0) == wanted }) else {
             // Already in the index when HEAD-to-index makes the same edit.
-            let head = await show(revision: "HEAD", path: path) ?? ""
-            let staged = (try? DiffEngine.diff(old: head, new: index))?.hunks ?? []
+            // Both sides of this check come through the same redaction, so
+            // they compare like for like; it only chooses the message.
+            let head = await show(revision: "HEAD", path: "./" + path) ?? ""
+            let stagedText = await show(revision: "", path: "./" + path) ?? ""
+            let staged = (try? DiffEngine.diff(old: head, new: stagedText))?.hunks ?? []
             if diff.hunks.isEmpty || staged.contains(where: { Self.changedLines($0) == wanted }) {
                 throw GitStageHunkError.alreadyStaged
             }
             throw GitStageHunkError.noMatch
         }
         let updated = Self.applying(match, to: index)
-        let gitDir = try await runChecked(["rev-parse", "--absolute-git-dir"])
-            .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let temporary = URL(fileURLWithPath: gitDir)
-            .appendingPathComponent("juno-stage-\(UUID().uuidString.lowercased())")
+        let temporary = scratch.appendingPathComponent("juno-stage-blob")
         try Data(updated.utf8).write(to: temporary, options: .atomic)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let blob = try await runChecked(["hash-object", "-w", temporary.path])
+        let blob = try await runChecked(["hash-object", "-w", "--path=\(path)", temporary.path])
             .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let listed = try await runChecked(["ls-files", "-s", "--", path]).stdout
-        let mode = listed.split(separator: " ").first.map(String.init) ?? "100644"
+        guard blob.range(of: "^[0-9a-f]{40,64}$", options: .regularExpression) != nil else {
+            throw GitServiceError.commandFailed(message: "Git did not return the new blob.")
+        }
         _ = try await runChecked(["update-index", "--cacheinfo", "\(mode),\(blob),\(path)"])
+    }
+
+    /// A file's text exactly as it is on disk: strict UTF-8, within the diff
+    /// engine's limit, or an error that refuses the Keep.
+    static func faithfulText(at url: URL) throws -> String {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        if let size = attributes?[.size] as? NSNumber, size.intValue > DiffEngine.maximumInputBytes {
+            throw GitStageHunkError.tooLarge
+        }
+        guard let data = try? Data(contentsOf: url) else { throw GitStageHunkError.noMatch }
+        guard data.count <= DiffEngine.maximumInputBytes else { throw GitStageHunkError.tooLarge }
+        // Decoded without dropping a byte-order mark, and refused unless it
+        // turns back into exactly the same bytes.
+        let text = String(decoding: data, as: UTF8.self)
+        guard !data.contains(0), Data(text.utf8) == data else {
+            throw GitStageHunkError.notText
+        }
+        return text
     }
 
     /// The edit a hunk makes, without its position: what it removes and
@@ -757,7 +818,11 @@ extension GitService {
         let replacement = hunk.lines.compactMap { $0.kind == .removed ? nil : $0.text }
         lines.replaceSubrange(start..<end, with: replacement)
         let joined = lines.joined(separator: "\n")
-        return (content.hasSuffix("\n") || content.isEmpty) && !joined.isEmpty ? joined + "\n" : joined
+        // By byte: Swift compares Characters, and a file ending "\r\n" ends
+        // in one Character that is not "\n", so `hasSuffix("\n")` dropped a
+        // CRLF file's last line ending.
+        let endsWithNewline = content.utf8.last == UInt8(ascii: "\n")
+        return (endsWithNewline || content.isEmpty) && !joined.isEmpty ? joined + "\n" : joined
     }
 
     /// `git status --porcelain` lines as path and status, renames as their

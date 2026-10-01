@@ -127,6 +127,47 @@ final class ReviewCommentQueueTests: XCTestCase {
         }
     }
 
+    /// The command executor redacts what it prints and caps it, so a blob
+    /// built from its output staged `TOKEN_TTL = [redacted]` for a line the
+    /// reader never touched. Keep reads the bytes on disk.
+    func testKeepStagesTheFileAsItIsOnDiskNotAsCommandOutputPrintsIt() async throws {
+        var lines = (1...30).map { "line \($0)" }
+        lines[14] = "SESSION_TOKEN_TTL = 3600"
+        lines[15] = "let mirror = \"https://deploy:hunter22@example.com/repo.git\""
+        lines[16] = "café crème \u{2014} naïve"
+        let original = "\u{FEFF}" + lines.joined(separator: "\r\n") + "\r\n"
+        let fixture = try await ShipFixture.make(model: ShipScriptedModel([]), git: true)
+        defer { fixture.remove() }
+        // Committed byte for byte, whatever the machine's own line-ending
+        // settings say.
+        try ShipFixture.shell("git config core.autocrlf false", in: fixture.workspace)
+        try Data(original.utf8).write(to: fixture.workspace.appendingPathComponent("config.txt"))
+        try ShipFixture.shell("git add config.txt && git commit -qm config", in: fixture.workspace)
+        var changed = lines
+        changed[1] = "line 2 changed"
+        changed[27] = "line 28 changed"
+        try Data(("\u{FEFF}" + changed.joined(separator: "\r\n") + "\r\n").utf8)
+            .write(to: fixture.workspace.appendingPathComponent("config.txt"))
+        let git = GitService(executor: CommandExecutionService(workspaceRootURL: fixture.workspace))
+        let diff = try DiffEngine.diff(
+            old: "\u{FEFF}" + lines.joined(separator: "\r\n") + "\r\n",
+            new: "\u{FEFF}" + changed.joined(separator: "\r\n") + "\r\n"
+        )
+        XCTAssertEqual(diff.hunks.count, 2)
+
+        try await git.stageHunk(path: "config.txt", matching: diff.hunks[0])
+
+        try ShipFixture.shell("git show :config.txt > staged.bin", in: fixture.workspace)
+        let staged = try Data(contentsOf: fixture.workspace.appendingPathComponent("staged.bin"))
+        var expected = lines
+        expected[1] = "line 2 changed"
+        XCTAssertEqual(
+            staged,
+            Data(("\u{FEFF}" + expected.joined(separator: "\r\n") + "\r\n").utf8),
+            "exactly the kept hunk on top of the index, every other byte as it was"
+        )
+    }
+
     // MARK: - Scopes
 
     func testTheFourScopesListTheRightFiles() async throws {
