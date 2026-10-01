@@ -200,6 +200,15 @@ final class PreviewBrowserTests: XCTestCase {
         } catch let error as PreviewBrowserError {
             XCTAssertTrue(error.localizedDescription.contains("always needs the reader's approval"), error.localizedDescription)
         }
+        let name = try ref(named: "Name", in: snapshot.text)
+        do {
+            _ = try await approvedEngine.perform(.type(ref: name, text: nil, secret: "admin", submit: false, replace: true))
+            XCTFail("a secret typed into a visible field could be read back from the next snapshot")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("not a password field"), error.localizedDescription)
+        }
+        let visible = try await page.webView.evaluateJavaScript("document.getElementById('name').value") as? String
+        XCTAssertEqual(visible, "")
         let typed = try await approvedEngine.perform(.type(ref: password, text: nil, secret: "admin", submit: false, replace: true))
         XCTAssertTrue(typed.text.contains("••••"), typed.text)
         XCTAssertFalse(typed.text.contains("correct horse"))
@@ -473,6 +482,62 @@ final class PreviewBrowserTests: XCTestCase {
         XCTAssertFalse(page.agentRecentlyActive)
         XCTAssertTrue(page.agentStopped)
         page.allowAgent()
+    }
+
+    /// A key the page does not handle is re-sent by WebKit through
+    /// `NSApp.sendEvent`, where Juno's own menus and shortcuts would see it:
+    /// an agent's Meta+Q, Meta+W or an approval shortcut must never get there.
+    func testAKeyThePageIgnoresNeverReachesJunosMenus() async throws {
+        final class Target: NSObject {
+            var fired = 0
+            @objc func fire(_ sender: Any?) { fired += 1 }
+        }
+        let app = NSApplication.shared
+        let previous = app.mainMenu
+        let target = Target()
+        let menu = NSMenu(title: "Main")
+        let top = NSMenuItem(title: "App", action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: "App")
+        let item = NSMenuItem(title: "Approve", action: #selector(Target.fire(_:)), keyEquivalent: "j")
+        item.keyEquivalentModifierMask = [.command]
+        item.target = target
+        submenu.addItem(item)
+        top.submenu = submenu
+        menu.addItem(top)
+        app.mainMenu = menu
+        defer { app.mainMenu = previous }
+
+        XCTAssertTrue(menu.performKeyEquivalent(with: try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "j", charactersIgnoringModifiers: "j", isARepeat: false, keyCode: 38
+        ))), "the menu answers Meta+J when the reader presses it")
+        XCTAssertEqual(target.fired, 1)
+
+        try await open("/index.html")
+        _ = try await engine.perform(.key(chord: "Meta+J", repeat: 1))
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(target.fired, 1, "the agent's unhandled Meta+J never reached the app's menu")
+    }
+
+    /// A right click reaches the page as `contextmenu` (and button-2 pointer
+    /// events) without a native menu holding the main thread.
+    func testARightClickReachesThePageWithoutANativeMenu() async throws {
+        try write("context.html", """
+        <!doctype html><html><head><title>Context</title></head><body>
+        <div id="area" style="width:300px;height:200px">Right-click me</div><p id="seen">none</p>
+        <script>
+          const area = document.getElementById("area");
+          area.addEventListener("pointerdown", (e) => { if (e.button === 2) document.getElementById("seen").textContent = "pointerdown"; });
+          area.addEventListener("contextmenu", (e) => { e.preventDefault(); document.getElementById("seen").textContent += " contextmenu"; });
+        </script></body></html>
+        """)
+        try await open("/context.html")
+        let point = try await centre(of: "area")
+        let started = Date()
+        _ = try await engine.perform(.click(.point(point), button: .right, count: 1, modifiers: []))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        let seen = try await text("seen")
+        XCTAssertEqual(seen, "pointerdown contextmenu")
     }
 
     // MARK: - PV-22 effects

@@ -480,7 +480,11 @@ struct PreviewBrowserEngine {
                 let info = try await js("return __juno.labelAt(x, y)", ["x": point.point.x, "y": point.point.y]) as? [String: Any]
                 try guardFloor(label(role: info?["role"], name: info?["name"]))
             }
-            PreviewInput.click(webView, at: point.point, button: button, count: count, modifiers: Self.modifierFlags(modifiers))
+            if button == .right {
+                try await contextClick(at: point.point)
+            } else {
+                PreviewInput.click(webView, at: point.point, button: button, count: count, modifiers: Self.modifierFlags(modifiers))
+            }
             await quickSettle()
             return PreviewActionOutcome(text: "Clicked \(point.label)\(point.covered.map { ". It was covered by \($0), which received the click" } ?? "").")
         case let .hover(target):
@@ -587,6 +591,23 @@ struct PreviewBrowserEngine {
         case .batch:
             throw PreviewBrowserError.failed("A batch cannot contain a batch.")
         }
+    }
+
+    /// A right click as the page sees it (pointer and mouse events with
+    /// button 2, then `contextmenu`), dispatched in the page. A synthesized
+    /// native right click would make WebKit open its context menu, and a
+    /// menu's tracking loop holds the main thread until someone clicks.
+    private func contextClick(at point: CGPoint) async throws {
+        _ = try await js("""
+            const el = document.elementFromPoint(x, y) || document.body || document.documentElement;
+            const base = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 2, view: window };
+            el.dispatchEvent(new PointerEvent("pointerdown", { ...base, buttons: 2, pointerType: "mouse", isPrimary: true }));
+            el.dispatchEvent(new MouseEvent("mousedown", { ...base, buttons: 2 }));
+            el.dispatchEvent(new PointerEvent("pointerup", { ...base, buttons: 0, pointerType: "mouse", isPrimary: true }));
+            el.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+            el.dispatchEvent(new MouseEvent("contextmenu", { ...base, buttons: 0 }));
+            return true;
+            """, ["x": point.x, "y": point.y])
     }
 
     private func requireOnPreview() throws {
@@ -781,6 +802,11 @@ struct PreviewBrowserEngine {
             throw PreviewBrowserError.consequential("Typing a credential into \(point.label)")
         }
         if let secret {
+            // Only a password field hides what is typed; anywhere else the
+            // value would sit in the page for the next snapshot to read back.
+            guard isPassword else {
+                throw PreviewBrowserError.failed("\(point.label) is not a password field. A saved secret goes only into a password field, where the page does not show it.")
+            }
             guard let stored = secrets.secret(named: secret, checkoutRoot: workspaceRoot) else {
                 throw PreviewBrowserError.failed("There is no test secret named \"\(secret)\" for this project. Ask the reader to add it in the Preview's menu.")
             }

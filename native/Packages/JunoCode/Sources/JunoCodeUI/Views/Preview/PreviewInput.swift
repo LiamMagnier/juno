@@ -10,8 +10,54 @@ import WebKit
 /// moves the reader's pointer or reaches another app. The offscreen-host
 /// spike (docs/rework/PROGRESS.md) measured that a page in a window that is
 /// never ordered front receives these as trusted events.
+///
+/// Nor do they reach Juno. WebKit re-sends a key the page did not handle
+/// through `NSApp.sendEvent`, where the app's menus and shortcuts answer it:
+/// an agent's Meta+Q would quit Juno, Meta+W close its window, Meta+Return
+/// press whatever button holds that shortcut. Every key event made here is
+/// remembered, and a local monitor drops it when it comes back that way.
+/// Right clicks are dispatched in the page (see the engine), so WebKit never
+/// opens a native context menu, whose tracking loop would hold the main
+/// thread until someone clicks.
 @MainActor
 enum PreviewInput {
+    /// The key events made for pages in the last few seconds, kept alive so
+    /// their identities are not reused.
+    private static var synthesized: [(event: NSEvent, at: TimeInterval)] = []
+    private static var resendGuard: Any?
+
+    /// Whether `event` is one Juno made for a page.
+    static func isSynthesized(_ event: NSEvent) -> Bool {
+        isSynthesized(ObjectIdentifier(event))
+    }
+
+    static func isSynthesized(_ identifier: ObjectIdentifier) -> Bool {
+        prune()
+        return synthesized.contains { ObjectIdentifier($0.event) == identifier }
+    }
+
+    private static func remember(_ event: NSEvent) {
+        installResendGuard()
+        prune()
+        synthesized.append((event, ProcessInfo.processInfo.systemUptime))
+    }
+
+    private static func prune() {
+        let now = ProcessInfo.processInfo.systemUptime
+        synthesized.removeAll { now - $0.at > 10 }
+        if synthesized.count > 512 { synthesized.removeFirst(synthesized.count - 512) }
+    }
+
+    /// Drops Juno's own page key events when WebKit re-sends them to the app.
+    static func installResendGuard() {
+        guard resendGuard == nil else { return }
+        resendGuard = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+            let identifier = ObjectIdentifier(event)
+            let drop = MainActor.assumeIsolated { isSynthesized(identifier) }
+            return drop ? nil : event
+        }
+    }
+
     enum Button: String, Sendable {
         case left, right, middle
     }
@@ -211,6 +257,7 @@ enum PreviewInput {
                 isARepeat: false,
                 keyCode: spec.keyCode
             ) else { continue }
+            remember(event)
             if type == .keyDown { webView.keyDown(with: event) } else { webView.keyUp(with: event) }
         }
     }

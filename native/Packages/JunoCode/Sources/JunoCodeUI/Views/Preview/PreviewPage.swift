@@ -231,8 +231,10 @@ public final class PreviewPage {
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
             let windowNumber = event.windowNumber
+            let identifier = ObjectIdentifier(event)
             let consumed = MainActor.assumeIsolated { () -> Bool in
-                guard let self, self.agentRecentlyActive,
+                // The agent's own Escape, re-sent by WebKit, is not the reader's.
+                guard !PreviewInput.isSynthesized(identifier), let self, self.agentRecentlyActive,
                       let window = self.webView.window, window.windowNumber == windowNumber,
                       let responder = window.firstResponder as? NSView,
                       responder === self.webView || responder.isDescendant(of: self.webView)
