@@ -72,10 +72,12 @@ struct DesktopMenuBarExtraContent: View {
             }
             if workbench.isScreenControlActive {
                 Section {
+                    // No key equivalent: ⌥⌘⎋ is the system's Force Quit, so
+                    // the menu would advertise a shortcut that opens a
+                    // different window. The global Esc stop is §3.7's.
                     Button("Stop Screen Control") {
                         Task { await workbench.stopAllScreenControl() }
                     }
-                    .keyboardShortcut(.escape, modifiers: [.command, .option])
                 }
             }
         }

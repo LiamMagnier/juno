@@ -43,6 +43,17 @@ struct QuitAndLifecycleTests {
     }
 
     @Test
+    func aRestartWithRunsWorkingQuitsWithoutAsking() {
+        var asked = false
+        let reply = DesktopLifecycle.terminateReply(activeRuns: 2, systemIsPoweringOff: true) { _, _ in
+            asked = true
+            return false
+        }
+        #expect(reply == .terminateNow)
+        #expect(!asked)
+    }
+
+    @Test
     func theStagedUpdateWaitsWhileRunsWork() {
         #expect(DesktopLifecycle.installsStagedUpdate(activeRuns: 0))
         #expect(!DesktopLifecycle.installsStagedUpdate(activeRuns: 1))

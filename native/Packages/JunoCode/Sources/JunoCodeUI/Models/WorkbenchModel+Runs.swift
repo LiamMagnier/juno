@@ -142,9 +142,18 @@ public extension WorkbenchModel {
             : .refused("Juno could not retry: the session is busy.")
     }
 
-    /// Resumes every interrupted run, for the launch setting (off by default).
-    internal func resumeInterruptedRuns() async {
-        for session in visibleSessions where RunIndex.isInterrupted(session) {
+    /// How long after it was interrupted a run still resumes by itself at
+    /// launch. An older one waits for the reader's Resume: carrying on work
+    /// from last week unasked is not what the setting promises.
+    static let automaticResumeWindow: TimeInterval = 24 * 60 * 60
+
+    /// Resumes recently interrupted runs, for the launch setting (off by
+    /// default).
+    internal func resumeInterruptedRuns(now: Date = Date()) async {
+        for session in visibleSessions where RunIndex.isInterrupted(session)
+            && now.timeIntervalSince(session.updatedAt) < Self.automaticResumeWindow
+            && !isArchived(session.id)
+        {
             _ = await resume(sessionID: session.id)
         }
     }

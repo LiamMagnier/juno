@@ -153,6 +153,8 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             StudioRunMonitor.shared.install(responder: DesktopLifecycle.codeNotificationResponder {
                 Self.presentMainWindowIfWithheld()
             })
+            // A restart or shutdown is not a quit to ask about.
+            DesktopLifecycle.observePowerOff()
             // After the monitor, which claims the same slot when it installs.
             UNUserNotificationCenter.current().delegate = self
             // Every launch, as Apple asks: the token can change, and asking
@@ -266,6 +268,7 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         return MainActor.assumeIsolated {
             DesktopLifecycle.terminateReply(
                 activeRuns: DesktopWorkbenchRegistry.shared.activeRunCount,
+                systemIsPoweringOff: DesktopLifecycle.systemIsPoweringOff,
                 confirm: DesktopLifecycle.confirmQuit
             )
         }
@@ -294,14 +297,32 @@ enum DesktopLifecycle {
     /// Juno keeps running with its last window closed.
     static let terminatesAfterLastWindowClosed = QuitGuard.terminatesAfterLastWindowClosed
 
+    /// Set once macOS says it is logging out, restarting or shutting down:
+    /// the quit guard then lets the app go without asking, rather than
+    /// cancelling the restart with a question nobody is there to answer.
+    @MainActor static var systemIsPoweringOff = false
+
+    /// Listens for the Mac powering off, for the quit guard.
+    @MainActor
+    static func observePowerOff() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { systemIsPoweringOff = true }
+        }
+    }
+
     /// Whether to quit now, given the runs working and the reader's answer to
     /// the question when there are any. `confirm` returns true to quit.
     @MainActor
     static func terminateReply(
         activeRuns: Int,
+        systemIsPoweringOff: Bool = false,
         confirm: @MainActor (_ message: String, _ detail: String) -> Bool
     ) -> NSApplication.TerminateReply {
-        switch QuitGuard.decision(activeRuns: activeRuns) {
+        switch QuitGuard.decision(activeRuns: activeRuns, systemIsPoweringOff: systemIsPoweringOff) {
         case .quit:
             return .terminateNow
         case let .ask(message, detail):

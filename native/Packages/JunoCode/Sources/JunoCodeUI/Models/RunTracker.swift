@@ -31,7 +31,11 @@ struct RunTracker: Codable, Equatable {
     var approvals: [String: [ApprovalRequest]] = [:]
     var questions: [String: [QuestionRequest]] = [:]
     var activity: [String: String] = [:]
-    var proposed: [String: String] = [:]
+    /// What each proposed call would do, by session and call, until it
+    /// finishes. Kept per session so a run that ends drops its calls that
+    /// never started (a declined one, say) instead of keeping them for the
+    /// life of the app.
+    var proposed: [String: [String: String]] = [:]
 
     private enum CodingKeys: String, CodingKey {
         case outcomes, goalStatuses, completions, viewedAt, archived, pullRequests
@@ -65,11 +69,12 @@ struct RunTracker: Codable, Equatable {
         case let .questionResolved(resolved):
             questions[id]?.removeAll { $0.id == resolved.requestID }
         case let .toolProposed(call):
-            proposed[call.toolCallID] = Self.activitySentence(call)
+            proposed[id, default: [:]][call.toolCallID] = Self.activitySentence(call)
         case let .toolStarted(started):
-            activity[id] = proposed[started.toolCallID]
+            activity[id] = proposed[id]?[started.toolCallID]
         case let .toolCompleted(completed):
-            proposed.removeValue(forKey: completed.toolCallID)
+            proposed[id]?.removeValue(forKey: completed.toolCallID)
+            if proposed[id]?.isEmpty == true { proposed.removeValue(forKey: id) }
             activity.removeValue(forKey: id)
         case let .statusChanged(change) where !change.status.isActive:
             // A run that ended answers nothing more: its pending calls were
@@ -77,6 +82,7 @@ struct RunTracker: Codable, Equatable {
             approvals.removeValue(forKey: id)
             questions.removeValue(forKey: id)
             activity.removeValue(forKey: id)
+            proposed.removeValue(forKey: id)
         case .userPrompt:
             // A new run: the last one's ending no longer describes the session.
             outcomes.removeValue(forKey: id)
@@ -129,6 +135,7 @@ struct RunTracker: Codable, Equatable {
         approvals.removeValue(forKey: key)
         questions.removeValue(forKey: key)
         activity.removeValue(forKey: key)
+        proposed.removeValue(forKey: key)
     }
 
     func facts(for session: CodeSession, project: String) -> RunFacts {

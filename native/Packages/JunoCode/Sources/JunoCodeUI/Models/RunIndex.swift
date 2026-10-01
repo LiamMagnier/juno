@@ -380,10 +380,14 @@ public enum QuitGuard {
         case ask(message: String, detail: String)
     }
 
-    /// - Parameter activeRuns: how many sessions are working or waiting on
-    ///   the reader with a run still open.
-    public static func decision(activeRuns: Int) -> Decision {
-        guard activeRuns > 0 else { return .quit }
+    /// - Parameters:
+    ///   - activeRuns: how many sessions are working or waiting on the reader
+    ///     with a run still open.
+    ///   - systemIsPoweringOff: the Mac is logging out, restarting or shutting
+    ///     down. Nobody is there to answer, and a question would cancel the
+    ///     restart; the runs come back interrupted, with Resume.
+    public static func decision(activeRuns: Int, systemIsPoweringOff: Bool = false) -> Decision {
+        guard activeRuns > 0, !systemIsPoweringOff else { return .quit }
         let message = activeRuns == 1
             ? "1 run is working. Quit and stop it?"
             : "\(activeRuns) runs are working. Quit and stop them?"

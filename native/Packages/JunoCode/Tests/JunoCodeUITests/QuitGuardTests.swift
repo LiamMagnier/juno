@@ -36,6 +36,15 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(message, "2 runs are working. Quit and stop them?")
     }
 
+    func testARestartOrShutdownIsNotAskedAbout() {
+        XCTAssertEqual(
+            QuitGuard.decision(activeRuns: 2, systemIsPoweringOff: true),
+            .quit,
+            "a question would cancel the restart; the runs come back interrupted, with Resume"
+        )
+        XCTAssertFalse(QuitGuard.installsStagedUpdate(activeRuns: 2), "the update still waits")
+    }
+
     func testAStagedUpdateWaitsForRunsToFinish() {
         XCTAssertTrue(QuitGuard.installsStagedUpdate(activeRuns: 0))
         XCTAssertFalse(QuitGuard.installsStagedUpdate(activeRuns: 1))
