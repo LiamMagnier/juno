@@ -285,6 +285,27 @@ enum PreviewSnapshotScript {
           href: tag === "a" && el.href ? el.href : null
         };
       };
+      // The label of the control a click at (x, y) presses: the element there
+      // or its nearest interactive ancestor.
+      J.labelAt = (x, y) => {
+        let el = document.elementFromPoint(x, y);
+        let depth = 0;
+        while (el && depth < 6 && !INTERACTIVE_ROLES.has(roleOf(el)) && el.tagName !== "A") { el = el.parentElement; depth++; }
+        if (!el) return null;
+        return { role: roleOf(el), name: nameOf(el) };
+      };
+      // What Enter would press: the focused control's form's submit button,
+      // else the focused control itself.
+      J.submitLabel = () => {
+        const active = document.activeElement;
+        if (!active || active === document.body) return null;
+        const form = active.form || (active.closest && active.closest("form"));
+        if (form) {
+          const submit = form.querySelector("button[type=submit], input[type=submit], button:not([type])");
+          if (submit) return { role: "button", name: nameOf(submit) };
+        }
+        return { role: roleOf(active), name: nameOf(active) };
+      };
       J.focus = (ref, replace) => {
         const el = J.lookup(ref);
         if (!el) return { error: "ref" };

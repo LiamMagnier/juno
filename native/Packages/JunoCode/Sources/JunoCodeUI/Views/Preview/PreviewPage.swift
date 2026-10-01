@@ -434,6 +434,7 @@ public final class PreviewPage {
     func presentDialog(_ dialog: PreviewDialog, completion: @escaping (Bool, String?) -> Void) {
         answerDialog(accept: false, text: nil)
         pendingDialog = dialog
+        PreviewDialogMirror.shared.set(dialog.kind == .alert ? nil : dialog.message)
         dialogCompletion = completion
         diagnostics.recordEvent("The page opened a \(dialog.kind.rawValue): \"\(dialog.message.prefix(300))\"")
         dialogTimeoutTask?.cancel()
@@ -451,6 +452,7 @@ public final class PreviewPage {
         guard let completion = dialogCompletion else { return false }
         dialogCompletion = nil
         pendingDialog = nil
+        PreviewDialogMirror.shared.set(nil)
         dialogTimeoutTask?.cancel()
         completion(accept, text)
         return true

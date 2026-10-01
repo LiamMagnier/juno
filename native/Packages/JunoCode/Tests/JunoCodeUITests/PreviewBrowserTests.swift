@@ -106,10 +106,22 @@ final class PreviewBrowserTests: XCTestCase {
         </script></body></html>
         """)
         try write("index.html", "<!doctype html><html><head><title>Home</title></head><body><h1>Home</h1><a href=\"/menu.html\">Menu</a></body></html>")
+        try write("login.html", """
+        <!doctype html><html><head><title>Login</title></head><body>
+        <form id="login"><label for="email">Email</label><input id="email"><button type="submit">Sign in</button></form>
+        <p id="sent">no</p>
+        <script>document.getElementById("login").addEventListener("submit", (e) => { e.preventDefault(); document.getElementById("sent").textContent = "yes"; });</script>
+        </body></html>
+        """)
     }
 
     private var engine: PreviewBrowserEngine {
         PreviewBrowserEngine(page: page, workspaceRoot: root, secrets: FakeSecrets())
+    }
+
+    /// An engine for a call the reader approved as consequential.
+    private var approvedEngine: PreviewBrowserEngine {
+        PreviewBrowserEngine(page: page, workspaceRoot: root, secrets: FakeSecrets(), allowsConsequential: true)
     }
 
     private struct FakeSecrets: PreviewSecretProviding {
@@ -182,7 +194,13 @@ final class PreviewBrowserTests: XCTestCase {
         } catch let error as PreviewBrowserError {
             XCTAssertTrue(error.localizedDescription.contains("secret"), error.localizedDescription)
         }
-        let typed = try await engine.perform(.type(ref: password, text: nil, secret: "admin", submit: false, replace: true))
+        do {
+            _ = try await engine.perform(.type(ref: password, text: nil, secret: "admin", submit: false, replace: true))
+            XCTFail("typing a credential is on the always-confirm floor")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("always needs the reader's approval"), error.localizedDescription)
+        }
+        let typed = try await approvedEngine.perform(.type(ref: password, text: nil, secret: "admin", submit: false, replace: true))
         XCTAssertTrue(typed.text.contains("••••"), typed.text)
         XCTAssertFalse(typed.text.contains("correct horse"))
         let value = try await page.webView.evaluateJavaScript("document.getElementById('pw').value") as? String
@@ -216,10 +234,10 @@ final class PreviewBrowserTests: XCTestCase {
         try await open("/dialogs.html")
         let snapshot = try await engine.perform(.snapshot(filter: "interactive", ref: nil, depth: nil, includeText: false, maxText: 6_000))
         let delete = try ref(named: "Delete project", in: snapshot.text)
-        let click = try await engine.perform(.click(.ref(delete), button: .left, count: 1, modifiers: []))
+        let click = try await approvedEngine.perform(.click(.ref(delete), button: .left, count: 1, modifiers: []))
         XCTAssertTrue(click.text.contains("A confirm is waiting: \"Delete project?\""), click.text)
         XCTAssertEqual(page.pendingDialog?.kind, .confirm)
-        _ = try await engine.perform(.dialog(accept: true, text: nil))
+        _ = try await approvedEngine.perform(.dialog(accept: true, text: nil))
         try await Task.sleep(for: .milliseconds(150))
         let result = try await text("result")
         XCTAssertEqual(result, "confirmed: true")
@@ -256,6 +274,66 @@ final class PreviewBrowserTests: XCTestCase {
         let result = try await engine.perform(.click(.ref(leave), button: .left, count: 1, modifiers: []))
         XCTAssertEqual(page.currentURL?.host, server.url.host)
         XCTAssertTrue(result.text.contains("External navigation to example.com is not available"), result.text)
+    }
+
+    // MARK: - The always-confirm floor
+
+    /// Pressing Delete, by ref or by coordinates, needs an approval made for
+    /// exactly that; so does accepting the page's "Delete project?".
+    func testTheFloorRefusesAConsequentialPressThatWasNotApprovedAsSuch() async throws {
+        try await open("/dialogs.html")
+        let snapshot = try await engine.perform(.snapshot(filter: "interactive", ref: nil, depth: nil, includeText: false, maxText: 6_000))
+        let delete = try ref(named: "Delete project", in: snapshot.text)
+        do {
+            _ = try await engine.perform(.click(.ref(delete), button: .left, count: 1, modifiers: []))
+            XCTFail("a Delete press must be refused without a consequential approval")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("\"Delete project\""), error.localizedDescription)
+        }
+        let box = try await page.webView.evaluateJavaScript(
+            "(() => { const r = document.getElementById('delete').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+        ) as? [NSNumber]
+        let center = CGPoint(x: box?[0].doubleValue ?? 0, y: box?[1].doubleValue ?? 0)
+        do {
+            _ = try await engine.perform(.click(.point(center), button: .left, count: 1, modifiers: []))
+            XCTFail("coordinates must not slip past the floor")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("always needs the reader's approval"), error.localizedDescription)
+        }
+        let state = try await text("result")
+        XCTAssertEqual(state, "nothing yet", "nothing was pressed")
+
+        _ = try await approvedEngine.perform(.click(.ref(delete), button: .left, count: 1, modifiers: []))
+        do {
+            _ = try await engine.perform(.dialog(accept: true, text: nil))
+            XCTFail("accepting \"Delete project?\" is consequential")
+        } catch is PreviewBrowserError {}
+        _ = try await engine.perform(.dialog(accept: false, text: nil))
+        let declined = try await text("result")
+        XCTAssertEqual(declined, "confirmed: false", "dismissing is always allowed")
+    }
+
+    /// Enter that would submit through a "Sign in" button is refused unless
+    /// approved as consequential; the button itself is the thing to ask about.
+    func testEnterThatWouldSignInIsOnTheFloor() async throws {
+        try await open("/login.html")
+        let snapshot = try await engine.perform(.snapshot(filter: "interactive", ref: nil, depth: nil, includeText: false, maxText: 6_000))
+        let email = try ref(named: "Email", in: snapshot.text)
+        do {
+            _ = try await engine.perform(.type(ref: email, text: "ada@example.com", secret: nil, submit: true, replace: false))
+            XCTFail("Enter into a sign-in form must be refused")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("\"Sign in\""), error.localizedDescription)
+        }
+        do {
+            _ = try await engine.perform(.key(chord: "Enter", repeat: 1))
+            XCTFail("Enter must be refused too")
+        } catch is PreviewBrowserError {}
+        let sent = try await text("sent")
+        XCTAssertEqual(sent, "no")
+        _ = try await approvedEngine.perform(.key(chord: "Enter", repeat: 1))
+        let after = try await text("sent")
+        XCTAssertEqual(after, "yes")
     }
 
     // MARK: - PV-22 effects

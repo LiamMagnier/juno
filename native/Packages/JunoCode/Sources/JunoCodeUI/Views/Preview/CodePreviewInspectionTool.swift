@@ -40,9 +40,13 @@ struct PreviewToolServices: Sendable {
     let hub: PreviewSessionHub
     let approvals: PreviewConfigApprovals
     let settings: PreviewLocalSettings
+    /// The session's coordinator, so a read-only session starts nothing even
+    /// for an approved configuration.
+    let permissions: PermissionCoordinator?
 
     init(
         workspaceRoot: URL,
+        permissions: PermissionCoordinator? = nil,
         shells: (any ShellSessionManaging)? = nil,
         evidenceDirectory: URL? = nil,
         supportsVision: Bool = true,
@@ -52,6 +56,7 @@ struct PreviewToolServices: Sendable {
         settings: PreviewLocalSettings = .shared
     ) {
         self.workspaceRoot = workspaceRoot
+        self.permissions = permissions
         self.shells = shells
         self.evidenceDirectory = evidenceDirectory
         self.supportsVision = supportsVision
@@ -63,6 +68,14 @@ struct PreviewToolServices: Sendable {
 
     func catalog() -> PreviewLaunchCatalog {
         LaunchConfigurationStore.load(workspaceRoot: workspaceRoot)
+    }
+
+    /// Starting, stopping or attaching changes processes: never in a
+    /// read-only session, however the configuration was approved.
+    func refuseIfReadOnly() async throws {
+        if let permissions, await permissions.permissionMode == .readOnly {
+            throw ToolError.denied(reason: "The session is read-only.")
+        }
     }
 
     /// The configuration a call names, or the session's own, or the default.
@@ -218,6 +231,9 @@ struct PreviewServerTool: CodeTool {
     func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let session = context.sessionID
         let catalog = services.catalog()
+        if ["start", "restart", "stop", "attach"].contains(input["action"]?.stringValue ?? "list") {
+            try await services.refuseIfReadOnly()
+        }
         switch input["action"]?.stringValue ?? "list" {
         case "list":
             return ToolResult(content: await list(catalog: catalog, session: session))
@@ -587,8 +603,32 @@ struct PreviewBrowserTool: CodeTool {
         }
     }
 
+    /// §4.4's table, with the always-confirm floor above it: an action that
+    /// presses a send / delete / buy / sign-in control Juno has seen, accepts
+    /// a page's question, or types a credential is `.destructive`, which asks
+    /// in every mode and is never saved as "Always allow". What Juno cannot
+    /// see before the call (a click by coordinates, the button Enter would
+    /// press) is checked again when it runs and refused unless approved so.
     func assessRisk(input: JSONValue) -> ActionRisk {
-        (try? PreviewBrowserAction.parse(input))?.risk ?? .read
+        guard let action = try? PreviewBrowserAction.parse(input) else { return .read }
+        return Self.isConsequential(action) ? .destructive : action.risk
+    }
+
+    static func isConsequential(_ action: PreviewBrowserAction) -> Bool {
+        func labelMatches(_ ref: String) -> Bool {
+            PreviewRefLabels.shared.label(ref).flatMap(PreviewConsequentialActions.match) != nil
+        }
+        switch action {
+        case let .click(.ref(ref), _, _, _): return labelMatches(ref)
+        case let .type(ref, text, secret, submit, _):
+            if secret != nil { return true }
+            if let text, PreviewConsequentialActions.looksLikeCredential(text) { return true }
+            return submit && labelMatches(ref)
+        case let .dialog(accept, _):
+            return accept && PreviewDialogMirror.shared.current.flatMap(PreviewConsequentialActions.match) != nil
+        case let .batch(actions): return actions.contains(where: isConsequential)
+        default: return false
+        }
     }
 
     func summary(input: JSONValue) -> String {
@@ -633,8 +673,13 @@ struct PreviewBrowserTool: CodeTool {
         let entry = services.hub.entry(for: session, workspaceRoot: services.workspaceRoot)
         let allowEval = services.settings.project(services.workspaceRoot).allowEval
         let supportsVision = services.supportsVision
+        // Approved as consequential only when it was assessed so: the floor's
+        // backstop refuses anything else that turns out to press such a
+        // control.
+        let consequential = assessRisk(input: input) == .destructive
         let result = try await Self.perform(
-            action, key: key, url: url, configuration: configuration, entry: entry, allowEval: allowEval, services: services
+            action, key: key, url: url, configuration: configuration, entry: entry, allowEval: allowEval,
+            allowsConsequential: consequential, services: services
         )
 
         var (outcome, record) = result
@@ -660,12 +705,14 @@ struct PreviewBrowserTool: CodeTool {
         configuration: ResolvedPreviewConfiguration?,
         entry: PreviewSessionHub.Entry,
         allowEval: Bool,
+        allowsConsequential: Bool,
         services: PreviewToolServices
     ) async throws -> (PreviewActionOutcome, UIVerificationRecord?) {
         let page = services.openPage(key: key, url: url, configuration: configuration)
         await waitForFirstLoad(page)
         let engine = PreviewBrowserEngine(
-            page: page, workspaceRoot: services.workspaceRoot, allowEval: allowEval, evidenceDirectory: services.evidenceDirectory
+            page: page, workspaceRoot: services.workspaceRoot, allowEval: allowEval,
+            evidenceDirectory: services.evidenceDirectory, allowsConsequential: allowsConsequential
         )
         do {
             let outcome = try await engine.perform(action)
@@ -748,6 +795,7 @@ struct CodePreviewOpenTool: CodeTool {
     func summary(input: JSONValue) -> String { server.summary(input: ["action": "start"]) }
 
     func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        try await services.refuseIfReadOnly()
         let catalog = services.catalog()
         guard let configuration = catalog.defaultConfiguration else {
             throw ToolError.invalidInput(message: "This project has no launch configuration.")
@@ -830,6 +878,7 @@ struct PreviewToolProvider: CodeToolProvider {
             .appendingPathComponent("preview-evidence", isDirectory: true)
         let services = PreviewToolServices(
             workspaceRoot: context.workspaceRoot,
+            permissions: context.permissions,
             shells: context.shells,
             evidenceDirectory: evidence,
             supportsVision: context.supportsVision

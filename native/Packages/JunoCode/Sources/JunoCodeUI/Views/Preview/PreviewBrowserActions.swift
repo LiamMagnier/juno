@@ -289,6 +289,9 @@ enum PreviewBrowserError: Error, LocalizedError, Sendable {
     /// The page is blocked in a dialog; only `dialog` (and reading the
     /// console, network or a screenshot) can go on.
     case dialogOpen
+    /// The action would press something on the always-confirm floor that was
+    /// not approved as such.
+    case consequential(String)
     case notOnPreview(String)
     case failed(String)
 
@@ -300,6 +303,8 @@ enum PreviewBrowserError: Error, LocalizedError, Sendable {
             "The reader stopped Juno using the preview. Do not retry; say what you still need."
         case .dialogOpen:
             "The page is waiting on a dialog. Answer it with preview_browser dialog (accept or dismiss) first."
+        case let .consequential(what):
+            "\(what) always needs the reader's approval, whatever the permission mode. Take a snapshot and act on it by its ref, so Juno can ask the reader first."
         case let .notOnPreview(url):
             "The page is on \(url), not the preview's own server; the agent only acts on loopback previews."
         case let .failed(message):
@@ -330,6 +335,9 @@ struct PreviewBrowserEngine {
     var secrets: any PreviewSecretProviding = KeychainPreviewSecrets()
     /// Where screenshots kept as evidence go (D-022): the session's folder.
     var evidenceDirectory: URL?
+    /// Whether this call was approved as consequential (send, delete, buy,
+    /// sign in…). Without it, the engine refuses to press such a control.
+    var allowsConsequential = false
 
     private var webView: WKWebView { page.webView }
     private let redactor = SecretRedactor()
@@ -339,13 +347,37 @@ struct PreviewBrowserEngine {
         workspaceRoot: URL,
         allowEval: Bool = false,
         secrets: any PreviewSecretProviding = KeychainPreviewSecrets(),
-        evidenceDirectory: URL? = nil
+        evidenceDirectory: URL? = nil,
+        allowsConsequential: Bool = false
     ) {
         self.page = page
         self.workspaceRoot = workspaceRoot
         self.allowEval = allowEval
         self.secrets = secrets
         self.evidenceDirectory = evidenceDirectory
+        self.allowsConsequential = allowsConsequential
+    }
+
+    /// The always-confirm floor's backstop: refuses to press `label` unless
+    /// the call was approved as consequential.
+    private func guardFloor(_ label: String?) throws {
+        guard !allowsConsequential, let label, PreviewConsequentialActions.match(label) != nil else { return }
+        throw PreviewBrowserError.consequential("Pressing \(label)")
+    }
+
+    private func label(role: Any?, name: Any?) -> String? {
+        let name = (name as? String) ?? ""
+        let role = (role as? String) ?? "control"
+        return name.isEmpty ? nil : "\"\(name.prefix(80))\" (\(role))"
+    }
+
+    /// What Enter would press, checked against the floor.
+    private func guardEnter() async throws {
+        guard !allowsConsequential else { return }
+        let info = try await js("return __juno.submitLabel()", [:]) as? [String: Any]
+        if let label = label(role: info?["role"], name: info?["name"]), PreviewConsequentialActions.match(label) != nil {
+            throw PreviewBrowserError.consequential("Enter would press \(label), which")
+        }
     }
 
     // MARK: - Entry
@@ -423,6 +455,12 @@ struct PreviewBrowserEngine {
         case let .click(target, button, count, modifiers):
             try requireOnPreview()
             let point = try await resolve(target, forClick: true)
+            try guardFloor(point.label)
+            if let covered = point.covered { try guardFloor(covered) }
+            if case .point = target {
+                let info = try await js("return __juno.labelAt(x, y)", ["x": point.point.x, "y": point.point.y]) as? [String: Any]
+                try guardFloor(label(role: info?["role"], name: info?["name"]))
+            }
             PreviewInput.click(webView, at: point.point, button: button, count: count, modifiers: Self.modifierFlags(modifiers))
             await quickSettle()
             return PreviewActionOutcome(text: "Clicked \(point.label)\(point.covered.map { ". It was covered by \($0), which received the click" } ?? "").")
@@ -444,6 +482,9 @@ struct PreviewBrowserEngine {
         case let .key(chord, count):
             try requireOnPreview()
             guard let parsed = PreviewInput.parseChord(chord) else { throw PreviewBrowserError.failed("\(chord) is not a key chord.") }
+            if ["enter", "return"].contains(parsed.key.lowercased()) || (parsed.key == " " || parsed.key.lowercased() == "space") {
+                try await guardEnter()
+            }
             PreviewInput.press(webView, parsed, repeat: count)
             await quickSettle()
             return PreviewActionOutcome(text: "Pressed \(chord)\(count > 1 ? " \(count) times" : "").")
@@ -500,6 +541,7 @@ struct PreviewBrowserEngine {
             guard let dialog = page.pendingDialog else {
                 throw PreviewBrowserError.failed("No dialog is open.")
             }
+            if accept, dialog.kind != .alert { try guardFloor("the page's question \"\(dialog.message.prefix(120))\"") }
             page.answerDialog(accept: accept, text: text)
             await quickSettle()
             return PreviewActionOutcome(text: "\(accept ? "Accepted" : "Dismissed") the \(dialog.kind.rawValue) \"\(dialog.message.prefix(200))\".")
@@ -698,6 +740,9 @@ struct PreviewBrowserEngine {
         }
         let isPassword = (info["isPassword"] as? Bool) == true
         let value: String
+        if secret != nil, !allowsConsequential {
+            throw PreviewBrowserError.consequential("Typing a credential into \(point.label)")
+        }
         if let secret {
             guard let stored = secrets.secret(named: secret, checkoutRoot: workspaceRoot) else {
                 throw PreviewBrowserError.failed("There is no test secret named \"\(secret)\" for this project. Ask the reader to add it in the Preview's menu.")
@@ -715,6 +760,7 @@ struct PreviewBrowserEngine {
         _ = try await js("return __juno.focus(ref, replace)", ["ref": ref, "replace": replace])
         PreviewInput.type(webView, value)
         if submit {
+            try await guardEnter()
             PreviewInput.press(webView, PreviewInput.Chord(key: "Enter", modifiers: []))
         }
         await quickSettle()
@@ -1172,4 +1218,48 @@ final class PreviewResumeOnce {
         continuation?.resume(returning: result)
         continuation = nil
     }
+}
+
+
+/// The always-confirm floor for the Preview (CODE_AGENT_SPEC §3.3, applied to
+/// the agent's browser): pressing a control whose name says send, submit,
+/// post, publish, buy, pay, order, purchase, checkout, transfer, delete,
+/// remove, erase, sign in, log in, accept, agree, allow, install or confirm,
+/// accepting a page's question, or typing a credential, always asks — in
+/// every mode, Full Access included, and never as a saved "Always allow".
+/// A local app's page can still reach real services from the browser.
+enum PreviewConsequentialActions {
+    static let words: [String] = [
+        "send", "submit", "post", "publish", "buy", "pay", "order", "purchase", "checkout", "check out",
+        "transfer", "delete", "remove", "erase", "sign in", "sign up", "log in", "login", "accept", "agree",
+        "allow", "install", "confirm", "permission", "password", "credential",
+        // French, the owner's layout.
+        "envoyer", "supprimer", "acheter", "payer", "publier", "confirmer", "valider", "se connecter", "connexion",
+    ]
+
+    /// The floor word `text` contains, matched on word boundaries, or nil.
+    static func match(_ text: String) -> String? {
+        let lowered = text.lowercased()
+        for word in words {
+            let pattern = "(^|[^\\p{L}])" + NSRegularExpression.escapedPattern(for: word) + "([^\\p{L}]|$)"
+            if lowered.range(of: pattern, options: .regularExpression) != nil { return word }
+        }
+        return nil
+    }
+
+    /// Whether `text` reads as a secret (an API key, a token, a private key).
+    static func looksLikeCredential(_ text: String) -> Bool {
+        SecretRedactor().redact(text) != text
+    }
+}
+
+/// The open dialog's message, readable where risk is assessed (off the main
+/// actor), so accepting "Delete project?" is asked about as what it is.
+final class PreviewDialogMirror: @unchecked Sendable {
+    static let shared = PreviewDialogMirror()
+    private let lock = NSLock()
+    private var message: String?
+
+    func set(_ message: String?) { lock.withLock { self.message = message } }
+    var current: String? { lock.withLock { message } }
 }
