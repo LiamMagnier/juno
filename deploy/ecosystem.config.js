@@ -102,6 +102,36 @@ const runRoot =
 
 const releaseEnv = process.env.GIT_SHA ? { GIT_SHA: process.env.GIT_SHA } : {};
 
+/**
+ * Each app's share of the database pool.
+ *
+ * Production reaches Postgres through Supabase's session pooler, which holds a
+ * fixed number of client slots (15) for every process on this VM together. With
+ * no `connection_limit`, Prisma opens up to (2 × CPUs + 1) = 5 connections per
+ * process, so ten apps fill every slot at rest, and on 2026-10-01 the release
+ * steps that need one connection of their own (the migration-ledger check, the
+ * smoke-token mint) were refused with "max clients reached". The budget below
+ * totals 14 at most (the artifact daemon gives its slot back between passes),
+ * leaving headroom for deploys. The URL comes from the release .env, so the
+ * credentials never appear here; an app without a database gets nothing.
+ */
+const POOL_BUDGET = {
+  "juno-backend": 4,
+  "juno-work": 2,
+};
+function pooledDatabaseEnv(appName) {
+  const raw = process.env.DATABASE_URL || rootEnv.DATABASE_URL;
+  if (!raw) return {};
+  try {
+    const url = new URL(raw);
+    url.searchParams.set("connection_limit", String(POOL_BUDGET[appName] ?? 1));
+    if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "20");
+    return { DATABASE_URL: url.toString() };
+  } catch {
+    return {};
+  }
+}
+
 module.exports = {
   // Every app here is named juno-*. deploy.sh treats that prefix as this
   // file's namespace: it verifies exactly the apps a release declares, and
@@ -138,6 +168,7 @@ module.exports = {
       listen_timeout: 60_000,
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-backend"),
         PORT: 3000,
         NODE_ENV: "production",
         // Higher default HTTP header limit (16kb) and heap for big chat bodies.
@@ -180,6 +211,7 @@ module.exports = {
       max_memory_restart: "900M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-work"),
         NODE_ENV: "production",
       },
       error_file: "logs/work-err.log",
@@ -205,6 +237,7 @@ module.exports = {
       max_memory_restart: "400M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-work-scheduler"),
         NODE_ENV: "production",
         NODE_OPTIONS: "--conditions=react-server",
       },
@@ -226,6 +259,7 @@ module.exports = {
       max_memory_restart: "600M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-research"),
         NODE_ENV: "production",
         NODE_OPTIONS: "--conditions=react-server",
       },
@@ -260,6 +294,7 @@ module.exports = {
       max_memory_restart: "400M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-work-triggers"),
         NODE_ENV: "production",
         NODE_OPTIONS: "--conditions=react-server",
       },
@@ -282,6 +317,7 @@ module.exports = {
       max_memory_restart: "400M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-memory-dreamer"),
         NODE_ENV: "production",
       },
       error_file: "logs/memory-dreamer-err.log",
@@ -304,6 +340,7 @@ module.exports = {
       max_memory_restart: "400M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-agent-reflector"),
         NODE_ENV: "production",
       },
       error_file: "logs/agent-reflector-err.log",
@@ -323,6 +360,7 @@ module.exports = {
       max_memory_restart: "300M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-import-recovery"),
         NODE_ENV: "production",
       },
       error_file: "logs/import-recovery-err.log",
@@ -343,6 +381,7 @@ module.exports = {
       max_memory_restart: "400M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-code-sweeper"),
         NODE_ENV: "production",
       },
       error_file: "logs/code-sweeper-err.log",
@@ -362,6 +401,7 @@ module.exports = {
       max_memory_restart: "300M",
       env: {
         ...releaseEnv,
+        ...pooledDatabaseEnv("juno-artifact-maintenance"),
         NODE_ENV: "production",
       },
       error_file: "logs/artifact-maintenance-err.log",
