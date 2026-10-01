@@ -243,7 +243,7 @@ enum DesktopVoiceCallText {
         case .ended: return .ended
         case .live:
             if controller.sessionPhase == .interrupting { return .interrupting }
-            if controller.assistantSpeaking { return .speaking }
+            if controller.assistantSpeaking || controller.playbackAudible { return .speaking }
             if controller.muted { return .muted }
             if controller.sessionPhase == .responding { return .thinking }
             if let last = controller.transcript.last, last.role == .user, last.final,
@@ -769,6 +769,7 @@ struct DesktopVoiceComposerGlow: View {
         let phase = DesktopVoiceCallText.phase(controller)
         JunoVoiceGlow(
             level: { [controller] in controller.muted ? 0 : controller.level },
+            bands: { [controller] in controller.muted ? .silent : controller.glowBands },
             processing: phase == .thinking,
             paused: phase.holdsGlowStill,
             tone: phase.glowTone

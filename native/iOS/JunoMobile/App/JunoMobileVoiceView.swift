@@ -253,7 +253,7 @@ extension JunoMobileVoiceSession {
         case .error: return .unavailable
         case .live:
             if controller.sessionPhase == .interrupting { return .interrupting }
-            if controller.assistantSpeaking { return .speaking }
+            if controller.assistantSpeaking || controller.playbackAudible { return .speaking }
             if controller.muted { return .muted }
             return awaitingReply ? .thinking : .listening
         }
@@ -587,6 +587,7 @@ struct JunoMobileVoiceComposerGlow: View {
         let phase = session.callPhase
         JunoVoiceGlow(
             level: { [controller] in controller.muted ? 0 : controller.level },
+            bands: { [controller] in controller.muted ? .silent : controller.glowBands },
             processing: phase == .thinking,
             paused: phase.glowPaused,
             tone: phase.glowTone,

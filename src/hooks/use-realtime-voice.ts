@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { getAudioContext } from "voice-glow";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import {
   MIC_SAMPLE_RATE,
@@ -267,9 +268,25 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const micNodeRef = React.useRef<AudioWorkletNode | null>(null);
   const micAnalyserRef = React.useRef<AnalyserNode | null>(null);
   const playCtxRef = React.useRef<AudioContext | null>(null);
+  /**
+   * Every scheduled chunk plays through this bus, which feeds the speakers,
+   * an analyser, and a MediaStream of exactly what is heard. The glow reads
+   * that stream (level plus low / mid / high bands) instead of a level taken
+   * as each chunk ARRIVES: the relay streams faster than real time, so the
+   * arrival level ran ahead of the voice by whatever was queued, often a
+   * second or more — the light peaked on words not yet spoken and went dark
+   * mid-sentence.
+   */
+  const playBusRef = React.useRef<GainNode | null>(null);
+  const playAnalyserRef = React.useRef<AnalyserNode | null>(null);
+  const playSamplesRef = React.useRef<Float32Array<ArrayBuffer> | null>(null);
+  /** The live mic and Juno's audible output, for the glow to analyse. */
+  const [audioStreams, setAudioStreams] = React.useState<{ mic: MediaStream | null; output: MediaStream | null }>({
+    mic: null,
+    output: null,
+  });
   const playCursorRef = React.useRef(0);
   const playSourcesRef = React.useRef<Set<AudioBufferSourceNode>>(new Set());
-  const playAnalyserRef = React.useRef<AnalyserNode | null>(null);
   const playRmsRef = React.useRef(0);
   const mutedRef = React.useRef(false);
   const speakingRef = React.useRef(false);
@@ -629,6 +646,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     micAnalyserRef.current = null;
 
     flushPlayback();
+    playBusRef.current?.disconnect();
+    playBusRef.current = null;
+    playAnalyserRef.current = null;
+    playSamplesRef.current = null;
+    setAudioStreams((prev) => (prev.mic || prev.output ? { mic: null, output: null } : prev));
     void playCtxRef.current?.close().catch(() => {});
     playCtxRef.current = null;
     playAnalyserRef.current = null;
@@ -681,7 +703,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     buffer.copyToChannel(float, 0);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(playAnalyserRef.current ?? ctx.destination);
+    src.connect(playBusRef.current ?? playAnalyserRef.current ?? ctx.destination);
     const startAt = Math.max(ctx.currentTime + 0.04, playCursorRef.current);
     src.start(startAt);
     playCursorRef.current = startAt + buffer.duration;
@@ -943,6 +965,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       history?: VoiceHistoryEntry[],
       opts?: { memory?: { projectId: string | null } | null; conversationId?: string | null }
     ) => {
+      // The glow analyses the call's streams on voice-glow's own page-wide
+      // AudioContext. Wake it here, still inside the click that started the
+      // call: Safari only lets a context start in a gesture, and a suspended
+      // one reads silence, leaving the light flat for the whole call.
+      getAudioContext();
       const generation = ++generationRef.current;
       providerEpochRef.current += 1;
       // Re-entry from the reconnect timer keeps the visible "reconnecting"
@@ -1005,11 +1032,23 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
         const playContext = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
         playCtxRef.current = playContext;
-        const playbackAnalyser = playContext.createAnalyser();
-        playbackAnalyser.fftSize = 512;
-        playbackAnalyser.smoothingTimeConstant = 0.35;
-        playbackAnalyser.connect(playContext.destination);
-        playAnalyserRef.current = playbackAnalyser;
+        const bus = playContext.createGain();
+        bus.connect(playContext.destination);
+        const analyser = playContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.35;
+        bus.connect(analyser);
+        let output: MediaStream | null = null;
+        try {
+          const tap = playContext.createMediaStreamDestination();
+          bus.connect(tap);
+          output = tap.stream;
+        } catch {
+          /* no MediaStream output here: the glow falls back to the level getter */
+        }
+        playBusRef.current = bus;
+        playAnalyserRef.current = analyser;
+        playSamplesRef.current = new Float32Array(analyser.fftSize);
         await playContext.resume();
         if (generationRef.current !== generation) {
           await playContext.close().catch(() => {});
@@ -1017,6 +1056,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         }
         await startMic(generation);
         if (generationRef.current !== generation) return;
+        setAudioStreams({ mic: micStreamRef.current, output });
 
         const ws = new WebSocket(`${normalizeRelayUrl(data.url)}/?token=${encodeURIComponent(data.token)}`);
         ws.binaryType = "arraybuffer";
@@ -1411,6 +1451,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     persona: personaOn,
     closedReason,
     levelRef,
+    /**
+     * The microphone and Juno's audible output as streams, for the glow to
+     * analyse in bands. Null outside a call, or where a stream can't be made.
+     */
+    audioStreams,
     speechInterim: speech.interim,
     start,
     retry,
