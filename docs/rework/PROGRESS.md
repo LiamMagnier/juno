@@ -328,3 +328,44 @@ into the gate and scheduling check-in turns (§2.7) once shells and
 background sub-agents can say what is awaited; the judge's cost and latency
 on Juno's proxy are still unmeasured (UNVERIFIED in §2.4); the landing
 screen's `/goal`.
+
+#### Lane A adversarial review (2026-10-01)
+
+Every Done claim above was traced end to end. Nine defects were fixed in two
+commits on `rf/code-loop` (`5d31e57f`, `b1021f90`); each has a test that
+fails without its fix.
+
+| Defect | Fix |
+|---|---|
+| A task grant kept applying after the goal runtime ended its goal (met, impossible, out of budget, blocked by the agent, paused by Stop): only the reader's Pause and Clear cleared it | `PermissionCoordinator` confirms the stored goal is still in force at each call a grant would allow (`setTaskGrantCheck`, installed on attach; `GoalRun.grantsApply`) |
+| Answering an approval re-activated a goal waiting on the reader for another reason (blocked, stalled) | `GoalRuntime.markWaitingOnApproval` only moves an active goal |
+| Output, review findings and the judge's reason were set inside the `<juno_runtime>` fence the prompt says to act on | `RuntimeContinuation.quoted`; the prompt says quoted text in a note is data; the judge sees agent-cited evidence marked apart from Juno's records |
+| An unapproved project file could raise the soft step limit (`agent.maxTurns`, or naming `autonomy.stepLimit` over the reader's lower turn limit) | both only narrow; raising `maxTurns` needs approval; a migrated goal gets the standard budget |
+| The wrap-up turn sent no tools, which a history with tool calls is refused for (400), so every soft limit would have ended as an error | tools stay declared; the note turns them off and any call is dropped unrun |
+| The run budget counted wall-clock time: a Retry after an hour or a Resume after a night wrapped up at once, and Keep going could not cover the gap | `RunLedger.workedSeconds`/`workingSince`: working time only, stopped at the journal's last step after a quit; a resumed orchestrator carries the run's spend |
+| A goal active at a quit spent the hours Juno was closed | paused at the journal's last write |
+| A run that ended without the goal deciding left the goal active with its clock running | the goal waits on the reader |
+| Resuming a stalled goal stalled again on the first reply | a reader's Resume or Retry clears the tool-less turn count; a judge interrupted by Stop is not a failure |
+
+Checked and found sound: the stop check never continues with an approval
+pending, in Plan or Ask, or after Stop; every loop is bounded (once per
+revision, `maxAutoContinues`, a 12 to 500 continuation backstop, the goal
+budget, six runner passes per end of turn, one output-limit resume per step);
+parked approvals stay digest-bound; evidence comes only from tool side
+effects and the runtime's own runners; the goal tools are `.read` and
+cannot complete a goal; grants exclude `critical`, `destructive`, pinned
+tools, screen input and `git push`.
+
+Still open: §2.7 has no source of awaited background work; when a goal is
+met while a check still fails the run ends `doneChecked` on the judge's word
+(the judge sees the failing check); a write through
+`CodeToolProviderContext.runLedger` mid-batch is stamped before that batch's
+edits (documented: return side effects instead).
+
+Gates on `b1021f90` (through `gate.sh`): `npm run native:test JunoCode`
+passed, 1,430 XCTests (18 skipped) and 78 Swift Testing tests, 0 failures;
+the JunoDesktop Debug `xcodebuild` (`CODE_SIGNING_ALLOWED=NO`) succeeded;
+`code:runtime:check` and `code:preview:check` pass. Tests added: 14
+(`PermissionCoordinatorTaskGrantTests` +2, `GoalModelTests` +1,
+`AutonomySettingsTests` +1, `CompletionGateTests` +2, `GoalRuntimeTests` +6,
+`AutonomousLoopTests` +2); three updated for the wrap-up keeping its tools.
