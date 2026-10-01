@@ -21,6 +21,16 @@ private actor ScriptedGate: CompletionGating {
     }
 }
 
+/// A stop check that waits for the test before it answers "keep going".
+private struct HoldingGate: CompletionGating {
+    let gate: ScriptedModelGate
+
+    func evaluate(_: CompletionGateContext) async -> GateDecision {
+        await gate.arriveAndWait()
+        return .continueWith(.todosOpen, detail: "Keep going.")
+    }
+}
+
 /// Hooks that record the four seam points and answer from a script.
 private actor SeamHooks: AgentLifecycleHooks {
     private(set) var compactionCalls: [String] = []
@@ -271,6 +281,49 @@ final class AgentLoopSeamTests: XCTestCase {
         XCTAssertEqual(recorded.count, AgentOrchestrator.maximumGateContinuations)
         let status = try await store.session(id: session.id).status
         XCTAssertEqual(status, .completed)
+    }
+
+    /// Autonomy never widens permissions: a turn the stop check started is
+    /// held to exactly the mode and rules the reader's turn was.
+    func testAContinuationNeverWidensWhatTheRunMayDo() async throws {
+        let gate = ScriptedGate([.continueWith(.todosOpen, detail: "Write the file now.")])
+        let model = ScriptedModelClient(steps: [
+            .text("Done."),
+            .toolCalls([("w1", "write_step", [:])], text: ""),
+            .text("It was refused."),
+        ])
+        let runtime = orchestrator(model, gate: gate, tools: [FailingTool(name: "write_step", risk: .write)], mode: .readOnly)
+
+        try await runtime.submit(prompt: "Look, do not touch")
+        await runtime.awaitCompletion()
+
+        let outcome = await payloads().compactMap { payload -> ToolCompletionStatus? in
+            if case let .toolCompleted(completed) = payload, completed.toolCallID == "w1" { return completed.status }
+            return nil
+        }
+        XCTAssertEqual(outcome, [.denied], "the continued turn could not write in a read-only session")
+        XCTAssertEqual(model.receivedRequests.count, 3)
+    }
+
+    /// Stop always wins: a continuation the gate decided on while the reader
+    /// pressed Stop is never sent.
+    func testStopDuringTheStopCheckSendsNoContinuation() async throws {
+        let held = ScriptedModelGate()
+        let gate = HoldingGate(gate: held)
+        let model = ScriptedModelClient(steps: [.text("Done.")])
+        let runtime = orchestrator(model, gate: gate)
+
+        try await runtime.submit(prompt: "Go")
+        await held.waitUntilArrived()
+        async let stopped: Void = runtime.stop()
+        // Stop has cancelled the run by the time the gate answers.
+        try await Task.sleep(for: .milliseconds(50))
+        await held.release()
+        await stopped
+
+        XCTAssertEqual(model.receivedRequests.count, 1)
+        let recorded = await continuations()
+        XCTAssertTrue(recorded.isEmpty)
     }
 
     func testDecisionsTheSeamCannotRunYetFinishTheRun() async throws {

@@ -241,8 +241,10 @@ tool provider starts empty.
 Deviation from §6.0: the review queue is `SessionController.reviewQueue`,
 because `review` already holds the document-review model.
 
-Gates on the branch (through `gate.sh`): `native:test JunoCode` 1,320
-XCTests (13 skipped) + 78 Swift Testing, 0 failures (42 new tests);
+Gates on the branch (through `gate.sh`): `native:test JunoCode` 1,322
+XCTests (13 skipped) + 78 Swift Testing, 0 failures (44 new tests, among
+them: a continued turn cannot write in a read-only session, and Stop during
+the stop check sends no continuation);
 `native:test JunoNativeKit` 1,673 + 58, 0 failures; JunoDesktop Debug
 `xcodebuild` succeeded; `typecheck` 0 errors; agent-core 236/236;
 `agent:protocol:check`, `code:task-wire:check`, `code:runtime:check`,
