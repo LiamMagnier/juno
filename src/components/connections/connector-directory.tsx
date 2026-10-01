@@ -214,7 +214,6 @@ function ConnectorTile({
   permissionsReady = true,
   onManage,
   landed,
-  index = 0,
 }: {
   item: DirectoryItem;
   busy: boolean;
@@ -227,7 +226,6 @@ function ConnectorTile({
   onManage?: () => void;
   /** Just came back from signing in: flashed once. */
   landed?: boolean;
-  index?: number;
 }) {
   const [detailsOpen, setDetailsOpen] = React.useState(false);
   const reduce = useReducedMotion() ?? false;

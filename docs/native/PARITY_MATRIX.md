@@ -22,30 +22,30 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-287 routes: 176 native, 47 planned, 51 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
+297 routes: 183 native, 49 planned, 52 web only, 13 internal. 47 pages: on the Mac 36 native, 2 partial, 2 planned, 7 web only; on iOS 20 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 15 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 9 | 3 | 1 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 10 | 4 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 1 | 1 | 1 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 5 | 13 | 3 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
-| [Connections](#connections) | 1/1 | 1/1 | 10 | 1 | 3 | 2 |
-| [Skills](#skills) | 4/4 | 0/4 | 10 | 0 | 0 | 0 |
+| [Connections](#connections) | 2/2 | 2/2 | 15 | 1 | 4 | 2 |
+| [Skills](#skills) | 4/4 | 0/4 | 10 | 2 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 3/3 | 3/3 | 18 | 3 | 1 | 0 |
+| [Agents](#agents) | 4/4 | 4/4 | 18 | 3 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
-| [Settings, notifications and announcements](#settings) | 2/2 | 2/2 | 11 | 1 | 2 | 0 |
+| [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 11 | 1 | 2 | 0 |
 | [Plans and billing](#billing) | 1/1 | 0/1 | 3 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/5 | 0/5 | 0 | 0 | 15 | 0 |
@@ -116,11 +116,13 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 |---|---|---|---|---|
 | `/api/approvals` | GET | Native | JunoChatKit |  |
 | `/api/approvals/[id]` | POST | Native | JunoChatKit |  |
+| `/api/approvals/grants` | GET | Planned |  | The standing "always allow" grants listed under Customize › Apps on the web, so a person can see what Juno may do without asking. The apps answer approvals but do not list standing grants yet. |
+| `/api/approvals/grants/[id]` | DELETE | Planned |  | Revoking one standing grant from that list (DELETE). As /api/approvals/grants. |
 | `/api/chat` | POST | Native | JunoChatKit |  |
 | `/api/chat/cancel` | POST | Native | JunoChatKit |  |
 | `/api/chat/clarify` | POST | Planned |  | Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire). |
 | `/api/chat/follow-ups` | POST | Native | JunoChatKit |  |
-| `/api/mentions` | GET | Planned |  | The composer's @ palette for typed context tokens (crew, files, projects, apps with needs-connection and approval preview, skills, chats, artifacts); the Mac and iPhone composers adopt inline tokens in the UI phase (request.context in the chat wire). |
+| `/api/mentions` | GET | Native | JunoChatKit | The composer's @ lookup for typed context tokens (agents, files, projects, apps with their connection and approval state, skills, chats, artifacts). Both apps' composers call it and send the chosen tokens as request.context. |
 | `/api/chat/receipt` | GET | Planned |  | Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire). |
 | `/api/chat/stream/[generationId]` | GET | Native | JunoChatKit |  |
 | `/api/chat/stream/active` | GET | Native | JunoChatKit |  |
@@ -232,7 +234,7 @@ Design is a type of artifact (register #73).
 | `/api/artifacts/[id]/proposals/[proposalId]/apply` | POST | Planned |  | Apply a held re-emit as the next version, against the version the person compared. |
 | `/api/artifacts/[id]/proposals/[proposalId]/dismiss` | POST | Planned |  | Dismiss a held re-emit. |
 | `/api/artifacts/[id]/proposals/[proposalId]/poster` | GET | Planned |  | The picture of a suggested design, for Compare. |
-| `/api/artifacts/[id]/publication` | GET, POST, DELETE | Planned |  | Publish (pinned to a version or to latest), Update, Roll back, Unpublish. The apps still make the legacy snapshot link through /api/share; the Publish panel is web-only until the native lane adds it. |
+| `/api/artifacts/[id]/publication` | GET, POST, DELETE | Native | JunoChatKit | The apps read an existing publication (GET) to share its live link; opening an artifact never publishes it. Publish, Update, Roll back and Unpublish stay on the web until the native lane adds the panel. |
 | `/api/artifacts/[id]/publication/reset` | POST | Planned |  | Reset a published link: the old token answers link gone, a new token serves. |
 | `/api/artifacts/[id]/restore` | POST | Planned |  | Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet. |
 | `/api/artifacts/[id]/versions` | GET | Planned |  | Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]. |
@@ -273,6 +275,7 @@ Design is a type of artifact (register #73).
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/connections` | Native | Native | DesktopConnectionsScreen |  |
+| `/customize` | Native | Native | DesktopConnectionsScreen | The web's Customize hub opens on its Apps tab, which renders /connections; the apps reach the same screen as Connections. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -286,6 +289,12 @@ Design is a type of artifact (register #73).
 | `/api/connectors/composio/[slug]/callback` | GET | Web only |  | As /api/connectors/{id}/callback. |
 | `/api/connectors/composio/[slug]/connect` | GET | Native | JunoDesktop, JunoMobile |  |
 | `/api/connectors/composio/catalog` | GET | Native | JunoChatKit |  |
+| `/api/connectors/custom` | GET, POST | Native | JunoChatKit | Mac only: lists and adds an OAuth-protected MCP server by URL (DesktopCustomConnectorSheets). The iPhone shows saved ones through /api/connectors but has no add form yet. |
+| `/api/connectors/custom/probe` | POST | Native | JunoChatKit | Mac only: checks a pasted URL before it is added. As /api/connectors/custom. |
+| `/api/connectors/custom/[id]` | GET, PATCH, DELETE | Native | NativeCustomConnectorPath.resource(id) in JunoChatKit/NativeCustomConnectors.swift (GET, PATCH, DELETE) | Mac only: reads, renames, switches tools off and removes a custom server. |
+| `/api/connectors/custom/[id]/tools` | POST | Native | NativeCustomConnectorPath.tools(id) in JunoChatKit/NativeCustomConnectors.swift | Mac only: refreshes the server's tool list. |
+| `/api/connectors/custom/[id]/connect` | GET | Native | NativeCustomConnectorPath.connectURL(backend:id:) in JunoChatKit/NativeCustomConnectors.swift, opened in the browser | Mac only: sign-in to the server starts here in the person's browser. |
+| `/api/connectors/custom/callback` | GET | Web only |  | The server's authorization page redirects the browser here; the Mac starts the flow at /api/connectors/custom/{id}/connect in the browser. |
 | `/api/mcp/[connector]` | GET, POST, DELETE | Internal |  | MCP servers Juno hosts for its own model runs. |
 | `/api/mcp/composio/[slug]` | GET, POST, DELETE | Internal |  | As /api/mcp/{connector}. |
 | `/api/mcp/servers` | GET, POST | Native | JunoChatKit | The Mac adds a custom MCP server (POST). Saved servers reach both apps as `user_mcp:` rows in /api/connectors; the iPhone has no add form yet. |
@@ -309,6 +318,7 @@ Design is a type of artifact (register #73).
 | `/api/skills` | GET | Native | JunoWorkKit |  |
 | `/api/skills/import/file` | POST | Native | JunoWorkKit | Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet. |
 | `/api/skills/import/github` | POST | Native | JunoWorkKit |  |
+| `/api/skills/import/package` | POST | Planned |  | Importing an uploaded SKILL.md or .zip/.skill package, pasted text or a public link, through the SSRF-safe fetcher. The Mac previews a SKILL.md through /api/skills/import/file; packages and links are web-only until the native lane adds them. |
 | `/api/skills/sources/[id]` | PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/skills/sources/[id]/check` | POST | Native | JunoWorkKit |  |
 | `/api/skills/sources/[id]/update` | POST | Native | JunoWorkKit |  |
@@ -316,6 +326,7 @@ Design is a type of artifact (register #73).
 | `/api/work/skills/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/work/skills/[id]/versions` | GET, POST | Native | JunoWorkKit |  |
 | `/api/work/skills/[id]/versions/[version]/consent` | POST | Native | JunoWorkKit |  |
+| `/api/work/skills/[id]/export` | GET | Planned |  | Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet. |
 
 <a id="assistants"></a>
 
@@ -404,6 +415,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/agents` | Native | Native | Agents (shared with the iPhone) |  |
+| `/crew` | Native | Native | Agents (shared with the iPhone) | A user-facing alias of /agents that renders the same agents home; the apps' Agents destination is the same place. |
 | `/agents/new` | Native | Native | NativeAgentHireView |  |
 | `/agents/[id]` | Native | Native | The agent page, DesktopAgentThread |  |
 
@@ -519,6 +531,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
+| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
 | `/profile` | Native | Native | Settings › Account | A redirect to Settings › Account. |
 
 | Route | Methods | Status | Called from | Note |
