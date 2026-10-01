@@ -1,5 +1,6 @@
 import Foundation
 import JunoCodeCore
+import JunoCodeLocal
 import JunoCodeRuntime
 
 /// Explicit reader consent for repository-declared MCP startup. The policy is
@@ -48,5 +49,33 @@ public struct MCPServerPolicyStore: Sendable {
               let payload = try? JSONDecoder().decode(Payload.self, from: data)
         else { return [] }
         return Set(payload.allowedServerDigests)
+    }
+}
+
+public extension MCPServerPolicyStore {
+    /// Who may start a server, by where it was declared (§5.8):
+    ///
+    /// - a project server, only with this workspace's consent for its exact
+    ///   declaration, as before;
+    /// - a server in the reader's own `~/.juno/mcp.json`, always: it is the
+    ///   reader's configuration and needs no workspace trust (switching it
+    ///   off in Settings still removes its tools);
+    /// - a server imported from Claude Code's `~/.claude.json`, only once the
+    ///   reader has turned it on.
+    static func startupAuthorizer(
+        project: MCPServerPolicyStore,
+        imports: UserExtensionPolicyStore?
+    ) -> MCPServerStartupAuthorizer {
+        { configuration in
+            guard configuration.enabled else { return false }
+            switch configuration.scope {
+            case .project:
+                return project.allows(configuration)
+            case .user:
+                return true
+            case .claudeImport:
+                return imports?.isEnabled(kind: "mcp", name: configuration.name) ?? false
+            }
+        }
     }
 }

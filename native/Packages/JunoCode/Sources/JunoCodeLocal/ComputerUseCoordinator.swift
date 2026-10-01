@@ -1,24 +1,23 @@
+import Foundation
+import JunoCodeCore
+import JunoScreenControl
+#if os(macOS)
 import ApplicationServices
 import CoreGraphics
-import Foundation
-import ImageIO
-import JunoCodeCore
-import ScreenCaptureKit
-import UniformTypeIdentifiers
+#endif
 
-/// Read-only Computer Use state for presentation. It contains no driver
-/// capability and cannot perform an action; the UI must still go through the
-/// coordinator's consent and safety envelope.
+/// Read-only screen-control state for presentation. It carries no driver
+/// and cannot act; the UI still goes through the service's checks.
 public struct ComputerUseSnapshot: Sendable {
     public let isActive: Bool
+    /// The Code session holding the app-wide lock, if one does.
     public let activeSessionID: CodeSessionID?
     public let screenCapturePermission: ComputerUsePermissionState
     public let accessibilityPermission: ComputerUsePermissionState
     public let displayBounds: CGRect?
     public let journal: [ComputerUseJournalEntry]
-    /// The screenshot the active session's agent last took, which is the last
-    /// image of the screen the model was sent; nil when it has taken none
-    /// since screen control started.
+    /// The frame the active session's agent was last sent; nil when it has
+    /// been sent none since screen control started.
     public let latestCapture: ComputerUseCapture?
 
     public init(
@@ -47,280 +46,269 @@ public struct ComputerUseSnapshot: Sendable {
     }
 }
 
-/// The safety envelope around Computer Use.
+/// Juno Code's adapter onto the app-wide screen-control service
+/// (CODE_AGENT_SPEC §3.2).
 ///
-/// Guarantees: never activates without an explicit per-session consent call;
-/// requires both TCC permissions up front; one session at a time; every
-/// action is rate-limited, bounds-checked, journaled, and bracketed by
-/// before/after captures; and the kill switch tears everything down
-/// immediately. The coordinator never activates itself.
-public actor ComputerUseCoordinator: ComputerUseCoordinating {
-    public static let minimumActionIntervalSeconds: Double = 0.5
-
-    public enum State: Equatable, Sendable {
-        case idle
-        case active(sessionID: CodeSessionID)
-    }
-
-    private let driver: any ComputerUseDriving
-    private var state: State = .idle
+/// It keeps the part only Code has: the explicit per-session consent — never
+/// activated without the reader's Start, both TCC grants checked first —
+/// and the session snapshot the window reads. Capture, input, grants, the
+/// floor, the lock and the stop are the service's, shared with Juno Work;
+/// the service re-proves the session's grant after every suspension point.
+public actor ComputerUseCoordinator: ScreenControlling {
+    private let service: ScreenControlService
+    private let permissions: any ComputerUsePermissionChecking
+    /// The reader's narrowing from Settings, read at every start.
+    private let preferences: @Sendable () -> ScreenControlPreferences
     private var journal: [ComputerUseJournalEntry] = []
-    private var lastActionAt: Date?
-    /// Changes whenever an active grant is revoked or replaced.
-    ///
-    /// Actor isolation alone is not a cancellation boundary: `perform` yields
-    /// while it asks the driver for bounds and screenshots, so a deactivate or
-    /// emergency stop can run while that action is suspended. Capturing this
-    /// generation lets the resumed action prove that it still owns the same
-    /// consent grant before it reaches input injection.
-    private var activationGeneration: UInt64 = 0
-    /// Only one driver operation may be in flight. The token, rather than a
-    /// Boolean, prevents an older action's `defer` from clearing a newer one.
-    private var inFlightActionID: UUID?
-    /// The last screenshot taken under the current grant. Kept so the reader
-    /// can see what the agent saw; cleared by every path that ends the grant,
-    /// so a screenshot never outlives the consent that took it.
-    ///
-    /// Screenshots only. The captures around a click, a keystroke or a scroll
-    /// go back to the tool, which drops them and tells the model in words, so
-    /// keeping one here would show the reader a screen the model never saw —
-    /// a dialog the click opened, say, while the agent still acts on the
-    /// screen before it.
-    private var latestCapture: ComputerUseCapture?
-    private let now: @Sendable () -> Date
+    private var journalTask: Task<Void, Never>?
 
     public init(
-        driver: any ComputerUseDriving,
-        now: @escaping @Sendable () -> Date = { Date() }
+        service: ScreenControlService,
+        permissions: any ComputerUsePermissionChecking,
+        preferences: @escaping @Sendable () -> ScreenControlPreferences = { .default }
     ) {
-        self.driver = driver
-        self.now = now
+        self.service = service
+        self.permissions = permissions
+        self.preferences = preferences
     }
 
-    public var currentState: State { state }
-    public var actionJournal: [ComputerUseJournalEntry] { journal }
-
-    /// Returns current TCC and session state without prompting or capturing.
-    /// Preflight is safe to call when the inspector appears; permission prompts
-    /// remain exclusive to an explicit activation gesture.
-    public func snapshot() async -> ComputerUseSnapshot {
-        let bounds = try? await driver.displayBounds()
-        let isActive: Bool
-        let activeSessionID: CodeSessionID?
-        switch state {
-        case .idle:
-            isActive = false
-            activeSessionID = nil
-        case .active(let sessionID):
-            isActive = true
-            activeSessionID = sessionID
-        }
-        return ComputerUseSnapshot(
-            isActive: isActive,
-            activeSessionID: activeSessionID,
-            screenCapturePermission: driver.screenCapturePermission(),
-            accessibilityPermission: driver.accessibilityPermission(),
-            displayBounds: bounds,
-            journal: journal,
-            latestCapture: latestCapture
+    #if os(macOS)
+    /// The app's coordinator onto the shared service, the real TCC state and
+    /// the reader's saved narrowing.
+    public init() {
+        self.init(
+            service: .shared,
+            permissions: SystemComputerUsePermissions(),
+            preferences: { ScreenControlPreferencesStore.standard.load() }
         )
     }
+    #endif
+
+    deinit { journalTask?.cancel() }
+
+    public var screenControlService: ScreenControlService { service }
 
     // MARK: - Lifecycle
 
-    /// Activates Computer Use for one session. `userConsented` must be the
-    /// result of an explicit user gesture in this session; passing false is
-    /// always an error. Never called automatically.
-    public func activate(sessionID: CodeSessionID, userConsented: Bool) throws {
-        guard userConsented else {
-            throw ComputerUseError.consentRequired
-        }
-        if case let .active(current) = state, current != sessionID {
-            throw ComputerUseError.activeForAnotherSession
-        }
-        guard driver.requestScreenCapturePermission() == .granted else {
+    /// Starts screen control for one session. `userConsented` must be the
+    /// reader's explicit Start in this session; false is always an error.
+    /// Never called automatically.
+    public func activate(sessionID: CodeSessionID, userConsented: Bool, title: String? = nil) async throws {
+        guard userConsented else { throw ComputerUseError.consentRequired }
+        guard permissions.requestScreenCapturePermission() == .granted else {
             throw ComputerUseError.screenCapturePermissionMissing
         }
-        guard driver.requestAccessibilityPermission() == .granted else {
+        guard permissions.requestAccessibilityPermission() == .granted else {
             throw ComputerUseError.accessibilityPermissionMissing
         }
-        if case .idle = state {
-            activationGeneration &+= 1
+        // The apps the reader denied or lowered, as saved: the service starts
+        // with none after a relaunch, and only Settings pushed them before.
+        await service.setPreferences(preferences())
+        do {
+            try await service.activate(sessionID: sessionID.value, title: title ?? "", kind: .codeSession)
+        } catch let ScreenControlError.lockHeld(holder) {
+            throw ComputerUseError.heldElsewhere(holder)
         }
-        state = .active(sessionID: sessionID)
+        startJournalIfNeeded()
     }
 
-    public func deactivate(sessionID: CodeSessionID) {
-        guard case .active(sessionID) = state else { return }
-        state = .idle
-        activationGeneration &+= 1
-        lastActionAt = nil
-        latestCapture = nil
+    public func deactivate(sessionID: CodeSessionID) async {
+        await service.deactivate(sessionID: sessionID.value)
     }
 
-    /// The kill switch: immediate, unconditional, and always available.
-    public func emergencyStop() {
-        state = .idle
-        activationGeneration &+= 1
-        lastActionAt = nil
-        latestCapture = nil
+    /// The kill switch: every session, every Work task, at once.
+    public func emergencyStop() async {
+        await service.stopAll(reason: .stopButton)
     }
 
-    public func displayBounds() async throws -> CGRect {
-        try await driver.displayBounds()
+    /// Grants lapse, screen control stays on: a model change.
+    public func revokeGrants(sessionID: CodeSessionID) async {
+        await service.revokeGrants(sessionID: sessionID.value)
     }
 
-    // MARK: - Actions
+    public func isActive(sessionID: CodeSessionID) async -> Bool {
+        await service.isActive(sessionID: sessionID.value)
+    }
 
-    /// Performs one action with the full envelope: active-state check, rate
-    /// limit, coordinate validation, capture-before, action, capture-after.
-    /// Returns the two captures for the session's Computer view.
-    @discardableResult
+    /// Current TCC and session state, without prompting or capturing.
+    public func snapshot() async -> ComputerUseSnapshot {
+        let holder = await service.lock.currentHolder
+        let active = holder?.kind == .codeSession ? holder.map { CodeSessionID(value: $0.id) } : nil
+        var capture: ComputerUseCapture?
+        if let active, let frame = await service.latestFrame(sessionID: active.value) {
+            capture = ComputerUseCapture(sessionID: active, imageData: frame.data, capturedAt: frame.at, appName: frame.appName)
+        }
+        return ComputerUseSnapshot(
+            isActive: active != nil,
+            activeSessionID: active,
+            screenCapturePermission: permissions.screenCapturePermission(),
+            accessibilityPermission: permissions.accessibilityPermission(),
+            displayBounds: Self.mainDisplayBounds(),
+            journal: journal,
+            latestCapture: capture
+        )
+    }
+
+    public var actionJournal: [ComputerUseJournalEntry] { journal }
+
+    private static func mainDisplayBounds() -> CGRect? {
+        #if os(macOS)
+        CGDisplayBounds(CGMainDisplayID())
+        #else
+        nil
+        #endif
+    }
+
+    private func startJournalIfNeeded() {
+        guard journalTask == nil else { return }
+        let service = self.service
+        journalTask = Task { [weak self] in
+            let stream = await service.activity()
+            for await step in stream {
+                await self?.record(step)
+            }
+        }
+    }
+
+    private func record(_ step: ScreenActivity) {
+        journal.append(ComputerUseJournalEntry(
+            sessionID: CodeSessionID(value: step.sessionID),
+            summary: step.summary,
+            timestamp: step.at,
+            succeeded: step.succeeded
+        ))
+        if journal.count > 1_000 { journal.removeFirst(journal.count - 1_000) }
+    }
+
+    // MARK: - ScreenControlling
+
+    public func state(sessionID: String) async -> ScreenSessionState {
+        await service.state(sessionID: sessionID)
+    }
+
+    public func listApps(sessionID: String) async -> [ScreenAppListing] {
+        await service.listApps(sessionID: sessionID)
+    }
+
+    public func proposeGrants(
+        sessionID: String,
+        apps: [String],
+        reason: String?,
+        clipboardRead: Bool,
+        clipboardWrite: Bool
+    ) async throws -> GrantProposal {
+        try await service.proposeGrants(
+            sessionID: sessionID, apps: apps, reason: reason,
+            clipboardRead: clipboardRead, clipboardWrite: clipboardWrite
+        )
+    }
+
+    public func applyGrants(sessionID: String, proposalID: String) async throws -> [AppGrant] {
+        try await service.applyGrants(sessionID: sessionID, proposalID: proposalID)
+    }
+
+    public func grants(sessionID: String) async -> [AppGrant] {
+        await service.grants(sessionID: sessionID)
+    }
+
+    public func release(sessionID: String, apps: [String]) async -> [String] {
+        await service.release(sessionID: sessionID, apps: apps)
+    }
+
+    public func open(sessionID: String, app: String) async throws -> ScreenActionResult {
+        try await service.open(sessionID: sessionID, app: app)
+    }
+
+    public func prepare(sessionID: String, action: ScreenAction) async throws -> PreparedScreenAction {
+        try await service.prepare(sessionID: sessionID, action: action)
+    }
+
     public func perform(
-        _ action: ComputerUseActionKind,
-        sessionID: CodeSessionID
-    ) async throws -> (before: Data, after: Data) {
-        guard case let .active(activeSession) = state else {
-            throw ComputerUseError.notActive
-        }
-        guard activeSession == sessionID else {
-            throw ComputerUseError.activeForAnotherSession
-        }
-        guard inFlightActionID == nil else {
-            throw ComputerUseError.rateLimited(
-                minimumIntervalSeconds: Self.minimumActionIntervalSeconds
-            )
-        }
-        let currentTime = now()
-        if let last = lastActionAt,
-           currentTime.timeIntervalSince(last) < Self.minimumActionIntervalSeconds
-        {
-            throw ComputerUseError.rateLimited(
-                minimumIntervalSeconds: Self.minimumActionIntervalSeconds
-            )
-        }
-        let generation = activationGeneration
-        let actionID = UUID()
-        inFlightActionID = actionID
-        defer {
-            if inFlightActionID == actionID {
-                inFlightActionID = nil
-            }
-        }
-
-        do {
-            try await validateCoordinates(of: action)
-            try requireActiveGrant(sessionID: sessionID, generation: generation)
-        } catch {
-            record(
-                action,
-                sessionID: sessionID,
-                succeeded: false,
-                note: String(describing: error)
-            )
-            throw error
-        }
-        lastActionAt = currentTime
-
-        do {
-            let before = try await driver.captureScreen()
-            try requireActiveGrant(sessionID: sessionID, generation: generation)
-            if case .screenshot = action {
-                keep(before, sessionID: sessionID)
-                record(action, sessionID: sessionID, succeeded: true, note: nil)
-                return (before, before)
-            }
-            // This is the final suspension boundary before input injection. A
-            // stop that ran during coordinate validation or capture invalidates
-            // the generation and cannot fall through to the driver.
-            try requireActiveGrant(sessionID: sessionID, generation: generation)
-            try await driver.perform(action)
-            try requireActiveGrant(sessionID: sessionID, generation: generation)
-            let after = try await driver.captureScreen()
-            try requireActiveGrant(sessionID: sessionID, generation: generation)
-            record(action, sessionID: sessionID, succeeded: true, note: nil)
-            return (before, after)
-        } catch {
-            record(
-                action,
-                sessionID: sessionID,
-                succeeded: false,
-                note: String(describing: error)
-            )
-            throw error
-        }
+        sessionID: String,
+        prepared: PreparedScreenAction,
+        toolCallID: String?,
+        attachFrame: Bool
+    ) async throws -> ScreenActionResult {
+        try await service.perform(sessionID: sessionID, prepared: prepared, toolCallID: toolCallID, attachFrame: attachFrame)
     }
 
-    // MARK: - Helpers
-
-    private func requireActiveGrant(
-        sessionID: CodeSessionID,
-        generation: UInt64
-    ) throws {
-        guard generation == activationGeneration else {
-            throw ComputerUseError.notActive
-        }
-        guard case let .active(activeSession) = state else {
-            throw ComputerUseError.notActive
-        }
-        guard activeSession == sessionID else {
-            throw ComputerUseError.activeForAnotherSession
-        }
+    public func settledFrame(sessionID: String) async throws -> ScreenActionResult {
+        try await service.settledFrame(sessionID: sessionID)
     }
 
-    private func validateCoordinates(of action: ComputerUseActionKind) async throws {
-        let point: (Double, Double)?
-        switch action {
-        case let .click(x, y), let .doubleClick(x, y):
-            point = (x, y)
-        case let .scroll(x, y, _):
-            point = (x, y)
-        case .screenshot, .typeText, .pressKey:
-            point = nil
-        }
-        guard let (x, y) = point else { return }
-        let bounds = try await driver.displayBounds()
-        guard bounds.contains(CGPoint(x: x, y: y)) else {
-            throw ComputerUseError.coordinatesOutOfBounds
-        }
+    public func accessibility(
+        sessionID: String,
+        app: String?,
+        query: String?,
+        filter: AXSnapshot.Filter,
+        depth: Int
+    ) async throws -> String {
+        try await service.accessibility(sessionID: sessionID, app: app, query: query, filter: filter, depth: depth)
     }
 
-    /// Only after the grant has been re-proved: a capture that finished after
-    /// a stop belongs to no one and must not reappear in the window.
-    private func keep(_ imageData: Data, sessionID: CodeSessionID) {
-        latestCapture = ComputerUseCapture(
-            sessionID: sessionID,
-            imageData: imageData,
-            capturedAt: now()
-        )
+    public func prepareMenu(sessionID: String, app: String?, path: [String]) async throws -> PreparedScreenAction {
+        try await service.prepareMenu(sessionID: sessionID, app: app, path: path)
     }
 
-    private func record(
-        _ action: ComputerUseActionKind,
-        sessionID: CodeSessionID,
-        succeeded: Bool,
-        note: String?
-    ) {
-        journal.append(
-            ComputerUseJournalEntry(
-                sessionID: sessionID,
-                action: action,
-                timestamp: now(),
-                succeeded: succeeded,
-                note: note
-            )
-        )
-        if journal.count > 1_000 {
-            journal.removeFirst(journal.count - 1_000)
-        }
+    public func performMenu(
+        sessionID: String,
+        prepared: PreparedScreenAction,
+        path: [String],
+        toolCallID: String?
+    ) async throws -> ScreenActionResult {
+        try await service.performMenu(sessionID: sessionID, prepared: prepared, path: path, toolCallID: toolCallID)
+    }
+
+    public func displays(sessionID: String) async -> [DisplayInfo] {
+        await service.displays(sessionID: sessionID)
+    }
+
+    public func requestTakeover(sessionID: String, displayID: UInt32?) async throws -> ScreenApprovalDetail {
+        try await service.requestTakeover(sessionID: sessionID, displayID: displayID)
+    }
+
+    public func beginTakeover(sessionID: String, displayID: UInt32?) async throws -> String {
+        try await service.beginTakeover(sessionID: sessionID, displayID: displayID)
+    }
+
+    public func endTakeover(sessionID: String) async -> String {
+        await service.endTakeover(sessionID: sessionID)
+    }
+
+    public func publishApprovalDetail(_ detail: ScreenApprovalDetail, digest: String) async {
+        await service.publishApprovalDetail(detail, digest: digest)
+    }
+
+    public func clearApprovalDetail(digest: String) async {
+        await service.clearApprovalDetail(digest: digest)
+    }
+
+    public func approvalDetail(digest: String) async -> ScreenApprovalDetail? {
+        await service.approvalDetail(digest: digest)
+    }
+
+    public func updateGrantChoices(proposalID: String, offers: [AppGrantOffer]) async {
+        await service.updateGrantChoices(proposalID: proposalID, offers: offers)
+    }
+
+    public func isGranted(sessionID: String, bundleID: String) async -> Bool {
+        await service.isGranted(sessionID: sessionID, bundleID: bundleID)
+    }
+
+    public func discard(sessionID: String, preparedID: String) async {
+        await service.discard(sessionID: sessionID, preparedID: preparedID)
+    }
+
+    public func setImageBudget(sessionID: String, budget: ImageBudget) async {
+        await service.setImageBudget(sessionID: sessionID, budget: budget)
     }
 }
 
-/// ScreenCaptureKit capture and CGEvent input injection for the selected main
-/// display. The coordinator above remains the safety boundary: this driver
-/// cannot be reached until the reader explicitly activates Computer Use for one
-/// session, and every action is bounded, rate-limited and journaled.
-public struct SystemComputerUseDriver: ComputerUseDriving {
+#if os(macOS)
+
+/// The real TCC reads. Preflight never prompts; the request pair prompts
+/// and is reached only from the reader's Start.
+public struct SystemComputerUsePermissions: ComputerUsePermissionChecking {
     public init() {}
 
     public func screenCapturePermission() -> ComputerUsePermissionState {
@@ -338,233 +326,9 @@ public struct SystemComputerUseDriver: ComputerUseDriving {
 
     public func requestAccessibilityPermission() -> ComputerUsePermissionState {
         if AXIsProcessTrusted() { return .granted }
-        let options = [
-            "AXTrustedCheckOptionPrompt": true,
-        ] as CFDictionary
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options) ? .granted : .denied
     }
-
-    public func displayBounds() async throws -> CGRect {
-        CGDisplayBounds(CGMainDisplayID())
-    }
-
-    public func captureScreen() async throws -> Data {
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false,
-            onScreenWindowsOnly: true
-        )
-        guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
-            ?? content.displays.first
-        else {
-            throw ComputerUseError.driverUnavailable(reason: "No capturable display is available.")
-        }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let configuration = SCStreamConfiguration()
-        // Capture in the same logical-point coordinate space CGEvent uses.
-        // Using SCDisplay's physical pixel dimensions on Retina displays made
-        // model-selected screenshot coordinates land at half their intended
-        // location.
-        let actionBounds = CGDisplayBounds(display.displayID)
-        configuration.width = max(1, Int(actionBounds.width.rounded()))
-        configuration.height = max(1, Int(actionBounds.height.rounded()))
-        configuration.showsCursor = true
-        configuration.capturesAudio = false
-
-        let image = try await SCScreenshotManager.captureImage(
-            contentFilter: filter,
-            configuration: configuration
-        )
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            data,
-            UTType.jpeg.identifier as CFString,
-            1,
-            nil
-        ) else {
-            throw ComputerUseError.driverUnavailable(reason: "Could not encode the screen image.")
-        }
-        CGImageDestinationAddImage(
-            destination,
-            image,
-            [
-                kCGImageDestinationLossyCompressionQuality: 0.82,
-            ] as CFDictionary
-        )
-        guard CGImageDestinationFinalize(destination) else {
-            throw ComputerUseError.driverUnavailable(reason: "Could not finish the screen image.")
-        }
-        return data as Data
-    }
-
-    public func perform(_ action: ComputerUseActionKind) async throws {
-        switch action {
-        case .screenshot:
-            return
-        case let .click(x, y):
-            try click(at: CGPoint(x: x, y: y), count: 1)
-        case let .doubleClick(x, y):
-            try click(at: CGPoint(x: x, y: y), count: 2)
-        case .typeText(let text):
-            try type(text)
-        case .pressKey(let key):
-            try press(key)
-        case let .scroll(x, y, deltaY):
-            guard let event = CGEvent(
-                scrollWheelEvent2Source: nil,
-                units: .pixel,
-                wheelCount: 1,
-                wheel1: Int32(clamping: Int(deltaY.rounded())),
-                wheel2: 0,
-                wheel3: 0
-            ) else {
-                throw ComputerUseError.driverUnavailable(reason: "Could not create a scroll event.")
-            }
-            event.location = CGPoint(x: x, y: y)
-            event.post(tap: .cghidEventTap)
-        }
-    }
-
-    private func click(at point: CGPoint, count: Int) throws {
-        for index in 1...count {
-            guard let down = CGEvent(
-                mouseEventSource: nil,
-                mouseType: .leftMouseDown,
-                mouseCursorPosition: point,
-                mouseButton: .left
-            ), let up = CGEvent(
-                mouseEventSource: nil,
-                mouseType: .leftMouseUp,
-                mouseCursorPosition: point,
-                mouseButton: .left
-            ) else {
-                throw ComputerUseError.driverUnavailable(reason: "Could not create a click event.")
-            }
-            down.setIntegerValueField(.mouseEventClickState, value: Int64(index))
-            up.setIntegerValueField(.mouseEventClickState, value: Int64(index))
-            down.post(tap: .cghidEventTap)
-            up.post(tap: .cghidEventTap)
-        }
-    }
-
-    private func type(_ text: String) throws {
-        let units = Array(text.utf16)
-        guard !units.isEmpty else { return }
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
-        else {
-            throw ComputerUseError.driverUnavailable(reason: "Could not create a typing event.")
-        }
-        units.withUnsafeBufferPointer { buffer in
-            guard let base = buffer.baseAddress else { return }
-            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
-            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
-        }
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
-    }
-
-    private func press(_ key: String) throws {
-        let (code, flags) = try Self.resolveChord(key)
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
-        else {
-            throw ComputerUseError.driverUnavailable(reason: "Could not create a key event.")
-        }
-        // The flags have to be set on both events. Posting a key-down carrying
-        // `.maskCommand` and a key-up without it leaves the receiving app believing
-        // Command is still held, which turns the *next* ordinary keystroke into
-        // another shortcut.
-        if !flags.isEmpty {
-            down.flags = flags
-            up.flags = flags
-        }
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
-    }
-
-    /// Resolves `"cmd+shift+p"`, `"return"` or `"a"` to a key code and modifiers.
-    ///
-    /// Chords are the point. The table below has always had `command` and `shift`
-    /// in it, but only as *standalone* keys — there was no way to express a
-    /// combination, and no letters or digits at all, so an agent driving the screen
-    /// could not press ⌘S to save, ⌘C to copy, or the letter `a`. Every real
-    /// keyboard interaction in a Mac app is a chord or a character, which made
-    /// `computer_press_key` close to useless: it could send Tab, Escape and the
-    /// arrow keys and nothing else.
-    ///
-    /// Pressing a bare modifier still works (`"shift"` alone resolves to its own key
-    /// code) because holding one is occasionally the whole gesture.
-    static func resolveChord(_ key: String) throws -> (CGKeyCode, CGEventFlags) {
-        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else {
-            throw ComputerUseError.driverUnavailable(reason: "No key was given.")
-        }
-        // Split on + and -, so both "cmd+s" and "cmd-s" parse. A lone "+" or "-" is
-        // a key in its own right, hence the empty-component filter and the
-        // single-token fast path.
-        let parts = normalized
-            .split(whereSeparator: { $0 == "+" || $0 == "-" })
-            .map(String.init)
-        guard parts.count > 1 else {
-            guard let code = keyCodes[normalized] else {
-                throw ComputerUseError.driverUnavailable(reason: "Unsupported key '\(key)'.")
-            }
-            return (code, [])
-        }
-
-        var flags: CGEventFlags = []
-        for modifier in parts.dropLast() {
-            guard let mask = modifierFlags[modifier] else {
-                throw ComputerUseError.driverUnavailable(
-                    reason: "Unsupported modifier '\(modifier)' in '\(key)'."
-                )
-            }
-            flags.insert(mask)
-        }
-        guard let base = parts.last, let code = keyCodes[base] else {
-            throw ComputerUseError.driverUnavailable(reason: "Unsupported key '\(key)'.")
-        }
-        return (code, flags)
-    }
-
-    private static let modifierFlags: [String: CGEventFlags] = [
-        "cmd": .maskCommand, "command": .maskCommand, "meta": .maskCommand,
-        "super": .maskCommand,
-        "shift": .maskShift,
-        "opt": .maskAlternate, "option": .maskAlternate, "alt": .maskAlternate,
-        "ctrl": .maskControl, "control": .maskControl,
-        "fn": .maskSecondaryFn,
-    ]
-
-    /// US ANSI virtual key codes. The layout-independent `kVK_ANSI_*` values, which
-    /// is what `CGEvent(keyboardEventSource:virtualKey:keyDown:)` takes.
-    private static let keyCodes: [String: CGKeyCode] = [
-        // Editing and navigation
-        "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51,
-        "backspace": 51, "forwarddelete": 117,
-        "escape": 53, "esc": 53, "capslock": 57,
-        "left": 123, "right": 124, "down": 125, "up": 126,
-        "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
-        // Bare modifiers, for when holding one is the gesture itself
-        "command": 55, "shift": 56, "option": 58, "control": 59,
-        "rightshift": 60, "rightoption": 61, "rightcontrol": 62,
-        // Function row
-        "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
-        "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
-        // Letters
-        "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
-        "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31, "p": 35,
-        "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9, "w": 13, "x": 7,
-        "y": 16, "z": 6,
-        // Digits
-        "0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
-        "7": 26, "8": 28, "9": 25,
-        // Punctuation an editor actually needs
-        "-": 27, "minus": 27, "=": 24, "equal": 24,
-        "[": 33, "leftbracket": 33, "]": 30, "rightbracket": 30,
-        ";": 41, "semicolon": 41, "'": 39, "quote": 39,
-        "\\": 42, "backslash": 42, ",": 43, "comma": 43,
-        ".": 47, "period": 47, "/": 44, "slash": 44,
-        "`": 50, "grave": 50,
-    ]
 }
+
+#endif

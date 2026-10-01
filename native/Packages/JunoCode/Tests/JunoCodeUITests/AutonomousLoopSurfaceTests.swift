@@ -30,7 +30,12 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
         let verification = VerificationRecord(command: "swift test", kind: .test, exitCode: 0, passed: true, workspaceRevision: 2, durationMs: 9_000)
         let ui = UIVerificationRecord(surface: .web, target: "/settings", viewport: "desktop", checks: [], passed: true, workspaceRevision: 2)
         let review = ReviewRecord(round: 1, findings: [], overall: .correct, workspaceRevision: 2)
-        let outcome = RunOutcomeEvent(endReason: .doneChecked, summary: "Done.", verification: "Checked with `swift test`")
+        let outcome = RunOutcomeEvent(
+            endReason: .doneChecked,
+            summary: "Done.",
+            verification: "Checked with `swift test`",
+            checks: [RunOutcomeCheck(label: "swift test", passed: true, recordID: verification.id)]
+        )
         let events = [
             event("continued", .runContinued(RunContinuedEvent(reason: .gate(.todosOpen), detail: "2 todos were open", origin: .gate))),
             event("goal-set", .goalSet(GoalSetEvent(goalID: "g1", objective: "x", criteria: [], origin: .reader))),
@@ -56,6 +61,19 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
         guard case .goalVerdict = items[1], case .verification = items[2], case .uiCheck = items[3],
               case .reviewFindings = items[4], case .ciStatus = items[5], case .runReport = items[6]
         else { return XCTFail("each record maps to its own row: \(items)") }
+    }
+
+    /// A report with nothing beyond the divider's words earns no row of its
+    /// own: the divider after it already says how the run ended.
+    func testAReportWithNothingToShowAddsNoRow() {
+        let bare = RunOutcomeEvent(endReason: .doneUnchecked, summary: "Done.")
+        let items = StudioThreadItems.build(
+            events: [event("outcome", .runOutcome(bare))],
+            groups: [],
+            pendingApprovalIDs: [],
+            showReasoning: false
+        )
+        XCTAssertTrue(items.isEmpty)
     }
 
     func testTheThreadIsUnchangedForATranscriptWithoutLoopRecords() {
@@ -87,8 +105,8 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
             "Reviewed the diff: no correctness findings"
         )
         XCTAssertEqual(
-            StudioReviewFindingsRow.line(for: ReviewFinding(priority: .p1, confidence: 0.9, path: "src/a.ts", line: 41, title: "Closes on open")),
-            "P1 at src/a.ts:41: Closes on open"
+            StudioReviewFindingsRow.heading(for: ReviewFinding(priority: .p1, confidence: 0.9, path: "src/a.ts", line: 41, title: "Closes on open")),
+            "Must fix · high confidence · src/a.ts:41"
         )
         XCTAssertEqual(
             PreviewCheckRow.caption(for: UIVerificationRecord(surface: .web, target: "/settings", viewport: "phone", checks: [], passed: true, workspaceRevision: 1)),
@@ -106,7 +124,8 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
                 CICheck(name: "lint", state: .passed), CICheck(name: "build", state: .passed),
                 CICheck(name: "e2e", state: .passed), CICheck(name: "test (ubuntu)", state: .failed),
             ])),
-            "CI: 3 of 4 checks passed; test (ubuntu) failed"
+            // Lane E's row: check names in code voice, as the CI bar says them.
+            "CI: 3 of 4 checks passed; `test (ubuntu)` failed"
         )
         XCTAssertEqual(
             StudioScreenStepRow.caption(for: StudioScreenStep(eventID: "e", verb: "Clicked", app: "TextEdit", element: "Save button", succeeded: true)),

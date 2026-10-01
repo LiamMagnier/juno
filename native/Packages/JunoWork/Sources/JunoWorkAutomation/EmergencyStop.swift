@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(JunoScreenControl)
+import JunoScreenControl
+#endif
 
 // MARK: - What is running
 
@@ -83,11 +86,20 @@ public actor EmergencyStop {
     private var active: AutomationActiveUse?
     private var observers: [UUID: @Sendable (AutomationActiveUse?) -> Void] = [:]
     private let now: @Sendable () -> Date
+    /// The app-wide screen lock and stop, shared with Juno Code. Nil keeps
+    /// this stop to itself, as tests and the phone have it.
+    private let sharedScreen: SharedScreenControl?
+    private var listensToSharedStop = false
 
-    public init(stopped: Bool = false, now: @escaping @Sendable () -> Date = { Date() }) {
+    public init(
+        stopped: Bool = false,
+        now: @escaping @Sendable () -> Date = { Date() },
+        sharedScreen: SharedScreenControl? = nil
+    ) {
         self.stopped = stopped
         self.stopReason = stopped ? "Automation has not been started on this Mac." : nil
         self.now = now
+        self.sharedScreen = sharedScreen
     }
 
     // MARK: Reading
@@ -121,7 +133,7 @@ public actor EmergencyStop {
     /// Refuses while another action is in flight. Not a queue: a queued action
     /// is an action that runs after a stop, which is the exact thing this type
     /// exists to make impossible.
-    public func begin(runID: String, activity: AutomationActivity) throws -> AutomationRunToken {
+    public func begin(runID: String, activity: AutomationActivity) async throws -> AutomationRunToken {
         guard !stopped else {
             throw AutomationRefusal(
                 .emergencyStopped,
@@ -140,7 +152,24 @@ public actor EmergencyStop {
             startedAt: now(),
             actionCount: 0
         )
+        // Reserved before the await below, so a second action cannot slip in
+        // while the shared lock is asked.
         active = use
+        let startGeneration = generation
+        if let sharedScreen, activity.tier.drivesScreen {
+            await listenToSharedStopIfNeeded(sharedScreen)
+            do {
+                try await sharedScreen.claim(runID: runID, title: activity.subject.auditIdentifier)
+            } catch let refusal as AutomationRefusal {
+                if active?.runID == runID { active = nil }
+                throw refusal
+            }
+            // A stop that landed during the claim wins.
+            guard !stopped, generation == startGeneration, active?.runID == runID else {
+                await sharedScreen.release(runID: runID)
+                throw AutomationRefusal(.emergencyStopped, stopReason ?? "Juno's control of this Mac is stopped.")
+            }
+        }
         notify()
         return AutomationRunToken(runID: runID, activity: activity, generation: generation)
     }
@@ -184,11 +213,14 @@ public actor EmergencyStop {
     /// Bumps the generation, so a token kept by a control that returned still
     /// cannot be used to perform a second action without going through
     /// ``begin(runID:activity:)`` and therefore through the whole gate again.
-    public func end(_ token: AutomationRunToken) {
+    public func end(_ token: AutomationRunToken) async {
         guard token.generation == generation, active?.runID == token.runID else { return }
         active = nil
         generation &+= 1
         notify()
+        if let sharedScreen, token.activity.tier.drivesScreen {
+            await sharedScreen.release(runID: token.runID)
+        }
     }
 
     // MARK: Stopping
@@ -199,11 +231,43 @@ public actor EmergencyStop {
     /// could fail is a stop somebody has to check the result of while their
     /// screen is being typed into.
     public func stop(reason: String = "You stopped Juno.") {
+        halt(reason: reason)
+        // One stop for the whole app: Juno Code's screen control stops too.
+        if let sharedScreen {
+            Task { await sharedScreen.stopEverything() }
+        }
+    }
+
+    private func halt(reason: String) {
         stopped = true
         stopReason = reason
         active = nil
         generation &+= 1
         notify()
+    }
+
+    /// A stop from elsewhere halts Work when Work is driving the screen. An
+    /// idle Work host is not left stopped by an Esc meant for a Code session.
+    private func haltIfDriving(reason: String) {
+        guard active != nil else { return }
+        halt(reason: reason)
+    }
+
+    /// Esc, the menu bar or a Code session's Stop reaches Work through the
+    /// shared lock.
+    private func listenToSharedStopIfNeeded(_ shared: SharedScreenControl) async {
+        guard !listensToSharedStop else { return }
+        listensToSharedStop = true
+        await shared.onStop { [weak self] sentence in
+            Task { await self?.haltIfDriving(reason: sentence) }
+        }
+    }
+
+    /// Connects the shared stop before the first action, so an Esc pressed
+    /// while Work is idle still leaves it stopped.
+    public func connectSharedStop() async {
+        guard let sharedScreen else { return }
+        await listenToSharedStopIfNeeded(sharedScreen)
     }
 
     /// Allows automation again.
@@ -228,5 +292,62 @@ public actor EmergencyStop {
     private func notify() {
         let snapshot = active
         for observer in observers.values { observer(snapshot) }
+    }
+}
+
+extension AutomationTier {
+    /// Tiers that drive the real screen and so take the shared lock.
+    var drivesScreen: Bool {
+        self == .visual || self == .accessibility
+    }
+}
+
+/// Juno Work's view of the app-wide screen lock and stop (CU-09).
+///
+/// On the Mac it wraps the one `ScreenControlLock` Juno Code uses, so a Work
+/// task and a Code session can never drive the screen at once, a refusal
+/// names whoever holds it, and one stop stops both. Elsewhere it is inert.
+public struct SharedScreenControl: Sendable {
+    #if canImport(JunoScreenControl)
+    let lock: ScreenControlLock
+
+    public init(lock: ScreenControlLock) {
+        self.lock = lock
+    }
+
+    #if os(macOS)
+    /// The app's lock, shared with Juno Code.
+    public static var app: SharedScreenControl {
+        SharedScreenControl(lock: ScreenControlService.shared.lock)
+    }
+    #endif
+    #endif
+
+    func claim(runID: String, title: String) async throws {
+        #if canImport(JunoScreenControl)
+        do {
+            _ = try await lock.claim(ScreenControlHolder(id: "work:\(runID)", kind: .workTask, title: title))
+        } catch let ScreenControlError.lockHeld(holder) {
+            throw AutomationRefusal(.tooFast, "\(holder). Juno does one thing on this Mac at a time.")
+        }
+        #endif
+    }
+
+    func release(runID: String) async {
+        #if canImport(JunoScreenControl)
+        await lock.release(holderID: "work:\(runID)")
+        #endif
+    }
+
+    func stopEverything() async {
+        #if canImport(JunoScreenControl)
+        await lock.stopAll(reason: .stopButton)
+        #endif
+    }
+
+    func onStop(_ handler: @escaping @Sendable (String) -> Void) async {
+        #if canImport(JunoScreenControl)
+        await lock.addStopListener { reason in handler(reason.sentence) }
+        #endif
     }
 }

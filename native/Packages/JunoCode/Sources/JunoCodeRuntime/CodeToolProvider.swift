@@ -29,6 +29,24 @@ public struct CodeToolProviderContext: Sendable {
     public var executor: any CommandExecuting
     public var git: any GitServicing
     public var tests: any TestRunning
+    /// The session's run ledger, for recorders that mint evidence (checks,
+    /// UI checks, reviews) through ``VerificationLedgerWriting``. Nil where
+    /// the session keeps none.
+    ///
+    /// A tool call should return its evidence as a side effect
+    /// (`.verificationRecorded`, `.uiVerificationRecorded`) instead: the loop
+    /// takes those in call order after the batch, so a check made after an
+    /// edit in the same batch counts against it. A write here lands mid-batch,
+    /// before that batch's edits are counted, and so reads as stale. It is for
+    /// evidence minted outside a tool call: the runtime's own check runner,
+    /// a Preview check that settles later.
+    public var runLedger: RunLedgerRecorder?
+    /// The session's durable shells, when the workspace has them (Lane D's
+    /// `preview_server attach` promotes a shell's server).
+    public var shells: (any ShellSessionManaging)?
+    /// Screen control and the Simulator, for Lane C's provider. Nil where the
+    /// session has neither (Lane C).
+    public var screen: ScreenToolServices?
 
     public init(
         sessionID: CodeSessionID,
@@ -42,7 +60,10 @@ public struct CodeToolProviderContext: Sendable {
         files: any FileOperating,
         executor: any CommandExecuting,
         git: any GitServicing,
-        tests: any TestRunning
+        tests: any TestRunning,
+        runLedger: RunLedgerRecorder? = nil,
+        shells: (any ShellSessionManaging)? = nil,
+        screen: ScreenToolServices? = nil
     ) {
         self.sessionID = sessionID
         self.workspaceID = workspaceID
@@ -56,6 +77,9 @@ public struct CodeToolProviderContext: Sendable {
         self.executor = executor
         self.git = git
         self.tests = tests
+        self.runLedger = runLedger
+        self.shells = shells
+        self.screen = screen
     }
 }
 

@@ -22,7 +22,7 @@
 # out on a runner after a green local run is the other half of this problem.
 #
 # Usage:
-#   npm run native:test                 # all three packages
+#   npm run native:test                 # every package
 #   npm run native:test JunoNativeKit   # one, by directory name
 #   JUNO_SWIFT_FILTER='<regex>' npm run native:test JunoNativeKit
 #                                       # only the tests the regex matches
@@ -41,7 +41,7 @@ SCRATCH_ROOT="${JUNO_SWIFT_SCRATCH:-${TMPDIR:-/tmp}/juno-swift-$(printf '%s' "$R
 
 PACKAGES=("$@")
 if [ ${#PACKAGES[@]} -eq 0 ]; then
-  PACKAGES=(JunoNativeKit JunoWork JunoCode)
+  PACKAGES=(JunoNativeKit JunoWork JunoCode JunoScreenControl)
 fi
 
 echo "[native:test] scratch: $SCRATCH_ROOT"

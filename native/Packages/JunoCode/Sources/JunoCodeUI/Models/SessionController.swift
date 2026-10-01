@@ -404,6 +404,7 @@ public final class SessionController {
             String(settings.autoCompact),
             String(settings.compactThreshold),
             String(settings.modelFallback),
+            String(describing: settings.autonomy),
             Digests.sha256Hex(standingInstructions.joined(separator: "\u{1F}")),
             Digests.sha256Hex(settings.repositoryInstructions.joined(separator: "\u{1F}")),
         ].joined(separator: "|")
@@ -481,7 +482,7 @@ public final class SessionController {
     /// What this session's hooks remember across orchestrators: whether it
     /// has started, whether it has ended, whether anything has happened since.
     private let hookLedger = HookSessionLedger()
-    public private(set) var runStartedAt: Date?
+    public internal(set) var runStartedAt: Date?
     /// The assistant text accumulating in the turn that is streaming right now,
     /// and empty whenever nothing is streaming. Never persisted: the
     /// `assistantMessage` event is the record, and this is replaced by it.
@@ -510,7 +511,7 @@ public final class SessionController {
     /// contained workspace service; stale selections are ignored unless their
     /// literal reference is still present in the prompt.
     public private(set) var composerFileReferences: [WorkspacePath] = []
-    public private(set) var transientError: String?
+    public internal(set) var transientError: String?
 
     /// Images the reader has attached to the message they are composing.
     ///
@@ -597,6 +598,9 @@ public final class SessionController {
     public let reviewQueue = ReviewQueueModel()
     /// Slash commands and the sheets they open. Lane F.
     public let commands = CommandCenterModel()
+    /// The run ledger and goal runtime Code orchestrators are built with,
+    /// which outlive any one orchestrator. Lane A.
+    let autonomyState = SessionAutonomyState()
 
     private var storeObserver: UUID?
     /// The `attach()` under way, which a second caller waits for rather than
@@ -621,6 +625,8 @@ public final class SessionController {
     /// The system prompt last built, and what it was built from. See
     /// ``stableSystemPrompt(context:contract:)``.
     private var systemPromptMemo: (key: String, prompt: String)?
+    /// The system prompt last built, for `/context` (Lane F).
+    var currentSystemPrompt: String? { systemPromptMemo?.prompt }
     /// The tool call that has started and not yet completed. Side effects are
     /// appended while the call is still open, which is what lets a test result
     /// be attributed to the run that produced it.
@@ -729,7 +735,10 @@ public final class SessionController {
                 : (behavior == .code ? session.configuration.permissionMode : .readOnly)
         ) ?? .denyAll
         self.hookDiscoveryResult = context?.hookDiscoveryResult ?? HookDiscoveryResult()
-        self.customAgents = context.map { CustomAgentDiscovery(access: $0.access).discover() } ?? []
+        self.customAgents = context.map {
+            CustomAgentDiscovery(access: $0.access, user: $0.userExtensionDirectories)
+                .discoverEnabled(imports: $0.userExtensionPolicy)
+        } ?? []
         self.workspaceSurface = context.map {
             WorkspaceSurface(
                 displayName: $0.record.descriptor.displayName,
@@ -755,7 +764,7 @@ public final class SessionController {
     /// the model and effort are sent with every turn — so changing one has to
     /// replace the orchestrator. Conversation continuity survives it because the
     /// store holds the model context, which the replacement reloads.
-    private func currentOrchestrator(_ live: Live) async -> AgentOrchestrator {
+    func currentOrchestrator(_ live: Live) async -> AgentOrchestrator {
         await applySettings(live)
         let contract = TurnContract(
             behavior: session.configuration.behavior,
@@ -764,7 +773,9 @@ public final class SessionController {
                 ? session.configuration.reasoningEffort
                 : nil,
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
-            computerUseActive: computerUseActive,
+            // Declared while turned on, not only while running, so Start
+            // mid-run needs no rebuild; the service refuses until then (CU-15).
+            computerUseActive: computerUseActive || session.configuration.computerUseEnabled,
             hookPolicyFingerprint: Self.hookPolicyFingerprint(activeHooks),
             customAgentID: session.configuration.customAgentID,
             extensionsFingerprint: Self.extensionsFingerprint(),
@@ -821,11 +832,6 @@ public final class SessionController {
             return await makeProjectlessOrchestrator(contract, live: live)
         }
         let systemPrompt = await stableSystemPrompt(context: context, contract: contract)
-        let sessionState = sessionStateProvider(
-            context: context,
-            store: live.store,
-            includeGoal: contract.behavior == .code
-        )
         // A sub-agent reads the date, branch and skills as its parent does,
         // but not the parent's goal: it cannot update that goal, and the
         // task it was handed is its whole contract.
@@ -839,6 +845,49 @@ public final class SessionController {
         let lifecycleHooks = contract.behavior == .code
             ? makeHookAdapter(context: context, live: live)
             : nil
+        // Code runs autonomously: the stop check, soft limits, budgets and
+        // goals (CODE_AGENT_SPEC §1, §2), with Lane B's checks, reviewer and
+        // report behind it. Plan, Ask and Survey only report.
+        let autonomy = contract.behavior == .code
+            ? await autonomyConfiguration(
+                contractModelID: contract.modelID,
+                live: live,
+                context: context,
+                // The review pass's reviewer: Lane B's built-in `reviewer`,
+                // read-only, with no way to start a write-capable child.
+                reviewer: DelegateTaskTool(
+                    model: live.modelClient,
+                    registry: ToolRegistry(
+                        tools: Self.visionAdjusted(
+                            context.registry
+                                .inspectionOnly()
+                                .allTools
+                                .filter { !$0.name.hasPrefix("computer_") },
+                            supportsVision: contract.supportsVision
+                        )
+                    ),
+                    store: live.store,
+                    workspaceID: workspaceID,
+                    workspaceName: workspaceSurface.displayName,
+                    modelID: contract.modelID,
+                    reasoningEffort: contract.reasoningEffort,
+                    parentSystemPrompt: systemPrompt,
+                    sessionState: childSessionState,
+                    controls: live.subagentControls,
+                    fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
+                    parentRules: { [permissions = live.permissions] in
+                        await permissions.permissionRules
+                    },
+                    lifecycleHooks: lifecycleHooks
+                )
+            )
+            : nil
+        let sessionState = sessionStateProvider(
+            context: context,
+            store: live.store,
+            includeGoal: contract.behavior == .code,
+            autonomy: autonomy
+        )
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools
@@ -859,7 +908,20 @@ public final class SessionController {
                 files: context.files,
                 executor: context.executor,
                 git: context.git,
-                tests: context.tests
+                tests: context.tests,
+                runLedger: autonomy?.ledger,
+                shells: context.shells,
+                screen: screen.toolServices(
+                    context: context,
+                    modelID: contract.modelID,
+                    computerUseEnabled: contract.computerUseActive,
+                    // Simulator evidence is stamped with the transcript's
+                    // revision (Lane B's ledger), so an iOS check made after
+                    // an edit counts against it (Lane C's seam).
+                    workspaceRevision: { [sessionID, store = live.store] in
+                        await VerificationLedgers.shared.ledger(for: sessionID, store: store).workspaceRevision
+                    }
+                )
             )
         )
         if !contract.supportsVision || !contract.computerUseActive {
@@ -879,13 +941,8 @@ public final class SessionController {
             tools.append(ExitPlanTool(questions: live.questions))
         }
         if contract.behavior == .code {
-            // Preview inspection is bound to the exact parent session by the
-            // ToolContext supplied during invocation. It is deliberately not
-            // part of WorkspaceContext, so Ask, Plan and isolated sub-agents
-            // cannot observe a UI surface they do not own.
-            tools.append(CodePreviewOpenTool(workspaceRoot: context.access.rootURL))
-            tools.append(CodePreviewInspectTool())
-            tools.append(CodePreviewBrowserTool())
+            // The Preview's tools come from Lane D's provider above
+            // (PreviewToolProvider), bound to this session by the ToolContext.
             // Workspace-declared MCP tools are discovered through the same
             // session construction path as built-in tools. They remain
             // approval-pinned by MCPCodeTool, so discovery never broadens the
@@ -895,7 +952,8 @@ public final class SessionController {
                     excludingServers: CodeDefaults.shared.disabledMCPServers
                 )
             )
-            tools.append(UpdateGoalTool(store: live.store))
+            // The goal tools come from `GoalToolProvider` above; the
+            // step-based `UpdateGoalTool` is no longer offered.
             tools.append(
             DelegateTaskTool(
                 model: live.modelClient,
@@ -917,7 +975,12 @@ public final class SessionController {
                 reasoningEffort: contract.reasoningEffort,
                 parentSystemPrompt: systemPrompt,
                 sessionState: childSessionState,
-                executionFactory: { [permissions = live.permissions, supportsVision = contract.supportsVision] request in
+                executionFactory: { [
+                    permissions = live.permissions,
+                    supportsVision = contract.supportsVision,
+                    store = live.store,
+                    worktreeHooks = lifecycleHooks
+                ] request in
                     // A child never outranks the session that spawned it.
                     let childMode = PermissionMode.workspaceWrite.capped(
                         at: await permissions.permissionMode
@@ -927,6 +990,22 @@ public final class SessionController {
                         let worktree = try await context.worktrees.create(
                             branch: request.branch
                         )
+                        // `WorktreeCreate` for a sub-agent's worktree too
+                        // (§5.9), told to the session that delegated.
+                        if let worktreeHooks {
+                            let answer = await worktreeHooks.worktreeChanged(
+                                sessionID: request.parentSessionID,
+                                created: true,
+                                path: worktree.rootPath,
+                                branch: worktree.branch
+                            )
+                            for notice in answer.notices {
+                                _ = try? await store.appendEvent(
+                                    sessionID: request.parentSessionID,
+                                    payload: .hookActivity(notice)
+                                )
+                            }
+                        }
                         let isolated = try context.isolatedContext(at: worktree.rootURL)
                         // No screen control and no background shells: a
                         // bounded child has no reader to start either for,
@@ -972,7 +1051,14 @@ public final class SessionController {
                 parentRules: { [permissions = live.permissions] in
                     await permissions.permissionRules
                 },
-                lifecycleHooks: lifecycleHooks
+                lifecycleHooks: lifecycleHooks,
+                // A write child gets a quarter of the session's own step
+                // limit, at most 60 (§5.2).
+                // Built-in and custom agents as targets (§5.2): Lane B's
+                // built-ins, then the session's custom agents (Lane F's
+                // discovery); a custom agent never takes a built-in's name.
+                agents: subagentTargets,
+                parentStepLimit: settings.maxTurns
             ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -1016,7 +1102,8 @@ public final class SessionController {
                 contract: contract,
                 live: live,
                 systemPrompt: systemPrompt,
-                sessionState: sessionState
+                sessionState: sessionState,
+                autonomy: autonomy
             ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
@@ -1026,7 +1113,17 @@ public final class SessionController {
             fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
             // In every mode, not only Code: an Ask turn changes no files, but
             // it is still a turn a later rewind has to count past.
-            turnCheckpoints: context.turnCheckpoints
+            turnCheckpoints: context.turnCheckpoints,
+            // Code turns (the only ones with autonomy): Lane A's stop check,
+            // with the Preview's rule 8 for the web surface (UI edits need a
+            // look at the running page) answered inside it, before the diff
+            // read and the goal's judge.
+            completionGate: autonomy.map { configuration in
+                autonomyGate(
+                    configuration,
+                    uiAdvisor: previewLease.uiAdvisor(sessionID: sessionID, workspaceRoot: context.access.rootURL)
+                )
+            } ?? ReportOnlyCompletionGate()
         )
     }
 
@@ -1037,11 +1134,12 @@ public final class SessionController {
     }
 
     /// The hook adapter for a Code run, or nil when no hook would run.
-    private func makeHookAdapter(context: WorkspaceContext, live: Live) -> WorkspaceAgentHooks? {
+    func makeHookAdapter(context: WorkspaceContext, live: Live) -> WorkspaceAgentHooks? {
         let definitions = activeHooks
         guard !definitions.isEmpty else { return nil }
         let permissions = live.permissions
         let store = live.store
+        let modelID = session.configuration.modelID
         return WorkspaceAgentHooks(
             definitions: definitions,
             executor: context.executor,
@@ -1058,8 +1156,33 @@ public final class SessionController {
             },
             didRun: { hookID in
                 Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
-            }
+            },
+            promptEvaluator: ModelHookPromptEvaluator(
+                client: live.modelClient,
+                sessionID: sessionID,
+                defaultModelID: { modelID },
+                recordUsage: { [sessionID] ledger in
+                    _ = try? await store.recordUsage(ledger, for: sessionID)
+                }
+            ),
+            instructionFiles: { await context.instructionFiles().map(\.path.value) }
         )
+    }
+
+    /// Runs one hook signal the app raises outside a run — a model switch, a
+    /// worktree, a settings change made in the app — through a fresh hook
+    /// adapter, and records what the hooks ask the thread to show. Code
+    /// sessions only, as for every hook.
+    func signalHooks(
+        _ signal: (WorkspaceAgentHooks, CodeSessionID) async -> AgentHookResponse
+    ) async {
+        guard let live, let context = live.context, session.configuration.behavior == .code else { return }
+        reloadHooks(from: context)
+        guard let hooks = makeHookAdapter(context: context, live: live) else { return }
+        let answer = await signal(hooks, sessionID)
+        for notice in answer.notices {
+            _ = try? await live.store.appendEvent(sessionID: sessionID, payload: .hookActivity(notice))
+        }
     }
 
     /// Runs `SessionEnd` hooks for a session that is going away: deleted, or
@@ -1084,7 +1207,8 @@ public final class SessionController {
         contract: TurnContract,
         live: Live,
         systemPrompt: String,
-        sessionState: (@Sendable () async -> [SessionStateSection])? = nil
+        sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
+        autonomy: AutonomyConfiguration? = nil
     ) -> AgentOrchestrator.Configuration {
         AgentOrchestrator.Configuration(
             maximumIterations: settings.maxTurns,
@@ -1095,7 +1219,8 @@ public final class SessionController {
                 : nil,
             contextCompactionTriggerFraction: settings.compactThreshold,
             systemPrompt: systemPrompt,
-            sessionState: sessionState
+            sessionState: sessionState,
+            autonomy: autonomy
         )
     }
 
@@ -1137,13 +1262,20 @@ public final class SessionController {
     private func sessionStateProvider(
         context: WorkspaceContext,
         store: CodeSessionStore,
-        includeGoal: Bool
+        includeGoal: Bool,
+        autonomy: AutonomyConfiguration? = nil
     ) -> @Sendable () async -> [SessionStateSection] {
         let sessionID = self.sessionID
         return { [weak self] in
             var sections = [context.sessionStateEnvironment()]
             if includeGoal {
-                sections.append(Self.goalStateSection(try? await store.goal(for: sessionID)))
+                // The goal, the project's checks and the run's bounds.
+                sections += Self.autonomySections(
+                    goal: await store.currentGoalRun(for: sessionID),
+                    recipe: await autonomy?.recipe(),
+                    ledger: await autonomy?.ledger?.snapshot(),
+                    settings: autonomy?.settings ?? .standard
+                )
             }
             if let skills = await self?.skillsStateSection() {
                 sections.append(skills)
@@ -1353,6 +1485,8 @@ public final class SessionController {
     /// each is handed a controller it will read the transcript from.
     /// A preview controller is already fully seeded, so this is a no-op there.
     public func attach() async {
+        // The verbs other lanes own (`/goal`, `/fork`), bound once.
+        installLaneRoutes()
         guard let live else { return }
         if let attaching {
             await attaching.value
@@ -1381,6 +1515,7 @@ public final class SessionController {
                 self?.apply(update, own: sessionID)
             }
         }
+        screen.bind(sessionID: sessionID, coordinator: live.context?.computerUse, store: live.store, permissions: live.permissions)
         let restored = await live.store.events(for: sessionID)
         usageLedger = await live.store.usageLedger(for: sessionID)
         let delivered = eventsDeliveredWhileRestoring ?? []
@@ -1402,6 +1537,7 @@ public final class SessionController {
         pendingApprovals = await live.permissions.pendingApprovals
         pendingQuestions = await live.questions.pendingQuestions
         pendingPlans = await live.questions.pendingPlans
+        await restoreAutonomy(live)
         await refreshWorkspacePanels()
         await refreshComputerUse()
         // Cleared here rather than by the caller once it resumes, so a detach
@@ -1483,14 +1619,18 @@ public final class SessionController {
             live: live
         )
         let wasActive = session.status.isActive
+        // The reader's queued line comments ride on this message, without
+        // touching the draft (CODE_AGENT_SPEC §5.10).
+        let outgoing = reviewQueue.outgoing(prompt: prompt, modelPrompt: modelPrompt)
         do {
             try await deliver(
-                prompt: prompt,
-                modelPrompt: modelPrompt,
+                prompt: outgoing.prompt,
+                modelPrompt: outgoing.modelPrompt,
                 images: pendingAttachments.map(\.image),
                 kind: activeInstructionKind,
                 live: live
             )
+            reviewQueue.markSent(outgoing.commentIDs)
             composerText = ""
             composerFileReferences = []
             pendingAttachments = []
@@ -1518,7 +1658,7 @@ public final class SessionController {
     ///
     /// - Parameter accepted: told once the agent has taken the message, before
     ///   its hooks run; see `AgentOrchestrator.submit`.
-    private func deliver(
+    func deliver(
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
@@ -1550,7 +1690,7 @@ public final class SessionController {
     }
 
     /// Starts a turn: the turn's contract, then the prompt.
-    private func startTurn(
+    func startTurn(
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
@@ -1561,6 +1701,9 @@ public final class SessionController {
         liveAssistantText = ""
         liveReasoningSummary = ""
         let configuration = session.configuration
+        // The goal and run journal as they stand before this turn, so a rewind
+        // to it puts them back with the conversation (CODE_AGENT_SPEC §5.6).
+        live.store.turnState(for: sessionID).snapshot(atSequence: await live.store.nextSequence(for: sessionID))
         // Written before the prompt, so the transcript reads contract-then-turn
         // and a past turn's permissions can still be read off the record long
         // after the composer has moved on to a different mode.
@@ -1779,6 +1922,10 @@ public final class SessionController {
     /// goal state, turn contracts, approvals, checkpoints and transcript
     /// durability remain identical to a manually retried message.
     public func retryLastTurn() async {
+        // The failed turn carries on from where it stopped, with no second
+        // copy of the message (CODE_AGENT_SPEC §1.6). Sending the prompt
+        // again is the fallback for a session with nothing to resume.
+        if await retryByResuming() { return }
         guard let lastPrompt = events.reversed().compactMap({ event -> String? in
             if case let .userPrompt(prompt) = event.payload { return prompt.text }
             return nil
@@ -1803,8 +1950,7 @@ public final class SessionController {
         // attach there keeps the fixture surfaces working without teaching them
         // about capabilities.
         guard live?.modelSupportsVision(session.configuration.modelID) ?? true else {
-            transientError =
-                "\(session.configuration.modelID) cannot see images. Choose a model with vision to attach one."
+            transientError = Self.cannotSeeImagesMessage
             return
         }
         guard attachment.image.data.count <= Self.maximumAttachmentBytes else {
@@ -1823,10 +1969,14 @@ public final class SessionController {
         pendingAttachments.removeAll { $0.id == id }
     }
 
+    /// What a paste, drop or choice of a picture says when the model cannot
+    /// see (§5.11).
+    static let cannotSeeImagesMessage = "This model cannot see images; switch to one that can."
+
     /// The per-image and per-message ceilings, matching the orchestrator's own
     /// limits for tool-result images.
     static let maximumAttachmentBytes = 8 * 1_024 * 1_024
-    static let maximumAttachments = 4
+    static let maximumAttachments = CodeAttachment.maximumPerMessage
 
     public func stop() async {
         guard live != nil else {
@@ -1841,6 +1991,8 @@ public final class SessionController {
         // prompt is turned away rather than delivered after the Stop.
         remoteHandover?.cancel()
         approvedPlanHandoff = nil
+        // Stop means every child and every loop too (Lane F).
+        await commands.stopEverything(sessionID: sessionID)
         await orchestrator?.stop()
         await live?.questions.cancelAll()
         liveAssistantText = ""
@@ -1881,9 +2033,9 @@ public final class SessionController {
         }
     }
 
-    /// Records a file chosen from the composer typeahead. Duplicate choices do
-    /// not duplicate model context, and directories are never registered by the
-    /// menu.
+    /// Records a file or folder chosen from the composer typeahead. Duplicate
+    /// choices do not duplicate model context; a folder is listed, not read
+    /// (`MentionResolver`).
     public func registerComposerFileReference(_ path: WorkspacePath) {
         guard !composerFileReferences.contains(path) else { return }
         composerFileReferences.append(path)
@@ -1895,6 +2047,16 @@ public final class SessionController {
     /// Each file and the aggregate are independently bounded so a large or
     /// malicious source file cannot consume an unbounded context window.
     private func explicitFileContextPrompt(
+        visiblePrompt: String,
+        live: Live
+    ) async -> String {
+        // Files first, as before; then folders, `@diff`, `@preview:` and
+        // `@shell:` mentions (Lane F, §5.12).
+        let withFiles = await explicitFileOnlyContextPrompt(visiblePrompt: visiblePrompt, live: live)
+        return await appendingMentionContext(to: withFiles, visiblePrompt: visiblePrompt)
+    }
+
+    private func explicitFileOnlyContextPrompt(
         visiblePrompt: String,
         live: Live
     ) async -> String {
@@ -1957,9 +2119,9 @@ public final class SessionController {
             session.configuration.behavior = behavior
             return
         }
-        await live.permissions.setMode(
-            behavior == .code ? session.configuration.permissionMode : .readOnly
-        )
+        let mode: PermissionMode = behavior == .code ? session.configuration.permissionMode : .readOnly
+        await live.permissions.setMode(mode)
+        await live.subagentControls.capModes(ownedBy: sessionID, at: mode)
         if behavior != .code {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseLatestCapture = nil
@@ -2004,7 +2166,8 @@ public final class SessionController {
         do {
             try await context.computerUse.activate(
                 sessionID: sessionID,
-                userConsented: true
+                userConsented: true,
+                title: session.title
             )
             computerUseActive = true
             computerUseStartBlocked = false
@@ -2086,7 +2249,21 @@ public final class SessionController {
             #endif
             return
         }
+        // A grant sheet's unticks reach the service before its Allow does.
+        await screen.settleGrantChoices()
         await live.permissions.resolve(approvalID: approvalID, decision: .approved)
+    }
+
+    /// Whether another device may allow this approval. A screen card is
+    /// allowed at the Mac only (CU-07): read from the permission coordinator,
+    /// which knows a request the moment it is raised, not from the mirrored
+    /// list the window draws.
+    public func mayAllowRemotely(_ approvalID: String) async -> Bool {
+        guard let live else { return true }
+        guard let request = await live.permissions.pendingApprovals.first(where: { $0.id == approvalID }) else {
+            return true
+        }
+        return !ComputerUseToolName.allowedOnlyAtTheMac.contains(request.toolName)
     }
 
     public func deny(_ approvalID: String) async {
@@ -2295,6 +2472,9 @@ public final class SessionController {
             return
         }
         await live.permissions.setMode(mode)
+        // Delegated work, background children included, never keeps more
+        // authority than the parent now has (Lane B, §5.2).
+        await live.subagentControls.capModes(ownedBy: sessionID, at: mode)
         hookPolicy = HookExecutionPolicy(
             allowedHookIDs: hookPolicy.allowedHookIDs,
             permissionMode: mode,
@@ -2310,7 +2490,34 @@ public final class SessionController {
             session.configuration.modelID = modelID
             return
         }
+        let previousModelID = session.configuration.modelID
+        if previousModelID != modelID {
+            // `PreModelSwitch` hooks may keep the current model (§5.9).
+            var refusal: String?
+            await signalHooks { hooks, id in
+                let answer = await hooks.modelSwitching(sessionID: id, from: previousModelID, to: modelID)
+                refusal = answer.blockReason
+                return answer
+            }
+            if let refusal {
+                transientError = "A hook kept the current model: \(refusal)"
+                return
+            }
+        }
+        defer {
+            if previousModelID != modelID {
+                Task { [weak self] in
+                    await self?.signalHooks { hooks, id in
+                        await hooks.modelSwitched(sessionID: id, from: previousModelID, to: modelID)
+                    }
+                }
+            }
+        }
         let supportsVision = live.modelSupportsVision(modelID)
+        if modelID != session.configuration.modelID {
+            // App grants lapse on a model change (§3.3); screen control stays on.
+            await live.context?.computerUse.revokeGrants(sessionID: sessionID)
+        }
         if !supportsVision, session.configuration.computerUseEnabled {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseLatestCapture = nil
@@ -2876,8 +3083,15 @@ public final class SessionController {
             if let orchestrator, await orchestrator.isRunning {
                 return conversationNotRewound(RewindCopy.running)
             }
+            // Where the turn began, read before the cut takes its row away.
+            let turnSequence = events.first { $0.id == turnID }?.sequence
             do {
                 let plan = try await live.store.rewindConversation(sessionID: sessionID, to: turnID)
+                // The goal and run journal go back with the conversation, so a
+                // rewound goal keeps no evidence from turns that are gone.
+                if let turnSequence {
+                    live.store.turnState(for: sessionID).restore(toSequence: turnSequence)
+                }
                 if scope.restoresCode {
                     // Their files are restored and their rows are gone; nothing
                     // is left to rewind them by.
@@ -3029,6 +3243,9 @@ public final class SessionController {
             let worktree = try await context.worktrees.create(branch: name)
             managedWorktrees = context.worktrees.worktrees
             transientError = "Created isolated worktree at " + worktree.rootPath
+            await signalHooks { hooks, id in
+                await hooks.worktreeChanged(sessionID: id, created: true, path: worktree.rootPath, branch: worktree.branch)
+            }
             return worktree
         } catch {
             transientError = "Could not create an isolated worktree: " + String(describing: error)
@@ -3041,6 +3258,9 @@ public final class SessionController {
         do {
             try await context.worktrees.remove(worktree)
             managedWorktrees = context.worktrees.worktrees
+            await signalHooks { hooks, id in
+                await hooks.worktreeChanged(sessionID: id, created: false, path: worktree.rootPath, branch: worktree.branch)
+            }
         } catch {
             transientError = "Could not remove the isolated worktree: " + String(describing: error)
         }
@@ -3090,7 +3310,8 @@ public final class SessionController {
         reloadHooks(from: context)
         skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
         CodeDefaults.shared.migrateSkillSwitches(for: skillDiscoveryResult.skills)
-        customAgents = CustomAgentDiscovery(access: context.access).discover()
+        customAgents = CustomAgentDiscovery(access: context.access, user: context.userExtensionDirectories)
+            .discoverEnabled(imports: context.userExtensionPolicy)
         mcpConfigurationError = context.mcpConfigurationError
         if let registry = context.mcpRegistry {
             mcpServerConfigurations = await registry.serverConfigurations()
@@ -3613,6 +3834,9 @@ public final class SessionController {
         if session.configuration.location != .local {
             return "Screen control runs on the Mac the session runs on."
         }
+        if live?.context == nil {
+            return "Open a project to use screen control."
+        }
         if session.configuration.behavior != .code {
             return "Ask and Plan sessions cannot control the computer."
         }
@@ -4065,6 +4289,7 @@ public final class SessionController {
 
     private func integrate(_ event: SessionEvent) {
         projection.apply(event: event)
+        integrateAutonomy(event)
         switch event.payload {
         case let .approvalRequested(request):
             pendingApprovals.append(request)

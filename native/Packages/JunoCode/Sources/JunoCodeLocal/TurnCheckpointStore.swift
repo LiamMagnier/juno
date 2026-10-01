@@ -359,6 +359,58 @@ public actor TurnCheckpointStore: TurnCheckpointing {
         try Self.removePersisted(sessionID: sessionID, directoryURL: directoryURL)
     }
 
+    // MARK: - Review and fork (Lane E)
+
+    /// The files the session's newest turn that changed anything touched,
+    /// each with its bytes from before that turn (nil when it did not exist):
+    /// the review's Last turn scope (CODE_AGENT_SPEC §5.10).
+    public func lastTurnChanges(sessionID: CodeSessionID) -> [(path: WorkspacePath, before: Data?)] {
+        guard let turn = journal(for: sessionID).last(where: { !$0.files.isEmpty }) else { return [] }
+        return turn.files.map { file in
+            (file.path, contents(of: file.before, sessionID: sessionID))
+        }
+    }
+
+    /// The bytes a recorded state names, from the store; nil for an absent
+    /// file or a missing blob.
+    public func contents(of state: TurnFileState, sessionID: CodeSessionID) -> Data? {
+        guard case let .file(sha256, _, _) = state,
+              let data = try? Data(contentsOf: blobURL(sha256, sessionID: sessionID)),
+              Digests.sha256Hex(data) == sha256
+        else { return nil }
+        return data
+    }
+
+    /// Writes every file touched in `turnID` or a later turn into the
+    /// checkout at `root` as it was before `turnID`: the files of a session
+    /// forked from just before that turn, in its own worktree (§5.6). The
+    /// source checkout is not touched. Paths are re-checked against `root`.
+    @discardableResult
+    public func materialize(
+        sessionID: CodeSessionID,
+        beforeTurn turnID: String,
+        into root: URL
+    ) throws -> [WorkspacePath] {
+        let turns = journal(for: sessionID)
+        guard let index = turns.firstIndex(where: { $0.id == turnID }) else {
+            throw TurnCheckpointError.notRecorded
+        }
+        if let gap = turns[index...].lazy.compactMap(\.gap).first {
+            throw TurnCheckpointError.incomplete(gap)
+        }
+        let base = root.standardizedFileURL.resolvingSymlinksInPath()
+        var written: [WorkspacePath] = []
+        for snapshot in TurnCheckpoint.netChanges(of: turns[index...]) {
+            let url = base.appendingPathComponent(snapshot.path.value).standardizedFileURL
+            guard url.path.hasPrefix(base.path + "/") else {
+                throw TurnCheckpointError.restoreFailed(path: snapshot.path.value, message: "Outside the checkout.")
+            }
+            try apply(snapshot.before, at: url, path: snapshot.path, sessionID: sessionID)
+            written.append(snapshot.path)
+        }
+        return written
+    }
+
     /// Removes a session's snapshots when its workspace cannot be opened.
     /// Deleting a transcript must not depend on a still-valid folder grant,
     /// because the snapshots hold the full pre-edit source.

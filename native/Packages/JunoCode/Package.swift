@@ -28,20 +28,32 @@ let package = Package(
         .library(name: "JunoSimulator", targets: ["JunoSimulator"]),
     ],
     dependencies: [
-        .package(path: "../JunoNativeKit")
+        .package(path: "../JunoNativeKit"),
+        // Screen control, shared with Juno Work: one lock, one stop, the
+        // grants and the always-confirm floor (CODE_AGENT_SPEC §3.2).
+        .package(path: "../JunoScreenControl"),
     ],
     targets: [
         .target(name: "JunoCodeCore"),
         .target(
             name: "JunoCodeLocal",
-            dependencies: ["JunoCodeCore"]
+            dependencies: [
+                "JunoCodeCore",
+                .product(name: "JunoScreenControl", package: "JunoScreenControl"),
+            ]
         ),
         // Depends on Core only, for SecretRedactor — build logs routinely carry
         // tokens, and they are redacted before they reach the UI or the model.
         .target(name: "JunoSimulator", dependencies: ["JunoCodeCore"]),
         .target(
             name: "JunoCodeRuntime",
-            dependencies: ["JunoCodeCore"]
+            dependencies: [
+                "JunoCodeCore",
+                // The computer tools speak the screen-control vocabulary and
+                // scale Simulator frames with its scaler. The service itself
+                // is reached only through the protocol a session hands in.
+                .product(name: "JunoScreenControl", package: "JunoScreenControl"),
+            ]
         ),
         .target(
             name: "JunoCodeUI",
@@ -56,6 +68,7 @@ let package = Package(
                 .product(name: "JunoDesignSystem", package: "JunoNativeKit"),
                 .product(name: "JunoCodeKit", package: "JunoNativeKit"),
                 .product(name: "JunoAuth", package: "JunoNativeKit"),
+                .product(name: "JunoScreenControl", package: "JunoScreenControl"),
             ]
         ),
         .target(
@@ -85,18 +98,25 @@ let package = Package(
         ),
         .testTarget(
             name: "JunoCodeLocalTests",
-            dependencies: ["JunoCodeCore", "JunoCodeLocal"]
+            dependencies: [
+                "JunoCodeCore", "JunoCodeLocal",
+                .product(name: "JunoScreenControl", package: "JunoScreenControl"),
+            ]
         ),
         .testTarget(
             name: "JunoCodeRuntimeTests",
             dependencies: [
                 "JunoCodeCore", "JunoCodeRuntime", "JunoCodeLocal",
                 .product(name: "JunoCore", package: "JunoNativeKit"),
+                .product(name: "JunoScreenControl", package: "JunoScreenControl"),
             ]
         ),
         .testTarget(
             name: "JunoCodeUITests",
-            dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI"]
+            dependencies: [
+                "JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI",
+                .product(name: "JunoScreenControl", package: "JunoScreenControl"),
+            ]
         ),
         .testTarget(
             name: "JunoCodeBridgeTests",

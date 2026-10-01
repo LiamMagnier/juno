@@ -40,6 +40,36 @@ public enum DevServerURLDetector {
         return nil
     }
 
+    /// Every address in `line`, loopback first, without duplicates. The
+    /// service treats each one as a candidate and keeps only the one its own
+    /// process group listens on (PV-8), so a proxy target printed beside the
+    /// server's address cannot win by appearing first.
+    public static func detectAll(in line: String) -> [URL] {
+        var found: [URL] = []
+        func add(_ url: URL?) {
+            guard let url, !found.contains(where: { $0.host == url.host && $0.port == url.port }) else { return }
+            found.append(url)
+        }
+        for url in allURLs(in: line, pattern: loopbackURL, normalizingHost: true) { add(url) }
+        for url in allURLs(in: line, pattern: privateURL, normalizingHost: false) { add(url) }
+        if found.isEmpty {
+            add(detect(in: line))
+        }
+        return found
+    }
+
+    private static func allURLs(
+        in line: String,
+        pattern: NSRegularExpression?,
+        normalizingHost: Bool
+    ) -> [URL] {
+        guard let pattern else { return [] }
+        return pattern.matches(in: line, range: NSRange(line.startIndex..., in: line)).compactMap { match in
+            guard let range = Range(match.range, in: line) else { return nil }
+            return firstURL(in: String(line[range]), pattern: pattern, normalizingHost: normalizingHost)
+        }
+    }
+
     // MARK: - Patterns
 
     /// Loopback in every spelling a server prints it, including the `0.0.0.0`

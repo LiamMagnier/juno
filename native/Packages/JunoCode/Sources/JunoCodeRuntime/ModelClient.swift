@@ -8,6 +8,12 @@ public struct ModelImage: Hashable, Codable, Sendable {
         case low
         case high
         case auto
+        /// Kept at the size sent. OpenAI's Responses wire sends it as is, so
+        /// a screenshot the harness already scaled is not resized again and
+        /// the model's coordinates stay in Juno's frame (CU-04); Chat
+        /// Completions has no such value and gets `high` with an image
+        /// already inside the box `high` resizes to.
+        case original
     }
 
     public let mediaType: String
@@ -145,6 +151,9 @@ public enum ModelCallPurpose: String, Equatable, Sendable {
     case turn
     /// The summary written when older turns are folded away.
     case compactionSummary
+    /// The goal judge, or drafting a goal's criteria: small-model calls that
+    /// count toward the session's and the goal's spend.
+    case goalJudge
 }
 
 /// What one model call was billed for, as the provider reported it.

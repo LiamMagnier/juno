@@ -47,7 +47,7 @@ struct StudioHooksSettings: View {
                 Toggle(isOn: Binding(get: { policy.allowUntrustedHooks }, set: { setAllowed($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Run this project's hooks")
-                        Text("They are commands from the repository. Juno runs them in the sandbox, and asks before each run wherever it would ask before a command.")
+                        Text("They come from the repository: commands, endpoints on this Mac, and questions for a model. Juno runs commands in the sandbox, and asks before each run wherever it would ask before a command. A hook can block or ask; it can never approve for you.")
                             .font(Studio.Font.meta)
                             .foregroundStyle(Studio.Ink.tertiary)
                     }
@@ -105,12 +105,31 @@ struct StudioHooksSettings: View {
         switch event {
         case .preToolUse: "Before a tool runs"
         case .postToolUse: "After a tool runs"
+        case .postToolUseFailure: "After a tool fails"
+        case .postToolBatch: "After a batch of tools"
         case .userPromptSubmit: "When you send a message"
         case .stop: "When Juno finishes"
+        case .stopFailure: "When a run ends on an error"
+        case .subagentStart: "When a sub-agent starts"
         case .subagentStop: "When a sub-agent finishes"
         case .sessionStart: "When a session starts"
         case .sessionEnd: "When a session ends"
         case .notification: "When Juno needs you"
+        case .permissionRequest: "When Juno asks for permission"
+        case .permissionDenied: "When a request is declined"
+        case .taskCreated: "When a todo is added"
+        case .taskCompleted: "When a todo is marked done"
+        case .preCompact: "Before the conversation is compacted"
+        case .postCompact: "After the conversation is compacted"
+        case .instructionsLoaded: "When instruction files load"
+        case .configChange: "When settings change"
+        case .fileChanged: "When Juno changes a file"
+        case .worktreeCreate: "When a worktree is created"
+        case .worktreeRemove: "When a worktree is removed"
+        case .preModelSwitch: "Before the model changes"
+        case .postModelSwitch: "After the model changes"
+        case .goalSet: "When a goal is set"
+        case .goalVerdict: "When the goal is checked"
         }
     }
 }
@@ -126,12 +145,23 @@ struct StudioHookSettingsRow: View {
     /// What the matcher selects. Events without a matcher say nothing.
     private var scope: String? {
         switch hook.event {
-        case .preToolUse, .postToolUse:
+        case .preToolUse, .postToolUse, .postToolUseFailure, .permissionRequest, .permissionDenied:
             hook.matcher.pattern ?? "Every tool"
-        case .sessionStart, .sessionEnd, .notification:
+        case .sessionStart, .sessionEnd, .notification, .subagentStart, .subagentStop, .preCompact,
+             .postCompact, .configChange, .fileChanged, .instructionsLoaded, .stopFailure:
             hook.matcher.pattern
-        case .userPromptSubmit, .stop, .subagentStop:
+        case .userPromptSubmit, .stop, .postToolBatch, .taskCreated, .taskCompleted, .worktreeCreate,
+             .worktreeRemove, .preModelSwitch, .postModelSwitch, .goalSet, .goalVerdict:
             nil
+        }
+    }
+
+    /// How the hook answers, in words, for the kinds that are not commands.
+    private var kind: String? {
+        switch hook.kind {
+        case .command: nil
+        case .http: "Posts to an endpoint"
+        case .prompt: "Asks a model"
         }
     }
 
@@ -152,7 +182,7 @@ struct StudioHookSettingsRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(hook.command)
-                Text(([scope, hook.path, status] as [String?]).compactMap { $0 }.joined(separator: " · "))
+                Text(([kind, scope, hook.path, status] as [String?]).compactMap { $0 }.joined(separator: " · "))
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.tertiary)
                     .lineLimit(1)

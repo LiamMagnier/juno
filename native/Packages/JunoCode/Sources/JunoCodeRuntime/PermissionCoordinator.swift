@@ -11,10 +11,25 @@ public enum AuthorizationOutcome: Equatable, Sendable {
 
 /// Per-session permission gate. `authorize` truly suspends while an approval
 /// is pending: the tool has not started, and both approve and deny resume the
-/// agent loop cleanly. Requests expire closed and cancellation denies
-/// everything pending.
+/// agent loop cleanly. Cancellation denies everything pending.
+///
+/// An approval nobody answers is never turned into a denial the model reads as
+/// "declined" (CODE_AGENT_SPEC §1.11). After `approvalTimeToLiveSeconds` the
+/// run *parks*: the call stays pending and bound to its digest for as long as
+/// the reader takes, the reader is reminded at 15, 60 and 240 minutes, and
+/// their decision may arrive whenever it comes. `expiresAt` is when the first
+/// reminder is due, not when the request dies.
 public actor PermissionCoordinator {
+    /// When an unanswered approval is first due a reminder. The request stays
+    /// pending past it.
     public static let approvalTimeToLiveSeconds: Double = 15 * 60
+    /// When a waiting approval reminds the reader, in minutes after it was
+    /// asked.
+    public static let parkingReminderMinutes: [Double] = [15, 60, 240]
+    /// How long an approval the reader gave stays good for the call to start.
+    /// Counted from the decision, so a parked approval answered hours later
+    /// is as good as one answered at once.
+    public static let approvedExecutionWindowSeconds: Double = 5 * 60
 
     private enum PendingResolution: Sendable {
         case decided(ApprovalDecision)
@@ -29,15 +44,46 @@ public actor PermissionCoordinator {
     private var pending: [String: CheckedContinuation<PendingResolution, Never>] = [:]
     private var pendingRequests: [String: ApprovalRequest] = [:]
     private var observers: [UUID: @Sendable (ApprovalUpdate) -> Void] = [:]
+    /// How many reminders each parked approval has had.
+    private var reminders: [String: Int] = [:]
+    /// The timers that park each pending approval, cancelled when it is
+    /// answered.
+    private var parkingTimers: [String: Task<Void, Never>] = [:]
+    /// Exact commands one active goal may run without asking (D-012).
+    private var taskGrants: [TaskGrant] = []
+    /// The goal the grants belong to, while it is active.
+    private var activeGrantGoalID: String?
+    /// The checkout this coordinator's session works in; a grant applies only
+    /// in its own.
+    private var workspaceRoot: String?
+    /// Asks whether the goal with this id still lets its grants apply, from
+    /// the goal as it is stored now. The goal runtime moves a goal out of
+    /// `active` on its own — met, judged impossible, out of budget, blocked,
+    /// stopped — without telling this coordinator, so a grant is honoured
+    /// only after this says yes at the moment of the call. Nil trusts the
+    /// grants as set (tests, and sessions with no goal store).
+    private var taskGrantCheck: (@Sendable (_ goalID: String) async -> Bool)?
 
     public enum ApprovalUpdate: Sendable {
         case requested(ApprovalRequest)
         case resolved(id: String, decision: ApprovalDecision)
+        /// Nobody has answered for a while: the run waits, the request stays
+        /// pending, and the reader is reminded. `reminder` counts from 1.
+        case parked(ApprovalRequest, reminder: Int)
     }
 
-    public init(sessionID: CodeSessionID, mode: PermissionMode) {
+    /// The coordinator's clock: when a request was raised and when it was
+    /// decided. Injected by tests that park an approval for hours.
+    private let now: @Sendable () -> Date
+
+    public init(
+        sessionID: CodeSessionID,
+        mode: PermissionMode,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.sessionID = sessionID
         self.mode = mode
+        self.now = now
     }
 
     public var permissionMode: PermissionMode { mode }
@@ -74,6 +120,161 @@ public actor PermissionCoordinator {
         Array(pendingRequests.values).sorted { $0.requestedAt < $1.requestedAt }
     }
 
+    /// Approvals that have waited past their reminder time.
+    public var parkedApprovals: [ApprovalRequest] {
+        pendingApprovals.filter { (reminders[$0.id] ?? 0) > 0 }
+    }
+
+    // MARK: - Task grants
+
+    /// The exact commands `goalID` may run without asking while it is active,
+    /// in the checkout at `workspaceRoot`. Replaces any grants before them.
+    public func setTaskGrants(_ grants: [TaskGrant], goalID: String, workspaceRoot: String) {
+        self.workspaceRoot = workspaceRoot
+        activeGrantGoalID = goalID
+        taskGrants = grants.filter { $0.goalID == goalID }
+    }
+
+    /// The goal ended, paused or was replaced: its grants stop applying.
+    /// With `goalID`, only that goal's grants go.
+    public func clearTaskGrants(goalID: String? = nil) {
+        guard goalID == nil || goalID == activeGrantGoalID else { return }
+        taskGrants = []
+        activeGrantGoalID = nil
+    }
+
+    /// Installs the check that confirms, at each call a grant would allow,
+    /// that its goal is still in force (see `taskGrantCheck`).
+    public func setTaskGrantCheck(_ check: (@Sendable (_ goalID: String) async -> Bool)?) {
+        taskGrantCheck = check
+    }
+
+    /// The grants in force now.
+    public var activeTaskGrants: [TaskGrant] {
+        guard activeGrantGoalID != nil else { return [] }
+        return taskGrants
+    }
+
+    /// Whether `grant` lets this exact call run without asking.
+    ///
+    /// Only a command line identical to the grant's, through the shell tools,
+    /// in the grant's own checkout, while its goal is active. Never anything
+    /// the always-confirm floor covers: a destructive or network-reaching
+    /// command (`critical`), `git push`, a tool pinned to always asking, or
+    /// screen input.
+    static func grant(
+        _ grant: TaskGrant,
+        covers toolName: String,
+        subject: PermissionRuleSubject?,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy,
+        activeGoalID: String?,
+        workspaceRoot: String?
+    ) -> Bool {
+        guard grant.goalID == activeGoalID,
+              let workspaceRoot,
+              Self.samePath(grant.worktreePath, workspaceRoot),
+              approvalPolicy == .byRisk,
+              risk != .destructive, risk != .critical,
+              Self.grantableTools.contains(toolName),
+              !ComputerUseToolName.input.contains(toolName),
+              case let .command(command)? = subject
+        else { return false }
+        let line = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty, line == grant.command else { return false }
+        let lowered = line.lowercased()
+        return !lowered.contains("git push") && !lowered.hasPrefix("push ")
+    }
+
+    /// The tools a task grant can reach: the ones that run a command line.
+    static let grantableTools: Set<String> = ["run_command", "run_tests", "shell_start"]
+
+    private static func samePath(_ lhs: String, _ rhs: String) -> Bool {
+        URL(fileURLWithPath: lhs).standardizedFileURL.path == URL(fileURLWithPath: rhs).standardizedFileURL.path
+    }
+
+    private func grantCovers(
+        toolName: String,
+        subject: PermissionRuleSubject?,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy
+    ) -> Bool {
+        taskGrants.contains {
+            Self.grant(
+                $0,
+                covers: toolName,
+                subject: subject,
+                risk: risk,
+                approvalPolicy: approvalPolicy,
+                activeGoalID: activeGrantGoalID,
+                workspaceRoot: workspaceRoot
+            )
+        }
+    }
+
+    /// Whether a task grant covers this call *and* its goal is still in
+    /// force, asked of the stored goal at this moment. Everything after the
+    /// one suspension is read afresh, so a grant cleared or replaced while
+    /// the goal was being read does not count.
+    private func grantConfirmed(
+        toolName: String,
+        subject: PermissionRuleSubject?,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy
+    ) async -> Bool {
+        guard rules.evaluate(toolName: toolName, subject: subject) == nil,
+              grantCovers(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy),
+              let goalID = activeGrantGoalID
+        else { return false }
+        if let check = taskGrantCheck {
+            guard await check(goalID) else { return false }
+        }
+        return activeGrantGoalID == goalID
+            && grantCovers(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
+    }
+
+    /// Whether this call would run without a prompt as things stand: the
+    /// mode, the reader's rules and the active task grants. A dry run that
+    /// asks nothing, for the stop check deciding whether the runtime may run a
+    /// check itself.
+    public func allowsWithoutPrompt(
+        toolName: String,
+        subject: PermissionRuleSubject?,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy = .byRisk
+    ) async -> Bool {
+        let granted = await grantConfirmed(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
+        let ruling = Self.ruling(
+            mode: mode,
+            risk: risk,
+            approvalPolicy: approvalPolicy,
+            rule: effectiveRule(toolName: toolName, subject: subject, granted: granted),
+            toolName: toolName
+        )
+        if case .allow = ruling { return true }
+        return false
+    }
+
+    /// The reader's rule for this call, or, when no rule speaks to it, an
+    /// allow from a task grant `grantConfirmed` vouched for. Grants come
+    /// after deny and ask rules and before the mode ladder.
+    private func effectiveRule(
+        toolName: String,
+        subject: PermissionRuleSubject?,
+        granted: Bool
+    ) -> PermissionRuleDecision? {
+        if let rule = rules.evaluate(toolName: toolName, subject: subject) {
+            return rule
+        }
+        guard granted else {
+            return nil
+        }
+        return .allow(PermissionRule(tool: "Bash", specifier: (subject.flatMap {
+            if case let .command(line) = $0 { return line }
+            return nil
+        }) ?? ""))
+    }
+
     /// Registers an observer for approval lifecycle updates (UI binding).
     @discardableResult
     public func addObserver(
@@ -101,11 +302,15 @@ public actor PermissionCoordinator {
         subject: PermissionRuleSubject? = nil,
         hookPermission: AgentHookPermission? = nil
     ) async -> AuthorizationOutcome {
+        // The only suspension before the ruling: whether a task grant's goal
+        // is still in force. Everything from the ruling to the request's
+        // registration below runs without another.
+        let granted = await grantConfirmed(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
         let ruling = Self.ruling(
             mode: mode,
             risk: risk,
             approvalPolicy: approvalPolicy,
-            rule: rules.evaluate(toolName: toolName, subject: subject),
+            rule: effectiveRule(toolName: toolName, subject: subject, granted: granted),
             hook: hookPermission,
             toolName: toolName
         )
@@ -125,7 +330,7 @@ public actor PermissionCoordinator {
             guard !Task.isCancelled else {
                 return .denied(reason: "The run was stopped.")
             }
-            let now = Date()
+            let now = self.now()
             let request = ApprovalRequest(
                 sessionID: sessionID,
                 actionDigest: actionDigest,
@@ -138,12 +343,16 @@ public actor PermissionCoordinator {
                 // Nothing to offer where no saved rule would ever apply:
                 // allow rules never silence a destructive action, nor a
                 // command line whose substitutions they cannot see into.
+                // Nor for screen control: grants are per app and per session
+                // (D-021), and a bare `computer` rule would allow every app.
                 suggestedRule: risk == .destructive || !PermissionRuleSet.patternsCanVouch(for: subject)
+                    || ComputerUseToolName.neverSavedAsRule.contains(toolName)
                     ? nil
                     : PermissionRuleSet.suggestedRule(toolName: toolName, subject: subject)
             )
             pendingRequests[request.id] = request
             notify(.requested(request))
+            scheduleParking(request)
             let requestAuthorityRevision = authorityRevision
 
             let resolution = await withCheckedContinuation { continuation in
@@ -169,10 +378,29 @@ public actor PermissionCoordinator {
             ) {
                 return .denied(reason: reason)
             }
-            guard request.authorizes(digest: actionDigest, at: Date()) else {
-                return .denied(reason: "The approval expired before the action ran.")
+            // The reader's yes binds this exact action, however long they
+            // took to give it: a parked approval does not decay, an answer to
+            // a different action never carries this one out, and the yes is
+            // good for the call to start for a short window from the moment
+            // they decided.
+            guard request.actionDigest == actionDigest else {
+                return .denied(reason: "The approval no longer matches the action.")
             }
-            return .approved(request)
+            let decidedAt = self.now()
+            return .approved(
+                ApprovalRequest(
+                    id: request.id,
+                    sessionID: request.sessionID,
+                    actionDigest: request.actionDigest,
+                    toolName: request.toolName,
+                    summary: request.summary,
+                    risk: request.risk,
+                    approvalPolicy: request.approvalPolicy,
+                    requestedAt: request.requestedAt,
+                    expiresAt: decidedAt.addingTimeInterval(Self.approvedExecutionWindowSeconds),
+                    suggestedRule: request.suggestedRule
+                )
+            )
         }
     }
 
@@ -266,12 +494,14 @@ public actor PermissionCoordinator {
     ) {
         guard let continuation = pending.removeValue(forKey: approvalID) else { return }
         pendingRequests.removeValue(forKey: approvalID)
+        reminders.removeValue(forKey: approvalID)
+        parkingTimers.removeValue(forKey: approvalID)?.cancel()
         notify(.resolved(id: approvalID, decision: observerDecision))
         continuation.resume(returning: resolution)
     }
 
-    /// Denies every pending approval (session stop, cancellation, expiry
-    /// sweep, or app termination). Approvals always fail closed.
+    /// Denies every pending approval (session stop, cancellation, or app
+    /// termination). Approvals always fail closed.
     public func denyAll(reason: String = "Cancelled") {
         let ids = Array(pending.keys)
         for id in ids {
@@ -283,15 +513,46 @@ public actor PermissionCoordinator {
         }
     }
 
-    /// Denies pending approvals that have outlived their expiry.
-    public func sweepExpired(now: Date = Date()) {
-        let expired = pendingRequests.values.filter { $0.expiresAt <= now }
-        for request in expired {
-            resolve(
-                approvalID: request.id,
-                resolution: .revoked(reason: "The approval expired before the action ran."),
-                observerDecision: .denied
-            )
+    /// Parks pending approvals that have waited past a reminder time and
+    /// answers those whose first reminder is due: the call stays pending and
+    /// bound to its digest, observers hear `.parked` once per threshold (15,
+    /// 60 and 240 minutes; the hooks' Notification event), and the run
+    /// monitor posts the reader's own reminders. Nothing is denied — an
+    /// unanswered approval is a run waiting on the reader, not a "no".
+    @discardableResult
+    public func sweepExpired(now: Date? = nil) -> [ApprovalRequest] {
+        let moment = now ?? self.now()
+        for request in pendingApprovals {
+            let waited = moment.timeIntervalSince(request.requestedAt) / 60
+            let due = Self.parkingReminderMinutes.filter { waited >= $0 }.count
+            let sent = reminders[request.id] ?? 0
+            guard due > sent else { continue }
+            reminders[request.id] = due
+            notify(.parked(request, reminder: due))
+        }
+        return pendingRequests.values
+            .filter { $0.expiresAt <= moment }
+            .sorted { $0.requestedAt < $1.requestedAt }
+    }
+
+    /// Wakes at each reminder time for one request, while it is pending.
+    private func scheduleParking(_ request: ApprovalRequest) {
+        let thresholds = Self.parkingReminderMinutes
+        let requestedAt = request.requestedAt
+        parkingTimers[request.id] = Task { [weak self] in
+            for minutes in thresholds {
+                let wake = requestedAt.addingTimeInterval(minutes * 60)
+                let delay = wake.timeIntervalSinceNow
+                if delay > 0 {
+                    do {
+                        try await Task.sleep(for: .seconds(delay))
+                    } catch {
+                        return
+                    }
+                }
+                guard let self else { return }
+                await self.sweepExpired()
+            }
         }
     }
 

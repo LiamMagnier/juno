@@ -245,26 +245,40 @@ public struct HookConfigurationParser: Sendable {
     ) {
         let path = provenance.path
         let location = "\(event.rawValue)[\(ordinal)]"
-        if let type = object["type"]?.stringValue,
-           type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "command"
-        {
-            diagnostics.append(
-                HookDiagnostic(
-                    path: path,
-                    location: location,
-                    message: "Only command hooks are supported; this hook type was ignored."
-                )
-            )
-            ordinal += 1
-            return
-        }
-
         if object["type"] != nil, object["type"]?.stringValue == nil {
             diagnostics.append(
                 HookDiagnostic(
                     path: path,
                     location: location,
                     message: "The hook type must be a string."
+                )
+            )
+            ordinal += 1
+            return
+        }
+        let rawType = object["type"]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "command"
+        guard let kind = HookHandlerKind(rawValue: rawType) else {
+            let message: String
+            switch rawType {
+            case "mcp_tool":
+                message = "MCP tool hooks are not supported yet; this hook was ignored."
+            case "agent":
+                message = "Agent hooks are not supported; this hook was ignored."
+            default:
+                message = "Only command, http and prompt hooks are supported; this hook type was ignored."
+            }
+            diagnostics.append(HookDiagnostic(path: path, location: location, message: message))
+            ordinal += 1
+            return
+        }
+        if kind == .prompt, !event.acceptsPromptHooks {
+            diagnostics.append(
+                HookDiagnostic(
+                    path: path,
+                    location: location,
+                    message: "A prompt hook can only block, and \(event.rawValue) cannot be blocked; this hook was ignored."
                 )
             )
             ordinal += 1
@@ -331,29 +345,228 @@ public struct HookConfigurationParser: Sendable {
             )
         }
 
-        guard let command = object["command"]?.stringValue else {
+        switch kind {
+        case .command:
+            guard let command = object["command"]?.stringValue else {
+                diagnostics.append(
+                    HookDiagnostic(
+                        path: path,
+                        location: location,
+                        message: "A command hook requires a string `command`."
+                    )
+                )
+                ordinal += 1
+                return
+            }
+            appendHook(
+                command: command,
+                matcher: matcher,
+                timeout: timeout,
+                event: event,
+                provenance: provenance,
+                location: location,
+                hooks: &hooks,
+                diagnostics: &diagnostics,
+                ordinal: &ordinal
+            )
+
+        case .http:
+            guard let raw = object["url"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let url = URL(string: raw),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  url.host != nil
+            else {
+                diagnostics.append(
+                    HookDiagnostic(
+                        path: path,
+                        location: location,
+                        message: "An http hook requires a `url` with an http or https scheme and a host."
+                    )
+                )
+                ordinal += 1
+                return
+            }
+            var headers: [String: String] = [:]
+            if let rawHeaders = object["headers"] {
+                guard let fields = rawHeaders.objectValue,
+                      fields.values.allSatisfy({ $0.stringValue != nil })
+                else {
+                    diagnostics.append(
+                        HookDiagnostic(path: path, location: location, message: "Hook headers must be an object of strings.")
+                    )
+                    ordinal += 1
+                    return
+                }
+                headers = fields.compactMapValues(\.stringValue)
+                // Claude Code fills `$VAR` from an `allowedEnvVars` list. Juno
+                // does not interpolate, and says so rather than send a
+                // literal `$TOKEN` and let the reader wonder why it fails.
+                if headers.values.contains(where: { $0.contains("$") }) {
+                    diagnostics.append(
+                        HookDiagnostic(
+                            path: path,
+                            location: location,
+                            message: "Header values are sent as written; environment variables in them are not filled in."
+                        )
+                    )
+                }
+                guard headers.allSatisfy({ key, value in
+                    !key.isEmpty && !key.contains(":")
+                        && !key.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+                        && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+                }) else {
+                    diagnostics.append(
+                        HookDiagnostic(path: path, location: location, message: "A hook header contains a control character.")
+                    )
+                    ordinal += 1
+                    return
+                }
+            }
+            if provenance.trust == .untrustedWorkspace,
+               !["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host?.lowercased() ?? "")
+            {
+                diagnostics.append(
+                    HookDiagnostic(
+                        path: path,
+                        location: location,
+                        message: "A project's HTTP hook may only post to this Mac; this one will be refused when it runs."
+                    )
+                )
+            }
+            appendHandler(
+                kind: .http,
+                text: url.absoluteString,
+                url: url,
+                headers: headers,
+                model: nil,
+                matcher: matcher,
+                timeout: timeout,
+                event: event,
+                provenance: provenance,
+                location: location,
+                hooks: &hooks,
+                diagnostics: &diagnostics,
+                ordinal: &ordinal
+            )
+
+        case .prompt:
+            guard let prompt = object["prompt"]?.stringValue,
+                  !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                diagnostics.append(
+                    HookDiagnostic(
+                        path: path,
+                        location: location,
+                        message: "A prompt hook requires a string `prompt`."
+                    )
+                )
+                ordinal += 1
+                return
+            }
+            appendHandler(
+                kind: .prompt,
+                text: prompt,
+                url: nil,
+                headers: [:],
+                model: object["model"]?.stringValue,
+                matcher: matcher,
+                timeout: timeout,
+                event: event,
+                provenance: provenance,
+                location: location,
+                hooks: &hooks,
+                diagnostics: &diagnostics,
+                ordinal: &ordinal
+            )
+        }
+    }
+
+    /// An `http` or `prompt` entry, bounded like a command.
+    private func appendHandler(
+        kind: HookHandlerKind,
+        text rawText: String,
+        url: URL?,
+        headers: [String: String],
+        model: String?,
+        matcher: String?,
+        timeout: Double?,
+        event: HookLifecycleEvent,
+        provenance: Provenance,
+        location: String,
+        hooks: inout [HookDefinition],
+        diagnostics: inout [HookDiagnostic],
+        ordinal: inout Int
+    ) {
+        defer { ordinal += 1 }
+        let path = provenance.path
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.unicodeScalars.contains(where: { $0.value == 0 }),
+              text.utf8.count <= HookExecutionLimits.maximumCommandBytes
+        else {
+            diagnostics.append(
+                HookDiagnostic(path: path, location: location, message: "The hook is too long or contains a NUL byte.")
+            )
+            return
+        }
+        guard let effectiveTimeout = boundedTimeout(
+            timeout ?? event.defaultTimeoutSeconds(for: kind),
+            path: path,
+            location: location,
+            diagnostics: &diagnostics
+        ) else { return }
+        let hookMatcher = HookMatcher(pattern: matcher)
+        let occurrence = hooks.count(where: {
+            $0.event == event && $0.matcher == hookMatcher && $0.command == text && $0.kind == kind
+        })
+        hooks.append(
+            HookDefinition(
+                event: event,
+                matcher: hookMatcher,
+                command: text,
+                timeoutSeconds: effectiveTimeout,
+                source: provenance.source,
+                path: path,
+                ordinal: ordinal,
+                occurrence: occurrence,
+                trust: provenance.trust,
+                kind: kind,
+                url: url,
+                headers: headers,
+                model: model
+            )
+        )
+    }
+
+    /// A timeout as written, clamped to Juno's ceiling, or nil (with a
+    /// diagnostic) when it is not a positive number.
+    private func boundedTimeout(
+        _ value: Double,
+        path: String,
+        location: String,
+        diagnostics: inout [HookDiagnostic]
+    ) -> Double? {
+        guard value.isFinite, value > 0 else {
             diagnostics.append(
                 HookDiagnostic(
                     path: path,
                     location: location,
-                    message: "A command hook requires a string `command`."
+                    message: "The hook timeout must be a positive number of seconds."
                 )
             )
-            ordinal += 1
-            return
+            return nil
         }
-
-        appendHook(
-            command: command,
-            matcher: matcher,
-            timeout: timeout,
-            event: event,
-            provenance: provenance,
-            location: location,
-            hooks: &hooks,
-            diagnostics: &diagnostics,
-            ordinal: &ordinal
-        )
+        guard value <= HookExecutionLimits.maximumTimeoutSeconds else {
+            diagnostics.append(
+                HookDiagnostic(
+                    path: path,
+                    location: location,
+                    message: "The hook timeout was shortened to Juno's limit of \(Int(HookExecutionLimits.maximumTimeoutSeconds)) seconds."
+                )
+            )
+            return HookExecutionLimits.maximumTimeoutSeconds
+        }
+        return value
     }
 
     // MARK: - Validation
@@ -459,33 +672,18 @@ public struct HookConfigurationParser: Sendable {
             )
             return
         case let .permitted(risk, _):
-            var effectiveTimeout = timeout ?? HookExecutionLimits.defaultTimeoutSeconds
-            guard effectiveTimeout.isFinite, effectiveTimeout > 0 else {
-                diagnostics.append(
-                    HookDiagnostic(
-                        path: path,
-                        location: location,
-                        message: "The hook timeout must be a positive number of seconds."
-                    )
-                )
-                return
-            }
-            if effectiveTimeout > HookExecutionLimits.maximumTimeoutSeconds {
-                effectiveTimeout = HookExecutionLimits.maximumTimeoutSeconds
-                diagnostics.append(
-                    HookDiagnostic(
-                        path: path,
-                        location: location,
-                        message: "The hook timeout was shortened to Juno's limit of \(Int(HookExecutionLimits.maximumTimeoutSeconds)) seconds."
-                    )
-                )
-            }
+            guard let effectiveTimeout = boundedTimeout(
+                timeout ?? event.defaultTimeoutSeconds(for: .command),
+                path: path,
+                location: location,
+                diagnostics: &diagnostics
+            ) else { return }
 
             let hookMatcher = HookMatcher(pattern: matcher)
             // Only an identical earlier entry shifts this one's ID; see
             // `HookDefinition.makeID`.
             let occurrence = hooks.count(where: {
-                $0.event == event && $0.matcher == hookMatcher && $0.command == command
+                $0.event == event && $0.matcher == hookMatcher && $0.command == command && $0.kind == .command
             })
             hooks.append(
                 HookDefinition(

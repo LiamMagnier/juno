@@ -239,7 +239,7 @@ public struct CommandClassifier: Sendable {
         }
         if isLongRunningPreviewServer(program: program, arguments: arguments) {
             return .forbidden(
-                reason: "'\(program)' is a preview server. Use open_preview to start and manage local preview servers."
+                reason: "'\(program)' \(Self.previewServerRefusalMarker). Use preview_server to start and manage local preview servers (open_preview opens the default one)."
             )
         }
         let verdict: CommandVerdict
@@ -796,6 +796,11 @@ public struct CommandClassifier: Sendable {
     private static let riskyEnvironmentPrefixes: [String] = [
         "DYLD_", "LD_", "GIT_CONFIG_", "GIT_SSH", "GIT_EXTERNAL_",
     ]
+
+    /// The words that mark a refusal as "this is a preview server", which a
+    /// configured preview server (DevServerService) does not apply: there a
+    /// static file server is the job.
+    public static let previewServerRefusalMarker = "is a preview server"
 
     private static func isLongRunningPreviewServer(program: String, arguments: [String]) -> Bool {
         if program == "http-server" || program == "live-server" || program == "serve" {

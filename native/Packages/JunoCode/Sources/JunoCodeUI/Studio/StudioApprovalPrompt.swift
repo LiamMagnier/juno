@@ -102,7 +102,13 @@ struct StudioApprovalPrompt: View {
                     .strokeBorder(Studio.Surface.hairline)
             )
 
-            if request.risk == .destructive {
+            // A screen tool's card shows what it will hit: the marked crop,
+            // the app and element, or the grant sheet (Lane C).
+            if ComputerUseToolName.isScreenTool(request.toolName) {
+                StudioScreenApprovalDetail(request: request, screen: controller.screen)
+            }
+
+            if request.risk == .destructive, !ComputerUseToolName.isScreenTool(request.toolName) {
                 Text(Self.isFileTool(request.toolName)
                     ? "This changes what Juno itself may do in this project, so Juno always asks."
                     : "This reaches outside the project, so Juno always asks.")
@@ -312,9 +318,10 @@ struct StudioApprovalCopy {
             if request.toolName.hasPrefix("mcp__") {
                 question = "Use this connected tool?"
                 subject = summary.hasPrefix("MCP ") ? String(summary.dropFirst(4)) : summary
-            } else if request.toolName.hasPrefix("computer_") {
-                question = "Control the screen?"
+            } else if ComputerUseToolName.isScreenTool(request.toolName) {
+                question = StudioScreenApprovalCopy.question(toolName: request.toolName, summary: summary)
                 subject = summary
+                icon = .monitor
             } else if request.toolName.hasPrefix("preview_") || request.toolName.contains("preview") {
                 question = "Use the preview?"
                 subject = summary

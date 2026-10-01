@@ -51,8 +51,14 @@ final class InspectEditorBufferToolTests: XCTestCase {
             lineCount: 3
         )
 
+        // Reading another app's buffer needs the editor granted for screen
+        // control and a document inside the workspace (CU-12).
+        let screen = FakeScreen()
+        screen.granted = ["com.apple.dt.Xcode"]
         let tool = InspectEditorBufferTool(
-            reader: MockEditorReader(authorized: true, inspectionResult: sampleInspection, editors: [editor])
+            reader: MockEditorReader(authorized: true, inspectionResult: sampleInspection, editors: [editor]),
+            computer: screen,
+            workspaceRoot: URL(fileURLWithPath: "/Users/dev/JunoDesktop")
         )
         let context = ToolContext(
             sessionID: CodeSessionID(),

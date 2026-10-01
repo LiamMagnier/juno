@@ -29,8 +29,10 @@
   events, unless it declares them — sandbox or no sandbox.
 
   Nothing here weakens the user-facing gate. Every command the agent runs is
-  classified and approval-gated in `JunoCodeCore/CommandClassifier.swift`, and
-  screen capture carries a visible indicator with a hard stop.
+  classified and goes through the permission ladder in
+  `JunoCodeCore/CommandClassifier.swift`; screen control is per app and per
+  session, shows who is using which app, and stops on Esc
+  (`native/Packages/JunoScreenControl`).
 -->
 <plist version="1.0">
 <dict>

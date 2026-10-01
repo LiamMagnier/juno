@@ -277,7 +277,59 @@ final class PermissionCoordinatorTests: XCTestCase {
         XCTAssertEqual(allowed, .allowed)
     }
 
-    func testExpirySweepDeniesStaleApprovals() async {
+    /// An approval nobody answers parks instead of decaying into a denial
+    /// (CODE_AGENT_SPEC §1.11): the call stays pending and bound to its
+    /// digest, the reader is reminded at 15, 60 and 240 minutes, and a yes
+    /// that comes a day later still approves exactly that action.
+    func testExpiryParksInsteadOfDenying() async {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        let requested = expectation(description: "approval requested")
+        nonisolated(unsafe) var requestID: String?
+        let reminders = ReminderLog()
+        await coordinator.addObserver { update in
+            switch update {
+            case let .requested(request):
+                requestID = request.id
+                requested.fulfill()
+            case let .parked(_, reminder):
+                reminders.append(reminder)
+            case .resolved:
+                break
+            }
+        }
+        let staleDigest = Self.digest("stale")
+        let authorization = Task {
+            await coordinator.authorize(
+                toolName: "write_file",
+                actionDigest: staleDigest,
+                risk: .write,
+                summary: "Stale"
+            )
+        }
+        await fulfillment(of: [requested], timeout: 5)
+        let asked = Date()
+        await coordinator.sweepExpired(now: asked.addingTimeInterval(20 * 60))
+        await coordinator.sweepExpired(now: asked.addingTimeInterval(21 * 60))
+        await coordinator.sweepExpired(now: asked.addingTimeInterval(24 * 3_600))
+        let pending = await coordinator.pendingApprovals.count
+        XCTAssertEqual(pending, 1, "parked, not denied")
+        let parked = await coordinator.parkedApprovals.count
+        XCTAssertEqual(parked, 1)
+        XCTAssertEqual(reminders.values, [1, 3], "one reminder per threshold passed, never twice")
+
+        await coordinator.resolve(approvalID: requestID!, decision: .approved)
+        let outcome = await authorization.value
+        guard case let .approved(request) = outcome else {
+            return XCTFail("expected approval, got \(outcome)")
+        }
+        XCTAssertTrue(request.authorizes(digest: staleDigest, at: Date()), "still bound to the same digest")
+        XCTAssertFalse(request.authorizes(digest: Self.digest("other"), at: Date()))
+    }
+
+    /// An approval past its reminder time parks: the sweep reports it and
+    /// leaves it pending (CODE_AGENT_SPEC §1.11), and the reader's answer
+    /// still decides it.
+    func testExpirySweepParksStaleApprovals() async {
         let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
         let requested = expectation(description: "approval requested")
         await coordinator.addObserver { update in
@@ -295,8 +347,12 @@ final class PermissionCoordinatorTests: XCTestCase {
             )
         }
         await fulfillment(of: [requested], timeout: 5)
-        // Far-future sweep: everything pending is expired.
-        await coordinator.sweepExpired(now: Date().addingTimeInterval(24 * 3_600))
+        // Far-future sweep: everything pending is past its reminder time.
+        let parked = await coordinator.sweepExpired(now: Date().addingTimeInterval(24 * 3_600))
+        XCTAssertEqual(parked.map(\.actionDigest), [staleDigest])
+        let pending = await coordinator.pendingApprovals
+        XCTAssertEqual(pending.count, 1, "a parked approval stays pending")
+        await coordinator.resolve(approvalID: pending[0].id, decision: .denied)
         let outcome = await authorization.value
         guard case .denied = outcome else {
             return XCTFail("expected denial, got \(outcome)")
@@ -372,5 +428,23 @@ final class PermissionCoordinatorTests: XCTestCase {
         )
         let pendingCount = await coordinator.pendingApprovals.count
         XCTAssertEqual(pendingCount, 0)
+    }
+}
+
+/// Reminders a parked approval sent, collected from the observer's thread.
+private final class ReminderLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Int] = []
+
+    func append(_ value: Int) {
+        lock.lock()
+        stored.append(value)
+        lock.unlock()
+    }
+
+    var values: [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
     }
 }

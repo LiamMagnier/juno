@@ -744,12 +744,27 @@ public struct RunCompletedEvent: Hashable, Codable, Sendable {
     public let filesChanged: Int
     public let testsPassed: Bool?
     public let durationSeconds: Double
+    /// Why the run ended (CODE_AGENT_SPEC §1.3). Nil in transcripts written
+    /// before the stop check existed.
+    public let endReason: RunEndReason?
+    /// The end reason in words, for the divider after "Worked for 4m 12s":
+    /// "Checked with `swift test`", "Stopped at 200 steps. Keep going?".
+    public let endDetail: String?
 
-    public init(summary: String, filesChanged: Int, testsPassed: Bool?, durationSeconds: Double) {
+    public init(
+        summary: String,
+        filesChanged: Int,
+        testsPassed: Bool?,
+        durationSeconds: Double,
+        endReason: RunEndReason? = nil,
+        endDetail: String? = nil
+    ) {
         self.summary = summary
         self.filesChanged = filesChanged
         self.testsPassed = testsPassed
         self.durationSeconds = durationSeconds
+        self.endReason = endReason
+        self.endDetail = endDetail
     }
 }
 

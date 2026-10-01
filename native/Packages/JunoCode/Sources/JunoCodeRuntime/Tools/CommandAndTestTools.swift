@@ -15,17 +15,23 @@ public struct RunCommandTool: CodeTool {
     private let directories: SessionWorkingDirectories?
     /// The root's absolute path, so `cd /abs/inside/workspace` is understood.
     private let workspaceRoot: String
+    /// Mints a `VerificationRecord` when the command is one of the project's
+    /// checks or a recognised build, test, lint or typecheck. Nil records
+    /// nothing.
+    private let evidence: CheckEvidenceRecorder?
 
     public init(
         executor: any CommandExecuting,
         changes: (any WorkspaceChangeDetecting)? = nil,
         directories: SessionWorkingDirectories? = nil,
-        workspaceRoot: String = ""
+        workspaceRoot: String = "",
+        evidence: CheckEvidenceRecorder? = nil
     ) {
         self.executor = executor
         self.changes = changes
         self.directories = directories
         self.workspaceRoot = workspaceRoot
+        self.evidence = evidence
     }
 
     public let name = "run_command"
@@ -179,10 +185,41 @@ public struct RunCommandTool: CodeTool {
             footer += "\n" + Self.changeSummary(report)
         }
 
+        // A check's result is evidence, minted here from what the command
+        // did, and stamped with the revision after its own file changes.
+        var sideEffects = Self.changeEvents(report)
+        if let evidence {
+            let output = capture.ends.joined { _ in "\n…\n" }
+            var testsRun: Int?
+            var failures: Int?
+            var passed: Bool?
+            if evidence.classify(command: command, workingDirectory: directory?.value)?.kind == .test {
+                let parsed = TestOutputParser.parse(
+                    command: command, output: output, exitCode: result.exitCode, durationSeconds: result.durationSeconds
+                )
+                (testsRun, failures, passed) = (parsed.testsRun, parsed.failures, parsed.passed)
+            }
+            if let record = await evidence.record(
+                command: command,
+                workingDirectory: directory?.value,
+                sessionID: context.sessionID,
+                result: result,
+                output: output,
+                testsRun: testsRun,
+                failures: failures,
+                passed: passed,
+                pendingChanges: sideEffects.count
+            ) {
+                sideEffects.append(.verificationRecorded(record))
+                footer += "\n[Juno recorded this as a \(record.kind.rawValue) check that "
+                    + (record.passed ? "passed" : "failed") + " at workspace revision \(record.workspaceRevision).]"
+            }
+        }
+
         return ToolResult(
             content: capture.rendered() + footer,
             isError: !result.succeeded,
-            sideEffects: Self.changeEvents(report)
+            sideEffects: sideEffects
         )
     }
 
@@ -204,7 +241,7 @@ public struct RunCommandTool: CodeTool {
             + "so they are not checkpointed and cannot be undone from the transcript.]"
     }
 
-    private static func changeEvents(_ report: WorkspaceChangeReport?) -> [SessionEventPayload] {
+    static func changeEvents(_ report: WorkspaceChangeReport?) -> [SessionEventPayload] {
         guard let report else { return [] }
         let entries: [(WorkspacePath, FileChangeKind)] =
             report.created.map { ($0, .created) }
@@ -295,6 +332,78 @@ public struct RunCommandTool: CodeTool {
 
     // MARK: - Refusals
 
+    /// Whether any command in the line starts a development server, watcher
+    /// or other process that never finishes (PV-11).
+    ///
+    /// Read from the words of each command in the line, not from its text:
+    /// a prefix test on `vite` refused `vitest run` and `vite build`, and a
+    /// substring test on `& ` refused every `a && b`. `cd web && npm run dev`
+    /// still starts a server, and is still refused.
+    static func startsLongRunningServer(_ line: String) -> Bool {
+        ShellSegments.split(line).contains { segment in
+            let words = segment.split(whereSeparator: { $0 == " " || $0 == "\t" }).map {
+                String($0).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            }
+            return isServerCommand(Array(words.drop { $0.contains("=") && !$0.hasPrefix("-") }))
+        }
+    }
+
+    private static func isServerCommand(_ words: [String]) -> Bool {
+        guard let raw = words.first else { return false }
+        let program = (raw.split(separator: "/").last.map(String.init) ?? raw).lowercased()
+        let arguments = Array(words.dropFirst())
+        let positional = arguments.filter { !$0.hasPrefix("-") }.map { $0.lowercased() }
+        let first = positional.first
+        switch program {
+        case "env":
+            return isServerCommand(Array(arguments.drop { $0.contains("=") || $0.hasPrefix("-") }))
+        case "npx", "bunx", "pnpx":
+            return isServerCommand(Array(arguments.drop { $0.hasPrefix("-") }))
+        case "serve", "http-server", "live-server", "webpack-dev-server", "browser-sync", "nodemon", "uvicorn":
+            return true
+        case "python", "python2", "python3", "pypy", "pypy3":
+            if let index = arguments.firstIndex(of: "-m"), index + 1 < arguments.count {
+                return ["http.server", "SimpleHTTPServer"].contains(arguments[index + 1])
+            }
+            return arguments.contains("runserver")
+        case "vite":
+            // `vite`, `vite dev`, `vite serve` and `vite preview` serve;
+            // `vite build` and `vite optimize` finish. `vitest` is a test
+            // runner and never reaches here.
+            return first == nil || ["dev", "serve", "preview"].contains(first!)
+        case "next", "nuxt", "nuxi", "astro", "remix", "gatsby":
+            return ["dev", "start", "develop", "preview"].contains(first ?? "")
+        case "react-scripts":
+            return first == "start"
+        case "ng":
+            return first == "serve"
+        case "webpack":
+            return first == "serve" || arguments.contains("--watch")
+        case "flask":
+            return first == "run"
+        case "rails":
+            return first == "server" || first == "s"
+        case "hugo", "jekyll":
+            return first == "server" || first == "serve"
+        case "php":
+            return arguments.contains("-S")
+        case "npm", "pnpm", "yarn", "bun":
+            let script: String?
+            if first == "run" || first == "run-script" {
+                script = positional.dropFirst().first
+            } else if program == "npm" {
+                script = first == "start" ? "start" : nil
+            } else {
+                script = first
+            }
+            guard let script else { return false }
+            return ["dev", "start", "serve", "preview", "watch"].contains(script)
+                || script.hasPrefix("dev:") || script.hasSuffix(":dev") || script.hasPrefix("watch:")
+        default:
+            return false
+        }
+    }
+
     private func checkForUnmanagedPreviewServer(_ command: String) -> ToolError? {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         if ShellBackgrounding.runsInBackground(trimmed) {
@@ -302,14 +411,7 @@ public struct RunCommandTool: CodeTool {
                 reason: "run_command waits for its command to finish, so it does not run '&' background jobs. Start long-running processes with shell_start and read them with shell_output (open_preview for a website preview)."
             )
         }
-        let lower = trimmed.lowercased()
-        if lower.contains("http.server") || lower.contains("simplehttpserver")
-            || lower.hasPrefix("npx serve") || lower.hasPrefix("npx -y serve") || lower.contains(" -y serve")
-            || lower.hasPrefix("serve ") || lower == "serve"
-            || lower.hasPrefix("http-server") || lower.hasPrefix("live-server")
-            || lower == "npm run dev" || lower == "pnpm run dev" || lower == "yarn dev" || lower == "bun run dev"
-            || lower.hasPrefix("vite") || lower.hasPrefix("next dev") || lower.hasPrefix("astro dev")
-        {
+        if Self.startsLongRunningServer(trimmed) {
             return .denied(
                 reason: "A development server never finishes, so run_command would wait on it until it timed out. Start it with shell_start and read it with shell_output, or use open_preview for a website preview in Juno's browser."
             )
@@ -323,19 +425,25 @@ public struct RunTestsTool: CodeTool {
 
     private let tests: any TestRunning
     private let classifier = CommandClassifier()
+    /// The project's accepted checks, and where a result becomes evidence.
+    private let evidence: CheckEvidenceRecorder?
 
-    public init(tests: any TestRunning) {
+    public init(tests: any TestRunning, evidence: CheckEvidenceRecorder? = nil) {
         self.tests = tests
+        self.evidence = evidence
     }
 
     public let name = "run_tests"
     public let description = """
-        Run an explicit project test or verification command. The user is asked \
-        to approve the exact command every time it runs, in every permission \
-        mode that allows commands at all — a read-only session refuses it \
-        outright rather than offering the prompt. Long output returns its \
-        start and its end, with a juno://command-output/ path to the whole of \
-        it that read_file pages with offset and limit.
+        Run an explicit project test or verification command. Prefer \
+        run_checks, which runs this project's recorded checks. A command \
+        that is exactly one of the project's accepted checks follows the \
+        reader's rules like run_command; any other command is shown to the \
+        reader for approval every time it runs, in every permission mode that \
+        allows commands at all — a read-only session refuses it outright \
+        rather than offering the prompt. Long output returns its start and \
+        its end, with a juno://command-output/ path to the whole of it that \
+        read_file pages with offset and limit.
         """
     public var inputSchema: JSONValue {
         [
@@ -346,10 +454,37 @@ public struct RunTestsTool: CodeTool {
     }
 
     public func assessRisk(input: JSONValue) -> ActionRisk {
+        // An accepted recipe check is a command like any other, and takes the
+        // risk the classifier gives it, as it would under run_command.
+        if let command = explicitCommand(from: input), isAcceptedCheck(command),
+           case let .permitted(risk, _) = classifier.classify(command)
+        {
+            return risk
+        }
         // Test commands execute repository-controlled code — package scripts,
         // compiler plugins, build phases, test binaries — but inside the
         // granted workspace. That is what `.critical` means.
-        .critical
+        return .critical
+    }
+
+    /// Whether `command` is exactly one of the checks the reader accepted for
+    /// this project, and reads as one: a recipe entry the classifier does not
+    /// grade as a build, test, lint or typecheck (a `git push` someone put in
+    /// `verify.json`) keeps the pin, whatever the file calls it.
+    private func isAcceptedCheck(_ command: String) -> Bool {
+        guard evidence?.acceptedRecipe?.containsCommand(command) ?? false else { return false }
+        return classifier.checkKind(of: command) != nil
+    }
+
+    /// Pinned to asking, except for an exactly accepted recipe check, which
+    /// follows the rules and the ladder like run_command (§1.8): the reader
+    /// has seen that command on the recipe card, and the pin is what made
+    /// "always allow `npm test` in this repo" impossible to say.
+    public func approvalPolicy(input: JSONValue) -> ApprovalPolicy {
+        if let command = explicitCommand(from: input), isAcceptedCheck(command) {
+            return .byRisk
+        }
+        return approvalPolicy
     }
 
     /// The bit `.critical` could not carry.
@@ -431,20 +566,34 @@ public struct RunTestsTool: CodeTool {
         }
         report += String(format: " (%.1fs)", outcome.durationSeconds)
         if result.wasTruncated { report += " — " + CommandOutputCapture.ceilingNote }
+        var sideEffects: [SessionEventPayload] = [
+            .testRunCompleted(
+                TestRunCompletedEvent(
+                    command: command,
+                    passed: outcome.passed,
+                    testsRun: outcome.testsRun,
+                    failures: outcome.failures,
+                    durationSeconds: outcome.durationSeconds
+                )
+            ),
+        ]
+        if let record = await evidence?.record(
+            command: command,
+            workingDirectory: nil,
+            sessionID: context.sessionID,
+            result: result,
+            output: summaryWindow.joined { _ in "\n…\n" },
+            testsRun: outcome.testsRun,
+            failures: outcome.failures,
+            passed: outcome.passed,
+            pendingChanges: 0
+        ) {
+            sideEffects.append(.verificationRecorded(record))
+        }
         return ToolResult(
             content: report + "\n" + capture.rendered(),
             isError: !outcome.passed,
-            sideEffects: [
-                .testRunCompleted(
-                    TestRunCompletedEvent(
-                        command: command,
-                        passed: outcome.passed,
-                        testsRun: outcome.testsRun,
-                        failures: outcome.failures,
-                        durationSeconds: outcome.durationSeconds
-                    )
-                )
-            ]
+            sideEffects: sideEffects
         )
     }
 

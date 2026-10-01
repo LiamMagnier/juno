@@ -19,6 +19,27 @@ public struct MCPServerConfiguration: Equatable, Sendable {
     public let transport: MCPServerTransportKind
     public let url: URL?
     public let headers: [String: String]
+    /// Where it was declared (§5.8): the project's `.mcp.json` or
+    /// `.juno/mcp.json`, the reader's `~/.juno/mcp.json`, or Claude Code's
+    /// `~/.claude.json`. Decides whose consent starts it; not part of the
+    /// consent digest, which is about what the server is.
+    public private(set) var scope: ExtensionScope = .project
+
+    /// The same declaration, as read from `scope`.
+    public func scoped(_ scope: ExtensionScope) -> MCPServerConfiguration {
+        var copy = self
+        copy.scope = scope
+        return copy
+    }
+
+    /// The file a reader would open to change it.
+    public var declaredIn: String {
+        switch scope {
+        case .project: ".mcp.json or .juno/mcp.json"
+        case .user: "~/.juno/mcp.json"
+        case .claudeImport: "~/.claude.json"
+        }
+    }
 
     /// Stable consent key for this exact declaration. It covers the process or
     /// endpoint plus every value that can change its authority; a repository
@@ -205,7 +226,78 @@ public enum MCPConfigurationLoader {
         return merged.values.sorted { $0.name < $1.name }
     }
 
+    /// Every server a session can see, with where each came from (§5.8):
+    /// the project's files, the reader's `~/.juno/mcp.json`, and the
+    /// `mcpServers` of Claude Code's `~/.claude.json`, read only.
+    ///
+    /// One name declared in more than one place resolves to the project's,
+    /// then the reader's, then the import; the others are kept in
+    /// `overridden` so a list can show both. A broken file of the reader's
+    /// own is reported in `problems` without taking the project's servers
+    /// down; a broken project file still throws, as it always has.
+    public static func loadAll(
+        from workspace: any WorkspaceAccessing,
+        userConfigurationFile: URL?,
+        claudeConfigurationFile: URL?
+    ) throws -> MCPConfigurationSet {
+        var byName: [String: MCPServerConfiguration] = [:]
+        var overridden: [MCPServerConfiguration] = []
+        var problems: [String] = []
+
+        func add(_ servers: [MCPServerConfiguration], scope: ExtensionScope) {
+            for server in servers.map({ $0.scoped(scope) }) {
+                if let existing = byName[server.name] {
+                    if server.scope < existing.scope {
+                        overridden.append(existing)
+                        byName[server.name] = server
+                    } else {
+                        overridden.append(server)
+                    }
+                } else {
+                    byName[server.name] = server
+                }
+            }
+        }
+
+        add(try load(from: workspace), scope: .project)
+        for (file, scope) in [(userConfigurationFile, ExtensionScope.user), (claudeConfigurationFile, .claudeImport)] {
+            guard let file, FileManager.default.fileExists(atPath: file.path) else { continue }
+            do {
+                // `~/.claude.json` keeps Claude Code's per-project history
+                // beside its servers and grows past a megabyte on a busy Mac;
+                // the reader's own `mcp.json` is servers alone.
+                let limit = scope == .claudeImport ? 16 * 1_024 * 1_024 : 1_024 * 1_024
+                let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                guard size <= limit else {
+                    problems.append("\(file.lastPathComponent) is larger than Juno reads.")
+                    continue
+                }
+                let data = try Data(contentsOf: file)
+                guard data.count <= limit else {
+                    problems.append("\(file.lastPathComponent) is larger than Juno reads.")
+                    continue
+                }
+                // `~/.claude.json` holds much more than servers; only its
+                // top-level `mcpServers` are the reader's user scope.
+                add(try parse(data: data, path: file.path, keys: scope == .claudeImport ? ["mcpServers"] : ["mcpServers", "servers"]), scope: scope)
+            } catch let MCPError.invalidConfiguration(path, reason) {
+                problems.append("\((path as NSString).lastPathComponent): \(reason)")
+            } catch {
+                problems.append("\(file.lastPathComponent) could not be read.")
+            }
+        }
+        return MCPConfigurationSet(
+            servers: byName.values.sorted { $0.name < $1.name },
+            overridden: overridden.sorted { $0.name == $1.name ? $0.scope < $1.scope : $0.name < $1.name },
+            problems: problems
+        )
+    }
+
     private static func parse(data: Data, path: String) throws -> [MCPServerConfiguration] {
+        try parse(data: data, path: path, keys: ["mcpServers", "servers"])
+    }
+
+    private static func parse(data: Data, path: String, keys: [String]) throws -> [MCPServerConfiguration] {
         let root: JSONValue
         do {
             root = try JSONDecoder().decode(JSONValue.self, from: data)
@@ -217,7 +309,7 @@ public enum MCPConfigurationLoader {
         }
 
         var rawServers: [String: JSONValue] = [:]
-        for key in ["mcpServers", "servers"] {
+        for key in keys {
             guard let raw = fields[key] else { continue }
             guard case let .object(serverMap) = raw else {
                 throw MCPError.invalidConfiguration(path: path, reason: "'\(key)' must be an object")
@@ -366,5 +458,22 @@ public enum MCPConfigurationLoader {
         let candidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
         let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
         return candidatePath == rootPath || candidatePath.hasPrefix(prefix)
+    }
+}
+
+/// Every MCP server a session can see, by where it was declared. See
+/// ``MCPConfigurationLoader/loadAll(from:userConfigurationFile:claudeConfigurationFile:)``.
+public struct MCPConfigurationSet: Equatable, Sendable {
+    /// One per name: the declaration that wins.
+    public let servers: [MCPServerConfiguration]
+    /// Declarations a same-named one outranks, kept for the list.
+    public let overridden: [MCPServerConfiguration]
+    /// The reader's own files that could not be read, in words.
+    public let problems: [String]
+
+    public init(servers: [MCPServerConfiguration], overridden: [MCPServerConfiguration] = [], problems: [String] = []) {
+        self.servers = servers
+        self.overridden = overridden
+        self.problems = problems
     }
 }

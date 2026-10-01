@@ -362,6 +362,8 @@ struct StudioGeneralSettings: View {
                 ForEach(StudioFollowUpBehavior.allCases) { Text($0.label).tag($0) }
             }
             Toggle("Keep this Mac awake", isOn: $preferences.keepAwakeWhileRunning)
+            Toggle("Resume interrupted runs when Juno opens", isOn: $preferences.resumeInterruptedOnLaunch)
+                .help("Off: a run Juno quit in the middle of waits for you to press Resume.")
         }
         Section("Composer") {
             Picker("Send with", selection: $preferences.commandReturnSends) {
@@ -736,8 +738,10 @@ struct StudioAgentSettings: View {
         } header: {
             Text("Runs")
         } footer: {
-            Text("A step is one model turn and the tools it calls. Long refactors need a few hundred.")
+            Text("A step is one model turn and the tools it calls. Long refactors need a few hundred. At the limit Juno writes where it got to and offers Keep going.")
         }
+
+        StudioAutonomySettings(scope: scope, settings: settings)
 
         Section {
             StudioScopedToggle(
@@ -1039,10 +1043,10 @@ struct StudioNotificationSettings: View {
         Section {
             Toggle("When a run finishes", isOn: $preferences.notifyWhenDone)
             Toggle("When Juno needs your approval", isOn: $preferences.notifyWhenNeedsYou)
-            Toggle("Only while Juno is in the background", isOn: $preferences.notifyOnlyInBackground)
+            Toggle("Finished runs only while Juno is in the background", isOn: $preferences.notifyOnlyInBackground)
             Toggle("Play a sound", isOn: $preferences.notificationSound)
         } footer: {
-            Text("macOS asks once for permission to show Juno's notifications.")
+            Text("Nothing is said about the session you are looking at. Approvals and questions can be answered from the notification. macOS asks once for permission to show Juno's notifications.")
         }
     }
 }

@@ -53,7 +53,8 @@ final class HookExtensibilityTests: XCTestCase {
             claude.hooks.first { $0.event == .postToolUse }?.timeoutSeconds,
             HookExecutionLimits.defaultTimeoutSeconds
         )
-        XCTAssertEqual(HookExecutionLimits.defaultTimeoutSeconds, 60)
+        // Claude Code's default for a command hook is ten minutes (§5.9).
+        XCTAssertEqual(HookExecutionLimits.defaultTimeoutSeconds, 600)
         XCTAssertNotNil(claude.hooks.first { $0.event == .sessionEnd })
 
         // Juno's own earlier names still load, onto their Claude equivalents.
@@ -126,14 +127,13 @@ final class HookExtensibilityTests: XCTestCase {
             path: ".claude/settings.json"
         )
 
-        XCTAssertTrue(configuration.hooks.isEmpty)
-        XCTAssertEqual(configuration.diagnostics.count, 4)
+        // `PreCompact` is an event now (§5.9), so only it loads; a prompt
+        // hook needs its `prompt`.
+        XCTAssertEqual(configuration.hooks.map(\.event), [.preCompact])
+        XCTAssertEqual(configuration.diagnostics.count, 3)
         XCTAssertTrue(configuration.diagnostics.contains { $0.message.contains("regular expression") })
-        XCTAssertTrue(configuration.diagnostics.contains { $0.message.contains("Only command hooks") })
+        XCTAssertTrue(configuration.diagnostics.contains { $0.message.contains("requires a string `prompt`") })
         XCTAssertTrue(configuration.diagnostics.contains { $0.message.contains("forbidden") })
-        XCTAssertTrue(configuration.diagnostics.contains {
-            $0.location == "PreCompact" && $0.message.contains("Unsupported hook event")
-        })
     }
 
     func testLongTimeoutIsClampedAndIfFilterIsDiagnosed() throws {
@@ -288,9 +288,12 @@ final class HookExtensibilityTests: XCTestCase {
         XCTAssertFalse(HookMatcher(pattern: "idle_prompt").matches(notification))
 
         // Claude Code ignores a matcher on these, and so does Juno.
-        for event in [HookLifecycleEvent.userPromptSubmit, .stop, .subagentStop] {
+        for event in [HookLifecycleEvent.userPromptSubmit, .stop, .postToolBatch] {
             XCTAssertTrue(HookMatcher(pattern: "Bash").matches(HookInvocationContext(event: event)))
         }
+        // A sub-agent's stop matches the agent it was started as (§5.9).
+        XCTAssertTrue(HookMatcher(pattern: "reviewer").matches(HookInvocationContext(event: .subagentStop, agentType: "reviewer")))
+        XCTAssertFalse(HookMatcher(pattern: "reviewer").matches(HookInvocationContext(event: .subagentStop, agentType: "explorer")))
     }
 
     func testDiscoveryResultSelectsByEventAndMatcher() throws {

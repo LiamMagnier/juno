@@ -68,7 +68,7 @@
       explicit approval; sending the event still needs this declaration.
     -->
     <key>NSAppleEventsUsageDescription</key>
-    <string>Juno Code asks before running any command that controls another app, such as opening a Simulator or a built app.</string>
+    <string>Juno Code uses Apple Events to open and control apps you work with, such as a Simulator or an app it built. Your permission mode decides when it asks first.</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>ATSApplicationFontsPath</key>

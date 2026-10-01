@@ -53,6 +53,39 @@ public struct DelegateTaskTool: CodeTool {
     /// finish runs `SubagentStop` — so delegating is never a way around a
     /// project's hooks.
     private let lifecycleHooks: (any AgentLifecycleHooks)?
+    /// The agents a task can name: the built-ins (`explorer`, `reviewer`,
+    /// `verifier`) and whatever custom agents the host knows (§5.2).
+    private let agents: any SubagentDefinitionResolving
+    /// The parent's step limit. A write-capable child gets a quarter of it,
+    /// at most ``maximumWriteSteps``.
+    private let parentStepLimit: Int
+    /// Where children started with `background: true` are kept until the
+    /// parent awaits, inspects or cancels them.
+    private let background: BackgroundSubagents
+
+    /// How many steps a read-only child takes at most: enough for a real
+    /// investigation, short enough to give the turn back.
+    public static let maximumReadOnlySteps = 18
+    /// The ceiling on a write-capable child's steps, whatever the parent's
+    /// step limit (§5.2: `min(parent stepLimit / 4, 60)`).
+    public static let maximumWriteSteps = 60
+    /// A background child's own budget, since no turn is waiting on it.
+    private static let backgroundBudget: Duration = .seconds(30 * 60)
+
+    /// The steps a child gets: read-only children the investigation cap,
+    /// write children a quarter of the parent's limit up to 60, and an
+    /// agent's own `maxSteps` only ever narrowing either.
+    public static func stepCap(
+        mode: SubagentExecutionMode,
+        parentStepLimit: Int,
+        agentMaximum: Int?
+    ) -> Int {
+        let base = mode == .workspaceWrite
+            ? max(1, min(parentStepLimit / 4, maximumWriteSteps))
+            : maximumReadOnlySteps
+        guard let agentMaximum, agentMaximum > 0 else { return base }
+        return min(base, agentMaximum)
+    }
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -86,7 +119,10 @@ public struct DelegateTaskTool: CodeTool {
         controls: SubagentControlRegistry? = nil,
         fallbackResolver: (any ModelFallbackResolver)? = nil,
         parentRules: (@Sendable () async -> PermissionRuleSet)? = nil,
-        lifecycleHooks: (any AgentLifecycleHooks)? = nil
+        lifecycleHooks: (any AgentLifecycleHooks)? = nil,
+        agents: (any SubagentDefinitionResolving)? = nil,
+        parentStepLimit: Int = 200,
+        background: BackgroundSubagents = .shared
     ) {
         self.model = model
         self.registry = registry
@@ -102,6 +138,9 @@ public struct DelegateTaskTool: CodeTool {
         self.fallbackResolver = fallbackResolver
         self.parentRules = parentRules
         self.lifecycleHooks = lifecycleHooks
+        self.agents = agents ?? SubagentDefinitions()
+        self.parentStepLimit = parentStepLimit
+        self.background = background
     }
 
     public let name = "delegate_task"
@@ -116,7 +155,14 @@ public struct DelegateTaskTool: CodeTool {
        investigations to run them concurrently (\(DelegateTaskTool.maximumConcurrent) at a \
        time) and get every answer back in one call; pass `task` for a single one. Each \
        sub-agent starts with a fresh context, so its instruction must be self-contained, \
-       and it cannot delegate further.
+       and it cannot delegate further. \
+        Name an `agent` to give the task a role: `explorer` (read-only \
+        search), `reviewer` (reviews a diff and answers in JSON), `verifier` \
+        (checks whether a change works), or a custom agent from .juno/agents. \
+        An agent can narrow what the task may do, never widen it. With \
+        `background: true` the call returns task ids at once; collect the \
+        results later with await_subagents, look at one with \
+        inspect_subagent, or stop one with cancel_subagent.
        """
 
     public var inputSchema: JSONValue {
@@ -124,6 +170,15 @@ public struct DelegateTaskTool: CodeTool {
             "type": "object",
             "properties": [
                 "task": ["type": "string", "description": "Complete, self-contained instructions"],
+                "prompt": ["type": "string", "description": "The same as task"],
+                "agent": [
+                    "type": "string",
+                    "description": "Built-in (explorer, reviewer, verifier) or a custom agent name from .juno/agents or ~/.juno/agents.",
+                ],
+                "background": [
+                    "type": "boolean",
+                    "description": "Start it and return its id at once instead of waiting.",
+                ],
                 "role": [
                     "type": "string",
                     "enum": ["engineer", "reviewer", "explainer"],
@@ -144,12 +199,14 @@ public struct DelegateTaskTool: CodeTool {
                 ],
                 "title": ["type": "string", "description": "Short imperative title"],
             ],
-            "required": ["task"],
         ]
         return [
             "type": "object",
             "properties": [
                 "task": ["type": "string"],
+                "prompt": ["type": "string"],
+                "agent": ["type": "string"],
+                "background": ["type": "boolean"],
                 "role": [
                     "type": "string",
                     "enum": ["engineer", "reviewer", "explainer"],
@@ -179,7 +236,13 @@ public struct DelegateTaskTool: CodeTool {
     /// refuses. Investigation stays a read.
     public func assessRisk(input: JSONValue) -> ActionRisk {
         let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []
-        return specs.contains { $0.mode == .workspaceWrite } ? .write : .read
+        // A built-in agent's narrowing is known here; a custom agent's is
+        // applied when the task starts, so a request for writes is assessed
+        // as one until then.
+        return specs.contains { spec in
+            let narrowed = spec.agentName.flatMap(BuiltInAgents.named)?.effectiveMode(requested: spec.mode) ?? spec.mode
+            return narrowed == .workspaceWrite
+        } ? .write : .read
     }
 
     public func summary(input: JSONValue) -> String {
@@ -208,6 +271,11 @@ public struct DelegateTaskTool: CodeTool {
         let modelID: String?
         let reasoningEffort: ReasoningEffort?
         let mode: SubagentExecutionMode
+        /// The agent the task names, if any; resolved when the call runs.
+        var agentName: String? = nil
+        var background = false
+        /// The resolved agent, set before the task starts.
+        var agent: SubagentDefinition? = nil
     }
 
     static func specs(from input: JSONValue, toolCallID: String) throws -> [Spec] {
@@ -215,7 +283,7 @@ public struct DelegateTaskTool: CodeTool {
         if let array = input["tasks"]?.arrayValue, !array.isEmpty {
             raw = array
         }
-        if input["task"]?.stringValue != nil {
+        if input["task"]?.stringValue != nil || input["prompt"]?.stringValue != nil {
             // Both shapes in one call is not an error worth refusing: the
             // singular is appended so nothing the model asked for is silently
             // dropped.
@@ -231,7 +299,7 @@ public struct DelegateTaskTool: CodeTool {
             )
         }
         return try raw.enumerated().map { index, entry in
-            guard let task = entry["task"]?.stringValue?
+            guard let task = (entry["prompt"]?.stringValue ?? entry["task"]?.stringValue)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                 !task.isEmpty
             else {
@@ -253,7 +321,12 @@ public struct DelegateTaskTool: CodeTool {
                 reasoningEffort: entry["reasoning_effort"]?.stringValue.flatMap(ReasoningEffort.init(rawValue:)),
                 mode: SubagentExecutionMode(
                     rawValue: entry["mode"]?.stringValue ?? SubagentExecutionMode.readOnly.rawValue
-                ) ?? .readOnly
+                ) ?? .readOnly,
+                agentName: entry["agent"]?.stringValue.flatMap { raw in
+                    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return trimmed.isEmpty ? nil : trimmed
+                },
+                background: entry["background"]?.boolValue ?? false
             )
         }
     }
@@ -269,9 +342,49 @@ public struct DelegateTaskTool: CodeTool {
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
-        let specs = try Self.specs(from: input, toolCallID: context.toolCallID)
+        var specs = try Self.specs(from: input, toolCallID: context.toolCallID)
         let parentSessionID = context.sessionID
         let deadline = ContinuousClock.now.advanced(by: Self.budget)
+
+        // Every named agent must exist before anything starts.
+        var unknown: [String] = []
+        for index in specs.indices {
+            guard let name = specs[index].agentName else { continue }
+            if let agent = await agents.definition(named: name) {
+                specs[index].agent = agent
+            } else {
+                unknown.append(name)
+            }
+        }
+        if !unknown.isEmpty {
+            let known = await agents.all().map(\.name).joined(separator: ", ")
+            throw ToolError.invalidInput(
+                message: "No agent is named \(unknown.joined(separator: ", ")). Agents: \(known)."
+            )
+        }
+
+        let backgroundSpecs = specs.filter(\.background)
+        if !backgroundSpecs.isEmpty {
+            // Refused whole, before anything starts, so a call never leaves
+            // half its children running.
+            let room = await background.capacity(parentSessionID: parentSessionID)
+            guard await background.reserve(backgroundSpecs.count, parentSessionID: parentSessionID) else {
+                let limit = BackgroundSubagents.maximumRunningPerParent
+                throw ToolError.invalidInput(
+                    message: "At most \(limit) background sub-agents can work at once, and \(limit - room) already are. "
+                        + "Collect results with await_subagents or stop one with cancel_subagent first."
+                )
+            }
+        }
+        specs = specs.filter { !$0.background }
+        var startedInBackground: [String] = []
+        for spec in backgroundSpecs {
+            await publish(spec, toolCallID: context.toolCallID, parentSessionID: parentSessionID, status: .queued)
+            startedInBackground.append(await startInBackground(spec, toolCallID: context.toolCallID, parentSessionID: parentSessionID))
+        }
+        guard !specs.isEmpty else {
+            return ToolResult(content: Self.backgroundReport(startedInBackground, titles: backgroundSpecs.map(\.title)))
+        }
 
         // Announced before any of them starts, so the panel has a row for every
         // agent the model asked for rather than only for the ones that won a
@@ -327,7 +440,7 @@ public struct DelegateTaskTool: CodeTool {
         // a reader wants there. Everything below it is for the model, which is
         // told elsewhere to reconcile these reports rather than paste them.
         let completed = outcomes.filter { $0.status == .completed }.count
-        let content: String
+        var content: String
         if let only = outcomes.first, outcomes.count == 1 {
             content = "Sub-agent \(only.status.rawValue): \(only.title)\n\n\(only.answer)"
         } else {
@@ -338,7 +451,33 @@ public struct DelegateTaskTool: CodeTool {
                 .joined(separator: "\n\n")
             content = "\(headline)\n\n\(body)"
         }
+        if !startedInBackground.isEmpty {
+            content += "\n\n" + Self.backgroundReport(startedInBackground, titles: backgroundSpecs.map(\.title))
+        }
         return ToolResult(content: content, isError: completed == 0)
+    }
+
+    /// "Started 2 sub-agents in the background: …".
+    static func backgroundReport(_ ids: [String], titles: [String]) -> String {
+        let lines = zip(ids, titles).map { "- \($0) — \($1)" }.joined(separator: "\n")
+        return "Started \(ids.count) sub-agent\(ids.count == 1 ? "" : "s") in the background:\n\(lines)\n"
+            + "Collect the results with await_subagents, look at one with inspect_subagent, or stop one with cancel_subagent."
+    }
+
+    /// Starts one child that no turn waits on. It keeps publishing into the
+    /// parent's transcript, runs under its own budget, and stops when the
+    /// reader stops the parent.
+    private func startInBackground(_ spec: Spec, toolCallID: String, parentSessionID: CodeSessionID) async -> String {
+        let deadline = ContinuousClock.now.advanced(by: Self.backgroundBudget)
+        let work: @Sendable () async -> (SubagentStatus, String) = {
+            let outcome = await self.run(
+                spec, index: 0, toolCallID: toolCallID, parentSessionID: parentSessionID, deadline: deadline
+            )
+            return (outcome.status, outcome.answer)
+        }
+        await background.start(id: spec.agentID, parentSessionID: parentSessionID, title: spec.title, work: work)
+        await background.cancelOnStop(parentSessionID: parentSessionID, store: store)
+        return spec.agentID
     }
 
     /// One sub-agent, from its own session to its own answer.
@@ -353,8 +492,10 @@ public struct DelegateTaskTool: CodeTool {
         parentSessionID: CodeSessionID,
         deadline: ContinuousClock.Instant
     ) async -> Outcome {
-        let childModelID = spec.modelID ?? modelID
+        let childModelID = spec.modelID ?? spec.agent?.model ?? modelID
         let childReasoningEffort = spec.reasoningEffort ?? reasoningEffort
+        // An agent narrows the mode, never widens it.
+        let mode = spec.agent?.effectiveMode(requested: spec.mode) ?? spec.mode
         await publish(
             spec,
             toolCallID: toolCallID,
@@ -365,7 +506,7 @@ public struct DelegateTaskTool: CodeTool {
 
         let environment: SubagentExecutionEnvironment
         do {
-            if spec.mode == .workspaceWrite {
+            if mode == .workspaceWrite {
                 guard let executionFactory else {
                     throw ToolError.denied(
                         reason: "Write-capable sub-agents are unavailable because no isolated worktree factory is configured."
@@ -376,7 +517,7 @@ public struct DelegateTaskTool: CodeTool {
                     parentSessionID: parentSessionID,
                     title: spec.title,
                     branch: Self.branchName(for: spec),
-                    mode: spec.mode
+                    mode: mode
                 )
                 environment = try await executionFactory(request)
             } else {
@@ -446,6 +587,22 @@ public struct DelegateTaskTool: CodeTool {
             startedAt: startedAt
         )
 
+        // `SubagentStart` hooks may add context to the child's task; they
+        // cannot stop the delegation (Lane F, §5.9).
+        let agentType = spec.agent?.name ?? spec.role.rawValue
+        var childTask = spec.task
+        if let start = await lifecycleHooks?.subagentStarted(
+            sessionID: parentSessionID,
+            agentID: spec.agentID,
+            agentType: agentType,
+            task: spec.task
+        ) {
+            for notice in start.notices {
+                _ = try? await store.appendEvent(sessionID: parentSessionID, payload: .hookActivity(notice))
+            }
+            childTask = AgentHookContext.appending(start.context, to: childTask)
+        }
+
         let permissions = PermissionCoordinator(
             sessionID: child.id,
             mode: environment.permissionMode
@@ -453,21 +610,30 @@ public struct DelegateTaskTool: CodeTool {
         if let parentRules {
             await permissions.setRules(await parentRules())
         }
-        let childInstruction: String
-        switch spec.mode {
+        var childInstruction: String
+        switch mode {
         case .readOnly:
             childInstruction = "You are a read-only Juno Code sub-agent. Do not modify files, run commands with side effects, commit, or control the computer."
         case .workspaceWrite:
             childInstruction = "You are a write-capable Juno Code sub-agent working only in an isolated Git worktree. Implement the delegated task there, run appropriate verification, and do not merge or modify the parent checkout."
         }
+        if let agent = spec.agent {
+            childInstruction += "\n\n" + agent.prompt
+        }
+        // The agent's tool list narrows the environment's, never adds to it.
+        let childRegistry = spec.agent?.narrowing(environment.registry) ?? environment.registry
         let orchestrator = AgentOrchestrator(
             sessionID: child.id,
             model: model,
-            registry: environment.registry,
+            registry: childRegistry,
             permissions: permissions,
             store: store,
             configuration: AgentOrchestrator.Configuration(
-                maximumIterations: 18,
+                maximumIterations: Self.stepCap(
+                    mode: mode,
+                    parentStepLimit: parentStepLimit,
+                    agentMaximum: spec.agent?.maxSteps
+                ),
                 systemPrompt: """
                 \(parentSystemPrompt)
 
@@ -479,8 +645,12 @@ public struct DelegateTaskTool: CodeTool {
             ),
             modelID: childModelID,
             reasoningEffort: childReasoningEffort,
+            // Told which agent it is, so `SubagentStop` and the child's tool
+            // hooks carry `agent_id` and `agent_type`.
             lifecycleHooks: lifecycleHooks?.subagentHooks(
-                executionRootPath: environment.executionRootPath
+                executionRootPath: environment.executionRootPath,
+                agentID: spec.agentID,
+                agentType: agentType
             ),
             fallbackResolver: fallbackResolver
         )
@@ -526,7 +696,13 @@ public struct DelegateTaskTool: CodeTool {
             // beyond its 18-iteration cap, so one that made no progress could
             // hold the parent open indefinitely.
             try await withTaskCancellationHandler {
-                try await orchestrator.submit(prompt: spec.task)
+                try await orchestrator.submit(prompt: childTask)
+                // A cancel that came before the run existed ran its `stop()`
+                // against nothing (the handler fires at once for a task
+                // already cancelled, and its hop can land before `submit`):
+                // stop the run that exists now. Cancelling a background child
+                // straight after starting it is exactly that case.
+                if Task.isCancelled { await orchestrator.stop() }
                 let watchdog = Task {
                     try? await Task.sleep(until: deadline, clock: .continuous)
                     await orchestrator.stop()
@@ -682,7 +858,7 @@ public struct DelegateTaskTool: CodeTool {
                     title: spec.title,
                     task: spec.task,
                     role: spec.role,
-                    executionMode: spec.mode,
+                    executionMode: spec.agent?.effectiveMode(requested: spec.mode) ?? spec.mode,
                     status: status,
                     currentActivity: currentActivity,
                     startedAt: startedAt,

@@ -274,11 +274,11 @@ final class CodeSettingsStoreTests: XCTestCase {
 
         let rules = store.resolved(projectRoot: project).rules
         XCTAssertEqual(
-            rules.evaluate(toolName: ComputerUseToolName.click, subject: nil),
+            rules.evaluate(toolName: "computer_click", subject: nil),
             .ask(PermissionRule(tool: "computer_click"))
         )
         XCTAssertEqual(
-            rules.evaluate(toolName: ComputerUseToolName.type, subject: nil),
+            rules.evaluate(toolName: "computer_type", subject: nil),
             .deny(PermissionRule(tool: "computer_type"))
         )
     }
@@ -287,11 +287,11 @@ final class CodeSettingsStoreTests: XCTestCase {
         try write(#"{"permissions":{"allow":["computer_click"]}}"#, to: .user)
 
         XCTAssertEqual(
-            store.resolved(projectRoot: project).rules.evaluate(toolName: ComputerUseToolName.click, subject: nil),
+            store.resolved(projectRoot: project).rules.evaluate(toolName: "computer_click", subject: nil),
             .allow(PermissionRule(tool: "computer_click"))
         )
         XCTAssertEqual(
-            store.resolved(projectRoot: nil).rules.evaluate(toolName: ComputerUseToolName.click, subject: nil),
+            store.resolved(projectRoot: nil).rules.evaluate(toolName: "computer_click", subject: nil),
             .allow(PermissionRule(tool: "computer_click"))
         )
     }
@@ -300,7 +300,7 @@ final class CodeSettingsStoreTests: XCTestCase {
         // Saved to the project's personal file, an Always allow for a click
         // would be dropped on the next run and the reader asked again, after
         // being told the answer was remembered.
-        let click = PermissionRule(tool: ComputerUseToolName.click)
+        let click = PermissionRule(tool: "computer_click")
         try store.rememberAllowRule(click, projectRoot: project)
         XCTAssertEqual(store.load(.user, projectRoot: nil).permissions?.allow, [click])
         XCTAssertNil(store.load(.local, projectRoot: project).permissions)

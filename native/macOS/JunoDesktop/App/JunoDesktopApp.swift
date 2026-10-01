@@ -1,4 +1,5 @@
 import AppKit
+import JunoCodeCore
 import JunoCore
 import JunoDesignSystem
 import JunoCodeUI
@@ -149,10 +150,14 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             // rather than while a Code window happens to be on screen. A click
             // is one request the registry hands to exactly one window, which
             // switches it to Code; with no window open, one is opened.
-            StudioRunMonitor.shared.install { id in
-                DesktopWorkbenchRegistry.shared.request(.openSession(id))
+            StudioRunMonitor.shared.install(responder: DesktopLifecycle.codeNotificationResponder {
                 Self.presentMainWindowIfWithheld()
-            }
+            })
+            // A restart or shutdown is not a quit to ask about.
+            DesktopLifecycle.observePowerOff()
+            // While Juno uses other apps: the caption, the takeover glow and
+            // the start and stop notifications (CODE_AGENT_SPEC §3.7).
+            DesktopScreenPresence.shared.install()
             // After the monitor, which claims the same slot when it installs.
             UNUserNotificationCenter.current().delegate = self
             // Every launch, as Apple asks: the token can change, and asking
@@ -258,10 +263,121 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         NSApp.sendAction(action, to: item.target, from: item)
     }
 
+    /// Quitting with runs working asks first, Keep working the default
+    /// (CODE_AGENT_SPEC §1.12). A stopped run comes back as interrupted, with
+    /// Resume.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !JunoTestHost.isActive else { return .terminateNow }
+        return MainActor.assumeIsolated {
+            DesktopLifecycle.terminateReply(
+                activeRuns: DesktopWorkbenchRegistry.shared.activeRunCount,
+                systemIsPoweringOff: DesktopLifecycle.systemIsPoweringOff,
+                confirm: DesktopLifecycle.confirmQuit
+            )
+        }
+    }
+
+    /// Runs, notifications and the menu bar item outlive the last window.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        DesktopLifecycle.terminatesAfterLastWindowClosed
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
+            // Never swapped in under a run the reader chose to stop: it is
+            // interrupted, and Resume needs the build that was running it.
+            guard DesktopLifecycle.installsStagedUpdate(
+                activeRuns: DesktopWorkbenchRegistry.shared.activeRunCount
+            ) else { return }
             DesktopUpdateModel.shared.installOnQuitIfStaged()
         }
+    }
+}
+
+/// The app's lifecycle rules for Juno Code, apart from the delegate so tests
+/// can read them (CODE_AGENT_SPEC §1.11, §1.12).
+enum DesktopLifecycle {
+    /// Juno keeps running with its last window closed.
+    static let terminatesAfterLastWindowClosed = QuitGuard.terminatesAfterLastWindowClosed
+
+    /// Set once macOS says it is logging out, restarting or shutting down:
+    /// the quit guard then lets the app go without asking, rather than
+    /// cancelling the restart with a question nobody is there to answer.
+    @MainActor static var systemIsPoweringOff = false
+
+    /// Listens for the Mac powering off, for the quit guard.
+    @MainActor
+    static func observePowerOff() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { systemIsPoweringOff = true }
+        }
+    }
+
+    /// Whether to quit now, given the runs working and the reader's answer to
+    /// the question when there are any. `confirm` returns true to quit.
+    @MainActor
+    static func terminateReply(
+        activeRuns: Int,
+        systemIsPoweringOff: Bool = false,
+        confirm: @MainActor (_ message: String, _ detail: String) -> Bool
+    ) -> NSApplication.TerminateReply {
+        switch QuitGuard.decision(activeRuns: activeRuns, systemIsPoweringOff: systemIsPoweringOff) {
+        case .quit:
+            return .terminateNow
+        case let .ask(message, detail):
+            return confirm(message, detail) ? .terminateNow : .terminateCancel
+        }
+    }
+
+    static func installsStagedUpdate(activeRuns: Int) -> Bool {
+        QuitGuard.installsStagedUpdate(activeRuns: activeRuns)
+    }
+
+    /// The question, with Keep Working as the default button.
+    @MainActor
+    static func confirmQuit(message: String, detail: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Keep Working")
+        alert.addButton(withTitle: "Quit")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    /// What answering a Juno Code notification does: the same paths as the
+    /// Runs list, with the same digest check. `present` brings the window
+    /// forward when an answer needs it.
+    @MainActor
+    static func codeNotificationResponder(present: @escaping @MainActor () -> Void) -> CodeNotificationResponder {
+        let registry = DesktopWorkbenchRegistry.shared
+        func open(_ id: CodeSessionID) {
+            registry.request(.openSession(id))
+            present()
+        }
+        return CodeNotificationResponder(
+            open: open,
+            reviewChanges: open,
+            allowOnce: { id, approvalID, digest in
+                _ = await registry.workbench?.allowOnce(sessionID: id, approvalID: approvalID, digest: digest)
+            },
+            decline: { id, approvalID, digest in
+                _ = await registry.workbench?.decline(sessionID: id, approvalID: approvalID, digest: digest)
+            },
+            reply: { id, questionID, text in
+                _ = await registry.workbench?.reply(sessionID: id, questionID: questionID, text: text)
+            },
+            keepGoing: { id in _ = await registry.workbench?.keepGoing(sessionID: id) },
+            retry: { id in _ = await registry.workbench?.retry(sessionID: id) },
+            fixIt: { id in
+                guard let controller = await registry.workbench?.controller(for: id) else { return }
+                await controller.reviewQueue.pullRequest.fixIt()
+            }
+        )
     }
 }
 

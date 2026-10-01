@@ -36,6 +36,9 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
     /// Claude Code's switch for turning hooks off at once. In a project's
     /// file it reaches only that project's hooks; see `HookDiscovery`.
     public var disableAllHooks: Bool?
+    /// How far the agent works on its own: the stop check, the soft step
+    /// limit, budgets and check-ins. See ``AutonomySettings``.
+    public var autonomy: AutonomySettings.Overrides?
 
     public init(
         permissions: Permissions? = nil,
@@ -45,7 +48,8 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         git: Git? = nil,
         instructions: String? = nil,
         hooks: JSONValue? = nil,
-        disableAllHooks: Bool? = nil
+        disableAllHooks: Bool? = nil,
+        autonomy: AutonomySettings.Overrides? = nil
     ) {
         self.permissions = permissions
         self.env = env
@@ -55,6 +59,7 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         self.instructions = instructions
         self.hooks = hooks
         self.disableAllHooks = disableAllHooks
+        self.autonomy = autonomy
     }
 
     public struct Permissions: Codable, Equatable, Sendable {
@@ -187,6 +192,8 @@ extension CodeSettingsFile {
             || !(sandbox?.writablePaths ?? []).isEmpty
             || sandbox?.network == true
             || agent?.modelFallback == true
+            || (agent?.maxTurns ?? 0) > ResolvedCodeSettings.defaults.maxTurns
+            || autonomy?.raisesAnything == true
     }
 }
 
@@ -250,6 +257,9 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
     /// voice: approving a file puts its settings in force, it does not make
     /// its prose the reader's own.
     public var repositoryInstructions: [String]
+    /// The stop check, soft step limit, budgets and check-ins. Its step limit
+    /// is `maxTurns` unless a file sets `autonomy.stepLimit`.
+    public var autonomy: AutonomySettings = .standard
 
     public static let defaults = ResolvedCodeSettings(
         rules: .empty,
@@ -283,9 +293,24 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> ResolvedCodeSettings {
         var resolved = defaults
+        // Whether a file that may loosen named `autonomy.stepLimit`, and the
+        // lowest one a file that may only narrow asked for.
+        var stepLimitSet = false
+        var narrowedStepLimit: Int?
         for layer in layers {
             let file = layer.file
             let loosens = layer.mayLoosen
+            if let autonomy = file.autonomy {
+                resolved.autonomy.apply(autonomy, mayLoosen: loosens)
+                if let limit = autonomy.stepLimit {
+                    if loosens {
+                        stepLimitSet = true
+                    } else {
+                        let clamped = min(max(limit, AutonomySettings.stepLimitRange.lowerBound), AutonomySettings.stepLimitRange.upperBound)
+                        narrowedStepLimit = min(narrowedStepLimit ?? clamped, clamped)
+                    }
+                }
+            }
             if let permissions = file.permissions {
                 resolved.rules = resolved.rules.merging(
                     PermissionRuleSet(
@@ -329,7 +354,11 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
             }
             if let agent = file.agent {
                 if let turns = agent.maxTurns {
-                    resolved.maxTurns = min(max(turns, maxTurnsRange.lowerBound), maxTurnsRange.upperBound)
+                    // The turn limit is the soft step limit, how long a run
+                    // works before it stops to ask: a file the reader has not
+                    // approved may lower it, never raise it.
+                    let clamped = min(max(turns, maxTurnsRange.lowerBound), maxTurnsRange.upperBound)
+                    resolved.maxTurns = loosens ? clamped : min(resolved.maxTurns, clamped)
                 }
                 if let auto = agent.autoCompact { resolved.autoCompact = auto }
                 if let threshold = agent.compactThreshold {
@@ -360,6 +389,13 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
                     resolved.repositoryInstructions.append(text)
                 }
             }
+        }
+        // The step limit is today's turn limit, made soft, unless a file that
+        // may loosen names it under `autonomy`. A file that may only narrow
+        // lowers whichever limit stands; its naming one never sets aside the
+        // reader's own lower turn limit.
+        if !stepLimitSet {
+            resolved.autonomy.stepLimit = min(resolved.maxTurns, narrowedStepLimit ?? resolved.maxTurns)
         }
         return resolved
     }

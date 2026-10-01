@@ -170,13 +170,19 @@ public enum DevServerCommandDiscovery {
     /// Lower sorts first. Names people actually use for the thing they want to
     /// look at, then anything whose body launches a known dev server, then the
     /// rest of the scripts in alphabetical order.
-    private static func rank(of name: String) -> Int {
+    static func rank(of name: String) -> Int {
         let preferred = ["dev", "start", "serve", "preview", "develop", "watch"]
         if let index = preferred.firstIndex(of: name.lowercased()) { return index }
         if name.lowercased().hasPrefix("dev:") || name.lowercased().hasPrefix("start:") {
             return preferred.count
         }
         return preferred.count + 1
+    }
+
+    /// Whether a script looks like it starts a long-lived server; shared with
+    /// ``LaunchConfigurationDiscovery``.
+    static func looksLikeServer(name: String, script: String) -> Bool {
+        startsAServer(name: name, script: script)
     }
 
     private static func startsAServer(name: String, script: String) -> Bool {

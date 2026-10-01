@@ -1,6 +1,7 @@
 import XCTest
 import JunoCodeCore
 import JunoCodeLocal
+import JunoScreenControl
 @testable import JunoCodeUI
 
 /// A grant the test flips between reads, the way the reader does in System
@@ -48,8 +49,31 @@ final class StudioScreenControlTests: XCTestCase {
             permissions: status(.denied, .denied)
         )
         XCTAssertEqual(notice, .active)
-        XCTAssertEqual(notice?.message, "Juno is controlling the screen")
+        XCTAssertEqual(notice?.message, "Juno can use the apps you grant")
+        XCTAssertEqual(notice?.message(app: "Safari"), "Juno is using Safari")
         XCTAssertNil(notice?.nextPermission)
+    }
+
+    func testTakingOverPausesInWords() {
+        let notice = StudioScreenControlNotice(isActive: true, startBlocked: false, permissions: status(.granted, .granted), paused: true)
+        XCTAssertEqual(notice, .paused)
+        XCTAssertEqual(notice?.message, "You took over. Juno is waiting.")
+    }
+
+    func testAGrantVoidedByAnUpdateSaysHowToFixIt() {
+        let lost = ComputerUsePermissionStatus(screenRecording: .granted, accessibility: .denied, accessibilityTrustLostAfterUpdate: true)
+        let notice = StudioScreenControlNotice(isActive: false, startBlocked: true, permissions: lost)
+        XCTAssertEqual(notice, .trustLost)
+        XCTAssertEqual(notice?.message, "macOS no longer trusts this build of Juno. Remove Juno from the Accessibility list and add it again.")
+        XCTAssertEqual(notice?.nextPermission, .accessibility)
+    }
+
+    func testNoStateIsADotOrAPill() {
+        // Every state is a sentence (CU-14): no symbol-only status.
+        let states: [StudioScreenControlNotice] = [.active, .paused, .needsPermission([.accessibility]), .trustLost, .ready]
+        for state in states {
+            XCTAssertGreaterThan(state.message.split(separator: " ").count, 3, "\(state)")
+        }
     }
 
     func testARefusedStartNamesEveryMissingGrantAndOpensTheFirst() {
@@ -140,5 +164,53 @@ final class StudioScreenControlTests: XCTestCase {
         XCTAssertFalse(controller.session.configuration.computerUseEnabled)
         XCTAssertEqual(controller.transientError, controller.computerUseUnavailableReason)
         XCTAssertNil(controller.computerUseLatestCapture)
+    }
+
+    // MARK: Step rows
+
+    func testEachScreenCallIsOneStepRowWithTheToolsOwnSentence() {
+        let session = CodeSessionID()
+        func event(_ payload: SessionEventPayload, _ id: String) -> SessionEvent {
+            SessionEvent(id: id, sessionID: session, sequence: 0, timestamp: Date(), payload: payload)
+        }
+        let events = [
+            event(.toolProposed(ToolProposedEvent(toolCallID: "c1", toolName: "computer", input: ["action": "left_click", "app": "com.apple.TextEdit"], risk: .read, summary: "Clicking com.apple.TextEdit")), "e1"),
+            event(.toolStarted(ToolStartedEvent(toolCallID: "c1")), "e2"),
+            event(.toolCompleted(ToolCompletedEvent(toolCallID: "c1", status: .succeeded, resultSummary: "Clicked the “Save” button in TextEdit.", durationSeconds: 0.4)), "e3"),
+            event(.toolProposed(ToolProposedEvent(toolCallID: "c2", toolName: "computer", input: ["action": "type", "text": "hello"], risk: .read, summary: "Type 5 characters")), "e4"),
+        ]
+        let steps = StudioScreenStep.steps(in: events)
+        XCTAssertEqual(steps["e1"]?.eventID, "e1")
+        XCTAssertEqual(steps["e3"]?.eventID, "e1", "every event of the call maps to its one row")
+        XCTAssertEqual(steps["e1"].map(StudioScreenStepRow.caption(for:)), "Clicked the “Save” button in TextEdit.")
+        XCTAssertEqual(steps["e4"].map(StudioScreenStepRow.caption(for:)), "Typing “hello” in the current app…")
+
+        let items = StudioThreadItems.build(events: events, groups: [], pendingApprovalIDs: [], showReasoning: false)
+        let rows = items.filter { if case .screenStep = $0 { return true } else { return false } }
+        XCTAssertEqual(rows.map(\.id), ["e1", "e4"])
+    }
+
+    func testAFailedStepSaysWhyInWords() {
+        let step = StudioScreenStep(eventID: "e", toolCallID: "c", verb: "Typed", app: "Terminal", succeeded: false,
+                                    outcome: "Terminal is granted for clicks only; typing, keys, right-click and drags were not sent.")
+        XCTAssertEqual(StudioScreenStepRow.caption(for: step), "Terminal is granted for clicks only; typing, keys, right-click and drags were not sent.")
+    }
+
+    func testTheModelSaysWhoIsUsingWhat() {
+        let model = ScreenControlModel()
+        let session = CodeSessionID()
+        XCTAssertNil(model.sentence)
+        model.setPreviewPresence(
+            ScreenPresenceState(holder: ScreenControlHolder(id: session.value, kind: .codeSession, title: "t", appName: "Safari")),
+            sessionID: session,
+            latest: nil
+        )
+        XCTAssertEqual(model.sentence, "Juno is using Safari")
+        model.setPreviewPresence(
+            ScreenPresenceState(holder: ScreenControlHolder(id: "other", kind: .codeSession, title: "t", appName: "Safari")),
+            sessionID: session,
+            latest: nil
+        )
+        XCTAssertNil(model.sentence, "another session's screen control is not this session's row")
     }
 }

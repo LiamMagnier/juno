@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import JunoCodeCore
+import JunoCodeLocal
 import JunoCodeRuntime
 @testable import JunoCodeUI
 
@@ -49,11 +50,12 @@ final class CodePreviewHarnessTests: XCTestCase {
     }
 
     func testPreviewInspectorIsReadOnlyAndFailsClosedWithoutAnActiveSurface() async throws {
-        let tool = CodePreviewInspectTool()
+        let root = try makeTemporaryPreviewWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tool = CodePreviewInspectTool(services: PreviewToolServices(workspaceRoot: root))
 
         XCTAssertEqual(tool.name, "inspect_preview")
         XCTAssertEqual(tool.assessRisk(input: [:]), .read)
-        XCTAssertTrue(tool.description.contains("optional screenshot"))
 
         do {
             _ = try await tool.execute(
@@ -64,58 +66,36 @@ final class CodePreviewHarnessTests: XCTestCase {
                     emitOutput: { _, _ in }
                 )
             )
-            XCTFail("an inspection must not invent a preview when no surface is open")
+            XCTFail("an inspection must not invent a preview when none runs")
         } catch let error as ToolError {
             guard case let .executionFailed(message) = error else {
                 return XCTFail("unexpected tool error: \(error)")
             }
-            XCTAssertTrue(message.contains("No active local Preview"))
+            XCTAssertTrue(message.contains("No preview is running"), message)
         }
     }
 
-    func testPreviewOpenToolRequestsTheOwningWorkspaceSurface() async throws {
-        let sessionID = CodeSessionID(value: "preview-open-tool-\(UUID().uuidString)")
-        let root = URL(fileURLWithPath: "/tmp/juno-preview-open", isDirectory: true)
-        let tool = CodePreviewOpenTool(workspaceRoot: root)
-        let expectation = expectation(description: "preview request posted")
-        let received = PreviewNotificationBox()
-        let observer = NotificationCenter.default.addObserver(
-            forName: .junoCodePreviewOpenRequested,
-            object: nil,
-            queue: .main
-        ) { notification in
-            received.value = notification.object as? CodePreviewTarget
-            expectation.fulfill()
-        }
-        defer { NotificationCenter.default.removeObserver(observer) }
+    /// PV-2: `open_preview` never says "Opened" for something that did not
+    /// open. With nothing to start it refuses before any approval, in words.
+    func testOpenPreviewIsHonestWhenNothingCanStart() throws {
+        let root = try makeTemporaryPreviewWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tool = CodePreviewOpenTool(services: PreviewToolServices(workspaceRoot: root))
 
         XCTAssertEqual(tool.assessRisk(input: [:]), .critical)
-        let result = try await tool.execute(
-            input: [:],
-            context: ToolContext(
-                sessionID: sessionID,
-                toolCallID: "preview-open-tool-call",
-                emitOutput: { _, _ in }
-            )
-        )
-
-        await fulfillment(of: [expectation], timeout: 1)
-        XCTAssertEqual(received.value?.sessionID, sessionID)
-        XCTAssertEqual(received.value?.workspaceRootPath, root.path)
-        XCTAssertTrue(result.content.contains("Opened the local Preview"))
+        guard case let .invalidInput(message)? = tool.precheck(input: [:]) else {
+            return XCTFail("expected a refusal before approval")
+        }
+        XCTAssertTrue(message.contains(".juno/launch.json"), message)
     }
 
     func testPreviewBrowserIsScopedAndFailsClosedWithoutAnActiveSurface() async throws {
-        let tool = CodePreviewBrowserTool()
+        let root = try makeTemporaryPreviewWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tool = PreviewBrowserTool(services: PreviewToolServices(workspaceRoot: root))
 
-        XCTAssertEqual(
-            tool.assessRisk(input: ["action": "snapshot"]),
-            .read
-        )
-        XCTAssertEqual(
-            tool.assessRisk(input: ["action": "click", "ref": "e1"]),
-            .critical
-        )
+        XCTAssertEqual(tool.assessRisk(input: ["action": "snapshot"]), .read)
+        XCTAssertEqual(tool.assessRisk(input: ["action": "click", "ref": "e1"]), .execute)
 
         do {
             _ = try await tool.execute(
@@ -126,12 +106,12 @@ final class CodePreviewHarnessTests: XCTestCase {
                     emitOutput: { _, _ in }
                 )
             )
-            XCTFail("browser QA must not invent a page when no Preview is open")
+            XCTFail("browser QA must not invent a page when no Preview runs")
         } catch let error as ToolError {
             guard case let .executionFailed(message) = error else {
-                return XCTFail("unexpected tool error: (error)")
+                return XCTFail("unexpected tool error: \(error)")
             }
-            XCTAssertTrue(message.contains("Use open_preview first"))
+            XCTAssertTrue(message.contains("No preview is running"), message)
         }
     }
 
@@ -703,82 +683,49 @@ final class CodePreviewHarnessTests: XCTestCase {
     // MARK: - Live preview discovery
 
     /// A repository can keep its browser app below `apps/` or `packages/` while
-    /// the root package only owns orchestration scripts. The preview must offer
-    /// the nested server and run it from the package that owns the script.
+    /// the root package only owns orchestration scripts. Discovery offers the
+    /// nested server, run from the package that owns the script, with the
+    /// root's package manager.
     func testPreviewDiscoveryFindsNestedServerAndKeepsRootPackageManager() async throws {
         let root = try makeTemporaryPreviewWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try writePackage(
-            at: root,
-            scripts: ["lint": "eslint ."]
-        )
+        try writePackage(at: root, scripts: ["lint": "eslint ."])
         try Data("lockfileVersion: '9.0'\n".utf8)
             .write(to: root.appendingPathComponent("pnpm-lock.yaml"))
 
         let webRoot = root.appendingPathComponent("apps/web", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: webRoot,
-            withIntermediateDirectories: true
-        )
-        try writePackage(
-            at: webRoot,
-            scripts: ["dev": "vite --host 0.0.0.0"]
-        )
+        try FileManager.default.createDirectory(at: webRoot, withIntermediateDirectories: true)
+        try writePackage(at: webRoot, scripts: ["dev": "vite --host 0.0.0.0"])
 
-        // A dependency package must never appear as a user-selectable project.
+        // A dependency package must never appear as a configuration.
         let dependencyRoot = root.appendingPathComponent("node_modules/fake-app", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: dependencyRoot,
-            withIntermediateDirectories: true
-        )
+        try FileManager.default.createDirectory(at: dependencyRoot, withIntermediateDirectories: true)
         try writePackage(at: dependencyRoot, scripts: ["dev": "vite"])
 
-        let result = await CodePreviewProjectDiscovery.scan(workspaceRoot: root)
-        let webCommand = try XCTUnwrap(
-            result.commands.first {
-                $0.workspaceDisplayName == "apps/web" && $0.name == "dev"
-            }
-        )
-
-        XCTAssertEqual(webCommand.commandLine, "pnpm run dev")
-        XCTAssertEqual(webCommand.workspaceDisplayName, "apps/web")
-        XCTAssertEqual(result.suggested?.id, webCommand.id)
-        XCTAssertFalse(
-            result.commands.contains { $0.workspaceRoot.path.contains("node_modules") },
-            "dependency manifests must not become preview targets"
-        )
+        let catalog = LaunchConfigurationStore.load(workspaceRoot: root)
+        let web = try XCTUnwrap(catalog.configuration(named: "apps/web dev"))
+        XCTAssertEqual(web.commandLine(), "pnpm run dev")
+        XCTAssertEqual(web.workingDirectoryDisplay, "apps/web")
+        XCTAssertEqual(catalog.defaultConfiguration?.name, web.name)
+        XCTAssertFalse(catalog.configurations.contains { $0.workingDirectory.path.contains("node_modules") })
     }
 
-    /// Two packages can expose the same script name. Their stable IDs and menu
-    /// labels must remain distinct so selecting one never starts the other.
+    /// Two packages can expose the same script name; their configurations get
+    /// different names so choosing one never starts the other.
     func testPreviewDiscoveryDisambiguatesMultipleNestedServers() async throws {
         let root = try makeTemporaryPreviewWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let webRoot = root.appendingPathComponent("apps/web", isDirectory: true)
-        let docsRoot = root.appendingPathComponent("packages/docs", isDirectory: true)
-        for packageRoot in [webRoot, docsRoot] {
-            try FileManager.default.createDirectory(
-                at: packageRoot,
-                withIntermediateDirectories: true
-            )
+        for package in ["apps/web", "packages/docs"] {
+            let packageRoot = root.appendingPathComponent(package, isDirectory: true)
+            try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
             try writePackage(at: packageRoot, scripts: ["dev": "vite"])
         }
 
-        let result = await CodePreviewProjectDiscovery.scan(workspaceRoot: root)
-        let devCommands = result.commands.filter { $0.name == "dev" }
-
-        XCTAssertEqual(devCommands.count, 2)
-        XCTAssertEqual(
-            Set(devCommands.map(\.id)).count,
-            2,
-            "same-named scripts in different packages need different selections"
-        )
-        XCTAssertEqual(
-            Set(devCommands.map(\.workspaceDisplayName)),
-            ["apps/web", "packages/docs"]
-        )
+        let catalog = LaunchConfigurationStore.load(workspaceRoot: root)
+        XCTAssertEqual(Set(catalog.configurations.map(\.name)), ["apps/web dev", "packages/docs dev"])
+        XCTAssertEqual(Set(catalog.configurations.map(\.workingDirectoryDisplay)), ["apps/web", "packages/docs"])
     }
 
     private func makeTemporaryPreviewWorkspace() throws -> URL {

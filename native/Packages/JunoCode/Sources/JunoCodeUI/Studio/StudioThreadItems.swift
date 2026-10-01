@@ -146,7 +146,11 @@ enum StudioThreadItems {
 
         for event in events {
             if let step = screenSteps[event.id] {
-                items.append(.screenStep(id: event.id, step: step))
+                // One row per call, at its proposal; the call's other events
+                // stay out of the activity rows.
+                if step.eventID == event.id {
+                    items.append(.screenStep(id: event.id, step: step))
+                }
                 continue
             }
             if let index = owner[event.id] {
@@ -279,6 +283,12 @@ enum StudioThreadItems {
                 items.append(.ciStatus(id: event.id, event: status))
 
             case let .runOutcome(outcome):
+                // The divider after it says how the run ended; the report
+                // earns a row of its own only when it has checks, gaps or
+                // notes to show.
+                guard !outcome.checks.isEmpty || !outcome.notChecked.isEmpty || !outcome.left.isEmpty else {
+                    continue
+                }
                 flushReasoning(id: event.id)
                 items.append(.runReport(id: event.id, event: outcome))
 

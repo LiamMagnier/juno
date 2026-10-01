@@ -36,6 +36,9 @@ struct DesktopMenuBarExtraContent: View {
     // nothing else — and which tells the targets gate these are system-drawn
     // menu items, not views laid out here.
     var body: some View {
+        // "Stop Juno using apps", only while Juno is using them.
+        DesktopScreenPresenceMenuSection()
+
         Section {
             Button {
                 registry.request(.newChat(prompt: nil))
@@ -58,6 +61,26 @@ struct DesktopMenuBarExtraContent: View {
                         Text(verbatim: item.status)
                     }
                     .help("\(item.title): \(item.status)")
+                }
+            }
+        }
+
+        // The runs in words, "2 working, 1 waiting for you", and the way to
+        // stop screen control from anywhere (CODE_AGENT_SPEC §1.11).
+        if let workbench = registry.workbench {
+            if let line = workbench.runSummaryLine {
+                Section {
+                    Text(verbatim: line)
+                }
+            }
+            if workbench.isScreenControlActive {
+                Section {
+                    // No key equivalent: ⌥⌘⎋ is the system's Force Quit, so
+                    // the menu would advertise a shortcut that opens a
+                    // different window. The global Esc stop is §3.7's.
+                    Button("Stop Screen Control") {
+                        Task { await workbench.stopAllScreenControl() }
+                    }
                 }
             }
         }
