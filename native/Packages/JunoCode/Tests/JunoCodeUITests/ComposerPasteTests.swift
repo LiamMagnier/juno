@@ -93,6 +93,36 @@ final class ComposerPasteTests: XCTestCase {
         XCTAssertEqual(dropped.map(\.name), ["spec.pdf"])
     }
 
+    /// ⌘V with a disk image copied in Finder must not read it into memory
+    /// to find out it is not a picture: only a picture or a PDF, under the
+    /// size ceiling, is read at all.
+    func testOnlyPicturesAndPDFsUnderTheCeilingAreRead() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // Real picture bytes behind a name that says otherwise: not read.
+        let disguised = root.appendingPathComponent("installer.dmg")
+        try Self.png().write(to: disguised)
+        XCTAssertTrue(CodeAttachment.loadAll(contentsOf: disguised).isEmpty)
+
+        // A picture past the ceiling, as a sparse file: refused by its size.
+        let huge = root.appendingPathComponent("huge.png")
+        XCTAssertTrue(FileManager.default.createFile(atPath: huge.path, contents: try Self.png()))
+        let handle = try FileHandle(forWritingTo: huge)
+        try handle.truncate(atOffset: UInt64(CodeAttachment.maximumFileBytes + 1))
+        try handle.close()
+        XCTAssertTrue(CodeAttachment.loadAll(contentsOf: huge).isEmpty)
+
+        // A folder is not a file.
+        XCTAssertTrue(CodeAttachment.loadAll(contentsOf: root).isEmpty)
+
+        // A picture under the ceiling still is one, named or not.
+        let named = root.appendingPathComponent("shot.png")
+        try Self.png().write(to: named)
+        XCTAssertEqual(CodeAttachment.loadAll(contentsOf: named).count, 1)
+        let bare = root.appendingPathComponent("capture")
+        try Self.png().write(to: bare)
+        XCTAssertEqual(CodeAttachment.loadAll(contentsOf: bare).count, 1)
+    }
+
     func testANonVisionModelSaysToSwitchInsteadOfAttaching() async throws {
         let controller = try await controller(vision: false)
         let picture = try XCTUnwrap(CodeAttachment.pasted(data: try Self.png(), declaredMediaType: "image/png"))

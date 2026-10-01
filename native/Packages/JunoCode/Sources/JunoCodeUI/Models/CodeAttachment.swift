@@ -35,6 +35,11 @@ public struct CodeAttachment: Identifiable, Hashable, Sendable {
         )
     }
 
+    /// The largest file the composer reads to make an attachment from. A
+    /// picture over the per-image limit is still read here, because it may
+    /// shrink when re-encoded; a file past this is not read at all.
+    public static let maximumFileBytes = 64 * 1_024 * 1_024
+
     /// The image formats every vision model in the catalog accepts.
     ///
     /// Deliberately not "any image UTI": HEIC is the default capture format on
@@ -59,9 +64,26 @@ public struct CodeAttachment: Identifiable, Hashable, Sendable {
     /// Reads a file the reader dropped, chose or pasted: an image is one
     /// attachment; a PDF is its first pages, one picture each (§5.11), so a
     /// model that sees images can read a dropped document.
+    ///
+    /// Only a regular file that says it is a picture or a PDF, and no larger
+    /// than ``maximumFileBytes``, is read at all: ⌘V with a disk image copied
+    /// in Finder, or a dropped folder, must not pull gigabytes into memory on
+    /// the way to finding out it is not a picture.
     public static func loadAll(contentsOf url: URL, maximumPages: Int = 4) -> [CodeAttachment] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        if UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true {
+        guard url.isFileURL,
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true,
+              let size = values.fileSize, size <= maximumFileBytes
+        else { return [] }
+        // A file with no extension may still be a picture (a temporary
+        // capture); one that names another type is not read.
+        let type = url.pathExtension.isEmpty ? nil : UTType(filenameExtension: url.pathExtension)
+        let isPDF = type?.conforms(to: .pdf) == true
+        guard isPDF || type == nil || type?.conforms(to: .image) == true else { return [] }
+        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]), data.count <= maximumFileBytes else {
+            return []
+        }
+        if isPDF {
             return pdfPages(data: data, name: url.lastPathComponent, maximumPages: maximumPages)
         }
         let declared = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
