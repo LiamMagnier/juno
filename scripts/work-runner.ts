@@ -1273,6 +1273,8 @@ async function openConnectors(input: {
     exchangeId: string;
     /** False when the connector's declared scope covers no writes. */
     mayWrite: boolean;
+    /** A custom connector's switched-off tools, carried so a run never offers them. */
+    custom?: { disabledTools: string[] };
   }
 
   const authorized: Authorized[] = [];
@@ -1339,6 +1341,7 @@ async function openConnectors(input: {
       headers: { Authorization: readable.credential },
       exchangeId: readable.exchangeId,
       mayWrite: writable.ok,
+      ...(endpoint.custom ? { custom: endpoint.custom } : {}),
     });
   }
 
@@ -1353,6 +1356,7 @@ async function openConnectors(input: {
       label: entry.label,
       mcpUrl: entry.mcpUrl,
       headers: entry.headers,
+      ...(entry.custom ? { custom: entry.custom } : {}),
     })),
     {
       userId: input.userId,
