@@ -724,8 +724,10 @@ final class DesktopCodeHostModel {
             kind: .local,
             displayName: "This Mac",
             hostID: targetID.value,
+            // No `.computerUse`: remote sessions never get screen control
+            // (they are forced off), so it is not advertised (CU-22).
             capabilities: [.workspaceAccess, .shell, .git, .worktrees, .tests, .devServers,
-                           .previews, .screenshots, .computerUse, .subagents, .approvals, .sessionResume],
+                           .previews, .screenshots, .subagents, .approvals, .sessionResume],
             connectionState: .online,
             supportedModelIDs: workbench.availableModels.map(\.modelID),
             protocolVersion: .current
