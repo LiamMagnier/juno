@@ -323,7 +323,215 @@ public enum AgentProtocolProjection {
                     detail: bounded(activity.message, maximumSummaryCharacters)
                 ))),
             ]
+
+        // The autonomous loop (protocol v1.1). Recorded evidence and goal
+        // state, bounded like everything else; never a file's contents.
+        case .runContinued(let continued):
+            return [
+                make(.runContinued(.init(
+                    reason: AgentContinueReason(rawValue: continued.reason.rawValue) ?? .unknown,
+                    detail: bounded(continued.detail, maximumSummaryCharacters),
+                    revision: continued.revision
+                ))),
+            ]
+
+        case .runOutcome(let outcome):
+            return [
+                make(.runOutcome(.init(
+                    endReason: AgentRunEndReason(rawValue: outcome.endReason.rawValue) ?? .unknown,
+                    summary: bounded(outcome.summary, maximumTextCharacters),
+                    verification: outcome.verification.map { bounded($0, maximumSummaryCharacters) },
+                    checks: outcome.checks.map {
+                        AgentRunCheck(
+                            label: bounded($0.label, maximumSummaryCharacters),
+                            passed: $0.passed,
+                            detail: $0.detail.map { bounded($0, maximumSummaryCharacters) }
+                        )
+                    },
+                    notChecked: outcome.notChecked.map { bounded($0, maximumSummaryCharacters) },
+                    left: outcome.left.map { bounded($0, maximumSummaryCharacters) },
+                    filesChanged: outcome.filesChanged,
+                    durationMs: milliseconds(outcome.durationSeconds)
+                ))),
+            ]
+
+        case .verificationRecorded(let record):
+            return [
+                make(.verifyResult(.init(
+                    command: bounded(record.command, maximumSummaryCharacters),
+                    passed: record.passed,
+                    exitCode: Int(record.exitCode),
+                    revision: record.workspaceRevision,
+                    check: record.checkID,
+                    kind: AgentCheckKind(rawValue: record.kind.rawValue) ?? .unknown,
+                    durationMs: record.durationMs,
+                    excerpt: record.excerpt.isEmpty ? nil : bounded(record.excerpt, maximumOutputCharacters)
+                ))),
+            ]
+
+        case .uiVerificationRecorded(let record):
+            return [
+                make(.verifyUi(.init(
+                    surface: AgentVerifySurface(rawValue: record.surface.rawValue) ?? .unknown,
+                    target: bounded(record.target, maximumSummaryCharacters),
+                    passed: record.passed,
+                    revision: record.workspaceRevision,
+                    viewport: record.viewport,
+                    checks: record.checks.map {
+                        AgentUICheck(
+                            name: bounded($0.name, maximumSummaryCharacters),
+                            passed: $0.passed,
+                            detail: $0.detail.map { bounded($0, maximumSummaryCharacters) }
+                        )
+                    },
+                    screenshotHash: record.screenshotHash
+                ))),
+            ]
+
+        case .reviewCompleted(let review):
+            return [
+                make(.reviewFindings(.init(
+                    round: review.round,
+                    overall: AgentReviewOverall(rawValue: review.overall.rawValue) ?? .unknown,
+                    findings: review.findings.map {
+                        AgentReviewFinding(
+                            priority: AgentReviewPriority(rawValue: $0.priority.rawValue) ?? .unknown,
+                            title: bounded($0.title, maximumSummaryCharacters),
+                            confidence: $0.confidence,
+                            path: $0.path,
+                            line: $0.line,
+                            body: $0.body.isEmpty ? nil : bounded($0.body, maximumSummaryCharacters),
+                            criterion: $0.criterion
+                        )
+                    },
+                    summary: review.summary.isEmpty ? nil : bounded(review.summary, maximumSummaryCharacters),
+                    revision: review.workspaceRevision
+                ))),
+            ]
+
+        case .goalSet(let goal):
+            return [
+                make(.goalSet(.init(
+                    goalId: goal.goalID,
+                    objective: bounded(goal.objective, maximumTextCharacters),
+                    criteria: goal.criteria.map(criterion),
+                    constraints: goal.constraints.map { bounded($0, maximumSummaryCharacters) },
+                    budget: budget(goal.budget),
+                    origin: AgentGoalOrigin(rawValue: goal.origin.rawValue) ?? .unknown
+                ))),
+            ]
+
+        case .goalEdited(let goal):
+            return [
+                make(.goalUpdated(.init(
+                    goalId: goal.goalID,
+                    objective: bounded(goal.objective, maximumTextCharacters),
+                    criteria: goal.criteria.map(criterion),
+                    constraints: goal.constraints.map { bounded($0, maximumSummaryCharacters) },
+                    budget: budget(goal.budget)
+                ))),
+            ]
+
+        case .goalVerdict(let verdict):
+            return [
+                make(.goalVerdict(.init(
+                    goalId: verdict.goalID,
+                    verdict: AgentGoalVerdict(rawValue: verdict.verdict.rawValue) ?? .unknown,
+                    reason: bounded(verdict.reason, GoalVerdictEvent.maximumReasonCharacters),
+                    unmetCriteria: verdict.unmetCriteria,
+                    revision: verdict.revision
+                ))),
+            ]
+
+        case .goalStatus(let status):
+            return [
+                make(.goalStatus(.init(
+                    goalId: status.goalID,
+                    status: AgentGoalStatus(rawValue: status.status.rawValue) ?? .unknown,
+                    reason: status.reason.map { bounded($0, maximumSummaryCharacters) },
+                    usage: usage(status.usage),
+                    budget: budget(status.budget)
+                ))),
+            ]
+
+        case .checkInDue(let checkIn):
+            return [
+                make(.checkinDue(.init(
+                    running: checkIn.running.map { bounded($0, maximumSummaryCharacters) },
+                    waitedMs: milliseconds(checkIn.waitedSeconds),
+                    idleCheckIns: checkIn.idleCheckIns
+                ))),
+            ]
+
+        case .ciStatus(let ci):
+            return [
+                make(.ciStatus(.init(
+                    checks: ci.checks.map {
+                        AgentCICheck(
+                            name: bounded($0.name, maximumSummaryCharacters),
+                            state: AgentCICheckState(rawValue: $0.state.rawValue) ?? .unknown,
+                            url: $0.url
+                        )
+                    },
+                    prNumber: ci.pullRequestNumber,
+                    prUrl: ci.pullRequestURL
+                ))),
+            ]
+
+        case .budgetReached(let reached):
+            return [
+                make(.budgetReached(.init(
+                    scope: AgentBudgetScope(rawValue: reached.scope.rawValue) ?? .unknown,
+                    limit: AgentBudgetLimit(rawValue: reached.limit.rawValue) ?? .unknown,
+                    goalId: reached.goalID,
+                    usage: usage(reached.usage),
+                    budget: budget(reached.budget)
+                ))),
+            ]
         }
+    }
+
+    private static func criterion(_ criterion: GoalCriterionSnapshot) -> AgentGoalCriterion {
+        let text = bounded(criterion.text, maximumSummaryCharacters)
+        switch criterion.check {
+        case let .command(checkID):
+            return AgentGoalCriterion(id: criterion.id, text: text, check: .command, checkId: checkID, met: criterion.met)
+        case let .ui(surface, target):
+            return AgentGoalCriterion(
+                id: criterion.id,
+                text: text,
+                check: .ui,
+                surface: AgentVerifySurface(rawValue: surface.rawValue) ?? .unknown,
+                target: target,
+                met: criterion.met
+            )
+        case .judged:
+            return AgentGoalCriterion(id: criterion.id, text: text, check: .judged, met: criterion.met)
+        }
+    }
+
+    private static func budget(_ budget: Budget) -> AgentBudget? {
+        guard !budget.isUnlimited else { return nil }
+        return AgentBudget(
+            minutes: budget.minutes,
+            turns: budget.turns,
+            tokens: budget.tokens,
+            costMicroUsd: budget.costUSD.map(microUSD)
+        )
+    }
+
+    private static func usage(_ usage: BudgetUsage) -> AgentBudgetUsage {
+        AgentBudgetUsage(
+            minutes: usage.minutes,
+            turns: usage.turns,
+            tokens: usage.tokens,
+            costMicroUsd: usage.costUSD.map(microUSD)
+        )
+    }
+
+    /// Dollars as the protocol's millionths of a dollar.
+    private static func microUSD(_ dollars: Double) -> Int {
+        Int((dollars * 1_000_000).rounded())
     }
 
     /// An event as the JSON the protocol puts on the wire.
