@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 #if canImport(AppKit)
 import AppKit
 #endif
+#if canImport(PDFKit)
+import PDFKit
+#endif
 
 /// An image the reader attached to the message they are composing.
 ///
@@ -50,12 +53,47 @@ public struct CodeAttachment: Identifiable, Hashable, Sendable {
     /// answer for a dropped `.zip` — the caller reports it rather than attaching
     /// something the model cannot read.
     public static func load(contentsOf url: URL) -> CodeAttachment? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        loadAll(contentsOf: url).first
+    }
+
+    /// Reads a file the reader dropped, chose or pasted: an image is one
+    /// attachment; a PDF is its first pages, one picture each (§5.11), so a
+    /// model that sees images can read a dropped document.
+    public static func loadAll(contentsOf url: URL, maximumPages: Int = 4) -> [CodeAttachment] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        if UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true {
+            return pdfPages(data: data, name: url.lastPathComponent, maximumPages: maximumPages)
+        }
         let declared = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
         guard let image = makeImage(data: data, declaredMediaType: declared) else {
-            return nil
+            return []
         }
-        return CodeAttachment(name: url.lastPathComponent, image: image)
+        return [CodeAttachment(name: url.lastPathComponent, image: image)]
+    }
+
+    /// A PDF's first `maximumPages` pages as PNGs, at most 1,600 points on
+    /// the long side. Empty for data that is not a PDF.
+    public static func pdfPages(data: Data, name: String, maximumPages: Int = 4) -> [CodeAttachment] {
+        #if canImport(PDFKit) && canImport(AppKit)
+        guard let document = PDFDocument(data: data), document.pageCount > 0 else { return [] }
+        var pages: [CodeAttachment] = []
+        for index in 0..<min(document.pageCount, maximumPages) {
+            guard let page = document.page(at: index) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            let scale = min(1, 1_600 / max(bounds.width, bounds.height, 1)) * 2
+            let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+            let image = page.thumbnail(of: size, for: .mediaBox)
+            guard let tiff = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff),
+                  let png = bitmap.representation(using: .png, properties: [:])
+            else { continue }
+            let label = document.pageCount == 1 ? name : "\(name), page \(index + 1)"
+            pages.append(CodeAttachment(name: label, image: ModelImage(mediaType: "image/png", data: png, detail: .auto)))
+        }
+        return pages
+        #else
+        return []
+        #endif
     }
 
     /// Builds an attachment from raw bytes on the pasteboard.

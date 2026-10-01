@@ -366,7 +366,8 @@ struct CodeSlashActionTests {
         let library = CodeSlashCommandLibrary.builtIn
         #expect(library.typedAction(in: "/comp") == nil)
         #expect(library.typedAction(in: "/compactor tidy") == nil)
-        #expect(library.typedAction(in: "/review the diff") == nil)
+        // `/review` is a verb now, so typed out it runs.
+        #expect(library.typedAction(in: "/review branch")?.command.action == .review)
         #expect(library.typedAction(in: "please /compact") == nil)
         #expect(library.typedAction(in: "/compact first\nthen more") == nil)
 
@@ -381,11 +382,13 @@ struct CodeSlashActionTests {
     @Test
     func theLandingLibraryHasNoSessionVerbs() {
         let landing = CodeSlashCommandLibrary.builtIn.excludingActions()
-        // Both verbs need a session: nothing to fold, nothing to go back to.
+        // Verbs need a session: nothing to fold, nothing to go back to.
         #expect(landing.command(named: "compact") == nil)
         #expect(landing.command(named: "rewind") == nil)
-        #expect(landing.command(named: "review") != nil)
-        #expect(landing.commands.count == CodeSlashCommandLibrary.builtIn.commands.count - 2)
+        #expect(landing.command(named: "goal") == nil)
+        #expect(landing.command(named: "explain") != nil)
+        #expect(landing.commands.count
+            == CodeSlashCommandLibrary.builtIn.commands.count - CodeSlashCommand.Action.allCases.count)
     }
 
     @Test
@@ -404,24 +407,14 @@ struct CodeSlashActionTests {
 }
 
 struct CodeBuiltInCommandsVerificationTests {
+    /// `/goal` is a verb now (§5.4), and the two commands that promised
+    /// features Juno does not have are gone.
     @Test
-    func builtInLibraryContainsGoalBoostAndTeamworkPreview() {
+    func goalIsAVerbAndBoostAndTeamworkPreviewAreGone() {
         let library = CodeSlashCommandLibrary.builtIn
-        let goal = library.command(named: "goal")
-        let boost = library.command(named: "boost")
-        let teamworkPreview = library.command(named: "teamwork-preview")
-
-        #expect(goal != nil)
-        #expect(goal?.summary.contains("goal") == true)
-        #expect(goal?.prompt.contains("update_goal") == true)
-
-        #expect(boost != nil)
-        #expect(boost?.summary.contains("Boost") == true)
-        #expect(boost?.prompt.contains("maximum rigor") == true)
-
-        #expect(teamworkPreview != nil)
-        #expect(teamworkPreview?.summary.contains("worktrees") == true)
-        #expect(teamworkPreview?.prompt.contains("worktrees") == true)
+        #expect(library.command(named: "goal")?.action == .goal)
+        #expect(library.command(named: "goal")?.prompt.isEmpty == true)
+        #expect(library.command(named: "boost") == nil)
+        #expect(library.command(named: "teamwork-preview") == nil)
     }
 }
-

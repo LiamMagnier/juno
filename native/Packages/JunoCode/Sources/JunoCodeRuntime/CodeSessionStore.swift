@@ -316,6 +316,30 @@ public actor CodeSessionStore {
         )
     }
 
+    /// Clears the session's goal at the reader's word (`/goal clear`): it
+    /// stops being the session's contract, and a `goal.status` of `cleared`
+    /// records that it was set aside, not met. The transcript keeps every
+    /// earlier snapshot, so the goal stays readable as history. Returns the
+    /// goal that was cleared, or nil when there was none.
+    @discardableResult
+    public func clearGoal(sessionID: CodeSessionID, reason: String? = nil) throws -> SessionGoal? {
+        try loadIfNeeded()
+        guard var session = sessions[sessionID] else {
+            throw SessionStoreError.sessionNotFound(id: sessionID.value)
+        }
+        guard let goal = session.goal else { return nil }
+        session.goal = nil
+        session.updatedAt = Date()
+        sessions[sessionID] = session
+        try persist(session)
+        _ = try appendEvent(
+            sessionID: sessionID,
+            payload: .goalStatus(GoalStatusEvent(goalID: goal.id, status: .cleared, reason: reason))
+        )
+        notify(.sessionChanged(session))
+        return goal
+    }
+
     public func deleteSession(id: CodeSessionID) throws {
         try loadIfNeeded()
         guard sessions[id] != nil else { return }
