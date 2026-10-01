@@ -33,6 +33,8 @@ type Option = "string" | "channel" | "mark" | "trace" | "glow" | "orb";
 const STILL = 3920;
 const THINK_SINCE_STRING = STILL - 575;
 const THINK_SINCE = STILL - 820;
+/** A long think with steady real activity: a pass at the start and a re-pass at every 1.6 s window after it. */
+const THINK_BEATS = Array.from({ length: 12 }, (_, i) => THINK_SINCE + i * 1600);
 
 const COLS: { phase: LabPhase; label: string }[] = [
   { phase: "listening", label: "You speaking" },
@@ -161,7 +163,7 @@ function LabComposer({ option, phase, theme }: { option: Option; phase: LabPhase
             </span>
           ) : option === "channel" ? (
             <span className="jv-mid__string">
-              <VoiceChannel phase={phase} since={phase === "thinking" ? THINK_SINCE : 0} beats={phase === "thinking" ? [THINK_SINCE] : undefined} />
+              <VoiceChannel phase={phase} since={phase === "thinking" ? THINK_SINCE : 0} beats={phase === "thinking" ? THINK_BEATS : undefined} />
             </span>
           ) : option === "mark" ? (
             <MarkSignature phase={phase} />
@@ -225,7 +227,7 @@ function MarkSignature({ phase }: { phase: LabPhase }) {
   const level = useLevel();
   const clock = useClock();
   const refs = React.useRef<(SVGPathElement | null)[]>([]);
-  const starts = React.useMemo(() => passStarts([THINK_SINCE]), []);
+  const starts = React.useMemo(() => passStarts(THINK_BEATS), []);
   useTick(
     (t) => {
       const who: Talker = phase === "answering" ? "alevr" : "you";
@@ -286,7 +288,7 @@ function TraceSignature({ phase }: { phase: LabPhase }) {
     setW(Math.round(el.getBoundingClientRect().width));
     return () => ro.disconnect();
   }, []);
-  const starts = React.useMemo(() => passStarts([THINK_SINCE]), []);
+  const starts = React.useMemo(() => passStarts(THINK_BEATS), []);
   useTick(
     (t) => {
       const p = path.current;
