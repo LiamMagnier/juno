@@ -18,11 +18,11 @@ import Foundation
 public enum JunoAgentProtocol {
     public static let name = "juno-agent-protocol"
     public static let major = 1
-    public static let minor = 0
+    public static let minor = 1
     /// What a producer writes as `v`.
-    public static let version = "1.0"
+    public static let version = "1.1"
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "ed91c33cf7772a23b3201f1e86a8def0b0416cd3b7696030721a583009275651"
+    public static let digest = "8220a2c3be3c54f9d7aa351f5dd22f48456949b3337f4e0a6ca6c1528f798e80"
 
     /// The major version a "<major>.<minor>" string names, or nil.
     public static func major(of version: String) -> Int? {
@@ -136,6 +136,10 @@ public enum AgentSessionState: String, Hashable, Sendable, Codable, CaseIterable
     case interrupted = "interrupted"
     /// Stopped because somebody asked it to.
     case cancelled = "cancelled"
+    /// A goal is paused; nothing runs until the reader resumes it.
+    case paused = "paused"
+    /// The run waits for background work (a shell, a sub-agent) to report before it goes on.
+    case waitingBackground = "waiting_background"
     /// A state this reader does not know.
     case unknown = "unknown"
 
@@ -161,6 +165,14 @@ public enum AgentTurnOrigin: String, Hashable, Sendable, Codable, CaseIterable {
     case remote = "remote"
     /// A routine that fired.
     case schedule = "schedule"
+    /// The runtime's stop check sent the agent back to work before it could finish.
+    case gate = "gate"
+    /// The goal runtime continued toward an active goal.
+    case goal = "goal"
+    /// Background work reported, or a check-in on it was due.
+    case checkin = "checkin"
+    /// A pull request's CI finished and the agent follows up.
+    case ci = "ci"
     /// An origin this reader does not know.
     case unknown = "unknown"
 
@@ -186,6 +198,12 @@ public enum AgentStopReason: String, Hashable, Sendable, Codable, CaseIterable {
     case refusal = "refusal"
     /// A hook ended the run.
     case hook = "hook"
+    /// A run or goal budget was reached and a wrap-up turn ran.
+    case budget = "budget"
+    /// Continuation turns in a row made no progress.
+    case stalled = "stalled"
+    /// The agent marked the remaining work blocked, or a goal was judged impossible.
+    case blocked = "blocked"
     /// A reason this reader does not know.
     case unknown = "unknown"
 
@@ -551,6 +569,313 @@ public enum AgentCommandDisposition: String, Hashable, Sendable, Codable, CaseIt
     }
 }
 
+/// Why a run ended. Every run ends with exactly one.
+public enum AgentRunEndReason: String, Hashable, Sendable, Codable, CaseIterable {
+    /// The stop check passed and fresh passing checks cover the change.
+    case doneChecked = "done_checked"
+    /// The stop check passed, but no check is known or the change needs none.
+    case doneUnchecked = "done_unchecked"
+    /// The agent finished after being sent back once, and a check still fails.
+    case checksFailing = "checks_failing"
+    /// The remaining work is blocked, with a reason, or a goal was judged impossible.
+    case blocked = "blocked"
+    /// Waiting for an approval or an answer, parked until the reader decides.
+    case needsYou = "needs_you"
+    /// The step limit was reached and a wrap-up turn ran.
+    case stepLimit = "step_limit"
+    /// A run or goal budget was reached and a wrap-up turn ran. Never done.
+    case budget = "budget"
+    /// Two continuation turns in a row made no tool call.
+    case stalled = "stalled"
+    /// Background work still runs; the run resumes when it reports.
+    case waitingOnBackground = "waiting_on_background"
+    /// The reader pressed Stop.
+    case stopped = "stopped"
+    /// The host quit or crashed mid-run.
+    case interrupted = "interrupted"
+    /// An error the retry policy could not clear.
+    case error = "error"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Why the runtime kept a run going with no new reader message.
+public enum AgentContinueReason: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Todo items were still open.
+    case todosOpen = "todos_open"
+    /// Files changed and no check has run since the last edit.
+    case unverified = "unverified"
+    /// The latest check after the last edit failed.
+    case checksFailing = "checks_failing"
+    /// A visible change was not yet looked at in the running result.
+    case uiUnchecked = "ui_unchecked"
+    /// The diff was not read since the last edit.
+    case diffUnreviewed = "diff_unreviewed"
+    /// The self-review found problems that are not yet answered.
+    case reviewFindings = "review_findings"
+    /// The active goal is not met yet.
+    case goalNotMet = "goal_not_met"
+    /// The model's output was cut off at its limit.
+    case outputLimit = "output_limit"
+    /// The reader asked to try a failed turn again.
+    case retry = "retry"
+    /// The host quit mid-run and the reader resumed it.
+    case afterQuit = "after_quit"
+    /// The reader granted another block of steps or budget.
+    case keepGoing = "keep_going"
+    /// The last turn before a limit: summarise and stop.
+    case wrapUp = "wrap_up"
+    /// Background work reported, or a check-in on it was due.
+    case checkin = "checkin"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// What a check is for.
+public enum AgentCheckKind: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Builds the project.
+    case build = "build"
+    /// Runs tests.
+    case test = "test"
+    /// Runs a linter.
+    case lint = "lint"
+    /// Runs a type checker.
+    case typecheck = "typecheck"
+    /// Anything else the project records as a check.
+    case custom = "custom"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Where a UI check looked.
+public enum AgentVerifySurface: String, Hashable, Sendable, Codable, CaseIterable {
+    /// A web page in the preview.
+    case web = "web"
+    /// An app in the iOS Simulator.
+    case ios = "ios"
+    /// A Mac app, through app-scoped screen control.
+    case mac = "mac"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// How serious a review finding is.
+public enum AgentReviewPriority: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Breaks something that matters now.
+    case p0 = "p0"
+    /// A real correctness, security or requirement problem.
+    case p1 = "p1"
+    /// Worth fixing; does not block.
+    case p2 = "p2"
+    /// A note.
+    case p3 = "p3"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// The reviewer's overall judgement of a diff.
+public enum AgentReviewOverall: String, Hashable, Sendable, Codable, CaseIterable {
+    /// No blocking problems.
+    case correct = "correct"
+    /// At least one blocking problem.
+    case incorrect = "incorrect"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Where a goal stands.
+public enum AgentGoalStatus: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Being worked toward.
+    case active = "active"
+    /// Kept, not worked on until resumed.
+    case paused = "paused"
+    /// Waiting on the reader, with a reason.
+    case needsYou = "needs_you"
+    /// Its budget ran out; Keep going adds another.
+    case budgetReached = "budget_reached"
+    /// Met, with evidence.
+    case achieved = "achieved"
+    /// Judged impossible, with a reason.
+    case impossible = "impossible"
+    /// Dropped by the reader.
+    case cleared = "cleared"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// What a check of a goal concluded.
+public enum AgentGoalVerdict: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Not met yet.
+    case notMet = "not_met"
+    /// Met.
+    case met = "met"
+    /// Cannot be met.
+    case impossible = "impossible"
+    /// The deterministic checks found something missing before any judge was asked.
+    case gateBlocked = "gate_blocked"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Who set a goal.
+public enum AgentGoalOrigin: String, Hashable, Sendable, Codable, CaseIterable {
+    /// The reader, with /goal.
+    case reader = "reader"
+    /// An approved plan carried out as a goal.
+    case plan = "plan"
+    /// Fixing a pull request's failing checks.
+    case ci = "ci"
+    /// The agent proposed it and the reader started it.
+    case proposedByModel = "proposed_by_model"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// How one goal criterion is checked.
+public enum AgentCriterionCheck: String, Hashable, Sendable, Codable, CaseIterable {
+    /// A fresh passing run of a recorded check.
+    case command = "command"
+    /// A fresh UI check of a target.
+    case ui = "ui"
+    /// Judged from the conversation.
+    case judged = "judged"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Where one CI check stands.
+public enum AgentCICheckState: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Waiting to start.
+    case queued = "queued"
+    /// Running.
+    case running = "running"
+    /// Passed.
+    case passed = "passed"
+    /// Failed.
+    case failed = "failed"
+    /// Cancelled.
+    case cancelled = "cancelled"
+    /// Skipped.
+    case skipped = "skipped"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Whose budget a limit belongs to.
+public enum AgentBudgetScope: String, Hashable, Sendable, Codable, CaseIterable {
+    /// One run's.
+    case run = "run"
+    /// A goal's, across its runs.
+    case goal = "goal"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Which ceiling of a budget was reached.
+public enum AgentBudgetLimit: String, Hashable, Sendable, Codable, CaseIterable {
+    /// Time.
+    case minutes = "minutes"
+    /// Continuation turns.
+    case turns = "turns"
+    /// Model tokens.
+    case tokens = "tokens"
+    /// Spend.
+    case cost = "cost"
+    /// A value this reader does not know.
+    case unknown = "unknown"
+
+    /// A value this build does not know reads as `.unknown` rather than
+    /// failing the event that carries it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
 /// A repository a cloud session works on.
 public struct AgentRepositoryRef: Hashable, Sendable, Codable {
     /// The owner, as the forge names it.
@@ -765,6 +1090,356 @@ public struct AgentQuestionOption: Hashable, Sendable, Codable {
     }
 }
 
+/// A ceiling on what a run or goal may spend. An absent field is unlimited.
+public struct AgentBudget: Hashable, Sendable, Codable {
+    /// Wall-clock minutes.
+    public var minutes: Int?
+    /// Continuation turns.
+    public var turns: Int?
+    /// Model tokens, children included.
+    public var tokens: Int?
+    /// Spend, in millionths of a US dollar.
+    public var costMicroUsd: Int?
+
+    public init(
+        minutes: Int? = nil,
+        turns: Int? = nil,
+        tokens: Int? = nil,
+        costMicroUsd: Int? = nil
+    ) {
+        self.minutes = minutes
+        self.turns = turns
+        self.tokens = tokens
+        self.costMicroUsd = costMicroUsd
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case minutes = "minutes"
+        case turns = "turns"
+        case tokens = "tokens"
+        case costMicroUsd = "costMicroUsd"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.minutes = try? container.decodeIfPresent(Int.self, forKey: .minutes)
+        self.turns = try? container.decodeIfPresent(Int.self, forKey: .turns)
+        self.tokens = try? container.decodeIfPresent(Int.self, forKey: .tokens)
+        self.costMicroUsd = try? container.decodeIfPresent(Int.self, forKey: .costMicroUsd)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(minutes, forKey: .minutes)
+        try container.encodeIfPresent(turns, forKey: .turns)
+        try container.encodeIfPresent(tokens, forKey: .tokens)
+        try container.encodeIfPresent(costMicroUsd, forKey: .costMicroUsd)
+    }
+}
+
+/// What a run or goal has spent so far, children included.
+public struct AgentBudgetUsage: Hashable, Sendable, Codable {
+    /// Wall-clock minutes.
+    public var minutes: Double?
+    /// Continuation turns.
+    public var turns: Int?
+    /// Model tokens.
+    public var tokens: Int?
+    /// Spend, in millionths of a US dollar.
+    public var costMicroUsd: Int?
+
+    public init(
+        minutes: Double? = nil,
+        turns: Int? = nil,
+        tokens: Int? = nil,
+        costMicroUsd: Int? = nil
+    ) {
+        self.minutes = minutes
+        self.turns = turns
+        self.tokens = tokens
+        self.costMicroUsd = costMicroUsd
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case minutes = "minutes"
+        case turns = "turns"
+        case tokens = "tokens"
+        case costMicroUsd = "costMicroUsd"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.minutes = try? container.decodeIfPresent(Double.self, forKey: .minutes)
+        self.turns = try? container.decodeIfPresent(Int.self, forKey: .turns)
+        self.tokens = try? container.decodeIfPresent(Int.self, forKey: .tokens)
+        self.costMicroUsd = try? container.decodeIfPresent(Int.self, forKey: .costMicroUsd)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(minutes, forKey: .minutes)
+        try container.encodeIfPresent(turns, forKey: .turns)
+        try container.encodeIfPresent(tokens, forKey: .tokens)
+        try container.encodeIfPresent(costMicroUsd, forKey: .costMicroUsd)
+    }
+}
+
+/// One row of a run report's Checked section, rendered only from recorded evidence.
+public struct AgentRunCheck: Hashable, Sendable, Codable {
+    /// What was checked: a command, a preview route, the review.
+    public var label: String
+    /// Whether it passed.
+    public var passed: Bool
+    /// More, in words: duration, test count, after the last edit.
+    public var detail: String?
+
+    public init(
+        label: String,
+        passed: Bool,
+        detail: String? = nil
+    ) {
+        self.label = label
+        self.passed = passed
+        self.detail = detail
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case label = "label"
+        case passed = "passed"
+        case detail = "detail"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.label = try container.decode(String.self, forKey: .label)
+        self.passed = try container.decode(Bool.self, forKey: .passed)
+        self.detail = try? container.decodeIfPresent(String.self, forKey: .detail)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(label, forKey: .label)
+        try container.encode(passed, forKey: .passed)
+        try container.encodeIfPresent(detail, forKey: .detail)
+    }
+}
+
+/// One condition a UI check tested.
+public struct AgentUICheck: Hashable, Sendable, Codable {
+    /// The condition, in words: HTTP 200, no new console errors.
+    public var name: String
+    /// Whether it held.
+    public var passed: Bool
+    /// Why it failed, or a detail worth keeping.
+    public var detail: String?
+
+    public init(
+        name: String,
+        passed: Bool,
+        detail: String? = nil
+    ) {
+        self.name = name
+        self.passed = passed
+        self.detail = detail
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name = "name"
+        case passed = "passed"
+        case detail = "detail"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.passed = try container.decode(Bool.self, forKey: .passed)
+        self.detail = try? container.decodeIfPresent(String.self, forKey: .detail)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(passed, forKey: .passed)
+        try container.encodeIfPresent(detail, forKey: .detail)
+    }
+}
+
+/// One problem a self-review found in the diff.
+public struct AgentReviewFinding: Hashable, Sendable, Codable {
+    /// How serious it is.
+    public var priority: AgentReviewPriority
+    /// The problem in one line.
+    public var title: String
+    /// 0 to 1, as the reviewer reported it.
+    public var confidence: Double?
+    /// The file, relative to the workspace.
+    public var path: String?
+    /// The line.
+    public var line: Int?
+    /// The explanation, bounded.
+    public var body: String?
+    /// The goal criterion it concerns, for a requirement gap.
+    public var criterion: String?
+
+    public init(
+        priority: AgentReviewPriority,
+        title: String,
+        confidence: Double? = nil,
+        path: String? = nil,
+        line: Int? = nil,
+        body: String? = nil,
+        criterion: String? = nil
+    ) {
+        self.priority = priority
+        self.title = title
+        self.confidence = confidence
+        self.path = path
+        self.line = line
+        self.body = body
+        self.criterion = criterion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case priority = "priority"
+        case title = "title"
+        case confidence = "confidence"
+        case path = "path"
+        case line = "line"
+        case body = "body"
+        case criterion = "criterion"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.priority = try container.decode(AgentReviewPriority.self, forKey: .priority)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.confidence = try? container.decodeIfPresent(Double.self, forKey: .confidence)
+        self.path = try? container.decodeIfPresent(String.self, forKey: .path)
+        self.line = try? container.decodeIfPresent(Int.self, forKey: .line)
+        self.body = try? container.decodeIfPresent(String.self, forKey: .body)
+        self.criterion = try? container.decodeIfPresent(String.self, forKey: .criterion)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(priority, forKey: .priority)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(confidence, forKey: .confidence)
+        try container.encodeIfPresent(path, forKey: .path)
+        try container.encodeIfPresent(line, forKey: .line)
+        try container.encodeIfPresent(body, forKey: .body)
+        try container.encodeIfPresent(criterion, forKey: .criterion)
+    }
+}
+
+/// One criterion of a goal.
+public struct AgentGoalCriterion: Hashable, Sendable, Codable {
+    /// Stable for the goal: c1, c2.
+    public var id: String
+    /// What must be true.
+    public var text: String
+    /// How it is checked.
+    public var check: AgentCriterionCheck
+    /// The recorded check, for a command criterion.
+    public var checkId: String?
+    /// Where to look, for a UI criterion.
+    public var surface: AgentVerifySurface?
+    /// The route or app, for a UI criterion.
+    public var target: String?
+    /// Whether the evidence satisfies it now, when known.
+    public var met: Bool?
+
+    public init(
+        id: String,
+        text: String,
+        check: AgentCriterionCheck,
+        checkId: String? = nil,
+        surface: AgentVerifySurface? = nil,
+        target: String? = nil,
+        met: Bool? = nil
+    ) {
+        self.id = id
+        self.text = text
+        self.check = check
+        self.checkId = checkId
+        self.surface = surface
+        self.target = target
+        self.met = met
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case text = "text"
+        case check = "check"
+        case checkId = "checkId"
+        case surface = "surface"
+        case target = "target"
+        case met = "met"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.text = try container.decode(String.self, forKey: .text)
+        self.check = try container.decode(AgentCriterionCheck.self, forKey: .check)
+        self.checkId = try? container.decodeIfPresent(String.self, forKey: .checkId)
+        self.surface = try? container.decodeIfPresent(AgentVerifySurface.self, forKey: .surface)
+        self.target = try? container.decodeIfPresent(String.self, forKey: .target)
+        self.met = try? container.decodeIfPresent(Bool.self, forKey: .met)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encode(check, forKey: .check)
+        try container.encodeIfPresent(checkId, forKey: .checkId)
+        try container.encodeIfPresent(surface, forKey: .surface)
+        try container.encodeIfPresent(target, forKey: .target)
+        try container.encodeIfPresent(met, forKey: .met)
+    }
+}
+
+/// One CI check on a pull request.
+public struct AgentCICheck: Hashable, Sendable, Codable {
+    /// The check's name.
+    public var name: String
+    /// Where it stands.
+    public var state: AgentCICheckState
+    /// Its page, when the forge gave one.
+    public var url: String?
+
+    public init(
+        name: String,
+        state: AgentCICheckState,
+        url: String? = nil
+    ) {
+        self.name = name
+        self.state = state
+        self.url = url
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name = "name"
+        case state = "state"
+        case url = "url"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.state = try container.decode(AgentCICheckState.self, forKey: .state)
+        self.url = try? container.decodeIfPresent(String.self, forKey: .url)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(state, forKey: .state)
+        try container.encodeIfPresent(url, forKey: .url)
+    }
+}
+
 /// What a host reports about a command.
 public struct AgentCommandReceipt: Hashable, Sendable, Codable {
     /// The command.
@@ -881,6 +1556,30 @@ public enum AgentEventPayload: Hashable, Sendable {
     case usageUpdated(UsageUpdated)
     /// Something went wrong that the reader should see. Whether the turn goes on is said by the turn events, not here.
     case sessionError(SessionError)
+    /// The runtime kept the run going with no new reader message: the stop check sent the agent back, or the reader resumed. A quiet caption, never the reader's words.
+    case runContinued(RunContinued)
+    /// How a run ended, with the report the runtime built from its recorded evidence.
+    case runOutcome(RunOutcome)
+    /// A check ran and its result counts as evidence. Recorded by the runtime, never claimed by the model.
+    case verifyResult(VerifyResult)
+    /// The running result was looked at: a preview route, a Simulator screen, a Mac app.
+    case verifyUi(VerifyUi)
+    /// A self-review of the diff finished.
+    case reviewFindings(ReviewFindings)
+    /// A goal was set. Setting one never changes the permission mode.
+    case goalSet(GoalSet)
+    /// A goal's objective, criteria, constraints or budget changed. Only the fields that are set changed.
+    case goalUpdated(GoalUpdated)
+    /// A goal was checked: the deterministic part, then the judge. The judge can only say keep working, met or impossible; it never allows anything.
+    case goalVerdict(GoalVerdict)
+    /// A goal's status or spend changed.
+    case goalStatus(GoalStatus)
+    /// Background work kept the run waiting long enough that the agent is asked to read it, keep waiting, or stop what is stuck.
+    case checkinDue(CheckinDue)
+    /// CI for a pull request the agent opened moved.
+    case ciStatus(CiStatus)
+    /// A run or goal budget was reached. A wrap-up turn follows; reaching a budget is never done, and Keep going adds the same budget again.
+    case budgetReached(BudgetReached)
     /// Code extension: a cloud run pushed a branch, and opened or reused a pull request.
     case codePullRequest(CodePullRequest)
     /// A type this build does not know, or a known one whose required fields
@@ -920,13 +1619,25 @@ public enum AgentEventPayload: Hashable, Sendable {
         case .planResolved: "plan.resolved"
         case .usageUpdated: "usage.updated"
         case .sessionError: "session.error"
+        case .runContinued: "run.continued"
+        case .runOutcome: "run.outcome"
+        case .verifyResult: "verify.result"
+        case .verifyUi: "verify.ui"
+        case .reviewFindings: "review.findings"
+        case .goalSet: "goal.set"
+        case .goalUpdated: "goal.updated"
+        case .goalVerdict: "goal.verdict"
+        case .goalStatus: "goal.status"
+        case .checkinDue: "checkin.due"
+        case .ciStatus: "ci.status"
+        case .budgetReached: "budget.reached"
         case .codePullRequest: "code.pull_request"
         case .unknown(let type, _): type
         }
     }
 
     /// Every type this build knows.
-    public static let knownTypes: [String] = ["session.created", "session.configured", "session.state", "turn.started", "turn.completed", "turn.failed", "turn.interrupted", "transcript.restarted", "item.user_message", "item.assistant_text.delta", "item.assistant_text", "item.thinking.delta", "item.thinking", "item.tool_call", "item.tool_output", "item.tool_result", "item.file_change", "item.test_run", "item.subagent", "item.compaction", "item.notice", "approval.requested", "approval.resolved", "question.asked", "question.answered", "plan.updated", "plan.proposed", "plan.resolved", "usage.updated", "session.error", "code.pull_request"]
+    public static let knownTypes: [String] = ["session.created", "session.configured", "session.state", "turn.started", "turn.completed", "turn.failed", "turn.interrupted", "transcript.restarted", "item.user_message", "item.assistant_text.delta", "item.assistant_text", "item.thinking.delta", "item.thinking", "item.tool_call", "item.tool_output", "item.tool_result", "item.file_change", "item.test_run", "item.subagent", "item.compaction", "item.notice", "approval.requested", "approval.resolved", "question.asked", "question.answered", "plan.updated", "plan.proposed", "plan.resolved", "usage.updated", "session.error", "run.continued", "run.outcome", "verify.result", "verify.ui", "review.findings", "goal.set", "goal.updated", "goal.verdict", "goal.status", "checkin.due", "ci.status", "budget.reached", "code.pull_request"]
 
     /// The payload for `type`, or nil when the type is unknown or its
     /// required fields do not decode.
@@ -1022,6 +1733,42 @@ public enum AgentEventPayload: Hashable, Sendable {
         case "session.error":
             guard let value = try? SessionError(from: decoder) else { return nil }
             self = .sessionError(value)
+        case "run.continued":
+            guard let value = try? RunContinued(from: decoder) else { return nil }
+            self = .runContinued(value)
+        case "run.outcome":
+            guard let value = try? RunOutcome(from: decoder) else { return nil }
+            self = .runOutcome(value)
+        case "verify.result":
+            guard let value = try? VerifyResult(from: decoder) else { return nil }
+            self = .verifyResult(value)
+        case "verify.ui":
+            guard let value = try? VerifyUi(from: decoder) else { return nil }
+            self = .verifyUi(value)
+        case "review.findings":
+            guard let value = try? ReviewFindings(from: decoder) else { return nil }
+            self = .reviewFindings(value)
+        case "goal.set":
+            guard let value = try? GoalSet(from: decoder) else { return nil }
+            self = .goalSet(value)
+        case "goal.updated":
+            guard let value = try? GoalUpdated(from: decoder) else { return nil }
+            self = .goalUpdated(value)
+        case "goal.verdict":
+            guard let value = try? GoalVerdict(from: decoder) else { return nil }
+            self = .goalVerdict(value)
+        case "goal.status":
+            guard let value = try? GoalStatus(from: decoder) else { return nil }
+            self = .goalStatus(value)
+        case "checkin.due":
+            guard let value = try? CheckinDue(from: decoder) else { return nil }
+            self = .checkinDue(value)
+        case "ci.status":
+            guard let value = try? CiStatus(from: decoder) else { return nil }
+            self = .ciStatus(value)
+        case "budget.reached":
+            guard let value = try? BudgetReached(from: decoder) else { return nil }
+            self = .budgetReached(value)
         case "code.pull_request":
             guard let value = try? CodePullRequest(from: decoder) else { return nil }
             self = .codePullRequest(value)
@@ -1062,6 +1809,18 @@ public enum AgentEventPayload: Hashable, Sendable {
         case .planResolved(let value): try value.encode(to: encoder)
         case .usageUpdated(let value): try value.encode(to: encoder)
         case .sessionError(let value): try value.encode(to: encoder)
+        case .runContinued(let value): try value.encode(to: encoder)
+        case .runOutcome(let value): try value.encode(to: encoder)
+        case .verifyResult(let value): try value.encode(to: encoder)
+        case .verifyUi(let value): try value.encode(to: encoder)
+        case .reviewFindings(let value): try value.encode(to: encoder)
+        case .goalSet(let value): try value.encode(to: encoder)
+        case .goalUpdated(let value): try value.encode(to: encoder)
+        case .goalVerdict(let value): try value.encode(to: encoder)
+        case .goalStatus(let value): try value.encode(to: encoder)
+        case .checkinDue(let value): try value.encode(to: encoder)
+        case .ciStatus(let value): try value.encode(to: encoder)
+        case .budgetReached(let value): try value.encode(to: encoder)
         case .codePullRequest(let value): try value.encode(to: encoder)
         case .unknown: break
         }
@@ -2414,6 +3173,675 @@ public enum AgentEventPayload: Hashable, Sendable {
         }
     }
 
+    /// The runtime kept the run going with no new reader message: the stop check sent the agent back, or the reader resumed. A quiet caption, never the reader's words.
+    public struct RunContinued: Hashable, Sendable, Codable {
+        /// Why.
+        public var reason: AgentContinueReason
+        /// The concrete fact, for the caption: 2 todos were open.
+        public var detail: String
+        /// The workspace revision it was decided at.
+        public var revision: Int?
+
+        public init(
+            reason: AgentContinueReason,
+            detail: String,
+            revision: Int? = nil
+        ) {
+            self.reason = reason
+            self.detail = detail
+            self.revision = revision
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case reason = "reason"
+            case detail = "detail"
+            case revision = "revision"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.reason = try container.decode(AgentContinueReason.self, forKey: .reason)
+            self.detail = try container.decode(String.self, forKey: .detail)
+            self.revision = try? container.decodeIfPresent(Int.self, forKey: .revision)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(reason, forKey: .reason)
+            try container.encode(detail, forKey: .detail)
+            try container.encodeIfPresent(revision, forKey: .revision)
+        }
+    }
+
+    /// How a run ended, with the report the runtime built from its recorded evidence.
+    public struct RunOutcome: Hashable, Sendable, Codable {
+        /// Why it ended.
+        public var endReason: AgentRunEndReason
+        /// The outcome in one sentence.
+        public var summary: String
+        /// What was checked, in words: Checked with swift test; Not checked: no test command.
+        public var verification: String?
+        /// The Checked rows, only from recorded evidence.
+        public var checks: [AgentRunCheck]?
+        /// What was not checked, plainly.
+        public var notChecked: [String]?
+        /// What is left or recommended next.
+        public var left: [String]?
+        /// How many files the run changed.
+        public var filesChanged: Int?
+        /// How long the run took.
+        public var durationMs: Int?
+
+        public init(
+            endReason: AgentRunEndReason,
+            summary: String,
+            verification: String? = nil,
+            checks: [AgentRunCheck]? = nil,
+            notChecked: [String]? = nil,
+            left: [String]? = nil,
+            filesChanged: Int? = nil,
+            durationMs: Int? = nil
+        ) {
+            self.endReason = endReason
+            self.summary = summary
+            self.verification = verification
+            self.checks = checks
+            self.notChecked = notChecked
+            self.left = left
+            self.filesChanged = filesChanged
+            self.durationMs = durationMs
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case endReason = "endReason"
+            case summary = "summary"
+            case verification = "verification"
+            case checks = "checks"
+            case notChecked = "notChecked"
+            case left = "left"
+            case filesChanged = "filesChanged"
+            case durationMs = "durationMs"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.endReason = try container.decode(AgentRunEndReason.self, forKey: .endReason)
+            self.summary = try container.decode(String.self, forKey: .summary)
+            self.verification = try? container.decodeIfPresent(String.self, forKey: .verification)
+            self.checks = (try? container.decodeIfPresent(AgentLossyArray<AgentRunCheck>.self, forKey: .checks))?.elements
+            self.notChecked = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .notChecked))?.elements
+            self.left = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .left))?.elements
+            self.filesChanged = try? container.decodeIfPresent(Int.self, forKey: .filesChanged)
+            self.durationMs = try? container.decodeIfPresent(Int.self, forKey: .durationMs)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(endReason, forKey: .endReason)
+            try container.encode(summary, forKey: .summary)
+            try container.encodeIfPresent(verification, forKey: .verification)
+            try container.encodeIfPresent(checks, forKey: .checks)
+            try container.encodeIfPresent(notChecked, forKey: .notChecked)
+            try container.encodeIfPresent(left, forKey: .left)
+            try container.encodeIfPresent(filesChanged, forKey: .filesChanged)
+            try container.encodeIfPresent(durationMs, forKey: .durationMs)
+        }
+    }
+
+    /// A check ran and its result counts as evidence. Recorded by the runtime, never claimed by the model.
+    public struct VerifyResult: Hashable, Sendable, Codable {
+        /// The command that ran.
+        public var command: String
+        /// Whether it passed.
+        public var passed: Bool
+        /// Its exit status.
+        public var exitCode: Int
+        /// The workspace revision it ran at; it counts only while the workspace is still there.
+        public var revision: Int
+        /// The recorded check it matched, when it matched one.
+        public var check: String?
+        /// What the check is for.
+        public var kind: AgentCheckKind?
+        /// How long it ran.
+        public var durationMs: Int?
+        /// The failing tail or a pass summary, bounded and redacted.
+        public var excerpt: String?
+
+        public init(
+            command: String,
+            passed: Bool,
+            exitCode: Int,
+            revision: Int,
+            check: String? = nil,
+            kind: AgentCheckKind? = nil,
+            durationMs: Int? = nil,
+            excerpt: String? = nil
+        ) {
+            self.command = command
+            self.passed = passed
+            self.exitCode = exitCode
+            self.revision = revision
+            self.check = check
+            self.kind = kind
+            self.durationMs = durationMs
+            self.excerpt = excerpt
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case command = "command"
+            case passed = "passed"
+            case exitCode = "exitCode"
+            case revision = "revision"
+            case check = "check"
+            case kind = "kind"
+            case durationMs = "durationMs"
+            case excerpt = "excerpt"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.command = try container.decode(String.self, forKey: .command)
+            self.passed = try container.decode(Bool.self, forKey: .passed)
+            self.exitCode = try container.decode(Int.self, forKey: .exitCode)
+            self.revision = try container.decode(Int.self, forKey: .revision)
+            self.check = try? container.decodeIfPresent(String.self, forKey: .check)
+            self.kind = try? container.decodeIfPresent(AgentCheckKind.self, forKey: .kind)
+            self.durationMs = try? container.decodeIfPresent(Int.self, forKey: .durationMs)
+            self.excerpt = try? container.decodeIfPresent(String.self, forKey: .excerpt)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(command, forKey: .command)
+            try container.encode(passed, forKey: .passed)
+            try container.encode(exitCode, forKey: .exitCode)
+            try container.encode(revision, forKey: .revision)
+            try container.encodeIfPresent(check, forKey: .check)
+            try container.encodeIfPresent(kind, forKey: .kind)
+            try container.encodeIfPresent(durationMs, forKey: .durationMs)
+            try container.encodeIfPresent(excerpt, forKey: .excerpt)
+        }
+    }
+
+    /// The running result was looked at: a preview route, a Simulator screen, a Mac app.
+    public struct VerifyUi: Hashable, Sendable, Codable {
+        /// Where.
+        public var surface: AgentVerifySurface
+        /// The route, the bundle id or the app.
+        public var target: String
+        /// Whether every condition held.
+        public var passed: Bool
+        /// The workspace revision it was checked at.
+        public var revision: Int
+        /// The viewport or device, when there is more than one.
+        public var viewport: String?
+        /// Each condition and whether it held.
+        public var checks: [AgentUICheck]?
+        /// SHA-256 of the screenshot kept as evidence.
+        public var screenshotHash: String?
+
+        public init(
+            surface: AgentVerifySurface,
+            target: String,
+            passed: Bool,
+            revision: Int,
+            viewport: String? = nil,
+            checks: [AgentUICheck]? = nil,
+            screenshotHash: String? = nil
+        ) {
+            self.surface = surface
+            self.target = target
+            self.passed = passed
+            self.revision = revision
+            self.viewport = viewport
+            self.checks = checks
+            self.screenshotHash = screenshotHash
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case surface = "surface"
+            case target = "target"
+            case passed = "passed"
+            case revision = "revision"
+            case viewport = "viewport"
+            case checks = "checks"
+            case screenshotHash = "screenshotHash"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.surface = try container.decode(AgentVerifySurface.self, forKey: .surface)
+            self.target = try container.decode(String.self, forKey: .target)
+            self.passed = try container.decode(Bool.self, forKey: .passed)
+            self.revision = try container.decode(Int.self, forKey: .revision)
+            self.viewport = try? container.decodeIfPresent(String.self, forKey: .viewport)
+            self.checks = (try? container.decodeIfPresent(AgentLossyArray<AgentUICheck>.self, forKey: .checks))?.elements
+            self.screenshotHash = try? container.decodeIfPresent(String.self, forKey: .screenshotHash)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(surface, forKey: .surface)
+            try container.encode(target, forKey: .target)
+            try container.encode(passed, forKey: .passed)
+            try container.encode(revision, forKey: .revision)
+            try container.encodeIfPresent(viewport, forKey: .viewport)
+            try container.encodeIfPresent(checks, forKey: .checks)
+            try container.encodeIfPresent(screenshotHash, forKey: .screenshotHash)
+        }
+    }
+
+    /// A self-review of the diff finished.
+    public struct ReviewFindings: Hashable, Sendable, Codable {
+        /// 1 for a run's first review.
+        public var round: Int
+        /// The overall judgement.
+        public var overall: AgentReviewOverall
+        /// What it found. Empty is a clean review.
+        public var findings: [AgentReviewFinding]?
+        /// The reviewer's summary.
+        public var summary: String?
+        /// The workspace revision it reviewed.
+        public var revision: Int?
+
+        public init(
+            round: Int,
+            overall: AgentReviewOverall,
+            findings: [AgentReviewFinding]? = nil,
+            summary: String? = nil,
+            revision: Int? = nil
+        ) {
+            self.round = round
+            self.overall = overall
+            self.findings = findings
+            self.summary = summary
+            self.revision = revision
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case round = "round"
+            case overall = "overall"
+            case findings = "findings"
+            case summary = "summary"
+            case revision = "revision"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.round = try container.decode(Int.self, forKey: .round)
+            self.overall = try container.decode(AgentReviewOverall.self, forKey: .overall)
+            self.findings = (try? container.decodeIfPresent(AgentLossyArray<AgentReviewFinding>.self, forKey: .findings))?.elements
+            self.summary = try? container.decodeIfPresent(String.self, forKey: .summary)
+            self.revision = try? container.decodeIfPresent(Int.self, forKey: .revision)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(round, forKey: .round)
+            try container.encode(overall, forKey: .overall)
+            try container.encodeIfPresent(findings, forKey: .findings)
+            try container.encodeIfPresent(summary, forKey: .summary)
+            try container.encodeIfPresent(revision, forKey: .revision)
+        }
+    }
+
+    /// A goal was set. Setting one never changes the permission mode.
+    public struct GoalSet: Hashable, Sendable, Codable {
+        /// Stable for the goal.
+        public var goalId: String
+        /// What the goal is.
+        public var objective: String
+        /// What must be true for it to be met.
+        public var criteria: [AgentGoalCriterion]?
+        /// What must not happen along the way.
+        public var constraints: [String]?
+        /// Its budget.
+        public var budget: AgentBudget?
+        /// Who set it.
+        public var origin: AgentGoalOrigin?
+
+        public init(
+            goalId: String,
+            objective: String,
+            criteria: [AgentGoalCriterion]? = nil,
+            constraints: [String]? = nil,
+            budget: AgentBudget? = nil,
+            origin: AgentGoalOrigin? = nil
+        ) {
+            self.goalId = goalId
+            self.objective = objective
+            self.criteria = criteria
+            self.constraints = constraints
+            self.budget = budget
+            self.origin = origin
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+            case objective = "objective"
+            case criteria = "criteria"
+            case constraints = "constraints"
+            case budget = "budget"
+            case origin = "origin"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try container.decode(String.self, forKey: .goalId)
+            self.objective = try container.decode(String.self, forKey: .objective)
+            self.criteria = (try? container.decodeIfPresent(AgentLossyArray<AgentGoalCriterion>.self, forKey: .criteria))?.elements
+            self.constraints = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .constraints))?.elements
+            self.budget = try? container.decodeIfPresent(AgentBudget.self, forKey: .budget)
+            self.origin = try? container.decodeIfPresent(AgentGoalOrigin.self, forKey: .origin)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(goalId, forKey: .goalId)
+            try container.encode(objective, forKey: .objective)
+            try container.encodeIfPresent(criteria, forKey: .criteria)
+            try container.encodeIfPresent(constraints, forKey: .constraints)
+            try container.encodeIfPresent(budget, forKey: .budget)
+            try container.encodeIfPresent(origin, forKey: .origin)
+        }
+    }
+
+    /// A goal's objective, criteria, constraints or budget changed. Only the fields that are set changed.
+    public struct GoalUpdated: Hashable, Sendable, Codable {
+        /// The goal.
+        public var goalId: String
+        /// The new objective.
+        public var objective: String?
+        /// The new criteria, whole.
+        public var criteria: [AgentGoalCriterion]?
+        /// The new constraints, whole.
+        public var constraints: [String]?
+        /// The new budget.
+        public var budget: AgentBudget?
+
+        public init(
+            goalId: String,
+            objective: String? = nil,
+            criteria: [AgentGoalCriterion]? = nil,
+            constraints: [String]? = nil,
+            budget: AgentBudget? = nil
+        ) {
+            self.goalId = goalId
+            self.objective = objective
+            self.criteria = criteria
+            self.constraints = constraints
+            self.budget = budget
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+            case objective = "objective"
+            case criteria = "criteria"
+            case constraints = "constraints"
+            case budget = "budget"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try container.decode(String.self, forKey: .goalId)
+            self.objective = try? container.decodeIfPresent(String.self, forKey: .objective)
+            self.criteria = (try? container.decodeIfPresent(AgentLossyArray<AgentGoalCriterion>.self, forKey: .criteria))?.elements
+            self.constraints = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .constraints))?.elements
+            self.budget = try? container.decodeIfPresent(AgentBudget.self, forKey: .budget)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(goalId, forKey: .goalId)
+            try container.encodeIfPresent(objective, forKey: .objective)
+            try container.encodeIfPresent(criteria, forKey: .criteria)
+            try container.encodeIfPresent(constraints, forKey: .constraints)
+            try container.encodeIfPresent(budget, forKey: .budget)
+        }
+    }
+
+    /// A goal was checked: the deterministic part, then the judge. The judge can only say keep working, met or impossible; it never allows anything.
+    public struct GoalVerdict: Hashable, Sendable, Codable {
+        /// The goal.
+        public var goalId: String
+        /// What the check concluded.
+        public var verdict: AgentGoalVerdict
+        /// Why, in at most 300 characters.
+        public var reason: String
+        /// The criteria not yet met.
+        public var unmetCriteria: [String]?
+        /// The workspace revision it was checked at.
+        public var revision: Int?
+
+        public init(
+            goalId: String,
+            verdict: AgentGoalVerdict,
+            reason: String,
+            unmetCriteria: [String]? = nil,
+            revision: Int? = nil
+        ) {
+            self.goalId = goalId
+            self.verdict = verdict
+            self.reason = reason
+            self.unmetCriteria = unmetCriteria
+            self.revision = revision
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+            case verdict = "verdict"
+            case reason = "reason"
+            case unmetCriteria = "unmetCriteria"
+            case revision = "revision"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try container.decode(String.self, forKey: .goalId)
+            self.verdict = try container.decode(AgentGoalVerdict.self, forKey: .verdict)
+            self.reason = try container.decode(String.self, forKey: .reason)
+            self.unmetCriteria = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .unmetCriteria))?.elements
+            self.revision = try? container.decodeIfPresent(Int.self, forKey: .revision)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(goalId, forKey: .goalId)
+            try container.encode(verdict, forKey: .verdict)
+            try container.encode(reason, forKey: .reason)
+            try container.encodeIfPresent(unmetCriteria, forKey: .unmetCriteria)
+            try container.encodeIfPresent(revision, forKey: .revision)
+        }
+    }
+
+    /// A goal's status or spend changed.
+    public struct GoalStatus: Hashable, Sendable, Codable {
+        /// The goal.
+        public var goalId: String
+        /// Where it stands.
+        public var status: AgentGoalStatus
+        /// Why, in words, above all when it needs the reader.
+        public var reason: String?
+        /// What it has spent.
+        public var usage: AgentBudgetUsage?
+        /// Its budget.
+        public var budget: AgentBudget?
+
+        public init(
+            goalId: String,
+            status: AgentGoalStatus,
+            reason: String? = nil,
+            usage: AgentBudgetUsage? = nil,
+            budget: AgentBudget? = nil
+        ) {
+            self.goalId = goalId
+            self.status = status
+            self.reason = reason
+            self.usage = usage
+            self.budget = budget
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+            case status = "status"
+            case reason = "reason"
+            case usage = "usage"
+            case budget = "budget"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try container.decode(String.self, forKey: .goalId)
+            self.status = try container.decode(AgentGoalStatus.self, forKey: .status)
+            self.reason = try? container.decodeIfPresent(String.self, forKey: .reason)
+            self.usage = try? container.decodeIfPresent(AgentBudgetUsage.self, forKey: .usage)
+            self.budget = try? container.decodeIfPresent(AgentBudget.self, forKey: .budget)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(goalId, forKey: .goalId)
+            try container.encode(status, forKey: .status)
+            try container.encodeIfPresent(reason, forKey: .reason)
+            try container.encodeIfPresent(usage, forKey: .usage)
+            try container.encodeIfPresent(budget, forKey: .budget)
+        }
+    }
+
+    /// Background work kept the run waiting long enough that the agent is asked to read it, keep waiting, or stop what is stuck.
+    public struct CheckinDue: Hashable, Sendable, Codable {
+        /// What is still running, in words.
+        public var running: [String]
+        /// How long the run has waited.
+        public var waitedMs: Int?
+        /// Idle check-ins since the reader's last message.
+        public var idleCheckIns: Int?
+
+        public init(
+            running: [String],
+            waitedMs: Int? = nil,
+            idleCheckIns: Int? = nil
+        ) {
+            self.running = running
+            self.waitedMs = waitedMs
+            self.idleCheckIns = idleCheckIns
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case running = "running"
+            case waitedMs = "waitedMs"
+            case idleCheckIns = "idleCheckIns"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.running = try container.decode(AgentLossyArray<String>.self, forKey: .running).elements
+            self.waitedMs = try? container.decodeIfPresent(Int.self, forKey: .waitedMs)
+            self.idleCheckIns = try? container.decodeIfPresent(Int.self, forKey: .idleCheckIns)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(running, forKey: .running)
+            try container.encodeIfPresent(waitedMs, forKey: .waitedMs)
+            try container.encodeIfPresent(idleCheckIns, forKey: .idleCheckIns)
+        }
+    }
+
+    /// CI for a pull request the agent opened moved.
+    public struct CiStatus: Hashable, Sendable, Codable {
+        /// Every check, as it now stands.
+        public var checks: [AgentCICheck]
+        /// The pull request's number.
+        public var prNumber: Int?
+        /// The pull request.
+        public var prUrl: String?
+
+        public init(
+            checks: [AgentCICheck],
+            prNumber: Int? = nil,
+            prUrl: String? = nil
+        ) {
+            self.checks = checks
+            self.prNumber = prNumber
+            self.prUrl = prUrl
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case checks = "checks"
+            case prNumber = "prNumber"
+            case prUrl = "prUrl"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.checks = try container.decode(AgentLossyArray<AgentCICheck>.self, forKey: .checks).elements
+            self.prNumber = try? container.decodeIfPresent(Int.self, forKey: .prNumber)
+            self.prUrl = try? container.decodeIfPresent(String.self, forKey: .prUrl)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(checks, forKey: .checks)
+            try container.encodeIfPresent(prNumber, forKey: .prNumber)
+            try container.encodeIfPresent(prUrl, forKey: .prUrl)
+        }
+    }
+
+    /// A run or goal budget was reached. A wrap-up turn follows; reaching a budget is never done, and Keep going adds the same budget again.
+    public struct BudgetReached: Hashable, Sendable, Codable {
+        /// Whose budget.
+        public var scope: AgentBudgetScope
+        /// Which ceiling.
+        public var limit: AgentBudgetLimit
+        /// The goal, for a goal's budget.
+        public var goalId: String?
+        /// What was spent.
+        public var usage: AgentBudgetUsage?
+        /// The budget that was reached.
+        public var budget: AgentBudget?
+
+        public init(
+            scope: AgentBudgetScope,
+            limit: AgentBudgetLimit,
+            goalId: String? = nil,
+            usage: AgentBudgetUsage? = nil,
+            budget: AgentBudget? = nil
+        ) {
+            self.scope = scope
+            self.limit = limit
+            self.goalId = goalId
+            self.usage = usage
+            self.budget = budget
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case scope = "scope"
+            case limit = "limit"
+            case goalId = "goalId"
+            case usage = "usage"
+            case budget = "budget"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.scope = try container.decode(AgentBudgetScope.self, forKey: .scope)
+            self.limit = try container.decode(AgentBudgetLimit.self, forKey: .limit)
+            self.goalId = try? container.decodeIfPresent(String.self, forKey: .goalId)
+            self.usage = try? container.decodeIfPresent(AgentBudgetUsage.self, forKey: .usage)
+            self.budget = try? container.decodeIfPresent(AgentBudget.self, forKey: .budget)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(scope, forKey: .scope)
+            try container.encode(limit, forKey: .limit)
+            try container.encodeIfPresent(goalId, forKey: .goalId)
+            try container.encodeIfPresent(usage, forKey: .usage)
+            try container.encodeIfPresent(budget, forKey: .budget)
+        }
+    }
+
     /// Code extension: a cloud run pushed a branch, and opened or reused a pull request.
     public struct CodePullRequest: Hashable, Sendable, Codable {
         /// The branch on origin.
@@ -2581,6 +4009,20 @@ public enum AgentCommandPayload: Hashable, Sendable {
     case planDecide(PlanDecide)
     /// Change what the next turn runs with. The host caps a remote sender at its own ceiling.
     case sessionSetMode(SessionSetMode)
+    /// Set a goal. The reader sending it is the approval for the goal itself; it never changes the permission mode, and every action still asks as the mode says.
+    case goalSet(GoalSet)
+    /// Pause the active goal. The turn in flight finishes its current tool wave; no continuation starts.
+    case goalPause(GoalPause)
+    /// Resume a paused goal, or one that needs the reader.
+    case goalResume(GoalResume)
+    /// Change a goal. Only the fields that are set change; the next check uses them.
+    case goalEdit(GoalEdit)
+    /// Clear the goal. It stays readable as history.
+    case goalClear(GoalClear)
+    /// Carry a run on with no new message: retry a failed turn, or resume one the host lost. Refused while a turn runs.
+    case runResume(RunResume)
+    /// Grant another block of steps or budget to a run that stopped at a limit, and resume it.
+    case runKeepGoing(RunKeepGoing)
     /// A type this build does not know, or a known one whose required fields
     /// were missing: kept whole, so nothing that arrives is lost or fatal.
     case unknown(type: String, raw: AgentJSONValue)
@@ -2596,12 +4038,19 @@ public enum AgentCommandPayload: Hashable, Sendable {
         case .questionAnswer: "question.answer"
         case .planDecide: "plan.decide"
         case .sessionSetMode: "session.set_mode"
+        case .goalSet: "goal.set"
+        case .goalPause: "goal.pause"
+        case .goalResume: "goal.resume"
+        case .goalEdit: "goal.edit"
+        case .goalClear: "goal.clear"
+        case .runResume: "run.resume"
+        case .runKeepGoing: "run.keep_going"
         case .unknown(let type, _): type
         }
     }
 
     /// Every type this build knows.
-    public static let knownTypes: [String] = ["turn.send", "turn.steer", "turn.queue", "turn.cancel", "approval.decide", "question.answer", "plan.decide", "session.set_mode"]
+    public static let knownTypes: [String] = ["turn.send", "turn.steer", "turn.queue", "turn.cancel", "approval.decide", "question.answer", "plan.decide", "session.set_mode", "goal.set", "goal.pause", "goal.resume", "goal.edit", "goal.clear", "run.resume", "run.keep_going"]
 
     /// The payload for `type`, or nil when the type is unknown or its
     /// required fields do not decode.
@@ -2631,6 +4080,27 @@ public enum AgentCommandPayload: Hashable, Sendable {
         case "session.set_mode":
             guard let value = try? SessionSetMode(from: decoder) else { return nil }
             self = .sessionSetMode(value)
+        case "goal.set":
+            guard let value = try? GoalSet(from: decoder) else { return nil }
+            self = .goalSet(value)
+        case "goal.pause":
+            guard let value = try? GoalPause(from: decoder) else { return nil }
+            self = .goalPause(value)
+        case "goal.resume":
+            guard let value = try? GoalResume(from: decoder) else { return nil }
+            self = .goalResume(value)
+        case "goal.edit":
+            guard let value = try? GoalEdit(from: decoder) else { return nil }
+            self = .goalEdit(value)
+        case "goal.clear":
+            guard let value = try? GoalClear(from: decoder) else { return nil }
+            self = .goalClear(value)
+        case "run.resume":
+            guard let value = try? RunResume(from: decoder) else { return nil }
+            self = .runResume(value)
+        case "run.keep_going":
+            guard let value = try? RunKeepGoing(from: decoder) else { return nil }
+            self = .runKeepGoing(value)
         default:
             return nil
         }
@@ -2646,6 +4116,13 @@ public enum AgentCommandPayload: Hashable, Sendable {
         case .questionAnswer(let value): try value.encode(to: encoder)
         case .planDecide(let value): try value.encode(to: encoder)
         case .sessionSetMode(let value): try value.encode(to: encoder)
+        case .goalSet(let value): try value.encode(to: encoder)
+        case .goalPause(let value): try value.encode(to: encoder)
+        case .goalResume(let value): try value.encode(to: encoder)
+        case .goalEdit(let value): try value.encode(to: encoder)
+        case .goalClear(let value): try value.encode(to: encoder)
+        case .runResume(let value): try value.encode(to: encoder)
+        case .runKeepGoing(let value): try value.encode(to: encoder)
         case .unknown: break
         }
     }
@@ -2918,6 +4395,230 @@ public enum AgentCommandPayload: Hashable, Sendable {
             try container.encodeIfPresent(mode, forKey: .mode)
             try container.encodeIfPresent(model, forKey: .model)
             try container.encodeIfPresent(effort, forKey: .effort)
+        }
+    }
+
+    /// Set a goal. The reader sending it is the approval for the goal itself; it never changes the permission mode, and every action still asks as the mode says.
+    public struct GoalSet: Hashable, Sendable, Codable {
+        /// What the goal is.
+        public var objective: String
+        /// What must be true, when the sender has criteria.
+        public var criteria: [String]?
+        /// Its budget; absent takes the host's default.
+        public var budget: AgentBudget?
+
+        public init(
+            objective: String,
+            criteria: [String]? = nil,
+            budget: AgentBudget? = nil
+        ) {
+            self.objective = objective
+            self.criteria = criteria
+            self.budget = budget
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case objective = "objective"
+            case criteria = "criteria"
+            case budget = "budget"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.objective = try container.decode(String.self, forKey: .objective)
+            self.criteria = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .criteria))?.elements
+            self.budget = try? container.decodeIfPresent(AgentBudget.self, forKey: .budget)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(objective, forKey: .objective)
+            try container.encodeIfPresent(criteria, forKey: .criteria)
+            try container.encodeIfPresent(budget, forKey: .budget)
+        }
+    }
+
+    /// Pause the active goal. The turn in flight finishes its current tool wave; no continuation starts.
+    public struct GoalPause: Hashable, Sendable, Codable {
+        /// The goal; absent means the active one.
+        public var goalId: String?
+
+        public init(
+            goalId: String? = nil
+        ) {
+            self.goalId = goalId
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try? container.decodeIfPresent(String.self, forKey: .goalId)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(goalId, forKey: .goalId)
+        }
+    }
+
+    /// Resume a paused goal, or one that needs the reader.
+    public struct GoalResume: Hashable, Sendable, Codable {
+        /// The goal; absent means the current one.
+        public var goalId: String?
+
+        public init(
+            goalId: String? = nil
+        ) {
+            self.goalId = goalId
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try? container.decodeIfPresent(String.self, forKey: .goalId)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(goalId, forKey: .goalId)
+        }
+    }
+
+    /// Change a goal. Only the fields that are set change; the next check uses them.
+    public struct GoalEdit: Hashable, Sendable, Codable {
+        /// The goal; absent means the current one.
+        public var goalId: String?
+        /// The new objective.
+        public var objective: String?
+        /// The new criteria, whole.
+        public var criteria: [String]?
+        /// The new constraints, whole.
+        public var constraints: [String]?
+        /// The new budget.
+        public var budget: AgentBudget?
+
+        public init(
+            goalId: String? = nil,
+            objective: String? = nil,
+            criteria: [String]? = nil,
+            constraints: [String]? = nil,
+            budget: AgentBudget? = nil
+        ) {
+            self.goalId = goalId
+            self.objective = objective
+            self.criteria = criteria
+            self.constraints = constraints
+            self.budget = budget
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+            case objective = "objective"
+            case criteria = "criteria"
+            case constraints = "constraints"
+            case budget = "budget"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try? container.decodeIfPresent(String.self, forKey: .goalId)
+            self.objective = try? container.decodeIfPresent(String.self, forKey: .objective)
+            self.criteria = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .criteria))?.elements
+            self.constraints = (try? container.decodeIfPresent(AgentLossyArray<String>.self, forKey: .constraints))?.elements
+            self.budget = try? container.decodeIfPresent(AgentBudget.self, forKey: .budget)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(goalId, forKey: .goalId)
+            try container.encodeIfPresent(objective, forKey: .objective)
+            try container.encodeIfPresent(criteria, forKey: .criteria)
+            try container.encodeIfPresent(constraints, forKey: .constraints)
+            try container.encodeIfPresent(budget, forKey: .budget)
+        }
+    }
+
+    /// Clear the goal. It stays readable as history.
+    public struct GoalClear: Hashable, Sendable, Codable {
+        /// The goal; absent means the current one.
+        public var goalId: String?
+
+        public init(
+            goalId: String? = nil
+        ) {
+            self.goalId = goalId
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try? container.decodeIfPresent(String.self, forKey: .goalId)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(goalId, forKey: .goalId)
+        }
+    }
+
+    /// Carry a run on with no new message: retry a failed turn, or resume one the host lost. Refused while a turn runs.
+    public struct RunResume: Hashable, Sendable, Codable {
+        /// Why: retry or after_quit.
+        public var note: AgentContinueReason
+
+        public init(
+            note: AgentContinueReason
+        ) {
+            self.note = note
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case note = "note"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.note = try container.decode(AgentContinueReason.self, forKey: .note)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(note, forKey: .note)
+        }
+    }
+
+    /// Grant another block of steps or budget to a run that stopped at a limit, and resume it.
+    public struct RunKeepGoing: Hashable, Sendable, Codable {
+        /// The goal whose budget was reached, when it was a goal's.
+        public var goalId: String?
+
+        public init(
+            goalId: String? = nil
+        ) {
+            self.goalId = goalId
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goalId = "goalId"
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.goalId = try? container.decodeIfPresent(String.self, forKey: .goalId)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(goalId, forKey: .goalId)
         }
     }
 

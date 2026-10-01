@@ -191,6 +191,22 @@ export class LegacyTaskDowncast {
       case 'plan.resolved':
       case 'usage.updated':
         return [];
+      // The autonomous loop (protocol v1.1): agent-core does not produce
+      // these yet (Phase 11, D-014), and the legacy task wire has no word for
+      // them; a reader that wants them reads the protocol rows.
+      case 'run.continued':
+      case 'run.outcome':
+      case 'verify.result':
+      case 'verify.ui':
+      case 'review.findings':
+      case 'goal.set':
+      case 'goal.updated':
+      case 'goal.verdict':
+      case 'goal.status':
+      case 'checkin.due':
+      case 'ci.status':
+      case 'budget.reached':
+        return [];
     }
   }
 }

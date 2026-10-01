@@ -312,6 +312,15 @@ public struct AgentSessionFold: Sendable {
             view.pullRequest = AgentPullRequestView(
                 branch: pr.branch, prUrl: pr.prUrl, prNumber: pr.prNumber, reused: pr.reused
             )
+
+        // The autonomous loop (v1.1): counted, not yet shown. The runs list,
+        // goal row and run report read these in Phase 11, and the web fold
+        // skips them the same way, so both still fold every golden transcript
+        // to the same view.
+        case .runContinued, .runOutcome, .verifyResult, .verifyUi, .reviewFindings,
+             .goalSet, .goalUpdated, .goalVerdict, .goalStatus, .checkinDue, .ciStatus,
+             .budgetReached:
+            break
         }
     }
 

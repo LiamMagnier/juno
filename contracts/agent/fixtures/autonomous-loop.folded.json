@@ -1,0 +1,71 @@
+{
+  "state": "paused",
+  "turns": [
+    {
+      "turnId": "turn:al-2",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "c1"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 21000
+    },
+    {
+      "turnId": "turn:al-10",
+      "origin": "gate",
+      "status": "completed",
+      "itemIds": [],
+      "stopReason": "end_turn",
+      "durationMs": 750000,
+      "filesChanged": 2
+    },
+    {
+      "turnId": "turn:al-21",
+      "origin": "checkin",
+      "status": "completed",
+      "itemIds": [],
+      "stopReason": "budget",
+      "durationMs": 3600000
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Make the settings menu open on click.",
+      "delivery": "prompt",
+      "turnId": "turn:al-2"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c1",
+      "toolName": "run_command",
+      "toolKind": "execute",
+      "title": "$ npm test",
+      "status": "error",
+      "turnId": "turn:al-2",
+      "risk": "execute",
+      "summary": "2 tests failed",
+      "exitCode": 1,
+      "durationMs": 9000
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 25,
+  "eventCount": 25,
+  "unknownEventCount": 0,
+  "sessionId": "mac_session_9",
+  "target": "local",
+  "workspaceName": "juno",
+  "model": "claude-sonnet-5",
+  "mode": "auto_edit"
+}

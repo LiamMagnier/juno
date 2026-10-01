@@ -79,7 +79,55 @@
           "status": "implemented",
           "note": "Per turn from turn_finished, and per sub-agent, with the cache counts agent-core reports; inputTokens is the uncached part, as the contract defines it."
         },
-        "code.pull_request": "implemented"
+        "code.pull_request": "implemented",
+        "run.continued": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "run.outcome": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "verify.result": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "verify.ui": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "review.findings": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "goal.set": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "goal.updated": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "goal.verdict": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "goal.status": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "checkin.due": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "ci.status": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        },
+        "budget.reached": {
+          "status": "planned",
+          "note": "agent-core adopts the autonomous loop's end reasons and goal semantics in Phase 11 (D-014); its engine is not changed by the Mac build."
+        }
       }
     },
     "mac-host": {
@@ -169,6 +217,54 @@
         "code.pull_request": {
           "status": "n/a",
           "note": "A Mac session does not open pull requests on its own."
+        },
+        "run.continued": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's stop check and resume record runContinued (CODE_AGENT_SPEC §6)."
+        },
+        "run.outcome": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A and Lane B record runOutcome with the run report (CODE_AGENT_SPEC §6)."
+        },
+        "verify.result": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane B's ledger records verificationRecorded (CODE_AGENT_SPEC §6)."
+        },
+        "verify.ui": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lanes B, C and D record uiVerificationRecorded (CODE_AGENT_SPEC §6)."
+        },
+        "review.findings": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane B's reviewer pass records reviewCompleted (CODE_AGENT_SPEC §6)."
+        },
+        "goal.set": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's goal runtime records goalSet (CODE_AGENT_SPEC §6)."
+        },
+        "goal.updated": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's goal runtime records goalEdited (CODE_AGENT_SPEC §6)."
+        },
+        "goal.verdict": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's goal runtime records goalVerdict (CODE_AGENT_SPEC §6)."
+        },
+        "goal.status": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's goal runtime records goalStatus (CODE_AGENT_SPEC §6)."
+        },
+        "checkin.due": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's goal runtime records checkInDue (CODE_AGENT_SPEC §6)."
+        },
+        "ci.status": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane E's CI watch records ciStatus (CODE_AGENT_SPEC §6)."
+        },
+        "budget.reached": {
+          "status": "planned",
+          "note": "AgentProtocolProjection maps the Swift event already; nothing records it until Lane A's budgets record budgetReached (CODE_AGENT_SPEC §6)."
         }
       }
     }
@@ -207,7 +303,55 @@
         "plan.resolved": "implemented",
         "usage.updated": "implemented",
         "session.error": "implemented",
-        "code.pull_request": "implemented"
+        "code.pull_request": "implemented",
+        "run.continued": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "run.outcome": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "verify.result": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "verify.ui": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "review.findings": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "goal.set": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "goal.updated": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "goal.verdict": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "goal.status": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "checkin.due": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "ci.status": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        },
+        "budget.reached": {
+          "status": "planned",
+          "note": "Counted and not yet shown; the runs list, goal row and run report read it in Phase 11."
+        }
       }
     },
     "swift-fold": {
@@ -243,7 +387,55 @@
         "plan.resolved": "implemented",
         "usage.updated": "implemented",
         "session.error": "implemented",
-        "code.pull_request": "implemented"
+        "code.pull_request": "implemented",
+        "run.continued": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "run.outcome": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "verify.result": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "verify.ui": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "review.findings": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "goal.set": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "goal.updated": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "goal.verdict": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "goal.status": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "checkin.due": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "ci.status": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        },
+        "budget.reached": {
+          "status": "planned",
+          "note": "As web-fold: counted and not yet shown."
+        }
       }
     }
   },
@@ -282,6 +474,34 @@
         "session.set_mode": {
           "status": "planned",
           "note": "Slice 2. Today: relay `patch` (update_session)."
+        },
+        "goal.set": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
+        },
+        "goal.pause": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
+        },
+        "goal.resume": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
+        },
+        "goal.edit": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
+        },
+        "goal.clear": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
+        },
+        "run.resume": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
+        },
+        "run.keep_going": {
+          "status": "planned",
+          "note": "Slice 2, with Lane A's goal runtime and resume (CODE_AGENT_SPEC §1.13). Today: nothing yet."
         }
       }
     },
@@ -319,6 +539,34 @@
         "session.set_mode": {
           "status": "planned",
           "note": "Slice 2. Today: relay `patch` (update_session). A cloud run's mode is fixed at dispatch."
+        },
+        "goal.set": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
+        },
+        "goal.pause": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
+        },
+        "goal.resume": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
+        },
+        "goal.edit": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
+        },
+        "goal.clear": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
+        },
+        "run.resume": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
+        },
+        "run.keep_going": {
+          "status": "planned",
+          "note": "Phase 11, when agent-core adopts goal semantics (D-014)."
         }
       }
     }

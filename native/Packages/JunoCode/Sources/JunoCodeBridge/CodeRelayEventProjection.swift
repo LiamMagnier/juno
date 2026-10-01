@@ -379,6 +379,13 @@ public enum CodeRelayEventProjection {
              .itemAssistantTextDelta, .itemThinkingDelta, .questionAsked, .questionAnswered,
              .planProposed, .planResolved, .usageUpdated, .codePullRequest, .unknown:
             return nil
+
+        // The autonomous loop (protocol v1.1) has no legacy spelling; the
+        // protocol events travel beside the heartbeat for readers that speak it.
+        case .runContinued, .runOutcome, .verifyResult, .verifyUi, .reviewFindings,
+             .goalSet, .goalUpdated, .goalVerdict, .goalStatus, .checkinDue, .ciStatus,
+             .budgetReached:
+            return nil
         }
     }
 
@@ -392,6 +399,10 @@ public enum CodeRelayEventProjection {
         case .completed: "completed"
         case .failed: "failed"
         case .cancelled, .interrupted: "interrupted"
+        // A paused goal waits on the reader with nothing running; a run that
+        // waits on background work is still working.
+        case .paused: "idle"
+        case .waitingBackground: "running"
         case .unknown: "running"
         }
     }

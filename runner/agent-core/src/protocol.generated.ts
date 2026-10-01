@@ -10,11 +10,11 @@
 export const AGENT_PROTOCOL = {
   name: "juno-agent-protocol",
   major: 1,
-  minor: 0,
+  minor: 1,
   /** What a producer writes as `v`. */
-  v: "1.0",
+  v: "1.1",
   /** SHA-256 of the contract this was generated from. */
-  digest: "ed91c33cf7772a23b3201f1e86a8def0b0416cd3b7696030721a583009275651",
+  digest: "8220a2c3be3c54f9d7aa351f5dd22f48456949b3337f4e0a6ca6c1528f798e80",
 } as const;
 
 // ── Enums ───────────────────────────────────────────────────────────────────
@@ -70,6 +70,8 @@ export const AGENT_SESSION_STATE_VALUES = [
   "failed", // Stopped because something went wrong.
   "interrupted", // Ended before it finished, without anyone asking: a crash, a quit, a lost host.
   "cancelled", // Stopped because somebody asked it to.
+  "paused", // A goal is paused; nothing runs until the reader resumes it.
+  "waiting_background", // The run waits for background work (a shell, a sub-agent) to report before it goes on.
   "unknown", // A state this reader does not know.
 ] as const;
 export type AgentSessionState = (typeof AGENT_SESSION_STATE_VALUES)[number];
@@ -82,6 +84,10 @@ export const AGENT_TURN_ORIGIN_VALUES = [
   "hook", // A hook that asked the agent to keep going.
   "remote", // A message sent from another device.
   "schedule", // A routine that fired.
+  "gate", // The runtime's stop check sent the agent back to work before it could finish.
+  "goal", // The goal runtime continued toward an active goal.
+  "checkin", // Background work reported, or a check-in on it was due.
+  "ci", // A pull request's CI finished and the agent follows up.
   "unknown", // An origin this reader does not know.
 ] as const;
 export type AgentTurnOrigin = (typeof AGENT_TURN_ORIGIN_VALUES)[number];
@@ -94,6 +100,9 @@ export const AGENT_STOP_REASON_VALUES = [
   "cancelled", // Somebody stopped it.
   "refusal", // The model declined.
   "hook", // A hook ended the run.
+  "budget", // A run or goal budget was reached and a wrap-up turn ran.
+  "stalled", // Continuation turns in a row made no progress.
+  "blocked", // The agent marked the remaining work blocked, or a goal was judged impossible.
   "unknown", // A reason this reader does not know.
 ] as const;
 export type AgentStopReason = (typeof AGENT_STOP_REASON_VALUES)[number];
@@ -267,6 +276,153 @@ export const AGENT_COMMAND_DISPOSITION_VALUES = [
 ] as const;
 export type AgentCommandDisposition = (typeof AGENT_COMMAND_DISPOSITION_VALUES)[number];
 
+/** Why a run ended. Every run ends with exactly one. */
+export const AGENT_RUN_END_REASON_VALUES = [
+  "done_checked", // The stop check passed and fresh passing checks cover the change.
+  "done_unchecked", // The stop check passed, but no check is known or the change needs none.
+  "checks_failing", // The agent finished after being sent back once, and a check still fails.
+  "blocked", // The remaining work is blocked, with a reason, or a goal was judged impossible.
+  "needs_you", // Waiting for an approval or an answer, parked until the reader decides.
+  "step_limit", // The step limit was reached and a wrap-up turn ran.
+  "budget", // A run or goal budget was reached and a wrap-up turn ran. Never done.
+  "stalled", // Two continuation turns in a row made no tool call.
+  "waiting_on_background", // Background work still runs; the run resumes when it reports.
+  "stopped", // The reader pressed Stop.
+  "interrupted", // The host quit or crashed mid-run.
+  "error", // An error the retry policy could not clear.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentRunEndReason = (typeof AGENT_RUN_END_REASON_VALUES)[number];
+
+/** Why the runtime kept a run going with no new reader message. */
+export const AGENT_CONTINUE_REASON_VALUES = [
+  "todos_open", // Todo items were still open.
+  "unverified", // Files changed and no check has run since the last edit.
+  "checks_failing", // The latest check after the last edit failed.
+  "ui_unchecked", // A visible change was not yet looked at in the running result.
+  "diff_unreviewed", // The diff was not read since the last edit.
+  "review_findings", // The self-review found problems that are not yet answered.
+  "goal_not_met", // The active goal is not met yet.
+  "output_limit", // The model's output was cut off at its limit.
+  "retry", // The reader asked to try a failed turn again.
+  "after_quit", // The host quit mid-run and the reader resumed it.
+  "keep_going", // The reader granted another block of steps or budget.
+  "wrap_up", // The last turn before a limit: summarise and stop.
+  "checkin", // Background work reported, or a check-in on it was due.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentContinueReason = (typeof AGENT_CONTINUE_REASON_VALUES)[number];
+
+/** What a check is for. */
+export const AGENT_CHECK_KIND_VALUES = [
+  "build", // Builds the project.
+  "test", // Runs tests.
+  "lint", // Runs a linter.
+  "typecheck", // Runs a type checker.
+  "custom", // Anything else the project records as a check.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentCheckKind = (typeof AGENT_CHECK_KIND_VALUES)[number];
+
+/** Where a UI check looked. */
+export const AGENT_VERIFY_SURFACE_VALUES = [
+  "web", // A web page in the preview.
+  "ios", // An app in the iOS Simulator.
+  "mac", // A Mac app, through app-scoped screen control.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentVerifySurface = (typeof AGENT_VERIFY_SURFACE_VALUES)[number];
+
+/** How serious a review finding is. */
+export const AGENT_REVIEW_PRIORITY_VALUES = [
+  "p0", // Breaks something that matters now.
+  "p1", // A real correctness, security or requirement problem.
+  "p2", // Worth fixing; does not block.
+  "p3", // A note.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentReviewPriority = (typeof AGENT_REVIEW_PRIORITY_VALUES)[number];
+
+/** The reviewer's overall judgement of a diff. */
+export const AGENT_REVIEW_OVERALL_VALUES = [
+  "correct", // No blocking problems.
+  "incorrect", // At least one blocking problem.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentReviewOverall = (typeof AGENT_REVIEW_OVERALL_VALUES)[number];
+
+/** Where a goal stands. */
+export const AGENT_GOAL_STATUS_VALUES = [
+  "active", // Being worked toward.
+  "paused", // Kept, not worked on until resumed.
+  "needs_you", // Waiting on the reader, with a reason.
+  "budget_reached", // Its budget ran out; Keep going adds another.
+  "achieved", // Met, with evidence.
+  "impossible", // Judged impossible, with a reason.
+  "cleared", // Dropped by the reader.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentGoalStatus = (typeof AGENT_GOAL_STATUS_VALUES)[number];
+
+/** What a check of a goal concluded. */
+export const AGENT_GOAL_VERDICT_VALUES = [
+  "not_met", // Not met yet.
+  "met", // Met.
+  "impossible", // Cannot be met.
+  "gate_blocked", // The deterministic checks found something missing before any judge was asked.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentGoalVerdict = (typeof AGENT_GOAL_VERDICT_VALUES)[number];
+
+/** Who set a goal. */
+export const AGENT_GOAL_ORIGIN_VALUES = [
+  "reader", // The reader, with /goal.
+  "plan", // An approved plan carried out as a goal.
+  "ci", // Fixing a pull request's failing checks.
+  "proposed_by_model", // The agent proposed it and the reader started it.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentGoalOrigin = (typeof AGENT_GOAL_ORIGIN_VALUES)[number];
+
+/** How one goal criterion is checked. */
+export const AGENT_CRITERION_CHECK_VALUES = [
+  "command", // A fresh passing run of a recorded check.
+  "ui", // A fresh UI check of a target.
+  "judged", // Judged from the conversation.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentCriterionCheck = (typeof AGENT_CRITERION_CHECK_VALUES)[number];
+
+/** Where one CI check stands. */
+export const AGENT_CICHECK_STATE_VALUES = [
+  "queued", // Waiting to start.
+  "running", // Running.
+  "passed", // Passed.
+  "failed", // Failed.
+  "cancelled", // Cancelled.
+  "skipped", // Skipped.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentCICheckState = (typeof AGENT_CICHECK_STATE_VALUES)[number];
+
+/** Whose budget a limit belongs to. */
+export const AGENT_BUDGET_SCOPE_VALUES = [
+  "run", // One run's.
+  "goal", // A goal's, across its runs.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentBudgetScope = (typeof AGENT_BUDGET_SCOPE_VALUES)[number];
+
+/** Which ceiling of a budget was reached. */
+export const AGENT_BUDGET_LIMIT_VALUES = [
+  "minutes", // Time.
+  "turns", // Continuation turns.
+  "tokens", // Model tokens.
+  "cost", // Spend.
+  "unknown", // A value this reader does not know.
+] as const;
+export type AgentBudgetLimit = (typeof AGENT_BUDGET_LIMIT_VALUES)[number];
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /** A repository a cloud session works on. */
@@ -321,6 +477,96 @@ export interface AgentQuestionOption {
   id: string;
   /** What the reader sees. */
   label: string;
+}
+
+/** A ceiling on what a run or goal may spend. An absent field is unlimited. */
+export interface AgentBudget {
+  /** Wall-clock minutes. */
+  minutes?: number;
+  /** Continuation turns. */
+  turns?: number;
+  /** Model tokens, children included. */
+  tokens?: number;
+  /** Spend, in millionths of a US dollar. */
+  costMicroUsd?: number;
+}
+
+/** What a run or goal has spent so far, children included. */
+export interface AgentBudgetUsage {
+  /** Wall-clock minutes. */
+  minutes?: number;
+  /** Continuation turns. */
+  turns?: number;
+  /** Model tokens. */
+  tokens?: number;
+  /** Spend, in millionths of a US dollar. */
+  costMicroUsd?: number;
+}
+
+/** One row of a run report's Checked section, rendered only from recorded evidence. */
+export interface AgentRunCheck {
+  /** What was checked: a command, a preview route, the review. */
+  label: string;
+  /** Whether it passed. */
+  passed: boolean;
+  /** More, in words: duration, test count, after the last edit. */
+  detail?: string;
+}
+
+/** One condition a UI check tested. */
+export interface AgentUICheck {
+  /** The condition, in words: HTTP 200, no new console errors. */
+  name: string;
+  /** Whether it held. */
+  passed: boolean;
+  /** Why it failed, or a detail worth keeping. */
+  detail?: string;
+}
+
+/** One problem a self-review found in the diff. */
+export interface AgentReviewFinding {
+  /** How serious it is. */
+  priority: AgentReviewPriority;
+  /** The problem in one line. */
+  title: string;
+  /** 0 to 1, as the reviewer reported it. */
+  confidence?: number;
+  /** The file, relative to the workspace. */
+  path?: string;
+  /** The line. */
+  line?: number;
+  /** The explanation, bounded. */
+  body?: string;
+  /** The goal criterion it concerns, for a requirement gap. */
+  criterion?: string;
+}
+
+/** One criterion of a goal. */
+export interface AgentGoalCriterion {
+  /** Stable for the goal: c1, c2. */
+  id: string;
+  /** What must be true. */
+  text: string;
+  /** How it is checked. */
+  check: AgentCriterionCheck;
+  /** The recorded check, for a command criterion. */
+  checkId?: string;
+  /** Where to look, for a UI criterion. */
+  surface?: AgentVerifySurface;
+  /** The route or app, for a UI criterion. */
+  target?: string;
+  /** Whether the evidence satisfies it now, when known. */
+  met?: boolean;
+}
+
+/** One CI check on a pull request. */
+export interface AgentCICheck {
+  /** The check's name. */
+  name: string;
+  /** Where it stands. */
+  state: AgentCICheckState;
+  /** Its page, when the forge gave one. */
+  url?: string;
 }
 
 /** What a host reports about a command. */
@@ -729,6 +975,192 @@ export interface AgentSessionErrorEvent extends AgentEventEnvelope {
   error: AgentErrorInfo;
 }
 
+/** The runtime kept the run going with no new reader message: the stop check sent the agent back, or the reader resumed. A quiet caption, never the reader's words. */
+export interface AgentRunContinuedEvent extends AgentEventEnvelope {
+  type: "run.continued";
+  /** Why. */
+  reason: AgentContinueReason;
+  /** The concrete fact, for the caption: 2 todos were open. */
+  detail: string;
+  /** The workspace revision it was decided at. */
+  revision?: number;
+}
+
+/** How a run ended, with the report the runtime built from its recorded evidence. */
+export interface AgentRunOutcomeEvent extends AgentEventEnvelope {
+  type: "run.outcome";
+  /** Why it ended. */
+  endReason: AgentRunEndReason;
+  /** The outcome in one sentence. */
+  summary: string;
+  /** What was checked, in words: Checked with swift test; Not checked: no test command. */
+  verification?: string;
+  /** The Checked rows, only from recorded evidence. */
+  checks?: AgentRunCheck[];
+  /** What was not checked, plainly. */
+  notChecked?: string[];
+  /** What is left or recommended next. */
+  left?: string[];
+  /** How many files the run changed. */
+  filesChanged?: number;
+  /** How long the run took. */
+  durationMs?: number;
+}
+
+/** A check ran and its result counts as evidence. Recorded by the runtime, never claimed by the model. */
+export interface AgentVerifyResultEvent extends AgentEventEnvelope {
+  type: "verify.result";
+  /** The command that ran. */
+  command: string;
+  /** Whether it passed. */
+  passed: boolean;
+  /** Its exit status. */
+  exitCode: number;
+  /** The workspace revision it ran at; it counts only while the workspace is still there. */
+  revision: number;
+  /** The recorded check it matched, when it matched one. */
+  check?: string;
+  /** What the check is for. */
+  kind?: AgentCheckKind;
+  /** How long it ran. */
+  durationMs?: number;
+  /** The failing tail or a pass summary, bounded and redacted. */
+  excerpt?: string;
+}
+
+/** The running result was looked at: a preview route, a Simulator screen, a Mac app. */
+export interface AgentVerifyUiEvent extends AgentEventEnvelope {
+  type: "verify.ui";
+  /** Where. */
+  surface: AgentVerifySurface;
+  /** The route, the bundle id or the app. */
+  target: string;
+  /** Whether every condition held. */
+  passed: boolean;
+  /** The workspace revision it was checked at. */
+  revision: number;
+  /** The viewport or device, when there is more than one. */
+  viewport?: string;
+  /** Each condition and whether it held. */
+  checks?: AgentUICheck[];
+  /** SHA-256 of the screenshot kept as evidence. */
+  screenshotHash?: string;
+}
+
+/** A self-review of the diff finished. */
+export interface AgentReviewFindingsEvent extends AgentEventEnvelope {
+  type: "review.findings";
+  /** 1 for a run's first review. */
+  round: number;
+  /** The overall judgement. */
+  overall: AgentReviewOverall;
+  /** What it found. Empty is a clean review. */
+  findings?: AgentReviewFinding[];
+  /** The reviewer's summary. */
+  summary?: string;
+  /** The workspace revision it reviewed. */
+  revision?: number;
+}
+
+/** A goal was set. Setting one never changes the permission mode. */
+export interface AgentGoalSetEvent extends AgentEventEnvelope {
+  type: "goal.set";
+  /** Stable for the goal. */
+  goalId: string;
+  /** What the goal is. */
+  objective: string;
+  /** What must be true for it to be met. */
+  criteria?: AgentGoalCriterion[];
+  /** What must not happen along the way. */
+  constraints?: string[];
+  /** Its budget. */
+  budget?: AgentBudget;
+  /** Who set it. */
+  origin?: AgentGoalOrigin;
+}
+
+/** A goal's objective, criteria, constraints or budget changed. Only the fields that are set changed. */
+export interface AgentGoalUpdatedEvent extends AgentEventEnvelope {
+  type: "goal.updated";
+  /** The goal. */
+  goalId: string;
+  /** The new objective. */
+  objective?: string;
+  /** The new criteria, whole. */
+  criteria?: AgentGoalCriterion[];
+  /** The new constraints, whole. */
+  constraints?: string[];
+  /** The new budget. */
+  budget?: AgentBudget;
+}
+
+/** A goal was checked: the deterministic part, then the judge. The judge can only say keep working, met or impossible; it never allows anything. */
+export interface AgentGoalVerdictEvent extends AgentEventEnvelope {
+  type: "goal.verdict";
+  /** The goal. */
+  goalId: string;
+  /** What the check concluded. */
+  verdict: AgentGoalVerdict;
+  /** Why, in at most 300 characters. */
+  reason: string;
+  /** The criteria not yet met. */
+  unmetCriteria?: string[];
+  /** The workspace revision it was checked at. */
+  revision?: number;
+}
+
+/** A goal's status or spend changed. */
+export interface AgentGoalStatusEvent extends AgentEventEnvelope {
+  type: "goal.status";
+  /** The goal. */
+  goalId: string;
+  /** Where it stands. */
+  status: AgentGoalStatus;
+  /** Why, in words, above all when it needs the reader. */
+  reason?: string;
+  /** What it has spent. */
+  usage?: AgentBudgetUsage;
+  /** Its budget. */
+  budget?: AgentBudget;
+}
+
+/** Background work kept the run waiting long enough that the agent is asked to read it, keep waiting, or stop what is stuck. */
+export interface AgentCheckinDueEvent extends AgentEventEnvelope {
+  type: "checkin.due";
+  /** What is still running, in words. */
+  running: string[];
+  /** How long the run has waited. */
+  waitedMs?: number;
+  /** Idle check-ins since the reader's last message. */
+  idleCheckIns?: number;
+}
+
+/** CI for a pull request the agent opened moved. */
+export interface AgentCiStatusEvent extends AgentEventEnvelope {
+  type: "ci.status";
+  /** Every check, as it now stands. */
+  checks: AgentCICheck[];
+  /** The pull request's number. */
+  prNumber?: number;
+  /** The pull request. */
+  prUrl?: string;
+}
+
+/** A run or goal budget was reached. A wrap-up turn follows; reaching a budget is never done, and Keep going adds the same budget again. */
+export interface AgentBudgetReachedEvent extends AgentEventEnvelope {
+  type: "budget.reached";
+  /** Whose budget. */
+  scope: AgentBudgetScope;
+  /** Which ceiling. */
+  limit: AgentBudgetLimit;
+  /** The goal, for a goal's budget. */
+  goalId?: string;
+  /** What was spent. */
+  usage?: AgentBudgetUsage;
+  /** The budget that was reached. */
+  budget?: AgentBudget;
+}
+
 /** Code extension: a cloud run pushed a branch, and opened or reused a pull request. */
 export interface AgentCodePullRequestEvent extends AgentEventEnvelope {
   type: "code.pull_request";
@@ -774,6 +1206,18 @@ export type AgentEvent =
   | AgentPlanResolvedEvent
   | AgentUsageUpdatedEvent
   | AgentSessionErrorEvent
+  | AgentRunContinuedEvent
+  | AgentRunOutcomeEvent
+  | AgentVerifyResultEvent
+  | AgentVerifyUiEvent
+  | AgentReviewFindingsEvent
+  | AgentGoalSetEvent
+  | AgentGoalUpdatedEvent
+  | AgentGoalVerdictEvent
+  | AgentGoalStatusEvent
+  | AgentCheckinDueEvent
+  | AgentCiStatusEvent
+  | AgentBudgetReachedEvent
   | AgentCodePullRequestEvent;
 export type AgentEventType = AgentEvent["type"];
 export type AgentEventOf<T extends AgentEventType> = Extract<AgentEvent, { type: T }>;
@@ -812,6 +1256,18 @@ export const AGENT_EVENT_TYPES = [
   "plan.resolved",
   "usage.updated",
   "session.error",
+  "run.continued",
+  "run.outcome",
+  "verify.result",
+  "verify.ui",
+  "review.findings",
+  "goal.set",
+  "goal.updated",
+  "goal.verdict",
+  "goal.status",
+  "checkin.due",
+  "ci.status",
+  "budget.reached",
   "code.pull_request",
 ] as const;
 
@@ -917,6 +1373,67 @@ export interface AgentSessionSetModeCommand extends AgentCommandEnvelope {
   effort?: AgentReasoningEffort;
 }
 
+/** Set a goal. The reader sending it is the approval for the goal itself; it never changes the permission mode, and every action still asks as the mode says. */
+export interface AgentGoalSetCommand extends AgentCommandEnvelope {
+  type: "goal.set";
+  /** What the goal is. */
+  objective: string;
+  /** What must be true, when the sender has criteria. */
+  criteria?: string[];
+  /** Its budget; absent takes the host's default. */
+  budget?: AgentBudget;
+}
+
+/** Pause the active goal. The turn in flight finishes its current tool wave; no continuation starts. */
+export interface AgentGoalPauseCommand extends AgentCommandEnvelope {
+  type: "goal.pause";
+  /** The goal; absent means the active one. */
+  goalId?: string;
+}
+
+/** Resume a paused goal, or one that needs the reader. */
+export interface AgentGoalResumeCommand extends AgentCommandEnvelope {
+  type: "goal.resume";
+  /** The goal; absent means the current one. */
+  goalId?: string;
+}
+
+/** Change a goal. Only the fields that are set change; the next check uses them. */
+export interface AgentGoalEditCommand extends AgentCommandEnvelope {
+  type: "goal.edit";
+  /** The goal; absent means the current one. */
+  goalId?: string;
+  /** The new objective. */
+  objective?: string;
+  /** The new criteria, whole. */
+  criteria?: string[];
+  /** The new constraints, whole. */
+  constraints?: string[];
+  /** The new budget. */
+  budget?: AgentBudget;
+}
+
+/** Clear the goal. It stays readable as history. */
+export interface AgentGoalClearCommand extends AgentCommandEnvelope {
+  type: "goal.clear";
+  /** The goal; absent means the current one. */
+  goalId?: string;
+}
+
+/** Carry a run on with no new message: retry a failed turn, or resume one the host lost. Refused while a turn runs. */
+export interface AgentRunResumeCommand extends AgentCommandEnvelope {
+  type: "run.resume";
+  /** Why: retry or after_quit. */
+  note: AgentContinueReason;
+}
+
+/** Grant another block of steps or budget to a run that stopped at a limit, and resume it. */
+export interface AgentRunKeepGoingCommand extends AgentCommandEnvelope {
+  type: "run.keep_going";
+  /** The goal whose budget was reached, when it was a goal's. */
+  goalId?: string;
+}
+
 export type AgentCommand =
   | AgentTurnSendCommand
   | AgentTurnSteerCommand
@@ -925,7 +1442,14 @@ export type AgentCommand =
   | AgentApprovalDecideCommand
   | AgentQuestionAnswerCommand
   | AgentPlanDecideCommand
-  | AgentSessionSetModeCommand;
+  | AgentSessionSetModeCommand
+  | AgentGoalSetCommand
+  | AgentGoalPauseCommand
+  | AgentGoalResumeCommand
+  | AgentGoalEditCommand
+  | AgentGoalClearCommand
+  | AgentRunResumeCommand
+  | AgentRunKeepGoingCommand;
 export type AgentCommandType = AgentCommand["type"];
 export const AGENT_COMMAND_TYPES = [
   "turn.send",
@@ -936,6 +1460,13 @@ export const AGENT_COMMAND_TYPES = [
   "question.answer",
   "plan.decide",
   "session.set_mode",
+  "goal.set",
+  "goal.pause",
+  "goal.resume",
+  "goal.edit",
+  "goal.clear",
+  "run.resume",
+  "run.keep_going",
 ] as const;
 export interface UnknownAgentCommand extends AgentCommandEnvelope {
   type: "unknown";
@@ -970,6 +1501,19 @@ const ENUM_VALUES: Record<string, readonly string[]> = {
   ErrorCode: AGENT_ERROR_CODE_VALUES,
   UsageScope: AGENT_USAGE_SCOPE_VALUES,
   CommandDisposition: AGENT_COMMAND_DISPOSITION_VALUES,
+  RunEndReason: AGENT_RUN_END_REASON_VALUES,
+  ContinueReason: AGENT_CONTINUE_REASON_VALUES,
+  CheckKind: AGENT_CHECK_KIND_VALUES,
+  VerifySurface: AGENT_VERIFY_SURFACE_VALUES,
+  ReviewPriority: AGENT_REVIEW_PRIORITY_VALUES,
+  ReviewOverall: AGENT_REVIEW_OVERALL_VALUES,
+  GoalStatus: AGENT_GOAL_STATUS_VALUES,
+  GoalVerdict: AGENT_GOAL_VERDICT_VALUES,
+  GoalOrigin: AGENT_GOAL_ORIGIN_VALUES,
+  CriterionCheck: AGENT_CRITERION_CHECK_VALUES,
+  CICheckState: AGENT_CICHECK_STATE_VALUES,
+  BudgetScope: AGENT_BUDGET_SCOPE_VALUES,
+  BudgetLimit: AGENT_BUDGET_LIMIT_VALUES,
 };
 
 const TYPE_FIELDS: Record<string, readonly FieldSpec[]> = {
@@ -999,6 +1543,51 @@ const TYPE_FIELDS: Record<string, readonly FieldSpec[]> = {
   QuestionOption: [
     { key: "id", kind: "string", optional: false },
     { key: "label", kind: "string", optional: false },
+  ],
+  Budget: [
+    { key: "minutes", kind: "integer", optional: true },
+    { key: "turns", kind: "integer", optional: true },
+    { key: "tokens", kind: "integer", optional: true },
+    { key: "costMicroUsd", kind: "integer", optional: true },
+  ],
+  BudgetUsage: [
+    { key: "minutes", kind: "number", optional: true },
+    { key: "turns", kind: "integer", optional: true },
+    { key: "tokens", kind: "integer", optional: true },
+    { key: "costMicroUsd", kind: "integer", optional: true },
+  ],
+  RunCheck: [
+    { key: "label", kind: "string", optional: false },
+    { key: "passed", kind: "boolean", optional: false },
+    { key: "detail", kind: "string", optional: true },
+  ],
+  UICheck: [
+    { key: "name", kind: "string", optional: false },
+    { key: "passed", kind: "boolean", optional: false },
+    { key: "detail", kind: "string", optional: true },
+  ],
+  ReviewFinding: [
+    { key: "priority", kind: "enum", optional: false, ref: "ReviewPriority" },
+    { key: "title", kind: "string", optional: false },
+    { key: "confidence", kind: "number", optional: true },
+    { key: "path", kind: "string", optional: true },
+    { key: "line", kind: "integer", optional: true },
+    { key: "body", kind: "string", optional: true },
+    { key: "criterion", kind: "string", optional: true },
+  ],
+  GoalCriterion: [
+    { key: "id", kind: "string", optional: false },
+    { key: "text", kind: "string", optional: false },
+    { key: "check", kind: "enum", optional: false, ref: "CriterionCheck" },
+    { key: "checkId", kind: "string", optional: true },
+    { key: "surface", kind: "enum", optional: true, ref: "VerifySurface" },
+    { key: "target", kind: "string", optional: true },
+    { key: "met", kind: "boolean", optional: true },
+  ],
+  CICheck: [
+    { key: "name", kind: "string", optional: false },
+    { key: "state", kind: "enum", optional: false, ref: "CICheckState" },
+    { key: "url", kind: "string", optional: true },
   ],
 };
 
@@ -1185,6 +1774,93 @@ const EVENT_FIELDS: Record<string, readonly FieldSpec[]> = {
   "session.error": [
     { key: "error", kind: "type", optional: false, ref: "ErrorInfo" },
   ],
+  "run.continued": [
+    { key: "reason", kind: "enum", optional: false, ref: "ContinueReason" },
+    { key: "detail", kind: "string", optional: false },
+    { key: "revision", kind: "integer", optional: true },
+  ],
+  "run.outcome": [
+    { key: "endReason", kind: "enum", optional: false, ref: "RunEndReason" },
+    { key: "summary", kind: "string", optional: false },
+    { key: "verification", kind: "string", optional: true },
+    { key: "checks", kind: "array", optional: true, item: { key: "", kind: "type", optional: false, ref: "RunCheck" } },
+    { key: "notChecked", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "left", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "filesChanged", kind: "integer", optional: true },
+    { key: "durationMs", kind: "integer", optional: true },
+  ],
+  "verify.result": [
+    { key: "command", kind: "string", optional: false },
+    { key: "passed", kind: "boolean", optional: false },
+    { key: "exitCode", kind: "integer", optional: false },
+    { key: "revision", kind: "integer", optional: false },
+    { key: "check", kind: "string", optional: true },
+    { key: "kind", kind: "enum", optional: true, ref: "CheckKind" },
+    { key: "durationMs", kind: "integer", optional: true },
+    { key: "excerpt", kind: "string", optional: true },
+  ],
+  "verify.ui": [
+    { key: "surface", kind: "enum", optional: false, ref: "VerifySurface" },
+    { key: "target", kind: "string", optional: false },
+    { key: "passed", kind: "boolean", optional: false },
+    { key: "revision", kind: "integer", optional: false },
+    { key: "viewport", kind: "string", optional: true },
+    { key: "checks", kind: "array", optional: true, item: { key: "", kind: "type", optional: false, ref: "UICheck" } },
+    { key: "screenshotHash", kind: "string", optional: true },
+  ],
+  "review.findings": [
+    { key: "round", kind: "integer", optional: false },
+    { key: "overall", kind: "enum", optional: false, ref: "ReviewOverall" },
+    { key: "findings", kind: "array", optional: true, item: { key: "", kind: "type", optional: false, ref: "ReviewFinding" } },
+    { key: "summary", kind: "string", optional: true },
+    { key: "revision", kind: "integer", optional: true },
+  ],
+  "goal.set": [
+    { key: "goalId", kind: "string", optional: false },
+    { key: "objective", kind: "string", optional: false },
+    { key: "criteria", kind: "array", optional: true, item: { key: "", kind: "type", optional: false, ref: "GoalCriterion" } },
+    { key: "constraints", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "budget", kind: "type", optional: true, ref: "Budget" },
+    { key: "origin", kind: "enum", optional: true, ref: "GoalOrigin" },
+  ],
+  "goal.updated": [
+    { key: "goalId", kind: "string", optional: false },
+    { key: "objective", kind: "string", optional: true },
+    { key: "criteria", kind: "array", optional: true, item: { key: "", kind: "type", optional: false, ref: "GoalCriterion" } },
+    { key: "constraints", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "budget", kind: "type", optional: true, ref: "Budget" },
+  ],
+  "goal.verdict": [
+    { key: "goalId", kind: "string", optional: false },
+    { key: "verdict", kind: "enum", optional: false, ref: "GoalVerdict" },
+    { key: "reason", kind: "string", optional: false },
+    { key: "unmetCriteria", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "revision", kind: "integer", optional: true },
+  ],
+  "goal.status": [
+    { key: "goalId", kind: "string", optional: false },
+    { key: "status", kind: "enum", optional: false, ref: "GoalStatus" },
+    { key: "reason", kind: "string", optional: true },
+    { key: "usage", kind: "type", optional: true, ref: "BudgetUsage" },
+    { key: "budget", kind: "type", optional: true, ref: "Budget" },
+  ],
+  "checkin.due": [
+    { key: "running", kind: "array", optional: false, item: { key: "", kind: "string", optional: false } },
+    { key: "waitedMs", kind: "integer", optional: true },
+    { key: "idleCheckIns", kind: "integer", optional: true },
+  ],
+  "ci.status": [
+    { key: "checks", kind: "array", optional: false, item: { key: "", kind: "type", optional: false, ref: "CICheck" } },
+    { key: "prNumber", kind: "integer", optional: true },
+    { key: "prUrl", kind: "string", optional: true },
+  ],
+  "budget.reached": [
+    { key: "scope", kind: "enum", optional: false, ref: "BudgetScope" },
+    { key: "limit", kind: "enum", optional: false, ref: "BudgetLimit" },
+    { key: "goalId", kind: "string", optional: true },
+    { key: "usage", kind: "type", optional: true, ref: "BudgetUsage" },
+    { key: "budget", kind: "type", optional: true, ref: "Budget" },
+  ],
   "code.pull_request": [
     { key: "branch", kind: "string", optional: false },
     { key: "prUrl", kind: "string", optional: true },
@@ -1236,6 +1912,33 @@ const COMMAND_FIELDS: Record<string, readonly FieldSpec[]> = {
     { key: "mode", kind: "enum", optional: true, ref: "PermissionMode" },
     { key: "model", kind: "string", optional: true },
     { key: "effort", kind: "enum", optional: true, ref: "ReasoningEffort" },
+  ],
+  "goal.set": [
+    { key: "objective", kind: "string", optional: false },
+    { key: "criteria", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "budget", kind: "type", optional: true, ref: "Budget" },
+  ],
+  "goal.pause": [
+    { key: "goalId", kind: "string", optional: true },
+  ],
+  "goal.resume": [
+    { key: "goalId", kind: "string", optional: true },
+  ],
+  "goal.edit": [
+    { key: "goalId", kind: "string", optional: true },
+    { key: "objective", kind: "string", optional: true },
+    { key: "criteria", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "constraints", kind: "array", optional: true, item: { key: "", kind: "string", optional: false } },
+    { key: "budget", kind: "type", optional: true, ref: "Budget" },
+  ],
+  "goal.clear": [
+    { key: "goalId", kind: "string", optional: true },
+  ],
+  "run.resume": [
+    { key: "note", kind: "enum", optional: false, ref: "ContinueReason" },
+  ],
+  "run.keep_going": [
+    { key: "goalId", kind: "string", optional: true },
   ],
 };
 
