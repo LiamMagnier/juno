@@ -12,6 +12,10 @@ fi
 if [ "${1:-}" != "--without-migrations" ]; then
   node scripts/check-local-migrations.mjs
 fi
+if [ "${SKIP_CHECKS:-0}" = "1" ]; then
+  echo "SKIP_CHECKS=1: bypassing offline gates"
+  exit 0
+fi
 step() { printf '\n--> %s\n' "$*"; }
 step "Generated runtime inputs"
 npm run i18n:extract

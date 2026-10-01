@@ -20,6 +20,8 @@ const intentionalFixtures = new Set([
   "native/Packages/JunoCode/Tests/JunoCodeCoreTests/SecretRedactorTests.swift|private key",
   "native/Packages/JunoCode/Tests/JunoCodeLocalTests/CommandExecutionServiceTests.swift|GitHub token",
   "native/Packages/JunoCode/Tests/JunoCodeLocalTests/DevServerServiceTests.swift|GitHub token",
+  "native/Packages/JunoCode/Tests/JunoCodeRuntimeTests/ShipToolsTests.swift|GitHub token",
+  "native/Packages/JunoScreenControl/Tests/JunoScreenControlTests/AppGrantPolicyTests.swift|GitHub token",
   "tests/dlp-policy.test.ts|OpenAI secret",
   "tests/dlp.test.ts|GitHub token",
   "tests/dlp.test.ts|OpenAI secret",
