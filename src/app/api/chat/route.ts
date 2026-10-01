@@ -228,6 +228,15 @@ import { cheapestWorkModel } from "@/lib/work/models";
 import { agentChatContext } from "@/lib/agents/store";
 import { agentApprovalMode, agentTurnModel } from "@/lib/agents/domain";
 import { appendAgentBlock } from "@/lib/agents/prompt";
+import {
+  markRoomTurn,
+  prepareRoomTurn,
+  recordRoomPlan,
+  roomSpeakers,
+  type RoomTurnSetup,
+} from "@/lib/agents/room-store";
+import { buildRoomPromptBlock, labelRoomHistory } from "@/lib/agents/rooms";
+import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -334,6 +343,34 @@ function refuse(rejection: EntitlementRejection) {
  * instruction is user-authored UI copy, not free text, but it is still fenced
  * as an instruction block so it cannot pose as content.
  */
+/** Whether the answering member of a room may ask another one (`ask_room_member`). */
+function roomMayAsk(setup: RoomTurnSetup, roomMessageId: string | null): boolean {
+  return (
+    !!roomMessageId &&
+    setup.mode.kind !== "retry" &&
+    setup.room.members.some((member) => member.agentId !== setup.speaker.agentId && !member.paused)
+  );
+}
+
+/** The room section appended after the answering agent's own block (src/lib/agents/rooms.ts). */
+function roomPromptBlock(setup: RoomTurnSetup, personName: string | null | undefined, roomMessageId: string | null): string {
+  const fromAgentId = setup.mode.kind === "follow_up" ? setup.mode.fromAgentId : null;
+  const asked =
+    setup.mode.kind === "follow_up" && fromAgentId
+      ? {
+          fromName: setup.room.members.find((member) => member.agentId === fromAgentId)?.name ?? "Another agent",
+          request: setup.mode.request,
+        }
+      : null;
+  return buildRoomPromptBlock({
+    self: { agentId: setup.speaker.agentId, name: setup.speaker.name },
+    members: setup.room.members,
+    personName,
+    asked,
+    canAsk: roomMayAsk(setup, roomMessageId),
+  });
+}
+
 function withRegenerateInstruction(system: string, input: { regenerate?: boolean; regenerateInstruction?: string }): string {
   if (!input.regenerate || !input.regenerateInstruction) return system;
   return `${system}\n\n# Regeneration request\nThe user asked for this answer to be regenerated with the following adjustment: ${input.regenerateInstruction}`;
@@ -769,6 +806,14 @@ async function handleChat(req: Request) {
   let workspaceProjectID: string | null = null;
   /** The agent whose thread this is, when it is one: read now because its model is a candidate below. */
   let threadAgentId: string | null = null;
+  /** Set when the conversation is a room: who answers this request, and why. */
+  let roomSetup: RoomTurnSetup | null = null;
+  if (input.roomTurn && (!input.regenerate || input.privateMode || !input.conversationId)) {
+    return NextResponse.json(
+      { error: "invalid_room_turn", message: "A room turn answers a saved room's newest message." },
+      { status: 400 }
+    );
+  }
   if (!input.privateMode) {
     if (input.conversationId) {
       const thread = await prisma.conversation.findFirst({
@@ -777,6 +822,24 @@ async function handleChat(req: Request) {
       });
       workspaceProjectID = thread?.projectId ?? null;
       threadAgentId = thread?.agentId ?? null;
+      // A room (src/lib/agents/rooms.ts): one member answers this request,
+      // and from here on the turn is that agent's, exactly as in its thread.
+      if (thread && !thread.agentId) {
+        const setup = await prepareRoomTurn({
+          userId: user.id,
+          conversationId: input.conversationId,
+          message: input.message ?? null,
+          regenerate: !!input.regenerate,
+          roomTurnAgentId: input.roomTurn?.agentId ?? null,
+        });
+        if (setup && "status" in setup) {
+          return NextResponse.json({ error: setup.error, message: setup.message }, { status: setup.status });
+        }
+        if (setup) {
+          roomSetup = setup;
+          threadAgentId = setup.speaker.agentId;
+        }
+      }
     } else if (input.projectId) {
       workspaceProjectID = (
         await prisma.project.findFirst({
@@ -1936,7 +1999,9 @@ async function handleChat(req: Request) {
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "desc" },
     });
-    if (last?.role === "ASSISTANT") staleAssistantId = last.id;
+    // A room's follow-up turn answers the same message as a NEW reply: the
+    // answer before it is another member's and must stay.
+    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up") staleAssistantId = last.id;
     // The native clients append the user turn first and then regenerate, so
     // their file tokens arrive here: cloned onto the turn being answered,
     // once — a retry that re-sends them finds the file already there.
@@ -2099,6 +2164,41 @@ async function handleChat(req: Request) {
     }
   }
 
+  /*
+   * A room's turn ledger (src/lib/agents/rooms.ts). A new message writes its
+   * plan here, once it is saved and paid for; a follow-up or a retry already
+   * holds its row. `roomTurnId` is the row this generation answers, marked
+   * answered with the reply's id when it is persisted, and `roomMessageId` is
+   * the person's message every turn of this plan answers.
+   */
+  let roomTurnId: string | null = null;
+  let roomMessageId: string | null = null;
+  if (roomSetup) {
+    if (roomSetup.mode.kind === "new") {
+      roomMessageId =
+        userMessageId ??
+        (
+          await prisma.message.findFirst({
+            where: { conversationId: conversation.id, role: "USER" },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+          })
+        )?.id ??
+        null;
+      if (roomMessageId) {
+        roomTurnId = await recordRoomPlan({
+          userId: user.id,
+          conversationId: conversation.id,
+          userMessageId: roomMessageId,
+          plan: roomSetup.mode.plan,
+        });
+      }
+    } else {
+      roomTurnId = roomSetup.mode.turnId;
+      roomMessageId = roomSetup.mode.userMessageId;
+    }
+  }
+
   try {
   // Build context from the most recent messages, excluding the answer being
   // regenerated. `historyWindowStart` anchors the window to blocks so the
@@ -2113,9 +2213,18 @@ async function handleChat(req: Request) {
   // A held re-emit is saved as an empty tag (the body waits in its
   // suggestion); the model reads a line that says so instead, or it would take
   // the empty tag for "I wrote nothing" or for a change that landed.
-  const history = recent
+  const decryptedHistory = recent
     .filter((m) => m.id !== staleAssistantId)
     .map((m) => ({ ...m, content: describeHeldArtifactsForModel(decryptMessageText(m.content)) }));
+  // In a room, every other member's reply reads "[Scout] …", so the answering
+  // agent can tell its own words from a colleague's.
+  const history = roomSetup
+    ? labelRoomHistory(
+        decryptedHistory,
+        await roomSpeakers(user.id, conversation.id, roomSetup.room.members),
+        roomSetup.speaker.agentId
+      )
+    : decryptedHistory;
   // The window before project reference files are added — `modelHistory`
   // below is what the provider receives. Kept apart so the memory query, the
   // knowledge query and the attachment scan read the user's words alone.
@@ -2558,9 +2667,11 @@ async function handleChat(req: Request) {
    * read the agent answers as Juno rather than failing the message — the
    * thread is still a chat.
    */
+  /** The agent answering: the thread's, or in a room the member picked for this turn. */
+  const turnAgentId = roomSetup ? roomSetup.speaker.agentId : conversation.agentId;
   const agentContext =
-    conversation.agentId && !input.privateMode
-      ? await agentChatContext(user, conversation.agentId, {
+    turnAgentId && !input.privateMode
+      ? await agentChatContext(user, turnAgentId, {
           taskHandoff: taskToolOn,
           handoff: handoffGateOpen,
         }).catch((err) => {
@@ -2616,7 +2727,11 @@ async function handleChat(req: Request) {
         }),
         appliedSkill
       ),
-      agentContext?.block ?? null
+      agentContext?.block
+        ? roomSetup
+          ? `${agentContext.block}\n\n${roomPromptBlock(roomSetup, user.name, roomMessageId)}`
+          : agentContext.block
+        : null
     ),
     input
   );
@@ -2860,7 +2975,7 @@ async function handleChat(req: Request) {
        * excludes the answer being regenerated entirely, so regeneration is
        * deterministic in its inputs and versions simply accumulate oldest-first.
        */
-      const persistAssistantTurn = async (data: {
+      const persistAssistantTurnRow = async (data: {
         content: string;
         reasoning: string;
         /** Empty for every provider that streams unbroken prose. Persisted as
@@ -2955,6 +3070,12 @@ async function handleChat(req: Request) {
           },
           include,
         });
+      };
+      /** The persisted reply, and in a room the turn it answers marked answered with it. */
+      const persistAssistantTurn = async (data: Parameters<typeof persistAssistantTurnRow>[0]) => {
+        const row = await persistAssistantTurnRow(data);
+        if (roomTurnId) await markRoomTurn(user.id, roomTurnId, "answered", row.id);
+        return row;
       };
 
       send({
@@ -3386,7 +3507,41 @@ async function handleChat(req: Request) {
               },
             })
           : null;
-      const nativeTools = [taskTool, handoffTool, ...agentConfigTools, setupChangeTool].filter(
+      // Rooms (src/lib/agents/rooms.ts). `create_room` rides the same gate as
+      // the configuration tools; `ask_room_member` is offered only to a room's
+      // answering member, and the store holds the cap and the loop guard.
+      const createRoomTool =
+        agentConfigToolsOn && userMessageId
+          ? createCreateRoomTool({
+              user,
+              untrustedContent: untrustedContentInTurn,
+              onReceipt: (change, url) => {
+                sendActivity({ kind: "tool", title: change.summary, url, agentChange: change });
+              },
+            })
+          : null;
+      const askRoomMemberTool =
+        roomSetup && roomMessageId && agentContext && !agentContext.paused && roomMayAsk(roomSetup, roomMessageId)
+          ? createAskRoomMemberTool({
+              user,
+              conversationId,
+              userMessageId: roomMessageId,
+              self: { agentId: roomSetup.speaker.agentId, name: roomSetup.speaker.name },
+              members: roomSetup.room.members,
+              untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+              onAsked: (sentence) => {
+                sendActivity({ kind: "tool", title: sentence });
+              },
+            })
+          : null;
+      const nativeTools = [
+        taskTool,
+        handoffTool,
+        ...agentConfigTools,
+        setupChangeTool,
+        createRoomTool,
+        askRoomMemberTool,
+      ].filter(
         (tool): tool is NativeChatTool => tool !== null
       );
 

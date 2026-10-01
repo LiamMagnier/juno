@@ -218,6 +218,19 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // first, spending a code by its hash, uses prismaUnguarded on purpose
   // (src/lib/computer/handoff.ts): the code is the authorization.
   ["AgentComputerHandoff", "userId"],
+  // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
+  // per-message plan of who answers. A room's membership is a statement about
+  // one person's agents, so it is guarded like the agents themselves.
+  ["AgentRoomMember", "userId"],
+  ["AgentRoomTurn", "userId"],
+  // A linked phone number for iMessage (src/lib/channels). The webhook finds
+  // the link by its HMAC through prismaUnguarded, on purpose and only there.
+  ["ChannelLink", "userId"],
+  // Payments (src/lib/payments): an agent's spending limit and the one-time
+  // cards it was allowed. The Stripe webhook looks a card up by its provider
+  // id through prismaUnguarded, like the billing webhook does.
+  ["AgentSpendLimit", "userId"],
+  ["AgentPayment", "userId"],
 ]);
 
 /**
