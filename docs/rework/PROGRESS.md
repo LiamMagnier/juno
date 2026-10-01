@@ -299,7 +299,7 @@ which sets `PreviewPage.backgroundHostMode = .onePoint`; tests keep
 | Item | Status | Notes |
 |---|---|---|
 | §4.8 P0: PV-29/30/31 static server | DONE | dotfiles, `node_modules`, `.git`, `*.pem`, `*.key`, `.env*` → 404 on the asked and the symlink-resolved path; no `Access-Control-Allow-Origin`; foreign `Host` → 421; `SO_NOSIGPIPE`; `poll` writes, 64 KB streaming, single byte `Range`; SSE live reload via `WorkspaceChangeDetector` |
-| §4.8 P0: PV-33 show the command | DONE | start card and `PreviewConfigApprovalCard`: argv, folder, env keys, port, network, source, warnings |
+| §4.8 P0: PV-33 show the command | DONE | start card and `PreviewConfigApprovalCard`: argv (shell-quoted as run, control characters written out, `1d88f55b`), folder, env keys, port, network, source, warnings |
 | §4.8 P0: PV-2, PV-3, PV-4, PV-38, PV-39 | DONE | honest `open_preview` alias; restart and stop tools; one page re-parented on appear; reload keeps the route; wiring check rewritten |
 | §4.8 P0: PV-11 (`&&`, `vitest`) | SKIPPED | Lane B owns `CommandAndTestTools.swift` (§4.5, §6.2); not touched here |
 | §4.1 registry, leases, idle stop, sharing, worktrees | DONE | `JunoCodeLocal/PreviewRegistry.swift`; a view never stops a server; a deleted session's leases end; 30 min idle with no lease and no view |
@@ -310,7 +310,7 @@ which sets `PreviewPage.backgroundHostMode = .onePoint`; tests keep
 | §4.2 `.juno/launch.json` + read-only `.claude/launch.json` import | DONE | Claude's fields plus `network`, `ready`, `autoVerify`, `allowedExternalOrigins`; `${workspaceFolder}` and `${port}`; issues in words |
 | §4.2 discovery writes the first file | DONE | Node (nested, root lockfile), Django, Flask, FastAPI, Rails, PHP/Laravel, Hugo, Go, static from the folder holding `index.html` (PV-16); "Save as .juno/launch.json" in the pane |
 | §4.2 URL truth (PV-8, PV-9) | DONE | `ListeningSocketOwnership` (libproc); every printed URL is a candidate, only a port the group listens on counts; LAN rewritten to loopback only when the group listens there |
-| §4.2 ports (PV-15) | PARTIAL | `autoPort: true` picks a free port and passes `PORT`; a fixed taken port fails naming its owner. "Unset asks once and saves" is not built: unset behaves as fixed and the message suggests `autoPort` |
+| §4.2 ports (PV-15) | DONE (review) | `autoPort: true` picks a free port and passes `PORT`; a fixed taken port fails naming its owner; with `autoPort` unset a taken port fails once and the pane asks "start web on a free port instead?", the answer kept on this Mac per configuration (`5d384733`) |
 | §4.2 network ask (PV-7), ready, logs (PV-12) | DONE | blocked outbound host read from the log, asked once per configuration hash, stored on this Mac; `ready.path`/`timeoutSeconds`; 5,000-line ring buffer with cursors, level and search |
 | §4.2 env secrets from the Keychain | DONE | `PreviewSecrets`: server secrets injected into that configuration's child only and scrubbed from its log; the pane's Secrets sheet shows names only |
 | §4.3 `preview_server` | DONE | list, start, stop, restart, logs, attach |
@@ -365,17 +365,69 @@ asset symbols SwiftPM does not compile, so they are blank in these PNGs only),
 | `npm run native:test JunoCode` | pass: 1,409 XCTests (18 skipped, snapshot tests among them), 78 Swift Testing, 0 failures (seams baseline 1,322 / 78) |
 | `xcodebuild … -scheme JunoDesktop -configuration Debug CODE_SIGNING_ALLOWED=NO build` | BUILD SUCCEEDED (DerivedData `/private/tmp/juno-rf-dd-code-preview`) |
 | `JUNO_SNAPSHOT_DIR=… JUNO_SWIFT_FILTER=PreviewSnapshotTests npm run native:test JunoCode` | 5 tests, 12 PNGs reviewed by eye |
-| `node scripts/check-code-preview-wiring.mjs`, `check-code-runtime-wiring.mjs`, `check-tracked-secrets.mjs` | pass |
+| `node scripts/check-code-preview-wiring.mjs`, `check-code-runtime-wiring.mjs`, `check-tracked-secrets.mjs` | wiring checks pass; the secret scan failed on this head (corrected in review, `7928a2af`) |
 | `npm run typecheck`, `npm test` | not run: no TypeScript changed in this lane |
+
+#### Adversarial review (2026-10-01, `6a273ab9`…`2eaa4f1a`)
+
+Every DONE row was checked end to end against the code. Defects found and
+fixed on the lane branch, each with a test that fails without the fix:
+
+| Area | Defect | Fix |
+|---|---|---|
+| Floor | A `drag` that presses and releases on Delete clicks it, unchecked | both ends checked like a click (refs, coordinates, covering element) |
+| Floor | A line break in `type` text (`\n`, `\r`, `\r\n`, U+2028) or a raw `\r` key is Enter, unchecked | `guardEnter` for any activation character or key |
+| Floor | The focusing click of `type` / `upload` lands on a covering element, unchecked | covering element checked |
+| Floor | `execute` re-assessed the call from a process-wide ref-name map and "current dialog", so another session's snapshot (or page) could lift the backstop for an unapproved press | the floor approval is the assessment the reader answered, per call digest, taken once, bound to the element names and question the card showed; ref names per session, open questions per page |
+| Escape from the page | WebKit re-sends a key the page ignores through `NSApp.sendEvent`; a test showed an agent's Meta+J firing the app's menu item (so Meta+Q, Meta+W, Meta+., Meta+Return buttons) | synthesized key events remembered and dropped by a local monitor when re-sent |
+| Main thread | A synthesized native right click opens WebKit's context menu, whose tracking loop holds the main thread | right clicks dispatched in the page (button-2 pointer and mouse events, `contextmenu`) |
+| Approvals | Start approvals leaked across sessions (`wasApprovedAnywhere`; shown bytes keyed by a digest every session shares); an unshown start ran | per session; no record of what was shown runs nothing |
+| Approvals | An attach `url` in a repository file needed no approval and became a navigation target | asked about like any configuration; only approved ones are targets |
+| Secrets | `upload` handed `.env`, keys and dotfiles to a page; a named secret could be typed into a visible field and read back | refused (asked or via symlink); secrets only into password fields |
+| Loopback | `app.localhost` (resolver may use DNS) and `0127.0.0.1` (octal 87 to WebKit) counted as loopback | exact spellings only |
+| Static server | `stop()` closed sockets still being written by handlers and live-reload writers (descriptor reuse); unbounded live-reload streams | shutdown, owners close, stream writes serialized; 16 streams |
+| Registry | A start that lost a race to a stop left its process running with no entry or ledger line | the losing start stops what it launched |
+| Ledger | A leaderless group was signalled on start times alone; a reused group number could be someone else's job | members must also work inside the server's folder |
+| Verify loop | Desktop and phone failures in one round counted as "the same failure twice", so a fix was never re-checked | repeats counted across workspace revisions |
+| Verify loop | Any passing screenshot covered an edited page | a pass must be of a changed page's route (components and styles: anywhere) |
+| Verify loop | Discovered (unconfigured) configurations made every `.ts` edit in a Node backend a UI edit | roots are configured or running previews only |
+| Pane | Esc worked only with SwiftUI focus and within 3 s of an action | also with the page focused, for a minute after the agent acted |
+| Pane | A background page could open the reader's browser by script-clicking a link | only a link the reader can have clicked |
+| Memory | A stopped server's hidden page lived on (unthrottled in the 1-pt host); crash loops reloaded forever; 5,000 log lines could reach hundreds of MB | page retired; reloads bounded; lines cut at 4,096 characters |
+| Gates | `check-tracked-secrets.mjs` failed on the lane head (a token-shaped literal in a test), though reported as passing | literal assembled at run time |
+
+Gates after the review (on `2eaa4f1a`, through `gate.sh`): `npm run
+native:test JunoCode` pass, 1,437 XCTests (18 skipped) and 78 Swift Testing,
+0 failures; the Preview suites are `StaticPreviewServerTests` 13,
+`LaunchConfigurationTests` 13, `PreviewServerLedgerTests` 7,
+`PreviewRegistryTests` 19, `PreviewVerificationTests` 18,
+`PreviewBrowserTests` 26, `PreviewVerifyLoopTests` 5,
+`PreviewToolPermissionTests` 14, `PreviewSnapshotTests` 5 (PNGs re-rendered
+and reviewed, the port question added to the banners).
+`xcodebuild … -scheme JunoDesktop -configuration Debug CODE_SIGNING_ALLOWED=NO
+build`: BUILD SUCCEEDED. `check-code-preview-wiring.mjs`,
+`check-code-runtime-wiring.mjs`, `check-tracked-secrets.mjs`: pass.
+
+PARTIAL item completed in review: PV-15 (above). Still open: "Always for this
+preview, offered once per session" (§4.4); durable shells as the process
+layer (§4.1); a structured annotate attachment (Lane F's `CodeAttachment`);
+PV-11 (Lane B).
 
 #### Risks
 
 - The 1-pt background host is unverified in a real app session (the
   harness never reports a visible occlusion state); manual probe above.
-- `wasApprovedAnywhere`: an approved start card covers the same bytes in
-  every session of the same checkout for the rest of the app run.
 - Floor words are a list (English plus French); a control named otherwise
-  ("Nuke it") is input at `.execute`. Clicks by coordinates are resolved to
-  their element and checked, never trusted.
+  ("Nuke it"), or a chat box whose Enter sends with no form, is input at
+  `.execute`. Clicks by coordinates are resolved to their element and
+  checked, never trusted.
+- A server secret reaches code the agent can edit (`npm run dev` runs
+  `package.json`, which the agent may change without re-approval), so it is
+  not hidden from a determined agent; only from logs, files and the model's
+  direct view.
+- A session's lease holds its server for as long as the session exists;
+  there is no archive event to end it.
+- Preview evidence screenshots accumulate per session (D-022: kept with the
+  session, deletable with it).
 - Merge points with Lanes A and B listed above (`SessionController` gate
   wrapper, UI records as side effects, `CommandClassifier` copy).
