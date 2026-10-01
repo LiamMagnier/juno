@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CrewFace, type CrewMember } from "./crew/face";
+import { CrewFace } from "./crew/face";
 import { CREW, crew, type CrewRow, type Segment } from "./fixtures";
 import { Composer } from "./composer";
-import { LOOK, lookOf, MemberPeek, Reaction, threadColour, useMemberTheme, type Look, type PeekHandle } from "./crew-bridge";
+import { MemberPeek, Reaction, useMemberTheme, type PeekHandle } from "./crew-bridge";
+import { CrewEditor } from "./crew-editor";
 import { Icon } from "./icons";
 import { FileMark } from "./marks";
 import { R, SPRING, T, useReduced } from "./motion";
@@ -165,216 +166,19 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
 
 type Sheet = { kind: "add" } | { kind: "customize"; id: string } | null;
 
-/** A labelled row of choices. Arrow keys move within it (radiogroup). */
-function Choice<V extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  render,
-  shape = "chip",
-  said,
-}: {
-  label: string;
-  value: V;
-  options: readonly V[];
-  onChange: (v: V) => void;
-  render: (v: V, on: boolean) => React.ReactNode;
-  shape?: "chip" | "tile" | "swatch";
-  /** The chosen option in words, beside the label (swatches have no text of their own). */
-  said?: string;
-}) {
-  const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
-  const id = `choice-${label.toLowerCase().replace(/\s+/g, "-")}`;
-  const move = (i: number) => {
-    const n = (i + options.length) % options.length;
-    onChange(options[n]);
-    refs.current[n]?.focus();
-  };
-  return (
-    <div className="jn-choice">
-      <p className="jn-choice__label" id={id}>
-        {label}
-        {said ? <span className="jn-choice__said">{said}</span> : null}
-      </p>
-      <div className="jn-choice__row" data-shape={shape} role="radiogroup" aria-labelledby={id}>
-        {options.map((o, i) => {
-          const on = o === value;
-          return (
-            <button
-              key={o}
-              ref={(el) => {
-                refs.current[i] = el;
-              }}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              tabIndex={on ? 0 : -1}
-              className="jn-choice__opt jicon-trigger"
-              onClick={() => onChange(o)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                  e.preventDefault();
-                  move(i + 1);
-                }
-                if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  move(i - 1);
-                }
-              }}
-            >
-              {render(o, on)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ThreadSample({ family, name }: { family: string; name: string }) {
-  return (
-    <div className="jn-tsample" style={threadColour(family)} data-member-theme={family}>
-      <span className="jn-tsample__bubble">Thanks, {name}. That saves me a morning.</span>
-      <span className="jn-tsample__disc" aria-hidden="true">
-        <Icon name="send" size={16} />
-      </span>
-    </div>
-  );
-}
+const DOES: Record<string, string> = {
+  mira: "Watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it.",
+  scout: "Researches markets and competitors and writes short briefs with sources.",
+  otto: "Reconciles invoices against the ledger every month and flags differences over €50.",
+  rhea: "Reads support escalations and drafts replies for you to send.",
+  ines: "Screens applicants for open roles and schedules first calls.",
+  tomas: "Watches alerts overnight and writes the incident summary for the morning.",
+};
 
 function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () => void }) {
-  const reduced = useReduced();
-  const editing = sheet.kind === "customize" ? crew(sheet.id) : null;
-  const base: CrewMember = editing ? face(editing) : { id: "new", name: "Nova", role: "Product analytics", seed: "nova-3c1d" };
-  const [look, setLook] = React.useState<Look>(() => lookOf(base, editing ? undefined : "lagoon"));
-  const [name, setName] = React.useState(editing?.name ?? "Nova");
-  const [role, setRole] = React.useState(
-    editing ? "Watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it." : "Reads the product analytics every Monday and writes the digest for #product.",
-  );
-  const [spin, setSpin] = React.useState(0);
-  const member: CrewMember = { ...base, name: name || "Unnamed", avatar: look };
-  const set = (patch: Partial<Look>) => setLook((l) => ({ ...l, ...patch }));
-  const who = name.trim() || "Your teammate";
-
-  return (
-    <>
-      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fade} onClick={onClose} />
-      <motion.div
-        className="jn-editor"
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? `Customize ${editing.name}` : "Add to crew"}
-        initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.99 }}
-        transition={reduced ? R : T.slow}
-      >
-        <div className="jn-editor__stage">
-          <div className="jn-editor__char">
-            <CrewFace member={member} state="available" size={184} facing="front" focused morph arrive={!editing} />
-          </div>
-          <p className="jn-editor__name">{name.trim() || "Unnamed"}</p>
-          <p className="jn-editor__role">{editing ? editing.role : "New to the crew"}</p>
-          <button
-            type="button"
-            className="jb jb--secondary jb--sm jicon-trigger jn-editor__shuffle"
-            onClick={() => {
-              setSpin((s) => s + 1);
-              setLook(LOOK.shuffle(`${base.seed}-${spin + 1}`));
-            }}
-          >
-            <Icon name="retry" size={16} />
-            Surprise me
-          </button>
-        </div>
-
-        <div className="jn-editor__form">
-          <header className="jn-editor__head">
-            <h2 className="t-display">{editing ? `Customize ${editing.name}` : "Add to crew"}</h2>
-            <button type="button" className="jib jicon-trigger" aria-label="Close" onClick={onClose}>
-              <Icon name="close" size={20} />
-            </button>
-          </header>
-
-          <div className="jn-editor__body">
-            <div className="jn-editor__fields">
-              <label className="jn-flabel">
-                <span>Name</span>
-                <span className="jfield jn-flabel__field">
-                  <input value={name} onChange={(e) => setName(e.target.value)} />
-                </span>
-              </label>
-              <label className="jn-flabel">
-                <span>What {editing ? editing.name : "they"} do{editing ? "es" : ""}</span>
-                <span className="jfield jn-flabel__field">
-                  <input value={role} onChange={(e) => setRole(e.target.value)} />
-                </span>
-              </label>
-            </div>
-
-            <Choice
-              label="Body"
-              value={look.shape}
-              options={LOOK.shapes}
-              shape="tile"
-              onChange={(v) => set({ shape: v })}
-              render={(v) => (
-                <>
-                  <CrewFace member={{ ...member, avatar: { ...look, shape: v } }} state="available" size={44} facing="front" live={false} />
-                  <span className="jn-choice__text">{LOOK.shapeLabel(v)}</span>
-                </>
-              )}
-            />
-
-            <Choice
-              label="Colour"
-              value={look.color}
-              options={LOOK.colors}
-              shape="swatch"
-              said={LOOK.colorLabel(look.color)}
-              onChange={(v) => set({ color: v })}
-              render={(v) => (
-                <span className="jn-swatch" style={{ background: LOOK.colorFlat(v) }}>
-                  <span className="sr">{LOOK.colorLabel(v)}</span>
-                </span>
-              )}
-            />
-
-            <Choice label="Material" value={look.material} options={LOOK.materials} onChange={(v) => set(LOOK.withMaterial(v))} render={(v) => LOOK.materialLabel(v)} />
-
-            <Choice label="Eyes" value={look.eyes.style} options={LOOK.eyes} onChange={(v) => set({ eyes: { ...look.eyes, style: v } })} render={(v) => LOOK.eyeLabel(v)} />
-
-            <div className="jn-choice">
-              <p className="jn-choice__label">
-                Thread colour <span className="jn-choice__said">Follows {LOOK.colorLabel(look.color)}</span>
-              </p>
-              <p className="jn-editor__hint">Your messages to {editing ? editing.name : who} and the send button take this colour, so you always know whose thread you are in.</p>
-              <ThreadSample family={look.color} name={name.trim() || "Nova"} />
-            </div>
-          </div>
-
-          <footer className="jn-editor__foot">
-            {editing ? (
-              <button type="button" className="jb jb--link" onClick={() => setLook(lookOf(face(editing)))}>
-                Back to the original look
-              </button>
-            ) : (
-              <p className="t-meta jn-editor__next">{who} starts with no apps. You choose them next.</p>
-            )}
-            <span className="jn-editor__actions">
-              <button type="button" className="jb jb--ghost" onClick={onClose}>
-                Cancel
-              </button>
-              <button type="button" className="jb jb--primary" aria-disabled={!name.trim()}>
-                {editing ? "Save" : `Add ${name.trim() || "to crew"}`}
-              </button>
-            </span>
-          </footer>
-        </div>
-      </motion.div>
-    </>
-  );
+  if (sheet.kind === "add") return <CrewEditor sheet={{ kind: "add" }} onClose={onClose} />;
+  const m = crew(sheet.id);
+  return <CrewEditor sheet={{ kind: "customize", member: face(m), role: m.role, does: DOES[m.id] ?? m.long }} onClose={onClose} />;
 }
 
 /* ———————————————————————————— A member's own thread ———————————————————————————— */

@@ -52,7 +52,7 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  height: 122px;
+  height: 132px;
   margin-bottom: -18px;
   pointer-events: none;
 }
@@ -88,7 +88,7 @@
 }
 .jn .jn-mhead__peek {
   position: absolute;
-  top: 8px;
+  top: 4px;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -111,7 +111,7 @@
   flex-direction: column;
   align-items: center;
   min-width: 84px;
-  margin-top: -14px;
+  margin-top: -8px;
   padding: 5px 14px 6px;
   border-radius: 12px;
   background: var(--raised);
@@ -250,10 +250,10 @@
   z-index: 51;
   inset: 0;
   margin: auto;
-  width: min(960px, calc(100vw - 32px));
-  height: min(680px, calc(100dvh - 32px));
+  width: min(1020px, calc(100vw - 32px));
+  height: min(724px, calc(100dvh - 32px));
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: 372px minmax(0, 1fr);
   border-radius: 22px;
   background: var(--raised);
   box-shadow: var(--shadow-sheet);
@@ -269,11 +269,39 @@
   padding: 32px 24px 28px;
   background: var(--card);
 }
+.jn .jn-editor__stage {
+  position: relative;
+}
+.jn .jn-editor__who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
 .jn .jn-editor__char {
   display: grid;
   place-items: center;
-  width: 200px;
-  height: 200px;
+  width: 224px;
+  height: 224px;
+  cursor: grab;
+  touch-action: none;
+}
+.jn .jn-editor__char:active {
+  cursor: grabbing;
+}
+.jn .jn-editor__stagetools {
+  margin-top: 20px;
+}
+.jn .jn-editor__drag {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
 }
 .jn .jn-editor__name {
   margin-top: 18px;
@@ -294,9 +322,6 @@
   line-height: 18px;
   color: var(--ink-3);
 }
-.jn .jn-editor__shuffle {
-  margin-top: 22px;
-}
 
 .jn .jn-editor__form {
   display: flex;
@@ -309,19 +334,143 @@
   justify-content: space-between;
   padding: 22px 16px 10px 28px;
 }
-.jn .jn-editor__body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 6px 28px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
 .jn .jn-editor__fields {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
   gap: 12px;
+  padding: 6px 28px 0;
+}
+.jn .jn-editor__tabs {
+  padding: 18px 28px 4px;
+}
+.jn .jn-editor__tabs .jseg {
+  width: 100%;
+}
+.jn .jn-editor__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px 28px 22px;
+  scrollbar-width: thin;
+}
+.jn .jn-editor__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.jn .jn-editor__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.jn .jn-editor__switchrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.jn .jn-editor__switchrow > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jn .jn-editor__switchlabel {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink);
+}
+.jn .jn-editor__note {
+  color: var(--ink-2);
+}
+
+/* Sliders: a 4 px track in the well, an ink thumb with a plane-coloured ring;
+   the two ends are words, not numbers. */
+.jn .jn-range {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jn .jn-range__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.jn .jn-range__end {
+  flex: none;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-range input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.jn .jn-range input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--well-2);
+}
+.jn .jn-range input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--well-2);
+}
+.jn .jn-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--raised);
+  transition: transform var(--d-press) var(--e-out);
+}
+.jn .jn-range input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--raised);
+}
+.jn .jn-range input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(0.94);
+}
+.jn .jn-range input[type="range"]:focus-visible {
+  outline: none;
+}
+.jn .jn-range input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 3px var(--raised),
+    0 0 0 5px var(--focus);
+}
+
+/* Any colour: a swatch with a plus until a custom colour is chosen. */
+.jn .jn-swatch-custom {
+  position: relative;
+}
+.jn .jn-swatch-custom .jn-swatch {
+  display: grid;
+  place-items: center;
+  background: var(--well);
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.jn .jn-choice__upload {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--well);
+  color: var(--ink-2);
 }
 .jn .jn-flabel {
   display: flex;
@@ -421,11 +570,17 @@
 }
 .jn .jn-choice__row[data-shape="tile"] .jn-choice__opt {
   flex-direction: column;
-  width: 84px;
-  height: 88px;
+  width: 92px;
+  height: 92px;
   padding: 8px 4px 8px;
   gap: 4px;
   border-radius: 16px;
+}
+.jn .jn-choice__row[data-shape="tile"] .jn-choice__text {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .jn .jn-choice__text {
   font-size: 12px;
@@ -513,7 +668,7 @@
     padding-top: 16px;
   }
   .jn .jn-portrait__face > .jcf {
-    transform: scale(0.8);
+    transform: scale(0.86);
   }
   .jn .jn-editor {
     inset: auto 0 0 0;
@@ -526,18 +681,56 @@
   .jn .jn-editor__stage {
     flex-direction: row;
     justify-content: flex-start;
-    gap: 16px;
-    padding: 16px;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .jn .jn-editor__who {
+    align-items: flex-start;
+  }
+  .jn .jn-editor__name {
+    margin-top: 0;
+    font-size: 24px;
+    line-height: 30px;
   }
   .jn .jn-editor__char {
-    width: 96px;
-    height: 96px;
+    position: relative;
+    flex: none;
+    width: 104px;
+    height: 104px;
   }
   .jn .jn-editor__char > .jcf {
-    transform: scale(0.5);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  .jn .jn-editor__stage {
+    align-items: center;
   }
   .jn .jn-editor__fields {
     grid-template-columns: minmax(0, 1fr);
+    padding: 4px 16px 0;
+  }
+  .jn .jn-editor__head {
+    padding: 14px 8px 6px 16px;
+  }
+  .jn .jn-editor__tabs {
+    padding: 14px 16px 2px;
+  }
+  .jn .jn-editor__body {
+    padding: 12px 16px 18px;
+  }
+  .jn .jn-editor__pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jn .jn-editor__drag {
+    display: none;
+  }
+  .jn .jn-editor__stagetools {
+    margin-top: 8px;
+  }
+  .jn .jn-choice__row[data-shape="tile"] .jn-choice__opt {
+    width: calc((100% - 24px) / 4);
   }
 }
 

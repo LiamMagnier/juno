@@ -243,6 +243,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
   const [k, setK] = React.useState(0);
   const [thanked, setThanked] = React.useState(false);
   const [draft, setDraft] = React.useState("");
+  const [cheer, setCheer] = React.useState(0);
   useTimeline(() => [
     ...MEMBER_SEQ.map((s, i): Step => [600 + s.at, () => setK(i)]),
     [3000, () => peek.current?.blink()],
@@ -251,6 +252,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
       setDraft("");
       setThanked(true);
     }],
+    [4550, () => setCheer(1)],
   ]);
   const now = MEMBER_SEQ[k];
   return (
@@ -258,7 +260,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
       <div className="jn-mthread jn-mthread--moment">
         <header className="jn-mhead">
           <div className="jn-mhead__peek">
-            <MemberPeek member={member} state={now.state} words={now.words} arrive handleRef={peek} />
+            <MemberPeek member={member} state={now.state} words={now.words} arrive handleRef={peek} cheer={cheer} />
           </div>
         </header>
         <div className="jn-thread jn-member">
@@ -296,7 +298,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
             </div>
           </div>
         </div>
-        <p className="jn-mstage__cap jn-mstage__cap--frame">Mira arrives over her thread on the character spring, says what she is doing in words, and blinks when you start typing to her. Your message and the send disc wear her colour; her thanks lands once and sits still.</p>
+        <p className="jn-mstage__cap jn-mstage__cap--frame">Mira arrives over her thread on the character spring, says what she is doing in words, and blinks when you start typing to her. Your message and the send disc wear her colour. Thank her and she is glad once: a happy bounce over the thread and her face on your message, then stillness.</p>
       </div>
     </div>
   );

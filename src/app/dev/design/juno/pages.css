@@ -147,6 +147,10 @@
   line-height: 18px;
   color: var(--ink-2);
   max-width: 18ch;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 .jn .jn-portrait__state[data-state="waiting"] {
   color: var(--attn);
@@ -1107,13 +1111,16 @@
     overflow-x: auto;
   }
   .jn .jn-lineup {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 24px;
-    gap: 4px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 20px;
+    gap: 4px 8px;
+  }
+  .jn .jn-portrait__link {
+    padding: 10px 6px 14px;
   }
   .jn .jn-portrait__face {
-    width: 88px;
-    height: 88px;
+    width: 96px;
+    height: 96px;
   }
   .jn .jn-now {
     grid-template-columns: 24px minmax(0, 1fr) auto;

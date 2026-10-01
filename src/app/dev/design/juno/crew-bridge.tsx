@@ -20,23 +20,6 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import {
-  AVATAR_COLORS,
-  AVATAR_MATERIALS,
-  avatarFromSeed,
-  EDITOR_SHAPES,
-  EYE_LABEL,
-  EYE_STYLES,
-  FAMILY,
-  MATERIAL_LABEL,
-  normalizeAvatar,
-  SHAPE_LABEL,
-  type AvatarColor,
-  type AvatarConfig,
-  type AvatarMaterial,
-  type AvatarShape,
-  type EyeStyle,
-} from "./crew/avatar";
 import { CREW_BY_ID } from "./crew/fixtures";
 import { CrewFace, useAvatar, type CrewMember, type CrewState } from "./crew/face";
 import { colorHex, contrast, hexToOklch, isColorValue, oklchToHex } from "./crew/palette";
@@ -50,39 +33,6 @@ export function crewMember(m: Pick<CrewRow, "id" | "name" | "role" | "seed">): C
   const fx = CREW_BY_ID[m.id];
   return fx ? { id: m.id, name: m.name, role: m.role, seed: fx.seed, avatar: fx.avatar } : { id: m.id, name: m.name, role: m.role, seed: m.seed };
 }
-
-/* ———————————————————————————— The look (the editor's vocabulary) ———————————————————————————— */
-
-export type Look = AvatarConfig;
-
-/** The look a member wears now: its stored avatar, else its seed's (optionally in a chosen colour). */
-export function lookOf(member: CrewMember, color?: AvatarColor): Look {
-  return member.avatar ? normalizeAvatar(member.avatar, member.seed) : avatarFromSeed(member.seed, color);
-}
-
-const pick = <T,>(xs: readonly T[], n: number) => xs[Math.abs(n) % xs.length];
-
-/** What the editor offers, in the character system's own words. */
-export const LOOK = {
-  shapes: EDITOR_SHAPES as readonly AvatarShape[],
-  colors: AVATAR_COLORS as readonly AvatarColor[],
-  materials: AVATAR_MATERIALS as readonly AvatarMaterial[],
-  eyes: EYE_STYLES as readonly EyeStyle[],
-  shapeLabel: (v: AvatarShape) => SHAPE_LABEL[v] ?? v,
-  colorLabel: (v: string) => FAMILY[v as AvatarColor]?.label ?? v,
-  colorFlat: (v: string) => FAMILY[v as AvatarColor]?.flat ?? "#8a8c90",
-  materialLabel: (v: AvatarMaterial) => MATERIAL_LABEL[v] ?? v,
-  eyeLabel: (v: EyeStyle) => EYE_LABEL[v] ?? v,
-  /** Changing material clears a texture chosen for the old one (the new material wears its own default). */
-  withMaterial: (v: AvatarMaterial): Partial<Look> => ({ material: v, texture: { kind: "none" } }),
-  /** "Surprise me": a whole new look from a seed, body and material included. */
-  shuffle: (seed: string): Look => {
-    const cfg = avatarFromSeed(seed);
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-    return { ...cfg, shape: pick(EDITOR_SHAPES, h), material: pick(AVATAR_MATERIALS, h >> 3), texture: { kind: "none" } };
-  },
-};
 
 /* ———————————————————————————— Thread colour ———————————————————————————— */
 
@@ -231,7 +181,7 @@ function deriveThread(bodyHex: string): ThreadColour {
   }
   const bubbleL = fillFor(0.54, c, h, WHITE, 4.8);
   const bl2 = hexToOklch(bubbleL).l;
-  const bubbleD = fillFor(0.42, c * 0.8, h, DARK_TEXT, 4.6);
+  const bubbleD = fillFor(0.42, c * 0.68, h, DARK_TEXT, 4.6);
   const discD = oklchToHex({ l: 0.78, c: c * 0.75, h });
   return {
     bubble: [bubbleL, bubbleD],
@@ -287,6 +237,8 @@ const PEEK_WORDS: Record<CrewState, string> = {
 /** What a peek can be asked to do from outside: a blink when the person starts typing to the member (P4). */
 export interface PeekHandle {
   blink: () => void;
+  /** The happy reaction (thanked). */
+  happy: () => void;
 }
 
 /**
@@ -303,9 +255,10 @@ export function MemberPeek({
   member,
   state,
   words,
-  size = 72,
+  size = 76,
   arrive,
   handleRef,
+  cheer,
 }: {
   member: CrewMember;
   state: CrewState;
@@ -314,12 +267,14 @@ export function MemberPeek({
   size?: number;
   arrive?: boolean;
   handleRef?: React.MutableRefObject<PeekHandle | null>;
+  /** Increment to play the happy reaction (a thank-you landed). */
+  cheer?: number;
 }) {
   const reduced = useReduced();
   const said = words ?? PEEK_WORDS[state];
   const onHandle = React.useCallback(
-    (h: { blink: () => void } | null) => {
-      if (handleRef) handleRef.current = h ? { blink: () => h.blink() } : null;
+    (h: { blink: () => void; happy: () => void } | null) => {
+      if (handleRef) handleRef.current = h ? { blink: () => h.blink(), happy: () => h.happy() } : null;
     },
     [handleRef],
   );
@@ -331,7 +286,7 @@ export function MemberPeek({
         animate={{ y: 0, opacity: 1, scale: 1 }}
         transition={reduced ? { duration: 0.16 } : { ...SPRING.character, delay: 0.08 }}
       >
-        <CrewFace member={member} state={state} size={size} facing="front" focused onHandle={onHandle} />
+        <CrewFace member={member} state={state} size={size} facing="front" focused idle cheer={cheer} onHandle={onHandle} />
       </motion.span>
       <button type="button" className="jn-peek__tag" aria-label={`${member.name}, ${said}. Open profile`}>
         <span className="jn-peek__name">{member.name}</span>
