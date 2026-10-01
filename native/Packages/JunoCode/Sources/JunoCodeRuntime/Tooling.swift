@@ -91,6 +91,10 @@ public protocol CodeTool: Sendable {
     /// Defaults to `.byRisk`; a tool that must be seen before every run pins it
     /// to `.alwaysRequiresApproval` instead of inflating its risk tier.
     var approvalPolicy: ApprovalPolicy { get }
+    /// The policy for one invocation. Defaults to `approvalPolicy`; a tool
+    /// whose pin depends on what it is asked to do (`run_tests` follows the
+    /// rules for an accepted recipe check) answers per input.
+    func approvalPolicy(input: JSONValue) -> ApprovalPolicy
     func summary(input: JSONValue) -> String
     /// Semantic refusal before any authorization: return an error for input
     /// that must never run (forbidden commands), so it cannot even be
@@ -102,6 +106,7 @@ public protocol CodeTool: Sendable {
 public extension CodeTool {
     func precheck(input: JSONValue) -> ToolError? { nil }
     var approvalPolicy: ApprovalPolicy { .byRisk }
+    func approvalPolicy(input _: JSONValue) -> ApprovalPolicy { approvalPolicy }
 }
 
 public extension CodeTool {

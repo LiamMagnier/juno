@@ -70,7 +70,8 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
             allowsLocalhost: sandbox.allowsLocalhost,
             additionalWritablePaths: sandbox.additionalWritablePaths + overrides.writablePaths,
             protectsPolicyFiles: sandbox.protectsPolicyFiles,
-            homeDirectory: sandbox.homeDirectory
+            homeDirectory: sandbox.homeDirectory,
+            protectsCredentials: sandbox.protectsCredentials
         )
     }
 

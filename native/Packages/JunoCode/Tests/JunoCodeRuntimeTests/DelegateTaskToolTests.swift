@@ -383,6 +383,64 @@ final class DelegateTaskToolTests: XCTestCase {
         XCTAssertEqual(statuses, [.queued, .preparing, .running, .waitingForApproval, .running, .completed])
     }
 
+    /// Lowering the parent's mode reaches the work it delegated: a child
+    /// waiting on an approval loses it, and runs no higher than its parent
+    /// now may. A background child outlives the turn that started it, so
+    /// this is the only way the reader's change can reach it.
+    func testLoweringTheParentsModeCapsItsChildren() async throws {
+        let parent = try await makeParent()
+        let log = ReadLog()
+        let controls = SubagentControlRegistry()
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("edit", "record_edit", ["path": "src/a.swift"])], text: ""),
+            .text("I could not make the edit."),
+        ])
+        let tool = DelegateTaskTool(
+            model: model,
+            registry: ToolRegistry(tools: []),
+            store: store,
+            workspaceID: WorkspaceID(value: "workspace"),
+            workspaceName: "workspace",
+            modelID: "test-model",
+            reasoningEffort: .medium,
+            parentSystemPrompt: "You are Juno Code.",
+            executionFactory: { request in
+                SubagentExecutionEnvironment(
+                    registry: ToolRegistry(tools: [RecordingEditTool(log: log)]),
+                    workspaceName: "isolated",
+                    executionRootPath: "/workspace/.juno/worktrees/agent",
+                    gitBranch: request.branch,
+                    permissionMode: .askBeforeChanges
+                )
+            },
+            controls: controls
+        )
+        let delegation = Task {
+            try await tool.execute(
+                input: ["task": "Make the edit.", "mode": "workspace_write"],
+                context: ToolContext(sessionID: parent.id, toolCallID: "call-cap", emitOutput: { _, _ in })
+            )
+        }
+        var waiting: SubagentUpdateEvent?
+        for _ in 0..<300 where waiting == nil {
+            try await Task.sleep(for: .milliseconds(10))
+            waiting = await subagentUpdates(in: parent.id).last { $0.status == .waitingForApproval }
+        }
+        let childID = try XCTUnwrap(waiting?.childSessionID, "the child never asked")
+
+        await controls.capModes(ownedBy: CodeSessionID(), at: .readOnly)
+        var pending = await controls.pendingApprovals(for: childID)
+        XCTAssertEqual(pending.count, 1, "another session's mode is no authority over this child")
+        await controls.capModes(ownedBy: parent.id, at: .fullAccess)
+        pending = await controls.pendingApprovals(for: childID)
+        XCTAssertEqual(pending.count, 1, "raising the parent never raises a child")
+
+        await controls.capModes(ownedBy: parent.id, at: .readOnly)
+        _ = try await delegation.value
+        let paths = await log.paths
+        XCTAssertEqual(paths, [], "the edit it was waiting to make never ran")
+    }
+
     func testAnEmptyCallIsRefused() async throws {
         let parent = try await makeParent()
         do {

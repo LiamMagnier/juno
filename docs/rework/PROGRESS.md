@@ -369,3 +369,120 @@ the JunoDesktop Debug `xcodebuild` (`CODE_SIGNING_ALLOWED=NO`) succeeded;
 (`PermissionCoordinatorTaskGrantTests` +2, `GoalModelTests` +1,
 `AutonomySettingsTests` +1, `CompletionGateTests` +2, `GoalRuntimeTests` +6,
 `AutonomousLoopTests` +2); three updated for the wrap-up keeping its tools.
+### Lane B: verification, self-review and report (`rf/code-verify`, §6.2)
+
+Juno now knows how to check its own work and can prove it did: a per-project
+verify recipe (discovered, shown to the reader, remembered by its bytes), a
+`run_checks` tool, evidence the runtime mints from what commands actually did,
+a read-only reviewer sub-agent with validated JSON findings, and a run report
+whose "Checked" rows come only from that evidence. Commands the agent runs can
+no longer read the reader's credentials (S3). The loop itself (the stop check
+that calls these) is Lane A's; every runner it needs is here behind a small
+API, listed under "For Lane A" below.
+
+| Spec item | Status | Where |
+|---|---|---|
+| §1.8 recipe file `.juno/verify.json` (argv or shell `run`, `targeted` with `{files}`/`{tests}`, `paths`, `cwd`, `timeoutSeconds`, `ui[]`) | DONE | `JunoCodeCore/VerifyRecipe.swift` |
+| §1.8 discovery, 14 ecosystems to depth 3 (Node by lockfile, make, Cargo, SwiftPM with `--package-path`, Xcode via injected `xcodebuild -list -json`, Go, Python with `uv`/`poetry`, Gradle, Maven, Deno, Bun, Ruby, Elixir, .NET), per-package `paths` | DONE | `JunoCodeLocal/VerifyRecipeDiscovery.swift` |
+| §1.8 acceptance bound to the file's SHA-256, re-asked on any edit; "Run these without asking in this repository" writes exactly the listed `Bash(...)` rules to `.juno/settings.local.json` (approved as the reader's own edit, git-ignored), nothing to project files | DONE | `JunoCodeLocal/VerifyRecipeStore.swift` (approvals in `Application Support/JunoCode/verify-approvals/`, the existing approval-store convention, not `Juno/code/verify-approvals.json`) |
+| §1.8 recipe card (Liquid Glass lifted surface, exact commands, separately ticked rules option, Not now) on first need | DONE | `Studio/StudioVerifyRecipeCard.swift`, `Models/VerificationModel.swift`; one line in `StudioSessionView` |
+| §1.8 `run_checks` (targeted / full / kinds / ids; most specific package first; each command authorized separately as `run_command`; failing excerpt ≤ 4 KB; full log through the output spill) | DONE | `Tools/RunChecksTool.swift`, `CheckRunner.swift` |
+| §1.8 `run_command` records evidence for an exact recipe check or a classifier-graded check; others record nothing; stamped with the revision after the command's own file changes | DONE | `Tools/CommandAndTestTools.swift`, `CheckRunner.swift` (`CheckEvidenceRecorder`) |
+| §1.8 classifier check grading (`npm/pnpm/yarn/bun test`, `vitest run`, `jest`, `tsc --noEmit`, `xcodebuild test`, `pytest`, `go vet`, `cargo clippy`, …; only `&&` chains count; never changes the risk tier) | DONE | `JunoCodeCore/CommandCheckGrading.swift` (an extension in its own file, so the risk rules stay untouched) |
+| §1.8 `run_tests` unpinned for an exactly accepted recipe check (rules and ladder like `run_command`; still asks under Ask; every other command stays pinned, Full access included) | DONE | `CodeTool.approvalPolicy(input:)` (default: the old property) in `Tooling.swift`, used by `ToolRegistry.authorizeInvocation` |
+| §1.8 learned checks ("Add `pnpm vitest run` to this project's checks?") | SKIPPED | needs an action on the report row and a recipe edit flow; the evidence it would read is recorded |
+| `VerificationLedger` (fold over the transcript: revision per `fileChanged` and rewind, evidence by id, `git_diff` reads, run boundary at the reader's message; live via the store observer, restored identically from disk) | DONE | `JunoCodeRuntime/VerificationLedger.swift`, registry `VerificationLedgers.shared`. `VerificationEngine.swift` stays (the goal-evidence path the orchestrator and projection still call) until Lane A's goal runtime replaces it |
+| §1.9 diff-read continuation text, reviewer sub-agent through `delegate_task` (`agent: "reviewer"`, read-only, fresh context, parent's model), JSON validated by `SchemaValidator` (extra keys tolerated), P0/P1 and unmet criteria at ≥ 0.6 block, P2/P3 become report notes, 2 rounds per run, threshold > 40 lines or ≥ 3 files | DONE (runners) | `ReviewPass.swift`, `BuiltInAgents.swift`. The gate's `runReview` call is Lane A's |
+| §1.10 run report (outcome sentence, divider words, "Checked" rows only from ledger records, "Not checked since the last edit", review notes in "Left") and its row | DONE (builder and row) | `RunReportBuilder.swift`, `Studio/StudioRunReport.swift`. Appending `runOutcome` at finish is Lane A's |
+| `<verify>` session-state section | DONE (builder) | `VerifyStateSection` in `RunReportBuilder.swift`; adding it to the block is Lane A's (cache discovery when there is no file: `status()` walks the tree) |
+| §5.2 runtime: built-in `explorer`, `reviewer`, `verifier`; `agent` and `prompt` fields; custom agents through `SubagentDefinitionResolving`; an agent narrows tools and mode, never widens (a custom agent cannot take a built-in's name); write children get `min(parent stepLimit / 4, 60)` steps; `background: true` returns ids; `await_subagents`, `inspect_subagent`, `cancel_subagent` (parent-scoped); background children stop with the parent | DONE | `Tools/DelegateTaskTool.swift`, `BuiltInAgents.swift`, `SubagentControlRegistry.swift` (`BackgroundSubagents`) |
+| §5.2 wiring custom agent discovery into `delegate_task`; `verifier` getting `run_checks` and Preview reads | PARTIAL | `SessionController` must pass `agents:` (Lane F's `CustomAgentDiscovery`); the read-only child registry has no `run_checks`, so `verifier` reads only for now |
+| §5.13 diagnostics after edits (accepted typecheck, allowed without a prompt, under 20 s last time; recorded; ≤ 2 KB block) | PARTIAL | `EditDiagnostics.swift` with tests; calling it after an edit batch is the loop's (Lane A) or the `PostToolBatch` hook point's (Lane F) |
+| PV-11 (`&&` and `vitest`) | DONE | dev-server refusal read per command word (`vite build`, `vitest run`, `cd web && npm test` run; `cd web && npm run dev`, `vite`, `npm start` refused) |
+| S3 credential read deny-list (D-019) | DONE | `CommandSandboxProfile.credentialPaths`: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, gcloud, Azure, kube, Docker auth, netrc and git credentials, keychains, browser profiles, publishing tokens, shell histories. `file-read-data` only (existence stays visible); off for the reader's own terminal; a workspace inside one stays readable |
+
+**For Lane A (the loop) — the calls the gate makes:**
+- Evidence: `await VerificationLedgers.shared.ledger(for: sessionID, store:)` is the
+  `VerificationLedgerReading` the gate reads. Count revisions there, not separately.
+- `runCheck(checkIDs:)`: `CheckRunner.plan(recipe:scope:.targeted, ids:, changedFiles: ledger.filesChangedThisRun, fileExists:)`,
+  then `allowedWithoutPrompt(_:)` decides rule 6's run-it-yourself branch, and `runAndRecord(_:)` runs and records.
+- `runReview`: `ReviewPass.needsReviewer(trigger:changedLines:changedFiles:goalClaimsCompletion:)`,
+  `ReviewPass(delegate: <the session's DelegateTaskTool>, ledger:).run(_:sessionID:)`, then
+  `ReviewPass.reviewFindingsContinuation(for:)` / `diffReadContinuation` as the note text.
+- Rule 2 (`wait`): `BackgroundSubagents.shared.hasRunning(parentSessionID:)`.
+- Finish: `RunReportBuilder.build(.init(endReason:modelReport:evidence: ledger.snapshotThisRun, …))`, appended as `.runOutcome`.
+- Session state: `VerifyStateSection.make(status:evidence:)`.
+
+**Risks.** Keychain reads are denied to agent commands, so an `xcodebuild`
+that signs with a real identity inside the agent sandbox may not find it
+(ad-hoc and `CODE_SIGNING_ALLOWED=NO` builds are unaffected; not probed
+here). `git fetch`/`push` over SSH from an agent command fails by design;
+the reader's terminal is unchanged. The ledger registry keeps one small
+ledger per opened session for the app's life. `run_checks` adds no prompt
+of its own (its commands each ask), a deliberate departure from the spec's
+"risk `.execute`" so the reader sees each command once rather than twice.
+
+Gates on the branch (through `gate.sh`): `npm run native:test JunoCode`
+passes: 1,439 XCTests (1 skipped, 0 failures; 117 new) + 78 Swift Testing,
+with `JUNO_SNAPSHOT_DIR` set so the snapshot tests ran too. JunoDesktop
+Debug `xcodebuild … CODE_SIGNING_ALLOWED=NO build` succeeded (DerivedData
+`/private/tmp/juno-rf-dd-code-verify`). `code:runtime:check`,
+`code:preview:check` and `check-approval-dispatch` pass. `typecheck` and
+`npm test` were not run: no web or TypeScript file changed. New tests:
+`VerifyRecipeTests` (13), `CommandCheckGradingTests` (5),
+`VerifyRecipeDiscoveryTests` (18), `VerifyRecipeStoreTests` (6),
+`CommandSandboxCredentialTests` (6, real `sandbox-exec`),
+`VerificationLedgerTests` (12), `RunChecksToolTests` (10),
+`CommandAndTestToolsTests` (7), `ReviewPassTests` (8),
+`DelegateTaskAgentsTests` (9), `RunReportBuilderTests` (9),
+`EditDiagnosticsTests` (4), `VerificationModelTests` (6),
+`VerificationSnapshotTests` (4: run report, recipe card ticked and not,
+changed file, recorded checks, review findings; light and dark, reviewed by
+eye). `CodeToolProviderTests` and `AutonomousLoopSurfaceTests` were updated
+for the provider and rows that are no longer empty placeholders.
+
+#### Lane B adversarial review (2026-10-01)
+
+Every DONE claim above was traced end to end and holds; the review found
+and fixed eleven defects, in five commits on the branch:
+
+| Defect | Severity | Fix |
+|---|---|---|
+| "Run these without asking" wrote a `Bash(...)` rule for every recipe command, so a `git push --force`, `npm publish` or `curl \| sh` in a cloned repo's verify.json became a standing permission with one tick | P1, permission widening | Rules only for lines graded as a check with no destructive or refused part (`VerifyRecipe.permissionRules`) |
+| `run_checks` and the stop check ran any accepted recipe command by the mode: under Full Access a `git push` in verify.json ran silently | P1, floor | Non-check recipe commands pinned to asking, every time (`CheckRunner.approvalPolicy(for:)`), never "allowed without prompt" |
+| The card listed 8 checks and counted the rest, and cut commands in the middle, so the reader accepted commands they never saw | P1, consent | Every check listed in full; past 8 the list scrolls and says so |
+| A `targeted` template could carry `; curl …`; ids, paths, routes and folder or scheme names could carry sentences and line breaks into the `<verify>` session state the model reads as Juno's | P1, injection | Templates must be one plain command; ids are names; text fields are one line; discovery skips odd names and keeps ids ≤ 64 |
+| Background sub-agents kept their starting mode after the reader lowered the parent's (or left Code) | P1, stale authority | `SubagentControlRegistry.capModes`, called from `setPermissionMode` and `setBehavior`; lowers and revokes pending approvals, never raises |
+| Unbounded background sub-agents (each a model run, a write child a worktree) and finished entries kept forever | P2, resource | At most 4 running per parent, reserved in one step; newest 32 finished kept |
+| `git_diff` with a path filter, or an empty staged diff, marked the whole diff read | P2, fakeable evidence | Counts only when it could show the whole change (unfiltered, or paths covering every changed file since the last edit) |
+| A record stamped above its place in the transcript (rewind race) would turn fresh later | P2, fakeable evidence | Fold clamps each record to its position's revision; a stale refold is retried |
+| A reviewer that kept failing recorded no round, so the stop check could restart it forever | P2, loop | Attempts count against the 2 rounds, checked and counted atomically |
+| Grading counted `cd /elsewhere && npm test`, `make test deploy`, `./gradlew build publish`, `mvn install deploy`; recipe checks that start servers ran until timeout | P2 | Workspace-relative `cd` only; every build-tool target must be a check; servers and `&` refused and never runnable unasked |
+| Discovery ran `xcodebuild -list` with package resolution (network clones, package builds) before any acceptance; accepting found checks overwrote a verify.json that appeared meanwhile; the report divider could render a model command as a link; ledgers of deleted sessions were never released | P2/P3 | `-disableAutomaticPackageResolution`; `VerifyRecipeAcceptError.fileAppeared`; links stripped; release on `.sessionRemoved` |
+
+Also: `ToolRegistry.restricted(to:)` keeps the context provider when an agent
+narrows a child's tools; write children use the session's own step limit;
+seven more credential stores (hosting CLIs, more shell and REPL histories)
+join the S3 deny-list; check records name the folder they ran in.
+
+**Still open for Lane A.** The gate must treat a `runCheck` that recorded
+nothing (an approval declined, a hook's ask) as fired at that revision, or it
+can re-issue it; `resume(note:)` must not append a `.userPrompt` event (the
+ledger starts a run there); the always-confirm floor for commands is not in
+`PermissionCoordinator` on this base, so `run_command git push` under Full
+Access still runs (Lane B no longer adds any path to it). **For Lane F:**
+check commands run through `PermissionCoordinator` but not `PreToolUse`
+hooks for `run_command`. **Residual:** evidence can still be gamed by
+changing what a check runs (a `"test": "true"` script, a binstub,
+`--passWithNoTests`), which shows in the diff and to the reviewer; agent
+commands can still reach `securityd` over Mach (keychain items with open
+ACLs, or a system prompt for the rest): the file deny-list cannot cover it.
+
+Gates after the review (through `gate.sh`): `npm run native:test JunoCode`
+passes, 1,458 XCTests (17 skipped: the snapshot tests without
+`JUNO_SNAPSHOT_DIR`; 0 failures; 19 new) + 78 Swift Testing; the lane
+filter with `JUNO_SNAPSHOT_DIR` set passes and the PNGs (recipe card short,
+long and changed, run report, rows, findings; light and dark) were read:
+words only. JunoDesktop Debug `xcodebuild … CODE_SIGNING_ALLOWED=NO build`:
+BUILD SUCCEEDED. `check-code-runtime-wiring`, `check-code-preview-wiring`,
+`check-approval-dispatch` pass.

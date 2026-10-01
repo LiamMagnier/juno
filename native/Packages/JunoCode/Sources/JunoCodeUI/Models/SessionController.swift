@@ -984,7 +984,10 @@ public final class SessionController {
                 parentRules: { [permissions = live.permissions] in
                     await permissions.permissionRules
                 },
-                lifecycleHooks: lifecycleHooks
+                lifecycleHooks: lifecycleHooks,
+                // A write child gets a quarter of the session's own step
+                // limit, at most 60 (§5.2).
+                parentStepLimit: settings.maxTurns
             ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -1985,9 +1988,9 @@ public final class SessionController {
             session.configuration.behavior = behavior
             return
         }
-        await live.permissions.setMode(
-            behavior == .code ? session.configuration.permissionMode : .readOnly
-        )
+        let mode: PermissionMode = behavior == .code ? session.configuration.permissionMode : .readOnly
+        await live.permissions.setMode(mode)
+        await live.subagentControls.capModes(ownedBy: sessionID, at: mode)
         if behavior != .code {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseLatestCapture = nil
@@ -2323,6 +2326,9 @@ public final class SessionController {
             return
         }
         await live.permissions.setMode(mode)
+        // Delegated work, background children included, never keeps more
+        // authority than the parent now has (Lane B, §5.2).
+        await live.subagentControls.capModes(ownedBy: sessionID, at: mode)
         hookPolicy = HookExecutionPolicy(
             allowedHookIDs: hookPolicy.allowedHookIDs,
             permissionMode: mode,

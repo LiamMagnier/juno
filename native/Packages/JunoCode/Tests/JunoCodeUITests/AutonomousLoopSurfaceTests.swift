@@ -105,8 +105,8 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
             "Reviewed the diff: no correctness findings"
         )
         XCTAssertEqual(
-            StudioReviewFindingsRow.line(for: ReviewFinding(priority: .p1, confidence: 0.9, path: "src/a.ts", line: 41, title: "Closes on open")),
-            "P1 at src/a.ts:41: Closes on open"
+            StudioReviewFindingsRow.heading(for: ReviewFinding(priority: .p1, confidence: 0.9, path: "src/a.ts", line: 41, title: "Closes on open")),
+            "Must fix · high confidence · src/a.ts:41"
         )
         XCTAssertEqual(
             PreviewCheckRow.caption(for: UIVerificationRecord(surface: .web, target: "/settings", viewport: "phone", checks: [], passed: true, workspaceRevision: 1)),

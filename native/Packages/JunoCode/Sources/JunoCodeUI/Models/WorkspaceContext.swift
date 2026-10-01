@@ -190,7 +190,11 @@ public final class WorkspaceContext: Sendable {
                 ComputerKeyTool(computer: computerUse),
                 ComputerScrollTool(computer: computerUse),
                 InspectEditorBufferTool(reader: AccessibilityEditorBufferReader.shared),
-            ]
+            ],
+            // A command that is one of this project's checks, or a recognised
+            // build, test, lint or typecheck, leaves a record of its result
+            // (CODE_AGENT_SPEC §1.8). Lane B.
+            checkEvidence: CheckEvidenceRecorder(recipes: VerifyRecipeStore(workspaceRoot: access.rootURL))
         )
     }
 

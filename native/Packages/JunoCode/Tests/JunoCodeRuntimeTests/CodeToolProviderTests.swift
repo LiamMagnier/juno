@@ -77,8 +77,9 @@ final class CodeToolProviderTests: XCTestCase {
     }
 
     func testTheLaneProvidersStartEmpty() async throws {
+        // Lanes A and B have landed; the goal test below and RunChecksToolTests cover what they offer.
         let lanes: [any CodeToolProvider] = [
-            VerificationToolProvider(), ScreenToolProvider(),
+            ScreenToolProvider(),
             ShipToolProvider(), ExtensionToolProvider(),
         ]
         let tools = await ToolRegistry.providedTools(by: lanes, for: try context(.code))
