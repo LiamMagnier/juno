@@ -1055,7 +1055,9 @@ export async function extractConversationMemory(opts: {
     const merged = mergeDigest(storedDigest, digest);
     storedDigest = merged ?? null;
     await prisma.conversationMemory.upsert({
-      where: { conversationId: convo.id },
+      // Scoped: unscoped, the ownership guard refused this upsert, the chat was
+      // never marked read, and every turn re-ran (and re-paid for) extraction.
+      where: { conversationId: convo.id, userId: opts.userId },
       create: {
         userId: opts.userId,
         conversationId: convo.id,

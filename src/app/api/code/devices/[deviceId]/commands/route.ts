@@ -81,7 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
     if (!sid) return NextResponse.json({ error: "Missing sessionID" }, { status: 400 });
 
     const remoteSession = await prisma.codeRemoteSession.findUnique({
-      where: { deviceId_sessionId: { deviceId, sessionId: sid } },
+      where: { deviceId_sessionId: { deviceId, sessionId: sid }, userId: user.id },
       select: { id: true },
     });
     const remoteSessionId = remoteSession?.id ?? (

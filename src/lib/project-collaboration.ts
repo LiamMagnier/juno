@@ -40,12 +40,10 @@ export async function getProjectRole(userId: string, projectId: string): Promise
    * one case this function does not need help with. A collaborator's row lives
    * in ProjectMember, read guarded below on its compound unique.
    *
-   * It is a fix, not a waiver. The ownership guard THROWS in development
-   * (src/lib/db.ts), so this line was a 500 on every project route that checks
-   * access — the project page included, which meant it could not be opened at
-   * all on a dev machine. In production the guard only logs, so the same
-   * defect was invisible there and permanent here: nobody could open the page
-   * they were being asked to work on.
+   * It is a fix, not a waiver. The ownership guard THROWS (src/lib/db.ts, in
+   * every environment since the 2026-10-01 hardening), so a guarded lookup
+   * here is a 500 on every project route that checks access — the project
+   * page included.
    */
   const project = await prismaUnguarded.project.findUnique({
     where: { id: projectId },
@@ -99,7 +97,10 @@ export async function listProjectMembers(userId: string, projectId: string): Pro
       where: { id: projectId },
       include: { user: { select: { id: true, name: true, email: true, image: true } } },
     }),
-    prisma.projectMember.findMany({
+    // Every member's row, not the caller's: each ProjectMember row is owned by
+    // the member it names, so a `userId` scope would list only the caller.
+    // Authorized by the VIEWER check above, like the project read beside it.
+    prismaUnguarded.projectMember.findMany({
       where: { projectId },
       include: { user: { select: { id: true, name: true, email: true, image: true } } },
       orderBy: { joinedAt: "asc" },
