@@ -475,3 +475,17 @@ struct CodePreviewBrowserTool: CodeTool {
         return value
     }
 }
+
+/// The Preview's agent tools (§4.3): the session-owned browser, server logs,
+/// console, network and viewports.
+///
+/// Owned by Lane D (Preview and browser).
+/// Empty in the seams commit (CODE_AGENT_SPEC §6.0): the lane registers its
+/// tools here and the session reaches them through `CodeToolProviders`, so no
+/// shared file changes when they land. The three Preview tools above are still
+/// added by the session directly until Lane D moves them here.
+struct PreviewToolProvider: CodeToolProvider {
+    func tools(for _: CodeToolProviderContext) async -> [any CodeTool] {
+        []
+    }
+}

@@ -579,6 +579,25 @@ public final class SessionController {
     /// different instances and disagreeing about what is being reviewed.
     public let review = ReviewModel()
 
+    // One model per lane of the autonomous-agent build (CODE_AGENT_SPEC §6.0),
+    // each an `@Observable` type in its lane's own file, empty until the lane
+    // fills it. Per session for the reason `review` is: switching sessions must
+    // not carry one session's goal, grants or Preview into another.
+
+    /// The goal: progress row, sheet, start card. Lane A.
+    public let goal = GoalModel()
+    /// The verify recipe, recorded checks and run report. Lane B.
+    public let verification = VerificationModel()
+    /// Screen control: grants, lock, presence and step rows. Lane C.
+    public let screen = ScreenControlModel()
+    /// The session's Preview lease and dev server. Lane D.
+    public let previewLease = PreviewLeaseModel()
+    /// Line comments, inline findings and the CI bar. Lane E. Named apart from
+    /// ``review``, the document-review state that predates it.
+    public let reviewQueue = ReviewQueueModel()
+    /// Slash commands and the sheets they open. Lane F.
+    public let commands = CommandCenterModel()
+
     private var storeObserver: UUID?
     /// The `attach()` under way, which a second caller waits for rather than
     /// starting another alongside it.
@@ -823,6 +842,26 @@ public final class SessionController {
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools
+        // Each lane's tools, from its own provider. Added before the screen
+        // and vision filters below, so a provided tool is held to them too;
+        // Code turns only.
+        tools += await ToolRegistry.providedTools(
+            by: CodeToolProviders.all,
+            for: CodeToolProviderContext(
+                sessionID: sessionID,
+                workspaceID: workspaceID,
+                workspaceRoot: context.access.rootURL,
+                behavior: contract.behavior,
+                supportsVision: contract.supportsVision,
+                computerUseActive: contract.computerUseActive,
+                store: live.store,
+                permissions: live.permissions,
+                files: context.files,
+                executor: context.executor,
+                git: context.git,
+                tests: context.tests
+            )
+        )
         if !contract.supportsVision || !contract.computerUseActive {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
