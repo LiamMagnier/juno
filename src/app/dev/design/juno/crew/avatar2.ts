@@ -19,7 +19,7 @@ export const AVATAR_VERSION = 2 as const;
 
 /* ——————————————————————————— Vocabulary ——————————————————————————— */
 
-export const BODY_SHAPES = ["pebble", "mochi", "bean", "drop", "gumdrop", "loaf", "peanut", "star", "orb", "cub"] as const;
+export const BODY_SHAPES = ["pebble", "mochi", "bean", "drop", "gumdrop", "marshmallow", "peanut", "star", "orb", "cub"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 /** Kept for callers of the first engine. */
 export type AvatarShape = BodyShape;
@@ -30,7 +30,7 @@ export const SHAPE_LABEL: Record<BodyShape, string> = {
   bean: "Bean",
   drop: "Drop",
   gumdrop: "Gumdrop",
-  loaf: "Loaf",
+  marshmallow: "Marshmallow",
   peanut: "Peanut",
   star: "Soft star",
   orb: "Orb",
@@ -51,10 +51,10 @@ export const MATERIAL_LABEL: Record<MaterialKind, string> = {
 
 export interface AvatarMaterial {
   kind: MaterialKind;
-  /** Plush only: 0 short pile .. 1 long, fluffy fur. */
-  length: number;
-  /** Plush only: 0 airy .. 1 dense. */
-  density: number;
+  /** Plush: 0 short pile .. 1 long, fluffy fur. Velvet uses a fixed short pile. */
+  furLength: number;
+  /** Plush: 0 airy .. 1 dense. */
+  furDensity: number;
 }
 
 export const EYE_STYLES = ["button", "oval", "sleepy", "wide", "bead", "googly", "stitched"] as const;
@@ -186,7 +186,7 @@ export function avatarFromSeed(seed: string, color?: ColorValue): AvatarConfig {
     stretch: r2(r() * 0.6 - 0.3),
     color: color ?? SEED_COLORS[hashSeed(`color:${seed}`) % SEED_COLORS.length],
     pattern: { kind: "none" },
-    material: { kind: "plush", length: r2(0.35 + r() * 0.3), density: r2(0.55 + r() * 0.3) },
+    material: { kind: "plush", furLength: r2(0.35 + r() * 0.3), furDensity: r2(0.55 + r() * 0.3) },
     eyes: { style: pick(r, ["oval", "button", "oval"] as const), size: r2(0.4 + r() * 0.25), gap: r2(0.35 + r() * 0.3), y: r2(0.4 + r() * 0.2) },
     brows: "none",
     cheeks: r() < 0.4,
@@ -227,7 +227,7 @@ export function surpriseAvatar(seed: string, keepColor?: ColorValue): AvatarConf
     const shape = pick(r, BODY_SHAPES);
     const color: ColorValue = keepColor ?? pick(r, PALETTE_IDS);
     const kind = r() < 0.55 ? "plush" : pick(r, MATERIAL_KINDS);
-    const material: AvatarMaterial = { kind, length: r2(0.25 + r() * 0.6), density: r2(0.5 + r() * 0.45) };
+    const material: AvatarMaterial = { kind, furLength: r2(0.25 + r() * 0.6), furDensity: r2(0.5 + r() * 0.45) };
     const patterned = (kind === "plush" || kind === "felt" || kind === "vinyl") && r() < 0.35;
     const pattern: AvatarPattern = patterned
       ? { kind: pick(r, ["dip", "belly", "spots", "stripes"] as const), color: defaultPatternColor(color), scale: r2(0.3 + r() * 0.5) }
@@ -282,7 +282,7 @@ function oneOf<T extends string>(xs: readonly T[], v: unknown, fallback: T): T {
 }
 
 /* The first engine's vocabulary, mapped onto the characters (configs stored before D-032 keep rendering). */
-const V1_SHAPE: Record<string, BodyShape> = { pebble: "pebble", bean: "bean", dome: "gumdrop", orb: "orb", cushion: "loaf" };
+const V1_SHAPE: Record<string, BodyShape> = { pebble: "pebble", bean: "bean", dome: "gumdrop", orb: "orb", cushion: "marshmallow" };
 const V1_COLOR: Record<string, PaletteId> = {
   porcelain: "cloud",
   graphite: "graphite",
@@ -295,6 +295,14 @@ const V1_COLOR: Record<string, PaletteId> = {
 };
 const V1_MATERIAL: Record<string, MaterialKind> = { ceramic: "ceramic", glass: "vinyl", felt: "felt", stone: "ceramic", metal: "vinyl", wood: "felt" };
 const V1_EYES: Record<string, EyeStyle> = { capsule: "oval", round: "button", lit: "wide" };
+
+/** A colour from any vocabulary (a palette id, a hex, or a first-engine family), else undefined. */
+export function colorFrom(v: unknown): ColorValue | undefined {
+  if (isPaletteId(v)) return v;
+  if (isHex(v)) return v.toLowerCase() as ColorValue;
+  if (typeof v === "string" && V1_COLOR[v]) return V1_COLOR[v];
+  return undefined;
+}
 
 function normalizeColor(v: unknown, fb: ColorValue): ColorValue {
   if (isPaletteId(v)) return v;
@@ -319,12 +327,17 @@ export function normalizeAvatar(input: unknown, seed = "juno"): AvatarConfig {
   const color = normalizeColor(o.color, base.color);
 
   let shape: BodyShape = base.shape;
-  if (typeof o.shape === "string") shape = v1 ? (V1_SHAPE[o.shape] ?? base.shape) : oneOf(BODY_SHAPES, o.shape, base.shape);
+  if (typeof o.shape === "string") shape = v1 ? (V1_SHAPE[o.shape] ?? base.shape) : oneOf(BODY_SHAPES, o.shape === "loaf" ? "marshmallow" : o.shape, base.shape);
 
   const m = (o.material ?? {}) as Record<string, unknown>;
   let material: AvatarMaterial;
-  if (typeof o.material === "string") material = { kind: V1_MATERIAL[o.material] ?? "plush", length: 0.5, density: 0.7 };
-  else material = { kind: oneOf(MATERIAL_KINDS, m.kind, base.material.kind), length: r2(clamp01(m.length, base.material.length)), density: r2(clamp01(m.density, base.material.density)) };
+  if (typeof o.material === "string") material = { kind: V1_MATERIAL[o.material] ?? "plush", furLength: 0.5, furDensity: 0.7 };
+  else
+    material = {
+      kind: oneOf(MATERIAL_KINDS, m.kind, base.material.kind),
+      furLength: r2(clamp01(m.furLength ?? m.length, base.material.furLength)),
+      furDensity: r2(clamp01(m.furDensity ?? m.density, base.material.furDensity)),
+    };
 
   const e = (o.eyes ?? {}) as Record<string, unknown>;
   const eyeStyle = v1 && typeof e.style === "string" ? (V1_EYES[e.style] ?? "oval") : oneOf(EYE_STYLES, e.style, base.eyes.style);
@@ -415,7 +428,7 @@ export function avatarKey(cfg: AvatarConfig): string {
     r2(cfg.stretch),
     colorHex(cfg.color),
     patternKey(cfg.pattern),
-    m.kind === "plush" ? `plush.${r2(m.length)}.${r2(m.density)}` : m.kind,
+    m.kind === "plush" ? `plush.${r2(m.furLength)}.${r2(m.furDensity)}` : m.kind,
     `${e.style}.${r2(e.size)}.${r2(e.gap)}.${r2(e.y)}`,
     cfg.brows,
     cfg.cheeks ? "c" : "-",
@@ -429,11 +442,33 @@ export function formKey(cfg: Pick<AvatarConfig, "shape" | "stretch">): string {
   return `${cfg.shape}|${r2(cfg.stretch)}`;
 }
 
+/* ——————————————————————————— Geometry hints ——————————————————————————— */
+
+/** Fur length in body units (plush 0.035..0.135, velvet a fixed short pile, others none). */
+export function furLengthOf(cfg: Pick<AvatarConfig, "material">): number {
+  if (cfg.material.kind === "plush") return 0.035 + cfg.material.furLength * 0.1;
+  if (cfg.material.kind === "velvet") return 0.014;
+  return 0;
+}
+
+/** How far above the body's top the headwear reaches (for flat previews and framing guesses). */
+export function headroomOf(cfg: Pick<AvatarConfig, "accessories">): number {
+  let h = 0;
+  for (const a of cfg.accessories) {
+    if (a.id === "antenna") h = Math.max(h, 0.42);
+    else if (a.id === "sprout") h = Math.max(h, 0.3);
+    else if (a.id === "beanie") h = Math.max(h, 0.3);
+    else if (a.id === "bucket" || a.id === "cap") h = Math.max(h, 0.14);
+    else if (a.id === "headphones") h = Math.max(h, 0.1);
+  }
+  return h;
+}
+
 /* ——————————————————————————— Words ——————————————————————————— */
 
 /** A one-line description, for the setup-change card and accessibility ("Coral plush mochi, wearing a flower pin"). */
 export function describeAvatar(cfg: AvatarConfig): string {
-  const mat = cfg.material.kind === "plush" ? (cfg.material.length > 0.65 ? "fluffy" : "plush") : MATERIAL_LABEL[cfg.material.kind].toLowerCase();
+  const mat = cfg.material.kind === "plush" ? (cfg.material.furLength > 0.65 ? "fluffy" : "plush") : MATERIAL_LABEL[cfg.material.kind].toLowerCase();
   const col = colorLabel(cfg.color);
   const pat = cfg.pattern.kind === "none" ? "" : cfg.pattern.kind === "image" ? " in its own image" : ` with ${PATTERN_LABEL[cfg.pattern.kind].toLowerCase()}`;
   const acc = cfg.accessories.map((a) => ACCESSORIES[a.id].label.toLowerCase());

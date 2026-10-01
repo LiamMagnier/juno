@@ -4,12 +4,12 @@
  * so sidebars, tokens and bylines never wait for the renderer to load.
  */
 
-import { avatarKey, type AvatarConfig } from "./avatar";
+import { avatarKey, type AvatarConfig } from "./avatar2";
 import type { CrewState, Facing } from "./rig";
 
 export type Theme = "light" | "dark";
 
-const STORE_PREFIX = "jcf1:";
+const STORE_PREFIX = "jcf2:";
 
 export function spriteDpr() {
   return typeof window === "undefined" ? 2 : Math.min(2, window.devicePixelRatio || 1);

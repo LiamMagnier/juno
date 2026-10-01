@@ -1,15 +1,15 @@
 import { notFound } from "next/navigation";
 import { JUNO_FONTS } from "../fonts";
-import { CrewLab, type LabSection } from "./lab";
+import { CrewGallery, type GalleryScene } from "./gallery";
 import "../tokens.css";
 import "./crew.css";
 
 /**
- * Crew identity, design round 3 (dev only; 404s in production).
+ * Crew characters, design round 3 (dev only; 404s in production).
  *
- *   /dev/design/juno/crew                              the 3D lab, light and dark
- *   /dev/design/juno/crew?scene=lab&only=matrix        one lab section
- *   &theme=light|dark                                  one appearance
+ *   /dev/design/juno/crew                       the whole lab, light and dark side by side
+ *   /dev/design/juno/crew?scene=<section>       one section (roster, matrix, states, ...)
+ *   &theme=light|dark                           one appearance
  */
 export const metadata = { title: "Crew" };
 
@@ -18,9 +18,15 @@ export default async function CrewDesignPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const str = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined);
   const theme = str("theme") === "light" || str("theme") === "dark" ? (str("theme") as "light" | "dark") : undefined;
+  const scene = (str("scene") ?? "lab") as GalleryScene;
+  const themes: ("light" | "dark")[] = theme ? [theme] : ["light", "dark"];
   return (
-    <div className={JUNO_FONTS}>
-      <CrewLab only={str("only") as LabSection | undefined} theme={theme} />
+    <div className={`${JUNO_FONTS} jcg-page`} data-cols={themes.length}>
+      {themes.map((t) => (
+        <div key={t} className="jn jcg-pane" data-theme={t} data-rm={str("rm") === "1" ? "" : undefined}>
+          <CrewGallery scene={scene} params={{ id: str("id"), state: str("state"), size: str("size") ? Number(str("size")) : undefined, tab: str("tab"), step: str("step") }} />
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,19 +1,20 @@
 "use client";
 
 /**
- * CrewFace: a crew member's identity and presence, as a small sculpted object.
+ * CrewFace: a crew member as a small 3D character.
  *
  * The member's AvatarConfig (or, untouched, the one derived from its seed)
- * says what the object is: a form grammar, proportions, a material, a colour
- * family, a texture, eyes. Presence is carried by pose only: where it looks,
- * how open its eyes are, how it sits, how much colour it holds.
+ * says who the character is: a body shape, a colour and pattern, a material
+ * (plush fur, velvet, knit, felt, soft vinyl, ceramic), eyes, brows, cheeks,
+ * a mouth and up to three accessories. Presence is carried by pose and
+ * expression, and always also by words beside the face:
  *
- *   available   three-quarter, looking ahead, at rest
- *   thinking    gaze up and aside, a slight tilt; slow drift while focused
- *   working     settled, forward and down on the work; a slow nod while focused
- *   waiting     turns to face you once, eyes a touch more open, then still
- *   paused      eyes closed, settled lower, colour quieted
- *   offline     matte and grey, eyes out
+ *   available   three-quarter, eyes ahead, at ease
+ *   thinking    looking up and aside, one brow asking; looks around while focused
+ *   working     forward and down, lids lowered; a focused bob while focused
+ *   waiting     hops once to face you, eyes wide, brows up, then still
+ *   paused      eyes closed, settled lower, colour quieted; breathes while focused
+ *   offline     grey, still, half lidded, the fur flattened
  *
  * Sizes up to 28 px render as cached sprites (<img>, no WebGL context each);
  * larger faces are live views of the one shared renderer, drawn only while
@@ -25,14 +26,15 @@
  */
 
 import * as React from "react";
-import { avatarFromSeed, avatarKey, normalizeAvatar, type AvatarColor, type AvatarConfig } from "./avatar";
+import { avatarFromSeed, avatarKey, colorFrom, normalizeAvatar, type AvatarConfig } from "./avatar2";
+import type { AvatarConfig as LegacyAvatarConfig } from "./avatar";
 import type { CrewState, Facing } from "./rig";
 import { Silhouette } from "./silhouette";
 import { resolveTheme, storedSprite, type Theme } from "./sprite-store";
 import type { LiveHandle } from "./engine";
 import "./face.css";
 
-export type { CrewState, Facing };
+export type { CrewState, Facing, LiveHandle };
 
 export const CREW_STATE_LABEL: Record<CrewState, string> = {
   available: "Available",
@@ -47,12 +49,12 @@ export interface CrewMember {
   id: string;
   name: string;
   role?: string;
-  /** A seed the identity is derived from when there is no stored avatar. */
+  /** A seed the character is derived from when there is no stored avatar. */
   seed: string;
-  /** The stored look. Absent: derived from the seed. */
-  avatar?: AvatarConfig;
-  /** A colour family chosen without a full avatar (legacy callers). */
-  family?: AvatarColor;
+  /** The stored look (v2; first-engine v1 looks are read too). Absent: derived from the seed. */
+  avatar?: AvatarConfig | LegacyAvatarConfig;
+  /** A colour chosen without a full avatar (a palette id, a hex, or a first-engine family). */
+  family?: string;
 }
 
 export interface CrewFaceProps {
@@ -61,7 +63,7 @@ export interface CrewFaceProps {
   size?: number;
   className?: string;
   /**
-   * Motion on (gaze, event blinks, state morphs). Off for faces that are
+   * Motion on (gaze, event blinks, state changes). Off for faces that are
    * pictures of a choice. Reduced motion always removes movement.
    */
   live?: boolean;
@@ -71,12 +73,22 @@ export interface CrewFaceProps {
   facing?: Facing;
   /** Give the face an accessible name ("Mira, waiting for you"). */
   label?: boolean | string;
-  /** The focused context (the open thread's header, the roster card being viewed): allows the thinking/working loop. */
+  /** The focused context (the open thread, the roster card being viewed): allows the state loops. */
   focused?: boolean;
+  /** The large character in the member's own thread: allows the idle (breathing, an occasional blink). */
+  idle?: boolean;
   /** Follow the pointer when it comes near (faces of 28 px and up). Defaults to `live`. */
   gaze?: boolean;
-  /** Morph shape changes (the avatar editor). */
+  /** Morph shape changes and boing on every change (the avatar editor). */
   morph?: boolean;
+  /** Voice level 0..1: the character talks (voice mode). */
+  level?: number;
+  /** Increment to play the happy reaction (thanked). */
+  cheer?: number;
+  /** Increment to play the waiting hop again. */
+  hop?: number;
+  /** Frame the character lower (-) or higher (+), as a fraction of the frame (the thread peek). */
+  offsetY?: number;
   /** Force a live render at any size. */
   forceLive?: boolean;
   /** Receive the live handle (blink on typing, drag in the editor). */
@@ -91,8 +103,13 @@ export function loadEngine() {
 }
 
 /** The config a member renders with: its stored avatar, else its seed's. */
+export function avatarOf(member: CrewMember): AvatarConfig {
+  return member.avatar ? normalizeAvatar(member.avatar, member.seed) : avatarFromSeed(member.seed, colorFrom(member.family));
+}
+
+/** The config a member renders with, memoised by its key. */
 export function useAvatar(member: CrewMember): AvatarConfig {
-  const cfg = member.avatar ? normalizeAvatar(member.avatar, member.seed) : avatarFromSeed(member.seed, member.family);
+  const cfg = avatarOf(member);
   const key = avatarKey(cfg);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return React.useMemo(() => cfg, [key]);
@@ -127,7 +144,8 @@ export function CrewFace(props: CrewFaceProps) {
 
 type Inner = CrewFaceProps & { cfg: AvatarConfig; name?: string; state: CrewState; size: number };
 
-function SpriteFace({ cfg, state, size, facing = "right", className, name, arrive }: Inner) {
+/** A still character rendered once and cached (sizes up to 28 px, and pictures of a choice). */
+export function SpriteFace({ cfg, state, size, facing = "right", className, name, arrive }: Inner) {
   const ref = React.useRef<HTMLSpanElement | null>(null);
   const theme = useTheme(ref);
   const [layers, setLayers] = React.useState<{ top: string | null; under: string | null }>({ top: null, under: null });
@@ -183,13 +201,13 @@ function SpriteFace({ cfg, state, size, facing = "right", className, name, arriv
   );
 }
 
-function LiveFace({ cfg, state, size, facing = "right", className, name, arrive, live = true, focused = false, gaze, morph, onHandle }: Inner) {
+function LiveFace({ cfg, state, size, facing = "right", className, name, arrive, live = true, focused = false, idle = false, gaze, morph, level, cheer, hop, offsetY, onHandle }: Inner) {
   const canvas = React.useRef<HTMLCanvasElement | null>(null);
   const ghost = React.useRef<HTMLCanvasElement | null>(null);
   const handle = React.useRef<LiveHandle | null>(null);
   const [ready, setReady] = React.useState(false);
   const key = avatarKey(cfg);
-  const opts = { cfg, state, size, facing, loop: live && focused, gaze: live && (gaze ?? true), morph: !!morph };
+  const opts = { cfg, state, size, facing, loop: live && focused, idle: live && idle, gaze: live && (gaze ?? true), morph: !!morph, offsetY: offsetY ?? 0 };
   const latest = React.useRef(opts);
   const onHandleRef = React.useRef(onHandle);
   React.useLayoutEffect(() => {
@@ -224,7 +242,17 @@ function LiveFace({ cfg, state, size, facing = "right", className, name, arrive,
   React.useEffect(() => {
     handle.current?.update(latest.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, state, facing, opts.loop, opts.gaze, opts.morph]);
+  }, [key, state, facing, opts.loop, opts.idle, opts.gaze, opts.morph, opts.offsetY]);
+
+  React.useEffect(() => {
+    handle.current?.level(level ?? 0);
+  }, [level]);
+  React.useEffect(() => {
+    if (cheer) handle.current?.happy();
+  }, [cheer]);
+  React.useEffect(() => {
+    if (hop) handle.current?.hop();
+  }, [hop]);
 
   return (
     <span

@@ -170,21 +170,23 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     hatDepth: 0.2,
     neckLine: 0.2,
   },
-  /* A loaf, a cat's loaf or a bread one: long, low, domed along the top. */
-  loaf: {
+  /* A marshmallow: a soft cylinder, pillowed at its middle, rounded at every edge. */
+  marshmallow: {
     sdf: (x, y, z) => {
-      const qx = Math.abs(x) - 0.62;
-      const qy = Math.abs(y + 0.38) - 0.18;
-      const qz = Math.abs(z) - 0.34;
-      const box = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - 0.46;
-      const dome = ellipsoid(x, y + 0.24, z, 1.02, 0.62, 0.78);
-      return seat(smin(box, dome, 0.3), y, G, 0.24);
+      const cy = -0.18;
+      const hh = 0.42;
+      const yy = y - cy;
+      const bulge = 1 + 0.06 * (1 - Math.min(1, (yy * yy) / 0.7));
+      const qx = Math.hypot(x, z / 0.94) / bulge - 0.6;
+      const qy = Math.abs(yy) - hh;
+      const d = Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - 0.4;
+      return seat(d, y, G, 0.12);
     },
-    eyeLine: 0.56,
-    eyeSpread: 0.26,
+    eyeLine: 0.55,
+    eyeSpread: 0.28,
     eyeScale: 1,
-    hatDepth: 0.3,
-    neckLine: 0.2,
+    hatDepth: 0.22,
+    neckLine: 0.22,
   },
   /* A peanut: a head and a body in one squashy piece. */
   peanut: {
