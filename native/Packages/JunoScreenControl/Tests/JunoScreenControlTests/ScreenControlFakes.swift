@@ -67,6 +67,13 @@ final class FakeCapture: ScreenCapturing, @unchecked Sendable {
         )
     }
 
+    private(set) var excludedApps: [Set<String>] = []
+
+    func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding bundleIDs: Set<String>) async throws -> CapturedImage {
+        lock.withLock { excludedApps.append(bundleIDs) }
+        return try await capture(display: display, excluding: own)
+    }
+
     func capture(display: DisplayInfo, excluding own: OwnProcess) async throws -> CapturedImage {
         lock.withLock { excludedOwn.append(own) }
         let image = displayImage ?? makeImage(width: Int(display.frame.width * display.backingScale), height: Int(display.frame.height * display.backingScale))

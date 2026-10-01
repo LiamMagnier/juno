@@ -228,6 +228,26 @@ final class ScreenControlHardeningTests: XCTestCase {
         }
     }
 
+    func testATakeoverFrameLeavesOutPasswordManagersAndDeniedApps() async throws {
+        let fixture = ScreenFixture()
+        fixture.environment.apps += [
+            RunningApp(pid: 201, bundleID: "com.1password.1password", name: "1Password"),
+            RunningApp(pid: 202, bundleID: "com.robinhood.desktop", name: "Robinhood"),
+            RunningApp(pid: 203, bundleID: "com.apple.Notes", name: "Notes"),
+        ]
+        try await fixture.start()
+        await fixture.service.setPreferences(ScreenControlPreferences(denied: ["com.apple.notes"]))
+        _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
+        _ = try await fixture.service.perform(
+            sessionID: "s1",
+            prepared: try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot)),
+            toolCallID: nil, attachFrame: true
+        )
+        let excluded = try XCTUnwrap(fixture.capture.excludedApps.last)
+        XCTAssertTrue(excluded.isSuperset(of: ["com.1password.1password", "com.robinhood.desktop", "com.apple.notes"]))
+        XCTAssertFalse(excluded.contains("com.apple.textedit"))
+    }
+
     // MARK: The card's place, proved again after the wait
 
     func testAFieldThatTurnedSecureWhileTheCardWaitedIsRefused() async throws {

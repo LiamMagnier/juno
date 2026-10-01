@@ -238,13 +238,23 @@ public struct SystemScreenCapture: ScreenCapturing {
     }
 
     public func capture(display: DisplayInfo, excluding own: OwnProcess) async throws -> CapturedImage {
+        try await capture(display: display, excluding: own, alsoExcluding: [])
+    }
+
+    public func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding bundleIDs: Set<String>) async throws -> CapturedImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let scDisplay = content.displays.first(where: { $0.displayID == display.id }) else {
             throw ScreenControlError.driverFailed("That display is no longer connected.")
         }
         // Juno's own apps, every one: never `excludingWindows: []` (CU-01).
-        let juno = content.applications.filter { own.owns(pid: $0.processID, bundleID: $0.bundleIdentifier) }
-        let filter = SCContentFilter(display: scDisplay, excludingApplications: juno, exceptingWindows: [])
+        // And every refused app, whatever the caller passed: a password
+        // manager or a security prompt is never in a frame.
+        let hidden = content.applications.filter {
+            own.owns(pid: $0.processID, bundleID: $0.bundleIdentifier)
+                || bundleIDs.contains($0.bundleIdentifier.lowercased())
+                || AppCategories.category(bundleID: $0.bundleIdentifier) == .refused
+        }
+        let filter = SCContentFilter(display: scDisplay, excludingApplications: hidden, exceptingWindows: [])
         let configuration = SCStreamConfiguration()
         configuration.width = max(1, Int((display.frame.width * display.backingScale).rounded()))
         configuration.height = max(1, Int((display.frame.height * display.backingScale).rounded()))

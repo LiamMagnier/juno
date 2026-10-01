@@ -760,7 +760,7 @@ public actor ScreenControlService: ScreenControlling {
                 ?? displays.first(where: \.isMain) ?? displays.first
             else { throw ScreenControlError.driverFailed("No display is available to capture.") }
             try checkpoint(sessionID, generation)
-            captured = try await deps.capture.capture(display: display, excluding: own)
+            captured = try await deps.capture.capture(display: display, excluding: own, alsoExcluding: await neverShown())
             bundleID = session.target?.bundleID ?? ""
             appName = session.target?.name ?? display.name
             pid = session.target?.pid ?? 0
@@ -792,6 +792,22 @@ public actor ScreenControlService: ScreenControlling {
             fingerprint: Self.fingerprint(scaled.image),
             capturedAt: deps.now()
         )
+    }
+
+    /// Running apps a takeover frame leaves out: refused ones, ones the
+    /// reader denied, and finance apps the reader has not allowed.
+    private func neverShown() async -> Set<String> {
+        var hidden = Set<String>()
+        for app in await deps.environment.runningApps() {
+            let key = app.bundleID.lowercased()
+            let category = AppCategories.category(bundleID: app.bundleID, appStoreCategory: app.appStoreCategory)
+            if category == .refused || preferences.denied.contains(key)
+                || (category.deniedByDefault && !preferences.allowedFinance.contains(key))
+            {
+                hidden.insert(key)
+            }
+        }
+        return hidden
     }
 
     /// Two identical consecutive captures, or the timeout: the frame after
@@ -1609,7 +1625,9 @@ public actor ScreenControlService: ScreenControlling {
             let displays = await deps.environment.displays()
             guard let display = displays.first(where: { $0.id == session.takeoverDisplayID }) ?? displays.first(where: \.isMain)
             else { throw ScreenControlError.driverFailed("No display is available to capture.") }
-            captured = try await deps.capture.capture(display: display, excluding: deps.environment.ownProcess)
+            captured = try await deps.capture.capture(
+                display: display, excluding: deps.environment.ownProcess, alsoExcluding: await neverShown()
+            )
         }
         try checkpoint(sessionID, generation)
         guard let rect = frame.geometry.sourcePixelRect(frameRegion: region),

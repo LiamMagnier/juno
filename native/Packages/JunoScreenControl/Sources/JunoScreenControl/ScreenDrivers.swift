@@ -197,6 +197,17 @@ public protocol ScreenCapturing: Sendable {
     /// A whole display, minus Juno's own windows and the presence overlay:
     /// `excludingApplications`, never `excludingWindows: []` (CU-01).
     func capture(display: DisplayInfo, excluding own: OwnProcess) async throws -> CapturedImage
+    /// The same, also leaving out the apps screen control never shows: the
+    /// refused ones (password managers, Keychain Access, security prompts)
+    /// and the ones the reader denied. A takeover sees the whole display,
+    /// but a password manager's window on it is not the model's to read.
+    func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding bundleIDs: Set<String>) async throws -> CapturedImage
+}
+
+public extension ScreenCapturing {
+    func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding _: Set<String>) async throws -> CapturedImage {
+        try await capture(display: display, excluding: own)
+    }
 }
 
 #endif
