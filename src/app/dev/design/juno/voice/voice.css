@@ -1,14 +1,15 @@
 /*
- * Voice and dictation: what the composer adds when it speaks. Everything else
- * is the system's composer (composer.css), unchanged.
+ * Alevr voice and dictation: what the composer adds when it speaks.
+ * Everything else is the system's composer (composer.css), unchanged.
  *
  * One new colour, for one job. The owner's voice rule (premium pass 1.8.1)
- * is warm for you, cool for Juno. Cool is the presence colour already
- * (Juno acting now). Warm is EMBER, a voice-only token: oklch(0.60 0.14 48)
- * in light (4.2:1 on the composer surface), oklch(0.75 0.11 55) in dark
- * (6.9:1), used only as a 1.5 px line (the string, the listening caret, the
- * mic's live bars) and never as a fill or as text, so it never competes with
- * attention (amber words) or danger (red). Muted is the fourth ink.
+ * is warm for you, cool for the assistant. Cool is the presence ink already
+ * (Alevr acting now). Warm is EMBER, a voice-only token: #c16229 in light
+ * (4.2:1 on the composer surface), #e49b68 in dark (6.9:1), used only for the
+ * channel's path, the listening caret and the mic's live bars, never as a
+ * fill behind text or as text, so it never competes with attention (amber
+ * words) or danger (red). A path at rest is the decorative ink (non-text
+ * ornament, by the brand's own role table).
  */
 
 .jn.jv {
@@ -16,8 +17,9 @@
   --vs-you: var(--voice-you);
   --vs-answer: var(--presence);
   --vs-quiet: var(--ink-4);
+  --vs-rest: var(--ink-4);
 }
-/* In a member's thread the member is the presence: their voice wears their thread colour. */
+/* In an agent's thread the agent is the presence: its voice wears its thread colour. */
 .jn.jv [data-member-theme] {
   --vs-answer: var(--m-disc);
 }
@@ -49,6 +51,32 @@
 }
 .jn .jv-string[data-tone="juno"] {
   color: var(--vs-answer);
+}
+
+/* ———————————————————————————— The channel (the signature) ———————————————————————————— */
+
+.jn .jv-channel {
+  display: block;
+  width: 100%;
+  height: 34px;
+  overflow: visible;
+}
+
+/* The ThinkingMark (stand-in) in the work row: graphite at rest; the pass tints toward the presence ink. */
+.jn .jv-continuum {
+  display: block;
+  flex: none;
+  color: var(--ink);
+}
+.jn .jv-live__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ink-2);
+}
+.jn .jv-live__mark .jv-continuum {
+  color: var(--ink-2);
 }
 
 /* ———————————————————————————— The row ———————————————————————————— */
@@ -234,63 +262,83 @@
 /* ———————————————————————————— The lab ———————————————————————————— */
 
 .jn .jv-lab {
-  padding: 40px 40px 56px;
+  padding: 40px 40px 64px;
   min-height: 100dvh;
   background: var(--ground);
 }
 .jn .jv-lab__head {
-  max-width: 760px;
-  margin-bottom: 28px;
+  max-width: 820px;
+  margin-bottom: 26px;
 }
 .jn .jv-lab__head p {
   margin-top: 6px;
   font-size: 14px;
+  line-height: 20px;
 }
-.jn .jv-lab__grid {
+.jn .jv-lab__cols,
+.jn .jv-lab__row {
   display: grid;
-  grid-template-columns: 132px repeat(3, minmax(0, 1fr));
-  gap: 16px 22px;
-  align-items: center;
+  grid-template-columns: 300px repeat(4, minmax(0, 1fr));
+  gap: 0 18px;
 }
-.jn .jv-lab__col {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-self: end;
-  padding-bottom: 4px;
-}
-.jn .jv-lab__name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink-2);
-}
-.jn .jv-lab__col[data-chosen] .jv-lab__name {
-  color: var(--ink);
-}
-.jn .jv-lab__line {
+.jn .jv-lab__colhead {
   font-size: 12px;
   line-height: 16px;
-  color: var(--ink-3);
-}
-.jn .jv-lab__rowhead {
-  display: flex;
-  flex-direction: column;
-  font-size: 13px;
-  line-height: 18px;
   font-weight: 500;
+  color: var(--ink-3);
+  padding: 0 0 8px 4px;
 }
-.jn .jv-lab__rowhead .ink-3 {
-  font-weight: 400;
-  font-size: 12px;
+.jn .jv-lab__cellhead {
+  display: none;
 }
-.jn .jv-lab__verdict {
+.jn .jv-lab__rows {
+  display: grid;
+}
+.jn .jv-lab__row {
+  align-items: center;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.jn .jv-lab__row[data-chosen] {
+  border-top-color: var(--line-3);
+}
+.jn .jv-lab__about {
+  display: grid;
+  gap: 4px;
   align-self: start;
+  padding-right: 6px;
+}
+.jn .jv-lab__name {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.jn .jv-lab__row:not([data-chosen]) .jv-lab__name {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.jn .jv-lab__tag {
+  font-weight: 500;
+  color: var(--ink-3);
+  margin-right: 2px;
+}
+.jn .jv-lab__line {
   font-size: 12.5px;
   line-height: 18px;
+  color: var(--ink-2);
+}
+.jn .jv-lab__verdict {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 17px;
   color: var(--ink-3);
 }
-.jn .jv-lab__verdict[data-chosen] {
+.jn .jv-lab__row[data-chosen] .jv-lab__verdict {
   color: var(--ink-2);
+}
+.jn .jv-lab__cell {
+  min-width: 0;
 }
 .jn .jv-labcomp {
   cursor: default;
@@ -303,32 +351,81 @@
   background: var(--fill-press);
   color: var(--ink);
 }
-.jn .jv-labcomp[data-edge] {
-  box-shadow: none;
+.jn .jv-labcomp .jv-mid {
+  padding: 0 8px 0 4px;
 }
-.jn .jv-edge-sig {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-  overflow: visible;
+/* Today's glow paints under a transparent composer, as it ships. */
+.jn .jv-glowref {
+  position: relative;
+  width: 100%;
+  border-radius: var(--r-composer);
 }
-.jn .jv-field-sig,
-.jn .jv-edge-sig__line {
-  color: var(--vs-quiet);
+.jn .jv-labcomp[data-glow] {
+  background: transparent;
 }
-.jn .jv-field-sig {
+
+/* C · the mark, centred in the row */
+.jn .jv-mark-sig {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.jn .jv-mark-sig svg path {
+  fill: var(--vs-rest);
+}
+
+/* D · the trace */
+.jn .jv-trace-sig {
   display: block;
   width: 100%;
+  overflow: visible;
 }
-.jn :is(.jv-field-sig, .jv-edge-sig__line)[data-tone="you"] {
-  color: var(--vs-you);
+
+/* Reference · the orb, drawn generically (the pattern, not anyone's artwork) */
+.jn .jv-orb-sig {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-width: 0;
 }
-.jn :is(.jv-field-sig, .jv-edge-sig__line)[data-tone="juno"] {
-  color: var(--vs-answer);
+.jn .jv-orb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, light-dark(#ffffff, #dfe6ff) 0%, light-dark(#8fb2ff, #7d9cf5) 38%, light-dark(#3a6cf0, #3c5fd8) 72%, light-dark(#2448c4, #23389a) 100%);
+  box-shadow: 0 0 18px light-dark(rgb(58 108 240 / 0.45), rgb(125 156 245 / 0.45));
+  will-change: transform;
 }
-.jn :is(.jv-field-sig, .jv-edge-sig__line)[data-tone="mix"] {
-  color: color-mix(in oklab, var(--vs-you) 50%, var(--vs-answer));
+.jn .jv-orb[data-phase="listening"] {
+  background: radial-gradient(circle at 38% 34%, light-dark(#fff6ee, #fff0e2) 0%, light-dark(#f6b38a, #f2b48c) 38%, light-dark(#e2753d, #d9773f) 72%, light-dark(#b9541f, #a55a2c) 100%);
+  box-shadow: 0 0 18px light-dark(rgb(226 117 61 / 0.45), rgb(217 119 63 / 0.4));
+}
+.jn .jv-orb[data-phase="muted"] {
+  background: radial-gradient(circle at 38% 34%, light-dark(#ffffff, #8c8e92) 0%, light-dark(#c9cbcf, #6c6e72) 60%, light-dark(#a9abaf, #55575b) 100%);
+  box-shadow: none;
+}
+
+@media (max-width: 1100px) {
+  .jn .jv-lab {
+    padding: 28px 16px 48px;
+  }
+  .jn .jv-lab__cols {
+    display: none;
+  }
+  .jn .jv-lab__row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .jn .jv-lab__about {
+    grid-column: 1 / -1;
+  }
+  .jn .jv-lab__cellhead {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-3);
+    margin: 0 0 6px 4px;
+  }
 }
 
 /* ———————————————————————————— Phone ———————————————————————————— */
