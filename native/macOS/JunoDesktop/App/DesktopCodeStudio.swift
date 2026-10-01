@@ -8,6 +8,7 @@ import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Code window's navigation model: what can be selected, how a selection
 /// survives a relaunch, and how the sessions of every transport flatten into
@@ -491,7 +492,12 @@ struct DesktopCodeSidebar: View {
 
     var body: some View {
         let all = runs
-        let waiting = DesktopCodeNavigationState.filtered(all, by: .needsYou)
+        // Local sessions wait in the Runs list; what is left here is the
+        // cloud's and other computers'.
+        let waiting = DesktopCodeNavigationState.filtered(all, by: .needsYou).filter {
+            if case .session = $0.item { return false } else { return true }
+        }
+        let runSections = isSearching ? [] : workbench.runSections
         let local = all.filter { if case .session = $0.item { return true } else { return false } }
         let conversations = sorted(local.filter { $0.workspaceID == nil })
         // Sessions of a project removed from Juno. They stay in the history,
@@ -505,6 +511,25 @@ struct DesktopCodeSidebar: View {
 
         return List(selection: $selection) {
             Section { navigationBlock }
+
+            // Runs (CODE_AGENT_SPEC §5.1): every session with a run, grouped
+            // by what it needs, each answered in its row. The heading carries
+            // the count in words; no dots, no badges.
+            ForEach(runSections) { section in
+                Section {
+                    ForEach(section.entries) { entry in
+                        StudioRunRow(entry: entry) { answer in
+                            await workbench.answer(answer, for: entry.sessionID)
+                        }
+                        .padding(.leading, JunoSidebarMetrics.titleLeading)
+                        .junoSidebarRowSelection(selection == .session(entry.sessionID))
+                        .tag(DesktopCodeSidebarItem.session(entry.sessionID))
+                        .contextMenu { runMenu(entry.sessionID) }
+                    }
+                } header: {
+                    DesktopSidebarHeading(section.heading)
+                }
+            }
 
             if !waiting.isEmpty {
                 Section {
@@ -608,6 +633,13 @@ struct DesktopCodeSidebar: View {
             Text("The folder and its files stay on disk. Juno stops its running sessions and forgets its access; the sessions stay in your history.")
         }
         .accessibilityIdentifier("juno.code.sidebar")
+        // Titles, projects and pull request links match as you type; this
+        // reads the transcripts too, once typing pauses (§5.17).
+        .task(id: workbench.sessionSearchText) {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await workbench.searchTranscripts(workbench.sessionSearchText)
+        }
     }
 
     // MARK: Navigation block
@@ -781,6 +813,44 @@ struct DesktopCodeSidebar: View {
             .contextMenu { menu(for: run) }
     }
 
+    /// A Runs row's menu: open it, fork it, archive it.
+    @ViewBuilder
+    private func runMenu(_ id: CodeSessionID) -> some View {
+        Button("Open") { selection = .session(id) }
+            .contentShape(.rect)
+        sessionShipItems(id)
+    }
+
+    /// Fork, worktree, export and archive (CODE_AGENT_SPEC §5.6, §5.7, §5.17).
+    @ViewBuilder
+    private func sessionShipItems(_ id: CodeSessionID) -> some View {
+        Button("Fork Session") {
+            Task {
+                if let fork = await workbench.fork(id, throughTurn: nil) {
+                    selection = .session(fork.id)
+                }
+            }
+        }
+        .contentShape(.rect)
+        Button("Fork into Its Own Worktree") {
+            Task {
+                if let fork = await workbench.fork(id, throughTurn: nil, inNewWorktree: true) {
+                    selection = .session(fork.id)
+                }
+            }
+        }
+        .contentShape(.rect)
+        Button("Export as Markdown…") {
+            Task { await DesktopSessionExport.save(id, from: workbench) }
+        }
+        .contentShape(.rect)
+        Button("Archive") {
+            if selection == .session(id) { selection = nil }
+            Task { _ = await workbench.archive(id) }
+        }
+        .contentShape(.rect)
+    }
+
     @ViewBuilder
     private func menu(for run: DesktopCodeRun) -> some View {
         switch run.item {
@@ -793,6 +863,8 @@ struct DesktopCodeSidebar: View {
                 if let workspaceID = session.workspaceID {
                     Button("New Session in This Project") { newSession(workspaceID) }
                 }
+                Divider()
+                sessionShipItems(id)
                 Divider()
                 Button("Delete", role: .destructive) {
                     if selection == run.item { selection = nil }
@@ -912,5 +984,19 @@ struct DesktopCodeSessionRow: View {
             case .failed: .bad
             }
         }())
+    }
+}
+
+/// Saving a session's transcript where the reader chooses (§5.17).
+@MainActor
+enum DesktopSessionExport {
+    static func save(_ id: CodeSessionID, from workbench: WorkbenchModel) async {
+        guard let markdown = await workbench.exportMarkdown(id) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        let title = workbench.sessions.first { $0.id == id }?.title ?? "Session"
+        panel.nameFieldStringValue = title.replacingOccurrences(of: "/", with: "-") + ".md"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? markdown.write(to: url, atomically: true, encoding: .utf8)
     }
 }

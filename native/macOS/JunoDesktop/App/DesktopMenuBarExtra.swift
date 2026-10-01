@@ -62,6 +62,24 @@ struct DesktopMenuBarExtraContent: View {
             }
         }
 
+        // The runs in words, "2 working, 1 waiting for you", and the way to
+        // stop screen control from anywhere (CODE_AGENT_SPEC §1.11).
+        if let workbench = registry.workbench {
+            if let line = workbench.runSummaryLine {
+                Section {
+                    Text(verbatim: line)
+                }
+            }
+            if workbench.isScreenControlActive {
+                Section {
+                    Button("Stop Screen Control") {
+                        Task { await workbench.stopAllScreenControl() }
+                    }
+                    .keyboardShortcut(.escape, modifiers: [.command, .option])
+                }
+            }
+        }
+
         let sessions = registry.activeSessions
         if !sessions.isEmpty {
             Section("Live Code Sessions") {

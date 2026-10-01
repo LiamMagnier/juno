@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import JunoCodeCore
 import JunoCodeKit
@@ -71,6 +72,21 @@ final class DesktopWorkbenchRegistry {
         workbench?.sessionsObserver = { sessions in
             StudioRunMonitor.shared.observe(sessions)
         }
+        // The Runs list is what the monitor speaks from: a finished run, an
+        // approval, a question, each said in words with its answer on the
+        // banner (CODE_AGENT_SPEC §1.11). The session in view says nothing:
+        // its card is on screen.
+        StudioRunMonitor.shared.sessionInView = { [weak workbench] in
+            NSApp?.isActive == true ? workbench?.selectedSessionID : nil
+        }
+        workbench?.runIndexObserver = { entries in
+            StudioRunMonitor.shared.observeRuns(entries)
+        }
+    }
+
+    /// How many sessions have a run open: what the quit guard asks about.
+    var activeRunCount: Int {
+        workbench?.activeRunCount ?? 0
     }
 
     func request(_ kind: Request.Kind) {
