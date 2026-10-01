@@ -35,8 +35,8 @@ export default function NewAutomationError({
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="The automation editor couldn’t open"
-        description="Nothing has been created. Your existing automations are untouched and still running."
+        title="The routine editor couldn’t open"
+        description="Nothing has been created. Your existing routines are untouched and still running."
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">
@@ -44,7 +44,7 @@ export default function NewAutomationError({
               Try again
             </Button>
             <Button asChild size="sm" variant="outline">
-              <Link href="/automations">Back to automations</Link>
+              <Link href="/automations">Back to routines</Link>
             </Button>
           </>
         }

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { DottedDivider } from "@/components/signature/dotted-divider";
 import { FEATURE_CATEGORIES, CATEGORY_LABEL, type FeatureCategory, type RoadmapRequest } from "@/lib/roadmap";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export function SubmitDialog({
   open,
@@ -90,7 +91,7 @@ export function SubmitDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Request a feature</DialogTitle>
-          <DialogDescription>Tell us what would make Juno better. Others can vote it up.</DialogDescription>
+          <DialogDescription>{`Tell us what would make ${PRODUCT_NAME} better. Others can vote it up.`}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

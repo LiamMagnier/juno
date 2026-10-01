@@ -9,6 +9,7 @@ import {
   runUtilityPrompt,
   utilityModelCandidates,
 } from "@/lib/memory";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,7 +20,7 @@ const bodySchema = z.object({ instruction: z.string().trim().min(1).max(600) });
 // literal initializer, and the ternary these used to sit in is not one.
 const FAILURE_MESSAGE = {
   busy: "The AI provider is busy right now — wait a minute and try again.",
-  unusable: "Juno couldn’t draft that change — the provider returned nothing usable. Try again in a moment.",
+  unusable: `${PRODUCT_NAME} couldn’t draft that change — the provider returned nothing usable. Try again in a moment.`,
 };
 
 // What the model returns: operations addressed by 1-based index into the fact list.

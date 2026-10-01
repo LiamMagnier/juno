@@ -31,6 +31,7 @@ import {
   ComposerDropOverlay,
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface CodeSessionComposerProps {
   above: React.ReactNode;
@@ -395,7 +396,7 @@ export function CodeSessionComposer({
                           size="icon-sm"
                           onClick={voice.onOpen}
                           disabled={dictation.active || voice.open}
-                          aria-label="Talk this session through with Juno"
+                          aria-label={`Talk this session through with ${PRODUCT_NAME}`}
                           className={composerIconButtonClass}
                         >
                           <AudioLines className="size-4" aria-hidden="true" />

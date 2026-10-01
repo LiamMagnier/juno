@@ -351,7 +351,7 @@ test("a very long body is capped, and says that it was", () => {
   const long = "x".repeat(9_000);
   const capped = sanitiseUntrusted(long, 100);
   assert.ok(capped.length < 200);
-  assert.match(capped, /truncated by Juno/);
+  assert.match(capped, /truncated by Alevr/);
   // Silent truncation would let a long comment hide its real ask from the model
   // and from the person reading the transcript at the same time.
   assert.equal(sanitiseUntrusted("short", 100), "short");

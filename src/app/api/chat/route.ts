@@ -244,6 +244,7 @@ import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
 import type { ChatFinishReason, ClientActivityEvent, ClientArtifact, ClientToolDetail, StreamChunk } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 // Self-hosted (a plain `next start` Node process on the VM) has NO per-request
@@ -1043,7 +1044,7 @@ async function handleChat(req: Request) {
     if (!isAutoModelId(requestedId)) {
       return NextResponse.json(
         {
-          error: "The selected model is temporarily unavailable because Juno reached its daily provider budget. Choose Auto or try again later.",
+          error: `The selected model is temporarily unavailable because ${PRODUCT_NAME} reached its daily provider budget. Choose Auto or try again later.`,
           code: "PLATFORM_BUDGET_EXCEEDED",
         },
         { status: 503 }
@@ -1075,7 +1076,7 @@ async function handleChat(req: Request) {
     } else if (requested?.comingSoon) {
       msg = `${requested.name} is not available yet.`;
     } else if (requested) {
-      msg = `${requested.name} cannot be reached with its provider right now. Juno did not send your prompt to a different provider.`;
+      msg = `${requested.name} cannot be reached with its provider right now. ${PRODUCT_NAME} did not send your prompt to a different provider.`;
     } else {
       msg = configuredProviders().length === 0
         ? "No AI model providers are configured. Add at least one provider API key (e.g. ANTHROPIC_API_KEY)."
@@ -3331,7 +3332,7 @@ async function handleChat(req: Request) {
       } else if (researchRequested) {
         researchNotice = PLANS[plan].webSearch
           ? "Research is not configured on this deployment. A search provider must be available before I can investigate your question."
-          : "Research is available on paid Juno plans. Your research has not started.";
+          : `Research is available on paid ${PRODUCT_NAME} plans. Your research has not started.`;
         sendActivity({
           kind: "warning",
           title: "Deep research was skipped",

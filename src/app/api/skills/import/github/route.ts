@@ -68,6 +68,7 @@ import {
 import type { LibrarySkill } from "@/lib/skills/library-contract";
 import { SKILL_MD_REFUSAL_MESSAGES, titleFromSkillName } from "@/lib/skills/skill-md";
 import { MAX_SKILL_NAME_CHARS, normalizeSkillSlug } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -334,7 +335,7 @@ export async function POST(req: Request) {
         path: candidate.path,
         slug: rename ?? candidate.skill.name,
         reason: "invalid_slug",
-        message: "Juno could not turn that name into something you can type after a slash.",
+        message: `${PRODUCT_NAME} could not turn that name into something you can type after a slash.`,
       });
       continue;
     }

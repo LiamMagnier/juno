@@ -12,6 +12,7 @@ import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Reply languages, stored by their English name, which is what the prompt builder reads. */
 const LANGUAGES: { value: string; label: string }[] = [
@@ -112,7 +113,7 @@ export function PersonalizationSection() {
     <>
       <SettingsGroup>
         <SettingRow
-          label="What Juno calls you"
+          label={`What ${PRODUCT_NAME} calls you`}
           htmlFor="personal-name"
           description="Used in greetings, and shown in the sidebar."
           wide
@@ -135,7 +136,7 @@ export function PersonalizationSection() {
         />
         <SettingBlock
           label="Custom instructions"
-          description="Juno keeps these in mind in every conversation."
+          description={`${PRODUCT_NAME} keeps these in mind in every conversation.`}
           status={saves.status("customInstructions")}
         >
           <Textarea
@@ -170,7 +171,7 @@ export function PersonalizationSection() {
         />
         <SettingRow
           label="Response language"
-          description="The language Juno replies in."
+          description={`The language ${PRODUCT_NAME} replies in.`}
           wide
           status={saves.status("responseLanguage")}
           control={

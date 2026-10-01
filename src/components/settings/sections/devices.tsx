@@ -9,6 +9,7 @@ import { SettingsGroup, SettingsInlineError } from "@/components/settings/settin
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The Work list flattened into the group's card: no well, rows flush with the card's inset. */
 const FLAT_LIST = "-mx-3.5 border-0 bg-transparent p-0";
@@ -103,7 +104,7 @@ export function DevicesView({
             size="panel"
             icon={CodeIcons.device}
             title="No Macs yet"
-            description="Install Juno on your Mac, sign in, and turn on Work in the app. It appears here on its own."
+            description={`Install ${PRODUCT_NAME} on your Mac, sign in, and turn on Work in the app. It appears here on its own.`}
             action={
               <Button asChild variant="outline" size="sm">
                 <Link href="/download">Get the Mac app</Link>
@@ -117,8 +118,7 @@ export function DevicesView({
                 woke or went away since the last good poll looked current. */}
             {failed && (
               <WorkStateNote tone="warning" className="mb-3">
-                These are the last answers Juno got. The latest check failed, so a Mac may have woken or gone away
-                since.
+                {`These are the last answers ${PRODUCT_NAME} got. The latest check failed, so a Mac may have woken or gone away since.`}
               </WorkStateNote>
             )}
             <WorkList className={FLAT_LIST}>
@@ -134,7 +134,7 @@ export function DevicesView({
             href="/permissions"
             className="rounded-xs text-foreground underline decoration-border underline-offset-4 transition-colors duration-fast ease-out-soft hover:decoration-foreground"
           >
-            See what Juno always asks first
+            {`See what ${PRODUCT_NAME} always asks first`}
           </Link>
         </p>
       </div>

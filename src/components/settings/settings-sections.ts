@@ -1,5 +1,6 @@
 import type { IconComponent } from "@/components/ui/icons";
 import { CodeIcons, SettingsIcons } from "@/lib/app-icons";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * The settings sections: one registry for the modal rail, the `/settings`
@@ -20,9 +21,9 @@ import { CodeIcons, SettingsIcons } from "@/lib/app-icons";
 export const SETTINGS_SECTIONS = [
   { id: "general", label: "General", icon: SettingsIcons.general },
   { id: "personalization", label: "Personalization", icon: SettingsIcons.personalization },
-  { id: "memory", label: "Memory", icon: SettingsIcons.memory },
+  { id: "memory", label: FEATURE_NAMES.memory.label, icon: SettingsIcons.memory },
   { id: "models", label: "Models", icon: SettingsIcons.models },
-  { id: "connectors", label: "Connectors", icon: SettingsIcons.connectors },
+  { id: "connectors", label: FEATURE_NAMES.apps.label, icon: SettingsIcons.connectors },
   { id: "devices", label: "Devices", icon: CodeIcons.device },
   { id: "voice", label: "Voice", icon: SettingsIcons.voice },
   { id: "data", label: "Data & privacy", icon: SettingsIcons.data },

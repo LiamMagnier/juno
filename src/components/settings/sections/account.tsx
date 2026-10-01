@@ -38,6 +38,7 @@ import {
   type WebPushState,
 } from "@/lib/notify/web-push-client";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 function initials(name: string | null, email: string | null) {
   return (name || email || "U").slice(0, 2);
@@ -367,7 +368,7 @@ function BrowserNotificationRows({ publicKey }: { publicKey: string }) {
         description={
           denied
             ? "Blocked in your browser settings. Allow notifications for this site there, then come back."
-            : "A notification from this browser when a task needs you or something finishes, even when Juno isn’t open."
+            : `A notification from this browser when a task needs you or something finishes, even when ${PRODUCT_NAME} isn’t open.`
         }
         status={saves.status("webPush")}
         control={<Switch id="web-push" checked={state === "on"} disabled={denied} onCheckedChange={turn} />}

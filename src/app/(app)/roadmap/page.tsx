@@ -26,6 +26,7 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "top", label: "Top" },
@@ -309,7 +310,7 @@ export default function RoadmapPage() {
             className="mt-8"
             icon={Inbox}
             title="The board is open."
-            description="Be the first to shape where Juno goes next."
+            description={`Be the first to shape where ${PRODUCT_NAME} goes next.`}
             action={
               <Button onClick={() => setSubmitOpen(true)}>
                 <Plus className="size-4" /> Request a feature

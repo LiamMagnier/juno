@@ -463,9 +463,9 @@ test("SwiftUI degrades honestly: a material, a rim, and named gaps", () => {
   assert.match(swift.content, /\.shadow\(color: Color\(\.sRGB/);
   // An inner shadow has no view modifier, so it is a comment in the file *and*
   // an entry in `unsupported` — never a silent omission.
-  assert.match(swift.content, /\/\/ Juno: inner shadow/);
-  assert.match(swift.content, /\/\/ Juno: .*grain/);
-  assert.match(swift.content, /\/\/ Juno: texture/);
+  assert.match(swift.content, /\/\/ Alevr: inner shadow/);
+  assert.match(swift.content, /\/\/ Alevr: .*grain/);
+  assert.match(swift.content, /\/\/ Alevr: texture/);
   assert.ok(swift.unsupported.some((line) => /inner shadow/.test(line)));
   assert.ok(swift.unsupported.some((line) => /grain/.test(line)));
   assert.ok(swift.unsupported.some((line) => /texture/.test(line)));

@@ -14,6 +14,7 @@ import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * Everything that starts without the reader typing a fresh prompt.
@@ -66,7 +67,7 @@ export default function AutomationsPage() {
   const action = (
     <Button asChild size="sm" className="gap-1.5">
       <Link href="/automations/new">
-        <Plus className="size-3.5" aria-hidden="true" /> New automation
+        <Plus className="size-3.5" aria-hidden="true" /> New routine
       </Link>
     </Button>
   );
@@ -75,13 +76,13 @@ export default function AutomationsPage() {
     <AppPage measure="wide">
       <CustomizeNav current="routines" />
       <AppPageHeader
-        heading="Routines"
+        heading={FEATURE_NAMES.routines.label}
         lede="Tasks that start themselves, on a schedule or when something changes."
         actions={action}
       />
       {failed ? (
         <LoadError
-          title="Couldn’t load your automations"
+          title="Couldn’t load your routines"
           description="They keep running. Check your connection and try again."
           onRetry={() => void load()}
         />
@@ -92,7 +93,7 @@ export default function AutomationsPage() {
       ) : schedules.length === 0 ? (
         <EmptyState
           icon={AppIcons.automations}
-          title="No automations yet"
+          title="No routines yet"
           description="Run a task on a schedule, or when something happens, like an invoice arriving or a meeting about to start."
           action={action}
         />

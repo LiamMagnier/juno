@@ -5,6 +5,7 @@ import { AsciiWordmark } from "@/components/signature/dot-matrix";
 import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingPhoneMenu } from "@/components/landing/phone-menu";
 import { LandingColumn } from "@/components/landing/section";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The public site's chrome: one bar and one footer for every page a signed-out
@@ -41,16 +42,16 @@ const PRODUCT_LINKS = [
  * with the same default), so Contact and Support go where a reply to any Juno
  * email would.
  */
-const CONTACT_EMAIL = (process.env.EMAIL_FROM ?? "Juno <hello@chat.liams.dev>").replace(/^.*<|>\s*$/g, "").trim();
+const CONTACT_EMAIL = (process.env.EMAIL_FROM ?? `${PRODUCT_NAME} <hello@chat.liams.dev>`).replace(/^.*<|>\s*$/g, "").trim();
 
 /**
  * No Status link: there is no status page. The roadmap lives behind the
  * sign-in wall, so `?next=` makes the redirect intentional.
  */
 const COMPANY_LINKS = [
-  { href: "/engineering/file-understanding", label: "How Juno reads files" },
+  { href: "/engineering/file-understanding", label: `How ${PRODUCT_NAME} reads files` },
   { href: `mailto:${CONTACT_EMAIL}`, label: "Contact" },
-  { href: `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Juno support")}`, label: "Support" },
+  { href: `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`${PRODUCT_NAME} support`)}`, label: "Support" },
   { href: "/sign-in?next=/roadmap", label: "Changelog & roadmap" },
 ];
 
@@ -73,7 +74,7 @@ export function SiteHeader({ onLanding = false }: { onLanding?: boolean }) {
   return (
     <LandingHeader>
       <LandingColumn contentClassName="flex items-center justify-between gap-3 py-2.5">
-        <Link href="/" aria-label="Juno home" className={LOGO_LOCKUP}>
+        <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={LOGO_LOCKUP}>
           <JunoMark className="size-7" />
           <AsciiWordmark />
         </Link>
@@ -107,7 +108,7 @@ export function SiteFooter() {
       <LandingColumn contentClassName="py-12">
         <div className="flex flex-col justify-between gap-10 sm:flex-row">
           <div>
-            <Link href="/" aria-label="Juno home" className={LOGO_LOCKUP}>
+            <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={LOGO_LOCKUP}>
               <JunoMark className="size-6" />
               <AsciiWordmark />
             </Link>
@@ -146,7 +147,7 @@ export function SiteFooter() {
           </nav>
         </div>
         <p className="mt-10 border-t border-border/60 pt-6 text-caption text-muted-foreground">
-          © {new Date().getFullYear()} Juno. Every frontier model, one honest subscription.
+          © {new Date().getFullYear()}{` ${PRODUCT_NAME}. Every frontier model, one honest subscription.`}
         </p>
       </LandingColumn>
     </footer>

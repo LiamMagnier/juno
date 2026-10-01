@@ -55,14 +55,14 @@
     },
     {
       "id": "artifacts",
-      "label": "Artifacts",
+      "label": "Made by Alevr",
       "href": "/artifacts",
       "kind": "artifacts",
       "icon": "AppIcons.artifacts"
     },
     {
       "id": "agents",
-      "label": "Agents",
+      "label": "Orbit",
       "href": "/agents",
       "kind": "agents",
       "icon": "AppIcons.agents"
@@ -97,14 +97,14 @@
     },
     {
       "id": "automations",
-      "label": "Automations",
+      "label": "Routines",
       "href": "/automations",
       "kind": "automations",
       "icon": "AppIcons.automations"
     },
     {
       "id": "connections",
-      "label": "Connections",
+      "label": "Apps",
       "href": "/connections",
       "kind": "connections",
       "icon": "AppIcons.connections"
@@ -156,7 +156,7 @@
         },
         {
           "id": "agents",
-          "label": "Crew"
+          "label": "Orbit"
         },
         {
           "id": "pinnedProjects",
@@ -268,7 +268,7 @@
         },
         {
           "id": "connectors",
-          "label": "Connectors",
+          "label": "Apps",
           "kind": "sub",
           "icon": "AppIcons.connections",
           "optional": true
@@ -282,7 +282,7 @@
         },
         {
           "id": "research",
-          "label": "Research",
+          "label": "Deep Field",
           "kind": "toggle",
           "icon": "ComposerIcons.research",
           "optional": true
@@ -387,7 +387,7 @@
       },
       {
         "id": "connectors",
-        "label": "Connectors",
+        "label": "Apps",
         "icon": "SettingsIcons.connectors"
       },
       {
@@ -453,7 +453,7 @@
       },
       {
         "id": "crew",
-        "label": "Crew",
+        "label": "Orbit",
         "href": "/crew"
       },
       {
@@ -481,7 +481,7 @@
   "platformDifferences": [
     {
       "platform": "iPhone",
-      "reason": "Chat, Crew and Code use native tabs; search uses the system search tab. Library, Projects and Customize are in Chat navigation."
+      "reason": "Chat, Orbit and Code use native tabs; search uses the system search tab. Library, Projects and Customize are in Chat navigation."
     },
     {
       "platform": "Mac",

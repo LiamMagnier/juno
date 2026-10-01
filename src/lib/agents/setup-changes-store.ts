@@ -40,6 +40,7 @@ import {
   type SetupSnapshot,
 } from "@/lib/agents/setup-changes";
 import type { AgentActor } from "@/lib/agents/store";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** What the card and the apps read about one change. */
 export interface ClientSetupChange {
@@ -197,7 +198,7 @@ export async function applySetupChange(
 
   const agents = await import("@/lib/agents/store");
   const agent = await agents.findAgent(user.id, change.agentId);
-  if (!agent) return markFailed(change, user.id, "That crew member no longer exists.");
+  if (!agent) return markFailed(change, user.id, "That agent no longer exists.");
   const after = objectOf(change.after);
   let written: Record<string, unknown> = {};
   try {
@@ -266,14 +267,14 @@ export async function applySetupChange(
         break;
       }
       default:
-        return markFailed(change, user.id, "Juno does not know that kind of change.");
+        return markFailed(change, user.id, `${PRODUCT_NAME} does not know that kind of change.`);
     }
   } catch (err) {
     console.error("[agents] a setup change failed to apply", {
       changeId: change.id,
       error: err instanceof Error ? err.message : String(err),
     });
-    return markFailed(change, user.id, "Juno could not apply that change because of a problem on its side.");
+    return markFailed(change, user.id, `${PRODUCT_NAME} could not apply that change because of a problem on its side.`);
   }
 
   const updated = await prisma.agentSetupChange.update({
@@ -356,7 +357,7 @@ export async function undoSetupChange(user: AgentActor, change: AgentSetupChange
   }
   const agents = await import("@/lib/agents/store");
   const agent = await agents.findAgent(user.id, change.agentId);
-  if (!agent) return { ok: false, status: 404, code: "not_found", message: "That crew member no longer exists." };
+  if (!agent) return { ok: false, status: 404, code: "not_found", message: "That agent no longer exists." };
   const before = objectOf(change.before);
   const after = objectOf(change.after);
   const applied = objectOf((after.applied ?? {}) as Prisma.JsonValue);

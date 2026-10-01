@@ -14,6 +14,7 @@ import { spring } from "@/lib/motion";
 import { useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
+import { BRAND, PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE ONE PRODUCT SWITCH.
@@ -102,8 +103,8 @@ type Product = {
  * both were navigation wearing a control's clothes.
  */
 export const PRODUCTS = [
-  { id: "chat", label: "Chat", href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
-  { id: "code", label: "Code", href: "/code", kind: "code", chord: "⌘⇧2", minPlan: "FREE" },
+  { id: "chat", label: BRAND.chat.label, href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
+  { id: "code", label: BRAND.code.label, href: "/code", kind: "code", chord: "⌘⇧2", minPlan: "FREE" },
 ] as const satisfies readonly Product[];
 
 /**
@@ -202,7 +203,7 @@ export function ProductSwitch({
       // and a `p-0.5` box inside it would eat the tap target for a border that
       // only has to say "these two are a different kind of thing". A
       // separator hairline says it for free, and it is what the footer uses.
-      <nav aria-label="Juno products" className="pt-2">
+      <nav aria-label={`${PRODUCT_NAME} products`} className="pt-2">
         <div className="flex flex-col items-center gap-1 px-2.5 pb-2">
           {PRODUCTS.map((product) => (
             <RailItem
@@ -236,7 +237,7 @@ export function ProductSwitch({
      * and each cell is a 32px row, the same height as every row under it.
      */
     <nav
-      aria-label="Juno products"
+      aria-label={`${PRODUCT_NAME} products`}
       className="grid h-9 w-full shrink-0 grid-cols-2 gap-0.5 rounded-control bg-sidebar-accent/80 p-0.5 coarse:h-12"
     >
       {PRODUCTS.map((product) => (

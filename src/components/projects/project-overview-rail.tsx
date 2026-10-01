@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { summaryExcerpt, type SummaryData } from "@/components/memory/memory-model";
 import { formatBytes, cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface RailFileItem {
   id: string;
@@ -165,7 +166,7 @@ export function ProjectOverviewRail({
             </button>
           ) : (
             <RailEmpty
-              description="A prompt Juno follows in every chat, task and code session filed here."
+              description={`A prompt ${PRODUCT_NAME} follows in every chat, task and code session filed here.`}
               action={
                 <Button variant="outline" size="sm" onClick={onEditInstructions}>
                   Add instructions
@@ -198,7 +199,7 @@ export function ProjectOverviewRail({
         >
           {fileCount === 0 ? (
             <RailEmpty
-              description="PDFs, documents and data Juno reads before answering here."
+              description={`PDFs, documents and data ${PRODUCT_NAME} reads before answering here.`}
               action={
                 <Button variant="outline" size="sm" onClick={onAddFile} disabled={uploading}>
                   Add a file
@@ -288,7 +289,7 @@ export function ProjectOverviewRail({
             // No action. Nothing the reader does here resolves it — memories
             // arrive from this project's chats, which is what the sentence
             // says, along with the boundary a reader most needs to trust.
-            <RailEmpty description="What Juno learns in this project’s chats stays here. Your other chats never see it." />
+            <RailEmpty description={`What ${PRODUCT_NAME} learns in this project’s chats stays here. Your other chats never see it.`} />
           ) : (
             // One piece, entering once, when the answer arrives.
             <div className="motion-safe:animate-fade-in">

@@ -949,7 +949,7 @@ function resolveSubagentModel(specModel: string | undefined, hostModel: string):
       task.isolation === 'git_worktree'
         ? `# Isolation: git worktree\nYou work in an isolated git worktree on branch \`${task.worktree?.branch ?? 'juno/agent'}\` (directory: ${cwd}). Your edits apply inside the worktree only; they are reviewed/imported afterwards. Do NOT commit, push, or switch branches.`
         : '# Isolation: read-only\nYou are reading the user\'s live checkout. You have NO write tools — describe proposed changes in your report instead.';
-    return `You are a Juno SUBAGENT — a focused child agent handling one delegated task inside the user's repository. Work only on your assigned task; a coordinator agent integrates results.
+    return `You are an Alevr Code SUBAGENT — a focused child agent handling one delegated task inside the user's repository. Work only on your assigned task; a coordinator agent integrates results.
 
 Working directory: ${cwd}
 

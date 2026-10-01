@@ -3,6 +3,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 
 import { isDisallowedAddress, isDisallowedHost } from "./url-safety";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Keep one agent fetch from buffering an unbounded response on the app host. */
 export const MAX_PINNED_FETCH_BYTES = 10 * 1024 * 1024;
@@ -75,7 +76,7 @@ export async function fetchPinnedPublicUrl(
       if (Number.isFinite(declared) && declared > MAX_PINNED_FETCH_BYTES) {
         incoming.resume();
         request.destroy();
-        finish(new Error("Response exceeds Juno's download limit"));
+        finish(new Error(`Response exceeds ${PRODUCT_NAME}'s download limit`));
         return;
       }
 
@@ -86,7 +87,7 @@ export async function fetchPinnedPublicUrl(
         bytes += buffer.byteLength;
         if (bytes > MAX_PINNED_FETCH_BYTES) {
           request.destroy();
-          finish(new Error("Response exceeds Juno's download limit"));
+          finish(new Error(`Response exceeds ${PRODUCT_NAME}'s download limit`));
           return;
         }
         chunks.push(buffer);

@@ -70,6 +70,7 @@ import { NotificationsPopover } from "@/components/notifications/notifications-p
 import { useNotifications } from "@/components/notifications/use-notifications";
 import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
 import { unreadDetail } from "@/components/notifications/inbox-model";
+import { BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -934,7 +935,7 @@ export function AppSidebar({
             <Link
               href={isCode ? "/code" : "/chat"}
               onClick={() => setSidebarOpen(false)}
-              aria-label={isCode ? "Juno Code home" : "Juno home"}
+              aria-label={isCode ? `${BRAND.code.title} home` : `${PRODUCT_NAME} home`}
               className={cn(
                 "group/brand flex items-center rounded-control",
                 collapsed ? "size-11 justify-center" : "h-9 max-md:pl-1.5"
@@ -996,7 +997,7 @@ export function AppSidebar({
                   transition={transition.base}
                   className="truncate font-serif text-title text-foreground translate-y-[3px]"
                 >
-                  Juno
+                  {PRODUCT_NAME}
                 </motion.span>
               )}
             </Link>
@@ -1093,7 +1094,7 @@ export function AppSidebar({
                behind this glyph was the only chip in the panel, and it is what
                made the one row people press most read as the chunkiest. */
             icon={<SidebarMotionIcon kind="new" />}
-            label={isCode ? "New session" : "New chat"}
+            label={isCode ? "New session" : FEATURE_NAMES.newChat.label}
             trailing={isCode ? undefined : <Kbd>{`${mod}⇧O`}</Kbd>}
             layoutId="nav-new"
             transition={layoutTransition}
@@ -1113,7 +1114,7 @@ export function AppSidebar({
               window.dispatchEvent(new CustomEvent("juno:search"));
             }}
             icon={<SidebarMotionIcon kind="search" />}
-            label="Search"
+            label={FEATURE_NAMES.search.label}
             layoutId="nav-search"
             transition={layoutTransition}
             reveal={revealOnMount}
@@ -1170,12 +1171,12 @@ export function AppSidebar({
         >
           {(isCode
             ? ([
-                { href: "/code/customize", kind: "settings", label: "Customize", active: pathname === "/code/customize" },
+                { href: "/code/customize", kind: "settings", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
               ] as const)
             : ([
-                { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
-                { href: "/library", kind: "library", label: "Library", active: pathname === "/library" || pathname === "/artifacts" },
-                { href: "/customize", kind: "settings", label: "Customize", active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
+                { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: !!pathname?.startsWith("/projects") },
+                { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" || pathname === "/artifacts" },
+                { href: "/customize", kind: "settings", label: FEATURE_NAMES.customize.label, active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
               ] as const)
           ).map((item) => (
             <NavRow
@@ -1304,12 +1305,12 @@ export function AppSidebar({
                         heading is a promise the column cannot keep. */}
                     {!isCode && !needsYouOnly && agents.length > 0 && (
                       <Section
-                        label="Crew"
+                        label={BRAND.orbit.label}
                         isCollapsed={sectionCollapsed.agents}
                         onToggleCollapse={() => toggleSection("agents")}
                         action={
                           <SectionAction
-                            label="Add to crew"
+                            label={FEATURE_NAMES.createAgent.label}
                             onClick={() => {
                               setSidebarOpen(false);
                               router.push("/agents/new");
@@ -1669,7 +1670,7 @@ function NeedsYouFold({
               only ? "sidebar-row-selected text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <span className="min-w-0 truncate">Needs you</span>
+            <span className="min-w-0 truncate">{FEATURE_NAMES.needsYou.label}</span>
             <span className="shrink-0 whitespace-pre tabular-nums">
               {" · "}
               {rows.length}
@@ -2417,7 +2418,7 @@ function ConversationRow({
       title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
       description: isCodeSession
         ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : "This permanently removes the conversation and its messages. Anything Juno made in it stays in your Library. This can't be undone.",
+        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
       confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
@@ -2962,7 +2963,7 @@ function ArchivedChatsDialog({
       title: isCode ? "Delete this session?" : "Delete this conversation?",
       description: isCode
         ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : "This permanently removes the conversation and its messages. Anything Juno made in it stays in your Library. This can't be undone.",
+        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
       confirmLabel: isCode ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         setItems((prev) => prev?.filter((x) => x.id !== c.id) ?? prev);

@@ -37,6 +37,7 @@ import {
 import { parseStoredDesignDocument } from "@/lib/design/migrations";
 import { isAncestorOf, subtreeIds } from "@/lib/design/document";
 import type { AssetRef, DesignDocument, NodeId, PageId } from "@/lib/design/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface HistoryEntry {
   id: string;
@@ -525,7 +526,7 @@ export function useDesignDocument(opts: Options) {
       setPending(null);
       persist(transaction.operations, pending.transaction.summary, "juno", transaction.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Couldn’t apply Juno's change.");
+      toast.error(error instanceof Error ? error.message : `Couldn’t apply ${PRODUCT_NAME}'s change.`);
     }
   }, [pending, persist]);
 

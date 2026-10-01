@@ -170,7 +170,7 @@ describe("(a) running code or typing on a crew computer always asks", () => {
   });
 
   it("Skip's own sentence no longer promises the floor covers everything", () => {
-    assert.match(domain.WORK_APPROVAL_MODE_SUMMARY.permissive, /running commands or typing on a crew member's computer, which always ask/);
+    assert.match(domain.WORK_APPROVAL_MODE_SUMMARY.permissive, /running commands or typing on an agent's computer, which always ask/);
     assert.doesNotMatch(domain.WORK_APPROVAL_MODE_SUMMARY.permissive, /four things/);
   });
 });

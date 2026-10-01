@@ -93,8 +93,8 @@ test("New design makes no conversation, and the delete-chat copy says the artifa
   assert.doesNotMatch(design, /conversation\.create/);
   assert.match(design, /conversationId: null,/);
   const sidebar = read("src/components/app/app-sidebar.tsx");
-  assert.equal(sidebar.match(/Anything Juno made in it stays in your Library\./g)?.length, 2);
-  assert.match(read("src/components/settings/sections/data-privacy.tsx"), /Everything Juno made in them stays in your/);
+  assert.equal(sidebar.match(/Anything \$\{PRODUCT_NAME\} made in it stays in your Library\./g)?.length, 2);
+  assert.match(read("src/components/settings/sections/data-privacy.tsx"), /Everything \$\{PRODUCT_NAME\} made in them stays in your/);
 });
 
 // ─── Immutable versions and drafts ───────────────────────────────────────────

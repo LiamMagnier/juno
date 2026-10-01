@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The page's small print, and the one irreversible thing it can do.
@@ -96,8 +97,7 @@ export function ResetDialog({
         <DialogHeader>
           <DialogTitle>Reset memory?</DialogTitle>
           <DialogDescription>
-            This permanently deletes everything Juno remembers, the summary and every project’s memory, and its edit
-            history. It can’t be undone. Your chats stay as they are.
+            {`This permanently deletes everything ${PRODUCT_NAME} remembers, the summary and every project’s memory, and its edit history. It can’t be undone. Your chats stay as they are.`}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="sm:justify-between">

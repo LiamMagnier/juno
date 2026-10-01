@@ -12,6 +12,7 @@ import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { OperationDiff } from "@/components/memory/operation-diff";
 import type { MemoryEditRecord } from "@/components/memory/memory-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The one way to change memory in words, and the place its answer lands.
@@ -34,7 +35,7 @@ import type { MemoryEditRecord } from "@/components/memory/memory-model";
 const APPLIED_HOLD_MS = 4500;
 
 // Named so the copy extractor reads them: a string inside a ternary prop is invisible to it.
-const PROMPT_PLACEHOLDER = "Tell Juno what to remember, change or forget";
+const PROMPT_PLACEHOLDER = `Tell ${PRODUCT_NAME} what to remember, change or forget`;
 const PAUSED_PLACEHOLDER = "Memory is off. Turn it on to make changes.";
 
 export interface PromptDockHandle {

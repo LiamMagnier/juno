@@ -21,6 +21,7 @@ import type {
   WorkSkillDetail,
   WorkTransportFailure,
 } from "@/components/work/work-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Everything the skills library asks the server for.
@@ -88,7 +89,7 @@ async function refusal(res: Response): Promise<WorkBlocked | WorkTransportFailur
     return {
       kind: "blocked",
       reason: text(data, "error") ?? "unavailable",
-      explanation: message ?? "Juno can’t do that right now. Try again in a moment.",
+      explanation: message ?? `${PRODUCT_NAME} can’t do that right now. Try again in a moment.`,
       missing: [],
       degradation: [],
     };
@@ -131,7 +132,7 @@ async function request<T>(
 export function skillsFailureMessage(result: WorkBlocked | WorkTransportFailure, fallback: string): string {
   if (result.kind === "blocked") return result.explanation;
   if (result.message) return result.message;
-  if (result.cause === "offline") return "Couldn’t reach Juno. Check your connection and try again.";
+  if (result.cause === "offline") return `Couldn’t reach ${PRODUCT_NAME}. Check your connection and try again.`;
   if (result.cause === "unauthorized") return "Your session has ended. Sign in again to continue.";
   return fallback;
 }

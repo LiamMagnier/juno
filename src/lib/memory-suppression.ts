@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * The one door every MemoryEntry write goes through.
  *
@@ -75,8 +77,8 @@ const REFUSAL_MESSAGE = {
   // be part of a translatable string. The name and the `*Message` suffix are
   // what put both halves in the i18n catalog — see
   // scripts/generate-i18n-catalog.mjs.
-  lead: "You asked Juno to forget",
-  tail: "This wasn’t saved — tell Juno to remember it again if that has changed.",
+  lead: `You asked ${PRODUCT_NAME} to forget`,
+  tail: `This wasn’t saved — tell ${PRODUCT_NAME} to remember it again if that has changed.`,
 };
 
 export function suppressionRefusalMessage(suppression: string): string {

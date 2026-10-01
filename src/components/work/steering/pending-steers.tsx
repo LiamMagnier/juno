@@ -4,6 +4,7 @@ import { CornerDownRight } from "@/components/ui/icons";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import { readEvent, str } from "@/components/work/work-payload";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Instructions you have given a running task that it has not visibly acted on
@@ -90,8 +91,8 @@ export function PendingSteers({ steers }: { steers: readonly PendingSteer[] }) {
     >
       <p className="font-mono text-micro text-muted-foreground">
         {steers.length === 1
-          ? "Queued — Juno reads this before its next step"
-          : `Queued — Juno reads these ${steers.length} before its next step, in order`}
+          ? `Queued — ${PRODUCT_NAME} reads this before its next step`
+          : `Queued — ${PRODUCT_NAME} reads these ${steers.length} before its next step, in order`}
       </p>
       <ul className="mt-1.5 space-y-1">
         {steers.map((steer) => (

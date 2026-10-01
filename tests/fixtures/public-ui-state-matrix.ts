@@ -64,7 +64,7 @@ export const UI_STATE_FIXTURES = [
       /<h1\b/,
       /Try again/,
       /href="\/chat"/,
-      /Juno can(?:&rsquo;|')t reach its backend/,
+      /\$\{PRODUCT_NAME\} can(?:&rsquo;|'|’)t reach its backend/,
       /<main\b/,
     ],
     forbidden: [],

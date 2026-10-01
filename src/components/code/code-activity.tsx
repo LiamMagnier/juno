@@ -18,6 +18,7 @@ import {
 import type { CodeActivityEvent } from "@/hooks/use-code-session";
 import { codeToolLabel, codeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * A CODING TRANSCRIPT'S RECEIPTS, IN THE FLOW OF THE TRANSCRIPT.
@@ -257,7 +258,7 @@ export function CodeActivity({
   if (rows.length === 0) return null;
   const last = rows[rows.length - 1];
   return (
-    <ToolReceiptList label="What Juno Code did" className={className}>
+    <ToolReceiptList label={`What ${PRODUCT_NAME} Code did`} className={className}>
       {rows.map((event) =>
         event.kind === "tool" ? (
           <ToolRow key={event.id} event={event} live={streaming && event === last} />

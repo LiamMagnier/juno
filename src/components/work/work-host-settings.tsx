@@ -26,6 +26,7 @@ import {
 } from "@/components/work/work-transport";
 import { CapabilityChip, WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * What one Mac may do, as controls.
@@ -91,7 +92,7 @@ const CAPABILITY_TOGGLES: readonly ToggleSpec[] = [
     key: "allowsComputerUse",
     label: "Screen control",
     detail:
-      "See the screen, click and type. This is also what lets Juno drive an app through its accessibility tree — the two ride one switch, because driving an app is screen control by another name.",
+      `See the screen, click and type. This is also what lets ${PRODUCT_NAME} drive an app through its accessibility tree — the two ride one switch, because driving an app is screen control by another name.`,
   },
   {
     key: "allowsShell",
@@ -185,7 +186,7 @@ function ToggleRow({
                 "This Mac is no longer offering this, and it is still switched on. It will lapse on its own at the next check-in; you can switch it off here now."
               : // Not "unavailable". The reader can very often fix this, and the
                 // fix is on the machine rather than on this page.
-                "This Mac has not offered this. Switch it on in Juno on the Mac itself and it becomes available here."}
+                `This Mac has not offered this. Switch it on in ${PRODUCT_NAME} on the Mac itself and it becomes available here.`}
         </span>
       </span>
       <Switch
@@ -292,7 +293,7 @@ export function WorkHostSettings({
         <h2 className="font-mono text-label text-muted-foreground">What this Mac may do</h2>
 
         <ToggleRow
-          label="Juno Work on this Mac"
+          label={`${PRODUCT_NAME} Work on this Mac`}
           detail="The master switch. With it off, this Mac claims nothing at all — the five below stop applying, and a task that needs a real machine looks for another one."
           checked={host.enabled}
           advertised={advertised.enabled}
@@ -322,7 +323,7 @@ export function WorkHostSettings({
 
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">
-          When Juno stops to ask
+          {`When ${PRODUCT_NAME} stops to ask`}
         </h2>
         <div className="rounded-field border border-border/50 px-3.5 py-3">
           <SegmentedControl
@@ -343,7 +344,7 @@ export function WorkHostSettings({
                 (advertisedPolicy !== null &&
                   POLICY_RANK[policy] > POLICY_RANK[advertisedPolicy]),
             }))}
-            ariaLabel="How often Juno asks before acting on this Mac"
+            ariaLabel={`How often ${PRODUCT_NAME} asks before acting on this Mac`}
             // The labels are phrases now, not words, so the segments wrap on a
             // narrow window rather than truncating a promise mid-sentence.
             optionClassName="whitespace-normal px-3 py-1 text-ui leading-snug"
@@ -353,14 +354,11 @@ export function WorkHostSettings({
             {WORK_APPROVAL_MODE_SUMMARY[host.approvalPolicy]}
           </p>
           <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-            Anything Juno cannot take back — a permanent delete, a message sent, a purchase, a
-            change to a security setting — is asked about under every one of these. There is no
-            setting that turns that off.
+            {`Anything ${PRODUCT_NAME} cannot take back — a permanent delete, a message sent, a purchase, a change to a security setting — is asked about under every one of these. There is no setting that turns that off.`}
           </p>
           {advertisedPolicy !== null && POLICY_RANK[advertisedPolicy] < 2 && (
             <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-              This Mac asked for “{WORK_APPROVAL_MODE_LABEL[advertisedPolicy]}”, so that is as
-              relaxed as it goes from here. Loosen it in Juno on the Mac itself.
+              This Mac asked for “{WORK_APPROVAL_MODE_LABEL[advertisedPolicy]}{`”, so that is as relaxed as it goes from here. Loosen it in ${PRODUCT_NAME} on the Mac itself.`}
             </p>
           )}
         </div>
@@ -390,9 +388,7 @@ export function WorkHostSettings({
               ))}
             </div>
             <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-              What this Mac told Juno it can do. A struck-through one is offered by the Mac and
-              switched off above. This list is the Mac’s to report and cannot be edited from a
-              browser.
+              {`What this Mac told ${PRODUCT_NAME} it can do. A struck-through one is offered by the Mac and switched off above. This list is the Mac’s to report and cannot be edited from a browser.`}
             </p>
           </>
         )}
@@ -416,7 +412,7 @@ export function WorkHostSettings({
             size="panel"
             icon={Folder}
             title="No folders shared"
-            description="Nothing has been shared with this Mac, so file work on it has nowhere to happen. A folder is chosen in Juno on the Mac, where the file picker is."
+            description={`Nothing has been shared with this Mac, so file work on it has nowhere to happen. A folder is chosen in ${PRODUCT_NAME} on the Mac, where the file picker is.`}
           />
         ) : (
           <>
@@ -447,9 +443,7 @@ export function WorkHostSettings({
                 construction, and this sentence is what stops the absence
                 reading as a bug in the list. */}
             <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-              Named, never located. Juno does not send the path of a folder on your Mac to a
-              browser — a path is a path in a screenshot, in a support ticket, and in the next
-              thing that asks an agent to read what sits next to it.
+              {`Named, never located. ${PRODUCT_NAME} does not send the path of a folder on your Mac to a browser — a path is a path in a screenshot, in a support ticket, and in the next thing that asks an agent to read what sits next to it.`}
             </p>
           </>
         )}
@@ -481,8 +475,7 @@ export function WorkHostSettings({
           />
         </div>
         <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-          These three are set in Juno on the Mac and are shown here as they stand. The browser
-          cannot change them.
+          {`These three are set in ${PRODUCT_NAME} on the Mac and are shown here as they stand. The browser cannot change them.`}
         </p>
       </section>
     </div>

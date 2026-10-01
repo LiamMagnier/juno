@@ -14,6 +14,7 @@
 
 import { openOoxml, scanXml, xmlAttr, type OoxmlPackage } from "./ooxml";
 import { BlockCollector, EXTRACT_LIMITS, type ExtractedBlock, type ExtractionResult } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const PPTX_PARSER = "pptx";
 export const PPTX_PARSER_VERSION = "1";
@@ -286,7 +287,7 @@ export async function extractPptx(input: { bytes: Uint8Array; fileName: string }
       status: "degraded",
       blocks: [],
       pageCount: slides.length,
-      reason: "This deck has no text — its slides are images only, and Juno does not read text out of pictures yet.",
+      reason: `This deck has no text — its slides are images only, and ${PRODUCT_NAME} does not read text out of pictures yet.`,
     };
   }
 
@@ -294,7 +295,7 @@ export async function extractPptx(input: { bytes: Uint8Array; fileName: string }
   const reason = !ordered
     ? "Slide order could not be read from the deck, so slide numbers follow the file's internal order and may not match what you see in PowerPoint."
     : truncated
-      ? "This deck is longer than Juno's indexing limit, so only its first slides were indexed."
+      ? `This deck is longer than ${PRODUCT_NAME}'s indexing limit, so only its first slides were indexed.`
       : undefined;
 
   return {

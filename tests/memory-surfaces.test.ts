@@ -56,7 +56,7 @@ test("an oversized profile is cut at a line and says it was cut", () => {
   const huge = Array.from({ length: 400 }, (_, i) => `Line ${i} of a very long consolidated summary.`).join("\n");
   const body = workMemoryContext({ summary: huge, recent: [] }) ?? "";
   assert.ok(body.length < WORK_MEMORY_MAX_CHARS + 200);
-  assert.match(body, /\[Cut off here — the rest of what Juno remembers was left out to keep room for the task\.\]$/);
+  assert.match(body, /\[Cut off here — the rest of what Alevr remembers was left out to keep room for the task\.\]$/);
   // Cut on a line boundary, so no fact ends mid-sentence.
   assert.match(body.split("\n\n[Cut off")[0], /summary\.$/);
 });

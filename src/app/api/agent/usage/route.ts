@@ -10,6 +10,7 @@ import {
 } from "@/lib/usage";
 import { checkBudget, checkUsageWindows, budgetExceededMessage } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
     if (!reserved.allowed) {
       return NextResponse.json(
         {
-          error: "You've reached your monthly usage limit. Upgrade your plan to keep using Juno Code.",
+          error: `You've reached your monthly usage limit. Upgrade your plan to keep using ${PRODUCT_NAME} Code.`,
           code: "QUOTA_EXCEEDED",
           quota: reserved.quota,
         },

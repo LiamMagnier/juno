@@ -5,6 +5,7 @@ import { PLAN_LIST } from "@/lib/plans";
 import { isPlanPurchasable } from "@/lib/stripe";
 import { Reveal } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Pricing — the same plan cards /upgrade renders, fed by the same config
@@ -24,7 +25,7 @@ import { Section } from "@/components/landing/section";
  */
 const ONE_LINERS: Partial<Record<string, string>> = {
   PRO: "Every model, voice, memory and artifacts. A real month of everyday use.",
-  MAX: "Five times Pro's monthly budget, for people who live in Juno.",
+  MAX: `Five times Pro's monthly budget, for people who live in ${PRODUCT_NAME}.`,
   MAX20: "Ten times Pro's monthly budget. The most headroom we sell.",
 };
 

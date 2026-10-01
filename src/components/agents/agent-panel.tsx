@@ -34,6 +34,7 @@ import {
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
+import { AGENT_STATE_NAMES } from "@/lib/brand/names";
 
 /**
  * `profile` is the agent's profile in the chat's side slot; `computer` is its
@@ -187,7 +188,7 @@ export function AgentProfile({
 
       <div className="mt-10 space-y-9">
         {needsYou || task ? (
-          <Section title={needsYou ? "Needs you" : "Working on"}>
+          <Section title={needsYou ? AGENT_STATE_NAMES.needsAnswer : "Working on"}>
             <div className="flex items-start gap-3">
               {needsYou ? <Hand className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /> : null}
               <div className="min-w-0 flex-1">

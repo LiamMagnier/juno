@@ -35,6 +35,7 @@ import {
   type SkillImportPreview,
   type SkillPackagePayload,
 } from "@/components/skills/skills-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Past this many skills the choose step grows a filter. */
 const FILTER_THRESHOLD = 8;
@@ -630,7 +631,7 @@ function ChooseStep({
           // Counted as files read (the ones that failed to parse too), against
           // every SKILL.md the walk saw, so the cap is stated as the cap.
           <p className="px-5 py-3 text-caption text-muted-foreground sm:px-6">
-            Juno read the first <span className="tabular-nums">{skills.length + discovery.problems.length}</span>
+            {`${PRODUCT_NAME} read the first `}<span className="tabular-nums">{skills.length + discovery.problems.length}</span>
             {discovery.total !== null ? (
               <>
                 {" "}
@@ -739,7 +740,7 @@ function CandidateRow({
         {blocked ? (
           <p className="mt-1.5 flex items-start gap-1.5 text-caption text-warning-foreground">
             <StatusIcons.warning className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-            Juno’s safety check blocked this skill. It would install switched off.
+            {`${PRODUCT_NAME}’s safety check blocked this skill. It would install switched off.`}
           </p>
         ) : null}
 
@@ -778,7 +779,7 @@ function CandidateRow({
 
         {skill.droppedTools.length > 0 && !skill.installed ? (
           <p className="mt-1.5 text-caption text-muted-foreground">
-            Leaves out tool rules Juno can’t apply:{" "}
+            {`Leaves out tool rules ${PRODUCT_NAME} can’t apply:`}{" "}
             <span className="font-mono" translate="no">
               {skill.droppedTools.slice(0, 2).join(", ")}
             </span>

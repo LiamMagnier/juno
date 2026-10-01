@@ -32,6 +32,7 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { promptPreview } from "@/lib/prompt-preview";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skeleton";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 interface ProjectItem {
   id: string;
@@ -393,7 +394,7 @@ export default function ProjectsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>New project</DialogTitle>
-            <DialogDescription>Name it, or leave it blank and Juno will name it from your first chat.</DialogDescription>
+            <DialogDescription>{`Name it, or leave it blank and ${PRODUCT_NAME} will name it from your first chat.`}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="proj-name">Project name <span className="font-normal text-muted-foreground">(optional)</span></Label>

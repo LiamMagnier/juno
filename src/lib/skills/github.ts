@@ -26,6 +26,7 @@
  */
 
 import { parseSkillMd, SKILL_MD_FILENAME, type ParsedSkillMd, type SkillMdRefusal } from "@/lib/skills/skill-md";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const GITHUB_API_BASE = "https://api.github.com";
 
@@ -154,17 +155,17 @@ export type GithubImportRefusal =
 
 export const GITHUB_IMPORT_REFUSAL_MESSAGES: Record<GithubImportRefusal, string> = {
   not_found:
-    "GitHub has no repository there, or it is private and Juno cannot see it. Connect GitHub on the Connections page to import from a private repository.",
+    `GitHub has no repository there, or it is private and ${PRODUCT_NAME} cannot see it. Connect GitHub on the Connections page to import from a private repository.`,
   unauthorized:
-    "GitHub refused the credential Juno used. Reconnect GitHub on the Connections page and try again.",
+    `GitHub refused the credential ${PRODUCT_NAME} used. Reconnect GitHub on the Connections page and try again.`,
   rate_limited:
-    "GitHub is rate-limiting Juno right now. Connecting your GitHub account raises the limit considerably; otherwise this clears on its own within the hour.",
+    `GitHub is rate-limiting ${PRODUCT_NAME} right now. Connecting your GitHub account raises the limit considerably; otherwise this clears on its own within the hour.`,
   tree_truncated:
     "This repository is too large to list in one pass. Paste a link to the folder the skills are in (the tree or blob URL from GitHub's own file browser works).",
   no_skills:
-    "Juno walked the repository and found no SKILL.md. A skill is a folder with a SKILL.md at its head; this repository has none where it looked.",
+    `${PRODUCT_NAME} walked the repository and found no SKILL.md. A skill is a folder with a SKILL.md at its head; this repository has none where it looked.`,
   not_a_skill_file: `That link points at a file that is not a ${SKILL_MD_FILENAME}. Link the skill's folder, or the ${SKILL_MD_FILENAME} inside it.`,
-  unreachable: "Juno could not reach GitHub. Nothing was imported.",
+  unreachable: `${PRODUCT_NAME} could not reach GitHub. Nothing was imported.`,
 };
 
 /** Where a skill came from, kept so the question survives the import. */

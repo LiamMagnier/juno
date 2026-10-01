@@ -35,7 +35,7 @@ export const AGENT_JOB_EXAMPLES: readonly string[] = [
   "Prepare my week every Sunday evening: calendar, deadlines, travel",
 ];
 
-const NAMES = ["Nova", "Pip", "Orion", "Wren", "Juno", "Sol", "Ivy", "Kit", "Remy", "Tess", "Arlo", "Nell"];
+const NAMES = ["Nova", "Pip", "Orion", "Wren", "Vega", "Sol", "Ivy", "Kit", "Remy", "Tess", "Arlo", "Nell"];
 
 /** A face nobody on the team has yet: one of the least-used tones, an unused shape when there is one. */
 export function nextAgentFace(team: readonly ClientAgent[], salt: number): AgentAvatar {

@@ -63,6 +63,7 @@ import {
   type createSessionSchema,
   type startRunSchema,
 } from "@/app/api/work/protocol";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Creating a task and starting its run, for every caller that does either.
@@ -1144,7 +1145,7 @@ export async function startWorkRunForUser(
     // until somebody configures a provider.
     return refused(503, {
       error: "no_model_available",
-      message: "Juno has no model available to run this right now, so nothing was started.",
+      message: `${PRODUCT_NAME} has no model available to run this right now, so nothing was started.`,
     });
   }
 
@@ -1374,7 +1375,7 @@ export async function startWorkRunForUser(
       // dead branch.
       const message =
         err.result.refusedBy === "unit"
-          ? "This task is above Juno’s per-run spending ceiling, so nothing was started. Lower its scope or choose a less expensive model."
+          ? `This task is above ${PRODUCT_NAME}’s per-run spending ceiling, so nothing was started. Lower its scope or choose a less expensive model.`
           : "Starting this task would exceed your monthly spending ceiling, so nothing was started. Finish or stop another run, or raise the account cap.";
       return refused(
         429,

@@ -13,6 +13,7 @@ import {
   settingsHref,
 } from "@/components/settings/settings-sections";
 import { planRank } from "@/lib/plans";
+import * as BrandNames from "@/lib/brand/names";
 
 /*
  * THE SHELL CONTRACT HOLDS THE WEB (docs/native/MACOS_LIQUID_GLASS_REDESIGN.md
@@ -136,10 +137,33 @@ function unwrap(node: ts.Expression): ts.Expression {
   return current;
 }
 
+/**
+ * A name read through the display-name registry (src/lib/brand/names.ts):
+ * `FEATURE_NAMES.library.label` is the sidebar's "Library" exactly as a
+ * literal would be, so the contract holds the words the reader sees.
+ */
+function registryText(node: ts.Expression): string | undefined {
+  let value: unknown = BrandNames;
+  for (const key of node.getText().replace(/\s+/g, "").split(".")) {
+    if (!value || typeof value !== "object" || !Object.hasOwn(value, key)) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return typeof value === "string" ? value : undefined;
+}
+
 function stringOf(node: ts.Expression | undefined): string | undefined {
   if (!node) return undefined;
   const bare = unwrap(node);
-  return ts.isStringLiteral(bare) || ts.isNoSubstitutionTemplateLiteral(bare) ? bare.text : undefined;
+  if (ts.isStringLiteral(bare) || ts.isNoSubstitutionTemplateLiteral(bare)) return bare.text;
+  if (ts.isIdentifier(bare) || ts.isPropertyAccessExpression(bare)) return registryText(bare);
+  return undefined;
+}
+
+/** The words an element shows: its text, or a single `{name}` it renders. */
+function childText(node: ts.Node): string | undefined {
+  if (ts.isJsxText(node)) return node.text.trim() || undefined;
+  if (ts.isJsxExpression(node) && node.expression) return stringOf(node.expression);
+  return undefined;
 }
 
 function property(object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
@@ -394,8 +418,8 @@ test("the list's section headings are the contract's, in order, per product", ()
   // Needs you is its own fold (`NeedsYouFold`), drawn above every Section.
   const needsYouFold = functionNamed(SIDEBAR, "NeedsYouFold");
   const needsYouLabel = descendants(needsYouFold)
-    .filter(ts.isJsxText)
-    .map((text) => text.text.trim())
+    .filter((node) => ts.isJsxText(node) || ts.isJsxExpression(node))
+    .map(childText)
     .find(Boolean);
   const headings: { node: ts.Node; label: PerProduct }[] = [
     ...elements(APP_SIDEBAR, "NeedsYouFold").map((node) => ({

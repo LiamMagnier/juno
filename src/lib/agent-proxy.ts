@@ -1,5 +1,6 @@
 import { emptyAnthropicUsage, foldAnthropicUsage, type RawAnthropicUsage } from "@/lib/anthropic-round";
 import { compatPromptCacheTokens, type CompatPromptCacheFields } from "@/lib/pricing";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The pure half of the provider proxy at /api/agent/<provider>/<path>.
@@ -370,10 +371,10 @@ export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentReque
   }
   if (wire === "openai-responses") {
     if (Object.hasOwn(parsed, "background") && parsed.background !== false) {
-      return refuse("Background responses are not available through Juno.");
+      return refuse(`Background responses are not available through ${PRODUCT_NAME}.`);
     }
     if (parsed.previous_response_id != null || parsed.conversation != null) {
-      return refuse("Send the whole conversation: stored responses are not available through Juno.");
+      return refuse(`Send the whole conversation: stored responses are not available through ${PRODUCT_NAME}.`);
     }
   }
 

@@ -16,7 +16,7 @@ export default function AutomationsLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <AppPage measure="wide" role="status" aria-label="Loading automations">
+    <AppPage measure="wide" role="status" aria-label="Loading routines">
       {/* AppPageHeader at its own metrics: the display-size heading, its lede
           and the rule it ends on. Anything looser here and the whole page steps
           sideways at the moment the real header lands on top of it. The eyebrow

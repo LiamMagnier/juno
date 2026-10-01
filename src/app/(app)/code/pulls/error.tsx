@@ -18,6 +18,7 @@ import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export default function CodePullsError({
   error,
@@ -37,7 +38,7 @@ export default function CodePullsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t load your pull requests"
-        description="GitHub didn’t answer, or the connection needs re-authorising. Nothing Juno Code has opened is affected."
+        description={`GitHub didn’t answer, or the connection needs re-authorising. Nothing ${PRODUCT_NAME} Code has opened is affected.`}
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

@@ -40,7 +40,7 @@ test("a proposal built against a stale revision is refused, not rebased", () => 
   );
   assert.throws(
     () => previewProposal(doc, proposal, { transactionId: "t1", now: "2026-01-01T00:00:00.000Z" }),
-    /changed while Juno was working/
+    /changed while Alevr was working/
   );
 });
 

@@ -5,10 +5,11 @@ import { getCurrentUser } from "@/lib/session";
 import { PLAN_LIST } from "@/lib/plans";
 import { env } from "@/lib/env";
 import { LandingPage } from "@/components/landing/landing-page";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // Signed-in users go straight to the app; strangers get the front door.
 export const metadata: Metadata = {
-  title: { absolute: "Juno — every frontier AI model, one honest subscription" },
+  title: { absolute: `${PRODUCT_NAME}: every frontier AI model, one honest subscription` },
   description:
     "Chat with Claude, GPT, Gemini and models from a dozen more labs in one calm workspace. Plans are metered by real API cost — you see what every answer costs. Hosted in France, GDPR by default.",
   alternates: { canonical: "/" },
@@ -26,7 +27,7 @@ function structuredData(): string {
   const data = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "Juno",
+    name: PRODUCT_NAME,
     url: base,
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, macOS, iOS",

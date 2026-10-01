@@ -1,4 +1,5 @@
 import type { BenchScenario } from "@/lib/memory-bench";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The recall benchmark's histories.
@@ -296,7 +297,7 @@ export const MEMORY_BENCH_SCENARIOS: BenchScenario[] = [
     id: "forget-and-move-on",
     title: "Forgotten, then a new job",
     description:
-      "Someone asks Juno to forget their employer, interviews elsewhere and takes the job. Tests that a forget survives history being read again, and that an interview in March is not upcoming in September.",
+      `Someone asks ${PRODUCT_NAME} to forget their employer, interviews elsewhere and takes the job. Tests that a forget survives history being read again, and that an interview in March is not upcoming in September.`,
     now: "2026-09-22T12:00:00Z",
     forgets: [{ at: "2026-03-01T09:00:00Z", statement: "The user works at Initech." }],
     conversations: [

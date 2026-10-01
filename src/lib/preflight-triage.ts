@@ -9,6 +9,7 @@ import {
   type PreflightClarificationQuestionType,
   type PreflightClarificationResult,
 } from "@/lib/preflight-clarification";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Pre-answer clarification triage
@@ -90,9 +91,9 @@ export function triageModelCandidates(): ModelInfo[] {
     .slice(0, 3);
 }
 
-const TRIAGE_SYSTEM = `You are the pre-answer triage step for Juno, an AI assistant. Before Juno answers, you decide whether pausing to ask the user ONE quick clarifying question FIRST would make Juno's answer meaningfully better.
+const TRIAGE_SYSTEM = `You are the pre-answer triage step for ${PRODUCT_NAME}, an AI assistant. Before ${PRODUCT_NAME} answers, you decide whether pausing to ask the user ONE quick clarifying question FIRST would make ${PRODUCT_NAME}'s answer meaningfully better.
 
-DEFAULT TO NOT ASKING. Most messages — including most vague ones — should be answered directly with reasonable assumptions. Interrupting the user is expensive; only do it when the answer to your question would genuinely change what Juno produces.
+DEFAULT TO NOT ASKING. Most messages — including most vague ones — should be answered directly with reasonable assumptions. Interrupting the user is expensive; only do it when the answer to your question would genuinely change what ${PRODUCT_NAME} produces.
 
 Ask ONLY when ALL of these hold:
 1. The request is a substantial piece of work (building, creating, writing, planning something non-trivial) — not a question, explanation, or chat.
@@ -100,7 +101,7 @@ Ask ONLY when ALL of these hold:
 3. A wrong assumption would waste real effort — the user would have to ask for a redo, not a tweak.
 
 NEVER ask when:
-- The message is a factual question, an explanation request, or casual conversation. Juno can pick a sensible depth and tone on its own.
+- The message is a factual question, an explanation request, or casual conversation. ${PRODUCT_NAME} can pick a sensible depth and tone on its own.
 - It is a follow-up in an ongoing conversation and the context already pins down what the user means.
 - The user provided code, an error, a document, or other concrete material to work from.
 - The request is already specific enough to act on, even if some minor details are open.
@@ -109,7 +110,7 @@ NEVER ask when:
 Question quality bar (when you do ask):
 - Ask exactly ONE question — the single highest-impact unknown. If two things feel unclear, ask about the one that changes the deliverable most.
 - The question must reference the specifics of THIS request; options must be concrete, mutually distinct, and cover the likely real answers — so the user can one-click instead of typing.
-- Never ask about things Juno can decide well itself (colors, file structure, phrasing).
+- Never ask about things ${PRODUCT_NAME} can decide well itself (colors, file structure, phrasing).
 
 Respond with ONLY a JSON object, no markdown fences, no commentary:
 {"needsClarification": false, "reason": "<one short sentence>"}
@@ -136,7 +137,7 @@ Question "type" is one of: single-choice, multi-choice, text, text-long. Use tex
  * research triage that asks "what do you already know about X?" has simply moved
  * the research onto the user.
  */
-const RESEARCH_TRIAGE_SYSTEM = `You are the scoping step for Juno's Deep Research. The user has asked for a full research run: it will take several minutes, read dozens of sources, cost real money, and produce a long cited report. Before it starts, you ask a few quick questions that determine the SHAPE of that report.
+const RESEARCH_TRIAGE_SYSTEM = `You are the scoping step for ${PRODUCT_NAME}'s Deep Research. The user has asked for a full research run: it will take several minutes, read dozens of sources, cost real money, and produce a long cited report. Before it starts, you ask a few quick questions that determine the SHAPE of that report.
 
 DEFAULT TO ASKING. Unlike a normal answer, a research run cannot be cheaply redone, and the user cannot tell from the request alone what they will get. Ask unless the request already specifies the deliverable precisely.
 
@@ -149,7 +150,7 @@ Ask 2 to 4 questions, chosen from the unknowns that actually change the output:
 - Geography, market, or jurisdiction, when the answer differs by region.
 
 NEVER ask:
-- About the subject matter itself. You are scoping the report, not researching it. Do not ask what the user already knows, believes, or has read, and never ask a question whose answer is the thing they are paying Juno to find out.
+- About the subject matter itself. You are scoping the report, not researching it. Do not ask what the user already knows, believes, or has read, and never ask a question whose answer is the thing they are paying ${PRODUCT_NAME} to find out.
 - Anything the request already answers, or the conversation already pins down.
 - More than four questions, or any question the user cannot answer in one click.
 
@@ -168,7 +169,7 @@ function buildTriageUserMessage(message: string, recentMessages: TriageContextMe
   if (context.length) {
     parts.push("Conversation so far (most recent last):");
     for (const m of context) {
-      parts.push(`${m.role === "USER" ? "User" : "Juno"}: ${m.content.replace(/\s+/g, " ").trim().slice(0, 800)}`);
+      parts.push(`${m.role === "USER" ? "User" : PRODUCT_NAME}: ${m.content.replace(/\s+/g, " ").trim().slice(0, 800)}`);
     }
     parts.push("");
   }

@@ -11,6 +11,7 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { cn } from "@/lib/utils";
 import { parseSummarySections, type SummaryData, type SummarySection } from "@/components/memory/memory-model";
 import { relativeTime } from "@/components/memory/memory-time";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The summary: the one raised surface on the page, because it is the one
@@ -98,7 +99,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
                   <span className="hidden @[30rem]/summary:inline">{hasSummary ? "Rebuild" : "Write summary"}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Rewrite it from everything Juno remembers</TooltipContent>
+              <TooltipContent>{`Rewrite it from everything ${PRODUCT_NAME} remembers`}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -164,13 +165,11 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
           </p>
         ) : project ? (
           <p className="max-w-prose pb-4 pt-2 text-body text-muted-foreground">
-            Juno writes this from the chats in this project as you go. Only those chats read it, and they read nothing
-            else Juno remembers about you.
+            {`${PRODUCT_NAME} writes this from the chats in this project as you go. Only those chats read it, and they read nothing else ${PRODUCT_NAME} remembers about you.`}
           </p>
         ) : (
           <p className="max-w-prose pb-4 pt-2 text-body text-muted-foreground">
-            Juno writes a short summary of what it knows once it has a few things to go on. Everything it remembers is
-            listed below either way.
+            {`${PRODUCT_NAME} writes a short summary of what it knows once it has a few things to go on. Everything it remembers is listed below either way.`}
           </p>
         )}
       </div>

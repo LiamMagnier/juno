@@ -22,6 +22,7 @@ import {
 import { AGENT_STYLES, AGENT_STYLE_LABEL, type AgentState, type AgentStyle } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
+import { AGENT_STATE_NAMES } from "@/lib/brand/names";
 
 const STYLE_COPY: Record<AgentStyle, string> = {
   warm: "Friendly and encouraging.",
@@ -32,11 +33,11 @@ const STYLE_COPY: Record<AgentStyle, string> = {
 
 /** The states a person can try the face in, in the order they happen. */
 const PREVIEW_STATES: ReadonlyArray<{ state: AgentState; label: string }> = [
-  { state: "idle", label: "At rest" },
-  { state: "thinking", label: "Thinking" },
-  { state: "working", label: "Working" },
-  { state: "waiting", label: "Needs you" },
-  { state: "done", label: "Done" },
+  { state: "idle", label: AGENT_STATE_NAMES.ready },
+  { state: "thinking", label: AGENT_STATE_NAMES.thinking },
+  { state: "working", label: AGENT_STATE_NAMES.working },
+  { state: "waiting", label: AGENT_STATE_NAMES.needsAnswer },
+  { state: "done", label: AGENT_STATE_NAMES.finished },
 ];
 
 /**

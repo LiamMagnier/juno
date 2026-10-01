@@ -9,6 +9,7 @@ import {
   memoryCategoryLabel,
   type MemoryCategory,
 } from "@/lib/memory-categories";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The rules that decide what Juno believes: how a fact is classified, when two
@@ -478,17 +479,17 @@ export function resolveContradiction(
     return {
       winner: "incoming",
       basis: "rank",
-      reason: `You said this yourself, so it replaced what Juno had inferred about ${noun}.`,
+      reason: `You said this yourself, so it replaced what ${PRODUCT_NAME} had inferred about ${noun}.`,
     };
   }
   if (incomingRank < existingRank) {
-    return { winner: "existing", basis: "rank", reason: `Not used: it conflicts with what you told Juno about ${noun}.` };
+    return { winner: "existing", basis: "rank", reason: `Not used: it conflicts with what you told ${PRODUCT_NAME} about ${noun}.` };
   }
   if (existing.confidence - incoming.confidence >= CONFIDENCE_MARGIN) {
     return {
       winner: "existing",
       basis: "confidence",
-      reason: `Not used: Juno is more confident in what it already knew about ${noun}.`,
+      reason: `Not used: ${PRODUCT_NAME} is more confident in what it already knew about ${noun}.`,
     };
   }
   if (incoming.confidence - existing.confidence >= CONFIDENCE_MARGIN) {
@@ -687,7 +688,7 @@ export function planFactIngestion(
         ...refresh,
         revive: false,
         expiresAt,
-        reinstate: { reason: "You said this again, so Juno believes it again." },
+        reinstate: { reason: `You said this again, so ${PRODUCT_NAME} believes it again.` },
       };
     }
     const outcome = resolveContradiction(
@@ -856,7 +857,7 @@ export function planTimelineReconciliation(
       expiresAt: due,
       reason: over
         ? "This was only true for a while, and that while has passed."
-        : "Juno re-read your chats: this is counted from when you said it.",
+        : `${PRODUCT_NAME} re-read your chats: this is counted from when you said it.`,
     });
   }
 
@@ -893,14 +894,14 @@ export function planTimelineReconciliation(
           id: member.entry.id,
           status: "active",
           supersededById: null,
-          reason: `Juno re-read your chats: this is the latest thing you said about ${member.noun}.`,
+          reason: `${PRODUCT_NAME} re-read your chats: this is the latest thing you said about ${member.noun}.`,
         });
       } else if (!wins && member.entry.status === "active") {
         changes.push({
           id: member.entry.id,
           status: "superseded",
           supersededById: carrier.entry.id,
-          reason: `Juno re-read your chats: you said something newer about ${member.noun}.`,
+          reason: `${PRODUCT_NAME} re-read your chats: you said something newer about ${member.noun}.`,
         });
       }
     }

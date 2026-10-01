@@ -28,6 +28,7 @@ import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export default function CodeRunsError({
   error,
@@ -49,7 +50,7 @@ export default function CodeRunsError({
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="Couldn’t open Juno Code"
+        title={`Couldn’t open ${PRODUCT_NAME} Code`}
         description="This screen failed to draw. Nothing was cancelled, and any run already going is still going on the machine it started on."
         action={
           <>

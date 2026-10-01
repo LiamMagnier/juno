@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   }
   const agent = await findAgent(grant.userId, grant.agentId);
   if (!agent) {
-    return NextResponse.json({ error: "not_found", message: "That crew member no longer exists." }, { status: 404, headers: HEADERS });
+    return NextResponse.json({ error: "not_found", message: "That agent no longer exists." }, { status: 404, headers: HEADERS });
   }
 
   try {

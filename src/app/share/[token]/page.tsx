@@ -22,6 +22,7 @@ import {
 import { countPublicationView, findPublicPublication } from "@/lib/artifact-publication";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Public share page — no auth, works signed out. Serves two kinds of token:
@@ -47,7 +48,7 @@ import type { ArtifactType } from "@/lib/message-content";
 // Never cache a share render: revocation must kill the link on the next request.
 export const dynamic = "force-dynamic";
 
-const SHARE_DESCRIPTION = "Shared from Juno — a thoughtful AI assistant for chat, code, and creativity.";
+const SHARE_DESCRIPTION = `Shared from ${PRODUCT_NAME} — a thoughtful AI assistant for chat, code, and creativity.`;
 
 const GONE_METADATA: Metadata = { title: "Not shared any more", robots: { index: false, follow: false } };
 
@@ -59,12 +60,12 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   if (share && (await sharedArtifactIsTrashed(share))) return GONE_METADATA;
   const publication = share ? null : await findPublicPublication(token);
   if (publication?.state === "gone") return GONE_METADATA;
-  const title = (share?.title ?? (publication?.state === "live" ? publication.snapshot.title : "")).trim() || "Shared from Juno";
+  const title = (share?.title ?? (publication?.state === "live" ? publication.snapshot.title : "")).trim() || `Shared from ${PRODUCT_NAME}`;
   return {
     title,
     description: SHARE_DESCRIPTION,
     robots: { index: false, follow: false },
-    openGraph: { title, description: SHARE_DESCRIPTION, type: "article", siteName: "Juno" },
+    openGraph: { title, description: SHARE_DESCRIPTION, type: "article", siteName: PRODUCT_NAME },
   };
 }
 
@@ -96,7 +97,7 @@ async function resolveSubject(token: string): Promise<PageSubject | "gone" | nul
     const artifact = share.kind === "ARTIFACT" ? await getSharedArtifactSnapshot(share) : null;
     if (!chat && !artifact) return null;
     return {
-      title: share.title.trim() || "Shared from Juno",
+      title: share.title.trim() || `Shared from ${PRODUCT_NAME}`,
       dateLine: `Shared ${formatSharedDate(share.snapshotAt)}`,
       chat,
       artifact,
@@ -107,7 +108,7 @@ async function resolveSubject(token: string): Promise<PageSubject | "gone" | nul
   if (publication.state === "gone") return "gone";
   countPublicationView(publication.publication.id);
   return {
-    title: publication.snapshot.title.trim() || "Shared from Juno",
+    title: publication.snapshot.title.trim() || `Shared from ${PRODUCT_NAME}`,
     dateLine: `Published ${formatSharedDate(new Date(publication.snapshot.publishedAt))}`,
     chat: null,
     artifact: publication.snapshot,
@@ -131,7 +132,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         <AppPage scroll={false} measure="reading" contentClassName="flex h-12 items-center gap-3 py-0">
           <Link
             href="/"
-            aria-label="Juno"
+            aria-label={PRODUCT_NAME}
             className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             <JunoMark className="size-6" />
@@ -141,7 +142,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             <p className="truncate font-mono text-caption text-muted-foreground">{subject.dateLine}</p>
           </div>
           <Button size="sm" asChild>
-            <Link href="/">Open in Juno</Link>
+            <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
           </Button>
         </AppPage>
       </header>
@@ -157,13 +158,13 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
               <Plate name="horizon" dim sizes="(min-width: 768px) 720px, 100vw" imageClassName="object-[50%_65%]" />
               <div className="relative m-3 flex flex-col gap-4 rounded-panel bg-card/85 p-5 backdrop-blur-xl sm:m-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-serif text-title font-medium text-foreground">Made with Juno</p>
+                  <p className="font-serif text-title font-medium text-foreground">{`Made with ${PRODUCT_NAME}`}</p>
                   <p className="mt-1 text-body text-muted-foreground">
                     Every frontier model in one calm place, with the cost of each answer in plain sight.
                   </p>
                 </div>
                 <Button asChild className="shrink-0">
-                  <Link href="/sign-up">Start with Juno</Link>
+                  <Link href="/sign-up">{`Start with ${PRODUCT_NAME}`}</Link>
                 </Button>
               </div>
             </aside>
@@ -203,7 +204,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         >
           <span className="inline-flex items-center gap-2 font-mono text-caption text-muted-foreground">
             <JunoMark className="size-4" />
-            Made with Juno
+            {`Made with ${PRODUCT_NAME}`}
           </span>
           {/* The visitor's two ways out, grouped so justify-between keeps them
               together at the end rather than spacing Report into the middle. */}

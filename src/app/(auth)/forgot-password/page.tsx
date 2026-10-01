@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { getCurrentUser } from "@/lib/session";
 import { isEmailEnabled } from "@/lib/email";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const metadata: Metadata = {
   title: "Forgot password",
-  description: "Request a secure password-reset link for your Juno account.",
+  description: `Request a secure password-reset link for your ${PRODUCT_NAME} account.`,
 };
 
 export default async function ForgotPasswordPage() {

@@ -38,6 +38,7 @@ import {
   parseTimeTrigger,
   type JsonObject,
 } from "@/lib/work/schedule";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Kinds
@@ -342,19 +343,19 @@ export const TRIGGER_OPTION_LIMITS: Readonly<
     {
       field: "labels",
       message:
-        "Juno's mail reader sees the sender, the subject and the date of a message, and not its labels. A trigger that requires a label would never match anything.",
+        `${PRODUCT_NAME}'s mail reader sees the sender, the subject and the date of a message, and not its labels. A trigger that requires a label would never match anything.`,
     },
     {
       field: "requireAttachment",
       message:
-        "Juno's mail reader cannot tell whether a message has an attachment without downloading it. A trigger that requires one would never match anything.",
+        `${PRODUCT_NAME}'s mail reader cannot tell whether a message has an attachment without downloading it. A trigger that requires one would never match anything.`,
     },
   ],
   calendar_window: [
     {
       field: "requireAttendees",
       message:
-        "Juno's calendar reader sees the title, the times and the calendar of an event, and not who was invited. A trigger that skips meetings with no other attendees would skip every meeting.",
+        `${PRODUCT_NAME}'s calendar reader sees the title, the times and the calendar of an event, and not who was invited. A trigger that skips meetings with no other attendees would skip every meeting.`,
     },
   ],
 };
@@ -998,7 +999,7 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
     return {
       outcome: "wait",
       cause: "account_concurrency",
-      explanation: "You already have as many scheduled runs going as Juno will run at once.",
+      explanation: `You already have as many scheduled runs going as ${PRODUCT_NAME} will run at once.`,
     };
   }
 
@@ -1377,7 +1378,7 @@ export function apiTriggerRefusal(
     ? {
         error: "one_api_trigger",
         message:
-          "An automation has one fire URL and one token, so it can have one API trigger. Use its text to tell the run which caller it was.",
+          "A routine has one fire URL and one token, so it can have one API trigger. Use its text to tell the run which caller it was.",
       }
     : null;
 }

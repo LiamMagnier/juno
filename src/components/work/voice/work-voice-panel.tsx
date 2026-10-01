@@ -16,6 +16,7 @@ import {
   type WorkVoiceSend,
   type WorkVoiceSendIntent,
 } from "@/components/work/voice/work-voice-surface";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Talking to Juno about a Work task, out loud, without pretending it is more
@@ -203,8 +204,8 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
       explanation={
         <>
           {briefedFromStream
-            ? "Juno was told this task’s goal, plan and latest activity when you started talking."
-            : "Juno was told this task’s goal and where it has got to when you started talking."}{" "}
+            ? `${PRODUCT_NAME} was told this task’s goal, plan and latest activity when you started talking.`
+            : `${PRODUCT_NAME} was told this task’s goal and where it has got to when you started talking.`}{" "}
           This is a separate conversation about the task: it can&rsquo;t see anything else, it
           can&rsquo;t change the task, and nothing said here reaches the run unless you send it.
         </>
@@ -216,11 +217,11 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
           // 16 − 12 = 4 — the same arithmetic as the send-preview well below it.
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border/60 bg-secondary px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
-              The task has moved on since Juno was briefed
+              {`The task has moved on since ${PRODUCT_NAME} was briefed`}
             </p>
             <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2">
               <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-              Bring Juno up to date
+              {`Bring ${PRODUCT_NAME} up to date`}
             </Button>
           </div>
         ) : undefined

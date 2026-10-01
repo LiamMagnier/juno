@@ -10,6 +10,7 @@ import { getInitialPreferences } from "@/lib/preferences";
 import { auth } from "@/lib/auth";
 import { directionOf, isAutoLocale } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // One interface voice across native and web. Inter is the quiet, neutral
 // grotesque every calm product interface has converged on (its metrics are
@@ -64,17 +65,19 @@ const APP_DESCRIPTION =
   "Every frontier AI model (Claude, GPT, Gemini and a dozen more labs) in one calm workspace, metered by what answers actually cost.";
 
 export const metadata: Metadata = {
-  title: { default: "Juno", template: "%s · Juno" },
+  title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
   description: APP_DESCRIPTION,
-  applicationName: "Juno",
+  applicationName: PRODUCT_NAME,
+  // The name under the icon on an iPhone home screen.
+  appleWebApp: { title: PRODUCT_NAME },
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   ),
   openGraph: {
-    siteName: "Juno",
+    siteName: PRODUCT_NAME,
     type: "website",
     locale: "en_US",
-    title: "Juno",
+    title: PRODUCT_NAME,
     description: APP_DESCRIPTION,
     // Static 1200×630 card generated from the design tokens (see public/og.png).
     images: [
@@ -82,13 +85,13 @@ export const metadata: Metadata = {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "Juno: every frontier AI model, one honest subscription",
+        alt: `${PRODUCT_NAME}: every frontier AI model, one honest subscription`,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Juno",
+    title: PRODUCT_NAME,
     description: APP_DESCRIPTION,
     images: ["/og.png"],
   },

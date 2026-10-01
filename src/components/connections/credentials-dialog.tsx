@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ConnectorStatus } from "@/components/connections/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Connect dialog for credentials-kind connectors. Apple Calendar/Mail take an
@@ -62,7 +63,7 @@ function HelpSteps() {
     <div className="surface-inset rounded-field p-3.5 text-caption text-muted-foreground">
       <p className="flex items-start gap-1.5">
         <KeyRound className="mt-0.5 size-3.5 shrink-0" />
-        Juno signs in with an app-specific password — never your main Apple ID password.
+        {`${PRODUCT_NAME} signs in with an app-specific password — never your main Apple ID password.`}
       </p>
       <ol className="mt-2 list-decimal space-y-1 pl-4">
         <li>
@@ -78,7 +79,7 @@ function HelpSteps() {
           </a>
         </li>
         <li>Go to Sign-In &amp; Security → App-Specific Passwords (requires two-factor authentication)</li>
-        <li>Generate one named “Juno” and paste it below</li>
+        <li>{`Generate one named “${PRODUCT_NAME}” and paste it below`}</li>
       </ol>
     </div>
   );
@@ -142,7 +143,7 @@ export function CredentialsDialog({
       const data = (await r.json().catch(() => ({}))) as { token?: string; message?: string };
       if (!r.ok || !data.token) throw new Error(data.message ?? "Apple Music isn’t set up on this server yet.");
       const musicKit = await loadMusicKit();
-      const instance = await musicKit.configure({ developerToken: data.token, app: { name: "Juno", build: "1.0" } });
+      const instance = await musicKit.configure({ developerToken: data.token, app: { name: PRODUCT_NAME, build: "1.0" } });
       const musicUserToken = await instance.authorize();
       if (!musicUserToken) throw new Error("Apple Music sign-in was cancelled.");
       const accountLabel = await postCredentials(connector, { musicUserToken });
@@ -161,8 +162,8 @@ export function CredentialsDialog({
           <DialogTitle>Connect {connector?.label}</DialogTitle>
           <DialogDescription>
             {isMusic
-              ? "Sign in with Apple to let Juno work with your Apple Music library. Apple hands back a music user token — Juno stores it encrypted and never sees your password."
-              : `Juno connects to ${connector?.label ?? "iCloud"} over iCloud with an app-specific password, stored encrypted on the server.`}
+              ? `Sign in with Apple to let ${PRODUCT_NAME} work with your Apple Music library. Apple hands back a music user token — ${PRODUCT_NAME} stores it encrypted and never sees your password.`
+              : `${PRODUCT_NAME} connects to ${connector?.label ?? "iCloud"} over iCloud with an app-specific password, stored encrypted on the server.`}
           </DialogDescription>
         </DialogHeader>
 

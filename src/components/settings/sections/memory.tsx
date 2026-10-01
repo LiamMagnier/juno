@@ -11,6 +11,7 @@ import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { SENSITIVE_TOPICS, SENSITIVE_TOPIC_META } from "@/lib/memory-sensitive";
 import type { ClientSettings } from "@/types/app";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type BackgroundMode = ClientSettings["backgroundProviderMode"];
 
@@ -37,7 +38,7 @@ const BACKGROUND_OPTIONS: ChoiceOption<BackgroundMode>[] = [
   },
   {
     value: "local_only",
-    label: "Juno’s own models only",
+    label: `${PRODUCT_NAME}’s own models only`,
     description: "Nothing goes to an outside lab. Some background work may not run.",
   },
 ];
@@ -76,7 +77,7 @@ export function MemorySection() {
         <SettingRow
           label="Reference saved memories"
           htmlFor="memory-enabled"
-          description="Juno remembers lasting facts and preferences from your chats and uses them in later ones."
+          description={`${PRODUCT_NAME} remembers lasting facts and preferences from your chats and uses them in later ones.`}
           status={saves.status("memoryEnabled")}
           control={
             <Switch
@@ -89,7 +90,7 @@ export function MemorySection() {
         <SettingRow
           label="Learn from past chats in the background"
           htmlFor="memory-background-learning"
-          description="Between sessions, Juno reads older chats it hasn’t learned from yet, within your usage limits."
+          description={`Between sessions, ${PRODUCT_NAME} reads older chats it hasn’t learned from yet, within your usage limits.`}
           status={saves.status("memoryBackgroundLearning")}
           control={
             <Switch
@@ -104,7 +105,7 @@ export function MemorySection() {
         />
         <SettingRow
           label="Memories"
-          description="See what Juno remembers, change it or forget it."
+          description={`See what ${PRODUCT_NAME} remembers, change it or forget it.`}
           control={
             <Button asChild variant="outline" size="sm">
               <Link href="/memory">Manage</Link>
@@ -124,7 +125,7 @@ export function MemorySection() {
        */}
       <SettingsGroup
         title="Sensitive subjects"
-        description="Juno doesn’t learn these on its own. Anything you ask it to remember is always kept."
+        description={`${PRODUCT_NAME} doesn’t learn these on its own. Anything you ask it to remember is always kept.`}
       >
         {SENSITIVE_TOPICS.map((topic) => (
           <SettingRow

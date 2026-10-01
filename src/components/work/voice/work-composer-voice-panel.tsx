@@ -9,6 +9,7 @@ import {
 } from "@/components/work/voice/work-voice-briefing";
 import { runLimitFrom } from "@/components/work/clarify/run-disclosure";
 import { WorkVoiceSurface, type WorkVoiceSend } from "@/components/work/voice/work-voice-surface";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Talking a task into existence, before there is a task.
@@ -106,10 +107,7 @@ export function WorkComposerVoicePanel({
       onClose={close}
       explanation={
         <>
-          Juno was told what is in the box and how you have set it up, and nothing else. It
-          can&rsquo;t create the task, start it or look anything up — when you&rsquo;re happy with
-          how you&rsquo;ve worded it, send the line into the box and start it yourself. Nothing
-          else said here is kept.
+          {`${PRODUCT_NAME} was told what is in the box and how you have set it up, and nothing else. It can’t create the task, start it or look anything up — when you’re happy with how you’ve worded it, send the line into the box and start it yourself. Nothing else said here is kept.`}
         </>
       }
     />

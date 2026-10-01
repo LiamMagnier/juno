@@ -45,6 +45,7 @@ import { readEvent, str } from "@/components/work/work-payload";
 import { deriveApprovals, deriveOpenQuestions } from "@/components/work/work-decisions";
 import { deriveCurrentAction, derivePlan, type PlanStep } from "@/components/work/work-timeline";
 import { statusSentence } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Per-turn ceiling. The wire allows 2,000; the gap is the safety margin. */
 const MAX_ENTRY_CHARS = 1_400;
@@ -178,7 +179,7 @@ function sections(input: WorkVoiceBriefingInput): string[] {
   const ordered: (string | null)[] = [
     // 1 — the task itself, and the rules of this conversation. Never dropped.
     [
-      "I am looking at one of my Juno Work tasks and I want to talk it through out loud.",
+      `I am looking at one of my ${PRODUCT_NAME} Work tasks and I want to talk it through out loud.`,
       "",
       `The task, in my own words: "${oneLine(session.goal, MAX_QUOTE_CHARS)}"`,
       `Where it stands: ${statusSentence(session.status)}`,
@@ -190,7 +191,7 @@ function sections(input: WorkVoiceBriefingInput): string[] {
         "that is not here, say you cannot see it rather than guessing. You also cannot " +
         "change this task: you cannot start it, stop it, answer its questions or approve " +
         "anything. I do all of that myself in the app. Talk normally, keep it short, and use " +
-        "my words for the work rather than Juno's.",
+        `my words for the work rather than ${PRODUCT_NAME}'s.`,
     ]
       .filter((line) => line !== null)
       .join("\n"),
@@ -213,7 +214,7 @@ function sections(input: WorkVoiceBriefingInput): string[] {
     // 3 — the plan, which is the thing the page is mostly showing.
     plan.length > 0
       ? [
-          "The plan Juno wrote for it, in order:",
+          `The plan ${PRODUCT_NAME} wrote for it, in order:`,
           ...plan.map(planLine),
           current ? `Right now it is: ${oneLine(current.title, 160)}` : null,
         ]
@@ -224,7 +225,7 @@ function sections(input: WorkVoiceBriefingInput): string[] {
         : null,
 
     // 4 — Juno's own recent words, so the voice can pick up the thread.
-    said.length > 0 ? ["The last things Juno said on the task:", ...said.map((text) => `- ${text}`)].join("\n") : null,
+    said.length > 0 ? [`The last things ${PRODUCT_NAME} said on the task:`, ...said.map((text) => `- ${text}`)].join("\n") : null,
 
     // 5 — what it has produced. Least important: I can see the list on screen.
     artifacts.length > 0
@@ -349,7 +350,7 @@ export function buildWorkComposerVoiceBriefing(
   const ordered: (string | null)[] = [
     // 1 — the job, and the rules of this conversation. Never dropped.
     [
-      "I am about to give Juno Work a task and I want to think it through out loud with you " +
+      `I am about to give ${PRODUCT_NAME} Work a task and I want to think it through out loud with you ` +
         "first. Help me turn it into one errand with a clear finish line: ask me what “done” " +
         "looks like, what you would need from me, and whether it is one task or several.",
       "",
@@ -359,12 +360,12 @@ export function buildWorkComposerVoiceBriefing(
         "So when we have converged, say the task back to me as ONE self-contained sentence or " +
         "short paragraph I can send — do not add a preamble around it. Never say you have set " +
         "anything up, saved anything or started anything, because you have not. Talk normally, " +
-        "keep it short, and use my words for the work rather than Juno's.",
+        `keep it short, and use my words for the work rather than ${PRODUCT_NAME}'s.`,
     ].join("\n"),
 
     // 2 — what a run can actually finish, so nothing agreed here is impossible.
     [
-      "What a Juno Work run can do, so we do not agree on something it cannot finish:",
+      `What a ${PRODUCT_NAME} Work run can do, so we do not agree on something it cannot finish:`,
       stops,
       "- It runs unattended and reports back. It can stop to ask me something, but it cannot " +
         "wait around for hours.",

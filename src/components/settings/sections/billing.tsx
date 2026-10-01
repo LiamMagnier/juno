@@ -22,6 +22,7 @@ import {
 } from "@/components/settings/format";
 import { PLANS } from "@/lib/plans";
 import { describeCapSource } from "@/lib/spend-ceiling";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 function meterTone(share: number) {
   return share >= 1 ? "destructive" : share >= 0.9 ? "warning" : "primary";
@@ -169,8 +170,7 @@ export function BillingSection() {
       <SettingsGroup title="Usage">
         {unlimited ? (
           <p className="py-4 text-ui text-muted-foreground">
-            Nothing is metering this account. A task Juno starts on its own still stops at a small backstop ceiling,
-            so an unattended loop can’t run all night.
+            {`Nothing is metering this account. A task ${PRODUCT_NAME} starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.`}
           </p>
         ) : quota.plan === "FREE" ? (
           <p className="py-4 text-ui text-muted-foreground">
@@ -300,7 +300,7 @@ function SpendCeilingRow({
             <span>{sourceNote}.</span>{" "}
             {ceilingEur != null && (
               <>
-                <span>Juno stops at</span> <span className="tabular-nums">{formatEur(ceilingEur, formatAt)}</span>{" "}
+                <span>{`${PRODUCT_NAME} stops at`}</span> <span className="tabular-nums">{formatEur(ceilingEur, formatAt)}</span>{" "}
                 <span>this period. Leave the field empty to use the default; the lower of the two applies.</span>
               </>
             )}

@@ -12,6 +12,7 @@ import type {
   ActionRiskClass,
   ClientActionApproval,
 } from "@/lib/action-approval";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The one card in the transcript that is not prose.
@@ -42,15 +43,15 @@ import type {
 const RISK_COPY: Record<ActionRiskClass, { label: string; detail: string }> = {
   read_only: {
     label: "Reads only",
-    detail: "This reads. Nothing outside Juno changes.",
+    detail: `This reads. Nothing outside ${PRODUCT_NAME} changes.`,
   },
   reversible_write: {
     label: "Reversible change",
     detail: "This changes something that can be put back, like a label, a folder or a draft.",
   },
   external_write: {
-    label: "Leaves Juno",
-    detail: "This sends something to another service. Once it lands there, Juno cannot take it back.",
+    label: `Leaves ${PRODUCT_NAME}`,
+    detail: `This sends something to another service. Once it lands there, ${PRODUCT_NAME} cannot take it back.`,
   },
   destructive_or_sensitive: {
     label: "Cannot be undone",
@@ -63,7 +64,7 @@ const RISK_COPY: Record<ActionRiskClass, { label: string; detail: string }> = {
   unknown: {
     label: "Unverified",
     detail:
-      "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer.",
+      `${PRODUCT_NAME} could not verify that this only reads, so it is treated as a change that leaves ${PRODUCT_NAME}. Read the arguments below before you answer.`,
   },
 };
 
@@ -75,21 +76,21 @@ const RISK_COPY: Record<ActionRiskClass, { label: string; detail: string }> = {
  */
 const STATUS_COPY: Record<ActionReceiptStatus, string> = {
   pending: "Waiting for your answer.",
-  allowed: "Allowed. Juno is carrying this out.",
-  denied: "Denied. Juno did not carry this out.",
-  executing: "Juno is carrying this out now.",
-  executed: "Juno carried this out.",
-  failed: "Juno tried this and it failed.",
+  allowed: `Allowed. ${PRODUCT_NAME} is carrying this out.`,
+  denied: `Denied. ${PRODUCT_NAME} did not carry this out.`,
+  executing: `${PRODUCT_NAME} is carrying this out now.`,
+  executed: `${PRODUCT_NAME} carried this out.`,
+  failed: `${PRODUCT_NAME} tried this and it failed.`,
   expired: "This expired before it was answered. Nothing was sent.",
   superseded:
-    "The arguments or your permissions changed after this was raised, so Juno cancelled it and will ask again.",
-  blocked: "Your permissions blocked this, so Juno never sent it.",
+    `The arguments or your permissions changed after this was raised, so ${PRODUCT_NAME} cancelled it and will ask again.`,
+  blocked: `Your permissions blocked this, so ${PRODUCT_NAME} never sent it.`,
 };
 
 const DECISION_COPY: Record<ActionApprovalDecision, string> = {
-  allow_once: "Allowed once. Juno is carrying out the action now.",
-  allow_scope: "Allowed. Juno will not ask again before this action on this connector.",
-  deny: "Denied. Juno will not carry out the action.",
+  allow_once: `Allowed once. ${PRODUCT_NAME} is carrying out the action now.`,
+  allow_scope: `Allowed. ${PRODUCT_NAME} will not ask again before this action on this connector.`,
+  deny: `Denied. ${PRODUCT_NAME} will not carry out the action.`,
 };
 
 /*
@@ -114,9 +115,9 @@ function isTaskHandoff(approval: Pick<ClientActionApproval, "connectorId" | "too
 
 const TASK_CARD_COPY = {
   description:
-    "Juno works on this on its own and reports back in this chat. It asks before risky steps, and you can stop it at any time.",
+    `${PRODUCT_NAME} works on this on its own and reports back in this chat. It asks before risky steps, and you can stop it at any time.`,
   untrusted:
-    "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.",
+    `This chat includes content ${PRODUCT_NAME} read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.`,
   footnote: "Unanswered, this expires and the task does not start.",
 };
 
@@ -205,7 +206,7 @@ const HANDOFF_CARD_COPY = {
   description:
     "It becomes their task, in their own thread, with their apps and autonomy. They report back there, not in this chat, and you can stop it at any time.",
   untrusted:
-    "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you hand it off.",
+    `This chat includes content ${PRODUCT_NAME} read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you hand it off.`,
   footnote: "Unanswered, this expires and nothing is handed off.",
 };
 
@@ -243,7 +244,7 @@ function detailText(detail: Record<string, unknown>, key: string): string | null
  */
 const REPLAY_COPY = { message: "It had already been answered this way." };
 const UNRECOGNISED_REFUSAL_COPY = {
-  message: "Juno could not record your answer, and the server did not say why. Nothing was sent.",
+  message: `${PRODUCT_NAME} could not record your answer, and the server did not say why. Nothing was sent.`,
 };
 
 type RefusalCode =
@@ -268,17 +269,17 @@ type RefusalCode =
  */
 const REFUSAL_COPY: Record<RefusalCode, { message: string; terminal: boolean }> = {
   not_found: {
-    message: "Juno can no longer find this request, so there is nothing left to answer. Nothing was sent.",
+    message: `${PRODUCT_NAME} can no longer find this request, so there is nothing left to answer. Nothing was sent.`,
     terminal: true,
   },
   digest_mismatch: {
     message:
-      "This answer does not match the action you were shown, so Juno refused it. Nothing was sent. If Juno still needs this, it will ask again with the real arguments.",
+      `This answer does not match the action you were shown, so ${PRODUCT_NAME} refused it. Nothing was sent. If ${PRODUCT_NAME} still needs this, it will ask again with the real arguments.`,
     terminal: true,
   },
   policy_changed: {
     message:
-      "Your permissions changed after this request was raised, so your answer no longer applies to it. Nothing was sent, and Juno will ask again.",
+      `Your permissions changed after this request was raised, so your answer no longer applies to it. Nothing was sent, and ${PRODUCT_NAME} will ask again.`,
     terminal: true,
   },
   expired: {
@@ -293,19 +294,19 @@ const REFUSAL_COPY: Record<RefusalCode, { message: string; terminal: boolean }> 
   // refused, the action itself still needs an answer. Allow once and Deny stay
   // live, and the button that caused this disappears.
   not_scope_allowable: {
-    message: "Juno only remembers approval for actions it can undo. Allow this once, or deny it.",
+    message: `${PRODUCT_NAME} only remembers approval for actions it can undo. Allow this once, or deny it.`,
     terminal: false,
   },
   blocked: {
-    message: "This connector is blocked by your current permissions, so Juno refused the action itself. Nothing was sent.",
+    message: `This connector is blocked by your current permissions, so ${PRODUCT_NAME} refused the action itself. Nothing was sent.`,
     terminal: true,
   },
   unauthorized: {
-    message: "You are signed out, so Juno could not record your answer. Sign in and answer again.",
+    message: `You are signed out, so ${PRODUCT_NAME} could not record your answer. Sign in and answer again.`,
     terminal: true,
   },
   unreachable: {
-    message: "Juno could not reach the server to record your answer. The request is still waiting, so try again.",
+    message: `${PRODUCT_NAME} could not reach the server to record your answer. The request is still waiting, so try again.`,
     terminal: false,
   },
 };
@@ -609,8 +610,8 @@ export function ApprovalCard({
         <p id={labelId} className={cn("text-caption font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
           {handoff
             ? answerable
-              ? "Hand this to a teammate?"
-              : "Handoff to a teammate"
+              ? "Hand this to another agent?"
+              : "Handoff to another agent"
             : task
               ? answerable
                 ? "Start a background task?"
@@ -620,7 +621,7 @@ export function ApprovalCard({
                   ? "Allow this agent setup change?"
                   : "Agent setup change"
                 : answerable
-                  ? "Juno needs your approval"
+                  ? `${PRODUCT_NAME} needs your approval`
                   : "Approval request"}
         </p>
         {!task && !agentConfig && <span className="text-caption text-muted-foreground">{risk.label}</span>}
@@ -767,7 +768,7 @@ export function ApprovalCard({
           <Button variant="ghost" className="basis-full justify-start px-0 text-muted-foreground" onClick={() => {
             window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: "Instead of this action, " }));
             document.getElementById("juno-composer-textarea")?.focus();
-          }}>Tell Juno what to do instead</Button>
+          }}>{`Tell ${PRODUCT_NAME} what to do instead`}</Button>
         </div>
       )}
 
@@ -788,7 +789,7 @@ export function ApprovalCard({
       {answerable && !sending && untouched && (
         <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
           <Clock className="size-3" aria-hidden="true" />
-          {task ? taskCopy.footnote : "Unanswered, this expires and Juno stops rather than acting on it."}
+          {task ? taskCopy.footnote : `Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`}
         </p>
       )}
     </section>

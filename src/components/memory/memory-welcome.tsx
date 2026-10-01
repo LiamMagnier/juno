@@ -5,6 +5,7 @@ import { MessagesSquare, Upload } from "@/components/ui/icons";
 import { ComposerIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * An account with nothing remembered yet.
@@ -55,15 +56,14 @@ export function MemoryWelcome({
           <ComposerIcons.memory motion="none" className="size-6" />
         </span>
         <h2 id="memory-welcome-heading" className="mt-4 text-heading text-foreground">
-          Juno hasn’t remembered anything yet
+          {`${PRODUCT_NAME} hasn’t remembered anything yet`}
         </h2>
         <p className="mt-1.5 max-w-md text-balance text-body text-muted-foreground">
-          As you chat, Juno keeps the details worth carrying over, like your work, your preferences and how you like
-          answers. You can also start it off yourself.
+          {`As you chat, ${PRODUCT_NAME} keeps the details worth carrying over, like your work, your preferences and how you like answers. You can also start it off yourself.`}
         </p>
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           <Button size="sm" onClick={onCompose} disabled={paused} aria-expanded={composing}>
-            Tell Juno something
+            {`Tell ${PRODUCT_NAME} something`}
           </Button>
           <Button size="sm" variant="outline" onClick={onImport} disabled={paused} className="gap-1.5">
             <Upload className="size-3.5" aria-hidden="true" />

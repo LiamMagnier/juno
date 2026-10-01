@@ -19,6 +19,7 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 /*
  * THE CANVAS AND THE VOICE PANEL ARE LOADED WHEN THEY OPEN, not before.
  *
@@ -1697,12 +1698,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         // reader, who would otherwise take the answer for a reading of it.
         if (result.pendingFiles?.length) {
           toast.warning(
-            `${listFileNames(result.pendingFiles)} ${result.pendingFiles.length === 1 ? "is" : "are"} still being indexed, so Juno answered without the text.`
+            `${listFileNames(result.pendingFiles)} ${result.pendingFiles.length === 1 ? "is" : "are"} still being indexed, so ${PRODUCT_NAME} answered without the text.`
           );
         }
         if (result.unavailableFiles?.length) {
           toast.warning(
-            `Juno could not read ${listFileNames(result.unavailableFiles)}. The answer does not draw on ${result.unavailableFiles.length === 1 ? "it" : "them"}.`
+            `${PRODUCT_NAME} could not read ${listFileNames(result.unavailableFiles)}. The answer does not draw on ${result.unavailableFiles.length === 1 ? "it" : "them"}.`
           );
         }
         return { accepted: true };
@@ -2056,7 +2057,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         ) : privateMode ? (
           <p className="py-1">Incognito chats are not saved or added to memory.</p>
         ) : (
-          <p className="hidden sm:block">Juno can make mistakes. Check important info.</p>
+          <p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>
         )
       }
     />

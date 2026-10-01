@@ -48,6 +48,7 @@ import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const TARGET_KEY = "juno:code:new:target";
 const MODEL_KEY = "juno:code:model";
@@ -788,7 +789,7 @@ export function CodeComposer({
                         size="icon-sm"
                         onClick={codeVoice.onOpenVoiceMode}
                         disabled={submitting || dictating || codeVoice.open}
-                        aria-label="Talk this through with Juno"
+                        aria-label={`Talk this through with ${PRODUCT_NAME}`}
                         className={composerIconButtonClass}
                       >
                         <AudioLines className="size-4" aria-hidden="true" />

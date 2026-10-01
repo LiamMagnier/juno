@@ -164,6 +164,6 @@ test("Juno attachment round trips carry per-object integrity evidence and fail c
   assert.match(EXPORT_ROUTE_SOURCE, /archiveSha256:/);
   assert.match(IMPORT_ROUTE_SOURCE, /function assertArchiveDigest/);
   assert.match(IMPORT_ROUTE_SOURCE, /failed its SHA-256 integrity check/);
-  assert.match(IMPORT_ROUTE_SOURCE, /Juno restore aborted: attachment/);
+  assert.match(IMPORT_ROUTE_SOURCE, /\$\{PRODUCT_NAME\} restore aborted: attachment/);
   assert.match(IMPORT_ROUTE_SOURCE, /status: 422/);
 });

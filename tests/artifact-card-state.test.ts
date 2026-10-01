@@ -255,7 +255,7 @@ test("the comparison route's answer is read defensively, and says what to warn a
   assert.ok(behind);
   assert.deepEqual(comparisonNotice(behind), {
     kind: "behind",
-    message: "This changed after Juno suggested it (v2 → v3). Applying replaces v3, which stays in history.",
+    message: "This changed after Alevr suggested it (v2 → v3). Applying replaces v3, which stays in history.",
   });
 
   const applied = readSuggestionComparison({ ...body, proposal: { ...body.proposal, status: "APPLIED" } });

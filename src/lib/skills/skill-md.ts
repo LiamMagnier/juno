@@ -38,6 +38,7 @@ import {
   MAX_SKILL_SLUG_CHARS,
   SKILL_SLUG_PATTERN,
 } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The file at the head of a skill directory. The spec spells it in capitals. */
 export const SKILL_MD_FILENAME = "SKILL.md";
@@ -174,8 +175,8 @@ export const SKILL_MD_REFUSAL_MESSAGES: Record<SkillMdRefusal, string> = {
   missing_name: "This skill has no name in its frontmatter, which is the one thing it is invoked by.",
   invalid_name: `A skill name has to be lowercase letters, numbers and hyphens, and at most ${MAX_SKILL_SLUG_CHARS} characters — that is what gets typed after a slash.`,
   missing_description:
-    "This skill has no description. The description is what Juno reads when deciding whether a skill fits, so a skill without one can never be offered.",
-  empty_body: "This skill has metadata but no instructions below it, so there is nothing for it to tell Juno to do.",
+    `This skill has no description. The description is what ${PRODUCT_NAME} reads when deciding whether a skill fits, so a skill without one can never be offered.`,
+  empty_body: `This skill has metadata but no instructions below it, so there is nothing for it to tell ${PRODUCT_NAME} to do.`,
   too_large: `This skill is larger than ${MAX_SKILL_MD_CHARS.toLocaleString("en")} characters. Instructions that long belong in files the skill points at rather than in the skill itself.`,
 };
 

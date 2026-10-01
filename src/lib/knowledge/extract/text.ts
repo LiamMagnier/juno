@@ -18,6 +18,7 @@ import {
   type ExtractionResult,
   type KnowledgeBlockType,
 } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const TEXT_PARSER = "text";
 export const TEXT_PARSER_VERSION = "1";
@@ -390,7 +391,7 @@ export function extractTextDocument(input: TextExtractInput): ExtractionResult {
       ...base,
       status: "failed",
       blocks: [],
-      reason: `This file has ${lines.length.toLocaleString()} lines, which is past the limit Juno can index.`,
+      reason: `This file has ${lines.length.toLocaleString()} lines, which is past the limit ${PRODUCT_NAME} can index.`,
     };
   }
 

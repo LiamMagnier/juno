@@ -35,6 +35,7 @@ import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 /**
  * Split: the learning blocks are 112 kB of source (StepLab plus five block
  * types) and they render for one part kind that most answers never produce.
@@ -1345,7 +1346,7 @@ export const MessageItem = React.memo(function MessageItem({
       className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}
     >
       {/* Turn marker — see the note on the user branch. */}
-      <h2 className="sr-only">{agentThread ? `${agentThread.name} replied` : "Juno replied"}</h2>
+      <h2 className="sr-only">{agentThread ? `${agentThread.name} replied` : `${PRODUCT_NAME} replied`}</h2>
       {agentThread && !showCursor ? (
         <div className="flex items-center gap-2 text-ui font-medium text-foreground" aria-hidden="true">
           <AgentFace avatar={agentThread.avatar} state="idle" size={20} live={false} />

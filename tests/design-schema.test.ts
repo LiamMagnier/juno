@@ -31,7 +31,7 @@ test("serialization is stable regardless of key insertion order", () => {
 
 test("a document from a newer schema is refused with an honest message", () => {
   const doc = { ...signInDocument(), schemaVersion: 99 };
-  assert.throws(() => migrateDesignDocument(doc), /newer version of Juno/);
+  assert.throws(() => migrateDesignDocument(doc), /newer version of Alevr/);
 });
 
 test("non-documents are rejected rather than coerced", () => {

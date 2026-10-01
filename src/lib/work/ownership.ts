@@ -83,14 +83,14 @@ export function ownerTransferRefusal(input: OwnerTransferInput): OwnerTransferRe
     return {
       code: "same_owner",
       message: input.toAgentId
-        ? `${input.toName?.trim() || "That crew member"} already owns this task.`
+        ? `${input.toName?.trim() || "That agent"} already owns this task.`
         : "You already own this task.",
     };
   }
   if (input.toAgentId && input.toAgentStatus && input.toAgentStatus !== "active") {
     return {
       code: "member_paused",
-      message: `${input.toName?.trim() || "That crew member"} is paused. Resume them before handing them work.`,
+      message: `${input.toName?.trim() || "That agent"} is paused. Resume them before handing them work.`,
     };
   }
   if (!isAtSafePoint({ status: input.status, run: input.run ?? null, now: input.now })) {
@@ -223,8 +223,8 @@ export function ownerTransferSentence(input: {
   reason: string;
 }): string {
   const name = (side: { agentId: string | null; name: string | null }) =>
-    side.agentId ? side.name?.trim() || "a crew member" : "you";
-  const actor = input.by.kind === "person" ? "You" : input.by.name?.trim() || "A crew member";
+    side.agentId ? side.name?.trim() || "an agent" : "you";
+  const actor = input.by.kind === "person" ? "You" : input.by.name?.trim() || "An agent";
   const reason = input.reason.trim().replace(/\s+/g, " ").slice(0, 200);
   const target = input.to.agentId ? name(input.to) : "you";
   const moved =

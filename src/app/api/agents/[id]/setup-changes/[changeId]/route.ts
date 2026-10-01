@@ -22,7 +22,7 @@ export async function GET(_req: Request, { params }: Params) {
   if (!user) return error;
   const { id, changeId } = await params;
   const agent = await findAgent(user.id, id);
-  if (!agent) return NextResponse.json({ error: "not_found", message: "That crew member no longer exists." }, { status: 404, headers: NO_STORE });
+  if (!agent) return NextResponse.json({ error: "not_found", message: "That agent no longer exists." }, { status: 404, headers: NO_STORE });
   const change = await findSetupChange(user.id, agent.id, changeId);
   if (!change) return NextResponse.json({ error: "not_found", message: "That change no longer exists." }, { status: 404, headers: NO_STORE });
   return NextResponse.json({ change: serializeSetupChange(change, agent.name) }, { headers: NO_STORE });
@@ -58,7 +58,7 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const agent = await findAgent(user.id, id);
-  if (!agent) return NextResponse.json({ error: "not_found", message: "That crew member no longer exists." }, { status: 404, headers: NO_STORE });
+  if (!agent) return NextResponse.json({ error: "not_found", message: "That agent no longer exists." }, { status: 404, headers: NO_STORE });
   const change = await findSetupChange(user.id, agent.id, changeId);
   if (!change) return NextResponse.json({ error: "not_found", message: "That change no longer exists." }, { status: 404, headers: NO_STORE });
 

@@ -32,6 +32,7 @@ import {
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type Detail = {
   request: RoadmapRequest;
@@ -275,7 +276,7 @@ export default function RoadmapDetailPage() {
                   <span className="font-medium text-foreground/90">{c.author.name ?? "Someone"}</span>
                   {c.official && (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
-                      <StatusIcons.verified className="size-3 shrink-0" /> Juno team
+                      <StatusIcons.verified className="size-3 shrink-0" />{` ${PRODUCT_NAME} team`}
                     </span>
                   )}
                   <span>· {timeAgo(c.createdAt)}</span>

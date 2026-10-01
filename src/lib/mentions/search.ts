@@ -142,7 +142,7 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
       item: {
         kind: "crew",
         id: agent.id,
-        label: tokenLabel(agent.name, "Crew member"),
+        label: tokenLabel(agent.name, "Agent"),
         ...(agent.role.trim() ? { subtitle: agent.role.trim() } : {}),
         icon: "crew",
         avatar: normalizeAgentAvatar(agent.avatar, agent.id),

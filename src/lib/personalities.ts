@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 // Single source of truth for response-style presets — used by the settings UI,
 // the settings API validator, and the system-prompt builder.
 //
@@ -21,7 +23,7 @@ export const PERSONALITIES: readonly Personality[] = [
   {
     id: "default",
     label: "Default",
-    description: "Juno's natural voice: warm, clear, and adapted to the question.",
+    description: `${PRODUCT_NAME}'s natural voice: warm, clear, and adapted to the question.`,
     systemPrompt: null,
   },
   {

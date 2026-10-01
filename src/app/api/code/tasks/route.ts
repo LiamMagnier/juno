@@ -25,6 +25,7 @@ import { getCodingMemory } from "@/lib/memory";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isUsableGitRef, MAX_REF_LENGTH } from "@/lib/code-branches";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -667,7 +668,7 @@ export async function POST(req: Request) {
         {
           error: "device_does_not_serve_queued_tasks",
           message:
-            `${device.name} is signed in but is not set up to run remote Juno Code work, so this ` +
+            `${device.name} is signed in but is not set up to run remote ${PRODUCT_NAME} Code work, so this ` +
             "task would never start. Enable remote hosting on that computer and try again.",
           deviceId: device.id,
         },

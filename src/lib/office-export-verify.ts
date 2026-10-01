@@ -31,6 +31,7 @@ import {
   validateDeliverable,
   type DeliverableValidation,
 } from "@/lib/work/deliverables/validate";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The Work artifact kind each export format is, so the right reader is used.
@@ -73,7 +74,7 @@ export function verifyOfficeExport(
  */
 export function exportVerificationMessage(format: OfficeFormat): string {
   return (
-    `Juno built the .${format} but it failed the check that it opens, so it was not ` +
+    `${PRODUCT_NAME} built the .${format} but it failed the check that it opens, so it was not ` +
     `downloaded — a file that will not open is worse than no file. Edit the artifact and ` +
     `try again, or export another format.`
   );

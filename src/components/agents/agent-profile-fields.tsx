@@ -33,6 +33,7 @@ import {
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { reasoningOptions } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The controls an agent is described with, shared by hiring (`/agents/new`) and
@@ -229,7 +230,7 @@ export function AutonomyPicker({
           <button key={option} {...radio.props(option)} className={cn(tileClass, "block w-full p-3")}>
             <span className="block text-ui font-medium text-foreground">{WORK_APPROVAL_MODE_LABEL[option]}</span>
             <span className="mt-0.5 block text-ui text-muted-foreground">
-              {WORK_APPROVAL_MODE_SUMMARY[option].replace(/^Juno /, "It ")}
+              {WORK_APPROVAL_MODE_SUMMARY[option].replace(`${PRODUCT_NAME} `, "It ")}
             </span>
           </button>
         ))}

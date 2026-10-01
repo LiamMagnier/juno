@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The page's one way in: every route to a new skill behind a single button.
@@ -54,7 +55,7 @@ export function AddSkillMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onCreateWithJuno}>
           <AppIcons.conversation aria-hidden="true" />
-          Create with Juno
+          {`Create with ${PRODUCT_NAME}`}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -70,7 +71,7 @@ export function AddSkillMenu({
  * question back, which is a round trip the reader could have answered here.
  */
 export const CREATE_SKILL_PROMPT =
-  "Help me create a skill for Juno. Ask me anything you need, then write the SKILL.md with a name, a one-line description and step-by-step instructions. The job is: ";
+  `Help me create a skill for ${PRODUCT_NAME}. Ask me anything you need, then write the SKILL.md with a name, a one-line description and step-by-step instructions. The job is: `;
 
 /** The composer's field, by its fixed id (see CHAT_COMPOSER_FIELD_ID in composer.tsx). */
 const COMPOSER_FIELD_ID = "juno-composer-textarea";

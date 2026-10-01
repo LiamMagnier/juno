@@ -18,6 +18,7 @@ import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export default function PermissionsError({
   error,
@@ -36,7 +37,7 @@ export default function PermissionsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t load your permissions"
-        description="This page didn’t load. Nothing changed: every task and every Mac keeps the permissions it had, and Juno still asks before everything it always asks about."
+        description={`This page didn’t load. Nothing changed: every task and every Mac keeps the permissions it had, and ${PRODUCT_NAME} still asks before everything it always asks about.`}
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

@@ -19,6 +19,7 @@ import { Field } from "@/components/ui/field";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { signOutToSignIn } from "@/lib/sign-out";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Everything about getting into this account, and keeping other people out.
@@ -242,8 +243,7 @@ function TwoStepSetupDialog({
             <DialogHeader>
               <DialogTitle>Save your recovery codes</DialogTitle>
               <DialogDescription>
-                Each one signs you in once if you lose your authenticator app. This is the only time they are shown:
-                they are stored hashed, so nobody, including Juno, can show them to you again.
+                {`Each one signs you in once if you lose your authenticator app. This is the only time they are shown: they are stored hashed, so nobody, including ${PRODUCT_NAME}, can show them to you again.`}
               </DialogDescription>
             </DialogHeader>
             {/* Dealt in on the tight rung rather than painted as one block: ten

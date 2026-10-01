@@ -65,6 +65,7 @@ import {
   type ReceiptStatus,
 } from "@/lib/chat/tool-receipt";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** House glyph for a receipt icon kind. Icons only from `@/components/ui/icons`. */
 const RECEIPT_ICONS: Record<ReceiptIconKind, IconComponent> = {
@@ -290,7 +291,7 @@ export function ToolReceiptList({
   return (
     <ul
       role="list"
-      aria-label={label ?? "What Juno did"}
+      aria-label={label ?? `What ${PRODUCT_NAME} did`}
       className={cn("mt-2 overflow-hidden rounded-field border border-border/60 bg-card/40", className)}
     >
       {children}

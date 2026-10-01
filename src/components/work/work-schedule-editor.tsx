@@ -42,6 +42,7 @@ import {
 import { TriggerListEditor, newTrigger } from "@/components/work/work-triggers";
 import { ScheduleArmingCard } from "@/components/work/schedules/arming-card";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Writing a schedule.
@@ -110,7 +111,7 @@ const HOST_OFFLINE_OPTIONS: readonly PolicyOption<WorkHostOfflinePolicy>[] = [
 ];
 
 const MISSED_RUN_OPTIONS: readonly PolicyOption<WorkMissedRunPolicy>[] = [
-  { value: "skip", label: "Let them go", hint: "Fires missed while Juno was down are not caught up." },
+  { value: "skip", label: "Let them go", hint: `Fires missed while ${PRODUCT_NAME} was down are not caught up.` },
   { value: "run_once", label: "Catch up once", hint: "One run covers everything that was missed." },
   { value: "run_all", label: "Run every one", hint: "One run per missed fire. A weekend down is a Monday queue." },
 ];
@@ -515,7 +516,7 @@ export function WorkScheduleEditor({
     setRefusal(
       result.message ??
         (result.cause === "offline"
-          ? "Couldn’t reach Juno to save this. Nothing was changed."
+          ? `Couldn’t reach ${PRODUCT_NAME} to save this. Nothing was changed.`
           : "Couldn’t save this schedule. Nothing was changed.")
     );
   }, [canSave, draft, budget.costUsd, budget.tokens, budget.minutes, schedule, onSaved]);
@@ -539,7 +540,7 @@ export function WorkScheduleEditor({
               { value: "work", label: "A task" },
               { value: "code", label: "Code" },
             ]}
-            ariaLabel="What this automation runs"
+            ariaLabel="What this routine runs"
             optionClassName="px-3 py-1 text-ui"
             className="max-w-xs"
           />
@@ -552,7 +553,7 @@ export function WorkScheduleEditor({
       ) : (
         isCode && (
           <p className="text-caption leading-relaxed text-muted-foreground">
-            A Code automation. Each run is a Code session of its own, with its own branch and pull
+            A Code routine. Each run is a Code session of its own, with its own branch and pull
             request.
           </p>
         )
@@ -1078,7 +1079,7 @@ function CodeRoutineFields({
                   longer holds it. Dropping it would silently reset a choice the
                   reader made, and the save would then write that reset. */}
               {draft.environmentId && !named && (
-                <option value={draft.environmentId}>The one this automation already uses</option>
+                <option value={draft.environmentId}>The one this routine already uses</option>
               )}
               {(environments ?? []).map((environment) => (
                 <option key={environment.id} value={environment.id}>

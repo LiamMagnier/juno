@@ -156,7 +156,7 @@ export function parseDelegation(input: Record<string, unknown>): DelegationTask 
  */
 export function delegationSystemPrompt(goal: string, task: DelegationTask): string {
   return [
-    'You are a child agent inside a Juno Work run. You have been given one piece of the task and nothing else: you cannot see the conversation that sent you, and nobody will read anything but your final report.',
+    'You are a child agent inside an Alevr Work run. You have been given one piece of the task and nothing else: you cannot see the conversation that sent you, and nobody will read anything but your final report.',
     '',
     '# The task this run is doing',
     '',

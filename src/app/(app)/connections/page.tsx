@@ -21,6 +21,7 @@ import { beginCustomConnectorSignIn } from "@/components/connections/custom-conn
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -36,7 +37,7 @@ const ERRORS: Record<string, string> = {
   use_credentials: "That app connects with credentials, not OAuth — use its Connect button here.",
   invalid_credentials: "Apple didn’t accept those credentials. Check the Apple ID and app-specific password.",
   unknown: "Unknown connector.",
-  custom_unreachable: "Juno couldn’t start signing in to that server. Check it’s up and try again.",
+  custom_unreachable: `${PRODUCT_NAME} couldn’t start signing in to that server. Check it’s up and try again.`,
 };
 
 
@@ -294,7 +295,7 @@ export default function ConnectionsPage() {
            a title that already means the same thing. See the note in
            app/(app)/library/page.tsx — same fix, same rule. */
         heading="Customize"
-        lede="Connect the apps Juno can work with."
+        lede={`Connect the apps ${PRODUCT_NAME} can work with.`}
         actions={
           <Button size="sm" className="gap-1.5" onClick={() => setAddMcpOpen(true)}>
             <Plus className="size-4" />
@@ -348,14 +349,13 @@ export default function ConnectionsPage() {
       <StandingGrants />
 
       <p className="mt-8 text-caption text-muted-foreground">
-        Connected tools are available to the model when you enable them in a chat, and Juno asks before any tool
-        that changes something. Provider permissions appear in App details when the provider returned them.
+        {`Connected tools are available to the model when you enable them in a chat, and ${PRODUCT_NAME} asks before any tool that changes something. Provider permissions appear in App details when the provider returned them.`}
       </p>
 
       <Dialog open={permissionTarget !== null} onOpenChange={(open) => !open && setPermissionTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Allow Juno to use this app?</DialogTitle>
+            <DialogTitle>{`Allow ${PRODUCT_NAME} to use this app?`}</DialogTitle>
             <DialogDescription>Its tools become available when you add it to a chat. Your action approval policy still applies.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -406,8 +406,8 @@ export default function ConnectionsPage() {
             </DialogTitle>
             <DialogDescription>
               {disconnectTarget?.source === "user_mcp"
-                ? "Juno will forget this MCP server and its Authorization header. You can add it again later."
-                : `Juno will lose access to your ${disconnectTarget?.label} account. You can reconnect anytime.`}
+                ? `${PRODUCT_NAME} will forget this MCP server and its Authorization header. You can add it again later.`
+                : `${PRODUCT_NAME} will lose access to your ${disconnectTarget?.label} account. You can reconnect anytime.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

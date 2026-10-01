@@ -17,6 +17,7 @@ import {
   Subhead,
   type StageSpec,
 } from "@/components/engineering/article";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * How Juno reads your files — the public version of docs/file-understanding.md.
@@ -43,13 +44,13 @@ import {
 const PUBLISHED = "22 September 2026";
 
 export const metadata: Metadata = {
-  title: "How Juno reads your files",
+  title: `How ${PRODUCT_NAME} reads your files`,
   description:
-    "An engineering audit of how ChatGPT, Claude, Gemini and Copilot actually process uploaded documents and images — dual-channel PDF handling, vision pipelines, retrieval, citation validation — and how Juno is built against it. Every external claim is tagged and sourced.",
+    `An engineering audit of how ChatGPT, Claude, Gemini and Copilot actually process uploaded documents and images — dual-channel PDF handling, vision pipelines, retrieval, citation validation — and how ${PRODUCT_NAME} is built against it. Every external claim is tagged and sourced.`,
   alternates: { canonical: "/engineering/file-understanding" },
   openGraph: {
     type: "article",
-    title: "How Juno reads your files",
+    title: `How ${PRODUCT_NAME} reads your files`,
     description:
       "What actually happens between an upload and an answer — audited against Anthropic, OpenAI, Google and Microsoft’s published documentation.",
     url: "/engineering/file-understanding",
@@ -73,7 +74,7 @@ const CONTENTS: { id: string; index: string; title: string }[] = [
   { id: "comparison", index: "13", title: "Naïve versus strong, concretely" },
   { id: "models", index: "14", title: "Where a model earns its cost" },
   { id: "stack", index: "15", title: "The stack, with reasons" },
-  { id: "juno", index: "16", title: "Where Juno stands today" },
+  { id: "juno", index: "16", title: `Where ${PRODUCT_NAME} stands today` },
   { id: "principles", index: "17", title: "Fifteen things worth remembering" },
   { id: "sources", index: "18", title: "Sources" },
 ];
@@ -175,14 +176,14 @@ function structuredData(): string {
   const data = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "How Juno reads your files",
+    headline: `How ${PRODUCT_NAME} reads your files`,
     description:
-      "An engineering audit of how frontier assistants process uploaded documents and images, and how Juno is built against it.",
+      `An engineering audit of how frontier assistants process uploaded documents and images, and how ${PRODUCT_NAME} is built against it.`,
     url: `${base}/engineering/file-understanding`,
     datePublished: "2026-09-22",
     inLanguage: "en",
     isAccessibleForFree: true,
-    publisher: { "@type": "Organization", name: "Juno", url: base },
+    publisher: { "@type": "Organization", name: PRODUCT_NAME, url: base },
   };
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
@@ -199,10 +200,10 @@ export default async function FileUnderstandingPage() {
       {/* ── Masthead ──────────────────────────────────────────────────── */}
       <header className="max-w-3xl">
         <p className="font-mono text-label text-muted-foreground">
-          Juno engineering · {PUBLISHED}
+          {`${PRODUCT_NAME} engineering · `}{PUBLISHED}
         </p>
         <h1 className="mt-3 text-balance font-serif text-display font-medium tracking-tight text-foreground">
-          How Juno reads your files
+          {`How ${PRODUCT_NAME} reads your files`}
         </h1>
         <Lede>
           Almost everything written about this online repeats the same sentence: a PDF becomes text,
@@ -212,9 +213,7 @@ export default async function FileUnderstandingPage() {
           and Microsoft publish, and then against our own source.
         </Lede>
         <p className="mt-4 text-body leading-relaxed text-muted-foreground">
-          We wrote this because Juno got it wrong first. For a while the composer would tell people
-          “couldn’t read this file” about documents that read perfectly well, and fixing that
-          properly meant finding out what the systems people compare us to are really doing.{" "}
+          {`We wrote this because ${PRODUCT_NAME} got it wrong first. For a while the composer would tell people “couldn’t read this file” about documents that read perfectly well, and fixing that properly meant finding out what the systems people compare us to are really doing.`}{" "}
           <a
             href="#defects"
             className="rounded-xs underline decoration-border underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:decoration-primary focus-visible:text-primary"
@@ -558,8 +557,7 @@ export default async function FileUnderstandingPage() {
               page fifteen is an image at a known rectangle, you can crop just that region and send
               it magnified — far cheaper than the whole page and far more legible than a downsampled
               one. <Evidence kind="juno" />
-              That is what Juno’s image inspection tool does: a region given in percentages, cropped
-              and scaled up to at least 768 px on its short edge before the model ever sees it.
+              {`That is what ${PRODUCT_NAME}’s image inspection tool does: a region given in percentages, cropped and scaled up to at least 768 px on its short edge before the model ever sees it.`}
             </p>
           </Section>
 
@@ -662,9 +660,7 @@ export default async function FileUnderstandingPage() {
           {/* 08 ── Defects */}
           <Section {...CONTENTS[7]}>
             <p className="text-body leading-relaxed text-muted-foreground">
-              Generic lists of mistakes are cheap, so this one is grounded: every item below was a
-              real defect in Juno, found during the audit, with the symptom it produced in front of
-              real people. All of them are fixed.
+              {`Generic lists of mistakes are cheap, so this one is grounded: every item below was a real defect in ${PRODUCT_NAME}, found during the audit, with the symptom it produced in front of real people. All of them are fixed.`}
             </p>
 
             <Subhead>Architectural</Subhead>
@@ -1020,10 +1016,7 @@ export default async function FileUnderstandingPage() {
               get a plausible paragraph.
             </p>
             <p className="mt-4 text-body leading-relaxed text-muted-foreground">
-              The corollary is the direction Juno has taken: rather than pre-digesting every upload,
-              give the model a sandbox and let it choose the right deterministic tool per question —
-              pypdf here, pandas there, Pillow for a crop — instead of guessing at upload time which
-              one it will eventually need.
+              {`The corollary is the direction ${PRODUCT_NAME} has taken: rather than pre-digesting every upload, give the model a sandbox and let it choose the right deterministic tool per question — pypdf here, pandas there, Pillow for a crop — instead of guessing at upload time which one it will eventually need.`}
             </p>
           </Section>
 
@@ -1061,8 +1054,7 @@ export default async function FileUnderstandingPage() {
                 files. A prompt injection inside a PDF then becomes arbitrary execution on your
                 application server. Use a remote, isolated sandbox — or do not offer the capability.{" "}
                 <Evidence kind="juno" />
-                Juno’s code tool is pinned to a remote microVM backend and is simply not offered when
-                none is configured: a missing sandbox costs the model a capability, never a boundary.
+                {`${PRODUCT_NAME}’s code tool is pinned to a remote microVM backend and is simply not offered when none is configured: a missing sandbox costs the model a capability, never a boundary.`}
               </p>
             </Note>
           </Section>
@@ -1166,18 +1158,13 @@ export default async function FileUnderstandingPage() {
             </ul>
             <Note title="A note on what this page is not">
               <p>
-                It is not a claim to know how ChatGPT or Claude work internally. It is an audit of
-                what their makers have published, plus the architecture those publications imply,
-                plus a first-person account of the mistakes we made building against them. The
-                longer engineering version, with the migration plan and the file paths, lives in
-                Juno’s repository.
+                {`It is not a claim to know how ChatGPT or Claude work internally. It is an audit of what their makers have published, plus the architecture those publications imply, plus a first-person account of the mistakes we made building against them. The longer engineering version, with the migration plan and the file paths, lives in ${PRODUCT_NAME}’s repository.`}
               </p>
             </Note>
           </Section>
 
           <p className="border-t border-border/60 pt-8 text-body leading-relaxed text-muted-foreground">
-            Juno puts every frontier model behind one subscription, metered by what answers actually
-            cost.{" "}
+            {`${PRODUCT_NAME} puts every frontier model behind one subscription, metered by what answers actually cost.`}{" "}
             <Link
               href="/"
               className="rounded-xs font-medium text-foreground underline decoration-border underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:decoration-primary focus-visible:text-primary"
