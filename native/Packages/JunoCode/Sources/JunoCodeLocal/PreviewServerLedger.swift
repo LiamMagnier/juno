@@ -161,6 +161,22 @@ public final class PreviewServerLedger: @unchecked Sendable {
         return report
     }
 
+    /// The app is quitting: every server this process started gets SIGTERM
+    /// now, synchronously, and leaves the ledger. A server that ignores it is
+    /// reaped by the next launch.
+    @discardableResult
+    public func terminateServersOwnedByThisProcess() -> [Entry] {
+        lock.lock()
+        defer { lock.unlock() }
+        let entries = readLocked()
+        let mine = entries.filter { $0.ownerPID == control.currentPID }
+        for entry in mine where isSameServer(entry) {
+            control.signalGroup(entry.pgid, SIGTERM)
+        }
+        writeLocked(entries.filter { $0.ownerPID != control.currentPID })
+        return mine
+    }
+
     /// Whether the Juno that started `entry` still runs. This process counts:
     /// its own servers are not orphans.
     func ownerIsAlive(_ entry: Entry) -> Bool {

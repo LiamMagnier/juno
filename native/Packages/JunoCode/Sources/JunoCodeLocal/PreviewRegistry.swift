@@ -188,11 +188,27 @@ public struct URLSessionPreviewProbe: PreviewHTTPProbing {
 
 /// Every preview server, leased by sessions (§4.1).
 public actor PreviewRegistry {
+    /// Whether this process is a test run, which must never touch the
+    /// reader's real ledger or signal their processes.
+    static var isTestProcess: Bool {
+        NSClassFromString("XCTestCase") != nil
+    }
+
+    /// The app's server ledger (`~/Library/Application Support/Juno/preview-servers.json`);
+    /// a throwaway file in a test run.
+    public static let sharedLedger: PreviewServerLedger = isTestProcess
+        ? PreviewServerLedger(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-preview-ledger-\(getpid()).json"))
+        : PreviewServerLedger()
+
     public static let shared: PreviewRegistry = {
-        let ledger = PreviewServerLedger()
+        let ledger = sharedLedger
         // Servers a crashed Juno left behind hold ports until reaped.
-        ledger.reapOrphans()
-        let registry = PreviewRegistry(ledger: ledger)
+        if !isTestProcess { ledger.reapOrphans() }
+        let registry = PreviewRegistry(
+            ledger: ledger,
+            settings: .shared
+        )
         Task { await registry.startSweeping() }
         return registry
     }()

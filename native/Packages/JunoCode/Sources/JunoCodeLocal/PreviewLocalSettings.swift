@@ -37,7 +37,11 @@ public final class PreviewLocalSettings: @unchecked Sendable {
             .appendingPathComponent("preview-settings.json")
     }
 
-    public static let shared = PreviewLocalSettings()
+    /// The reader's settings; a throwaway file in a test run.
+    public static let shared = PreviewRegistry.isTestProcess
+        ? PreviewLocalSettings(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-preview-settings-\(getpid()).json"))
+        : PreviewLocalSettings()
 
     public init(fileURL: URL = PreviewLocalSettings.defaultFileURL) {
         self.fileURL = fileURL
