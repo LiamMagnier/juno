@@ -32,6 +32,19 @@ final class HTTPValidationTests: XCTestCase {
         )
     }
 
+    func testPreEncodedSegmentsAreKeptAndCannotSmuggleTraversal() throws {
+        let origin = try APIOrigin(URL(string: "https://api.juno.test")!)
+        XCTAssertEqual(
+            try origin.endpoint(path: "/api/connectors/custom/mcp%3Aabc/tools").absoluteString,
+            "https://api.juno.test/api/connectors/custom/mcp%3Aabc/tools",
+            "an encoded colon is not encoded a second time"
+        )
+        XCTAssertThrowsError(try origin.endpoint(path: "/v1/%2E%2E/admin"))
+        XCTAssertThrowsError(try origin.endpoint(path: "/v1/a%2Fb"))
+        XCTAssertThrowsError(try origin.endpoint(path: "/v1/%zz"))
+        XCTAssertThrowsError(try origin.endpoint(path: "/v1/a b%3A"))
+    }
+
     func testHeaderValidationRejectsInjectionAndCaseInsensitiveDuplicates() {
         XCTAssertThrowsError(try HTTPHeaders(["X-Test": "ok\r\nX-Forged: yes"]))
         XCTAssertThrowsError(try HTTPHeaders(["X-Test": "one", "x-test": "two"]))

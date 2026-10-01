@@ -122,7 +122,27 @@ public struct APIOrigin: Equatable, Sendable {
         }
 
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        components?.path = path
+        if path.contains("%") {
+            // A caller that percent-encoded a segment itself (a custom MCP
+            // server's `mcp:abc` id travels as `mcp%3Aabc`, exactly as the
+            // web's `encodeURIComponent` sends it). `.path` would encode the
+            // `%` a second time, so the encoded form is taken as-is — but only
+            // once it is well formed, and never as a way to smuggle a `..` or
+            // a `/` past the checks above.
+            let allowed = CharacterSet.urlPathAllowed.union(CharacterSet(charactersIn: "%"))
+            guard path.unicodeScalars.allSatisfy(allowed.contains),
+                segments.allSatisfy({ segment in
+                    guard let decoded = segment.removingPercentEncoding else { return false }
+                    return decoded != "." && decoded != ".." && !decoded.contains("/")
+                        && !decoded.contains("\\")
+                })
+            else {
+                throw HTTPValidationError.invalidEndpointPath
+            }
+            components?.percentEncodedPath = path
+        } else {
+            components?.path = path
+        }
         components?.queryItems = queryItems.isEmpty ? nil : queryItems
         guard let result = components?.url else {
             throw HTTPValidationError.invalidEndpointPath
