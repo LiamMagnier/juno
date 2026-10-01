@@ -20,6 +20,8 @@ interface FakeContainerState {
   vncRunning: boolean;
   vncControlPassword?: string;
   vncViewPassword?: string;
+  /** The token the fake gate holds, set only by provisionCdpToken. */
+  gateToken?: string;
 }
 
 let cachedGreyShotPromise: Promise<Shot> | null = null;
@@ -229,8 +231,9 @@ export class FakeProvider implements ComputerProvider {
   async exec(
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number }
+    opts?: { timeoutSeconds?: number; cwd?: string }
   ): Promise<ExecResult> {
+    if (opts?.cwd) normalizeAgentPath(opts.cwd);
     this.record("exec", handle, command, opts);
     if (this.execHandler) {
       return await this.execHandler(handle, command, opts);
@@ -329,6 +332,54 @@ export class FakeProvider implements ComputerProvider {
     c.vncRunning = true;
     c.vncControlPassword = opts.controlPassword;
     c.vncViewPassword = opts.viewPassword;
+  }
+
+  async isVncRunning(handle: ComputerHandle): Promise<boolean> {
+    this.record("isVncRunning", handle);
+    const c = this.containers.get(handle.name);
+    return Boolean(c && c.state === "running" && c.vncRunning);
+  }
+
+  async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
+    // Recorded without the token: the fake's call log is read by tests that
+    // assert no secret is ever recorded anywhere.
+    this.record("provisionCdpToken", handle);
+    const c = this.containers.get(handle.name);
+    if (c) c.gateToken = token;
+  }
+
+  async fileInfo(
+    handle: ComputerHandle,
+    rawPath: string
+  ): Promise<{ type: "file" | "dir" | "other"; size: number; path: string } | null> {
+    this.record("fileInfo", handle, rawPath);
+    const resolved = normalizeAgentPath(rawPath);
+    const fsMap = this.volumes.get(handle.volume) ?? new Map<string, Buffer>();
+    const buf = fsMap.get(resolved);
+    if (buf) return { type: "file", size: buf.byteLength, path: resolved };
+    const prefix = resolved.endsWith("/") ? resolved : `${resolved}/`;
+    for (const key of fsMap.keys()) {
+      if (key.startsWith(prefix)) return { type: "dir", size: 0, path: resolved };
+    }
+    return resolved === "/home/agent" || resolved === "/home/agent/work"
+      ? { type: "dir", size: 0, path: resolved }
+      : null;
+  }
+
+  async listOwned(): Promise<{
+    containers: Array<{ name: string; agentId: string | null; userId: string | null; state: "running" | "paused" | "exited" }>;
+    volumes: string[];
+  }> {
+    this.record("listOwned");
+    return {
+      containers: Array.from(this.containers.values()).map((c) => ({
+        name: c.handle.name,
+        agentId: c.agentId,
+        userId: c.userId,
+        state: c.state,
+      })),
+      volumes: Array.from(this.volumes.keys()),
+    };
   }
 
   async stopVnc(handle: ComputerHandle): Promise<void> {

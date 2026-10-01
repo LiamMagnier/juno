@@ -5,6 +5,14 @@ import path from "node:path";
 import sharp from "sharp";
 import { runDockerBuffer, spawnDockerWithStdin } from "@/lib/docker-cli";
 import { env } from "@/lib/env";
+import {
+  COMPUTER_NOT_RESPONDING,
+  COMPUTER_PATH_REFUSED,
+  COMPUTER_UNREACHABLE,
+  ComputerError,
+  isSafeAgentPath,
+  scrubComputerText,
+} from "./errors";
 import type {
   ComputerFileEntry,
   ComputerHandle,
@@ -24,6 +32,7 @@ export interface DockerCreateArgvOptions {
   memoryMb?: number;
   cpus?: number;
   image?: string;
+  network?: string;
 }
 
 /**
@@ -37,6 +46,7 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
   const cpus = opts.cpus ?? env.agentComputer.cpus;
   const image = opts.image ?? env.agentComputer.image;
   const name = `juno-agent-${opts.agentId}`;
+  const network = opts.network ?? env.agentComputer.network;
 
   const argv: string[] = [
     "create",
@@ -45,7 +55,7 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     "--hostname",
     "computer",
     "--network",
-    "juno-computers",
+    network,
     "--dns",
     "1.1.1.1",
     "--dns",
@@ -79,8 +89,10 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     `juno.agent=${opts.agentId}`,
     "--label",
     `juno.user=${opts.userId}`,
-    "-e",
-    "JUNO_CDP_TOKEN",
+    // No `-e JUNO_CDP_TOKEN`: `docker exec` inherits the container's configured
+    // env, so the agent's shell (and so the model) could print it with `env`.
+    // The token reaches the gate through stdin after every start instead
+    // (`provisionCdpToken`).
     "--restart",
     "no",
     "--stop-timeout",
@@ -112,17 +124,33 @@ async function runDockerText(
     timedOut: res.timedOut,
   };
   if (res.exitCode !== 0 && !options?.allowNonZero) {
-    throw new Error(
-      `docker ${argv[0]} failed (exit ${res.exitCode}): ${out.stderr.trim() || out.stdout.trim()}`
-    );
+    throw dockerFailure(argv, res.exitCode, out.stderr || out.stdout);
   }
   return out;
 }
 
-async function resolveContainerPath(
+/**
+ * A failed `docker` call, as the rest of Juno may see it. The daemon's words
+ * name the container and sometimes an address, so they are scrubbed and kept
+ * for one log line; the error's message is a sentence with neither.
+ */
+function dockerFailure(argv: string[], exitCode: number, raw: string): ComputerError {
+  const detail = `docker ${argv[0]} exited ${exitCode}: ${scrubComputerText(raw.trim())}`;
+  console.warn("[agent-computer] docker call failed", { detail });
+  return new ComputerError(COMPUTER_NOT_RESPONDING, detail);
+}
+
+function spawnWithStdin(argv: string[], input: Buffer, timeoutMs?: number): Promise<void> {
+  return spawnDockerWithStdin(argv, input, timeoutMs).catch((err: unknown) => {
+    throw dockerFailure(argv, 1, err instanceof Error ? err.message : String(err));
+  });
+}
+
+export async function resolveContainerPath(
   handle: ComputerHandle,
   rawPath: string
 ): Promise<string> {
+  assertRawAgentPath(rawPath);
   const candidate = rawPath.startsWith("/")
     ? rawPath
     : path.posix.join("/home/agent/work", rawPath);
@@ -136,11 +164,21 @@ async function resolveContainerPath(
     "--",
     candidate,
   ]);
-  const resolved = stdout.trim();
-  if (resolved !== "/home/agent" && !resolved.startsWith("/home/agent/")) {
-    throw new Error("Path must stay inside /home/agent");
+  // realpath runs as an argv (no shell, so no profile the agent could have
+  // edited), and its answer is still checked as untrusted text: normalized,
+  // no `..`, no newline, under /home/agent.
+  const resolved = stdout.replace(/\n$/, "");
+  if (!isSafeAgentPath(resolved) || path.posix.normalize(resolved) !== resolved) {
+    throw new ComputerError(COMPUTER_PATH_REFUSED);
   }
   return resolved;
+}
+
+/** Validates a raw path before it is handed to the container at all. */
+function assertRawAgentPath(rawPath: string): void {
+  if (typeof rawPath !== "string" || rawPath.length === 0 || rawPath.length > 4096 || /[\0\r\n]/.test(rawPath)) {
+    throw new ComputerError(COMPUTER_PATH_REFUSED);
+  }
 }
 
 export class DockerProvider implements ComputerProvider {
@@ -212,25 +250,46 @@ export class DockerProvider implements ComputerProvider {
   }): Promise<ComputerHandle> {
     const pre = await this.preflight();
     if (!pre.ok) {
-      throw new Error(pre.reason ?? "The server cannot start another computer right now.");
+      throw new ComputerError(pre.reason ?? "The server cannot start another computer right now.");
     }
 
     const name = `juno-agent-${opts.agentId}`;
     const volume = `juno-agent-${opts.agentId}`;
 
     if (process.platform === "darwin" && process.env.NODE_ENV !== "production") {
+      const network = env.agentComputer.network;
       const netCheck = await runDockerText(
-        ["network", "inspect", "juno-computers"],
+        ["network", "inspect", network],
         { allowNonZero: true }
       );
       if (netCheck.exitCode !== 0) {
-        await runDockerText(["network", "create", "juno-computers"], {
-          allowNonZero: true,
-        });
+        // Same shape as setup-vm.sh: no container-to-container traffic.
+        await runDockerText(
+          [
+            "network",
+            "create",
+            "--driver",
+            "bridge",
+            "-o",
+            "com.docker.network.bridge.enable_icc=false",
+            "--label",
+            "app=juno",
+            network,
+          ],
+          { allowNonZero: true }
+        );
       }
     }
 
-    await runDockerText(["volume", "create", volume]);
+    await runDockerText([
+      "volume",
+      "create",
+      "--label",
+      "app=juno",
+      "--label",
+      `juno.agent=${opts.agentId}`,
+      volume,
+    ]);
 
     // Remove any leftover container with the same name before creating
     await runDockerText(["rm", "-f", name], { allowNonZero: true });
@@ -240,9 +299,7 @@ export class DockerProvider implements ComputerProvider {
       userId: opts.userId,
     });
 
-    await runDockerText(createArgv, {
-      env: { JUNO_CDP_TOKEN: opts.cdpToken },
-    });
+    await runDockerText(createArgv);
 
     return { name, volume };
   }
@@ -250,7 +307,7 @@ export class DockerProvider implements ComputerProvider {
   async start(handle: ComputerHandle): Promise<void> {
     const pre = await this.preflight();
     if (!pre.ok) {
-      throw new Error(pre.reason ?? "The server cannot start another computer right now.");
+      throw new ComputerError(pre.reason ?? "The server cannot start another computer right now.");
     }
     await runDockerText(["start", handle.name]);
   }
@@ -305,7 +362,7 @@ export class DockerProvider implements ComputerProvider {
         const idx = line.lastIndexOf(":");
         const p = Number(idx >= 0 ? line.slice(idx + 1) : line);
         if (!Number.isFinite(p) || p <= 0) {
-          throw new Error(`Unable to parse published port from: ${raw}`);
+          throw new ComputerError(COMPUTER_UNREACHABLE, `unparseable published port: ${raw}`);
         }
         return p;
       };
@@ -326,7 +383,7 @@ export class DockerProvider implements ComputerProvider {
     ]);
     const ip = inspectOut.stdout.trim();
     if (!ip) {
-      throw new Error(`Container ${handle.name} has no IP on juno-computers`);
+      throw new ComputerError(COMPUTER_UNREACHABLE, "container has no address on the computers network");
     }
     return {
       cdpUrl: `ws://${ip}:9222`,
@@ -357,7 +414,7 @@ export class DockerProvider implements ComputerProvider {
       "/tmp/juno-shot.png",
     ]);
     if (raw.exitCode !== 0 || raw.stdout.byteLength === 0) {
-      throw new Error("Failed to read screenshot from container");
+      throw new ComputerError(COMPUTER_NOT_RESPONDING, "screenshot was empty");
     }
     const jpeg = await sharp(raw.stdout).jpeg({ quality: 70 }).toBuffer();
     const sha256 = createHash("sha256").update(jpeg).digest("hex");
@@ -488,9 +545,12 @@ export class DockerProvider implements ComputerProvider {
   async exec(
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number }
+    opts?: { timeoutSeconds?: number; cwd?: string }
   ): Promise<ExecResult> {
     const secs = Math.max(1, Math.min(300, Math.round(opts?.timeoutSeconds ?? 30)));
+    // The working directory is an argv element to docker, validated under
+    // /home/agent first; it is never interpolated into the command string.
+    const workdir = opts?.cwd ? await resolveContainerPath(handle, opts.cwd) : "/home/agent/work";
     const started = Date.now();
     const res = await runDockerText(
       [
@@ -498,7 +558,7 @@ export class DockerProvider implements ComputerProvider {
         "--user",
         "1000",
         "--workdir",
-        "/home/agent/work",
+        workdir,
         handle.name,
         "timeout",
         "--signal=TERM",
@@ -540,7 +600,7 @@ export class DockerProvider implements ComputerProvider {
         "-mindepth",
         "1",
         "-printf",
-        "%y\\t%s\\t%p\\n",
+        "%y\\t%s\\t%T@\\t%p\\n",
       ],
       { allowNonZero: true }
     );
@@ -549,13 +609,16 @@ export class DockerProvider implements ComputerProvider {
     for (const line of res.stdout.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      const [typeCode, sizeStr, fullPath] = trimmed.split("\t");
+      const [typeCode, sizeStr, mtime, ...rest] = trimmed.split("\t");
+      const fullPath = rest.join("\t");
       if (!fullPath) continue;
+      const seconds = Number(mtime);
       entries.push({
         name: path.posix.basename(fullPath),
         path: fullPath,
         type: typeCode === "d" ? "dir" : typeCode === "f" ? "file" : "other",
         size: Number(sizeStr) || 0,
+        ...(Number.isFinite(seconds) && seconds > 0 ? { modifiedAt: new Date(seconds * 1000).toISOString() } : {}),
       });
     }
     return entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -568,14 +631,14 @@ export class DockerProvider implements ComputerProvider {
   ): Promise<Buffer> {
     const resolved = await resolveContainerPath(handle, filePath);
     const maxBytes = opts?.maxBytes ?? 5 * 1024 * 1024;
+    // `head -c` rather than `cat`: a file larger than the cap is cut, not
+    // turned into a maxBuffer failure.
     const res = await runDockerBuffer(
-      ["exec", "--user", "1000", handle.name, "cat", "--", resolved],
-      { maxBuffer: maxBytes + 1024 }
+      ["exec", "--user", "1000", handle.name, "head", "-c", String(maxBytes), "--", resolved],
+      { maxBuffer: maxBytes + 64 * 1024, timeoutMs: 60_000 }
     );
     if (res.exitCode !== 0) {
-      throw new Error(
-        `Failed to read ${resolved}: ${res.stderr.toString("utf8").trim()}`
-      );
+      throw new ComputerError("That file could not be read.", res.stderr.toString("utf8"));
     }
     return res.stdout.byteLength > maxBytes
       ? res.stdout.subarray(0, maxBytes)
@@ -603,7 +666,7 @@ export class DockerProvider implements ComputerProvider {
       typeof content === "string"
         ? Buffer.from(content, "utf8")
         : Buffer.from(content);
-    await spawnDockerWithStdin(
+    await spawnWithStdin(
       [
         "exec",
         "-i",
@@ -634,11 +697,19 @@ export class DockerProvider implements ComputerProvider {
     handle: ComputerHandle,
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void> {
+    // The password file goes to tmpfs, never the agent's volume, and x11vnc
+    // deletes it the moment it has read it (`rm:`). A file left in
+    // /home/agent/.juno was readable by the agent's shell, which runs as the
+    // same uid, so the model could have read the control password.
     const passFileContent = Buffer.from(
       `${opts.controlPassword}\n__BEGIN_VIEWONLY__\n${opts.viewPassword}\n`,
       "utf8"
     );
-    await spawnDockerWithStdin(
+    await runDockerText(
+      ["exec", "--user", "1000", handle.name, "pkill", "-x", "x11vnc"],
+      { allowNonZero: true }
+    );
+    await spawnWithStdin(
       [
         "exec",
         "-i",
@@ -647,13 +718,9 @@ export class DockerProvider implements ComputerProvider {
         handle.name,
         "sh",
         "-c",
-        "mkdir -p /home/agent/.juno && chmod 700 /home/agent/.juno && umask 077 && cat > /home/agent/.juno/vncpass",
+        "umask 077 && rm -f /tmp/.juno-vncpass && cat > /tmp/.juno-vncpass",
       ],
       passFileContent
-    );
-    await runDockerText(
-      ["exec", "--user", "1000", handle.name, "pkill", "-x", "x11vnc"],
-      { allowNonZero: true }
     );
     await runDockerText([
       "exec",
@@ -669,12 +736,94 @@ export class DockerProvider implements ComputerProvider {
       "-shared",
       "-rfbport",
       "5900",
+      "-noipv6",
       "-passwdfile",
-      "/home/agent/.juno/vncpass",
+      "rm:/tmp/.juno-vncpass",
       "-bg",
       "-o",
       "/tmp/x11vnc.log",
     ]);
+  }
+
+  async isVncRunning(handle: ComputerHandle): Promise<boolean> {
+    const res = await runDockerText(
+      ["exec", "--user", "1000", handle.name, "pgrep", "-x", "x11vnc"],
+      { allowNonZero: true, timeoutMs: 10_000 }
+    );
+    return res.exitCode === 0 && res.stdout.trim().length > 0;
+  }
+
+  async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
+    // Written to tmpfs through stdin, then renamed so the gate never reads half
+    // a token. The gate loads it, deletes it and keeps it in memory only.
+    await spawnWithStdin(
+      [
+        "exec",
+        "-i",
+        "--user",
+        "1000",
+        handle.name,
+        "sh",
+        "-c",
+        "umask 077 && cat > /tmp/.juno-cdp-token.part && mv -f /tmp/.juno-cdp-token.part /tmp/.juno-cdp-token",
+      ],
+      Buffer.from(token, "utf8")
+    );
+  }
+
+  async fileInfo(
+    handle: ComputerHandle,
+    rawPath: string
+  ): Promise<{ type: "file" | "dir" | "other"; size: number; path: string } | null> {
+    const resolved = await resolveContainerPath(handle, rawPath);
+    const res = await runDockerText(
+      ["exec", "--user", "1000", handle.name, "stat", "-c", "%s:%F", "--", resolved],
+      { allowNonZero: true }
+    );
+    if (res.exitCode !== 0) return null;
+    const [sizeStr, kind] = res.stdout.trim().split(":");
+    return {
+      path: resolved,
+      size: Number(sizeStr) || 0,
+      type: kind === "regular file" || kind === "regular empty file" ? "file" : kind === "directory" ? "dir" : "other",
+    };
+  }
+
+  async listOwned(): Promise<{
+    containers: Array<{ name: string; agentId: string | null; userId: string | null; state: "running" | "paused" | "exited" }>;
+    volumes: string[];
+  }> {
+    const ps = await runDockerText([
+      "ps",
+      "-a",
+      "--filter",
+      "label=app=juno",
+      "--format",
+      '{{.Names}}\t{{.Label "juno.agent"}}\t{{.Label "juno.user"}}\t{{.State}}',
+    ]);
+    const containers = ps.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        const [name, agentId, userId, state] = line.split("\t");
+        // Only the names this provider creates, whatever else carries the label.
+        if (!name || !name.startsWith("juno-agent-")) return [];
+        return [
+          {
+            name,
+            agentId: agentId || null,
+            userId: userId || null,
+            state: state === "running" ? ("running" as const) : state === "paused" ? ("paused" as const) : ("exited" as const),
+          },
+        ];
+      });
+    const vols = await runDockerText(["volume", "ls", "--filter", "name=juno-agent-", "--format", "{{.Name}}"]);
+    const volumes = vols.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((name) => name.startsWith("juno-agent-"));
+    return { containers, volumes };
   }
 
   async stopVnc(handle: ComputerHandle): Promise<void> {

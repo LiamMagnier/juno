@@ -12,6 +12,16 @@ function required(name: string): string {
   return v;
 }
 
+function positiveNumber(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return raw !== undefined && raw.trim() !== "" && Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function nonNegativeNumber(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return raw !== undefined && raw.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
 export const env = {
   // Core (required)
   get databaseUrl() {
@@ -164,105 +174,96 @@ export const env = {
   agentComputer: {
     get provider(): string {
       return (
-        process.env.AGENT_COMPUTER_PROVIDER ??
         process.env.COMPUTER_PROVIDER ??
+        process.env.AGENT_COMPUTER_PROVIDER ??
         ""
       ).trim();
     },
     get image(): string {
+      // The tag setup-vm.sh builds. A different default here left the feature
+      // silently off on a server set up exactly as documented.
       return (
-        process.env.AGENT_COMPUTER_IMAGE ??
         process.env.COMPUTER_DOCKER_IMAGE ??
+        process.env.AGENT_COMPUTER_IMAGE ??
         ""
-      ).trim() || "juno-agent-computer:1";
+      ).trim() || "juno-computer:1";
     },
     get storageRoot(): string {
       return (process.env.AGENT_COMPUTER_STORAGE_ROOT ?? "").trim() || "/var/lib/juno-computers";
     },
     get network(): string {
-      return (process.env.AGENT_COMPUTER_NETWORK ?? "").trim() || "juno-agent-net";
+      return (
+        process.env.COMPUTER_DOCKER_NETWORK ??
+        process.env.AGENT_COMPUTER_NETWORK ??
+        ""
+      ).trim() || "juno-computers";
     },
     get memoryMb(): number {
-      const n = Number(
-        process.env.AGENT_COMPUTER_MEMORY_MB ?? process.env.COMPUTER_MEMORY_MB
-      );
-      return Number.isFinite(n) && n > 0 ? n : 2048;
+      return positiveNumber(process.env.COMPUTER_MEMORY_MB ?? process.env.AGENT_COMPUTER_MEMORY_MB, 2048);
     },
     get cpus(): number {
-      const n = Number(
-        process.env.AGENT_COMPUTER_CPUS ?? process.env.COMPUTER_CPUS
-      );
-      return Number.isFinite(n) && n > 0 ? n : 1.5;
+      return positiveNumber(process.env.COMPUTER_CPUS ?? process.env.AGENT_COMPUTER_CPUS, 2);
     },
     get shmMb(): number {
-      const n = Number(process.env.AGENT_COMPUTER_SHM_MB);
-      return Number.isFinite(n) && n > 0 ? n : 1024;
+      return positiveNumber(process.env.AGENT_COMPUTER_SHM_MB, 1024);
     },
     get diskQuotaMb(): number {
-      const n = Number(
-        process.env.AGENT_COMPUTER_DISK_QUOTA_MB ??
-          process.env.COMPUTER_DISK_LIMIT_MB
+      return positiveNumber(
+        process.env.COMPUTER_DISK_LIMIT_MB ?? process.env.AGENT_COMPUTER_DISK_QUOTA_MB,
+        10240
       );
-      return Number.isFinite(n) && n > 0 ? n : 4096;
     },
+    /** Computers on (awake, waking or resting) across the whole server. */
     get maxAwakeHost(): number {
-      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_HOST);
-      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 6;
+      return Math.floor(
+        positiveNumber(process.env.COMPUTER_MAX_RUNNING_TOTAL ?? process.env.AGENT_COMPUTER_MAX_AWAKE_HOST, 4)
+      );
     },
+    /** Computers on (awake, waking or resting) per account. */
     get maxAwakeUser(): number {
-      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_USER);
-      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 2;
+      return Math.floor(
+        positiveNumber(process.env.COMPUTER_MAX_RUNNING_PER_USER ?? process.env.AGENT_COMPUTER_MAX_AWAKE_USER, 2)
+      );
     },
     get minFreeMemMb(): number {
-      const n = Number(
-        process.env.AGENT_COMPUTER_MIN_FREE_MEM_MB ??
-          process.env.COMPUTER_MIN_FREE_MEMORY_MB
+      return nonNegativeNumber(
+        process.env.COMPUTER_MIN_FREE_MEMORY_MB ?? process.env.AGENT_COMPUTER_MIN_FREE_MEM_MB,
+        1024
       );
-      return Number.isFinite(n) && n >= 0 ? n : 4096;
     },
     get minFreeDiskMb(): number {
-      if (process.env.AGENT_COMPUTER_MIN_FREE_DISK_MB) {
-        const n = Number(process.env.AGENT_COMPUTER_MIN_FREE_DISK_MB);
-        if (Number.isFinite(n) && n >= 0) return n;
-      }
       if (process.env.COMPUTER_MIN_FREE_DISK_GB) {
         const gb = Number(process.env.COMPUTER_MIN_FREE_DISK_GB);
         if (Number.isFinite(gb) && gb >= 0) return gb * 1024;
       }
-      return 10240;
+      return nonNegativeNumber(process.env.AGENT_COMPUTER_MIN_FREE_DISK_MB, 10240);
     },
+    /** Idle minutes before an awake computer rests (`docker pause`). */
     get restMinutes(): number {
-      if (process.env.AGENT_COMPUTER_REST_MINUTES) {
-        const n = Number(process.env.AGENT_COMPUTER_REST_MINUTES);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
       if (process.env.COMPUTER_IDLE_PAUSE_SECONDS) {
         const s = Number(process.env.COMPUTER_IDLE_PAUSE_SECONDS);
         if (Number.isFinite(s) && s > 0) return s / 60;
       }
-      return 20;
+      return positiveNumber(process.env.AGENT_COMPUTER_REST_MINUTES, 3);
     },
+    /** Idle hours before a computer sleeps (`docker stop`). */
     get sleepHours(): number {
-      if (process.env.AGENT_COMPUTER_SLEEP_HOURS) {
-        const n = Number(process.env.AGENT_COMPUTER_SLEEP_HOURS);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
       if (process.env.COMPUTER_IDLE_STOP_MINUTES) {
         const m = Number(process.env.COMPUTER_IDLE_STOP_MINUTES);
         if (Number.isFinite(m) && m > 0) return m / 60;
       }
-      return 24;
+      return positiveNumber(process.env.AGENT_COMPUTER_SLEEP_HOURS, 0.5);
+    },
+    /** Days asleep before a computer, its sign-ins and its files are destroyed. */
+    get retentionDays(): number {
+      return positiveNumber(process.env.COMPUTER_RETENTION_DAYS, 30);
     },
     get costUsdPerMin(): number {
-      if (process.env.AGENT_COMPUTER_COST_USD_PER_MIN) {
-        const n = Number(process.env.AGENT_COMPUTER_COST_USD_PER_MIN);
-        if (Number.isFinite(n) && n >= 0) return n;
-      }
       if (process.env.COMPUTER_COST_MICRO_USD_PER_SECOND) {
         const micro = Number(process.env.COMPUTER_COST_MICRO_USD_PER_SECOND);
         if (Number.isFinite(micro) && micro >= 0) return (micro * 60) / 1_000_000;
       }
-      return 0;
+      return nonNegativeNumber(process.env.AGENT_COMPUTER_COST_USD_PER_MIN, 0);
     },
   },
 

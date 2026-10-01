@@ -174,6 +174,8 @@ export async function ensureStream(opts: {
     viewPassword?: string;
   };
   rotatePasswords?: boolean;
+  /** Start x11vnc. False reuses the running server and its passwords. */
+  restart?: boolean;
 }): Promise<{
   controlPassword: string;
   viewPassword: string;
@@ -193,10 +195,12 @@ export async function ensureStream(opts: {
       ? opts.existingPasswords.viewPassword
       : generateVncPassword(8);
 
-  await provider.startVnc(opts.handle, {
-    controlPassword,
-    viewPassword,
-  });
+  if (opts.restart !== false) {
+    await provider.startVnc(opts.handle, {
+      controlPassword,
+      viewPassword,
+    });
+  }
   const endpoints = await provider.endpoints(opts.handle);
   return {
     controlPassword,

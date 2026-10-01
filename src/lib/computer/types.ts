@@ -45,6 +45,8 @@ export interface ComputerFileEntry {
   path: string;
   type: "file" | "dir" | "other";
   size: number;
+  /** ISO time of the last change, when the provider knows it. */
+  modifiedAt?: string;
 }
 
 export interface ComputerProvider {
@@ -77,12 +79,27 @@ export interface ComputerProvider {
   exec(
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number }
+    opts?: { timeoutSeconds?: number; cwd?: string }
   ): Promise<ExecResult>;
   listFiles(handle: ComputerHandle, dir?: string): Promise<ComputerFileEntry[]>;
   readFile(handle: ComputerHandle, path: string, opts?: { maxBytes?: number }): Promise<Buffer>;
   writeFile(handle: ComputerHandle, path: string, content: Buffer | string): Promise<void>;
   diskUsageMb(handle: ComputerHandle): Promise<number>;
+  /** `{ type, size }` of one path under /home/agent, or null when it does not exist. */
+  fileInfo(handle: ComputerHandle, path: string): Promise<{ type: "file" | "dir" | "other"; size: number; path: string } | null>;
+  /**
+   * Hands the CDP gate its token after every start. Through stdin into tmpfs,
+   * never through `-e`: `docker exec` inherits a container's configured env, so a
+   * token passed that way is one `env` away from the agent's shell and the model.
+   */
+  provisionCdpToken(handle: ComputerHandle, token: string): Promise<void>;
+  /** Whether x11vnc is running, so a stream the database thinks is on can be restarted. */
+  isVncRunning(handle: ComputerHandle): Promise<boolean>;
+  /** Every container this server created for agents (label `app=juno`), and every agent volume. */
+  listOwned(): Promise<{
+    containers: Array<{ name: string; agentId: string | null; userId: string | null; state: "running" | "paused" | "exited" }>;
+    volumes: string[];
+  }>;
   startVnc(
     handle: ComputerHandle,
     opts: { controlPassword: string; viewPassword: string }
