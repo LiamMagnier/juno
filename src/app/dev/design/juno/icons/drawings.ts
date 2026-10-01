@@ -658,6 +658,26 @@ const RIBBON = `M6.75 20.25V${fmt(3.75 + 2.655)}${corner(6.75, 3.75, 0, 1, 1, 0,
 const TILE_A = rr(3.75, 3.75, 7.5, 7.5, 2.25);
 const TILE_B = rr(12.75, 12.75, 7.5, 7.5, 2.25);
 
+
+/**
+ * Folio (D-038, "What Alevr made"): one sheet folded once, standing open and
+ * seen from a little above, so the fold runs to a point at its foot. Straight
+ * leaves on one crease (sources is a pair of separate, curved pages).
+ */
+const FOLIO = roundPoly(1.2, 12, 6, 20.25, 3.75, 20.25, 18.75, 12, 21, 3.75, 18.75, 3.75, 3.75);
+const FOLIO_CREASE = poly(12, 6, 12, 21);
+/**
+ * Deep Field (D-038, "Deep research"): one long look into a field. The
+ * viewfinder's corners hold four points of falling size, set on a spiral so
+ * they read as found, not scattered (no starfield: four points, one frame).
+ */
+const FIELD_CORNERS = [
+  "M3.75 8.25V6.75A3 3 0 0 1 6.75 3.75H8.25",
+  "M15.75 3.75H17.25A3 3 0 0 1 20.25 6.75V8.25",
+  "M20.25 15.75V17.25A3 3 0 0 1 17.25 20.25H15.75",
+  "M8.25 20.25H6.75A3 3 0 0 1 3.75 17.25V15.75",
+];
+
 /* —————————————————————————————— The set —————————————————————————————— */
 
 const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => ({ viewBox: 24, line: 1.5, ...d });
@@ -1675,6 +1695,16 @@ export const ICONS = {
     motion: "None: a settings noun.",
   }),
 
+  folio: I({
+    group: "Files",
+    elements: [p(FOLIO), p(FOLIO_CREASE)],
+    motion: "None. Folio (D-038, what Alevr made): a sheet folded once, standing open. Made things are kept, not played.",
+  }),
+  "deep-field": I({
+    group: "Work and evidence",
+    elements: [...FIELD_CORNERS.map((d) => p(d)), dot(10.125, 10.875, 1.875), dot(15, 9, 1.125), dot(14.25, 15, 1.5), dot(9, 15.75, 0.9)],
+    motion: "Deep Field (D-038, deep research): the viewfinder holding four points of falling size. None: a long look is still.",
+  }),
 } satisfies Record<string, IconDrawing>;
 
 /** Other names the screens use for the same drawing. */
@@ -1745,6 +1775,8 @@ export const ICON_ALIASES = {
   video: "file-video",
   card: "billing",
   language: "globe",
+  folios: "folio",
+  "deep-research": "deep-field",
 } satisfies Record<string, string>;
 
 export function resolveIcon(name: string): IconDrawing | undefined {

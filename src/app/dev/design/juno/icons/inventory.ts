@@ -16,6 +16,15 @@ export type InventoryRow = {
 
 export const SEMANTIC_INVENTORY: InventoryRow[] = [
   {
+    group: "Branded features (D-038)",
+    direction: "Orbit's open ellipse; a sheet folded once; one long look into a field",
+    items: [
+      { label: "Orbit", icon: "orbit" },
+      { label: "Folio", icon: "folio" },
+      { label: "Deep Field", icon: "deep-field" },
+    ],
+  },
+  {
     group: "Primary destinations",
     direction: "Open conversation contour; open elliptical path; bracket pair with inset cursor",
     items: [
