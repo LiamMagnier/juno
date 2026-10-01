@@ -446,7 +446,7 @@ export function formKey(cfg: Pick<AvatarConfig, "shape" | "stretch">): string {
 
 /** Fur length in body units (plush 0.035..0.135, velvet a fixed short pile, others none). */
 export function furLengthOf(cfg: Pick<AvatarConfig, "material">): number {
-  if (cfg.material.kind === "plush") return 0.035 + cfg.material.furLength * 0.1;
+  if (cfg.material.kind === "plush") return 0.045 + cfg.material.furLength * 0.12;
   if (cfg.material.kind === "velvet") return 0.014;
   return 0;
 }

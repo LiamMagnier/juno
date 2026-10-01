@@ -55,8 +55,8 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  height: 144px;
-  margin-bottom: -22px;
+  height: 162px;
+  margin-bottom: -30px;
   pointer-events: none;
 }
 .jn .jn-mhead::before {
@@ -221,7 +221,8 @@
 
 @media (max-width: 760px) {
   .jn .jn-mhead {
-    height: 132px;
+    height: 158px;
+    margin-bottom: -32px;
   }
   .jn .jn-mhead__bar {
     padding: 0 6px;

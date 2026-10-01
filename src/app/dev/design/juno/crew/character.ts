@@ -282,6 +282,7 @@ interface EyeMats {
   lid: THREE.MeshPhysicalMaterial;
   ink: AccMaterial;
   thread: AccMaterial;
+  stitchHi: AccMaterial;
 }
 
 function eyeMaterials(bodyHex: string): EyeMats {
@@ -303,7 +304,8 @@ function eyeMaterials(bodyHex: string): EyeMats {
       clearcoat: 1e-4,
     }),
     ink: makeAccMaterial("thread", featureInk(bodyHex)),
-    thread: makeAccMaterial("thread", EYE_INK),
+    thread: makeAccMaterial("thread", "#1c1613"),
+    stitchHi: makeAccMaterial("thread", "#f4f1ea"),
   };
 }
 
@@ -390,10 +392,15 @@ function buildEye(style: EyeStyle, r: number, stroke: number, mats: EyeMats, sid
       break;
     }
     case "stitched": {
-      dome = new THREE.Vector3(r * 0.72, r * 0.98, r * 0.22);
+      dome = new THREE.Vector3(r * 0.74, r * 1.0, r * 0.24);
       const d = add(U.sphere(), mats.thread.mat);
       d.scale.copy(dome);
-      depth = r * 0.22;
+      // The white highlight stitch embroidered plush eyes carry.
+      const hi = add(U.capsule(), mats.stitchHi.mat);
+      hi.scale.set(r * 0.16, r * 0.3, r * 0.06);
+      hi.rotation.z = -0.5;
+      hi.position.set(-r * 0.24, r * 0.4, r * 0.21);
+      depth = r * 0.24;
       break;
     }
   }
@@ -621,11 +628,14 @@ export class Character {
     /* Shadow and framing. */
     this.shadow.scale.set(f.halfWidth * 2.5 + this.fur * 2, f.halfDepth * 2.3 + this.fur * 2, 1);
     this.shadow.position.y = f.bottom + 0.004;
-    let top = f.top + this.fur;
-    let half = f.halfWidth + this.fur;
+    // Frame by the body: headwear may add a little headroom, but a big hat never shrinks the character.
+    const bodyTop = f.top + this.fur;
+    const bodyHalf = f.halfWidth + this.fur;
+    let top = bodyTop;
+    let half = bodyHalf;
     for (const acc of this.accs) {
-      top = Math.max(top, acc.top);
-      half = Math.max(half, acc.half);
+      top = Math.max(top, Math.min(acc.top, bodyTop + (f.top - f.bottom) * 0.16));
+      half = Math.max(half, Math.min(acc.half, bodyHalf * 1.06));
     }
     this.bounds = { top, bottom: f.bottom, half };
     const h = f.top - f.bottom;
@@ -678,6 +688,7 @@ export class Character {
       for (const m of [this.eyeMats.dark, this.eyeMats.pupil, this.eyeMats.white, this.eyeMats.iris, this.eyeMats.glint, this.eyeMats.cover, this.eyeMats.lid]) m.dispose();
       this.eyeMats.ink.mat.dispose();
       this.eyeMats.thread.mat.dispose();
+      this.eyeMats.stitchHi.mat.dispose();
     }
     const mats = eyeMaterials(bodyHex);
     this.eyeMats = mats;
@@ -699,22 +710,17 @@ export class Character {
         placeOn(g, frame, this.fur * 0.55 + 0.004, 0.5);
         const inner = new THREE.Group();
         g.add(inner);
-        const m = new THREE.Mesh(U.capsule(), mats.ink.mat);
+        const m = new THREE.Mesh<THREE.BufferGeometry, THREE.Material>(U.capsule(), mats.ink.mat);
         const len = r * (cfg.brows === "straight" ? 1.05 : 0.95);
         const th = r * 0.26 * t.stroke;
         m.scale.set(th, len, th * 0.7);
         m.rotation.z = Math.PI / 2;
         if (cfg.brows === "arched") {
-          // Two strokes meeting in a soft peak.
-          m.scale.y = len * 0.55;
-          m.position.x = (i === 0 ? 1 : -1) * len * 0.22;
-          m.rotation.z = Math.PI / 2 + (i === 0 ? 0.35 : -0.35);
-          const m2 = new THREE.Mesh(U.capsule(), mats.ink.mat);
-          m2.scale.set(th, len * 0.55, th * 0.7);
-          m2.position.x = (i === 0 ? -1 : 1) * len * 0.22;
-          m2.position.y = -len * 0.06;
-          m2.rotation.z = Math.PI / 2 + (i === 0 ? -0.2 : 0.2);
-          inner.add(m2);
+          // One soft arc.
+          m.geometry = closedArc(t.stroke * 0.95, true);
+          m.scale.setScalar(len * 0.62);
+          m.rotation.z = 0;
+          m.position.y = -len * 0.05;
         } else if (cfg.brows === "soft") {
           m.scale.x = th * 1.15;
           m.scale.y = len * 0.85;
@@ -730,7 +736,7 @@ export class Character {
     if (cfg.mouth === "smile") {
       const m = new THREE.Mesh(smileGeometry(t.stroke), mats.ink.mat);
       placeOn(m, mf, this.fur * 0.45 + 0.004, 0.45);
-      m.scale.setScalar(r * 0.55);
+      m.scale.setScalar(r * 0.72);
       this.mouthSmile = m;
       this.features.add(m);
     }
@@ -738,7 +744,7 @@ export class Character {
     const o = new THREE.Group();
     placeOn(o, mf, this.fur * 0.4 + 0.004, 0.45);
     const om = new THREE.Mesh(U.sphere(), mats.dark);
-    om.scale.set(r * 0.26, r * 0.2, r * 0.12);
+    om.scale.set(r * 0.32, r * 0.25, r * 0.14);
     o.add(om);
     o.userData.base = cfg.mouth === "dot" ? 1 : 0;
     o.visible = cfg.mouth === "dot";
@@ -758,6 +764,7 @@ export class Character {
     for (const spec of cfg.accessories) {
       const built = buildAccessory(spec.id, {
         anchors: a,
+        field: this.field!,
         fur: this.fur,
         bodyHex,
         color: spec.color ? colorHex(spec.color) : undefined,

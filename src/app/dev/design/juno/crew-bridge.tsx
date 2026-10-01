@@ -52,7 +52,7 @@ export function MemberPeek({
   member,
   state,
   words,
-  size = 104,
+  size = 116,
   arrive,
   typing,
   cheer,

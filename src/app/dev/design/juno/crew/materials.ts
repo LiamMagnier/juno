@@ -646,7 +646,7 @@ export interface AccMaterial {
  * own texture; hard goods are plain physical materials. Every accessory
  * desaturates with the body (offline).
  */
-export function makeAccMaterial(kind: AccMaterialKind, color: THREE.ColorRepresentation, scale = 1): AccMaterial {
+export function makeAccMaterial(kind: AccMaterialKind, color: THREE.ColorRepresentation, scale = 1, dots?: THREE.ColorRepresentation): AccMaterial {
   const desat = { value: 0 };
   const c = new THREE.Color(color);
   let mat: THREE.MeshPhysicalMaterial;
@@ -681,6 +681,7 @@ export function makeAccMaterial(kind: AccMaterialKind, color: THREE.ColorReprese
   const freq = (kind === "knit" ? 7 : kind === "canvas" ? 9 : kind === "thread" ? 14 : 3) * scale;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uDesat = desat;
+    if (dots) shader.uniforms.uDot = { value: new THREE.Color(dots) };
     if (bumpTex) shader.uniforms.uBumpTex = { value: bumpTex };
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vJP;\nvarying vec3 vJN;")
@@ -690,6 +691,7 @@ export function makeAccMaterial(kind: AccMaterialKind, color: THREE.ColorReprese
         "#include <common>",
         `#include <common>
 uniform float uDesat;
+${dots ? "uniform vec3 uDot;" : ""}
 varying vec3 vJP;
 varying vec3 vJN;
 ${bumpTex ? `uniform sampler2D uBumpTex;\nfloat jcHeight = 0.0;\n${BUMP_GLSL}` : ""}`,
@@ -709,6 +711,18 @@ ${
 }`
     : ""
 }
+${
+  dots
+    ? `{
+  // Polka dots printed on the cloth (bandanas).
+  vec3 q = vJP * 15.0;
+  vec2 cell = vec2(q.x + 0.5 * floor(q.y), q.y);
+  float d = length(fract(cell) - 0.5);
+  float aa = fwidth(d);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uDot, 1.0 - smoothstep(0.17 - aa, 0.17 + aa, d));
+}`
+    : ""
+}
 {
   float l = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(l) * 1.02, uDesat);
@@ -721,6 +735,6 @@ ${
 normal = jcBump(normal, jcHeight * ${(bumpK / Math.max(0.2, scale)).toFixed(5)}, faceDirection);`,
       );
   };
-  mat.customProgramCacheKey = () => `jc-acc-${kind}-${freq.toFixed(2)}-${bumpK}`;
+  mat.customProgramCacheKey = () => `jc-acc-${kind}-${freq.toFixed(2)}-${bumpK}-${dots ? "d" : ""}`;
   return { mat, desat };
 }

@@ -16,10 +16,12 @@ import * as THREE from "three";
 import { ACCESSORIES, type AccessoryId } from "./avatar2";
 import { makeAccMaterial, type AccMaterial, type AccMaterialKind } from "./materials";
 import { complement, hexToOklch, oklchToHex, patternPartner } from "./palette";
-import { surfaceBasis, type Anchors, type Frame, type V3 } from "./shapes";
+import { castRay, surfaceBasis, type Anchors, type BodyField, type Frame, type V3 } from "./shapes";
 
 export interface AccContext {
   anchors: Anchors;
+  /** The body's distance field (cloth that lies on the body projects onto it). */
+  field: BodyField;
   /** Fur length (body units): accessories sit on the pile. */
   fur: number;
   bodyHex: string;
@@ -228,8 +230,8 @@ class Kit {
   mats: AccMaterial[] = [];
   geos: THREE.BufferGeometry[] = [];
   springs: Springy[] = [];
-  mat(kind: AccMaterialKind, color: string, scale = 1) {
-    const m = makeAccMaterial(kind, color, scale);
+  mat(kind: AccMaterialKind, color: string, scale = 1, dots?: string) {
+    const m = makeAccMaterial(kind, color, scale, dots);
     this.mats.push(m);
     return m.mat;
   }
@@ -324,7 +326,9 @@ const BUILD: Record<AccessoryId, Builder> = {
       pos.setZ(i, pos.getZ(i) - Math.pow(Math.abs(x) / bw, 2) * 0.07);
     }
     billGeo.computeVertexNormals();
-    const bill = kit.mesh(billGeo, felt, g);
+    const billMat = kit.mat("felt", col);
+    billMat.side = THREE.DoubleSide;
+    const bill = kit.mesh(billGeo, billMat, g);
     bill.rotation.x = Math.PI / 2 + 0.2;
     bill.position.set(0, 0.012, h.rz * 0.9);
     const btn = kit.mesh(new THREE.SphereGeometry(1, 16, 10), felt, g);
@@ -423,6 +427,7 @@ const BUILD: Record<AccessoryId, Builder> = {
     const top = c.anchors.top;
     const base = new THREE.Group();
     base.position.set(top[0], top[1] + c.fur * 0.5, top[2]);
+    base.scale.setScalar(1.45);
     kit.group.add(base);
     const vinyl = kit.mat("vinyl", col);
     const stem = kit.mesh(tube([new THREE.Vector3(0, -0.04, 0), new THREE.Vector3(0.01, 0.08, 0), new THREE.Vector3(0.035, 0.17, 0.01)], 0.018, 20, 8), vinyl, base);
@@ -449,6 +454,7 @@ const BUILD: Record<AccessoryId, Builder> = {
     const base = new THREE.Group();
     base.position.set(top[0], top[1] + c.fur * 0.3, top[2]);
     base.rotation.z = -0.12;
+    base.scale.setScalar(1.3);
     kit.group.add(base);
     kit.mesh(tube([new THREE.Vector3(0, -0.05, 0), new THREE.Vector3(0.0, 0.14, 0), new THREE.Vector3(0.03, 0.3, 0)], 0.014, 24, 8), kit.mat("vinyl", "#3e4045"), base);
     const ball = kit.mesh(new THREE.SphereGeometry(1, 24, 16), kit.mat("gloss", col), base);
@@ -465,7 +471,7 @@ const BUILD: Record<AccessoryId, Builder> = {
     kit.group.add(g);
     const felt = kit.mat("felt", col);
     const petal = new THREE.SphereGeometry(1, 18, 12);
-    const k = 1.55;
+    const k = 1.9;
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2 + 0.3;
       const p = kit.mesh(petal.clone(), felt, g);
@@ -509,36 +515,39 @@ const BUILD: Record<AccessoryId, Builder> = {
     void chain;
   },
 
-  /* Over-ear headphones: a band over the head, cushioned cups on the sides. */
+  /* Over-ear headphones: a padded band over the head, big cushioned cups turned a little toward you. */
   headphones(kit, c, col) {
     const a = c.anchors;
     const shell = kit.mat("vinyl", col);
     const cushion = kit.mat("velvet", light(col) ? "#3e4045" : "#2a2b2f");
-    const out = c.fur * 0.8 + 0.02;
-    const L = v3(a.ears[0].p).addScaledVector(v3(a.ears[0].n), out);
-    const Rr = v3(a.ears[1].p).addScaledVector(v3(a.ears[1].n), out);
-    const topY = a.top[1] + c.fur * 0.85 + 0.06;
+    const out = c.fur * 0.8 + 0.03;
     const h = hatRing(c);
-    const midY = (L.y + topY) / 2 + 0.06;
+    const cupR = 0.17 + a.height * 0.035;
+    const ears = a.ears.map((e) => v3(e.p).addScaledVector(v3(e.n), out).add(new THREE.Vector3(0, 0, 0.05)));
+    const topY = a.top[1] + c.fur * 0.85 + 0.07;
+    const midY = (ears[0].y + topY) / 2 + 0.08;
     const band = [
-      L.clone().add(new THREE.Vector3(0.02, 0.08, 0)),
-      new THREE.Vector3(-h.rx * 0.95 - 0.02, midY, h.cz * 0.5),
-      new THREE.Vector3(0, topY, h.cz * 0.3),
-      new THREE.Vector3(h.rx * 0.95 + 0.02, midY, h.cz * 0.5),
-      Rr.clone().add(new THREE.Vector3(-0.02, 0.08, 0)),
+      ears[0].clone().add(new THREE.Vector3(0.03, cupR * 0.8, -0.02)),
+      new THREE.Vector3(-h.rx * 0.98 - 0.03, midY, h.cz * 0.4),
+      new THREE.Vector3(0, topY, h.cz * 0.2),
+      new THREE.Vector3(h.rx * 0.98 + 0.03, midY, h.cz * 0.4),
+      ears[1].clone().add(new THREE.Vector3(-0.03, cupR * 0.8, -0.02)),
     ];
-    kit.mesh(tube(band, 0.034, 64, 10), shell, kit.group);
-    for (const [i, p] of [L, Rr].entries()) {
+    const bandMesh = kit.mesh(tube(band, 0.045, 72, 12), shell, kit.group);
+    bandMesh.scale.z = 1;
+    for (const [i, p] of ears.entries()) {
       const n = v3(a.ears[i].n).normalize();
+      // Turn the cup a little toward the viewer so it reads from the front.
+      n.z += 0.45;
+      n.normalize();
       const cup = new THREE.Group();
       cup.position.copy(p);
       cup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
       kit.group.add(cup);
-      const r = 0.15 + c.anchors.height * 0.03;
-      kit.mesh(lathe([[0.001, 0.1], [r * 0.7, 0.1], [r, 0.075], [r * 1.02, 0.03], [r * 0.95, 0.0]], 28), shell, cup);
-      const pad = kit.mesh(new THREE.TorusGeometry(r * 0.8, r * 0.26, 10, 28), cushion, cup);
+      kit.mesh(lathe([[0.001, 0.13], [cupR * 0.72, 0.13], [cupR, 0.1], [cupR * 1.04, 0.05], [cupR * 0.98, 0.0]], 32), shell, cup);
+      const pad = kit.mesh(new THREE.TorusGeometry(cupR * 0.78, cupR * 0.28, 12, 32), cushion, cup);
       pad.rotation.x = Math.PI / 2;
-      pad.position.y = -0.005;
+      pad.position.y = -0.01;
     }
   },
 
@@ -547,18 +556,20 @@ const BUILD: Record<AccessoryId, Builder> = {
     const a = c.anchors;
     const gloss = kit.mat("gloss", col);
     for (const e of a.ears) {
-      const p = v3(e.p).addScaledVector(v3(e.n), c.fur * 0.6 + 0.02);
+      const p = v3(e.p).addScaledVector(v3(e.n), c.fur * 0.6 + 0.03).add(new THREE.Vector3(0, -0.04, 0.08));
       const g = new THREE.Group();
       g.position.copy(p);
-      g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), v3(e.n).normalize());
+      const nn = v3(e.n).normalize();
+      nn.z += 0.5;
+      g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), nn.normalize());
       kit.group.add(g);
       const bud = kit.mesh(new THREE.SphereGeometry(1, 20, 14), gloss, g);
-      bud.scale.set(0.07, 0.07, 0.055);
+      bud.scale.set(0.09, 0.09, 0.07);
       const stem = new THREE.Group();
       g.add(stem);
       stem.quaternion.copy(g.quaternion.clone().invert());
-      const s2 = kit.mesh(new THREE.CapsuleGeometry(0.022, 0.12, 4, 10), gloss, stem);
-      s2.position.y = -0.09;
+      const s2 = kit.mesh(new THREE.CapsuleGeometry(0.028, 0.15, 4, 10), gloss, stem);
+      s2.position.y = -0.11;
     }
   },
 
@@ -567,14 +578,14 @@ const BUILD: Record<AccessoryId, Builder> = {
     const a = c.anchors;
     const metal = kit.mat("metal", col);
     for (const e of a.ears) {
-      const p = v3(e.p).addScaledVector(v3(e.n), c.fur * 0.5).add(new THREE.Vector3(0, -a.eyeRadius * 0.9, 0));
+      const p = v3(e.p).addScaledVector(v3(e.n), c.fur * 0.6 + 0.01).add(new THREE.Vector3(0, -a.eyeRadius * 1.1, 0.07));
       const g = new THREE.Group();
       g.position.copy(p);
       kit.group.add(g);
-      const stud = kit.mesh(new THREE.SphereGeometry(0.018, 10, 8), metal, g);
+      const stud = kit.mesh(new THREE.SphereGeometry(0.026, 12, 10), metal, g);
       void stud;
-      const ring = kit.mesh(new THREE.TorusGeometry(0.07, 0.011, 8, 32), metal, g);
-      ring.position.y = -0.07;
+      const ring = kit.mesh(new THREE.TorusGeometry(0.11, 0.018, 10, 40), metal, g);
+      ring.position.y = -0.11;
       ring.rotation.y = Math.atan2(e.n[0], e.n[2]) + Math.PI / 2;
       kit.spring(g, 0.8);
     }
@@ -585,9 +596,9 @@ const BUILD: Record<AccessoryId, Builder> = {
     const n = c.anchors.neck;
     const vel = kit.mat("velvet", col);
     const g = new THREE.Group();
-    g.position.set(0, n.y, n.front + c.fur * 0.8 + 0.02);
+    g.position.set(0, n.y - 0.03, n.front + c.fur * 0.8 + 0.03);
     kit.group.add(g);
-    const s = 0.8 + n.a * 0.25;
+    const s = 1.15 + n.a * 0.35;
     const lobe = new THREE.SphereGeometry(1, 22, 14);
     for (const side of [-1, 1]) {
       const l = kit.mesh(lobe.clone(), vel, g);
@@ -612,7 +623,7 @@ const BUILD: Record<AccessoryId, Builder> = {
     const pad = c.fur * 0.7 + 0.03;
     const geo = bandGeometry(n.a + pad, n.front + pad, n.back + pad, 0.07, 0.19, 96);
     const g = new THREE.Group();
-    g.position.y = n.y + 0.03;
+    g.position.y = n.y - 0.03;
     kit.group.add(g);
     kit.mesh(geo, knit, g);
     // The hanging end: a flat knit strip with a little fringe, over the front.
@@ -639,8 +650,8 @@ const BUILD: Record<AccessoryId, Builder> = {
     const pad = c.fur * 0.8 + 0.02;
     const rx = n.a + pad;
     const rzF = n.front + pad;
-    const w = rx * 0.82;
-    const hgt = 0.22 + n.a * 0.06;
+    const w = rx * 0.56;
+    const hgt = 0.4 + n.a * 0.08;
     const shape = new THREE.Shape();
     shape.moveTo(-w, 0);
     shape.lineTo(w, 0);
@@ -648,29 +659,43 @@ const BUILD: Record<AccessoryId, Builder> = {
     shape.quadraticCurveTo(0, -hgt - 0.02, -0.03, -hgt);
     shape.quadraticCurveTo(-w * 0.2, -hgt * 0.7, -w, 0);
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 2, curveSegments: 16 });
-    // Wrap it round the neck: bend x around the ellipse.
+    // Lay the cloth on the body: each vertex goes round the neck by its x and is
+    // projected onto the surface at its own height, so the point lies on the chest.
     const pos = geo.attributes.position as THREE.BufferAttribute;
+    const baseY = n.y + 0.05;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const y = pos.getY(i);
       const z = pos.getZ(i);
-      const a = x / rx;
-      const drop = Math.max(0, -y) / hgt;
-      const r = 1 + z / rzF + drop * 0.05;
-      pos.setXYZ(i, Math.sin(a) * rx * r, y, Math.cos(a) * rzF * r);
+      const ang = x / rx;
+      const dx = Math.sin(ang);
+      const dz = Math.cos(ang);
+      const wy = baseY + y;
+      // Cloth drapes straight down from the band; it never tucks under the body's curve.
+      const atBand = castRay(c.field, 0, baseY, 0, dx, 0, dz, 3);
+      const surf = Math.max(castRay(c.field, 0, wy, 0, dx, 0, dz, 3), atBand - Math.max(0, -y) * 0.15);
+      const r = surf + pad + z;
+      pos.setXYZ(i, dx * r, y, dz * r);
     }
     geo.computeVertexNormals();
     const g = new THREE.Group();
-    g.position.y = n.y + 0.05;
+    g.position.y = baseY;
     kit.group.add(g);
-    kit.mesh(geo, canvas, g);
+    // Cloth is thin: both faces render (the extrusion's caps wind inward once draped).
+    const cloth = kit.mat("canvas", col, 1, light(col) ? "#3e4045" : "#f7f3ea");
+    cloth.side = THREE.DoubleSide;
+    kit.mesh(geo, cloth, g);
     // The band behind.
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i < 40; i++) {
       const a = (i / 40) * Math.PI * 2;
       pts.push(new THREE.Vector3(Math.sin(a) * rx, 0, Math.cos(a) >= 0 ? Math.cos(a) * rzF : Math.cos(a) * (n.back + pad)));
     }
-    kit.mesh(tube(pts, 0.026, 64, 8, true), canvas, g);
+    kit.mesh(tube(pts, 0.03, 64, 8, true), canvas, g);
+    // The knot, at the back.
+    const knot = kit.mesh(new THREE.SphereGeometry(1, 14, 10), canvas, g);
+    knot.scale.set(0.06, 0.05, 0.05);
+    knot.position.set(0, 0, -(n.back + pad));
   },
 };
 

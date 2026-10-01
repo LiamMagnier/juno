@@ -201,7 +201,7 @@ function Eyes() {
   );
 }
 
-function Wear() {
+function Wear({ only, size = 96 }: { only?: string; size?: number }) {
   const bodies: AvatarConfig[] = [
     { ...CREW_BY_ID.nadia.avatar, accessories: [], pattern: { kind: "none" } },
     { ...CREW_BY_ID.bram.avatar, accessories: [], shape: "drop", color: "lagoon" },
@@ -211,9 +211,9 @@ function Wear() {
     <Sec title="Accessories" note="Seventeen pieces, each modelled in its own material and fitted to the body from its anchors, so every piece sits on every shape.">
       {bodies.map((b, i) => (
         <div key={i} className="jcg-wear">
-          {ACCESSORY_IDS.map((id) => (
+          {ACCESSORY_IDS.filter((id) => !only || only.split(",").includes(id)).map((id) => (
             <figure key={id} className="jcg-state">
-              <CrewFace member={still({ ...b, accessories: [{ id }] }, `wear-${i}-${id}`)} size={96} live={false} facing="right" />
+              <CrewFace member={still({ ...b, accessories: [{ id }] }, `wear-${i}-${id}`)} size={size} live={false} facing="right" />
               {i === 0 ? <figcaption className="jcg-role">{ACCESSORIES[id].label}</figcaption> : null}
             </figure>
           ))}
@@ -223,13 +223,32 @@ function Wear() {
   );
 }
 
-const SAMPLE_IMAGE =
-  "data:image/svg+xml;charset=utf-8," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#f3e6cf"/><g fill="#2e968d">${Array.from({ length: 8 }, (_, i) => `<circle cx="${(i % 4) * 64 + 32}" cy="${Math.floor(i / 4) * 128 + 64}" r="22"/>`).join("")}</g><g fill="#e4715e">${Array.from({ length: 8 }, (_, i) => `<rect x="${(i % 4) * 64 + 20}" y="${Math.floor(i / 4) * 128 + 120}" width="24" height="24" rx="6"/>`).join("")}</g></svg>`,
-  );
+/** A person's own image, drawn as a PNG in the browser (uploads are PNG, JPEG or WebP data URLs). */
+function useSampleImage(): string | null {
+  const [url, setUrl] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 256;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#f3e6cf";
+    g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 16; i++) {
+      const x = (i % 4) * 64 + 32;
+      const y = Math.floor(i / 4) * 64 + 32;
+      g.fillStyle = i % 2 ? "#2e968d" : "#e4715e";
+      g.beginPath();
+      if (i % 3 === 0) g.arc(x, y, 18, 0, Math.PI * 2);
+      else g.roundRect(x - 16, y - 16, 32, 32, 8);
+      g.fill();
+    }
+    setUrl(c.toDataURL("image/png"));
+  }, []);
+  return url;
+}
 
 function Colours() {
+  const image = useSampleImage();
   const base = { ...CREW_BY_ID.nadia.avatar, accessories: [] as AvatarConfig["accessories"], shape: "pebble" as const, mouth: "none" as const };
   return (
     <Sec title="Colour and pattern" note="Sixteen colours chosen as a set, any custom colour, two-tone, belly, spots and stripes, or a person's own image.">
@@ -248,7 +267,7 @@ function Colours() {
             ["Belly", { pattern: { kind: "belly", color: "#fbf3e6", scale: 0.6 } }],
             ["Spots", { pattern: { kind: "spots", color: "cocoa", scale: 0.5 } }],
             ["Stripes", { pattern: { kind: "stripes", color: "cloud", scale: 0.4 } }],
-            ["Own image", { pattern: { kind: "image", assetUrl: SAMPLE_IMAGE, tint: 0.1 } }],
+            ["Own image", image ? { pattern: { kind: "image", assetUrl: image, tint: 0.1 } } : {}],
             ["Custom colour", { color: "#5a8f6e" }],
           ] as [string, Partial<AvatarConfig>][]
         ).map(([label, patch]) => (
@@ -641,7 +660,7 @@ export function CrewGallery({ scene = "lab", params = {} }: { scene?: GallerySce
       {(lab || scene === "states") && <States />}
       {(lab || scene === "sizes") && <Sizes />}
       {(lab || scene === "eyes") && <Eyes />}
-      {(lab || scene === "wear") && <Wear />}
+      {(lab || scene === "wear") && <Wear only={params.id} size={params.size} />}
       {(lab || scene === "colours") && <Colours />}
       {(lab || scene === "matrix") && <Matrix />}
       {(lab || scene === "tokens") && <Tokens />}

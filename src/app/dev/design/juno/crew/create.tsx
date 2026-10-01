@@ -72,7 +72,7 @@ export function CrewCreate({ onDone, onCancel, step: initialStep = "who", initia
   return (
     <div className={className ? `jcc ${className}` : "jcc"} data-step={step}>
       <header className="jcc__head">
-        <h2 className="jcc__title">{step === "ready" ? `Meet ${name || "your new member"}` : "Add to crew"}</h2>
+        <h2 className="jcc__title">Add to crew</h2>
         <ol className="jcc__steps" aria-label="Steps">
           {steps.map((s, i) => (
             <li key={s.id} aria-current={s.id === step ? "step" : undefined} data-done={i < at ? "" : undefined}>

@@ -119,7 +119,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.3,
     eyeScale: 1,
     hatDepth: 0.2,
-    neckLine: 0.26,
+    neckLine: 0.32,
   },
   /* A rice cake: wide and low, the base spreading under its own softness. */
   mochi: {
@@ -131,7 +131,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.3,
     eyeScale: 1.02,
     hatDepth: 0.26,
-    neckLine: 0.2,
+    neckLine: 0.3,
   },
   /* A jelly bean standing up, curved a little like a kidney. */
   bean: {
@@ -144,7 +144,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.34,
     eyeScale: 0.94,
     hatDepth: 0.18,
-    neckLine: 0.3,
+    neckLine: 0.36,
   },
   /* A drop with its tip leaning, the way a drop just let go. */
   drop: {
@@ -156,7 +156,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.32,
     eyeScale: 1,
     hatDepth: 0.3,
-    neckLine: 0.18,
+    neckLine: 0.29,
   },
   /* A gumdrop: tall rounded top, a skirt that flares a touch into the ground. */
   gumdrop: {
@@ -168,7 +168,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.3,
     eyeScale: 1,
     hatDepth: 0.2,
-    neckLine: 0.2,
+    neckLine: 0.3,
   },
   /* A marshmallow: a soft cylinder, pillowed at its middle, rounded at every edge. */
   marshmallow: {
@@ -185,8 +185,8 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeLine: 0.55,
     eyeSpread: 0.28,
     eyeScale: 1,
-    hatDepth: 0.22,
-    neckLine: 0.22,
+    hatDepth: 0.3,
+    neckLine: 0.3,
   },
   /* A peanut: a head and a body in one squashy piece. */
   peanut: {
@@ -218,7 +218,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.36,
     eyeScale: 0.92,
     hatDepth: 0.22,
-    neckLine: 0.26,
+    neckLine: 0.3,
   },
   /* A ball that has settled, nearly round. */
   orb: {
@@ -227,7 +227,7 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeSpread: 0.3,
     eyeScale: 1,
     hatDepth: 0.2,
-    neckLine: 0.22,
+    neckLine: 0.31,
   },
   /* A cub: a pebble with two round ears. */
   cub: {
@@ -241,8 +241,8 @@ export const SHAPES: Record<BodyShape, ShapeSpec> = {
     eyeLine: 0.5,
     eyeSpread: 0.3,
     eyeScale: 1,
-    hatDepth: 0.22,
-    neckLine: 0.22,
+    hatDepth: 0.34,
+    neckLine: 0.3,
   },
 };
 
@@ -428,7 +428,7 @@ export function anchors(shape: BodyShape, stretch: number, eyes: Pick<AvatarEyes
   };
   const eyeL = frameAt(f, origin, dirTo(-spread, eyeY));
   const eyeR = frameAt(f, origin, dirTo(spread, eyeY));
-  const eyeRadius = (0.1 + eyes.size * 0.075) * s.eyeScale;
+  const eyeRadius = (0.112 + eyes.size * 0.085) * s.eyeScale;
   const faceF = frameAt(f, origin, dirTo(0, eyeY));
   const mouthY = eyeY - eyeRadius * 2.1;
   const mouth = frameAt(f, [0, Math.min(origin[1], mouthY), -0.05], [0, (mouthY - Math.min(origin[1], mouthY)) * 1.1, 1]);

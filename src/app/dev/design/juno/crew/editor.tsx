@@ -216,7 +216,7 @@ export function AvatarEditor({ value, onChange, name, onName, tab: initialTab = 
 
 type Setter = (patch: Partial<AvatarConfig>, change: Change, push?: boolean) => void;
 
-function Thumb({ cfg, label, selected, onPick, size = 60, sub }: { cfg: AvatarConfig; label: string; selected: boolean; onPick: () => void; size?: number; sub?: string }) {
+function Thumb({ cfg, label, selected, onPick, size = 72, sub }: { cfg: AvatarConfig; label: string; selected: boolean; onPick: () => void; size?: number; sub?: string }) {
   return (
     <button type="button" className="jce-opt" aria-pressed={selected} onClick={onPick}>
       <span className="jce-opt__pic">
@@ -292,7 +292,7 @@ function ShapeTab({ cfg, set }: { cfg: AvatarConfig; set: Setter }) {
       <Group title="Body">
         <div className="jce-grid jce-grid--5">
           {BODY_SHAPES.map((shape) => (
-            <Thumb key={shape} cfg={{ ...cfg, shape, accessories: [] }} label={SHAPE_LABEL[shape]} selected={cfg.shape === shape} onPick={() => set({ shape }, "shape")} />
+            <Thumb key={shape} cfg={{ ...cfg, shape, accessories: [] }} label={SHAPE_LABEL[shape]} selected={cfg.shape === shape} onPick={() => set({ shape }, "shape")} size={76} />
           ))}
         </div>
       </Group>
@@ -356,7 +356,7 @@ function ColourTab({ cfg, set }: { cfg: AvatarConfig; set: Setter }) {
           {PATTERNS.map((kind) => {
             const preview: AvatarPattern =
               kind === "none" ? { kind: "none" } : kind === "image" ? (cfg.pattern.kind === "image" ? cfg.pattern : { kind: "none" }) : { kind, color: patColor ?? defaultPatternColor(cfg.color), scale: 0.5 };
-            return <Thumb key={kind} cfg={{ ...cfg, pattern: preview, accessories: [] }} label={PATTERN_LABEL[kind]} selected={cfg.pattern.kind === kind} onPick={() => pickPattern(kind)} size={52} />;
+            return <Thumb key={kind} cfg={{ ...cfg, pattern: preview, accessories: [] }} label={PATTERN_LABEL[kind]} selected={cfg.pattern.kind === kind} onPick={() => pickPattern(kind)} size={64} />;
           })}
         </div>
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => onFile(e.target.files?.[0])} />
@@ -424,7 +424,7 @@ function EyesTab({ cfg, set }: { cfg: AvatarConfig; set: Setter }) {
       <Group title="Eyes" aside={EYE_LABEL[cfg.eyes.style]}>
         <div className="jce-grid jce-grid--4">
           {EYE_STYLES.map((style) => (
-            <Thumb key={style} cfg={{ ...cfg, eyes: { ...cfg.eyes, style }, accessories: cfg.accessories.filter((a) => ACCESSORIES[a.id].slot !== "eyes") }} label={EYE_LABEL[style]} selected={cfg.eyes.style === style} onPick={() => set({ eyes: { ...cfg.eyes, style } }, "eyes")} size={64} />
+            <Thumb key={style} cfg={{ ...cfg, eyes: { ...cfg.eyes, style }, accessories: cfg.accessories.filter((a) => ACCESSORIES[a.id].slot !== "eyes") }} label={EYE_LABEL[style]} selected={cfg.eyes.style === style} onPick={() => set({ eyes: { ...cfg.eyes, style } }, "eyes")} size={76} />
           ))}
         </div>
       </Group>
@@ -465,7 +465,7 @@ function AccessoriesTab({ cfg, worn, wear, takeOff, colour }: { cfg: AvatarConfi
               {ids.map((id) => {
                 const on = wornIds.has(id);
                 const preview = on ? cfg.accessories : wearAccessory(cfg.accessories, id);
-                return <Thumb key={id} cfg={{ ...cfg, accessories: preview }} label={ACCESSORIES[id].label} selected={on} onPick={() => (on ? takeOff(id) : wear(id))} size={60} />;
+                return <Thumb key={id} cfg={{ ...cfg, accessories: preview }} label={ACCESSORIES[id].label} selected={on} onPick={() => (on ? takeOff(id) : wear(id))} size={72} />;
               })}
             </div>
           </Group>
