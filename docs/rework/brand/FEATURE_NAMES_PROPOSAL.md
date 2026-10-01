@@ -62,7 +62,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 2. Library
 
 - **Today:** Library (also /artifacts)
-- **Recommended:** **Library** (Keep the plain word). Keep the plain word.
+- **Recommended:** **Library** (Everything made and saved). Keep the plain word.
 - **Meaning:** Borges's Library of Babel is literature's image of infinite knowledge, a combinatorially vast library. The plain word already carries Alevr's story, and everyone knows what a library holds.
 - **Alternatives:** Atlas (A bound collection of maps): ChatGPT Atlas (launched 2025-10-21, sunset announced 2026-07-09) still owns the word in AI. [E1, E2] · Aleph (Borges's point that holds every point): Near-homophone of Alevr; Aleph Alpha is a major AI company merging into Cohere. [E4] · Archive (Plain alternative): Collides with the existing Archive action and implies cold storage.
 - **In real copy:**
@@ -92,7 +92,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 4. Instructions
 
 - **Today:** Instructions
-- **Recommended:** **Instructions** (Keep the plain word). Keep the plain word.
+- **Recommended:** **Instructions** (How Alevr should answer). Keep the plain word.
 - **Meaning:** These are literal rules the person writes. The label has to say exactly what it does.
 - **Alternatives:** Axioms (Statements taken as true): Lovely math, but grand for "be concise"; Axiom Math is a well-funded AI prover. [E16] · Invariants (What holds in every chat): Precise for engineers, opaque for everyone else.
 - **In real copy:**
@@ -107,7 +107,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 5. Projects
 
 - **Today:** Projects
-- **Recommended:** **Projects** (Keep the plain word). Keep the plain word.
+- **Recommended:** **Projects** (Work kept together). Keep the plain word.
 - **Meaning:** The universal word for a context container. A branded noun would add learning without adding meaning.
 - **Alternatives:** Span (Everything reachable from a set): Elegant linear algebra; abstract as a place. · Field (An area of work): Competes with Deep Field.
 - **In real copy:**
@@ -122,7 +122,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 6. Skills
 
 - **Today:** Skills
-- **Recommended:** **Skills** (Keep the plain word). Keep the plain word.
+- **Recommended:** **Skills** (Reusable methods). Keep the plain word.
 - **Meaning:** Agent Skills is an open SKILL.md standard (released 2025-12-18; 30+ tools by March 2026). Importing a skill from elsewhere only works if Alevr uses the shared word.
 - **Alternatives:** Lemmas (A proven helper reused in bigger proofs): The perfect metaphor and the most opaque word on this page; Lemma is also an AI-observability startup. [E18] · Methods (Plain alternative): Vague, and breaks the shared standard's vocabulary.
 - **In real copy:**
@@ -137,7 +137,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 7. Routines (scheduled work)
 
 - **Today:** Routines (route /automations)
-- **Recommended:** **Routines** (Keep the plain word). Keep the plain word.
+- **Recommended:** **Routines** (Scheduled work). Keep the plain word.
 - **Meaning:** Plain for repeating, scheduled work, and the category's word (Claude Code Routines, April 2026). An orbit is already periodic, so Alevr needs no second cosmic word here. Use "Coming up" as the plain heading for the next runs.
 - **Alternatives:** Horizon (What is ahead): Names a view, not the thing; Sierra launched Horizon for long-horizon agents (July 2026). [E20] · Cadence (A steady rhythm): Cadence Design Systems plus several Cadence AI-agent companies. [E21]
 - **In real copy:**
@@ -182,7 +182,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 10. Voice
 
 - **Today:** Voice · Dictation
-- **Recommended:** **Voice** (Keep the plain word). Keep the plain word.
+- **Recommended:** **Voice** (Talk with Alevr). Keep the plain word.
 - **Meaning:** Voice is a mode, not a place. It has to match the OS and be found by search. Dictation stays separate.
 - **Alternatives:** Talk (Friendlier verb): Blurs with Chat. · Resonance (Branded alternative): Decorative; adds no meaning.
 - **In real copy:**
