@@ -16,6 +16,12 @@ import {
   takeoverHolder,
   takeoverOpened,
 } from "./takeover";
+import {
+  COMPUTER_PATH_REFUSED,
+  ComputerError,
+  isSafeAgentPath,
+  publicComputerMessage,
+} from "./errors";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
 import type {
   ComputerHandle,
@@ -103,7 +109,27 @@ export interface ComputerStorePersistence {
     runId: string,
     now: Date
   ): Promise<boolean>;
+  /**
+   * The sweeper's claim on an idle computer before it pauses or stops it: one
+   * conditional write that succeeds only if nobody holds a live lease and
+   * nothing touched the row since the sweeper read it. Without it, a run that
+   * leased and woke the computer between the sweeper's read and its `docker
+   * pause` had its computer frozen under it.
+   */
+  claimIdleCas(
+    userId: string,
+    agentId: string,
+    expected: { status: ComputerStatus; lastActiveAt: Date | null; lastViewedAt: Date | null },
+    now: Date
+  ): Promise<boolean>;
 }
+
+/**
+ * The statuses that hold a container's memory, and so count against the caps.
+ * A resting (paused) container keeps all of its RAM; counting only awake ones
+ * let a user hold any number of computers on by letting each of them rest.
+ */
+const ON_STATUSES = ["awake", "starting", "resting", "stopping"] as const;
 
 const posterCache = new Map<string, { jpeg: Buffer; sha256: string; updatedAt: Date }>();
 
@@ -224,7 +250,7 @@ const prismaPersistence: ComputerStorePersistence = {
     const { prismaUnguarded } = await import("@/lib/db");
     return prismaUnguarded.agentComputer.count({
       where: {
-        status: { in: ["awake", "starting"] },
+        status: { in: [...ON_STATUSES] },
         ...(excludeAgentId ? { agentId: { not: excludeAgentId } } : {}),
       },
     });
@@ -235,7 +261,7 @@ const prismaPersistence: ComputerStorePersistence = {
     return prisma.agentComputer.count({
       where: {
         userId,
-        status: { in: ["awake", "starting"] },
+        status: { in: [...ON_STATUSES] },
         ...(excludeAgentId ? { agentId: { not: excludeAgentId } } : {}),
       },
     });
@@ -341,6 +367,22 @@ const prismaPersistence: ComputerStorePersistence = {
     });
     return updated.count > 0;
   },
+
+  async claimIdleCas(userId, agentId, expected, now) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: {
+        userId,
+        agentId,
+        status: expected.status,
+        lastActiveAt: expected.lastActiveAt,
+        lastViewedAt: expected.lastViewedAt,
+        OR: [{ leaseRunId: null }, { leaseExpiresAt: null }, { leaseExpiresAt: { lt: now } }],
+      },
+      data: { status: "stopping", leaseRunId: null, leaseExpiresAt: null },
+    });
+    return updated.count > 0;
+  },
 };
 
 let activePersistence: ComputerStorePersistence = prismaPersistence;
@@ -385,7 +427,7 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
       let count = 0;
       for (const r of rows.values()) {
         if (excludeAgentId && r.agentId === excludeAgentId) continue;
-        if (r.status === "awake" || r.status === "starting") count++;
+        if ((ON_STATUSES as readonly string[]).includes(r.status)) count++;
       }
       return count;
     },
@@ -394,7 +436,7 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
       for (const r of rows.values()) {
         if (r.userId !== userId) continue;
         if (excludeAgentId && r.agentId === excludeAgentId) continue;
-        if (r.status === "awake" || r.status === "starting") count++;
+        if ((ON_STATUSES as readonly string[]).includes(r.status)) count++;
       }
       return count;
     },
@@ -490,8 +532,38 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
       rows.set(agentId, next);
       return true;
     },
+    async claimIdleCas(userId, agentId, expected, now) {
+      const existing = rows.get(agentId);
+      if (!existing || existing.userId !== userId) return false;
+      const sameTime = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
+      const leaseLive =
+        existing.leaseRunId !== null &&
+        existing.leaseExpiresAt !== null &&
+        existing.leaseExpiresAt.getTime() >= now.getTime();
+      if (
+        existing.status !== expected.status ||
+        leaseLive ||
+        !sameTime(existing.lastActiveAt, expected.lastActiveAt) ||
+        !sameTime(existing.lastViewedAt, expected.lastViewedAt)
+      ) {
+        return false;
+      }
+      rows.set(agentId, {
+        ...existing,
+        status: "stopping",
+        leaseRunId: null,
+        leaseExpiresAt: null,
+        updatedAt: now,
+      });
+      return true;
+    },
   };
 }
+
+export const CAPS_USER_MESSAGE =
+  "Your agents' computers that are already on have reached the limit. Put one to sleep or wait for it to rest.";
+export const CAPS_HOST_MESSAGE =
+  "The server has reached its maximum number of computers right now. Try again in a moment.";
 
 async function checkAwakeCaps(userId: string, agentId: string): Promise<void> {
   const [userAwake, hostAwake] = await Promise.all([
@@ -500,14 +572,10 @@ async function checkAwakeCaps(userId: string, agentId: string): Promise<void> {
   ]);
 
   if (userAwake >= env.agentComputer.maxAwakeUser) {
-    throw new Error(
-      `You already have ${userAwake} awake agent computers (maximum ${env.agentComputer.maxAwakeUser}). Put another agent's computer to sleep first.`
-    );
+    throw new ComputerError(CAPS_USER_MESSAGE);
   }
   if (hostAwake >= env.agentComputer.maxAwakeHost) {
-    throw new Error(
-      "The server has reached its maximum number of active computers right now. Try again in a moment."
-    );
+    throw new ComputerError(CAPS_HOST_MESSAGE);
   }
 }
 
@@ -671,7 +739,7 @@ export async function enableComputer(
 ): Promise<AgentComputerRow> {
   const provider = computerProvider();
   if (!provider || !(await isAgentComputerConfigured())) {
-    throw new Error("Agent computers are not configured on this server.");
+    throw new ComputerError("Agent computers are not configured on this server.");
   }
 
   const existing = await activePersistence.findByAgent(userId, agentId);
@@ -726,6 +794,8 @@ export async function billComputerSeconds(input: {
   agentId: string;
   seconds: number;
   runId?: string | null;
+  /** The start of the billed interval; part of the idempotency key. */
+  since?: Date | null;
 }): Promise<number> {
   const rate = computerCostMicroUsdPerSecond();
   const secs = Math.max(0, Math.floor(input.seconds));
@@ -738,9 +808,12 @@ export async function billComputerSeconds(input: {
       model: "agent-computer",
       kind: "work",
       costUsd: costMicroUsd / 1_000_000,
-      idempotencyKey: input.runId
-        ? `computer:${input.agentId}:run:${input.runId}:${secs}`
-        : `computer:${input.agentId}:idle:${Date.now()}:${secs}`,
+      // Keyed on the interval's start, not on its length: two settlements in
+      // one run that happened to be the same number of seconds long were
+      // collapsed into one by the old key, and the second was never billed.
+      idempotencyKey: `computer:${input.agentId}:${input.runId ? `run:${input.runId}` : "idle"}:${
+        (input.since ?? new Date()).getTime()
+      }:${secs}`,
     }).catch(() => {});
   }
   return costMicroUsd;
@@ -769,6 +842,7 @@ export async function settleRunComputerBilling(
     agentId,
     seconds: elapsedSeconds,
     runId,
+    since: row.lastResumedAt,
   });
 }
 
@@ -784,7 +858,7 @@ export async function ensureAwake(
 }> {
   const provider = computerProvider();
   if (!provider || !(await isAgentComputerConfigured())) {
-    throw new Error("Agent computers are not configured on this server.");
+    throw new ComputerError("Agent computers are not configured on this server.");
   }
 
   if (activePersistence === prismaPersistence && computerCostMicroUsdPerSecond() > 0) {
@@ -795,7 +869,7 @@ export async function ensureAwake(
     const plan = await getUserPlan(userId);
     const windows = await checkUsageWindows(userId, plan);
     if (!windows.allowed && windows.bound !== null) {
-      throw new Error(windowLimitMessage(windows.bound, windows.resetsAtMs));
+      throw new ComputerError(windowLimitMessage(windows.bound, windows.resetsAtMs));
     }
   }
 
@@ -804,96 +878,128 @@ export async function ensureAwake(
     if (opts?.autoEnable) {
       row = await enableComputer(userId, agentId);
     } else {
-      throw new Error("This agent does not have a computer enabled yet.");
+      throw new ComputerError("This agent does not have a computer enabled yet.");
     }
+  }
+
+  // The sweeper claimed it and is pausing or stopping it right now. Wait for
+  // that to land rather than racing `docker stop` with `docker start`.
+  if (row.status === "stopping") {
+    const deadline = Date.now() + 30_000;
+    while (row && row.status === "stopping" && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      row = await activePersistence.findByAgent(userId, agentId);
+    }
+    if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
   }
 
   let handle = decodeHandle(row.containerRef, agentId);
-  const secrets = decodeSecrets(row.secrets);
+  let secrets = decodeSecrets(row.secrets);
+  const counted = (ON_STATUSES as readonly string[]).includes(row.status);
 
-  let liveState = await provider.state(handle);
-  if (liveState === "missing") {
-    // Recreate container attached to the same persistent named volume
-    handle = await provider.create({
-      agentId,
-      userId,
-      cdpToken: secrets.cdpToken,
-    });
-    row = await activePersistence.updateByAgent(userId, agentId, {
-      containerRef: encodeHandle(handle),
-    });
-    liveState = await provider.state(handle);
+  try {
+    let liveState = await provider.state(handle);
+    if (liveState === "missing") {
+      // Recreated on the same named volume if it still exists. The token is new:
+      // the old one belonged to a container that is gone.
+      if (!counted) await checkAwakeCaps(userId, agentId);
+      const cdpToken = randomBytes(24).toString("hex");
+      handle = await provider.create({ agentId, userId, cdpToken });
+      secrets = { cdpToken };
+      row = await activePersistence.updateByAgent(userId, agentId, {
+        containerRef: encodeHandle(handle),
+        secrets: encodeSecrets(secrets),
+        streamOn: false,
+      });
+      await recordComputerEvent(userId, agentId, "computer_recreated",
+        "Its computer was lost and has been replaced; sign-ins may be gone.");
+      liveState = await provider.state(handle);
+    }
+
+    if (liveState === "paused") {
+      // A resting computer already counts against the caps.
+      if (!counted) await checkAwakeCaps(userId, agentId);
+      await provider.unpause(handle);
+    } else if (liveState !== "running") {
+      if (!counted || row.status === "stopping") await checkAwakeCaps(userId, agentId);
+      await activePersistence.updateByAgent(userId, agentId, { status: "starting", lastError: null });
+      await provider.start(handle);
+    }
+
+    // Idempotent; covers a container restarted behind Juno's back, whose gate
+    // came up with no token and so lets nobody in.
+    await provider.provisionCdpToken(handle, secrets.cdpToken);
+  } catch (err) {
+    const message = publicComputerMessage(err);
+    await activePersistence
+      .updateByAgent(userId, agentId, { status: "error", lastError: message })
+      .catch(() => undefined);
+    throw err instanceof ComputerError ? err : new ComputerError(message);
   }
 
   const now = new Date();
-
-  if (liveState === "running") {
-    const diskMb = await provider.diskUsageMb(handle).catch(() => row?.diskMb ?? 0);
-    row = await activePersistence.updateByAgent(userId, agentId, {
-      status: "awake",
-      lastActiveAt: now,
-      lastResumedAt: row.lastResumedAt ?? now,
-      ...(opts?.touchView ? { lastViewedAt: now } : {}),
-      diskMb,
-      lastError: null,
-    });
-    return { row, handle, secrets, provider };
-  }
-
-  await checkAwakeCaps(userId, agentId);
-
-  try {
-    if (liveState === "paused") {
-      await provider.unpause(handle);
-    } else {
-      await provider.start(handle);
-      // A fresh start has a fresh tmpfs and a fresh gate: hand it its token
-      // (never through the container's env, which the agent's shell reads).
-      await provider.provisionCdpToken(handle, secrets.cdpToken);
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await activePersistence.updateByAgent(userId, agentId, {
-      status: "error",
-      lastError: msg,
-    });
-    throw err;
-  }
-
+  const wasAwake = row.status === "awake" && row.lastResumedAt;
   const diskMb = await provider.diskUsageMb(handle).catch(() => row?.diskMb ?? 0);
   row = await activePersistence.updateByAgent(userId, agentId, {
     status: "awake",
-    lastResumedAt: now,
     lastActiveAt: now,
+    lastResumedAt: wasAwake ? row.lastResumedAt : now,
     ...(opts?.touchView ? { lastViewedAt: now } : {}),
     diskMb,
     lastError: null,
   });
-
   return { row, handle, secrets, provider };
+}
+
+/** An AgentEvent from the computer layer; never carries ids, addresses or secrets. */
+async function recordComputerEvent(userId: string, agentId: string, kind: string, title: string): Promise<void> {
+  if (activePersistence !== prismaPersistence) return;
+  try {
+    const { recordAgentEvent } = await import("@/lib/agents/store");
+    await recordAgentEvent({ userId, agentId, kind: kind as import("@/lib/agents/domain").AgentEventKind, title });
+  } catch {
+    // The log is a record, never a precondition.
+  }
+}
+
+export interface IdleClaim {
+  status: ComputerStatus;
+  lastActiveAt: Date | null;
+  lastViewedAt: Date | null;
 }
 
 export async function restComputer(
   userId: string,
   agentId: string,
-  opts?: { now?: Date }
-): Promise<AgentComputerRow> {
+  opts?: { now?: Date; ifIdle?: IdleClaim }
+): Promise<AgentComputerRow | null> {
   const provider = computerProvider();
   const row = await activePersistence.findByAgent(userId, agentId);
   if (!row || !provider) {
-    throw new Error("Agent computer not found");
+    throw new ComputerError("This agent does not have a computer enabled yet.");
+  }
+  const now = opts?.now ?? new Date();
+  if (opts?.ifIdle && !(await activePersistence.claimIdleCas(userId, agentId, opts.ifIdle, now))) {
+    return null;
   }
 
   const handle = decodeHandle(row.containerRef, agentId);
-  const liveState = await provider.state(handle);
-  const now = opts?.now ?? new Date();
-
-  if (liveState === "running") {
-    await capturePosterQuietly(userId, agentId, handle, provider);
-    if (row.streamOn) {
-      await stopStream({ handle, provider }).catch(() => {});
+  let liveState: Awaited<ReturnType<ComputerProvider["state"]>> = "missing";
+  try {
+    liveState = await provider.state(handle);
+    if (liveState === "running") {
+      await capturePosterQuietly(userId, agentId, handle, provider);
+      if (row.streamOn) {
+        await stopStream({ handle, provider }).catch(() => {});
+      }
+      await provider.pause(handle);
+      liveState = "paused";
     }
-    await provider.pause(handle);
+  } catch (err) {
+    await activePersistence
+      .updateByAgent(userId, agentId, { status: "error", lastError: publicComputerMessage(err) })
+      .catch(() => undefined);
+    throw err;
   }
 
   const elapsedSeconds =
@@ -907,11 +1013,12 @@ export async function restComputer(
       agentId,
       seconds: elapsedSeconds,
       runId: row.leaseRunId,
+      since: row.lastResumedAt,
     });
   }
 
   return activePersistence.updateByAgent(userId, agentId, {
-    status: liveState === "missing" || liveState === "exited" ? "asleep" : "resting",
+    status: liveState === "paused" ? "resting" : "asleep",
     streamOn: false,
     lastResumedAt: null,
     activeSeconds: row.activeSeconds + elapsedSeconds,
@@ -921,26 +1028,41 @@ export async function restComputer(
 export async function sleepComputer(
   userId: string,
   agentId: string,
-  opts?: { now?: Date }
-): Promise<AgentComputerRow> {
+  opts?: { now?: Date; ifIdle?: IdleClaim }
+): Promise<AgentComputerRow | null> {
   const provider = computerProvider();
   const row = await activePersistence.findByAgent(userId, agentId);
   if (!row || !provider) {
-    throw new Error("Agent computer not found");
+    throw new ComputerError("This agent does not have a computer enabled yet.");
+  }
+  const now = opts?.now ?? new Date();
+  if (opts?.ifIdle && !(await activePersistence.claimIdleCas(userId, agentId, opts.ifIdle, now))) {
+    return null;
   }
 
   const handle = decodeHandle(row.containerRef, agentId);
-  const liveState = await provider.state(handle);
-  const now = opts?.now ?? new Date();
-
-  if (liveState === "running") {
-    await capturePosterQuietly(userId, agentId, handle, provider);
-  }
-  if (row.streamOn) {
-    await stopStream({ handle, provider }).catch(() => {});
-  }
-  if (liveState === "running" || liveState === "paused") {
-    await provider.stop(handle);
+  try {
+    let liveState = await provider.state(handle);
+    if (liveState === "paused") {
+      // A paused container cannot be screenshotted or stopped gracefully; wake
+      // it for the poster so Chromium flushes its cookies on the way down.
+      await provider.unpause(handle);
+      liveState = "running";
+    }
+    if (liveState === "running") {
+      await capturePosterQuietly(userId, agentId, handle, provider);
+    }
+    if (row.streamOn) {
+      await stopStream({ handle, provider }).catch(() => {});
+    }
+    if (liveState === "running") {
+      await provider.stop(handle);
+    }
+  } catch (err) {
+    await activePersistence
+      .updateByAgent(userId, agentId, { status: "error", lastError: publicComputerMessage(err) })
+      .catch(() => undefined);
+    throw err;
   }
 
   const elapsedSeconds =
@@ -954,6 +1076,7 @@ export async function sleepComputer(
       agentId,
       seconds: elapsedSeconds,
       runId: row.leaseRunId,
+      since: row.lastResumedAt,
     });
   }
 
@@ -973,7 +1096,7 @@ export async function resetComputer(
 ): Promise<AgentComputerRow> {
   const provider = computerProvider();
   if (!provider) {
-    throw new Error("Agent computer provider is not configured.");
+    throw new ComputerError("Agent computers are not configured on this server.");
   }
 
   const existing = await activePersistence.findByAgent(userId, agentId);
@@ -1288,9 +1411,15 @@ export async function openComputerViewSession(
   const awake = await ensureAwake(userId, agentId, { touchView: true });
   const existingControl = awake.secrets.vncControlPassword;
   const existingView = awake.secrets.vncViewPassword;
+  // The row can say the stream is on while x11vnc is gone (the container was
+  // restarted behind Juno's back); reusing the old passwords then hands the
+  // viewer a stream that does not exist, so check the process too.
+  const vncAlive = awake.row.streamOn
+    ? await awake.provider.isVncRunning(awake.handle).catch(() => false)
+    : false;
   const needRotate =
     Boolean(opts?.rotatePasswords) ||
-    !awake.row.streamOn ||
+    !vncAlive ||
     !existingControl ||
     !existingView;
 
@@ -1302,6 +1431,7 @@ export async function openComputerViewSession(
       viewPassword: existingView,
     },
     rotatePasswords: needRotate,
+    restart: needRotate,
   });
 
   const now = new Date();
@@ -1409,9 +1539,8 @@ export interface ComputerDirectoryEntry {
   modifiedAt: string;
 }
 
-function shellQuote(arg: string): string {
-  return `'${arg.replace(/'/g, `'\\''`)}'`;
-}
+/** The largest file the files route streams back. */
+export const MAX_COMPUTER_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 export async function listOrDownloadComputerFiles(
   userId: string,
@@ -1439,78 +1568,50 @@ export async function listOrDownloadComputerFiles(
 
   const awake = await ensureAwake(userId, agentId);
   const targetInput = rawPath.trim() || "/home/agent/work";
-  const resolvedRes = await awake.provider.exec(
-    awake.handle,
-    `realpath -m -- ${shellQuote(targetInput)}`,
-    { timeoutSeconds: 10 }
-  );
-  const resolved = resolvedRes.stdout.trim();
-  if (
-    resolvedRes.exitCode !== 0 ||
-    !resolved ||
-    (resolved !== "/home/agent" && !resolved.startsWith("/home/agent/"))
-  ) {
-    throw new Error("Path must stay inside /home/agent/.");
+  // Resolved inside the container by argv (no shell, no login profile the
+  // agent could have edited to forge the answer), then checked again here.
+  const info = await awake.provider.fileInfo(awake.handle, targetInput);
+  if (info && !isSafeAgentPath(info.path)) {
+    throw new ComputerError(COMPUTER_PATH_REFUSED);
   }
 
   if (download) {
-    const statRes = await awake.provider.exec(
-      awake.handle,
-      `stat -c '%s:%F' -- ${shellQuote(resolved)}`,
-      { timeoutSeconds: 10 }
-    );
-    if (statRes.exitCode !== 0) {
-      throw new Error("File not found.");
+    if (!info) throw new ComputerError("That file does not exist.");
+    if (info.type !== "file") throw new ComputerError("Only regular files can be downloaded.");
+    if (info.size > MAX_COMPUTER_DOWNLOAD_BYTES) {
+      throw new ComputerError("That file is larger than the 25 MB download limit.");
     }
-    const [sizeStr, fileType] = statRes.stdout.trim().split(":");
-    const sizeBytes = Number(sizeStr ?? 0);
-    if (!fileType?.includes("regular")) {
-      throw new Error("Only regular files can be downloaded.");
-    }
-    if (!Number.isFinite(sizeBytes) || sizeBytes > 25 * 1024 * 1024) {
-      throw new Error("File exceeds the 25 MB download limit.");
-    }
-    const bytes = await awake.provider.readFile(awake.handle, resolved);
-    const name = resolved.split("/").filter(Boolean).pop() ?? "download";
+    const bytes = await awake.provider.readFile(awake.handle, info.path, {
+      maxBytes: MAX_COMPUTER_DOWNLOAD_BYTES,
+    });
+    const name = info.path.split("/").filter(Boolean).pop() ?? "download";
     return {
       kind: "file",
-      path: resolved,
+      path: info.path,
       name,
       sizeBytes: bytes.byteLength,
       bytes,
     };
   }
 
-  const listRes = await awake.provider.exec(
-    awake.handle,
-    `mkdir -p -- ${shellQuote(resolved)} && find ${shellQuote(resolved)} -mindepth 1 -maxdepth 1 -printf '%f\\t%s\\t%TY-%Tm-%TdT%TH:%TM:%TSZ\\t%y\\n' | sort`,
-    { timeoutSeconds: 10 }
-  );
-  if (listRes.exitCode !== 0) {
-    throw new Error("Unable to list directory.");
+  if (info && info.type !== "dir") {
+    throw new ComputerError("That path is not a folder.");
   }
-
-  const entries: ComputerDirectoryEntry[] = [];
-  for (const line of listRes.stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const [name, sizeRaw, mtimeRaw, kindCode] = trimmed.split("\t");
-    if (!name) continue;
-    const type: "file" | "directory" = kindCode === "d" ? "directory" : "file";
-    entries.push({
-      name,
-      path: `${resolved.replace(/\/+$/, "")}/${name}`,
-      type,
-      sizeBytes: Number(sizeRaw) || 0,
-      modifiedAt: mtimeRaw || new Date().toISOString(),
-    });
-  }
+  const dir = info?.path ?? targetInput;
+  const listed = info ? await awake.provider.listFiles(awake.handle, dir) : [];
+  const entries: ComputerDirectoryEntry[] = listed
+    .filter((entry) => isSafeAgentPath(entry.path))
+    .map((entry) => ({
+      name: entry.name,
+      path: entry.path,
+      type: entry.type === "dir" ? ("directory" as const) : ("file" as const),
+      sizeBytes: entry.size,
+      modifiedAt: entry.modifiedAt ?? new Date(0).toISOString(),
+    }));
 
   return {
     kind: "directory",
-    path: resolved,
+    path: info?.path ?? "/home/agent/work",
     entries,
   };
 }
-
-

@@ -156,6 +156,14 @@ export const AGENT_EVENT_KINDS = [
   "takeover_ended",
   "duplicated",
   "undone",
+  // The agent's computer (src/lib/computer): replaced after it went missing, a
+  // secret typed in from a card, a saved sign-in kept or forgotten, and a task
+  // taught by showing. None of these carry the secret, an id or an address.
+  "computer_recreated",
+  "secret_filled",
+  "sign_in_saved",
+  "sign_in_removed",
+  "skill_learned",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 
