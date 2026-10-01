@@ -192,7 +192,7 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
               <Icon name="hand" size={16} />
             </span>
             <span className="jrow__text">
-              Search index <span className="jn-attn">wants your approval</span>
+              Postgres index <span className="jn-attn">wants approval</span>
             </span>
           </a>
         </Section>

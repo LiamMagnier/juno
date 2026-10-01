@@ -394,11 +394,9 @@
 
 /* ——————————————————————————————— Code ——————————————————————————————— */
 
-/* The same tokens, one notch denser: 13px step lines on 26px rows, mono for
-   paths and counts, the diff docked on the right rather than floating. */
-.jn .jn-frame--code .jn-side--code .jrow {
-  height: 30px;
-}
+/* The same tokens, one notch denser in the work itself: 13px step lines on
+   28px rows, mono for paths and counts, the diff as the panel's second pane.
+   The sidebar keeps the shell's 32 px rows (one shell, one target size). */
 .jn .jn-codehome__title {
   text-align: center;
   margin-bottom: 26px;
