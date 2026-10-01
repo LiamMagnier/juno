@@ -1,63 +1,90 @@
 # Alevr feature names: proposal
 
-Proposal for owner review · 2026-10-02 · not adopted. No production string, route, id or file name changes until the owner picks names and an implementation pass is authorised. Review page: `/Users/liammagnier/Developer/project/juno/.claude/local-tools/refoundation-artifacts/alevr-naming.html` (rendered from `naming/naming-data.mjs`, the same source as this file).
+Proposal for owner review · 2026-10-02 · critic-reviewed 2026-10-02 · not adopted. No production string, route, id or file name changes until the owner picks names and an implementation pass is authorised. Review page: `/Users/liammagnier/Developer/project/juno/.claude/local-tools/refoundation-artifacts/alevr-naming.html` (rendered from `naming/naming-data.mjs`, the same source as this file).
 
 The owner asked: "maybe find new name for artifacts and other features like memory something related to Alevr brand identity but also mathematical & space like the infinite knowledge".
 
 ## Answer
 
-Four branded nouns, each introduced with a plain descriptor: Orbit for your agents, Folio for what Alevr makes, Locus for memory and Deep Field for deep research. Everything else keeps its plain name: Library, Projects, Skills, Routines, Instructions, Voice, Search and threads. Library stays because the plain word already tells the brand story (Borges's infinite library). The thinking moment gets no name: the Continuum mark and the real phase words are enough.
+Two branded nouns, both places you go or modes you start, each introduced with a plain descriptor: Orbit for your agents (chosen) and Deep Field for deep research. Things you count and controls you trust keep plain words: what Alevr makes is called by its real type (a deck, a document, a site) and collected under Made by Alevr, and Memory stays Memory because it is a privacy control. Library stays because Borges's infinite library already tells the brand story, and the brand word in Made by Alevr is Alevr itself, the aleph. The thinking moment gets no name: the Continuum mark and the real phase words are enough.
 
-This updates [NAMES_AND_ICONS.md](NAMES_AND_ICONS.md) only if the owner accepts it. That map kept Library, Memory, Projects, Skills, Routines, Instructions and Research as plain nouns and banned space terminology for ordinary controls. This proposal keeps that ban for controls and verbs, and adds three branded *destination or object* nouns beside Orbit, each always introduced with a plain descriptor.
+This updates [NAMES_AND_ICONS.md](NAMES_AND_ICONS.md) only if the owner accepts it. That map kept Library, Memory, Projects, Skills, Routines, Instructions and Research as plain nouns, moved the separate Artifacts navigation into Library and banned space terminology for ordinary controls. *(Revised in review.)* This proposal now agrees with that map everywhere except one place: the deep-research mode becomes Deep Field, always introduced as "Deep research". The word "artifact" is retired in favour of real types and Made by Alevr, with no new noun.
 
-## The system: A point, a path, an ellipse, a fold, a field.
+## Critic review (2026-10-02, added)
+
+Independent naming critic (brand and UX writing). Everything changed from the first proposal (6aedc6ab, dc638b04) is listed here and marked *(revised)*, *(new)* or *(added)* below.
+
+Two of the four branded nouns were clever but unclear, and both sat where clarity matters most: Folio on every made thing in running copy, Locus on a privacy control. They are withdrawn. Deep Field and Orbit stay, with copy and collision fixes. The space vocabulary itself was already disciplined: no Nebula, Galaxy, Cosmos, Stellar, Constellation or Horizon survived, and none is added.
+
+**Principle:** Brand the places you go and the modes you start. Keep plain the things you count and the controls you trust.
+
+| Area | Before | After | Why |
+|---|---|---|---|
+| Made things | Folio ("Otto finished a folio") | Real type in sentences; Made by Alevr as the collection | On Mac and iPad a folio is Apple's Smart Folio case; in Spanish a blank sheet of printer paper; in hotels a bill. Folio AI already makes AI slide decks. The story is a paper fold, not mathematics or space, and fold is the name of the rejected Open Fold mark. The card broke its own rule (real types in running copy) in its own notification. [E31, E7] |
+| Memory | Locus (tab), Memory (switch, search, policy) | Memory, one word everywhere | One letter from Apple's Focus on the same Mac and iPhone; many readers see locust. The proposal needed Memory on the switch, settings search, policy and export, so one setting had two names. Collisions are in the exact category: an AI agent app, a memory MCP, an agent SDK. [E32, E11, E12] |
+| Deep research | Deep Field, "Start a Deep Field" | Deep Field as a mode only: "Start research", "Deep Field report" | Kept: the clearest bridge and the best metaphor. A mode is never countable, and verbs stay plain. |
+| Orbit | Collision Low | Collision Medium; clear before filing | Two 2026 agent launches use the word: Orbit Insight's Agent Builder (create research agents through conversation) and Cropin's OrbitAI. [E33, E34] |
+| System | Point, path, ellipse, fold, field; four names | Path, ellipse, field, plus the plain Library; two names | The construction now holds only names that pass the new-user test. Library is drawn as the infinite set it already is. |
+| Rules | Six rules | New first rule (places and modes, not things or controls); events merged into verbs; pronunciation added | The missing rule is what made Folio and Locus fail. Alevr already needs a pronunciation note (AL-ver), so sub-names must add none. |
+
+- **Cliché space words.** Passed. Orbit is common but earned by the glyph; Deep Field is specific (Hubble). Constellation, Horizon, Atlas and Aleph stay rejected.
+- **Pronunciation and translation.** Orbit and Deep Field read the same in most Latin-script languages; descriptors are localized. Folio and Locus carried local meanings (blank sheet, bill, mutual-fund account; locust, loco).
+- **Consistency.** Every branded noun is now a proper noun for a place or mode, capitalized, never plural or countable, and appears with its descriptor on first use.
+- **Plain words.** Library, Projects, Skills, Routines, Instructions, Voice, Search, threads and the unnamed thinking moment all pass unchanged.
+
+## The system: A path, an ellipse, a field. *(revised)*
 
 | Geometry | Name | Plain descriptor | Meaning |
 |---|---|---|---|
-| point | Locus | Memory | What is known about you: one fixed point. |
 | path | Continuum (internal only) | The mark, not a label | Thinking becoming action. Logo and thinking mark only. |
 | ellipse | Orbit | Your agents | Agents carrying work around you, each on its own path. |
-| fold | Folio | What Alevr made | A sheet folded once, like the Continuum blades. Made work you keep. |
 | field | Deep Field | Deep research | One long, patient look that shows far more than expected. |
+| infinite set | Library (plain word) *(added)* | Plain word, kept | Borges's infinite library and Alevr's aleph: an unending set. It holds everything Made by Alevr. |
 
-Library holds all of it, and keeps its plain name because Borges's Library of Babel is already literature's image of infinite knowledge.
+Withdrawn in review: Locus (point) and Folio (fold). Library holds all of it, and keeps its plain name because Borges's Library of Babel is already literature's image of infinite knowledge.
 
 ## Rules
 
-- **Descriptor first.** Each branded noun appears with its plain descriptor on first use, in onboarding, settings search, help, data export and the accessible name ("Locus, memory").
-- **Verbs stay plain.** Create agent, Remember, Forget, Open, Save to Library, Start. Never launch, summon, deploy or beam.
-- **Names lead events.** Notifications lead with the agent's name or the outcome ("Otto finished a deck"). The branded noun follows, at most once.
-- **Not marks.** Only Alevr, Alevr Chat, Alevr Orbit and Alevr Code are product names. Never "Alevr Locus" or "Alevr Folio" lockups or filings until cleared.
-- **Latin script, local descriptor.** Branded nouns are not translated, like product names. The descriptor is localized and carries the meaning ("Locus · メモリ"). Needs native review.
+- **Places and modes, not things.** *(new)* Brand somewhere you go (Orbit) or a mode you start (Deep Field). Things you count keep their real type (a deck, a report); controls you trust stay plain (Memory: On). A branded noun is never plural or countable: no "a Deep Field".
+- **Descriptor first.** *(revised)* Each branded noun appears with its plain descriptor on first use, in onboarding, settings search, help, data export and the accessible name ("Deep Field, deep research").
+- **Verbs and events stay plain.** *(revised)* Create agent, Remember, Forget, Open, Save to Library, Start research. Never launch, summon, deploy or beam. Notifications lead with the agent's name or the outcome ("Otto finished a deck"); a branded noun follows at most once.
+- **Not marks.** *(revised)* Only Alevr, Alevr Chat, Alevr Orbit and Alevr Code are product names. Never an "Alevr Deep Field" lockup or filing; clear Orbit before any filing (Orbit Insight, OrbitAI).
+- **One pronunciation lesson.** *(revised)* Alevr already needs one (AL-ver). Sub-names add none. Branded nouns stay in Latin script and are not translated; the descriptor is localized and carries the meaning ("Orbit · Deine Agenten"). Needs native review.
 - **Identifiers unchanged.** Routes, ids and files stay: /library, /artifacts, /memory, /research, crew/. Only user-facing words change.
 
-## If the owner wants fewer names
+## If the owner wants fewer names *(revised)*
 
-1. **Locus.** Drop first. It is the only branded noun on a privacy control. Falling back to Memory costs nothing in clarity.
-2. **Folio.** Drop second. The fallback is to show the type (deck, document, site) and use "made by Alevr" as the Library filter.
-3. **Deep Field.** Keep longest. It is the clearest bridge ("Deep" is already in the phrase) and the strongest metaphor.
-4. **Orbit.** Already chosen (D-035).
+1. **Deep Field.** Drop first if you want only one branded noun. The fallback is the plain phrase Deep research, which every assistant already uses.
+2. **Orbit.** Already chosen (D-035). Keep.
+
+## If the owner still wants more *(added)*
+
+What adding a withdrawn name back would cost, least harmful first.
+
+1. **Folio.** Only as the Library filter label, never in a sentence ("Otto finished a deck", not "a folio"). Costs: Apple's Smart Folio case on the same devices, Folio AI's slide agent, and a paper story rather than a mathematical one.
+2. **Locus.** Not recommended in any form. If wanted, only as the title of a visual memory map, never on the tab, switch, search, policy or export. Costs: Focus and locust misreadings, and two names for one privacy setting.
 
 ## Plain words that stay
 
-Chat · Code · New chat · Search · Projects · Library · Customize · Apps · Skills · Routines · Instructions · Voice · Dictation · Computer · Preview · Activity · Tasks · Runs · Receipts · Plan · Ready · Thinking · Working · Needs your answer · Blocked · Finished · Allowed · Ask first · Stop · Continue · Review · Try again · Approve
+Chat · Code · New chat · Search · Projects · Library · Made by Alevr · Customize · Apps · Skills · Routines · Memory · Instructions · Voice · Dictation · Computer · Preview · Activity · Tasks · Runs · Receipts · Plan · Ready · Thinking · Working · Needs your answer · Blocked · Finished · Allowed · Ask first · Stop · Continue · Review · Try again · Approve
 
 ## Feature by feature
 
 ### 1. Made things (artifacts)
 
 - **Today:** Artifacts · Made by Juno · artifact
-- **Recommended:** **Folio** (What Alevr made). Branded name.
-- **Meaning:** A folio is a sheet folded once, the same fold as the Continuum blades, and the root of portfolio: a finished piece of work you keep, version and share.
-- **Alternatives:** Artifact (Keep today's word): Claude's and Grok's word for the same thing; carries no Alevr meaning. [E5] · Figure (Math and science "Fig. 1"): Reads as a chart or diagram, wrong for a site or a deck. · Plate (Astronomical photographic plate): Beautiful history, but most people read dinnerware.
+- **Recommended:** **Made by Alevr** (Each piece called by its real type). Plain label, no new noun.
+- **Critic review (revised; was Folio):** Folio was clever but unclear. On Mac and iPad a folio is Apple's Smart Folio case; in Spanish it is a blank sheet of printer paper, in hotels a bill, in Indian English a mutual-fund account. Folio AI is an AI agent that makes slide decks, the same thing Alevr makes. Its story is a paper fold, not mathematics or space, and fold is the name of the rejected Open Fold mark. The first card also broke its own rule: it said to use real types in running copy, then wrote "Otto finished a folio". [E31, E7, E8]
+- **Meaning:** What Alevr makes is called what it is: a deck, a document, a site, a chart. Together they are collected under Made by Alevr (Library filter; "Made" as the short project tab), and the brand word there is Alevr itself, the aleph. Claude's word "artifact" goes away without a new noun to learn.
+- **Alternatives:** Folio *(withdrawn)* (A sheet folded once): Withdrawn in review: Apple's Smart Folio case, Folio AI's slide agent, a blank sheet in Spanish; a paper story, not a mathematical one. [E31, E7] · Artifact (Keep today's word): Claude's and Grok's word for the same thing; carries no Alevr meaning. [E5] · Figure (Math and science "Fig. 1"): Reads as a chart or diagram, wrong for a site or a deck. · Plate (Astronomical photographic plate): Beautiful history, but most people read dinnerware.
 - **In real copy:**
-  - Library filter: "Folios" with descriptor "What Alevr made"
-  - Button: "Open folio"
-  - Empty state: "No folios yet. Ask for a document, deck, site or design. Everything Alevr makes is kept here with its versions."
-  - Notification: "Otto finished a folio: Q3 market brief." (action: Open)
-- **How each option reads:** Folio: "Otto finished a folio: Q3 market brief." · Artifact: "Otto finished an artifact: Q3 market brief." · Figure: "Otto finished a figure: Q3 market brief." · Plate: "Otto finished a plate: Q3 market brief."
-- **Clarity risk:** Medium. Portfolio helps, but some read folio as a binder of many items. In Indian English a folio is a mutual-fund account number; in hotels, a guest bill. Use the real type (deck, document) in running copy and keep folio for the Library filter, project tab and receipts.
-- **Collision risk:** Medium. Crowded common word: Folio AI (Verso.ai, Paris), an AI agent for PowerPoint and Google Slides; Folio (Isengard LLC), an alpha desktop document workspace for AI agents; a Folio digital-wallet app. Fine as an in-product noun; do not file "Alevr Folio". [E7, E8, E9]
+  - Library filter: "Made by Alevr"
+  - Button: "Open deck"
+  - Empty state: "Nothing made yet. Ask for a document, deck, site or design. Everything Alevr makes is kept here with its versions."
+  - Notification: "Otto finished a deck: Q3 market brief." (action: Open)
+- **How each option reads:** Made by Alevr: "Otto finished a deck: Q3 market brief." · Folio: "Otto finished a folio: Q3 market brief." · Artifact: "Otto finished an artifact: Q3 market brief." · Figure: "Otto finished a figure: Q3 market brief." · Plate: "Otto finished a plate: Q3 market brief."
+- **Clarity risk:** None. Real types explain themselves. When a group mixes types, name them ("a deck and 2 documents"); use "items" only in counts that cannot.
+- **Collision risk:** n/a. No new noun. "Made by" is ordinary phrasing; Alevr's own availability is the open question (NAMING_SCREEN.md).
 
 ### 2. Library
 
@@ -77,17 +104,18 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 ### 3. Memory
 
 - **Today:** Memory
-- **Recommended:** **Locus** (Memory). Branded name.
-- **Meaning:** Latin for place. The method of loci (the memory palace) is the oldest memory technique; in geometry a locus is the set of every point that satisfies a condition: everything that holds true about you.
-- **Alternatives:** Memory (Keep the plain word): Strongest clarity on a privacy control; every assistant uses it. · Basis (The set everything is built from): Good math, plain English (foundation); Basis is a $1.15B AI-agent company. [E14] · Constellation (Connected points): Four syllables, decorative, and already common among AI-memory tools. [E15]
+- **Recommended:** **Memory** (What Alevr remembers about you). Keep the plain word.
+- **Critic review (revised; was Locus):** Locus was clever but unclear where clarity matters most. It is one letter from Focus, Apple's system feature on the same Mac and iPhone, and many readers see locust (Spanish readers may hear loco). The first card already needed "Memory" on the switch, in settings search, the privacy policy and data export, so one privacy setting would have had two names. Its collisions are in the exact category: an AI agent app, a persistent-memory MCP and an agent SDK. [E32, E11, E12, E13]
+- **Meaning:** Memory is a privacy control: people must find it, understand it and switch it off without learning a word. Every assistant and every privacy policy already uses it. The brand lives in the drawing and the receipt, not in a new noun.
+- **Alternatives:** Locus *(withdrawn)* (Latin for place): Withdrawn in review: one letter from Apple's Focus, read as locust, and two names for one privacy setting. Lovely story (method of loci), wrong place for it. [E32, E30] · Basis (The set everything is built from): Good math, plain English (foundation); Basis is a $1.15B AI-agent company. [E14] · Constellation (Connected points): Four syllables, decorative, and already common among AI-memory tools. [E15]
 - **In real copy:**
-  - Customize tab: "Locus" with descriptor "Memory"
+  - Customize tab: "Memory"
   - Button: "Remember this"
-  - Empty state: "Locus is empty. When you tell Alevr something worth keeping, it is saved here. You can edit or forget any of it."
-  - Notification: "Remembered in Locus: you prefer metric units." (action: Undo)
-- **How each option reads:** Locus: "Remembered in Locus: you prefer metric units." · Memory: "Remembered: you prefer metric units. Manage in Memory." · Basis: "Added to your Basis: you prefer metric units." · Constellation: "Added to your constellation: you prefer metric units."
-- **Clarity risk:** High. The only branded noun on a privacy control. Keep "Memory" in settings search, the privacy policy, data export, the accessible name ("Locus, memory") and every switch ("Memory: On"). Verbs stay plain: Remember, Forget. Also rejected: Recall (Microsoft Windows Recall). [E27]
-- **Collision risk:** Medium-high. Several AI products already use it: Locus for macOS (open-source AI workspace with agents and recurring work), Locus – Mobile AI Agent (App Store), a locus persistent-memory MCP for coding tools, Oracle's locus multi-agent SDK. Acceptable as an in-product noun only. [E10, E11, E12, E13]
+  - Empty state: "Nothing remembered yet. When you tell Alevr something worth keeping, it is saved here. You can edit or forget any of it."
+  - Notification: "Remembered: you prefer metric units." (action: Undo)
+- **How each option reads:** Memory: "Remembered: you prefer metric units." · Locus: "Remembered in Locus: you prefer metric units." · Basis: "Added to your Basis: you prefer metric units." · Constellation: "Added to your constellation: you prefer metric units."
+- **Clarity risk:** None. One word everywhere: tab, switch ("Memory: On"), settings search, privacy policy and data export. Verbs stay plain: Remember, Forget. Also rejected: Recall (Microsoft Windows Recall). [E27]
+- **Collision risk:** n/a. Generic vocabulary.
 
 ### 4. Instructions
 
@@ -153,16 +181,17 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 
 - **Today:** Research (composer mode) · Deep research
 - **Recommended:** **Deep Field** (Deep research). Branded name.
+- **Critic review (kept, copy fixed):** The clearest and strongest branded noun: "Deep" carries the familiar phrase and the Hubble story is exact. Fixed the copy: the button said "Start a Deep Field", which made a mode countable and broke the plain-verbs rule. It is now "Start research", and the notification names the report. Flagged, not changed: Deep is AI's most worn prefix (DeepMind, DeepSeek, DeepL, Deep Research); Field and the Hubble story are what make it Alevr's. [E23]
 - **Meaning:** In December 1995 Hubble held on a patch of sky that looked empty for ten days and found about 3,000 galaxies. Deep research does that with one question, and "Deep" keeps the familiar meaning.
 - **Alternatives:** Deep research (Keep the plain phrase): Clear, but it is OpenAI's, Google's and Perplexity's generic term. [E22] · Parallax (Measuring by two vantage points): Also the name of an unselected Alevr logo concept, and of YouGov's AI research product. [E25] · Survey (As in a sky survey): Most people read a questionnaire.
 - **In real copy:**
   - Composer option: "Deep Field" with descriptor "Deep research"
-  - Button: "Start a Deep Field"
+  - Button: "Start research"
   - Empty state: "Deep Field. Reads widely on one question, compares sources and writes a cited report. It can take several minutes."
-  - Notification: "Deep Field finished: EU battery rules. 42 sources, 6 open questions." (action: Open report)
-- **How each option reads:** Deep Field: "Deep Field finished: EU battery rules. 42 sources." · Deep research: "Deep research finished: EU battery rules. 42 sources." · Parallax: "Parallax finished: EU battery rules. 42 sources." · Survey: "Survey finished: EU battery rules. 42 sources."
-- **Clarity risk:** Low. "Deep" bridges to the familiar phrase. A Deep Field must never imply that it found everything; the report states its sources and open questions. Quick lookups stay Search.
-- **Collision risk:** Medium. DeepField (deepfield-ai.com) is an AI consumer-research platform for agencies (page dated 2026-09-22); Nokia Deepfield is network analytics. Always two words, never a standalone mark. [E23, E24]
+  - Notification: "Deep Field report ready: EU battery rules. 42 sources, 6 open questions." (action: Open report)
+- **How each option reads:** Deep Field: "Deep Field report ready: EU battery rules. 42 sources." · Deep research: "Deep research finished: EU battery rules. 42 sources." · Parallax: "Parallax finished: EU battery rules. 42 sources." · Survey: "Survey finished: EU battery rules. 42 sources."
+- **Clarity risk:** Low. "Deep" bridges to the familiar phrase. A mode, never a countable thing: "Start research", "Deep Field report", never "a Deep Field". The report must never imply it found everything; it states its sources and open questions. Cricket and baseball readers know the deep field as the far outfield, which is harmless and settled by the descriptor. Quick lookups stay Search.
+- **Collision risk:** Medium. DeepField (deepfield-ai.com) is an AI consumer-research platform for agencies whose own page describes several AI agents working on one study (page dated 2026-09-22); Nokia Deepfield is network analytics. Always two words, never a standalone mark. [E23, E24]
 
 ### 9. The Continuum thinking moment
 
@@ -213,6 +242,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
 
 - **Today:** Crew · Agents
 - **Recommended:** **Orbit** (Your agents). Chosen.
+- **Critic review (kept, risk raised):** Still the right name: a place you go, earned by the glyph, and already chosen. Collision raised from Low to Medium after two 2026 agent launches named Orbit, one of them for creating research agents through conversation, the same gesture as Create agent. [E33, E34]
 - **Meaning:** Agents carry work around you, each on its own path; the two open elliptical arcs are its glyph. Each agent is still called by its own name, never "an Orbit".
 - **Alternatives:** Agents (Plain fallback): Zero risk, zero distinctiveness. · Constellation (A group of named points): Long and decorative.
 - **In real copy:**
@@ -222,7 +252,7 @@ Chat · Code · New chat · Search · Projects · Library · Customize · Apps �
   - Notification: "Otto finished the summary." (action: Open)
 - **How each option reads:** Orbit: "Otto finished the summary." · Agents: "Otto finished the summary." · Constellation: "Otto, in your constellation, finished the summary."
 - **Clarity risk:** Low. Needs "Your agents" on first use; never used for an individual.
-- **Collision risk:** Low. Mozilla's Orbit AI add-on shut down on 2025-06-26. A common word; not exclusive. [E26]
+- **Collision risk:** Medium. Orbit Financial Technology launched Agent Builder in Orbit Insight on 2026-06-03, for creating research agents through conversation; Cropin and Google Cloud launched OrbitAI, an agentic platform for agriculture, in July 2026; Mozilla's Orbit AI add-on shut down on 2025-06-26; Orbit is also Wrigley's chewing gum. Different markets and a common word, but clear "Alevr Orbit" before any filing. [E33, E34, E26]
 
 ## Evidence
 
@@ -259,3 +289,7 @@ Web searches on 2026-10-02. Indexed search signals only, not legal clearance or 
 | E28 | [Hubble Deep Field: about 3,000 galaxies in an "empty" patch, Dec 1995](https://science.nasa.gov/image-detail/full-wfpc2-mosaic-full-resolution) | NASA · read 2026-10-02 |
 | E29 | [Borges, The Library of Babel](https://en.wikipedia.org/wiki/The_Library_of_Babel) | Wikipedia · read 2026-10-02 |
 | E30 | [The method of loci (locus, Latin for place)](https://www.mcgill.ca/oss/article/critical-thinking-history/ancient-memory-technique-still-puzzles-scientists) | McGill OSS · read 2026-10-02 |
+| E31 | [Apple sells iPad cases as Folios (Smart Folio)](https://www.apple.com/shop/ipad/accessories/cases-protection/folios) *(added in review)* | Apple · read 2026-10-02 |
+| E32 | [Focus on Mac and iPhone: Apple's system feature, with Focus filters for apps](https://support.apple.com/guide/mac-help/set-up-a-focus-to-stay-on-task-mchl613dc43f/mac) *(added in review)* | Apple Support · read 2026-10-02 |
+| E33 | [Orbit launches Agent Builder: create research agents through conversation (Orbit Insight)](https://www.prnewswire.com/news-releases/orbit-launches-agent-builder-a-major-industry-leap-forward-in-ai-investment-research-302788983.html) *(added in review)* | PR Newswire · 2026-06-03 |
+| E34 | [Cropin and Google Cloud launch OrbitAI, an agentic AI platform for agriculture](https://agrospectrumindia.com/2026/07/15/cropin-and-google-cloud-launch-orbitai-worlds-first-agentic-ai-platform-for-food-and-agriculture.html) *(added in review)* | Agro Spectrum India · 2026-07-15 |
