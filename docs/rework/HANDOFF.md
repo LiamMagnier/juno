@@ -1,9 +1,54 @@
-# Juno Refoundation — handoff (paused 2026-10-01)
+# Juno Refoundation — handoff (paused again 2026-10-01, afternoon)
 
-The owner paused all work on 2026-10-01 and will resume later. Nothing was
-lost: every in-progress change is committed on its branch, and this file says
-exactly where each track stopped and how to restart it.
+The owner paused all work a second time on 2026-10-01 and will resume later.
+Nothing is lost: every change is committed on its branch, every render, page
+and reference is copied to the git-ignored
+`/Users/liammagnier/Developer/project/juno/.claude/local-tools/refoundation-artifacts/`
+(618 MB: design-v3 renders and clips, design-v2, round-1 directions, the
+reference board and images, the owner's reference images 1–9, the comparison
+pages, the screenshot harness `shots/shots.mjs`, `mkwt.sh`).
 
+## State at the second pause
+
+- **Trunk** `rework/refoundation` at `406d2812`, clean. Since the first pause it
+  gained: the Juno Code seams (`e1fde2fa`) and the **six autonomous-agent lanes,
+  integrated and merged** (`fff21f85`, Phase 10a recorded `dfb3c105`; the §6.7
+  cross-lane scenarios pass). `1f119cbf` holds the independent verifier's
+  in-progress Swift fixes, **unverified**: re-run `npm run native:test JunoCode`
+  and the Mac build first. Design work: framed shell, blur, sidebar, centred
+  composer (`4460ff63`…`1b4fcb89`), icons (`f09ed494`, `a119c76b`), revision 1 and
+  voice WIP (`b715305e`), Blender crew pipelines (`3fbb1cae` long-fur plush,
+  superseded; `406d2812` flocked designer-toy pass 1).
+- **Worktrees:** the trunk plus `juno-rf-code-{agent-integ,loop,verify,preview,
+  screen,ship,extend}` — all clean and merged; remove them (branches kept).
+- **Blender 5.2.2** is installed at /Applications/Blender.app (owner approved);
+  Cycles uses the M4 Pro GPU through Metal.
+- **main** still has only the hotfix `6822e3dd`, not deployed.
+
+## Paused tracks and how to resume
+
+1. **Design round 3** — script `refoundation-design-v3f.js` (run
+   `wf_b09dd1dd-c77`). Done: critique 1 of screens and icons (scores: craft/dark
+   8.0, UX 7.5, motion 7.0, icons 6.5; findings in the run journal and in
+   `juno-design-critique1.html`). In progress when paused: revision 1 of screens
+   and icons (WIP committed), and **crew pass 1** of the scored designer-toy loop
+   (three directions A everyday shapes, B, C celestial; quick previews in
+   `refoundation-artifacts/design-v3/crew/loop1/`; not yet scored). Resume by
+   relaunching v3f as a new run: it starts the crew loop at pass 1 again and the
+   screens/icons critique again unless the script is edited to skip the done
+   critique (pass the critique-1 findings as text and start at revision 1).
+   Owner feedback to honour: D-016 … D-034 (latest: crew "still creepy compared
+   to OpenAI versions" → flocked designer toys, graphic eyes, saturated colours,
+   iconic silhouettes, scored against the dots key art; framed shell; blur;
+   sidebar; centred composer; serif greeting; no composer shadow; own icons,
+   approved for now).
+2. **Voice and dictation design** — script
+   `refoundation-voice-design-wf_ef28fc23-1ba.js` (designer was mid-build; WIP
+   in `src/app/dev/design/juno/voice/` if any, committed in `b715305e`).
+   Relaunch as a new run; the owner asked to see voice mode, dictation and the
+   model selector (model selector already exists in the menus scene).
+3. **Juno Code** — the autonomous agent is merged. Next: verify `1f119cbf`,
+   then Phase 10 (Mac Code UX on the new design system) and Phase 11.
 ## Where things are
 
 - **Trunk:** branch `rework/refoundation`, worktree
