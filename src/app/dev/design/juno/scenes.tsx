@@ -69,7 +69,7 @@ export function MenusScene() {
   ];
   return (
     <div className="jn-board jn-board--menus">
-      <MenuCell cap="Typing @ puts a teammate, file, project, app or chat in the sentence" label="Add context with @">
+      <MenuCell cap="Typing @ puts an agent, file, project, app or chat in the sentence" label="Add context with @">
         <Composer variant="dock" initial={atDraft} still={{ palette: { query: "", active: 0 } }} />
       </MenuCell>
       <MenuCell cap="Auto, four models with one line each, effort, then every model" label="Model">

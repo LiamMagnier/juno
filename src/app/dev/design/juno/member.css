@@ -296,3 +296,23 @@
 }
 
 
+
+/* The agent's work row: the Continuum ThinkingMark in the lead slot, beside what the agent is doing. */
+.jn .jn-mlive__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+
+/* Orbit's page title carries its glyph (the open elliptical arcs), in the second ink. */
+.jn .jn-orbit__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.jn .jn-orbit__glyph {
+  color: var(--ink-2);
+  transform: translateY(1px);
+}

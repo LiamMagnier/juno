@@ -3,10 +3,11 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CrewFace } from "./crew/face";
-import { CREW, crew, type CrewRow, type Segment } from "./fixtures";
+import { CREW, crew, STATE_WORD, type CrewRow, type Segment } from "./fixtures";
 import { Composer } from "./composer";
 import { CrewMark, MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
 import { AvatarEditor, CrewCreate, normalizeAvatar, type AvatarConfig } from "./crew";
+import { OrbitGlyph, ThinkingMark } from "./brand";
 import { Icon } from "./icons";
 import { FileMark } from "./marks";
 import { useDialogFocus } from "./layers";
@@ -14,23 +15,26 @@ import { R, SHEET_OUT, SPRING, T, useReduced } from "./motion";
 import { AppFrame, ChatSidebar, face, MobileBar, usePanelAtEnd } from "./shell";
 
 /*
- * Crew (D-032). Crew members are characters: each has a body, a material, a
- * colour and eyes the person chose, and that colour follows the member into
- * its own thread (the person's bubbles, the send disc). The roster opens on
- * the team itself, big enough for each look and state to read; a member's
- * page is its thread, with the character peeking over the conversation.
+ * Alevr Orbit (D-032, D-035): your agents. Each agent is a character with a
+ * body, a material, a colour and eyes the person chose, and that colour
+ * follows it into its own thread (the person's bubbles, the send disc). The
+ * Orbit page opens on the agents themselves, big enough for each look and
+ * state to read; an agent's page is its thread, with the character peeking
+ * over the conversation. Words: Orbit (navigation), Your agents (the
+ * descriptor), an agent by its own name, Create agent; states Ready, Thinking,
+ * Working, Needs your answer, Blocked, Finished. Routes and ids keep "crew".
  *
- *   /dev/design/juno?scene=crew                               roster
- *   /dev/design/juno?scene=crew&flow=add                      add to crew
- *   /dev/design/juno?scene=crew&flow=customize&member=mira    customize a member
- *   /dev/design/juno?scene=crew&member=mira                   the member's thread
+ *   /dev/design/juno?scene=crew                               Orbit, your agents
+ *   /dev/design/juno?scene=crew&flow=add                      create an agent
+ *   /dev/design/juno?scene=crew&flow=customize&member=mira    customize an agent
+ *   /dev/design/juno?scene=crew&member=mira                   the agent's thread
  */
 
 /* ———————————————————————————— Roster ———————————————————————————— */
 
 function Portrait({ m, onCustomize }: { m: CrewRow; onCustomize: (id: string) => void }) {
   const member = face(m);
-  const words = m.state === "waiting" ? "Needs your answer" : m.state === "available" ? "Available" : (m.roster ?? m.long);
+  const words = m.status === "needs" || m.status === "ready" ? STATE_WORD[m.status] : (m.roster ?? m.long);
   return (
     <div className="jn-portrait" data-state={m.state}>
       <a href="#" className="jn-portrait__link" aria-label={`${m.name}, ${m.role}. ${words}. Open thread`}>
@@ -39,7 +43,7 @@ function Portrait({ m, onCustomize }: { m: CrewRow; onCustomize: (id: string) =>
         </span>
         <span className="jn-portrait__name">{m.name}</span>
         <span className="jn-portrait__role">{m.role}</span>
-        <span className="jn-portrait__state" data-state={m.state}>
+        <span className="jn-portrait__state" data-state={m.state} data-status={m.status}>
           {words}
         </span>
       </a>
@@ -102,16 +106,19 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
   const [sheet, setSheet] = React.useState<Sheet>(initial);
   return (
     <AppFrame sidebar={<ChatSidebar current="crew" />}>
-      <MobileBar title="Crew" collapse />
+      <MobileBar title="Orbit" collapse />
       <div className="jn-page jn-page--crew">
         <header className="jn-page__head">
           <div>
-            <h1 className="t-title">Crew</h1>
-            <p className="jn-page__lede">Six teammates. Each has its own thread, standing work and apps, and keeps working when you leave.</p>
+            <h1 className="t-title jn-orbit__title">
+              <OrbitGlyph size={24} className="jn-orbit__glyph" />
+              Orbit
+            </h1>
+            <p className="jn-page__lede">Your agents. Each has its own thread, standing work and apps, and keeps working when you leave.</p>
           </div>
           <button type="button" className="jb jb--secondary jicon-trigger" onClick={() => setSheet({ kind: "add" })}>
             <Icon name="plus" size={16} />
-            Add to crew
+            Create agent
           </button>
         </header>
 
@@ -184,7 +191,7 @@ function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () 
         className="jn-crewsheet"
         role="dialog"
         aria-modal="true"
-        aria-label={m ? `Customize ${m.name}` : "Add to crew"}
+        aria-label={m ? `Customize ${m.name}` : "Create agent"}
         data-kind={sheet.kind}
         initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -278,13 +285,13 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
             </span>
           </div>
           <div className="jn-mhead__peek">
-            <MemberPeek member={member} state={answered ? "working" : "waiting"} words={answered ? "Reading seat usage…" : undefined} arrive typing={typing} />
+            <MemberPeek member={member} state={answered ? "working" : "waiting"} words={answered ? "Reading seat usage" : "Needs your answer"} arrive typing={typing} />
           </div>
         </header>
 
         <div className="jn-thread jn-member" role="log" aria-label={`${m.name}’s thread`}>
           <p className="jn-member__intro">
-            {m.name} joined your crew on 2 September. {m.role}: watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it.
+            You created {m.name} on 2 September. {m.role}: watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it.
           </p>
           <div className="jn-daymark">Monday</div>
           <CrewRun m={m} time="9:04">
@@ -330,8 +337,10 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
           </Mine>
 
           {answered ? (
-            <motion.div className="jn-mlive" initial={reduced ? false : { opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={reduced ? R : SPRING.layout}>
-              <CrewMark member={member} state="thinking" size={20} />
+            <motion.div className="jn-mlive" role="status" initial={reduced ? false : { opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={reduced ? R : SPRING.layout}>
+              <span className="jn-mlive__mark">
+                <ThinkingMark size={20} />
+              </span>
               <span className="jn-mlive__text">
                 <b>{m.name}</b> is reading 90 days of seat usage for Halvorsen AS in Stripe
               </span>

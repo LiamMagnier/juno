@@ -132,10 +132,10 @@
   text-align: right;
 }
 
-/* The live line (M1): what Juno is doing, in words in the second ink, led by
-   a glyph for the kind of work in the presence colour (the one colour that
-   means "acting now"), and real seconds after three. The words are never the
-   blue: blue words read as a link. */
+/* The live line (M1): what Alevr is doing, in words in the second ink, led by
+   the Continuum ThinkingMark (its handoff is the one colour that means "acting
+   now"), and real seconds after three. The words are never the blue: blue
+   words read as a link. */
 .jn .jn-live {
   display: flex;
   align-items: center;
@@ -149,9 +149,8 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--presence);
+  width: 20px;
+  height: 20px;
 }
 .jn .jn-live--slot {
   visibility: hidden;

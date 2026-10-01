@@ -57,7 +57,7 @@ export function TokenChip({
 }) {
   const token = TOKENS[id];
   const needs = token.kind === "app" && token.connected === false;
-  const kindWord = token.kind === "crew" ? "crew member" : token.kind === "app" ? "app" : token.kind;
+  const kindWord = token.kind === "crew" ? "agent" : token.kind === "app" ? "app" : token.kind;
   return (
     <span
       ref={(el) => register?.(id, el)}
@@ -260,8 +260,8 @@ const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 export function Composer({
   initial = [],
-  placeholder = "Ask anything. @ adds files, apps or crew; / runs skills",
-  label = "Message Juno",
+  placeholder = "Ask anything. @ adds files, apps or agents; / runs skills",
+  label = "Message Alevr",
   layoutId,
   still,
   context,
@@ -618,7 +618,7 @@ export function Composer({
             type="button"
             className="jn-disc jicon-trigger jtip"
             data-mode={mode}
-            data-tip={mode === "stop" ? "Stop" : mode === "send" ? "Send" : "Talk with Juno"}
+            data-tip={mode === "stop" ? "Stop" : mode === "send" ? "Send" : "Talk with Alevr"}
             data-kbd={mode === "send" ? "↵" : mode === "stop" ? "esc" : undefined}
             data-tip-side={variant === "home" ? undefined : "top"}
             data-tip-align="end"
@@ -849,7 +849,7 @@ export function AppPanel({
         </>
       ) : (
         <>
-          <p className="jn-appanel__lede">Connect {app.name} so Juno can read issues. Creating one will ask you first.</p>
+          <p className="jn-appanel__lede">Connect {app.name} so Alevr can read issues. Creating one will ask you first.</p>
           <div className="jn-appanel__foot">
             <span>Opens {app.name} to sign in</span>
             <button type="button" className="jb jb--primary jb--sm">

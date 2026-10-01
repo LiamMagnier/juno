@@ -1,0 +1,159 @@
+/* —————————————————————————— Alevr: mark, wordmark, lockups (STAND-IN) ——————————————————————————
+ *
+ * The Continuum is drawn in the ink: graphite on light, pale neutral on dark.
+ * Its only colour moment is the thinking handoff (the presence ink, briefly,
+ * beside words that say what is happening). The wordmark is upright
+ * Newsreader 600.
+ */
+
+.jn .jn-cmk {
+  display: inline-block;
+  flex: none;
+  overflow: visible;
+  vertical-align: middle;
+}
+.jn .jn-cmk__b {
+  fill: currentColor;
+}
+
+.jn .jn-alevr {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: -0.012em;
+  font-kerning: normal;
+  font-variation-settings: "opsz" 24;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* The lockup: mark, wordmark, and optionally the product word in the same serif at 400. The mark is
+   centred on the capitals (Newsreader's caps sit above the em box's middle), not on the line box. */
+.jn .jn-lockup {
+  --lk: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--lk) * 0.3);
+  color: var(--ink);
+  line-height: 1;
+}
+.jn .jn-lockup__mark {
+  transform: translateY(calc(var(--lk) * -0.06));
+}
+.jn .jn-lockup__product {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.008em;
+  font-variation-settings: "opsz" 24;
+  color: var(--ink-2);
+  margin-left: calc(var(--lk) * -0.06);
+  white-space: nowrap;
+}
+
+/* Product glyphs: stroke drawings in the icon set's weight. */
+.jn .jn-pglyph {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+
+/* —————————————————————————— The ThinkingMark: a tonal path handoff ——————————————————————————
+ *
+ * Stationary. A pass runs clockwise from the top blade: each blade shifts to
+ * the presence ink over 220 ms (base) and back over 220 ms, 70 ms after the
+ * one before it; the last blade then holds a quiet presence tone while the
+ * work is live, so the row reads as live between passes without anything
+ * moving. A pass restarts by switching between two identical keyframe names
+ * (data-pass a/b). Done: the held tone settles to the ink once (base).
+ * Waiting and error: still, in the third ink. Reduced motion: no passes.
+ */
+.jn .jn-tm {
+  --tm-ink: var(--ink-2);
+  --tm-on: var(--presence);
+  --tm-hold: color-mix(in oklab, var(--presence) 64%, var(--tm-ink));
+}
+.jn .jn-tm .jn-cmk__b {
+  fill: var(--tm-ink);
+  transition: fill var(--d-base) var(--e-out);
+}
+.jn .jn-tm[data-state="active"] .jn-cmk__b[data-last] {
+  fill: var(--tm-hold);
+}
+.jn .jn-tm[data-state="waiting"],
+.jn .jn-tm[data-state="error"] {
+  --tm-ink: var(--ink-3);
+}
+.jn .jn-tm[data-pass="a"] .jn-cmk__b {
+  animation: jn-tm-a calc(var(--d-base) * 2) linear calc(var(--i) * 70ms) both;
+}
+.jn .jn-tm[data-pass="b"] .jn-cmk__b {
+  animation: jn-tm-b calc(var(--d-base) * 2) linear calc(var(--i) * 70ms) both;
+}
+.jn .jn-tm[data-pass="a"] .jn-cmk__b[data-last] {
+  animation-name: jn-tm-a-last;
+}
+.jn .jn-tm[data-pass="b"] .jn-cmk__b[data-last] {
+  animation-name: jn-tm-b-last;
+}
+@keyframes jn-tm-a {
+  0% {
+    fill: var(--tm-ink);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  50% {
+    fill: var(--tm-on);
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  100% {
+    fill: var(--tm-ink);
+  }
+}
+@keyframes jn-tm-b {
+  0% {
+    fill: var(--tm-ink);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  50% {
+    fill: var(--tm-on);
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  100% {
+    fill: var(--tm-ink);
+  }
+}
+@keyframes jn-tm-a-last {
+  0% {
+    fill: var(--tm-hold);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  50% {
+    fill: var(--tm-on);
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  100% {
+    fill: var(--tm-hold);
+  }
+}
+@keyframes jn-tm-b-last {
+  0% {
+    fill: var(--tm-hold);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  50% {
+    fill: var(--tm-on);
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  100% {
+    fill: var(--tm-hold);
+  }
+}
+.jn[data-rm] .jn-tm .jn-cmk__b {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jn .jn-tm .jn-cmk__b {
+    animation: none !important;
+  }
+}

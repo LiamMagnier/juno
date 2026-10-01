@@ -3,7 +3,7 @@
 import * as React from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { CrewMark } from "./crew-bridge";
-import { ACCOUNT, DRAFT, MIRA, PRESENCE_GLYPHS, PRESENCE_WORDS, RECEIPT, THREAD_TITLE, type Segment } from "./fixtures";
+import { ACCOUNT, DRAFT, MIRA, PRESENCE_WORDS, RECEIPT, THREAD_TITLE, type Segment } from "./fixtures";
 import { Composer, type ComposerApi, type ComposerStill } from "./composer";
 import { Icon } from "./icons";
 import { FileMark, GmailMark, SlackMark } from "./marks";
@@ -276,7 +276,7 @@ export function ChatSurface({
             <motion.div className="jn-thread" role="log" aria-relevant="additions" {...threadIn}>
               <UserMessage segments={sent} receipt={receipt ? RECEIPT : null} animateIn={live} />
               {stage === "thinking" ? (
-                lineShown ? <LiveLine text={PRESENCE_WORDS[presence]} glyph={PRESENCE_GLYPHS[presence]} seconds={seconds} /> : <div className="jn-live jn-live--slot" aria-hidden="true" />
+                lineShown ? <LiveLine text={PRESENCE_WORDS[presence]} seconds={seconds} /> : <div className="jn-live jn-live--slot" aria-hidden="true" />
               ) : (
                 <Trace />
               )}
@@ -314,7 +314,7 @@ export function ChatSurface({
                 apiRef={dockApi}
                 busy={stage === "thinking" || stage === "streaming"}
                 placeholder="Reply…"
-                label="Message Juno"
+                label="Message Alevr"
                 fieldId="jn-message"
                 dockRow={
                   <AnimatePresence initial={false}>
@@ -334,7 +334,7 @@ export function ChatSurface({
                   </AnimatePresence>
                 }
               />
-              <p className="jn-dock__note">Juno can make mistakes. Check what matters.</p>
+              <p className="jn-dock__note">Alevr can make mistakes. Check what matters.</p>
             </motion.div>
           </>
         )}

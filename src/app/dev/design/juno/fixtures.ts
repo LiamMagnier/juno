@@ -9,7 +9,13 @@ import type { CrewState } from "./crew/face";
 
 export const ACCOUNT = { name: "Liam Magnier", first: "Liam", plan: "Pro", initials: "LM", email: "liam@northwind.io" };
 
-/* ———————————————————————————— Crew ———————————————————————————— */
+/* ———————————————————————— Agents (Alevr Orbit) ———————————————————————— */
+
+/**
+ * An agent's state in words (Alevr Orbit): Ready, Thinking, Working, Needs your answer, Blocked, Finished.
+ * The face has its own poses (CrewState); `status` is what the screens say.
+ */
+export type AgentStatus = "ready" | "thinking" | "working" | "needs" | "blocked" | "finished";
 
 export interface CrewRow {
   /** Two lines at most, under the face on the roster. */
@@ -18,44 +24,57 @@ export interface CrewRow {
   name: string;
   role: string;
   seed: string;
+  /** The face's pose. */
   state: CrewState;
-  /** A few words, in the sidebar row, of what the member is doing now. */
+  /** The state in words. */
+  status: AgentStatus;
+  /** A few words, in the sidebar row, of what the agent is doing now. */
   now: string;
-  /** The same, as a full sentence (roster, member page). */
+  /** The same, as a full sentence (roster, the agent's page). */
   long: string;
-  /** When the member last did something, relative. */
+  /** When the agent last did something, relative. */
   when: string;
 }
 
 export const CREW: CrewRow[] = [
-  { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", now: "Needs your answer", long: "Needs your answer on the Halvorsen renewal", when: "4 min ago" },
-  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", now: "Available", long: "Available. Finished the Q3 forecast review 1 h ago", when: "1 h ago" },
-  { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", now: "Reconciling invoices", roster: "Reconciling invoices, 206 of 214", long: "Reconciling September invoices, 206 of 214 matched", when: "now" },
-  { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", now: "Reading escalations", roster: "Reading this week’s escalations", long: "Reading this week’s escalations", when: "now" },
-  { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", now: "Paused", long: "Paused until Monday", when: "Friday" },
-  { id: "tomas", name: "Tomas", role: "On-call engineering", seed: "tomas-oncall", state: "offline", now: "Offline", roster: "Offline since Sunday", long: "Offline, last active Sunday", when: "Sunday" },
+  { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", status: "needs", now: "Needs your answer", long: "Needs your answer on the Halvorsen renewal", when: "4 min ago" },
+  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", status: "ready", now: "Ready", long: "Ready. Finished the Q3 forecast review 1 h ago", when: "1 h ago" },
+  { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", status: "working", now: "Reconciling invoices", roster: "Reconciling invoices, 206 of 214", long: "Reconciling September invoices, 206 of 214 matched", when: "now" },
+  { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", status: "thinking", now: "Reading escalations", roster: "Reading this week’s escalations", long: "Reading this week’s escalations", when: "now" },
+  { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", status: "blocked", now: "Blocked", roster: "Blocked: Greenhouse sign-in expired", long: "Blocked: the Greenhouse sign-in expired on Friday", when: "Friday" },
+  { id: "tomas", name: "Tomas", role: "On-call engineering", seed: "tomas-oncall", state: "available", status: "finished", now: "Finished", roster: "Finished the incident review", long: "Finished the incident review on Sunday", when: "Sunday" },
 ];
 
 export const crew = (id: string): CrewRow => CREW.find((m) => m.id === id) ?? CREW[0];
 export const MIRA = CREW[0];
 
-/** The sidebar's right-hand word for a crew row. Available is the rest state and says nothing. */
-export const SIDE_STATE: Record<CrewState, string | null> = {
-  available: null,
+/** The sidebar's right-hand word for an agent's row. Ready is the rest state and says nothing. */
+export const SIDE_STATE: Record<AgentStatus, string | null> = {
+  ready: null,
   thinking: "Thinking",
   working: "Working",
-  waiting: "Needs you",
-  paused: "Paused",
-  offline: "Offline",
+  needs: "Needs your answer",
+  blocked: "Blocked",
+  finished: "Finished",
 };
 
-export const STATE_WORD: Record<CrewState, string> = {
-  available: "Available",
+export const STATE_WORD: Record<AgentStatus, string> = {
+  ready: "Ready",
   thinking: "Thinking",
   working: "Working",
-  waiting: "Needs you",
-  paused: "Paused",
-  offline: "Offline",
+  needs: "Needs your answer",
+  blocked: "Blocked",
+  finished: "Finished",
+};
+
+/** The face pose for each status. */
+export const STATUS_FACE: Record<AgentStatus, CrewState> = {
+  ready: "available",
+  thinking: "thinking",
+  working: "working",
+  needs: "waiting",
+  blocked: "paused",
+  finished: "available",
 };
 
 /* ———————————————————————— Sidebar ———————————————————————— */
@@ -97,7 +116,7 @@ export const TOKENS: Record<string, TokenRef> = {
   linear: { id: "linear", kind: "app", label: "Linear", connected: false, detail: "Not connected" },
   notion: { id: "notion", kind: "app", label: "Notion", connected: true, detail: "Connected as Northwind wiki" },
   mira: { id: "mira", kind: "crew", label: "Mira", detail: "Accounts, needs your answer" },
-  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, available" },
+  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, ready" },
   otto: { id: "otto", kind: "crew", label: "Otto", detail: "Finance operations, reconciling invoices" },
   atlas: { id: "atlas", kind: "project", label: "Atlas launch", detail: "14 chats" },
   renewals: { id: "renewals", kind: "project", label: "Renewals 2026", detail: "6 chats" },
@@ -105,7 +124,7 @@ export const TOKENS: Record<string, TokenRef> = {
 };
 
 export const PALETTE_GROUPS: { kind: TokenKind; label: string; ids: string[] }[] = [
-  { kind: "crew", label: "Crew", ids: ["mira", "scout", "otto"] },
+  { kind: "crew", label: "Agents", ids: ["mira", "scout", "otto"] },
   { kind: "file", label: "Files", ids: ["forecast", "notes", "deck"] },
   { kind: "project", label: "Projects", ids: ["atlas", "renewals"] },
   { kind: "app", label: "Apps", ids: ["stripe", "slack", "linear"] },
@@ -232,9 +251,7 @@ export const READS: { verb: string; object: string; where?: string; mark: string
 export const TRACE_SUMMARY = "Worked 12s, searched the web and read 3 sources";
 
 /** The live line's phases (M1), each held at least a second. */
-export const PRESENCE_WORDS = ["Reading Q3 Forecast.xlsx", "Checking Stripe subscriptions", "Comparing renewals with the forecast"];
-/** The glyph that leads each phase, in the presence colour: what kind of work it is. */
-export const PRESENCE_GLYPHS = ["research", "search", "sheet"];
+export const PRESENCE_WORDS = ["Reading Q3 Forecast.xlsx", "Searching Stripe subscriptions", "Comparing renewals with the forecast"];
 
 /** How the sent message's tokens resolved (M23). */
 export const RECEIPT = "Q3 Forecast.xlsx and Stripe added. Mira takes the renewal check. Posting to Slack asks you first.";

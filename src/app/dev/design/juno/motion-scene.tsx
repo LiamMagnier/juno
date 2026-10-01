@@ -204,7 +204,7 @@ function MenuMoment() {
 /* ———————————————————————— 9 · Crew presence ———————————————————————— */
 
 const PRESENCE_SEQ: { state: CrewState; words: string }[] = [
-  { state: "available", words: "Available" },
+  { state: "available", words: "Ready" },
   { state: "thinking", words: "Mira is thinking" },
   { state: "working", words: "Mira is matching Stripe customers" },
   { state: "waiting", words: "Mira needs your answer" },
@@ -384,7 +384,7 @@ function MaterialMoment({ tall }: { tall?: boolean }) {
           </div>
         </div>
         <div className="jn-dock">
-          <Composer variant="dock" apiRef={api} placeholder="Reply…" label="Message Juno" />
+          <Composer variant="dock" apiRef={api} placeholder="Reply…" label="Message Alevr" />
         </div>
       </div>
     </div>
@@ -449,7 +449,7 @@ export function MotionScene({ only }: { only?: string }) {
     <main className="jn-motion">
       <header className="jn-sys__head">
         <h1 className="t-title">Motion</h1>
-        <p className="jn-page__lede">Causality and continuity only. Chrome answers in 120 to 220 ms; the one spatial move, the first send, takes 360 ms on a spring with no bounce. Anything started from the keyboard does not move. The only thing allowed to idle is a crew member over its own thread, and only while you can see it.</p>
+        <p className="jn-page__lede">Causality and continuity only. Chrome answers in 120 to 220 ms; the one spatial move, the first send, takes 360 ms on a spring with no bounce. Anything started from the keyboard does not move. The only thing allowed to idle is an agent over its own thread, and only while you can see it.</p>
       </header>
       <div className="jn-motion__grid">
         {MOMENTS.map((m) => (

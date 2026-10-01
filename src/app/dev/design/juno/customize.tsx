@@ -83,7 +83,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
             </div>
           </section>
           <section className="jn-sheet__section">
-            <h3 className="jn-sheet__label">What Juno can read</h3>
+            <h3 className="jn-sheet__label">What Alevr can read</h3>
             {reads.map((a) => (
               <div key={a.label} className="jn-sheet__row">
                 <span className="jn-sheet__rowtext">{a.label}</span>
@@ -92,7 +92,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
             ))}
           </section>
           <section className="jn-sheet__section">
-            <h3 className="jn-sheet__label">What Juno can change</h3>
+            <h3 className="jn-sheet__label">What Alevr can change</h3>
             <p className="jn-sheet__hint">Allow runs without asking. Ask shows you the exact message first. Off never happens.</p>
             {changes.map((a) => (
               <div key={a.label} className="jn-sheet__row">
@@ -114,7 +114,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
           <button type="button" className="jb jb--link jn-sheet__disconnect">
             Disconnect {app.name}
           </button>
-          <p className="t-meta">Juno loses access at once. Mira’s renewal check stops posting. Nothing in {app.name} is deleted.</p>
+          <p className="t-meta">Alevr loses access at once. Mira’s renewal check stops posting. Nothing in {app.name} is deleted.</p>
         </footer>
       </motion.aside>
     </>
@@ -165,7 +165,7 @@ export function CustomizeScene({ app }: { app?: string }) {
           <header className="jn-page__head">
             <div>
               <h1 className="t-title">Apps</h1>
-              <p className="jn-page__lede">The services Juno can work in. You decide what each one may do.</p>
+              <p className="jn-page__lede">The services Alevr can work in. You decide what each one may do.</p>
             </div>
             <button type="button" className="jb jb--secondary jicon-trigger jicon-quiet">
               <Icon name="plus" size={16} />

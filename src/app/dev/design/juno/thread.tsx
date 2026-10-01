@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CrewMark } from "./crew-bridge";
 import { ANSWER_CLOSE, ANSWER_INTRO, ANSWER_LIST, ANSWER_TABLE, MIRA, MIRA_PLAN, READS, SLACK_POST, TRACE_SUMMARY, type Segment } from "./fixtures";
 import { Sentence } from "./composer";
+import { ThinkingMark, type ThinkingState } from "./brand";
 import { Icon } from "./icons";
 import { SlackMark, StepMark } from "./marks";
 import { fromKeyboard, usePopoverKeys } from "./layers";
@@ -52,25 +53,51 @@ export function AutoHeight({ children, className }: { children: React.ReactNode;
 /* ———————————————————————— The live line (M1) ———————————————————————— */
 
 /*
- * While Juno works before its first word, one line says what it is doing, and
- * after three seconds how long it has been. The words are in the second ink;
- * a glyph for the kind of work leads them in the presence colour (the one
- * colour that means "acting now"), so the line never reads as a blue link.
- * The changing words and the glyph are the whole signal: no caret, no dots,
- * no shimmer, no orb, no loop. A phase change cross-fades on fast (the glyph
- * with it); the first word of the answer replaces the line in the same frame.
+ * While Alevr works before its first word, one line says what it is doing,
+ * and after three seconds how long it has been. The words are in the second
+ * ink; the Continuum leads them (D-037): the ThinkingMark, stationary, hands
+ * a tone of the presence colour through its paths once when the work starts
+ * and once more for each real phase change (coalesced to one pass every
+ * 1.6 s), then holds a quiet pose. The words are never the blue: blue words
+ * read as a link. No caret, no dots, no shimmer, no orb, no spinner. A phase
+ * change cross-fades the words on fast; the first word of the answer
+ * replaces the line in the same frame. `who` names an agent doing the work
+ * (its face leads instead: the agent, not Alevr, is acting).
  */
-export function LiveLine({ text, seconds, who, glyph = "research", className }: { text: string; seconds?: number; who?: "mira"; glyph?: string; className?: string }) {
+export function LiveLine({
+  text,
+  seconds,
+  who,
+  className,
+  state = "active",
+}: {
+  text: string;
+  seconds?: number;
+  who?: "mira";
+  className?: string;
+  /** "waiting" when the work is stopped on the person (Waiting for your answer): the mark is still. */
+  state?: ThinkingState;
+}) {
   const reduced = useReduced();
+  // Each real phase change asks the mark for one more pass (the mark coalesces them).
+  const [pulse, setPulse] = React.useState(0);
+  const first = React.useRef(true);
+  React.useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setPulse((p) => p + 1);
+  }, [text]);
   return (
-    <div className={["jn-live", className].filter(Boolean).join(" ")} role="status" aria-live="polite">
+    <div className={["jn-live", className].filter(Boolean).join(" ")} role="status" aria-live="polite" data-state={state}>
       {who ? (
         <span className="jn-live__face">
           <CrewMark member={face(MIRA)} state="working" size={20} />
         </span>
       ) : (
         <span className="jn-live__glyph" aria-hidden="true">
-          <Icon name={glyph} size={16} />
+          <ThinkingMark size={20} state={state} pulse={pulse} />
         </span>
       )}
       <span className="jn-live__words">
@@ -234,7 +261,7 @@ export function Trace({ open: initialOpen = false, label = TRACE_SUMMARY, items 
   const [open, setOpen] = React.useState(initialOpen);
   const reduced = useReduced();
   return (
-    <div className="jn-trace" role="group" aria-label="Juno’s steps">
+    <div className="jn-trace" role="group" aria-label="Alevr’s steps">
       <button type="button" className="jn-trace__line jicon-trigger jicon-quiet" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span>{label}</span>
         <span className="jn-trace__chev" data-open={open ? "" : undefined}>
@@ -518,7 +545,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               ) : (
                 <span>
                   Posted to #design <span className="ink-3 num">at 14:06</span>
-                  {outcome === "always" ? <span className="ink-3">. Juno posts to #design without asking from now on.</span> : null}
+                  {outcome === "always" ? <span className="ink-3">. Alevr posts to #design without asking from now on.</span> : null}
                 </span>
               )}
               <button type="button" className="jb jb--link" onClick={() => setOutcome(null)}>
@@ -530,7 +557,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               <header className="jn-approve__head">
                 <SlackMark size={20} className="jn-approve__mark" />
                 <p id="jn-approve-title" className="jn-approve__title">
-                  <b className="jn-attn">Needs your approval:</b> Juno wants to post to #design
+                  <b className="jn-attn">Needs your approval:</b> Alevr wants to post to #design
                 </p>
               </header>
               <div className="jn-approve__payload">
@@ -543,7 +570,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               {redirect ? (
                 <div className="jn-approve__redirect">
                   <label className="jfield">
-                    <input autoFocus placeholder="Tell Juno what to do instead" aria-label="Tell Juno what to do instead" />
+                    <input autoFocus placeholder="Tell Alevr what to do instead" aria-label="Tell Alevr what to do instead" />
                   </label>
                   <button type="button" className="jb jb--secondary jb--sm" onClick={() => setRedirect(false)}>
                     Cancel
@@ -599,7 +626,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                           >
                             <span className="jn-pop__stack">
                               <span>Post once</span>
-                              <span className="jn-pop__line">Juno asks again next time</span>
+                              <span className="jn-pop__line">Alevr asks again next time</span>
                             </span>
                             <span className="jn-pop__check">
                               <Icon name="check" size={16} />
@@ -632,7 +659,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                       onInstead?.();
                     }}
                   >
-                    Tell Juno what to do instead
+                    Tell Alevr what to do instead
                   </button>
                 </div>
               )}

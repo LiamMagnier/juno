@@ -4,13 +4,14 @@ import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CODE_STEPS, DIFF, type DiffLine } from "./fixtures";
 import { Composer, Segmented } from "./composer";
+import { AlevrLogo } from "./brand";
 import { Icon } from "./icons";
 import { EASE_OUT, R, T, useReduced } from "./motion";
 import { AppFrame, CodeSidebar, MobileBar, TopBar } from "./shell";
 import { LiveLine } from "./thread";
 
 /*
- * Juno Code on the same tokens, one notch denser: 13px tool lines on 28px
+ * Alevr Code on the same tokens, one notch denser: 13px tool lines on 28px
  * rows, mono for paths and counts, the diff docked on the right (not
  * floating). The composer is the same object with Code's quiet context row:
  * repository, environment, and the permission mode as words: Ask, Plan,
@@ -86,8 +87,9 @@ export function CodeStartScene() {
         <div className="jn-top jn-top--clear" aria-hidden="true" />
         <div className="jn-home jn-codehome">
           <div className="jn-home__stack">
-            <div className="jn-home__greet">
-              <h1 className="t-title jn-codehome__title">What are we changing in juno-web?</h1>
+            <div className="jn-home__greet jn-codehome__greet">
+              <AlevrLogo size={15} product="Code" className="jn-codehome__lockup" />
+              <h1 className="t-title jn-codehome__title">What will you build?</h1>
             </div>
             <Composer variant="code" placeholder="Describe the change, or paste an error" context={<ContextRow />} fieldId="jn-message" />
             <div className="jn-home__suggest jn-codehome__recent">
@@ -270,7 +272,7 @@ export function CodeScene({ pane: initialPane = "session" }: { pane?: "session" 
                 <Step key={s.object + s.verb} {...s} />
               ))}
             </ol>
-            <LiveLine className="jn-codelive" glyph="test" text="Running the whole sync suite, 41 of 128 tests" seconds={38} />
+            <LiveLine className="jn-codelive" text="Running the whole sync suite, 41 of 128 tests" seconds={38} />
           </div>
           <div className="jn-dock jn-dock--code">
             <Composer variant="code" busy placeholder="Steer, or ask about the change" context={<ContextRow compact />} fieldId="jn-message" />

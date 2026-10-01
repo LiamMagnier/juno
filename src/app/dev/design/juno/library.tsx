@@ -317,7 +317,7 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
         <header className="jn-page__head">
           <div>
             <h1 className="t-title">Library</h1>
-            <p className="jn-page__lede">What Juno made and what you gave it, newest first.</p>
+            <p className="jn-page__lede">What Alevr made and what you gave it, newest first.</p>
           </div>
           <span className="jn-page__actions jicon-quiet">
             <button type="button" className="jb jb--ghost jicon-trigger">
