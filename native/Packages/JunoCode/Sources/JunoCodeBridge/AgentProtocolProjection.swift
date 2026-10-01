@@ -231,7 +231,7 @@ public enum AgentProtocolProjection {
         case .runCompleted(let run):
             return [
                 make(.turnCompleted(.init(
-                    stopReason: .endTurn,
+                    stopReason: stopReason(run.endReason),
                     durationMs: milliseconds(run.durationSeconds),
                     filesChanged: run.filesChanged,
                     summary: bounded(run.summary, maximumTextCharacters)
@@ -638,11 +638,28 @@ public enum AgentProtocolProjection {
         }
     }
 
+    /// How a run's end reads as the turn's stop reason. The full reason is
+    /// in `run.outcome`; this is the nearest the older field can say.
+    private static func stopReason(_ reason: RunEndReason?) -> AgentStopReason {
+        switch reason {
+        case .stepLimit?: .maxSteps
+        case .budget?: .budget
+        case .stalled?: .stalled
+        case .blocked?: .blocked
+        case .stopped?: .cancelled
+        case .doneChecked?, .doneUnchecked?, .checksFailing?, .needsYou?, .waitingOnBackground?,
+             .interrupted?, .error?, nil:
+            .endTurn
+        }
+    }
+
     private static func todoStatus(_ status: TodoStatus) -> AgentPlanStepStatus {
         switch status {
         case .pending: .pending
         case .inProgress: .inProgress
         case .completed: .completed
+        case .blocked: .blocked
+        case .cancelled: .cancelled
         }
     }
 

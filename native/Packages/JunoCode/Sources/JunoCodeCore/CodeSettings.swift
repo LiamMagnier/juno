@@ -36,6 +36,9 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
     /// Claude Code's switch for turning hooks off at once. In a project's
     /// file it reaches only that project's hooks; see `HookDiscovery`.
     public var disableAllHooks: Bool?
+    /// How far the agent works on its own: the stop check, the soft step
+    /// limit, budgets and check-ins. See ``AutonomySettings``.
+    public var autonomy: AutonomySettings.Overrides?
 
     public init(
         permissions: Permissions? = nil,
@@ -45,7 +48,8 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         git: Git? = nil,
         instructions: String? = nil,
         hooks: JSONValue? = nil,
-        disableAllHooks: Bool? = nil
+        disableAllHooks: Bool? = nil,
+        autonomy: AutonomySettings.Overrides? = nil
     ) {
         self.permissions = permissions
         self.env = env
@@ -55,6 +59,7 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         self.instructions = instructions
         self.hooks = hooks
         self.disableAllHooks = disableAllHooks
+        self.autonomy = autonomy
     }
 
     public struct Permissions: Codable, Equatable, Sendable {
@@ -187,6 +192,7 @@ extension CodeSettingsFile {
             || !(sandbox?.writablePaths ?? []).isEmpty
             || sandbox?.network == true
             || agent?.modelFallback == true
+            || autonomy?.raisesAnything == true
     }
 }
 
@@ -250,6 +256,9 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
     /// voice: approving a file puts its settings in force, it does not make
     /// its prose the reader's own.
     public var repositoryInstructions: [String]
+    /// The stop check, soft step limit, budgets and check-ins. Its step limit
+    /// is `maxTurns` unless a file sets `autonomy.stepLimit`.
+    public var autonomy: AutonomySettings = .standard
 
     public static let defaults = ResolvedCodeSettings(
         rules: .empty,
@@ -283,9 +292,14 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> ResolvedCodeSettings {
         var resolved = defaults
+        var stepLimitSet = false
         for layer in layers {
             let file = layer.file
             let loosens = layer.mayLoosen
+            if let autonomy = file.autonomy {
+                resolved.autonomy.apply(autonomy, mayLoosen: loosens)
+                stepLimitSet = stepLimitSet || autonomy.stepLimit != nil
+            }
             if let permissions = file.permissions {
                 resolved.rules = resolved.rules.merging(
                     PermissionRuleSet(
@@ -360,6 +374,11 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
                     resolved.repositoryInstructions.append(text)
                 }
             }
+        }
+        // The step limit is today's turn limit, made soft, unless a file
+        // names it under `autonomy`.
+        if !stepLimitSet {
+            resolved.autonomy.stepLimit = resolved.maxTurns
         }
         return resolved
     }

@@ -13,15 +13,17 @@ public struct TodoWriteTool: CodeTool {
         Keep a checklist of the steps of a multi-step task, shown to the reader \
         as you work. Send the WHOLE list every time — it replaces the previous \
         one. Each item has an id, content (imperative: "Add the migration"), a \
-        status (pending, in_progress, completed) and optionally activeForm \
-        (what is shown while it runs: "Adding the migration").
+        status (pending, in_progress, completed, blocked, cancelled) and \
+        optionally activeForm (what is shown while it runs: "Adding the \
+        migration"). A blocked item needs a reason saying why you cannot do it.
 
         Use it for work with three or more steps, or when the reader gives you \
         several things to do. Keep exactly one item in_progress while you \
         work, mark each completed as soon as it is done, and add items you \
-        discover along the way. Skip it for a single quick change. It is a \
-        progress list, not a record of verification: say what you checked in \
-        your answer.
+        discover along the way. Skip it for a single quick change. Juno does \
+        not let a run end while items are pending or in_progress: finish \
+        them, or mark them blocked with the reason. It is a progress list, not \
+        a record of verification: say what you checked in your answer.
         """
     public var inputSchema: JSONValue {
         [
@@ -34,8 +36,12 @@ public struct TodoWriteTool: CodeTool {
                         "properties": [
                             "id": ["type": "string"],
                             "content": ["type": "string"],
-                            "status": ["type": "string", "enum": ["pending", "in_progress", "completed"]],
+                            "status": [
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "completed", "blocked", "cancelled"],
+                            ],
                             "activeForm": ["type": "string"],
+                            "reason": ["type": "string"],
                         ],
                         "required": ["id", "content", "status"],
                     ],
@@ -80,7 +86,13 @@ public struct TodoWriteTool: CodeTool {
             }
             guard let statusText = item["status"]?.stringValue, let status = TodoStatus(rawValue: statusText) else {
                 throw ToolError.invalidInput(
-                    message: "Item \(index + 1): status is pending, in_progress or completed."
+                    message: "Item \(index + 1): status is pending, in_progress, completed, blocked or cancelled."
+                )
+            }
+            let reason = item["reason"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if status == .blocked, reason?.isEmpty ?? true {
+                throw ToolError.invalidInput(
+                    message: "Item \(index + 1) is blocked: give the reason you cannot do it."
                 )
             }
             guard !id.isEmpty, seen.insert(id).inserted else {
@@ -91,7 +103,8 @@ public struct TodoWriteTool: CodeTool {
                 id: id,
                 content: String(content.prefix(500)),
                 status: status,
-                activeForm: active?.isEmpty == false ? String(active!.prefix(500)) : nil
+                activeForm: active?.isEmpty == false ? String(active!.prefix(500)) : nil,
+                reason: reason?.isEmpty == false ? String(reason!.prefix(500)) : nil
             )
         }
     }

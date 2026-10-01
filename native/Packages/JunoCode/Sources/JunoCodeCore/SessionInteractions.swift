@@ -6,6 +6,14 @@ public enum TodoStatus: String, Codable, CaseIterable, Sendable {
     case pending
     case inProgress = "in_progress"
     case completed
+    /// The agent cannot do it, and says why in the item's `reason`. A blocked
+    /// item does not count as open work for the stop check.
+    case blocked
+    /// No longer needed.
+    case cancelled
+
+    /// Work the stop check counts as still to do.
+    public var isOpen: Bool { self == .pending || self == .inProgress }
 }
 
 /// One step of the agent's working checklist.
@@ -16,12 +24,15 @@ public struct TodoItem: Hashable, Codable, Sendable, Identifiable {
     public let status: TodoStatus
     /// The same step while it runs: "Adding the migration".
     public let activeForm: String?
+    /// Why a blocked item cannot be done.
+    public let reason: String?
 
-    public init(id: String, content: String, status: TodoStatus, activeForm: String? = nil) {
+    public init(id: String, content: String, status: TodoStatus, activeForm: String? = nil, reason: String? = nil) {
         self.id = id
         self.content = content
         self.status = status
         self.activeForm = activeForm
+        self.reason = reason
     }
 }
 
