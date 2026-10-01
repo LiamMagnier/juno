@@ -117,7 +117,7 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
             <p className="jn-page__lede">Your agents. Each has its own thread, standing work and apps, and keeps working when you leave.</p>
           </div>
           <button type="button" className="jb jb--secondary jicon-trigger" onClick={() => setSheet({ kind: "add" })}>
-            <Icon name="plus" size={16} />
+            <Icon name="create-agent" size={16} />
             Create agent
           </button>
         </header>

@@ -138,7 +138,7 @@ function FirstRun() {
         </p>
         <p className="jn-firstrun__empty">Your agents carry standing work forward, like a Monday renewal check.</p>
         <button type="button" className="jb jb--secondary jb--sm jicon-trigger jicon-quiet">
-          <Icon name="add-member" size={16} />
+          <Icon name="create-agent" size={16} />
           Create agent
         </button>
       </div>
