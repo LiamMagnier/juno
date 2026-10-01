@@ -233,3 +233,81 @@ private actor SlowDriver {
         release = nil
     }
 }
+
+#if canImport(JunoScreenControl)
+import JunoScreenControl
+
+/// Work shares Juno Code's screen lock and stop (CU-09).
+final class SharedScreenControlTests: XCTestCase {
+    private let screen = AutomationActivity(tier: .visual, intent: .activateControl, subject: .app(bundleIdentifier: "com.apple.TextEdit"))
+
+    func testAWorkTaskIsRefusedWhileACodeSessionHoldsTheScreen() async throws {
+        let lock = ScreenControlLock()
+        _ = try await lock.claim(ScreenControlHolder(id: "code-1", kind: .codeSession, title: "Fix the export sheet", appName: "TextEdit"))
+        let stop = EmergencyStop(sharedScreen: SharedScreenControl(lock: lock))
+        do {
+            _ = try await stop.begin(runID: "run-1", activity: screen)
+            XCTFail("Work drove the screen a Code session held")
+        } catch let refusal as AutomationRefusal {
+            XCTAssertEqual(refusal.code, .tooFast)
+            XCTAssertTrue(refusal.message.hasPrefix("Juno is using TextEdit for ‘Fix the export sheet’."))
+        }
+        let active = await stop.activeUse
+        XCTAssertNil(active, "a refused claim leaves nothing reserved")
+    }
+
+    func testACodeSessionIsRefusedWhileWorkDrivesTheScreenAndTheEndReleasesIt() async throws {
+        let lock = ScreenControlLock()
+        let stop = EmergencyStop(sharedScreen: SharedScreenControl(lock: lock))
+        let token = try await stop.begin(runID: "run-1", activity: screen)
+        do {
+            _ = try await lock.claim(ScreenControlHolder(id: "code-1", kind: .codeSession, title: "Other"))
+            XCTFail("two holders")
+        } catch ScreenControlError.lockHeld {}
+        await stop.end(token)
+        _ = try await lock.claim(ScreenControlHolder(id: "code-1", kind: .codeSession, title: "Other"))
+    }
+
+    func testOneStopStopsWorkToo() async throws {
+        let lock = ScreenControlLock()
+        let stop = EmergencyStop(sharedScreen: SharedScreenControl(lock: lock))
+        let token = try await stop.begin(runID: "run-1", activity: screen)
+        await lock.stopAll(reason: .escapeKey)
+        for _ in 0..<100 {
+            if await stop.isStopped { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let stopped = await stop.isStopped
+        XCTAssertTrue(stopped)
+        do {
+            try await stop.checkpoint(token)
+            XCTFail("an action outlived Esc")
+        } catch let refusal as AutomationRefusal {
+            XCTAssertEqual(refusal.code, .emergencyStopped)
+        }
+    }
+
+    func testAnIdleWorkHostIsNotLeftStoppedByACodeStop() async throws {
+        let lock = ScreenControlLock()
+        let stop = EmergencyStop(sharedScreen: SharedScreenControl(lock: lock))
+        await stop.connectSharedStop()
+        await lock.stopAll(reason: .escapeKey)
+        try await Task.sleep(for: .milliseconds(50))
+        let stopped = await stop.isStopped
+        XCTAssertFalse(stopped)
+    }
+
+    func testWorksOwnStopReleasesTheSharedLock() async throws {
+        let lock = ScreenControlLock()
+        let stop = EmergencyStop(sharedScreen: SharedScreenControl(lock: lock))
+        _ = try await stop.begin(runID: "run-1", activity: screen)
+        await stop.stop()
+        for _ in 0..<100 {
+            if await lock.currentHolder == nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let holder = await lock.currentHolder
+        XCTAssertNil(holder)
+    }
+}
+#endif
