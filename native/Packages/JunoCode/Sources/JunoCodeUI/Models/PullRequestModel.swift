@@ -154,6 +154,11 @@ public final class PullRequestModel {
             }
         case let .failed(message):
             problem = "Could not read CI: \(message)"
+        case let .stopped(message):
+            // The watch never polls forever: no checks, a CLI that keeps
+            // failing, or a day of running ends it, said in words.
+            isWatching = false
+            problem = message
         }
     }
 
