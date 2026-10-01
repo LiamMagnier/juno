@@ -26,6 +26,26 @@ struct CodeTaskIntentTests {
         #expect(ask.effectiveMode(ceiling: .readOnly) == .plan)
     }
 
+    /// A goal starts its turns in Code under the stored mode, so the stored
+    /// mode is capped too — Plan included — and screen control is off.
+    @Test
+    func theStoredConfigurationIsCappedAndWithoutScreenControl() {
+        var base = AgentConfiguration(modelID: "m", behavior: .code, permissionMode: .fullAccess)
+        base.computerUseEnabled = true
+        let plan = CodeTaskIntentRequest(projectName: "juno", prompt: "", goal: "tests pass", mode: .plan)
+        let readOnly = plan.configuration(base: base, ceiling: .readOnly)
+        #expect(readOnly.behavior == .plan)
+        #expect(readOnly.permissionMode == .readOnly, "Plan stored Ask-before-changes above a read-only ceiling")
+        #expect(readOnly.computerUseEnabled == false)
+        #expect(plan.configuration(base: base, ceiling: .fullAccess).permissionMode == .askBeforeChanges)
+
+        let full = CodeTaskIntentRequest(projectName: "juno", prompt: "x", mode: .fullAccess)
+        let capped = full.configuration(base: base, ceiling: .workspaceWrite)
+        #expect(capped.behavior == .code)
+        #expect(capped.permissionMode == .workspaceWrite)
+        #expect(capped.computerUseEnabled == false)
+    }
+
     @Test
     func theProjectIsFoundByName() {
         let records = [record("juno"), record("juno-web"), record("atlas")]

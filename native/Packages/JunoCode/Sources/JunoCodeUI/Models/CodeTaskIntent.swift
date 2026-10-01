@@ -49,6 +49,24 @@ public struct CodeTaskIntentRequest: Equatable, Sendable {
         return StudioMode(behavior: .code, permission: asked.permission.capped(at: ceiling))
     }
 
+    /// The configuration the session is created with: the reader's defaults,
+    /// in the capped mode, without screen control.
+    ///
+    /// The stored permission mode is capped too, even for Plan, whose turns
+    /// are read-only whatever is stored: a goal starts its turns in Code
+    /// (`/goal` switches the behaviour), and Code runs under the stored mode.
+    /// Storing Ask-before-changes beside Plan let a goal from an automation
+    /// run above a read-only remote ceiling. Screen control is off, as for a
+    /// session started from the phone: nobody is watching the screen.
+    public func configuration(base: AgentConfiguration, ceiling: PermissionMode) -> AgentConfiguration {
+        let mode = effectiveMode(ceiling: ceiling)
+        var configuration = base
+        configuration.behavior = mode.behavior
+        configuration.permissionMode = (mode.behavior == .code ? mode.permission : .askBeforeChanges).capped(at: ceiling)
+        configuration.computerUseEnabled = false
+        return configuration
+    }
+
     /// The project the request names: an exact display name, ignoring case,
     /// then a unique prefix. Nil with no name and more than one project.
     public func project(in records: [WorkspaceRecord]) -> WorkspaceRecord? {
@@ -100,8 +118,10 @@ public extension WorkbenchModel {
             : URL(fileURLWithPath: record.descriptor.localPathHint, isDirectory: true)
         let ceiling = CodeSettingsStore().resolved(projectRoot: root).remoteCeiling
         let mode = request.effectiveMode(ceiling: ceiling)
-        var configuration = CodeDefaults.shared.configuration(behavior: mode.behavior, availableModels: availableModels)
-        configuration.permissionMode = mode.behavior == .code ? mode.permission : .askBeforeChanges
+        let configuration = request.configuration(
+            base: CodeDefaults.shared.configuration(behavior: mode.behavior, availableModels: availableModels),
+            ceiling: ceiling
+        )
         guard let session = await createSession(workspaceID: record.id, configuration: configuration) else {
             throw CodeTaskIntentError.cannotStart("Juno Code could not open \(record.descriptor.displayName).")
         }
