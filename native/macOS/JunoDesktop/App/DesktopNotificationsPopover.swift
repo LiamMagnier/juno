@@ -20,7 +20,7 @@ import SwiftUI
 /// value and the help, where a dot cannot say it.
 struct DesktopNotificationsRow: View {
     /// The row's name: the web's action row (the shell contract).
-    private static let label = "Notifications"
+    private static let label: String = "Notifications"
 
     let model: NativeNotificationsModel
     /// Where a row's link goes: main's route, handed to this window.
@@ -29,41 +29,66 @@ struct DesktopNotificationsRow: View {
     /// notifications" opens the same popover from the same row.
     @Binding var isOpen: Bool
 
+    // Split into small typed pieces: written as one expression, the Swift 6.4
+    // type checker gave up on this body ("unable to type-check this
+    // expression in reasonable time") and the Mac app stopped compiling.
     var body: some View {
         Button {
             isOpen.toggle()
         } label: {
-            Label {
-                HStack(spacing: JunoSpace.tight) {
-                    Text(Self.label)
-                    Spacer(minLength: JunoSpace.hairline)
-                    // The column's one trailing slot, so this dot shares a
-                    // centre with every row's mark below it.
-                    DesktopSidebarTrailingSlot {
-                        if let tone = model.dotTone {
-                            DesktopUnreadDot(pressing: tone == .accent)
-                        }
-                    }
-                }
-            } icon: {
-                JunoSymbol(JunoShellChatSidebar.Action.notifications.icon)
-                    .foregroundStyle(Color.junoSidebarInk)
-            }
-            .foregroundStyle(Color.junoSidebarInk)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
+            rowLabel
         }
         .buttonStyle(.plain)
-        .help(model.unreadDetail.map { "\(Self.label) · \($0)" } ?? Self.label)
+        .help(helpText)
         .accessibilityLabel(Self.label)
         .accessibilityValue(model.unreadDetail ?? "")
         .accessibilityIdentifier("juno.desktop.sidebar.notifications")
         .popover(isPresented: $isOpen, arrowEdge: .trailing) {
-            DesktopNotificationsPopover(model: model) { notification in
-                open(notification)
-            }
-            .frame(width: DesktopNotificationsPopover.width, height: DesktopNotificationsPopover.height(for: model))
+            popover
         }
+    }
+
+    private var rowLabel: some View {
+        Label {
+            title
+        } icon: {
+            JunoSymbol(JunoShellChatSidebar.Action.notifications.icon)
+                .foregroundStyle(Color.junoSidebarInk)
+        }
+        .foregroundStyle(Color.junoSidebarInk)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+    }
+
+    private var title: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Text(Self.label)
+            Spacer(minLength: JunoSpace.hairline)
+            // The column's one trailing slot, so this dot shares a
+            // centre with every row's mark below it.
+            DesktopSidebarTrailingSlot {
+                unreadDot
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var unreadDot: some View {
+        if let tone = model.dotTone {
+            DesktopUnreadDot(pressing: tone == .accent)
+        }
+    }
+
+    private var helpText: String {
+        guard let detail = model.unreadDetail else { return Self.label }
+        return "\(Self.label) · \(detail)"
+    }
+
+    private var popover: some View {
+        DesktopNotificationsPopover(model: model) { notification in
+            open(notification)
+        }
+        .frame(width: DesktopNotificationsPopover.width, height: DesktopNotificationsPopover.height(for: model))
     }
 
     /// A row pressed: read at once, then — when it goes somewhere — followed,
