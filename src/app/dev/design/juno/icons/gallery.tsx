@@ -17,13 +17,32 @@ const GROUPS: IconGroup[] = ["Navigation", "Composer", "Message", "States", "Fil
 
 const byGroup = (group: IconGroup) => Object.entries(ICONS).filter(([, d]) => d.group === group) as [string, IconDrawing][];
 
-export type GalleryView = "sheet" | "proof" | "lab" | "context" | "reel" | "states" | "focus";
+export type GalleryView = "sheet" | "proof" | "lab" | "context" | "shell" | "reel" | "states" | "focus" | "pixels";
 
-export function IconGallery({ view = "sheet", group, names, on }: { view?: GalleryView; group?: string; names?: string; on?: boolean }) {
+export function IconGallery({
+  view = "sheet",
+  group,
+  names,
+  on,
+  size,
+  fit = true,
+  theme,
+}: {
+  view?: GalleryView;
+  group?: string;
+  names?: string;
+  on?: boolean;
+  size?: number;
+  fit?: boolean;
+  /** shell: one pane in this theme instead of light beside dark (for recording). */
+  theme?: "light" | "dark";
+}) {
+  if (view === "pixels") return <Pixels names={names} size={size ?? 16} fit={fit} />;
   if (view === "focus") return <Focus names={names} on={on} />;
   if (view === "proof") return <Proof />;
   if (view === "lab") return <StrokeLab />;
   if (view === "context") return <Context />;
+  if (view === "shell") return <ShellContext theme={theme} />;
   if (view === "reel") return <Reel group={group} />;
   if (view === "states") return <States />;
   return <Sheet group={group} />;
@@ -39,8 +58,8 @@ function Sheet({ group }: { group?: string }) {
       <header className="jig-head">
         <h1 className="jig-title">Icons</h1>
         <p className="jig-lede">
-          {count} drawings on one 24 unit grid, one 1.5 px line and one motion each. Hover any of them; the right-hand three show the hover pose, the on
-          state and the disabled state.
+          {count} drawings on one 24 unit grid, one optically sized line (1.25 px at 16, 1.5 px from 20), fitted to the pixel grid at every size, and one
+          motion each. Hover any of them; the right-hand three show the hover pose, the on state and the disabled state.
         </p>
       </header>
       {groups.map((g) => (
@@ -124,6 +143,24 @@ function Focus({ names, on }: { names?: string; on?: boolean }) {
   );
 }
 
+/* —————————————————————————————— Pixels (for the nearest-neighbour proofs) —————————————————————————————— */
+
+/** Every icon (or `names`) at one size on whole-pixel positions, for tools/pixels.mjs to capture and enlarge. `fit=0` draws the raw geometry. */
+function Pixels({ names, size, fit }: { names?: string; size: number; fit: boolean }) {
+  const list = names ? names.split(",").filter(Boolean) : Object.keys(ICONS);
+  return (
+    <main className="jig jig--pixels">
+      <div className="jig-pixgrid">
+        {list.map((n) => (
+          <span key={n} className="jig-pixcell" data-name={n}>
+            <Icon name={n} size={size} fit={fit} />
+          </span>
+        ))}
+      </div>
+    </main>
+  );
+}
+
 /* —————————————————————————————— 16 px proof —————————————————————————————— */
 
 function Proof() {
@@ -155,8 +192,8 @@ const LAB = ["new-chat", "search", "folder", "library", "customize", "crew", "be
 function StrokeLab() {
   const options = [
     { label: "1 px", px: 1 },
-    { label: "1.25 px", px: 1.25 },
-    { label: "1.5 px (house)", px: 1.5 },
+    { label: "1.25 px (house)", px: 1.25 },
+    { label: "1.5 px", px: 1.5 },
   ];
   return (
     <main className="jig jig--lab">
@@ -169,23 +206,26 @@ function StrokeLab() {
                 <div className="jig-labnav">
                   {LAB.slice(0, 8).map((n) => (
                     <span key={n} className="jig-labitem">
-                      <Icon name={n} size={16} style={{ strokeWidth: (o.px * 24) / 16 }} />
+                      <Icon name={n} size={16} px={o.px} />
                       <span>{n.replace("-", " ")}</span>
                     </span>
                   ))}
                 </div>
                 <div className="jig-labstrip">
                   {LAB.map((n) => (
-                    <Icon key={n} name={n} size={16} style={{ strokeWidth: (o.px * 24) / 16 }} />
+                    <Icon key={n} name={n} size={16} px={o.px} />
                   ))}
                   <span className="jig-labsep" />
                   {LAB.map((n) => (
-                    <Icon key={n} name={n} size={20} style={{ strokeWidth: (o.px * 24) / 20 }} />
+                    <Icon key={n} name={n} size={20} px={o.px} />
                   ))}
                 </div>
               </section>
             ))}
-            <p className="jig-labcap">House ladder: 12 px draws {iconStrokePx(12)} px, 14 px draws {iconStrokePx(14)} px, 16 to 24 px draw 1.5 px</p>
+            <p className="jig-labcap">
+              House ladder: 12 px draws {iconStrokePx(12)} px, 14 px draws {iconStrokePx(14)} px, 16 px draws {iconStrokePx(16)} px, 18 px draws {iconStrokePx(18)} px,
+              20 px and up draw {iconStrokePx(20)} px. Every row is grid fitted.
+            </p>
           </div>
         ))}
       </div>
@@ -353,6 +393,195 @@ function ContextBody() {
         </div>
       </section>
     </>
+  );
+}
+
+/* —————————————————————————————— The framed shell and its menus (D-033) —————————————————————————————— */
+
+/**
+ * Every glyph the framed shell, the sidebar and the blurred layers ask for, in
+ * place: the frame and its inset panel, the sticky header on the bar
+ * material, a chat row's menu (S9), the account menu with its theme submenu,
+ * the command palette (O7) and the Undo toast (O6), on the material over
+ * busy content, light beside dark. The layout is a stand-in for the lead's
+ * shell; the glyphs, sizes and inks are the real ones.
+ */
+function ShellContext({ theme }: { theme?: "light" | "dark" }) {
+  return (
+    <main className="jig jig--shell">
+      <div className={theme ? "jig-one" : "jig-split"}>
+        {(theme ? [theme] : (["light", "dark"] as const)).map((t) => (
+          <div key={t} className="jn jig-pane jig-sh" data-theme={t}>
+            <ShellBody />
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}
+
+function MenuRow({ icon, label, kbd, checked, sub, danger, state }: { icon?: string; label: string; kbd?: string; checked?: boolean; sub?: boolean; danger?: boolean; state?: "active" }) {
+  return (
+    <span className="jig-sh-mrow" role="menuitem" data-danger={danger ? "" : undefined}>
+      <span className="jig-sh-mlead">{icon ? <Icon name={icon} size={16} state={state} /> : null}</span>
+      <span className="jig-sh-mtext">{label}</span>
+      {kbd ? <kbd className="jig-sh-kbd">{kbd}</kbd> : null}
+      {checked ? <Icon name="check" size={16} /> : null}
+      {sub ? <Icon name="chevron-right" size={16} /> : null}
+    </span>
+  );
+}
+
+function ShellBody() {
+  return (
+    <div className="jig-sh-frame">
+      <aside className="jig-sh-side">
+        <div className="jig-sh-head">
+          <span className="jig-wordmark">Juno</span>
+          <span className="jig-sidetools">
+            <button type="button" className="jig-ib jicon-trigger" aria-label="Activity">
+              <Icon name="bell" size={16} />
+            </button>
+            <button type="button" className="jig-ib jicon-trigger" aria-label="Hide sidebar">
+              <Icon name="sidebar" size={16} />
+            </button>
+          </span>
+        </div>
+        {[
+          ["new-chat", "New chat", "⇧⌘O"],
+          ["search", "Search", "⌘K"],
+          ["folder", "Projects"],
+          ["library", "Library"],
+          ["customize", "Customize"],
+        ].map(([icon, label, kbd], i) => (
+          <a key={icon} href="#" className="jig-sh-row jicon-trigger" data-hover={i === 1 ? "" : undefined} onClick={(e) => e.preventDefault()}>
+            <span className="jig-sh-lead">
+              <Icon name={icon} size={16} />
+            </span>
+            <span className="jig-sh-text">{label}</span>
+            {kbd && i === 1 ? <kbd className="jig-sh-kbd">{kbd}</kbd> : null}
+          </a>
+        ))}
+        <p className="jig-sh-label">Pinned</p>
+        <span className="jig-sh-row jig-sh-row--text" data-menu="">
+          <span className="jig-sh-text">Northwind renewal</span>
+          <span className="jig-sh-more jicon-trigger">
+            <Icon name="more" size={16} />
+          </span>
+        </span>
+        <span className="jig-sh-row jig-sh-row--text">
+          <span className="jig-sh-text">Pricing page copy</span>
+        </span>
+        <p className="jig-sh-label">Recent</p>
+        {["Q3 forecast against Stripe", "Why the sync worker drops", "Lisbon offsite venues"].map((r, i) => (
+          <span key={r} className="jig-sh-row jig-sh-row--text" aria-current={i === 0 ? "page" : undefined}>
+            <span className="jig-sh-text">{r}</span>
+          </span>
+        ))}
+        <span className="jig-sh-grow" />
+        <span className="jig-sh-row jig-sh-account" data-open="">
+          <span className="jig-sh-avatar">LM</span>
+          <span className="jig-sh-text">Liam Magnier</span>
+          <Icon name="chevrons-up-down" size={16} />
+        </span>
+      </aside>
+
+      <section className="jig-sh-panel">
+        <header className="jig-sh-bar">
+          <span className="jig-sh-title">
+            Q3 forecast against Stripe
+            <Icon name="chevron-down" size={16} />
+          </span>
+          <span className="jig-sh-grow" />
+          <button type="button" className="jig-ib jicon-trigger" aria-label="Share">
+            <Icon name="share" size={20} />
+          </button>
+          <button type="button" className="jig-ib jicon-trigger" aria-label="Open the document">
+            <Icon name="panel-right" size={20} />
+          </button>
+          <button type="button" className="jig-ib jicon-trigger" aria-label="More">
+            <Icon name="more" size={20} />
+          </button>
+        </header>
+        <div className="jig-sh-content" aria-hidden>
+          <p>Stripe booked 412 new annual plans in Q3, against 388 in the forecast.</p>
+          <div className="jig-sh-cards">
+            {[
+              ["sheet", "Q3 Forecast.xlsx", "#1f8a4c"],
+              ["deck", "Board update, October", "#c2581c"],
+              ["document", "Renewal summary", "#2f6fd6"],
+              ["design", "Pricing page, v3", "#8a4fd6"],
+            ].map(([icon, label, tint]) => (
+              <span key={label} className="jig-sh-card" style={{ "--tint": tint } as React.CSSProperties}>
+                <Icon name={icon} size={20} />
+                {label}
+              </span>
+            ))}
+          </div>
+          <p>Churn held at 2.1%. Two of the three accounts that paused asked to resume in March.</p>
+        </div>
+
+        <div className="jig-sh-palette jmat jicon-quiet" role="dialog" aria-label="Search">
+          <div className="jig-sh-field">
+            <Icon name="search" size={20} />
+            <span className="jig-sh-ph">Search chats, files and people</span>
+            <kbd className="jig-sh-kbd">esc</kbd>
+          </div>
+          <p className="jig-sh-mlabel">Recent</p>
+          <MenuRow icon="history" label="Q3 forecast against Stripe" />
+          <span className="jig-sh-mrow" data-active="">
+            <span className="jig-sh-mlead">
+              <Icon name="history" size={16} />
+            </span>
+            <span className="jig-sh-mtext">Why the sync worker drops cursors</span>
+            <Icon name="enter" size={16} />
+          </span>
+          <MenuRow icon="folder" label="Atlas launch" />
+          <MenuRow icon="document" label="Renewal summary, Northwind" />
+        </div>
+
+        <div className="jig-sh-toast" role="status">
+          <Icon name="trash" size={16} />
+          <span>Chat deleted</span>
+          <button type="button" className="jig-sh-verb jicon-trigger">
+            <Icon name="undo" size={16} />
+            Undo
+          </button>
+        </div>
+      </section>
+
+      <div className="jig-sh-rowmenu jmat jicon-quiet" role="menu" aria-label="Chat">
+        <MenuRow icon="rename" label="Rename" />
+        <MenuRow icon="unpin" label="Unpin" />
+        <MenuRow icon="move" label="Move to" sub />
+        <MenuRow icon="fork" label="Branch" />
+        <MenuRow icon="bell-off" label="Mute" />
+        <span className="jig-sh-msep" />
+        <MenuRow icon="trash" label="Delete" danger />
+      </div>
+
+      <div className="jig-sh-acctmenu jmat jicon-quiet" role="menu" aria-label="Account">
+        <p className="jig-sh-mlabel">Liam Magnier, Pro plan</p>
+        <MenuRow icon="settings" label="Settings" kbd="⌘," />
+        <MenuRow icon="keyboard" label="Keyboard shortcuts" kbd="⌘/" />
+        <span className="jig-sh-mrow" data-active="">
+          <span className="jig-sh-mlead">
+            <Icon name="contrast" size={16} />
+          </span>
+          <span className="jig-sh-mtext">Theme</span>
+          <Icon name="chevron-right" size={16} />
+        </span>
+        <MenuRow icon="phone" label="Get the iPhone app" />
+        <MenuRow icon="help" label="Help" />
+        <span className="jig-sh-msep" />
+        <MenuRow icon="sign-out" label="Sign out" />
+      </div>
+      <div className="jig-sh-submenu jmat jicon-quiet" role="menu" aria-label="Theme">
+        <MenuRow icon="sun" label="Light" />
+        <MenuRow icon="moon" label="Dark" />
+        <MenuRow icon="contrast" label="Match the system" checked />
+      </div>
+    </div>
   );
 }
 

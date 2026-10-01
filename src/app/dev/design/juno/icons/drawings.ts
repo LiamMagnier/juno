@@ -450,11 +450,11 @@ const ARROW_HEAD = head(19.5, 12, 0, 7.425);
 const BUBBLE = "M6.75 4.5H17.25A3 3 0 0 1 20.25 7.5V13.5A3 3 0 0 1 17.25 16.5H11.25L7.5 19.875V16.5H6.75A3 3 0 0 1 3.75 13.5V7.5A3 3 0 0 1 6.75 4.5Z";
 const FOLDER = "M3.75 7.5A2.25 2.25 0 0 1 6 5.25H9.19L11.44 7.5H18A2.25 2.25 0 0 1 20.25 9.75V16.5A2.25 2.25 0 0 1 18 18.75H6A2.25 2.25 0 0 1 3.75 16.5Z";
 /** The bell's shoulders are round, its waist straight, and its lip flares a little: cast, not extruded. */
-const BELL = "M4.875 16.5C5.9 15.6 6.375 14.4 6.375 12.75V10.5A5.625 5.625 0 0 1 17.625 10.5V12.75C17.625 14.4 18.1 15.6 19.125 16.5";
+const BELL = "M4.875 16.5C6 15.6 6.75 14.4 6.75 12.75V10.5A5.25 5.25 0 0 1 17.25 10.5V12.75C17.25 14.4 18 15.6 19.125 16.5";
 const MIC = "M9 6.75A3 3 0 0 1 15 6.75V11.25A3 3 0 0 1 9 11.25Z";
 const EYE = "M3 12C5.2 7.9 8.4 5.625 12 5.625C15.6 5.625 18.8 7.9 21 12C18.8 16.1 15.6 18.375 12 18.375C8.4 18.375 5.2 16.1 3 12Z";
 const BOOKMARK = "M6.75 5.25A1.5 1.5 0 0 1 8.25 3.75H15.75A1.5 1.5 0 0 1 17.25 5.25V20.25L12 16.5L6.75 20.25Z";
-const PIN = "M9.375 3.75V9L6.375 13.5H17.625L14.625 9V3.75";
+const PIN = "M9.75 3.75V9L6.375 13.5H17.625L14.25 9V3.75";
 const THUMB = "M7.5 10.5L10.6 4.45A1.8 1.8 0 0 1 14 5.55L13.4 9H18.35A1.9 1.9 0 0 1 20.2 11.35L18.8 17.95A2 2 0 0 1 16.85 19.5H7.5Z";
 const CUFF = "M7.5 10.5H5.25A1.5 1.5 0 0 0 3.75 12V18A1.5 1.5 0 0 0 5.25 19.5H7.5";
 /* The crew: two members standing on one ground line, the nearer one shorter and looking at you. */
@@ -491,6 +491,19 @@ const leanBand = (() => {
 })();
 
 const PLUG = ["M7.5 9H16.5V12A4.5 4.5 0 0 1 7.5 12Z", poly(9.75, 9, 9.75, 4.5), poly(14.25, 9, 14.25, 4.5), poly(12, 16.5, 12, 20.25)];
+
+/** Undo: the shaft leaves to the left from the hook's top and the hook turns back under it (a U-turn, the way the state goes). */
+const UNDO = "M4.5 8.25H14.25A5.25 5.25 0 0 1 14.25 18.75H9.75";
+const UNDO_HEAD = head(4.5, 8.25, 180, 4.773);
+/** Return: down the right side, round the corner, out to the left. */
+const ENTER = "M18.75 6V12A3 3 0 0 1 15.75 15H5.25";
+const ENTER_HEAD = head(5.25, 15, 180, 4.773);
+/** The clock's hands, shared by routine and history. */
+const HANDS = poly(12, 8.25, 12, 12, 14.625, 13.5);
+/** The bell's parts, so the muted bell is the bell. */
+const BELL_PARTS = [BELL, poly(4.5, 16.5, 19.5, 16.5), poly(10.125, 19.5, 13.875, 19.5)];
+/** The pin's parts, so the unpin is the pin. */
+const PIN_PARTS = [poly(8.25, 3.75, 15.75, 3.75), PIN, poly(12, 13.5, 12, 20.25)];
 
 /* —————————————————————————————— The set —————————————————————————————— */
 
@@ -582,8 +595,8 @@ export const ICONS = {
   }),
   bell: I({
     group: "Navigation",
-    elements: [p(BELL), p(poly(4.5, 16.5, 19.5, 16.5)), p(poly(10.125, 19.5, 13.875, 19.5))],
-    fill: [solid(`${BELL}Z`), p(poly(4.5, 16.5, 19.5, 16.5)), p(poly(10.125, 19.5, 13.875, 19.5))],
+    elements: BELL_PARTS.map((d) => p(d)),
+    fill: [solid(`${BELL}Z`), p(BELL_PARTS[1]), p(BELL_PARTS[2])],
     on: { kind: "fill" },
     hover: { r: 10, o: [12, 4.5], anim: "swing" },
     motion: "One swing from the hanger, damped, then still.",
@@ -673,7 +686,7 @@ export const ICONS = {
   }),
   at: I({
     group: "Composer",
-    elements: [c(12, 12, 3.375), p(`M15.375 8.625V13.125A2.25 2.25 0 0 0 19.875 13.125V12${arc(12, 12, 7.875, 0, -306, false)}`)],
+    elements: [c(12, 12, 3.75), p(`M15.75 8.25V13.125A2.25 2.25 0 0 0 20.25 13.125V12${arc(12, 12, 8.25, 0, -306, false)}`)],
     hover: { r: -18, o: [12, 12] },
     motion: "The tail winds back a little.",
   }),
@@ -802,7 +815,7 @@ export const ICONS = {
   "read-aloud": I({
     group: "Message",
     elements: [
-      p(roundPoly(0.9, 3.75, 9.375, 7.125, 9.375, 11.25, 5.625, 11.25, 18.375, 7.125, 14.625, 3.75, 14.625)),
+      p(roundPoly(0.9, 3.75, 9, 7.5, 9, 11.25, 5.25, 11.25, 18.75, 7.5, 15, 3.75, 15)),
       g([p(arc(11.625, 12, 3.75, -48, 48))], { anim: "wave", delay: 0 }),
       g([p(arc(11.625, 12, 7.125, -48, 48))], { anim: "wave", delay: 80 }),
     ],
@@ -846,7 +859,7 @@ export const ICONS = {
   }),
   warning: I({
     group: "States",
-    elements: [p(roundPoly(2, 12, 3.75, 20.625, 19.125, 3.375, 19.125)), p(poly(12, 9.75, 12, 13.875)), dot(12, 16.5)],
+    elements: [p(roundPoly(2, 12, 4.125, 20.625, 19.5, 3.375, 19.5)), p(poly(12, 10.125, 12, 14.25)), dot(12, 16.875)],
     motion: "None.",
   }),
   lock: I({
@@ -884,7 +897,7 @@ export const ICONS = {
   }),
   sheet: I({
     group: "Files",
-    elements: [p(rr(3.75, 4.5, 16.5, 15, 3)), p(poly(3.75, 9.75, 20.25, 9.75)), p(poly(3.75, 14.625, 20.25, 14.625)), p(poly(9.75, 4.5, 9.75, 19.5))],
+    elements: [p(rr(3.75, 4.5, 16.5, 15, 3)), p(poly(3.75, 9.75, 20.25, 9.75)), p(poly(3.75, 14.25, 20.25, 14.25)), p(poly(9.75, 4.5, 9.75, 19.5))],
     motion: "None. A table, not a page: a page with lines in it read as a plus-minus sign at 16 px.",
   }),
   deck: I({
@@ -978,7 +991,7 @@ export const ICONS = {
     group: "Crew and time",
     elements: [
       g([p(arc(12, 12, 8.25, -60, 240)), p(head(...pt(12, 12, 8.25, 240), -30, 3.75))], { r: 45, o: [12, 12] }),
-      p(poly(12, 8.25, 12, 12, 14.625, 13.5)),
+      p(HANDS),
     ],
     motion: "The loop comes round an eighth; the hands keep the time.",
   }),
@@ -1040,7 +1053,7 @@ export const ICONS = {
   }),
   run: I({
     group: "Code",
-    elements: [c(12, 12, 8.25), g([p(roundPoly(1, 10.125, 8.625, 15.375, 12, 10.125, 15.375))], { x: 0.75 })],
+    elements: [c(12, 12, 8.25), g([p(roundPoly(1, 10.5, 8.625, 15.75, 12, 10.5, 15.375))], { x: 0.75 })],
     motion: "The triangle nudges forward.",
   }),
   test: I({
@@ -1057,8 +1070,8 @@ export const ICONS = {
     group: "Code",
     elements: [
       p(rr(3.75, 3.75, 6.75, 4.5, 1.5)),
-      p(poly(7.125, 8.25, 7.125, 18.75, 13.5, 18.75)),
-      p(poly(7.125, 12, 13.5, 12)),
+      p(poly(6.75, 8.25, 6.75, 18.75, 13.5, 18.75)),
+      p(poly(6.75, 12, 13.5, 12)),
       g([p(rr(13.5, 9.75, 6.75, 4.5, 1.5)), p(rr(13.5, 16.5, 6.75, 4.5, 1.5))], { x: 0.75 }),
     ],
     motion: "The children step out from the parent.",
@@ -1172,8 +1185,8 @@ export const ICONS = {
   }),
   pin: I({
     group: "Library",
-    elements: [p(poly(8.25, 3.75, 15.75, 3.75)), p(PIN), p(poly(12, 13.5, 12, 20.25))],
-    fill: [p(poly(8.25, 3.75, 15.75, 3.75)), solid(`${PIN}Z`), p(poly(12, 13.5, 12, 20.25))],
+    elements: PIN_PARTS.map((d) => p(d)),
+    fill: [p(PIN_PARTS[0]), solid(`${PIN}Z`), p(PIN_PARTS[2])],
     on: { kind: "fill" },
     hover: { r: -14, o: [12, 20.25] },
     motion: "The pin tilts on its point. Active: filled, pinned.",
@@ -1270,6 +1283,80 @@ export const ICONS = {
     elements: [p(MIC), p("M6 11.25A6 6 0 0 0 18 11.25"), p(poly(12, 17.25, 12, 20.25)), ko(SLASH), p(SLASH)],
     motion: "None.",
   }),
+
+  /* ——— The framed shell, the sidebar and its menus (D-033) ——— */
+  keyboard: I({
+    group: "Navigation",
+    elements: [
+      p(rr(3, 6, 18, 12, 2.25)),
+      dot(7.5, 10.125),
+      dot(10.5, 10.125),
+      dot(13.5, 10.125),
+      dot(16.5, 10.125),
+      g([p(poly(8.25, 14.25, 15.75, 14.25))], { y: 0.75 }),
+    ],
+    motion: "The space bar goes down: a key pressed.",
+  }),
+  "bell-off": I({
+    group: "Navigation",
+    elements: [...BELL_PARTS.map((d) => p(d)), ko(SLASH), p(SLASH)],
+    motion: "None: a state (this chat or member is muted).",
+  }),
+  history: I({
+    group: "Crew and time",
+    elements: [g([p(arc(12, 12, 8.25, 130, -150)), p(head(...pt(12, 12, 8.25, -150), 120, 4.5))], { r: -45, o: [12, 12] }), p(HANDS)],
+    motion: "The arrow winds back an eighth: back in time (retry's arrow round routine's clock).",
+  }),
+  undo: I({
+    group: "Arrows",
+    elements: [p(UNDO), p(UNDO_HEAD)],
+    hover: { r: -14, o: [14.25, 13.5] },
+    motion: "The hook winds back, the way the change goes.",
+  }),
+  redo: I({
+    group: "Arrows",
+    elements: [p(flipX(UNDO)), p(flipX(UNDO_HEAD))],
+    hover: { r: 14, o: [9.75, 13.5] },
+    motion: "The hook winds forward.",
+  }),
+  enter: I({
+    group: "Arrows",
+    elements: [p(ENTER), p(ENTER_HEAD)],
+    hover: { x: -1.125 },
+    motion: "Nudges the way it points, as the key goes in.",
+  }),
+  "folder-plus": I({
+    group: "Library",
+    elements: [p(FOLDER), g([p(poly(12, 11.25, 12, 15.75)), p(poly(9.75, 13.5, 14.25, 13.5))], { r: 90, o: [12, 13.5] })],
+    motion: "The plus turns a quarter: a new project.",
+  }),
+  "folder-move": I({
+    group: "Library",
+    elements: [p(FOLDER), g([p(poly(8.25, 13.5, 15, 13.5)), p(head(15, 13.5, 0, 3.182))], { x: 1.125 })],
+    motion: "The arrow moves in: this goes into a project.",
+  }),
+  unpin: I({
+    group: "Library",
+    elements: [...PIN_PARTS.map((d) => p(d)), ko(SLASH), p(SLASH)],
+    motion: "None: the menu verb for a pinned row.",
+  }),
+  grip: I({
+    group: "Library",
+    elements: [dot(9.75, 6.75, 1.5), dot(14.25, 6.75, 1.5), dot(9.75, 12, 1.5), dot(14.25, 12, 1.5), dot(9.75, 17.25, 1.5), dot(14.25, 17.25, 1.5)],
+    motion: "None: a handle; the pointer and the lift say it.",
+  }),
+  phone: I({
+    group: "Code",
+    elements: [p(rr(6.75, 3, 10.5, 18, 3)), p(poly(10.5, 18, 13.5, 18))],
+    hover: { y: -0.75 },
+    motion: "The phone lifts, as if picked up.",
+  }),
+  contrast: I({
+    group: "Theme",
+    elements: [c(12, 12, 8.25), solid("M12 3.75A8.25 8.25 0 0 1 12 20.25Z")],
+    hover: { r: 180, o: [12, 12] },
+    motion: "The halves trade places: light and dark follow the system.",
+  }),
 } satisfies Record<string, IconDrawing>;
 
 /** Other names the screens use for the same drawing. */
@@ -1294,6 +1381,24 @@ export const ICON_ALIASES = {
   "check-circle": "success",
   "branch-chat": "fork",
   settings2: "settings",
+  rename: "edit",
+  move: "folder-move",
+  "move-to": "folder-move",
+  "new-project": "folder-plus",
+  delete: "trash",
+  restore: "history",
+  versions: "history",
+  recent: "history",
+  duplicate: "copy",
+  export: "download",
+  "theme-system": "contrast",
+  system: "contrast",
+  mobile: "phone",
+  drag: "grip",
+  mute: "bell-off",
+  return: "enter",
+  shortcuts: "keyboard",
+  publish: "globe",
 } satisfies Record<string, string>;
 
 export function resolveIcon(name: string): IconDrawing | undefined {

@@ -38,11 +38,8 @@
   transform-origin: 12px 12px;
 }
 
-@media (min-resolution: 2dppx) {
-  .ji .jsnap {
-    translate: var(--ji-snap, 0) var(--ji-snap, 0);
-  }
-}
+/* Crispness is not a translate here: index.tsx fits each drawing's stems to the
+ * device pixel grid per size and pixel ratio (fitDrawing). */
 
 /* ——————————————————————————— Parts at rest ——————————————————————————— */
 

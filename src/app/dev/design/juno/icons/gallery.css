@@ -495,3 +495,350 @@
   color: var(--ink);
   padding-left: 4px;
 }
+
+/* Pixels: whole-pixel cells for the nearest-neighbour proofs. */
+.jig--pixels {
+  padding: 24px;
+}
+.jig-pixgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 40px);
+  gap: 8px;
+}
+.jig-pixcell {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--ink);
+}
+
+/* —————————————————————————————— The framed shell (view=shell) ——————————————————————————————
+ * A stand-in for the lead's framed shell (shell.css), drawn with the same
+ * tokens, so the glyphs can be judged where they live: on the frame, in the
+ * inset panel, and on the material over busy content. */
+.jig--shell {
+  max-width: none;
+  padding: 0;
+}
+.jig-sh {
+  padding: 0;
+  background: var(--side);
+}
+.jig-sh-frame {
+  position: relative;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  height: 980px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.jig-sh-side {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  min-width: 0;
+}
+.jig-sh-head {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 2px 0 10px;
+}
+.jig-sh-head .jig-sidetools {
+  margin-left: auto;
+}
+.jig-sh-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-row);
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.jig-sh-row[data-hover],
+.jig-sh-row[data-menu],
+.jig-sh-row[data-open] {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+.jig-sh-row[aria-current="page"] {
+  background: var(--fill-selected);
+  color: var(--ink);
+}
+.jig-sh-row--text {
+  padding-left: 10px;
+}
+.jig-sh-lead {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--ink-3);
+}
+.jig-sh-row[data-hover] .jig-sh-lead {
+  color: var(--ink-2);
+}
+.jig-sh-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jig-sh-more {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -4px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  background: var(--fill-hover);
+}
+.jig-sh-label {
+  margin: 16px 0 4px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jig-sh-grow {
+  flex: 1;
+}
+.jig-sh-account {
+  height: 44px;
+}
+.jig-sh-account > svg {
+  color: var(--ink-3);
+}
+.jig-sh-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--well-2);
+  color: var(--ink-2);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.jig-sh-kbd {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.jig-sh-panel {
+  position: relative;
+  margin: 8px 8px 8px 0;
+  border-radius: var(--r-panel, 14px);
+  background: var(--ground);
+  box-shadow:
+    0 0 0 1px var(--panel-edge),
+    0 1px 2px var(--panel-lift);
+  overflow: hidden;
+  isolation: isolate;
+}
+.jig-sh-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  padding: 0 8px 0 16px;
+  background: var(--mat-bar);
+  -webkit-backdrop-filter: var(--mat-filter-bar);
+  backdrop-filter: var(--mat-filter-bar);
+  box-shadow: 0 1px 0 var(--line);
+}
+.jig-sh-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.jig-sh-title > svg {
+  color: var(--ink-3);
+}
+.jig-sh-bar .jig-ib {
+  width: 32px;
+  height: 32px;
+  color: var(--ink-2);
+}
+.jig-sh-content {
+  padding: 68px 28px 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 24px;
+}
+.jig-sh-content p {
+  max-width: 52ch;
+  margin: 0 0 16px;
+}
+.jig-sh-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.jig-sh-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 64px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--tint) 16%, var(--card));
+  color: var(--ink);
+}
+.jig-sh-card > svg {
+  color: var(--tint);
+}
+
+/* The material layers: menus, the palette (shell.css owns the real ones). */
+.jig-sh-rowmenu,
+.jig-sh-acctmenu,
+.jig-sh-submenu,
+.jig-sh-palette {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: var(--r-pop);
+  box-shadow:
+    0 0 0 1px var(--mat-edge),
+    inset 0 1px 0 var(--mat-sheen),
+    var(--shadow-pop);
+  color: var(--ink);
+}
+.jig-sh-rowmenu {
+  top: 252px;
+  left: 196px;
+  width: 196px;
+}
+.jig-sh-acctmenu {
+  bottom: 56px;
+  left: 8px;
+  width: 236px;
+}
+.jig-sh-submenu {
+  bottom: 168px;
+  left: 248px;
+  width: 220px;
+}
+.jig-sh-palette {
+  top: 112px;
+  left: 196px;
+  right: 16px;
+  padding: 6px 6px 8px;
+}
+.jig-sh-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 10px;
+  margin-bottom: 4px;
+  box-shadow: 0 1px 0 var(--line);
+  color: var(--ink-3);
+}
+.jig-sh-ph {
+  flex: 1;
+  font-size: 15px;
+}
+.jig-sh-mlabel {
+  margin: 6px 0 2px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jig-sh-mrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 10px 0 8px;
+  border-radius: 8px;
+  color: var(--ink);
+}
+.jig-sh-mrow[data-active] {
+  background: var(--fill-selected);
+}
+.jig-sh-mrow > svg {
+  color: var(--ink-3);
+  flex: none;
+}
+.jig-sh-mlead {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--ink-2);
+}
+.jig-sh-mtext {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jig-sh-mrow[data-danger] {
+  color: var(--danger);
+}
+.jig-sh-mrow[data-danger] .jig-sh-mlead {
+  color: var(--danger);
+}
+.jig-sh-msep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--line);
+}
+
+.jig-sh-toast {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border-radius: 12px;
+  background: var(--mat-toast);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
+  color: light-dark(#f3f4f5, #f3f4f5);
+  font-size: 14px;
+}
+.jig-sh-toast > svg {
+  color: light-dark(rgb(243 244 245 / 0.72), rgb(243 244 245 / 0.72));
+}
+.jig-sh-verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin-left: 8px;
+  padding: 0 10px 0 8px;
+  border-radius: 8px;
+  color: #ffffff;
+  font-weight: 500;
+  background: rgb(255 255 255 / 0.1);
+}
+.jig-one {
+  min-height: 100dvh;
+}

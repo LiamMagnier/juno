@@ -26,7 +26,7 @@
  */
 import * as React from "react";
 import type { CSSProperties, SVGProps } from "react";
-import { ICON_ALIASES, ICONS, resolveIcon, type IconDrawing, type IconElement, type IconMove } from "./drawings";
+import { ICON_ALIASES, ICONS, resolveIcon, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
 import "./icons.css";
 
 export type KnownIconName = keyof typeof ICONS | keyof typeof ICON_ALIASES;
@@ -48,6 +48,10 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   pose?: "hover" | "press";
   /** The line in grid units, instead of the optical ladder: display sizes (a 192 px drawing review draws 1.5, as 24 px does). */
   line?: number;
+  /** Grid fitting (default on at UI sizes, 12 to 32 px). `false` draws the raw geometry: the pixel proof's before column. */
+  fit?: boolean;
+  /** Labs only: the line in px instead of the optical ladder, still fitted. */
+  px?: number;
 }
 
 /* —————————————————————————————— Optical sizing —————————————————————————————— */
@@ -67,16 +71,186 @@ export function iconStrokePx(size: number): number {
   return 1;
 }
 
+/* —————————————————————————————— Grid fitting —————————————————————————————— */
+
 /**
- * Half a device pixel at 2x, in grid units, when the stroke is an odd whole
- * number of device pixels (1.5 px = 3 dp): lattice lines then land on pixel
- * centres and the stroke's edges are crisp. Applied only at >= 2dppx
- * (icons.css). An even stroke (1 px = 2 dp) is already crisp on the lattice.
+ * Hinting, done the way a font's autohinter does it, per rendered size and
+ * device pixel ratio. Every straight horizontal and vertical run in a drawing
+ * is a stem; each stem's centre moves (at most half a device pixel) to where
+ * the rendered line covers whole device pixels: a pixel boundary when the
+ * line's whole device pixels are even (2 dp, or 2.5 as 16 px at 2x draws), a
+ * pixel centre when odd (1.5 px at 2x is 3 dp). Every other point (curves,
+ * diagonals, circle centres, knockouts) is interpolated between the stems
+ * around it, so joins stay joined and proportions hold: the drawing is the
+ * same, only its straight edges are crisp. One lattice cannot be crisp at 16
+ * and at 20 px (a 1.5 unit step is 2 dp at 16 but 2.5 dp at 20), which is why
+ * the fit happens here and not in the data. The native projection reads the
+ * unfitted drawing (SF Symbols scale as vectors).
  */
-function snapUnits(size: number, strokePx: number): number {
-  const dp = strokePx * 2;
-  return Number.isInteger(dp) && dp % 2 === 1 ? 6 / size : 0;
+type AxisMap = (v: number) => number;
+
+/** A straight run this long or longer is a stem (a member's 1.5 unit eyes count). */
+const STEM_MIN = 0.75;
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+function stemsOf(els: IconElement[], xs: Set<number>, ys: Set<number>) {
+  for (const el of els) {
+    if (el.tag === "g") {
+      stemsOf(el.children ?? [], xs, ys);
+      continue;
+    }
+    if (el.tag === "rect") {
+      const x = Number(el.attrs.x ?? 0);
+      const y = Number(el.attrs.y ?? 0);
+      xs.add(r3(x)).add(r3(x + Number(el.attrs.width ?? 0)));
+      ys.add(r3(y)).add(r3(y + Number(el.attrs.height ?? 0)));
+      continue;
+    }
+    if (el.tag !== "path") continue;
+    const t = String(el.attrs.d).match(/[MLHVCQAZ]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+    let i = 0;
+    let cmd = "";
+    let x = 0;
+    let y = 0;
+    let sx = 0;
+    let sy = 0;
+    const num = () => Number(t[i++]);
+    const line = (x1: number, y1: number) => {
+      if (Math.abs(x1 - x) < 1e-3 && Math.abs(y1 - y) >= STEM_MIN) xs.add(r3(x));
+      if (Math.abs(y1 - y) < 1e-3 && Math.abs(x1 - x) >= STEM_MIN) ys.add(r3(y));
+      x = x1;
+      y = y1;
+    };
+    while (i < t.length) {
+      if (/[MLHVCQAZ]/.test(t[i])) {
+        cmd = t[i++];
+        if (cmd === "Z") {
+          line(sx, sy);
+          continue;
+        }
+      }
+      if (cmd === "M") {
+        x = sx = num();
+        y = sy = num();
+        cmd = "L";
+      } else if (cmd === "L") line(num(), num());
+      else if (cmd === "H") line(num(), y);
+      else if (cmd === "V") line(x, num());
+      else if (cmd === "C" || cmd === "Q" || cmd === "A") {
+        i += cmd === "C" ? 4 : cmd === "Q" ? 2 : 5;
+        x = num();
+        y = num();
+      } else i++;
+    }
+  }
 }
+
+/**
+ * One axis: stems snap to the device lattice, points between two stems follow
+ * linearly, points outside shift with the nearest stem. `off` shifts the
+ * lattice so the glyph's centre line (12 units) is itself a stem position, and
+ * a stem exactly between two targets rounds away from the centre: a symmetric
+ * drawing stays symmetric (a pin's body stays centred on its needle) and its
+ * counters open rather than close.
+ */
+function axisMap(stems: Set<number>, k: number, frac: number, off: number): AxisMap {
+  const from = [...stems].sort((a, b) => a - b);
+  if (from.length === 0) return (v) => v;
+  const to: number[] = [];
+  from.forEach((c, j) => {
+    const v = c * k + off - frac;
+    const tie = Math.abs(v - Math.floor(v) - 0.5) < 1e-6;
+    const n = tie ? (c < 12 ? Math.floor(v) : c > 12 ? Math.ceil(v) : Math.round(v)) : Math.round(v);
+    let tgt = (n + frac) / k;
+    // Two stems closer than a device pixel must not swap or merge: the later one keeps the earlier one's shift.
+    if (j > 0 && tgt <= to[j - 1] + 1e-6) tgt = c + (to[j - 1] - from[j - 1]);
+    to.push(tgt);
+  });
+  const last = from.length - 1;
+  return (v) => {
+    if (v <= from[0]) return r3(v + to[0] - from[0]);
+    if (v >= from[last]) return r3(v + to[last] - from[last]);
+    let j = 0;
+    while (from[j + 1] < v) j++;
+    return r3(to[j] + ((v - from[j]) / (from[j + 1] - from[j])) * (to[j + 1] - to[j]));
+  };
+}
+
+function fitEls(els: IconElement[], mx: AxisMap, my: AxisMap): IconElement[] {
+  return els.map((el) => {
+    if (el.tag === "g") return { ...el, children: fitEls(el.children ?? [], mx, my) };
+    const a = { ...el.attrs };
+    if (el.tag === "path") a.d = xform(String(a.d), (x, y) => [mx(x), my(y)]);
+    else if (el.tag === "circle") {
+      a.cx = mx(Number(a.cx));
+      a.cy = my(Number(a.cy));
+    } else if (el.tag === "rect") {
+      const x = Number(a.x ?? 0);
+      const y = Number(a.y ?? 0);
+      a.x = mx(x);
+      a.y = my(y);
+      a.width = r3(mx(x + Number(a.width ?? 0)) - mx(x));
+      a.height = r3(my(y + Number(a.height ?? 0)) - my(y));
+    }
+    return { ...el, attrs: a };
+  });
+}
+
+const fitCache = new WeakMap<IconDrawing, Map<string, IconDrawing>>();
+
+/**
+ * The drawing fitted to `size` px at `dpr` with a `strokePx` line. The rest
+ * and on drawings share one fit (the fill must land exactly on the outline it
+ * replaces); a swap target or hover drawing is fitted on its own.
+ */
+export function fitDrawing(d: IconDrawing, size: number, dpr: number, strokePx: number): IconDrawing {
+  const key = `${size}|${dpr}|${strokePx}`;
+  let bySize = fitCache.get(d);
+  const hit = bySize?.get(key);
+  if (hit) return hit;
+  const k = (size * dpr) / 24;
+  const frac = Math.floor(strokePx * dpr + 1e-6) % 2 === 1 ? 0.5 : 0;
+  const centre = 12 * k - frac;
+  const off = Math.round((Math.round(centre) - centre) * 1000) / 1000;
+  const xs = new Set<number>();
+  const ys = new Set<number>();
+  stemsOf(d.elements, xs, ys);
+  if (d.fill) stemsOf(d.fill, xs, ys);
+  const mx = axisMap(xs, k, frac, off);
+  const my = axisMap(ys, k, frac, off);
+  const out: IconDrawing = { ...d, elements: fitEls(d.elements, mx, my), fill: d.fill ? fitEls(d.fill, mx, my) : undefined };
+  if (!bySize) {
+    bySize = new Map();
+    fitCache.set(d, bySize);
+  }
+  bySize.set(key, out);
+  return out;
+}
+
+/** The device pixel ratio the fit targets: 2 on the server (Retina is the reference frame), the screen's own on the client. */
+const dprListeners = new Set<() => void>();
+let dprQuery: MediaQueryList | null = null;
+function watchDpr() {
+  if (typeof window === "undefined" || !window.matchMedia) return;
+  dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  dprQuery.addEventListener(
+    "change",
+    () => {
+      watchDpr();
+      dprListeners.forEach((f) => f());
+    },
+    { once: true },
+  );
+}
+function subscribeDpr(cb: () => void) {
+  dprListeners.add(cb);
+  if (!dprQuery) watchDpr();
+  return () => {
+    dprListeners.delete(cb);
+  };
+}
+const dprNow = () => Math.min(3, Math.max(1, Math.round(window.devicePixelRatio || 1)));
+const dprServer = () => 2;
 
 /* —————————————————————————————— Rendering —————————————————————————————— */
 
@@ -86,17 +260,26 @@ const TIGHT_GROW = 0.75;
 
 type Ctx = {
   uid: string;
+  /** Device pixels per grid unit when fitted (a held hover pose then moves by whole device pixels), else 0. */
+  k: number;
   sw: number;
   value?: number;
   levels?: number[];
   levelIndex: { i: number };
 };
 
-function moveStyle(m: IconMove | undefined): CSSProperties | undefined {
+/** A held translation, rounded to whole device pixels (never to nothing), so a part at rest in its hover pose stays crisp. */
+function snapMove(v: number, k: number): number {
+  if (!k) return v;
+  const dp = Math.round(v * k) || Math.sign(v);
+  return Math.round((dp / k) * 1000) / 1000;
+}
+
+function moveStyle(m: IconMove | undefined, k = 0): CSSProperties | undefined {
   if (!m) return undefined;
   const s: Record<string, string | number> = {};
-  if (m.x) s["--hx"] = `${m.x}px`;
-  if (m.y) s["--hy"] = `${m.y}px`;
+  if (m.x) s["--hx"] = `${snapMove(m.x, k)}px`;
+  if (m.y) s["--hy"] = `${snapMove(m.y, k)}px`;
   if (m.r) s["--hr"] = `${m.r}deg`;
   const sx = m.sx ?? m.s;
   const sy = m.sy ?? m.s;
@@ -158,7 +341,7 @@ function renderEl(el: IconElement, key: string, ctx: Ctx): React.ReactNode {
         lv = { "--lv": levelScale(el, ctx.levels[i] ?? 0) } as CSSProperties;
       }
     }
-    const style = el.hover || lv ? { ...moveStyle(el.hover), ...lv } : undefined;
+    const style = el.hover || lv ? { ...moveStyle(el.hover, ctx.k), ...lv } : undefined;
     return (
       <g key={key} className={el.hover ? "jp" : undefined} data-anim={el.hover?.anim} data-lv={isLevel ? "" : undefined} style={style}>
         {renderList(el.children ?? [], ctx, key)}
@@ -194,7 +377,7 @@ function renderList(els: IconElement[], ctx: Ctx, prefix: string): React.ReactNo
       <mask key={`${key}m`} id={id} maskUnits="userSpaceOnUse" x={-4} y={-4} width={32} height={32}>
         <rect x={-4} y={-4} width={32} height={32} fill="white" stroke="none" />
         {el.hover ? (
-          <g className="jp" data-anim={el.hover.anim} style={moveStyle(el.hover)}>
+          <g className="jp" data-anim={el.hover.anim} style={moveStyle(el.hover, ctx.k)}>
             {shape}
           </g>
         ) : (
@@ -209,39 +392,45 @@ function renderList(els: IconElement[], ctx: Ctx, prefix: string): React.ReactNo
   return painted;
 }
 
-function Wrap({ move, children }: { move?: IconMove; children: React.ReactNode }) {
+function Wrap({ move, k, children }: { move?: IconMove; k: number; children: React.ReactNode }) {
   if (!move) return <>{children}</>;
   return (
-    <g className="jp" data-anim={move.anim} style={moveStyle(move)}>
+    <g className="jp" data-anim={move.anim} style={moveStyle(move, k)}>
       {children}
     </g>
   );
 }
 
-/** One drawing's layers: base, hover swap, fill, and the swap target. */
-function Layers({ d, ctx }: { d: IconDrawing; ctx: Ctx }) {
+type Fit = (d: IconDrawing) => IconDrawing;
+const noFit: Fit = (d) => d;
+
+/** One drawing's layers: base, hover swap, fill, and the swap target, each fitted to the rendered size. */
+function Layers({ d: raw, ctx, fit }: { d: IconDrawing; ctx: Ctx; fit: Fit }) {
+  const d = fit(raw);
   const on = d.on;
   const turn = on?.kind === "turn" ? ({ "--on-turn": `${on.deg}deg`, transformOrigin: "12px 12px" } as CSSProperties) : undefined;
-  const alt = on?.kind === "swap" ? resolveIcon(on.to) : undefined;
-  const hoverAlt = d.hoverSwap ? resolveIcon(d.hoverSwap) : undefined;
+  const altRaw = on?.kind === "swap" ? resolveIcon(on.to) : undefined;
+  const hoverRaw = d.hoverSwap ? resolveIcon(d.hoverSwap) : undefined;
+  const alt = altRaw ? fit(altRaw) : undefined;
+  const hoverAlt = hoverRaw ? fit(hoverRaw) : undefined;
   return (
     <>
       <g className="jg jg-base" style={turn}>
-        <Wrap move={d.hover}>{renderList(d.elements, ctx, "b")}</Wrap>
+        <Wrap move={d.hover} k={ctx.k}>{renderList(d.elements, ctx, "b")}</Wrap>
       </g>
       {hoverAlt ? (
         <g className="jg jg-hover">
-          <Wrap move={hoverAlt.hover}>{renderList(hoverAlt.elements, { ...ctx, uid: `${ctx.uid}h` }, "h")}</Wrap>
+          <Wrap move={hoverAlt.hover} k={ctx.k}>{renderList(hoverAlt.elements, { ...ctx, uid: `${ctx.uid}h` }, "h")}</Wrap>
         </g>
       ) : null}
       {d.fill ? (
         <g className="jg jg-fill">
-          <Wrap move={d.hover}>{renderList(d.fill, { ...ctx, uid: `${ctx.uid}f` }, "f")}</Wrap>
+          <Wrap move={d.hover} k={ctx.k}>{renderList(d.fill, { ...ctx, uid: `${ctx.uid}f` }, "f")}</Wrap>
         </g>
       ) : null}
       {alt ? (
         <g className="jg jg-alt">
-          <Wrap move={alt.hover}>{renderList(alt.elements, { ...ctx, uid: `${ctx.uid}a`, levelIndex: { i: 0 } }, "a")}</Wrap>
+          <Wrap move={alt.hover} k={ctx.k}>{renderList(alt.elements, { ...ctx, uid: `${ctx.uid}a`, levelIndex: { i: 0 } }, "a")}</Wrap>
         </g>
       ) : null}
     </>
@@ -329,7 +518,7 @@ function useCalmLevels(levels: number[] | undefined, svg: React.RefObject<SVGSVG
   return reduced ? (held ?? levels) : levels;
 }
 
-export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, line, className, style, ...rest }: IconProps) {
+export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, line, fit: fitOn = true, px, className, style, ...rest }: IconProps) {
   const rawId = React.useId();
   const uid = `ji${rawId.replace(/[^a-zA-Z0-9]/g, "")}`;
   const svgRef = React.useRef<SVGSVGElement | null>(null);
@@ -343,11 +532,13 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
     setShown(name);
   }
 
-  const strokePx = iconStrokePx(size);
+  const strokePx = px ?? iconStrokePx(size);
   const sw = line ?? Math.round(((strokePx * 24) / size) * 1000) / 1000;
-  const snap = line ? 0 : snapUnits(size, strokePx);
+  const dpr = React.useSyncExternalStore(subscribeDpr, dprNow, dprServer);
+  const fits = fitOn && line == null && size >= 12 && size <= 32;
+  const fit = React.useMemo<Fit>(() => (fits ? (x) => fitDrawing(x, size, dpr, strokePx) : noFit), [fits, size, dpr, strokePx]);
   const d = resolveIcon(name);
-  const ctx: Ctx = { uid, sw, value, levels: shownLevels, levelIndex: { i: 0 } };
+  const ctx: Ctx = { uid, k: fits ? (size * dpr) / 24 : 0, sw, value, levels: shownLevels, levelIndex: { i: 0 } };
 
   if (!d && process.env.NODE_ENV !== "production" && !warned.has(name)) {
     warned.add(name);
@@ -360,11 +551,6 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
   const settle = (e: React.AnimationEvent<SVGGElement>) => {
     if (e.target === e.currentTarget) setLeaving(null);
   };
-
-  const svgStyle = {
-    ...(snap ? { "--ji-snap": `${Math.round(snap * 1000) / 1000}px` } : null),
-    ...style,
-  } as CSSProperties;
 
   return (
     <svg
@@ -385,21 +571,21 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
       role={title ? "img" : undefined}
       aria-hidden={title ? undefined : true}
       focusable="false"
-      style={svgStyle}
+      style={style}
       {...rest}
     >
       {title ? <title>{title}</title> : null}
       <g className="jsnap">
         {d ? (
           <g key={`in${leaving?.n ?? 0}`} className={enterCls ? `jl ${enterCls}` : "jl"} style={enterStyle} onAnimationEnd={leaving ? settle : undefined}>
-            <Layers d={d} ctx={ctx} />
+            <Layers d={d} ctx={ctx} fit={fit} />
           </g>
         ) : (
           <rect x={5.25} y={5.25} width={13.5} height={13.5} rx={3} strokeDasharray="2 2" opacity={0.5} />
         )}
         {prev ? (
           <g key={`out${leaving?.n ?? 0}`} className="jl jg-exit">
-            <Layers d={prev} ctx={{ ...ctx, uid: `${uid}p`, levelIndex: { i: 0 } }} />
+            <Layers d={prev} ctx={{ ...ctx, uid: `${uid}p`, levelIndex: { i: 0 } }} fit={fit} />
           </g>
         ) : null}
       </g>
