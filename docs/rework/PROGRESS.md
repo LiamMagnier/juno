@@ -254,3 +254,78 @@ tests, 4,416 pass, 67 skipped, 2 fail, both outside this change and failing
 on the trunk too since 2026-10-01: `google:gemini-omni-flash-preview` passed
 its `retiresOn: 2026-09-30` and left the catalog
 (`tests/model-catalog-fidelity.test.ts`, `tests/video-gen.test.ts`).
+
+### Lane F: commands, hooks, MCP, agents and composer inputs (`rf/code-extend`, §6.6)
+
+Built on the trunk at `e1fde2fa` (runtime integration and seams), in
+`../juno-rf-code-extend`. Shared files were touched only where a seam did not
+reach, each change additive and named below.
+
+| Spec item | Status | What landed |
+|---|---|---|
+| §5.4 slash verbs with real handlers | DONE, four on default routes | `SlashCommands.swift` (sources: project, yours, Claude Code; verbs; aliases), `SlashCommandHandlers.swift` (pure parser + handlers over `SlashCommandHost`), `CommandCenterModel.swift` (library, sheets, confirmation, `/btw`, `/loop`s, routes), `SessionController+Commands.swift` (the host). All 20 verbs: `/goal /verify /review /context /cost (/usage) /compact /rewind /resume /model /init /memory /permissions /agents /mcp /hooks /tasks /fork /loop /export /btw`. `/boost` and `/teamwork-preview` are gone. `/goal`, `/verify`, `/review`, `/fork` run today's behaviour through `SlashCommandRoutes`, which Lanes A, B and E replace without touching the registry: `/goal` sets the goal with no approval card (the reader typed it), asks "Replace the current goal?" over an open one, clears with `clear/stop/off/cancel` (new `CodeSessionStore.clearGoal`, a `goal.status cleared` event); `/verify` runs the detected checks through `run_tests` and its approvals; `/review` sends a turn that delegates to the built-in `reviewer` agent; `/fork` copies the conversation and transcript into a new session. `/loop` without an interval runs at a 10-minute pace until Lane A's `schedule_wakeup` exists. |
+| §5.5 context and cost readout | DONE | `/context` sheet (`ContextBreakdown`: per-part estimates scaled by Hamilton's method so the parts sum exactly to the provider-reported total; suggestions in words), `/cost` sheet (`CostBreakdown`: by model with the cache split, the session's own turns apart from sub-agents). The meter shows "$1.12" beside the ring and opens `/context`. Judge and reviewer rows appear when Lanes A and B record that spend. |
+| §5.8 user-global MCP, commands, agents, skills | DONE | `~/.juno/mcp.json`, `~/.juno/{commands,agents,skills}`; read-only import of `~/.claude/{commands,agents,skills}` and `~/.claude.json` `mcpServers`, each off until turned on (`~/.juno/imports.json`, `UserExtensionPolicyStore`). Project over yours over Claude Code's, the losers listed. Yours need no workspace trust; project items keep theirs. `ExtensionScope` (Core), `UserExtensions.swift`, `MCPConfigurationLoader.loadAll`, `MCPServerPolicyStore.startupAuthorizer`. |
+| §5.9 full hooks protocol | DONE, three events partly wired | 27 events (Claude Code's 25 adopted plus `GoalSet`, `GoalVerdict`); handler types `command`, `http` (POST the stdin JSON, 2xx body read like stdout, no redirects, ephemeral session; a project's may only post to loopback), `prompt` (one tool-less model turn answering `{ok, reason}`; can only block). `mcp_tool` and `agent` are diagnosed. Stdin carries the documented fields per event (`agent_id`/`agent_type`, `last_assistant_message`, `error`, `trigger`, `tool_calls`…); stdout handles `continue`, `stopReason`, `suppressOutput`, `systemMessage`, `decision`, `hookSpecificOutput` (`permissionDecision` with `defer` as ask, `updatedInput`, `additionalContext`, PermissionRequest `decision.behavior`). Exit 2 blocks only where the event can be blocked. Timeouts 600 s command and http, 30 s prompt, 30 s `UserPromptSubmit`. Wired: the seams' PreCompact, PostCompact, PostToolBatch, PostToolUseFailure; StopFailure; PermissionRequest (a block declines, an allow approves nothing) and PermissionDenied; SubagentStart and agent-typed SubagentStop; TaskCreated/TaskCompleted (may refuse a `todo_write`); InstructionsLoaded; FileChanged (Juno's own write tools); PreModelSwitch (may keep the model)/PostModelSwitch; WorktreeCreate/Remove (the reader's isolated worktrees); GoalSet (`/goal`). Partly: ConfigChange fires for changes made in `/permissions` and `/agents`, not for files edited outside Juno; GoalVerdict has its adapter call ready for Lane A's judge; sub-agent worktrees do not fire WorktreeCreate. |
+| §5.2 custom agents as targets, background delegation | DONE (with Lane B's runtime files touched additively) | Agent front matter `name, description, model, tools, mode, isolation, maxSteps` from `.juno/agents`, `.claude/agents`, `~/.juno/agents`, imported `~/.claude/agents`. `delegate_task` takes `agent` and `background`; built-ins `explorer`, `reviewer`, `verifier` (`SubagentDefinitions.swift`, prompts only: the reviewer's JSON protocol is Lane B's). An agent narrows mode, tools and steps and never widens them; write children get `min(stepLimit/4, 60)` steps. Background children (`BackgroundSubagentRegistry`, 30-minute budget each) are followed by `await_subagents`, `inspect_subagent`, `cancel_subagent` through `ExtensionToolProvider`; Stop cancels them. `hasRunning` is there for Lane A's stop check. |
+| §5.11 image paste and drag | DONE, surfaces pending | ⌘V and drop of images, PDFs (first four pages as PNGs) and Finder files; the macOS screenshot thumbnail drags in as a file. A model that cannot see now says "This model cannot see images; switch to one that can." instead of the paste vanishing. "Send to chat" from Preview and screen-control thumbnails is `SessionController.attach(_:)`, ready for Lanes C and D to call. |
+| §5.12 @ mentions | PARTIAL | `MentionResolver.swift` (from `FileContextToken.swift`) and `StudioMentionPicker.swift`: `@diff` and running `@shell:<id>` above files and folders; folders list two levels deep, at most 200 entries, plus their `AGENTS.md`; `@preview:/route` asks a `PreviewMentionProviding` (Lane D plugs the Preview in; without one the block says the Preview was not open); unknown mentions stay text. Not done: tinted inline rendering in the composer (a `TextField` cannot style ranges; left for the composer redesign). |
+| §5.18 App Intent | DONE; CLI SKIPPED (D-025) | `JunoCodeIntents.swift` "Start a Juno Code task" (task, project, goal, mode) and an App Shortcut; `CodeTaskIntentRequest` caps the mode at the reader's remote ceiling, since an automation runs with no one watching; the session is ordinary and every approval waits in the app. `.junoCodeOpenSession` notifications from `/resume` and `/fork` reach the window through `DesktopWorkbenchRegistry`. |
+
+Safety invariants, each with a test: a hook's `updatedInput` is validated
+against the schema and authorized from scratch at no lower a risk, without
+the hook's own `allow` (`HookInvariantTests`); a hook `allow` cannot silence
+screen input, a destructive action or `git_commit`, nor turn read-only into
+an action; a PermissionRequest hook may decline, never approve; a prompt hook
+can only block; a project's HTTP hook cannot post off this Mac; imported
+Claude Code items start off; a slash verb runs under the session's mode
+(`/verify` asks like any command); an App Intent never gets more than the
+remote ceiling; Stop ends loops and background children.
+
+Shared files touched (additive): `AgentOrchestrator.swift` (PermissionRequest
+and PermissionDenied calls beside the Notification one), `ToolScheduler.swift`
+and `ToolRegistry.swift` (`updatedInput`, `minimumRisk`),
+`CodeSessionStore.swift` (`clearGoal`), `CodeToolProvider.swift`
+(`backgroundSubagents`), `DelegateTaskTool.swift` (agents, background,
+SubagentStart), `SessionController.swift` (hook adapter gets the prompt
+evaluator and instruction files; `signalHooks`; model and worktree signals;
+agent targets and the background registry for `delegate_task`; Stop calls
+`commands.stopEverything()`; mention context after file context; the
+non-vision message; `currentSystemPrompt`; `transientError` settable in the
+module), `WorkspaceContext.swift` (MCP from every scope; skills with user
+folders), `StudioSessionView.swift` (commands through the command centre,
+the sheet host, the loop line, the meter's `/context`), and on the Mac
+`DesktopWorkbenchRegistry.swift` (one line) and the regenerated
+`JunoDesktop.xcodeproj` (four lines for `JunoCodeIntents.swift`).
+
+Tests added (76): XCTest `HookHandlerProtocolTests` (12, including an
+in-process `NWListener` HTTP hook and scripted prompt hooks),
+`HookInvariantTests` (6), `SubagentTargetTests` (8),
+`WorkspaceAgentHookEventsTests` (9, including a prompt Stop hook through a
+scripted model), `ComposerPasteTests` (3), `StudioCommandSnapshotTests` (8,
+offscreen, skipped without `JUNO_SNAPSHOT_DIR`); Swift Testing
+`SlashCommandRegistryTests` (13), `UserGlobalConfigTests` (5),
+`MentionResolverTests` (5), `ContextBreakdownTests` (4), `CodeTaskIntentTests`
+(3). Updated: `HookExtensibilityTests` (600 s default, PreCompact is an event,
+agent-typed SubagentStop), `SlashCommandTests` (verbs, landing library).
+Snapshots reviewed by eye in light and dark: slash menu (scrolls past eight
+rows now), `/context`, `/cost`, `/permissions`, `/agents`, `/btw`, the `@`
+picker, the hooks list with every handler kind, the loop line. Words only, no
+pills or dots.
+
+Gates on the branch (through `gate.sh`):
+
+| Gate | Result | Notes |
+|---|---|---|
+| `npm run native:test JunoCode` | pass | 1,368 XCTests (21 skipped: the 13 earlier snapshot skips and the 8 new ones without `JUNO_SNAPSHOT_DIR`) and 108 Swift Testing, 0 failures; seams baseline 1,322 + 78 |
+| `JUNO_SNAPSHOT_DIR=… JUNO_SWIFT_FILTER='StudioCommandSnapshotTests'` | pass | 19 PNGs, read and reviewed |
+| `xcodebuild -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj -scheme JunoDesktop -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/juno-rf-dd-code-extend CODE_SIGNING_ALLOWED=NO build` | BUILD SUCCEEDED | App Intents metadata extracted; no warnings in the new files |
+| `npm run typecheck`, `npm test` | not run | no TypeScript or web file changed in this lane |
+
+Left for other lanes, through the seams above: the goal sheet and start card
+replace `/goal`'s default route (A); the verify recipe and the reviewer pass
+replace `/verify` and `/review` (B); session forks at a turn and into a
+worktree replace `/fork` (E); the Preview answers `@preview:` and calls
+`attach(_:)` for "Send to chat" (D); screen-control thumbnails do the same (C);
+the stop check reads `BackgroundSubagentRegistry.hasRunning` (A); the judge
+calls `WorkspaceAgentHooks.goalVerdict` (A).
