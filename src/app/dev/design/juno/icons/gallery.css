@@ -565,6 +565,15 @@
   background: var(--fill-hover);
   color: var(--ink);
 }
+@media (hover: hover) and (pointer: fine) {
+  a.jig-sh-row:hover {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+  a.jig-sh-row:hover .jig-sh-lead {
+    color: var(--ink-2);
+  }
+}
 .jig-sh-row[aria-current="page"] {
   background: var(--fill-selected);
   color: var(--ink);
