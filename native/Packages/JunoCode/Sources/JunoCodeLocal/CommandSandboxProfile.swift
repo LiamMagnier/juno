@@ -107,6 +107,10 @@ public struct CommandSandboxProfile: Equatable, Sendable {
             "/.aws", "/.config/gcloud", "/.azure", "/.kube", "/.oci", "/.config/doctl",
             "/.docker/config.json", "/.terraform.d/credentials.tfrc.json", "/.fly", "/.supabase",
             "/.config/stripe", "/.vault-token", "/.config/op", "/.password-store",
+            // Hosting and tunnel CLIs' login tokens
+            "/.netlify", "/.config/netlify", "/Library/Application Support/com.vercel.cli",
+            "/Library/Application Support/netlify", "/.wrangler", "/Library/Preferences/.wrangler",
+            "/.config/heroku", "/.railway", "/.ngrok2", "/.config/ngrok", "/Library/Application Support/ngrok",
             // Publishing tokens
             "/.pypirc", "/.gem/credentials", "/.cargo/credentials", "/.cargo/credentials.toml",
             // Database logins
@@ -123,8 +127,9 @@ public struct CommandSandboxProfile: Equatable, Sendable {
             "/Library/Application Support/com.operasoftware.Opera",
             "/Library/Application Support/Firefox",
             "/Library/Safari", "/Library/Cookies", "/Library/Containers/com.apple.Safari",
-            // Shell histories, where tokens typed on a command line end up
-            "/.zsh_history", "/.bash_history",
+            // Shell and REPL histories, where tokens typed on a command line end up
+            "/.zsh_history", "/.bash_history", "/.local/share/fish/fish_history", "/.zsh_sessions",
+            "/.psql_history", "/.mysql_history", "/.node_repl_history", "/.python_history",
         ].map { home + $0 } + ["/Library/Keychains"]
     }
 
