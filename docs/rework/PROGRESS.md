@@ -254,3 +254,77 @@ tests, 4,416 pass, 67 skipped, 2 fail, both outside this change and failing
 on the trunk too since 2026-10-01: `google:gemini-omni-flash-preview` passed
 its `retiresOn: 2026-09-30` and left the catalog
 (`tests/model-catalog-fidelity.test.ts`, `tests/video-gen.test.ts`).
+
+### Lane A: loop, stop check and goal (`rf/code-loop`, §6.1; steps 1 and 2 of §6.8)
+
+Branched from the trunk at the seams merge (`e1fde2fa`). Three code commits
+and this entry; nothing pushed.
+
+| Spec item | State | Where |
+|---|---|---|
+| §1.2 run ledger, filled from side effects, stamped by revision, saved as the run journal | Done | `JunoCodeRuntime/RunLedger.swift` (`RunLedger`, `RunLedgerRecorder`, `RunJournal`) |
+| §1.3 one end reason per run, report and divider words | Done | `RunEndWords`, `LedgerRunReportBuilder` (stands in for Lane B's builder through `RunReportBuilding`), `RunCompletedEvent.endReason/endDetail` |
+| §1.4 stop check, rules 1–12 in order, once per revision | Done | `JunoCodeRuntime/CompletionGate.swift`; `runCheck`/`runReview` call Lane B's runners through `GateCheckRunning`/`GateReviewRunning` when they exist |
+| §1.5 continuation templates, fenced notes, captions | Done | `RuntimeContinuation.swift`, `StudioLoopRows.swift` |
+| §1.6 soft step limit, output-limit resume, run and goal budgets, Keep going, Retry by resume | Done | `AgentOrchestrator` (`limitReached`, `endOfTurn`, `announceWrapUp`), `SessionController+Autonomy` |
+| §1.6 settings layered through the files | Done | `JunoCodeCore/AutonomySettings.swift`, `CodeSettings.autonomy`; an unapproved project file can only lower bounds; Settings → Agent → Autonomy |
+| §1.7 workflow text and `<verify>`, `<autonomy>`, `<goal>` sections | Done | `WorkspaceContext.codeWorkflow`, `SessionController.autonomySections`; goal and verify re-sent whole after compaction |
+| §1.11 approvals park instead of expiring into a denial | Done | `PermissionCoordinator.sweepExpired` now parks, reminders at 15/60/240 min, a late yes still binds the digest; notifications are Lane E's |
+| §1.12 run journal and `resume(note: .afterQuit)` | Done | `sessions/<id>/run.json`, `SessionController.resumeInterruptedRun()`; an active goal comes back paused; the quit guard and Resume row are Lane E's |
+| §1.13 protocol | Done in the seams commit | the turn's stop reason now maps from the end reason |
+| §2.1–§2.2 `GoalRun`, state machine, one current goal, replaceable, history, migration | Done | `JunoCodeCore/GoalModels.swift`, `CodeSessionStore` (`goal.json`) |
+| §2.3 `/goal`, start card, criteria drafting, task grants, propose_goal | Done; plan and CI origins are Lane F/E entry points into the same `GoalModelHost.startGoal` | `GoalModel`, `StudioGoalStartCard`, `ModelCriteriaDrafter`, `PermissionCoordinator.setTaskGrants` |
+| §2.4 gate then judge, outcomes, judge errors, stall guard, budgets | Done | `GoalRuntime.swift`, `CompletionJudge.swift` (`haiku` route, D-020) |
+| §2.5 `<goal>` section and goal tools | Done | `Tools/GoalTools.swift` (`.read`, cannot complete a goal) |
+| §2.6 errors pause the goal, Stop pauses it | Done | `GoalRuntime.runEnded` |
+| §2.7 waiting on background work and check-ins | Partial | the gate's `wait`, `CheckInSchedule` (tested with an injected clock) and the `checkin` note exist; nothing feeds `backgroundWork` yet, because durable shells cannot yet tell a server from an awaited job and background sub-agents are Lane B's §5.2 |
+| §2.8 progress row, sheet, verdict rows, commands | Done | `StudioGoalRow`, `StudioGoalSheet`, `StudioGoalVerdictRow`; `/goal` is a session verb (`CodeSlashCommand.Action.goal`) |
+| §5.16 `/loop` | Skipped | step 4 of §6.8 |
+| §6.7 cross-lane acceptance | Skeleton, passing | `Tests/JunoCodeUITests/AutonomousAgentScenarioTests.swift`: all four scenarios, 1 and 2 with stand-ins for `run_checks` and the Preview recorder |
+
+Deviations and seams for the other lanes:
+
+- The recipe the gate reads is `GateRecipe` (in `CompletionGate.swift`), not
+  Lane B's `VerifyRecipe`. Until `.juno/verify.json` lands, Code sessions use
+  the test commands `TestRunnerService` suggests, none of them run without
+  the model asking. Lane B maps its recipe onto `GateRecipe` and sets
+  `runsWithoutPrompt` with `PermissionCoordinator.allowsWithoutPrompt`.
+- Recorders reach the ledger through `CodeToolProviderContext.runLedger`
+  (`VerificationLedgerWriting`) or by returning `.verificationRecorded`,
+  `.uiVerificationRecorded` or `.reviewCompleted` side effects; the ledger
+  stamps the revision either way.
+- `UpdateGoalTool` (the step goal) stays in the tree for the sessions and
+  tests that still read `SessionGoal`, but Code sessions no longer offer it.
+- The diff-read rule applies only in a Git repository (`git_diff` cannot
+  run elsewhere).
+- A run report row shows in the thread only when it has checks, gaps or
+  notes; the divider after it already says how the run ended.
+- `/goal` needs a session, so the landing screen does not offer it.
+
+Tests added: `CompletionGateTests` 35, `AutonomousLoopTests` 9,
+`GoalRuntimeTests` 14, `PermissionCoordinatorTaskGrantTests` 6,
+`AutonomySettingsTests` 12, `GoalModelTests` 7, `AutonomousAgentScenarioTests` 4,
+`LoopSnapshotTests` 5 (rendered only with `JUNO_SNAPSHOT_DIR`), plus one each
+in `CodeToolProviderTests` and `AutonomousLoopSurfaceTests`. Updated for the
+new behaviour: the iteration-limit, max-tokens and missing-stop-reason tests
+(soft now), the expiry test (parks now), the seam continuation test, the
+cache-prefix test (new goal tools) and two slash-command tests.
+
+Snapshots reviewed by eye, light and dark: goal row in five states, start
+card, goal sheet, continuation captions and verdict rows, and one end
+divider per `RunEndReason`. Words only; no pills, badges or dots.
+
+Gates on the branch (through `gate.sh`, on `f6fb1a8a`):
+
+| Gate | Result |
+|---|---|
+| `npm run native:test JunoCode` (warnings as errors) | pass: 1,362 XCTests (17 skipped: snapshots), 78 Swift Testing, 0 failures (seams baseline 1,322 + 78) |
+| `xcodebuild … -scheme JunoDesktop -configuration Debug CODE_SIGNING_ALLOWED=NO build` | BUILD SUCCEEDED (DerivedData `/private/tmp/juno-rf-dd-code-loop`) |
+| `agent:protocol:check`, `code:runtime:check`, `code:preview:check`, `check-approval-dispatch` | pass |
+| `npm run typecheck`, `npm test` | not run: the lane changes no TypeScript and no contract |
+
+Open for later steps: `/loop` (§5.16, step 4); feeding background work
+into the gate and scheduling check-in turns (§2.7) once shells and
+background sub-agents can say what is awaited; the judge's cost and latency
+on Juno's proxy are still unmeasured (UNVERIFIED in §2.4); the landing
+screen's `/goal`.
