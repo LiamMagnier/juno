@@ -16,7 +16,11 @@
 # Usage (from anywhere inside the repo):
 #   deploy/deploy-from-mac.sh                 # deploy origin/main
 #   deploy/deploy-from-mac.sh some-branch     # deploy a branch, tag or SHA
-# Production deployment requires the shared local gates; bypass is disabled.
+#   deploy/deploy-from-mac.sh REF --skip-checks="why this cannot wait"
+#       EMERGENCY ONLY. Skips the test/lint/contract gates (scripts/local-gates.sh)
+#       but still runs the migration replay, the security check and `next build`
+#       (which typechecks), and records who, what and why on this Mac and on the VM.
+#       SKIP_CHECKS in the environment is ignored; a push never takes this path.
 #
 # Needs, once:
 #   - Docker Desktop, running. Settings → Resources → Memory: 8 GB (the
@@ -37,16 +41,35 @@ IMAGE="node:24-bookworm"
 # rewrite broke every request on the new release.
 BUILD_ROOT="/opt/juno-release-build"
 REF="origin/main"
-SKIP_CHECKS="${SKIP_CHECKS:-0}"
+# The gate bypass is a flag with a reason, never an inherited variable: a
+# leftover `export SKIP_CHECKS=1` used to skip every gate of the next deploy
+# with nothing on screen but one word in a banner.
+if [ -n "${SKIP_CHECKS:-}" ]; then
+  printf '\033[1;33m[warn] SKIP_CHECKS in the environment is ignored; the gates will run. Use --skip-checks="<reason>" for an emergency.\033[0m\n' >&2
+fi
+SKIP_CHECKS=0
+SKIP_REASON=""
 
 for arg in "$@"; do
   case "$arg" in
-    --skip-checks) SKIP_CHECKS=1 ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    --skip-checks)
+      echo "--skip-checks needs a reason: --skip-checks=\"why this cannot wait for green gates\"" >&2
+      exit 2 ;;
+    --skip-checks=*)
+      SKIP_CHECKS=1
+      SKIP_REASON="${arg#--skip-checks=}" ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) REF="$arg" ;;
   esac
 done
+if [ "$SKIP_CHECKS" = 1 ]; then
+  # One printable line of at least 12 characters: it goes into two logs.
+  if [ "${#SKIP_REASON}" -lt 12 ] || [ "${#SKIP_REASON}" -gt 300 ] || printf '%s' "$SKIP_REASON" | LC_ALL=C grep -q '[^ -~]'; then
+    echo "--skip-checks reason must be one printable line of 12 to 300 characters" >&2
+    exit 2
+  fi
+fi
 
 say() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[warn] %s\033[0m\n' "$*" >&2; }
@@ -79,6 +102,19 @@ if ! git branch -r --contains "$SHA" 2>/dev/null | grep -q .; then
 fi
 if [ "$REF" = "origin/main" ] && [ -n "$(git log --oneline origin/main..HEAD 2>/dev/null)" ]; then
   warn "your local branch has commits that aren't on origin/main; they are NOT in this deploy (git push first to include them)"
+fi
+GATES_BYPASS_B64=""
+if [ "$SKIP_CHECKS" = 1 ]; then
+  # Recorded before anything is built, so an abandoned emergency deploy is in
+  # the log too. The VM gets the same line in ~/juno/deploy-bypass.log.
+  BYPASS_LINE="$(date -u +%Y-%m-%dT%H:%M:%SZ) sha=$SHA ref=$REF operator=$(git config user.email 2>/dev/null || whoami)@$(hostname -s) reason=$SKIP_REASON"
+  BYPASS_LOG="${JUNO_BYPASS_LOG:-$HOME/.juno/deploy-bypass.log}"
+  mkdir -p "$(dirname "$BYPASS_LOG")" && chmod 700 "$(dirname "$BYPASS_LOG")"
+  printf '%s\n' "$BYPASS_LINE" >> "$BYPASS_LOG" || die "could not record the gate bypass in $BYPASS_LOG"
+  GATES_BYPASS_B64="$(printf '%s' "$BYPASS_LINE" | base64 | tr -d '\n')"
+  printf '\n\033[1;41;37m EMERGENCY DEPLOY: test, lint and contract gates are SKIPPED \033[0m\n' >&2
+  printf '\033[1;31m%s\033[0m\n' "Reason: $SKIP_REASON" >&2
+  printf '\033[1;31m%s\033[0m\n\n' "Still run: migration replay, security check, next build (typecheck + lint). Logged in $BYPASS_LOG and on the VM." >&2
 fi
 live_sha="$(curl -fsS -m 10 "$PUBLIC_URL/api/health" 2>/dev/null | sed -n 's/.*"version":"\([0-9a-f]*\)".*/\1/p' || true)"
 echo "Live now: ${live_sha:-unknown}"
@@ -124,7 +160,7 @@ say "Source archive of ${SHA:0:12}"
 git archive --format=tar "$SHA" | gzip -1 > "$WORK/$ARCHIVE"
 shasum -a 256 "$WORK/$ARCHIVE" | cut -d' ' -f1 > "$WORK/$ARCHIVE.sha256"
 
-say "Checks and build in a linux/amd64 container ($([ "$SKIP_CHECKS" = 1 ] && echo 'checks SKIPPED' || echo 'with checks'))"
+say "Checks and build in a linux/amd64 container ($([ "$SKIP_CHECKS" = 1 ] && echo 'EMERGENCY: gates SKIPPED except security' || echo 'with checks'))"
 build_start=$SECONDS
 # Everything the container prints goes to stderr (your terminal); the build
 # artifact is the only thing on stdout. node_modules stays inside the
@@ -134,7 +170,7 @@ build_start=$SECONDS
 docker run --rm -i --platform linux/amd64 \
   -v juno-npm-cache:/root/.npm \
   -v "$WORK/build.env:/run/juno-build.env:ro" \
-  -e SKIP_CHECKS="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
+  -e JUNO_EMERGENCY_SKIP_GATES="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
   "$IMAGE" bash -c '
     set -Eeuo pipefail
     exec 3>&1 1>&2
@@ -147,10 +183,11 @@ docker run --rm -i --platform linux/amd64 \
     npm run build --prefix runner/agent-core
     step "relay dependencies"
     npm ci --prefix relay --no-audit --no-fund
-    step "shared local gates"
-    if [ "${SKIP_CHECKS:-0}" = "1" ]; then
-      echo "SKIP_CHECKS=1: bypassing non-build gates"
+    if [ "${JUNO_EMERGENCY_SKIP_GATES:-0}" = "1" ]; then
+      step "EMERGENCY: shared gates skipped; the security check still runs"
+      npm run security:check
     else
+      step "shared local gates"
       bash scripts/local-gates.sh --without-migrations
     fi
     step "next build"
@@ -187,9 +224,15 @@ echo "Uploaded in $(elapsed "$upload_start")"
 # —— Release transaction (same as deploy.yml) ——————————————————————————————————
 say "Activating ${SHA:0:12} (deploy.sh: migrate, reload, health check, auto-rollback)"
 VM_UPLOAD_OWNED=''
-vm "GIT_SHA_TO_DEPLOY='$SHA' RUN_ID='$RUN_ID' UPLOAD_DIR='$UPLOAD_DIR' JUNO_BUILD_ROOT='$BUILD_ROOT' bash -s" <<'REMOTE'
+vm "GIT_SHA_TO_DEPLOY='$SHA' RUN_ID='$RUN_ID' UPLOAD_DIR='$UPLOAD_DIR' JUNO_BUILD_ROOT='$BUILD_ROOT' GATES_BYPASS_B64='$GATES_BYPASS_B64' bash -s" <<'REMOTE'
 set -euo pipefail
 LIVE_ROOT="$HOME/juno"
+if [ -n "$GATES_BYPASS_B64" ]; then
+  # An emergency deploy leaves a line on the server it changed, beside the
+  # releases, whoever later asks why this release did not pass its gates.
+  printf '%s\n' "$(printf '%s' "$GATES_BYPASS_B64" | base64 -d)" >> "$LIVE_ROOT/deploy-bypass.log"
+  chmod 600 "$LIVE_ROOT/deploy-bypass.log"
+fi
 ARCHIVE="$UPLOAD_DIR/juno-${GIT_SHA_TO_DEPLOY}.tar.gz"
 BUILD_ARTIFACT="$UPLOAD_DIR/juno-${GIT_SHA_TO_DEPLOY}.build.tar.gz"
 INCOMING_ENV="$LIVE_ROOT/.env.incoming-${RUN_ID}"
@@ -292,3 +335,4 @@ JUNO_PUBLIC_UI_BASE_URL="$APP_URL" node ~/juno/current/scripts/public-ui-smoke.m
 SMOKE
 
 say "Deployed ${SHA:0:12} — $PUBLIC_URL is live on it. Total $(elapsed 0)."
+[ "$SKIP_CHECKS" != 1 ] || warn "This release did NOT pass the shared gates (emergency bypass, logged). Run scripts/local-gates.sh on ${SHA:0:12} and fix forward."
