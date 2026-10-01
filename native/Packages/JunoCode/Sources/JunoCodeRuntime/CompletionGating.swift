@@ -117,12 +117,28 @@ public protocol GateCheckRunning: Sendable {
     /// Runs the recipe checks with these ids and returns what ran, pass or
     /// fail. A check that was refused or could not start returns nothing.
     func runChecks(ids: [String], sessionID: CodeSessionID) async -> [VerificationRecord]
+    /// Whether the runner already wrote its records (and the file changes
+    /// its commands made) to the transcript, stamped with the transcript's
+    /// revision, as Lane B's `CheckRunner.runAndRecord` does. The loop then
+    /// only takes them into the run ledger; otherwise it records them too.
+    var recordsEvidence: Bool { get }
+}
+
+public extension GateCheckRunning {
+    var recordsEvidence: Bool { false }
 }
 
 /// Runs the read-only reviewer sub-agent over the diff for the stop check
 /// (`runReview`, §1.9). Lane B provides the real one.
 public protocol GateReviewRunning: Sendable {
     func review(sessionID: CodeSessionID, ledger: RunLedger, goal: GoalRun?) async -> ReviewRecord?
+    /// Whether the runner already wrote the review to the transcript (Lane
+    /// B's `ReviewPass` does).
+    var recordsEvidence: Bool { get }
+}
+
+public extension GateReviewRunning {
+    var recordsEvidence: Bool { false }
 }
 
 /// Everything the loop needs to run autonomously: the settings, the ledger

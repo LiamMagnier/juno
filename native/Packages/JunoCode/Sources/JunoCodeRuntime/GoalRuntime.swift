@@ -128,7 +128,7 @@ public actor GoalRuntime {
                     ? "\(criterion.id) needs a passing \(command) since the last edit"
                     : "\(criterion.id): \(command) failed")
             case let .ui(surface, target):
-                let records = ledger.freshUIVerifications(surface: surface, target: target)
+                let records = Self.freshUIRecords(ledger, surface: surface, target: target)
                 if records.contains(where: \.passed) {
                     result.metCriteria.append(criterion.id)
                 } else {
@@ -404,7 +404,7 @@ public actor GoalRuntime {
                     .filter { $0.checkID == checkID || recipe?.check(for: $0)?.id == checkID }
                     .map { "recorded by Juno: \($0.command) \($0.passed ? "passed" : "failed") at revision \($0.workspaceRevision) (\($0.id))" }
             case let .ui(surface, target):
-                resolved.evidence += ledger.freshUIVerifications(surface: surface, target: target)
+                resolved.evidence += Self.freshUIRecords(ledger, surface: surface, target: target)
                     .map { "recorded by Juno: \($0.target) \($0.passed ? "passed" : "failed") \($0.checks.map(\.name).joined(separator: ", ")) (\($0.id))" }
             case .judged:
                 break
@@ -460,6 +460,23 @@ public enum GoalChangeRecord: Sendable {
     case verdictAndStatus(GoalVerdict)
     /// `goal.updated`.
     case edited
+}
+
+// MARK: - UI evidence for a criterion
+
+extension GoalRuntime {
+    /// The fresh UI records that speak for `target` on `surface`. A web
+    /// target is a route, matched the way the Preview matches one (Lane D):
+    /// `/settings` is the page at `/settings.html` or `/settings?tab=a`, and
+    /// `[id]` segments match any value. Native targets match exactly.
+    public static func freshUIRecords(
+        _ ledger: RunLedger,
+        surface: UIVerificationSurface,
+        target: String
+    ) -> [UIVerificationRecord] {
+        guard surface == .web else { return ledger.freshUIVerifications(surface: surface, target: target) }
+        return ledger.freshUIVerifications(surface: .web).filter { PreviewUIEdits.route($0.target, matches: target) }
+    }
 }
 
 // MARK: - The gate with the goal

@@ -832,17 +832,6 @@ public final class SessionController {
             return await makeProjectlessOrchestrator(contract, live: live)
         }
         let systemPrompt = await stableSystemPrompt(context: context, contract: contract)
-        // Code runs autonomously: the stop check, soft limits, budgets and
-        // goals (CODE_AGENT_SPEC §1, §2). Plan, Ask and Survey only report.
-        let autonomy = contract.behavior == .code
-            ? await autonomyConfiguration(contractModelID: contract.modelID, live: live, context: context)
-            : nil
-        let sessionState = sessionStateProvider(
-            context: context,
-            store: live.store,
-            includeGoal: contract.behavior == .code,
-            autonomy: autonomy
-        )
         // A sub-agent reads the date, branch and skills as its parent does,
         // but not the parent's goal: it cannot update that goal, and the
         // task it was handed is its whole contract.
@@ -856,6 +845,49 @@ public final class SessionController {
         let lifecycleHooks = contract.behavior == .code
             ? makeHookAdapter(context: context, live: live)
             : nil
+        // Code runs autonomously: the stop check, soft limits, budgets and
+        // goals (CODE_AGENT_SPEC §1, §2), with Lane B's checks, reviewer and
+        // report behind it. Plan, Ask and Survey only report.
+        let autonomy = contract.behavior == .code
+            ? await autonomyConfiguration(
+                contractModelID: contract.modelID,
+                live: live,
+                context: context,
+                // The review pass's reviewer: Lane B's built-in `reviewer`,
+                // read-only, with no way to start a write-capable child.
+                reviewer: DelegateTaskTool(
+                    model: live.modelClient,
+                    registry: ToolRegistry(
+                        tools: Self.visionAdjusted(
+                            context.registry
+                                .inspectionOnly()
+                                .allTools
+                                .filter { !$0.name.hasPrefix("computer_") },
+                            supportsVision: contract.supportsVision
+                        )
+                    ),
+                    store: live.store,
+                    workspaceID: workspaceID,
+                    workspaceName: workspaceSurface.displayName,
+                    modelID: contract.modelID,
+                    reasoningEffort: contract.reasoningEffort,
+                    parentSystemPrompt: systemPrompt,
+                    sessionState: childSessionState,
+                    controls: live.subagentControls,
+                    fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
+                    parentRules: { [permissions = live.permissions] in
+                        await permissions.permissionRules
+                    },
+                    lifecycleHooks: lifecycleHooks
+                )
+            )
+            : nil
+        let sessionState = sessionStateProvider(
+            context: context,
+            store: live.store,
+            includeGoal: contract.behavior == .code,
+            autonomy: autonomy
+        )
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools

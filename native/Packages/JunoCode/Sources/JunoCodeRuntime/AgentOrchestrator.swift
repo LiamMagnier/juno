@@ -2583,7 +2583,12 @@ public actor AgentOrchestrator {
                 await ledger.update { $0.autoCheckRevisions.append(revision) }
                 if let runner = configuration.autonomy?.checkRunner {
                     for record in await runner.runChecks(ids: ids, sessionID: sessionID) {
-                        await ledger.recordVerification(record)
+                        if runner.recordsEvidence {
+                            // Already in the transcript, at its revision.
+                            await ledger.update { $0.recordVerification(record) }
+                        } else {
+                            await ledger.recordVerification(record)
+                        }
                     }
                 }
                 continue
@@ -2591,7 +2596,11 @@ public actor AgentOrchestrator {
                 if let reviewer = configuration.autonomy?.reviewRunner {
                     let goal = await configuration.autonomy?.goals?.currentGoal()
                     if let record = await reviewer.review(sessionID: sessionID, ledger: snapshot, goal: goal) {
-                        await ledger.recordReview(record)
+                        if reviewer.recordsEvidence {
+                            await ledger.update { $0.recordReview(record) }
+                        } else {
+                            await ledger.recordReview(record)
+                        }
                         if goal?.isActive == true {
                             await configuration.autonomy?.goals?.noteReviewed(atRevision: snapshot.workspaceRevision)
                         }

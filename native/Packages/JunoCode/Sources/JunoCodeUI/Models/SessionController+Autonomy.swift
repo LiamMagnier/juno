@@ -26,6 +26,36 @@ final class SessionAutonomyState {
     init() {}
 }
 
+/// The project's verify recipe for one orchestrator: the file is read (and
+/// its acceptance checked) at every ask, which is one small read; discovery,
+/// which walks the project, runs once.
+actor VerifyRecipeStatusCache: VerifyRecipeProviding {
+    private let store: VerifyRecipeStore
+    private var discovered: VerifyRecipe?
+
+    init(store: VerifyRecipeStore) {
+        self.store = store
+    }
+
+    func status() async -> VerifyRecipeStatus {
+        switch store.file() {
+        case .missing:
+            if let discovered { return .discovered(discovered) }
+            let found = await store.discover()
+            discovered = found
+            return .discovered(found)
+        case let .present(recipe, _, accepted):
+            return accepted ? .accepted(recipe) : .awaitingAcceptance(recipe)
+        case let .invalid(message, _):
+            return .invalid(message)
+        }
+    }
+
+    nonisolated func acceptedRecipe() -> VerifyRecipe? {
+        store.acceptedRecipe()
+    }
+}
+
 /// The model that judges goals and drafts their criteria: the cheapest
 /// capable route in the catalogue (D-020), today the `haiku` alias.
 enum GoalJudgeRoute {
@@ -82,20 +112,87 @@ extension SessionController {
         return recipe
     }
 
-    /// Everything a Code orchestrator needs to work autonomously.
-    func autonomyConfiguration(contractModelID: String, live: Live, context: WorkspaceContext) async -> AutonomyConfiguration {
+    /// Everything a Code orchestrator needs to work autonomously: Lane A's
+    /// ledger and goal runtime, with Lane B's recipe, check runner, reviewer
+    /// and report behind the stop check.
+    ///
+    /// - Parameter reviewer: the read-only `delegate_task` the review pass
+    ///   starts the built-in `reviewer` through; nil where no diff can be read.
+    func autonomyConfiguration(
+        contractModelID: String,
+        live: Live,
+        context: WorkspaceContext,
+        reviewer: (any SubagentDelegating)? = nil
+    ) async -> AutonomyConfiguration {
         let runtime = autonomyRuntime(live)
-        let recipe = await gateRecipe(context)
+        let suggested = await gateRecipe(context)
         let modelPricing = live.modelPricing(contractModelID)
+        let root = context.access.rootURL
+        let recipes = VerifyRecipeStore(workspaceRoot: root)
+        let evidence = await VerificationLedgers.shared.ledger(for: sessionID, store: live.store)
+        let checks = CheckRunner(
+            executor: context.executor,
+            permissions: live.permissions,
+            ledger: evidence,
+            changes: WorkspaceChangeDetector(rootURL: root)
+        )
+        let statuses = VerifyRecipeStatusCache(store: recipes)
+        // The project's recipe (accepted, or found when there is no file),
+        // each check marked with whether it runs without a prompt now: asked
+        // at every stop check, so a rule or mode change counts at once. The
+        // toolchain's suggestion stands in where the recipe has nothing.
+        let recipe: @Sendable () async -> GateRecipe? = {
+            let made = await VerifyGateRecipe.make(status: await statuses.status()) { check in
+                await checks.allowedWithoutPrompt([
+                    PlannedCheck(check: check, commandLine: check.commandLine, isTargeted: false),
+                ])
+            }
+            return made ?? suggested
+        }
+        var reviewRunner: (any GateReviewRunning)?
+        if let reviewer, context.access.isGitRepository {
+            let store = live.store
+            let sessionID = self.sessionID
+            let git = context.git
+            reviewRunner = VerifyGateReviewRunner(
+                pass: ReviewPass(delegate: reviewer, ledger: evidence),
+                diff: { await Self.reviewDiff(git) },
+                request: {
+                    await store.events(for: sessionID).reversed().lazy.compactMap { event -> String? in
+                        if case let .userPrompt(prompt) = event.payload { return prompt.text }
+                        return nil
+                    }.first ?? ""
+                }
+            )
+        }
         return AutonomyConfiguration(
             settings: settings.autonomy,
             behavior: .code,
             ledger: runtime.ledger,
             goals: runtime.goals,
-            recipe: { recipe },
+            recipe: recipe,
+            checkRunner: VerifyGateCheckRunner(recipes: statuses, runner: checks),
+            reviewRunner: reviewRunner,
+            reportBuilder: VerifyRunReportBuilder(),
             pricing: { id in id == contractModelID ? modelPricing : nil },
             diffAvailable: context.access.isGitRepository
         )
+    }
+
+    /// The run's change for the reviewer: staged and unstaged diffs, and the
+    /// new files `git diff` does not show, by name (the reviewer reads them).
+    nonisolated static func reviewDiff(_ git: any GitServicing) async -> String? {
+        let unstaged = (try? await git.diff(staged: false, path: nil)) ?? ""
+        let staged = (try? await git.diff(staged: true, path: nil)) ?? ""
+        let untracked = ((try? await git.status())?.files ?? [])
+            .filter { $0.indexState == "?" || $0.worktreeState == "?" }
+            .map(\.path)
+        var parts = [staged, unstaged].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if !untracked.isEmpty {
+            parts.append("New files, not in the diff (read them with read_file):\n"
+                + untracked.prefix(50).map { "- \($0)" }.joined(separator: "\n"))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 
     /// The stop check for a Code orchestrator.
@@ -354,7 +451,14 @@ extension SessionController: GoalModelHost {
     public func draftGoal(objective: String, origin: GoalOrigin) async -> GoalDraft {
         var draft = GoalDraft(objective: objective, budget: settings.autonomy.goalBudget, origin: origin)
         guard let live, let context = live.context else { return draft }
-        let recipe = await gateRecipe(context)
+        // The project's own checks (Lane B's recipe) are what a grant can
+        // cover; the toolchain's suggestion where it has none.
+        let projectRecipe = await VerifyGateRecipe.make(
+            status: await VerifyRecipeStore(workspaceRoot: context.access.rootURL).status(),
+            runsWithoutPrompt: { _ in false }
+        )
+        var recipe = projectRecipe
+        if recipe == nil { recipe = await gateRecipe(context) }
         draft.offeredGrants = recipe?.checks.map(\.command) ?? []
         let drafter = ModelCriteriaDrafter(
             model: live.modelClient,

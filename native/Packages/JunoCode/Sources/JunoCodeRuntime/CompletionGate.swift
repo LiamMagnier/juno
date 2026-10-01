@@ -288,10 +288,14 @@ public struct CompletionGate: Sendable {
 
         // 8. UI files changed and nobody looked at the result.
         if changed, let recipe, !ledger.hasFired(.uiUnchecked) {
-            for target in recipe.ui where settings.autoVerify.isOn(for: target.surface) {
+            // The web surface is the Preview's to answer (8b) when it is
+            // wired: it knows the routes an edit touches.
+            for target in recipe.ui where settings.autoVerify.isOn(for: target.surface)
+                && !(target.surface == .web && uiAdvice != nil)
+            {
                 let touched = ledger.filesChanged.contains { UIChangeTrigger.isUIChange($0, for: target) }
                 guard touched else { continue }
-                if ledger.freshUIVerifications(surface: target.surface, target: target.target).isEmpty {
+                if GoalRuntime.freshUIRecords(ledger, surface: target.surface, target: target.target).isEmpty {
                     return .decided(.continueWith(.uiUnchecked, detail: Self.uiDetail(target)))
                 }
             }
