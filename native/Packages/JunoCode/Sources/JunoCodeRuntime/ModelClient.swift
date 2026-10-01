@@ -8,6 +8,12 @@ public struct ModelImage: Hashable, Codable, Sendable {
         case low
         case high
         case auto
+        /// Kept at the size sent. OpenAI's Responses wire sends it as is, so
+        /// a screenshot the harness already scaled is not resized again and
+        /// the model's coordinates stay in Juno's frame (CU-04); Chat
+        /// Completions has no such value and gets `high` with an image
+        /// already inside the box `high` resizes to.
+        case original
     }
 
     public let mediaType: String

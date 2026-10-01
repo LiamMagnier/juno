@@ -29,6 +29,9 @@ public struct CodeToolProviderContext: Sendable {
     public var executor: any CommandExecuting
     public var git: any GitServicing
     public var tests: any TestRunning
+    /// Screen control and the Simulator, for Lane C's provider. Nil where the
+    /// session has neither (Lane C).
+    public var screen: ScreenToolServices?
 
     public init(
         sessionID: CodeSessionID,
@@ -42,7 +45,8 @@ public struct CodeToolProviderContext: Sendable {
         files: any FileOperating,
         executor: any CommandExecuting,
         git: any GitServicing,
-        tests: any TestRunning
+        tests: any TestRunning,
+        screen: ScreenToolServices? = nil
     ) {
         self.sessionID = sessionID
         self.workspaceID = workspaceID
@@ -56,6 +60,7 @@ public struct CodeToolProviderContext: Sendable {
         self.executor = executor
         self.git = git
         self.tests = tests
+        self.screen = screen
     }
 }
 

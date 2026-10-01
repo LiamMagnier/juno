@@ -134,6 +134,15 @@ public struct ScreenAppListing: Hashable, Sendable {
     public var category: AppCategory
     public var grantedTier: AppTier?
     public var cap: AppTier?
+
+    public init(bundleID: String, name: String, running: Bool, category: AppCategory, grantedTier: AppTier?, cap: AppTier?) {
+        self.bundleID = bundleID
+        self.name = name
+        self.running = running
+        self.category = category
+        self.grantedTier = grantedTier
+        self.cap = cap
+    }
 }
 
 /// A step the reader can see: what happened, where, and the after-frame,
@@ -218,6 +227,8 @@ public struct ScreenPresenceState: Hashable, Sendable {
 /// started screen control for the session.
 public protocol ScreenControlling: Sendable {
     func state(sessionID: String) async -> ScreenSessionState
+    /// The route's image budget, set by the tools before they capture.
+    func setImageBudget(sessionID: String, budget: ImageBudget) async
     func listApps(sessionID: String) async -> [ScreenAppListing]
     func proposeGrants(sessionID: String, apps: [String], reason: String?, clipboardRead: Bool, clipboardWrite: Bool) async throws -> GrantProposal
     /// Applies a proposal the reader approved, with the choices they made on

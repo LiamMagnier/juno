@@ -245,7 +245,7 @@ final class PermissionRulesTests: XCTestCase {
         XCTAssertTrue(PermissionRule(parsing: "Computer_Click")?.coversScreenInput == true)
         XCTAssertTrue(PermissionRule(tool: "computer_type", specifier: "anything").coversScreenInput)
         // Looking is a read, and other tools are other tools.
-        XCTAssertFalse(PermissionRule(tool: ComputerUseToolName.screenshot).coversScreenInput)
+        XCTAssertFalse(PermissionRule(tool: ComputerUseToolName.accessibility).coversScreenInput)
         XCTAssertFalse(PermissionRule(tool: "Bash").coversScreenInput)
         XCTAssertFalse(PermissionRule(tool: "mcp__computer").coversScreenInput)
     }

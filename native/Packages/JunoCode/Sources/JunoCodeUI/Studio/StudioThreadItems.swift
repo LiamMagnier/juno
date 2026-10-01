@@ -146,7 +146,11 @@ enum StudioThreadItems {
 
         for event in events {
             if let step = screenSteps[event.id] {
-                items.append(.screenStep(id: event.id, step: step))
+                // One row per call, at its proposal; the call's other events
+                // stay out of the activity rows.
+                if step.eventID == event.id {
+                    items.append(.screenStep(id: event.id, step: step))
+                }
                 continue
             }
             if let index = owner[event.id] {

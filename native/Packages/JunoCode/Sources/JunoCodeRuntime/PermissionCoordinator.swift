@@ -138,7 +138,10 @@ public actor PermissionCoordinator {
                 // Nothing to offer where no saved rule would ever apply:
                 // allow rules never silence a destructive action, nor a
                 // command line whose substitutions they cannot see into.
+                // Nor for screen control: grants are per app and per session
+                // (D-021), and a bare `computer` rule would allow every app.
                 suggestedRule: risk == .destructive || !PermissionRuleSet.patternsCanVouch(for: subject)
+                    || ComputerUseToolName.neverSavedAsRule.contains(toolName)
                     ? nil
                     : PermissionRuleSet.suggestedRule(toolName: toolName, subject: subject)
             )

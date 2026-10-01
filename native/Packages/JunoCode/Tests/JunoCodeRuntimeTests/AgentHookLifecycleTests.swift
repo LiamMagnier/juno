@@ -784,7 +784,7 @@ final class AgentHookLifecycleTests: XCTestCase {
             XCTAssertEqual(ruling(.fullAccess, .critical, hook: .ask, tool: tool), .requireApproval, tool)
         }
         XCTAssertEqual(
-            ruling(.workspaceWrite, .critical, hook: .allow, tool: ComputerUseToolName.click),
+            ruling(.workspaceWrite, .critical, hook: .allow, tool: ComputerUseToolName.computer),
             .requireApproval
         )
         XCTAssertEqual(ruling(.workspaceWrite, .critical, hook: .allow, tool: "run_command"), .allow)
