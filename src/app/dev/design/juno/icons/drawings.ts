@@ -660,13 +660,6 @@ const TILE_B = rr(12.75, 12.75, 7.5, 7.5, 2.25);
 
 
 /**
- * Folio (D-038, "What Alevr made"): one sheet folded once, standing open and
- * seen from a little above, so the fold runs to a point at its foot. Straight
- * leaves on one crease (sources is a pair of separate, curved pages).
- */
-const FOLIO = roundPoly(1.2, 12, 6, 20.25, 3.75, 20.25, 18.75, 12, 21, 3.75, 18.75, 3.75, 3.75);
-const FOLIO_CREASE = poly(12, 6, 12, 21);
-/**
  * Deep Field (D-038, "Deep research"): one long look into a field. The
  * viewfinder's corners hold four points of falling size, set on a spiral so
  * they read as found, not scattered (no starfield: four points, one frame).
@@ -1695,11 +1688,6 @@ export const ICONS = {
     motion: "None: a settings noun.",
   }),
 
-  folio: I({
-    group: "Files",
-    elements: [p(FOLIO), p(FOLIO_CREASE)],
-    motion: "None. Folio (D-038, what Alevr made): a sheet folded once, standing open. Made things are kept, not played.",
-  }),
   "deep-field": I({
     group: "Work and evidence",
     elements: [...FIELD_CORNERS.map((d) => p(d)), dot(10.125, 10.875, 1.875), dot(15, 9, 1.125), dot(14.25, 15, 1.5), dot(9, 15.75, 0.9)],
@@ -1775,7 +1763,8 @@ export const ICON_ALIASES = {
   video: "file-video",
   card: "billing",
   language: "globe",
-  folios: "folio",
+  /* D-038 revised: Folio is withdrawn; made things are named by their real type (deck, document, site) under "Made by Alevr". */
+  site: "browser",
   "deep-research": "deep-field",
 } satisfies Record<string, string>;
 

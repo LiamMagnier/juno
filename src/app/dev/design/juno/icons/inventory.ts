@@ -16,11 +16,10 @@ export type InventoryRow = {
 
 export const SEMANTIC_INVENTORY: InventoryRow[] = [
   {
-    group: "Branded features (D-038)",
-    direction: "Orbit's open ellipse; a sheet folded once; one long look into a field",
+    group: "Branded features (D-038 revised)",
+    direction: "Orbit's open ellipse; one long look into a field. Made things keep their real type's glyph (document, deck, site) under \"Made by Alevr\": no glyph of their own",
     items: [
       { label: "Orbit", icon: "orbit" },
-      { label: "Folio", icon: "folio" },
       { label: "Deep Field", icon: "deep-field" },
     ],
   },
@@ -215,6 +214,7 @@ export const SEMANTIC_INVENTORY: InventoryRow[] = [
       { label: "Image", icon: "file-image" },
       { label: "Audio", icon: "audio" },
       { label: "Video", icon: "video" },
+      { label: "Site", icon: "site" },
     ],
   },
   {
