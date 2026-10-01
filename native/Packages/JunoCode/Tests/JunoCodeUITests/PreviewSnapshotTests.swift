@@ -110,11 +110,15 @@ final class PreviewSnapshotTests: XCTestCase {
                 text: "The server tried to reach fonts.googleapis.com while offline. Let this project's server use the internet?",
                 actions: [("Keep offline", {}), ("Allow", {})]
             )
+            PreviewBannerRow(
+                text: "Port 3000 is in use by node (pid 4211). When it is, start web on a free port instead?",
+                actions: [("Keep this port", {}), ("Use a free port", {})]
+            )
             Spacer(minLength: 0)
         }
         .background(Studio.Surface.canvas)
         for dark in [false, true] {
-            try await render(rows, size: CGSize(width: 520, height: 180), dark: dark, name: "preview-banners-\(dark ? "dark" : "light")")
+            try await render(rows, size: CGSize(width: 520, height: 230), dark: dark, name: "preview-banners-\(dark ? "dark" : "light")")
         }
     }
 
