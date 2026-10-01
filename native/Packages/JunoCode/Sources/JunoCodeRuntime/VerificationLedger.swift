@@ -9,9 +9,12 @@ import JunoCodeCore
 // - every `fileChanged` event bumps the workspace revision, including changes
 //   a command made, and a rewind bumps it too;
 // - `verificationRecorded`, `uiVerificationRecorded` and `reviewCompleted`
-//   add evidence, each once by id;
+//   add evidence, each once by id, describing the workspace where they sit
+//   in the transcript (a record never claims a revision from after it);
 // - a `git_diff` call that succeeded marks the diff read at the revision it
-//   ran at;
+//   ran at, when it could have shown the whole change: unfiltered, or
+//   filtered to paths that together cover every file the run changed, and
+//   not an empty staged diff;
 // - a reader's message starts a run.
 //
 // Because it is a fold, what a session restored from disk knows is exactly
@@ -54,6 +57,15 @@ public final class VerificationLedger: VerificationLedgerReading, VerificationLe
         public var linesChangedThisRun = 0
         /// Review passes since then.
         public var reviewRoundsThisRun = 0
+        /// Reviewer runs started since then, including those that failed or
+        /// answered nothing readable: what bounds the review rounds when no
+        /// review gets recorded. Not in the transcript, so a relaunch starts
+        /// it again from the recorded rounds.
+        public var reviewAttemptsThisRun = 0
+        /// Paths a filtered `git_diff` showed since the last edit.
+        var diffPathsRead: Set<String> = []
+        /// What each `git_diff` call in flight asked for, by call id.
+        var diffCalls: [String: DiffCall] = [:]
         /// Ids of the records minted since then.
         public var recordIDsThisRun: Set<String> = []
         /// The tool each call in flight belongs to, by call id.
@@ -61,6 +73,21 @@ public final class VerificationLedger: VerificationLedgerReading, VerificationLe
         var recordIDs: Set<String> = []
 
         public init() {}
+    }
+
+    /// One `git_diff` call's input: the path it was narrowed to, if any, and
+    /// whether it showed the staged changes.
+    struct DiffCall: Hashable, Sendable {
+        var path: String?
+        var staged: Bool
+
+        init(input: JSONValue) {
+            var raw = input["path"]?.stringValue?.trimmingCharacters(in: .whitespaces) ?? ""
+            while raw.hasPrefix("./") { raw.removeFirst(2) }
+            while raw.hasSuffix("/") { raw.removeLast() }
+            path = raw.isEmpty || raw == "." ? nil : raw
+            staged = input["staged"]?.boolValue ?? (input["staged"]?.stringValue == "true")
+        }
     }
 
     /// A ledger over `events`, observing nothing: for tests, projections and
@@ -120,21 +147,36 @@ public final class VerificationLedger: VerificationLedgerReading, VerificationLe
         // A rewind cut events from the transcript; the revision is counted
         // again over what is left, so it means what it will mean after a
         // relaunch.
-        if refold, let store {
-            let sessionID = sessionID
-            Task { [weak self] in
-                let history = await store.events(for: sessionID)
-                self?.refold(history)
+        if refold { scheduleRefold(attempt: 0) }
+    }
+
+    /// Reads the history again and folds it from scratch. An event appended
+    /// between the read and the fold makes the read stale; it is read again
+    /// then, a few times at most, rather than left counting what the rewind
+    /// cut.
+    private func scheduleRefold(attempt: Int) {
+        guard let store else { return }
+        let sessionID = sessionID
+        Task { [weak self] in
+            let history = await store.events(for: sessionID)
+            guard let self else { return }
+            if !self.refold(history), attempt < 3 {
+                self.scheduleRefold(attempt: attempt + 1)
             }
         }
     }
 
-    private func refold(_ history: [SessionEvent]) {
+    /// Whether `history` was current enough to replace the state.
+    private func refold(_ history: [SessionEvent]) -> Bool {
         lock.withLock {
             var fresh = State()
             for event in history { Self.apply(event, to: &fresh) }
             // Anything appended after the read stays counted.
-            if fresh.lastSequence >= state.lastSequence { state = fresh }
+            guard fresh.lastSequence >= state.lastSequence else { return false }
+            // Attempts are not in the transcript; the run's count carries over.
+            fresh.reviewAttemptsThisRun = max(fresh.reviewAttemptsThisRun, state.reviewAttemptsThisRun)
+            state = fresh
+            return true
         }
     }
 
@@ -151,32 +193,47 @@ public final class VerificationLedger: VerificationLedgerReading, VerificationLe
             state.filesChangedThisRun = []
             state.linesChangedThisRun = 0
             state.reviewRoundsThisRun = 0
+            state.reviewAttemptsThisRun = 0
             state.recordIDsThisRun = []
         case let .fileChanged(change):
             state.workspaceRevision += 1
+            state.diffPathsRead = []
             if !state.filesChangedThisRun.contains(change.path.value) {
                 state.filesChangedThisRun.append(change.path.value)
             }
             state.linesChangedThisRun += change.linesAdded + change.linesRemoved
         case .transcriptRewound:
             state.workspaceRevision += 1
+            state.diffPathsRead = []
         case let .toolProposed(proposed):
             state.toolNames[proposed.toolCallID] = proposed.toolName
+            if proposed.toolName == "git_diff" {
+                state.diffCalls[proposed.toolCallID] = DiffCall(input: proposed.input)
+            }
         case let .toolCompleted(completed):
             let name = state.toolNames.removeValue(forKey: completed.toolCallID)
+            let call = state.diffCalls.removeValue(forKey: completed.toolCallID)
             if name == "git_diff", completed.status == .succeeded {
-                state.lastDiffReadRevision = state.workspaceRevision
+                noteDiffRead(call, summary: completed.resultSummary, in: &state)
             }
-        case let .verificationRecorded(record):
+        case var .verificationRecorded(record):
             guard state.recordIDs.insert(record.id).inserted else { return }
+            // A record describes the workspace where it sits in the
+            // transcript. Its own file changes come before it, so a correct
+            // stamp is exactly this revision; a higher one (stamped from a
+            // count a rewind then cut back) would turn fresh later, when the
+            // count caught up with a workspace it never saw.
+            record.workspaceRevision = min(record.workspaceRevision, state.workspaceRevision)
             state.verifications.append(record)
             state.recordIDsThisRun.insert(record.id)
-        case let .uiVerificationRecorded(record):
+        case var .uiVerificationRecorded(record):
             guard state.recordIDs.insert(record.id).inserted else { return }
+            record.workspaceRevision = min(record.workspaceRevision, state.workspaceRevision)
             state.uiVerifications.append(record)
             state.recordIDsThisRun.insert(record.id)
-        case let .reviewCompleted(record):
+        case var .reviewCompleted(record):
             guard state.recordIDs.insert(record.id).inserted else { return }
+            record.workspaceRevision = min(record.workspaceRevision, state.workspaceRevision)
             state.reviews.append(record)
             state.recordIDsThisRun.insert(record.id)
             state.reviewRoundsThisRun += 1
@@ -185,6 +242,27 @@ public final class VerificationLedger: VerificationLedgerReading, VerificationLe
         default:
             break
         }
+    }
+
+    /// A `git_diff` that succeeded: the diff counts as read when the call
+    /// could have shown the whole change. An unfiltered diff can; an empty
+    /// staged diff shows nothing of unstaged edits; a diff narrowed to one
+    /// path counts once the paths read since the last edit cover every file
+    /// this run changed.
+    private static func noteDiffRead(_ call: DiffCall?, summary: String, in state: inout State) {
+        let call = call ?? DiffCall(input: .object([:]))
+        let empty = summary.trimmingCharacters(in: .whitespacesAndNewlines) == "No changes."
+        if call.staged, empty { return }
+        guard let path = call.path else {
+            state.lastDiffReadRevision = state.workspaceRevision
+            return
+        }
+        state.diffPathsRead.insert(path)
+        let changed = state.filesChangedThisRun
+        let covered = !changed.isEmpty && changed.allSatisfy { file in
+            state.diffPathsRead.contains { file == $0 || file.hasPrefix($0 + "/") }
+        }
+        if covered { state.lastDiffReadRevision = state.workspaceRevision }
     }
 
     // MARK: - Reading
@@ -201,6 +279,21 @@ public final class VerificationLedger: VerificationLedgerReading, VerificationLe
     public var filesChangedThisRun: [String] { lock.withLock { state.filesChangedThisRun } }
     /// Review passes this run; at most `ReviewPass.maximumRounds`.
     public var reviewRoundsThisRun: Int { lock.withLock { state.reviewRoundsThisRun } }
+    /// Reviewer runs started this run, recorded or not.
+    public var reviewAttemptsThisRun: Int { lock.withLock { state.reviewAttemptsThisRun } }
+
+    /// Counts one reviewer run against this run's rounds before it starts,
+    /// so a reviewer that keeps failing cannot be started again and again.
+    /// Answers the round it is, or nil when `maximum` rounds were already
+    /// used (checked and counted in one step).
+    public func beginReviewAttempt(maximum: Int) -> Int? {
+        lock.withLock {
+            let used = max(state.reviewAttemptsThisRun, state.reviewRoundsThisRun)
+            guard used < maximum else { return nil }
+            state.reviewAttemptsThisRun = used + 1
+            return used + 1
+        }
+    }
 
     /// A value copy, for the gate and the report.
     public var snapshot: VerificationSnapshot {
@@ -306,6 +399,9 @@ public actor VerificationLedgers {
 
     private var ledgers: [CodeSessionID: VerificationLedger] = [:]
     private var opening: [CodeSessionID: Task<VerificationLedger, Never>] = [:]
+    /// Stores whose deletions this registry follows, so a deleted session's
+    /// ledger stops watching and is let go.
+    private var watchedStores: Set<ObjectIdentifier> = []
 
     public init() {}
 
@@ -318,6 +414,12 @@ public actor VerificationLedgers {
         let ledger = await task.value
         ledgers[sessionID] = ledger
         opening[sessionID] = nil
+        if watchedStores.insert(ObjectIdentifier(store)).inserted {
+            await store.addObserver { [weak self] update in
+                guard case let .sessionRemoved(removed) = update else { return }
+                Task { await self?.release(removed) }
+            }
+        }
         return ledger
     }
 

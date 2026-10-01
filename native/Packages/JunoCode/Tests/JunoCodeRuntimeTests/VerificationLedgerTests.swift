@@ -159,6 +159,69 @@ final class VerificationLedgerTests: XCTestCase {
         XCTAssertFalse(ledger.diffReadIsFresh)
     }
 
+    /// A diff read is evidence the model could otherwise fake: a call that
+    /// could not have shown the whole change does not count.
+    func testOnlyADiffThatCouldShowTheWholeChangeCountsAsRead() async throws {
+        let ledger = await ledgers.ledger(for: session.id, store: store)
+        try await append(.userPrompt(UserPromptEvent(text: "fix")))
+        try await append(try fileChanged("src/a.ts"))
+        try await append(try fileChanged("lib/b.ts"))
+        var call = 0
+        func diff(_ input: JSONValue, shows summary: String = "diff --git a/x b/x") async throws {
+            call += 1
+            try await append(.toolProposed(ToolProposedEvent(toolCallID: "d\(call)", toolName: "git_diff", input: input, risk: .read, summary: "Git diff")))
+            try await append(.toolCompleted(ToolCompletedEvent(toolCallID: "d\(call)", status: .succeeded, resultSummary: summary, durationSeconds: 0.1)))
+        }
+
+        try await diff(["path": "src/a.ts"])
+        XCTAssertFalse(ledger.diffReadIsFresh, "one of the two changed files is not the diff")
+        try await diff(["path": "./lib/"])
+        XCTAssertTrue(ledger.diffReadIsFresh, "together the paths read cover every change")
+
+        try await append(try fileChanged("lib/b.ts"))
+        try await diff(["path": "lib/b.ts"])
+        XCTAssertFalse(ledger.diffReadIsFresh, "paths read before the last edit no longer count")
+
+        try await diff(["staged": true], shows: "No changes.")
+        XCTAssertFalse(ledger.diffReadIsFresh, "an empty staged diff shows none of the unstaged edits")
+        try await diff(["staged": true])
+        XCTAssertTrue(ledger.diffReadIsFresh, "a staged diff with the changes in it does")
+
+        try await append(try fileChanged("src/a.ts"))
+        try await diff(["path": "."])
+        XCTAssertTrue(ledger.diffReadIsFresh, "the whole tree is no filter")
+    }
+
+    /// Evidence describes the workspace where it sits in the transcript, so a
+    /// stamp from a count a rewind later cut back can never turn fresh.
+    func testARecordNeverClaimsARevisionFromAfterItsPlace() async throws {
+        let ledger = await ledgers.ledger(for: session.id, store: store)
+        try await append(try fileChanged("a.swift"))
+        try await append(.verificationRecorded(check("swift test", passed: true, at: 3)))
+        XCTAssertEqual(ledger.verifications.last?.workspaceRevision, 1)
+        XCTAssertEqual(ledger.freshVerifications.count, 1, "it is evidence about the workspace it ran in")
+        try await append(try fileChanged("a.swift"))
+        try await append(try fileChanged("a.swift"))
+        XCTAssertEqual(ledger.workspaceRevision, 3)
+        XCTAssertTrue(ledger.freshVerifications.isEmpty, "and stays stale once the count reaches its stamp")
+
+        let reopened = CodeSessionStore(directoryURL: base.appendingPathComponent("store"))
+        let restored = await VerificationLedger.open(sessionID: session.id, store: reopened)
+        XCTAssertEqual(restored.verifications.map(\.workspaceRevision), [1], "the same after a relaunch")
+        await restored.close()
+    }
+
+    func testADeletedSessionsLedgerIsLetGo() async throws {
+        _ = await ledgers.ledger(for: session.id, store: store)
+        try await store.deleteSession(id: session.id)
+        var existing = await ledgers.existing(for: session.id)
+        for _ in 0..<100 where existing != nil {
+            try await Task.sleep(for: .milliseconds(10))
+            existing = await ledgers.existing(for: session.id)
+        }
+        XCTAssertNil(existing, "a deleted session's ledger stops watching the store")
+    }
+
     func testAReadersMessageStartsANewRun() async throws {
         let ledger = await ledgers.ledger(for: session.id, store: store)
         try await append(.userPrompt(UserPromptEvent(text: "one")))

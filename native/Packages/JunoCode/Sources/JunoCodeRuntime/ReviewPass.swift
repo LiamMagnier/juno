@@ -137,8 +137,12 @@ public struct ReviewPass: Sendable {
 
     /// Runs one review round and records it.
     public func run(_ request: Request, sessionID: CodeSessionID) async -> Outcome {
-        let round = ledger.reviewRoundsThisRun + 1
-        guard round <= Self.maximumRounds else { return .roundLimit }
+        // Attempts count, not only recorded reviews: a reviewer that fails or
+        // answers nothing readable records no review, and a stop check that
+        // asked for one again would otherwise start it without end.
+        guard let round = ledger.beginReviewAttempt(maximum: Self.maximumRounds) else {
+            return .roundLimit
+        }
         let revision = ledger.workspaceRevision
         let input: JSONValue = [
             "tasks": [

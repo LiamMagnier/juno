@@ -148,6 +148,24 @@ final class ReviewPassTests: XCTestCase {
         guard case .clean = await pass.run(request(), sessionID: session.id) else { return XCTFail() }
     }
 
+    /// A reviewer that fails records no review, so recorded rounds alone
+    /// cannot bound it: a stop check asking again would start it forever.
+    func testAReviewerThatKeepsFailingCountsAgainstTheRounds() async throws {
+        let ledger = await ledgers.ledger(for: session.id, store: store)
+        try await store.appendEvent(sessionID: session.id, payload: .userPrompt(UserPromptEvent(text: "fix")))
+        let delegate = FailingReviewer()
+        let pass = ReviewPass(delegate: delegate, ledger: ledger)
+        for _ in 0..<5 { _ = await pass.run(request(), sessionID: session.id) }
+        XCTAssertEqual(delegate.calls, ["review-0-1", "review-0-2"], "two attempts, each its own call")
+        guard case .roundLimit = await pass.run(request(), sessionID: session.id) else {
+            return XCTFail("a third attempt never starts")
+        }
+        XCTAssertNil(ledger.review, "a failure is not a review")
+        try await store.appendEvent(sessionID: session.id, payload: .userPrompt(UserPromptEvent(text: "again")))
+        _ = await pass.run(request(), sessionID: session.id)
+        XCTAssertEqual(delegate.calls.count, 3, "a new run starts the count again")
+    }
+
     func testTheThresholdDecidesBetweenTheDiffReadAndTheReviewer() {
         XCTAssertFalse(ReviewPass.needsReviewer(trigger: .auto, changedLines: 39, changedFiles: 2))
         XCTAssertFalse(ReviewPass.needsReviewer(trigger: .auto, changedLines: 40, changedFiles: 2))
@@ -163,5 +181,18 @@ final class ReviewPassTests: XCTestCase {
     func testTheDiffReadContinuationIsImperativeAndShort() {
         XCTAssertTrue(ReviewPass.diffReadContinuation.contains("git_diff"))
         XCTAssertLessThan(ReviewPass.diffReadContinuation.count, 600)
+    }
+}
+
+/// A reviewer whose run always fails, noting each call it was given.
+private final class FailingReviewer: SubagentDelegating, @unchecked Sendable {
+    private let lock = NSLock()
+    private var received: [String] = []
+
+    var calls: [String] { lock.withLock { received } }
+
+    func delegate(_: JSONValue, context: ToolContext) async throws -> ToolResult {
+        lock.withLock { received.append(context.toolCallID) }
+        return ToolResult(content: "Sub-agent failed: the model is unavailable.", isError: true)
     }
 }
