@@ -224,18 +224,24 @@ public struct StudioRunsHeading: View {
 }
 
 public extension WorkbenchModel {
-    /// Answers a row of the Runs list.
-    func answer(_ choice: RunRowAnswer, for sessionID: CodeSessionID) async -> RunActionResult {
-        let entry = runEntries.first { $0.sessionID == sessionID }
+    /// Answers a row of the Runs list, bound to what that row showed.
+    ///
+    /// Allow once and Decline answer the approval the reader saw on the row,
+    /// with its digest, never whatever is pending by the time the click
+    /// lands: if that approval was answered elsewhere and a different action
+    /// is now waiting, the click is refused rather than carrying out an
+    /// action the reader never read. The same goes for a question.
+    func answer(_ choice: RunRowAnswer, shown entry: RunIndexEntry) async -> RunActionResult {
+        let sessionID = entry.sessionID
         switch choice {
         case .allowOnce:
-            guard let approval = entry?.approval else { return .refused("Nothing is waiting for an approval.") }
+            guard let approval = entry.approval else { return .refused("Nothing is waiting for an approval.") }
             return await allowOnce(sessionID: sessionID, approvalID: approval.id, digest: approval.actionDigest)
         case .decline:
-            guard let approval = entry?.approval else { return .refused("Nothing is waiting for an approval.") }
+            guard let approval = entry.approval else { return .refused("Nothing is waiting for an approval.") }
             return await decline(sessionID: sessionID, approvalID: approval.id, digest: approval.actionDigest)
         case let .reply(text):
-            guard let question = entry?.question else { return .refused("Nothing is waiting for an answer.") }
+            guard let question = entry.question else { return .refused("Nothing is waiting for an answer.") }
             return await reply(sessionID: sessionID, questionID: question.id, text: text)
         case .keepGoing:
             return await keepGoing(sessionID: sessionID)

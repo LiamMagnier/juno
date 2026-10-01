@@ -99,7 +99,19 @@ public extension WorkbenchModel {
             : .refused("That question is no longer waiting.")
     }
 
+    /// Whether the session's row still offers `action`. A banner or a row
+    /// can outlive what it was about.
+    internal func offers(_ action: RunRowAction, _ sessionID: CodeSessionID) -> Bool {
+        runEntries.first { $0.sessionID == sessionID }?.actions.contains(action) ?? false
+    }
+
+    /// Keep going, only while the run still offers it: a banner left from a
+    /// step limit the reader already dealt with must not start another run
+    /// with nothing to carry on.
     func keepGoing(sessionID: CodeSessionID) async -> RunActionResult {
+        guard offers(.keepGoing, sessionID) else {
+            return .refused("This run no longer needs Keep going. Open the session to see where it stands.")
+        }
         guard let controller = await controller(for: sessionID) else {
             return .refused("The session could not be opened.")
         }
@@ -115,8 +127,13 @@ public extension WorkbenchModel {
         return await controller.resumeInterrupted() ? .done : .refused("Juno could not resume: the session is busy.")
     }
 
-    /// Retry a failed turn: no duplicate message, no clobbered draft.
+    /// Retry a failed turn: no duplicate message, no clobbered draft. Only
+    /// while the run still stands failed: a stale "Retry" banner on a session
+    /// that has since finished starts nothing.
     func retry(sessionID: CodeSessionID) async -> RunActionResult {
+        guard offers(.retry, sessionID) else {
+            return .refused("This run no longer needs a retry. Open the session to see where it stands.")
+        }
         guard let controller = await controller(for: sessionID) else {
             return .refused("The session could not be opened.")
         }

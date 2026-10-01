@@ -218,6 +218,9 @@ final class StudioRunMonitorTests: XCTestCase {
             keepGoing: { calls.list.append("keep \($0.value)") },
             retry: { calls.list.append("retry \($0.value)") }
         ))
+        // The approval the banner is about, as the monitor announced it.
+        monitor.observeRuns([entry(.working)])
+        monitor.observeRuns([entry(.needsYou, reason: .needsYou, approval: approval())])
         let info = [
             CodeNotificationKey.sessionID: "s1",
             CodeNotificationKey.approvalID: "a1",
@@ -240,6 +243,53 @@ final class StudioRunMonitorTests: XCTestCase {
             "keep s1",
             "retry s1",
         ], "an empty reply and an answer without its digest do nothing")
+    }
+
+    func testOnlyABannerThisMonitorPostedCanAnswerAnApproval() async {
+        let calls = Calls()
+        monitor.install(responder: CodeNotificationResponder(
+            open: { calls.list.append("open \($0.value)") },
+            allowOnce: { session, id, _ in calls.list.append("allow \(session.value) \(id)") },
+            decline: { session, id, _ in calls.list.append("decline \(session.value) \(id)") },
+            keepGoing: { calls.list.append("keep \($0.value)") }
+        ))
+        // a2 was never announced in this launch: a banner left from an
+        // earlier one, or someone else's notification carrying the words.
+        let stranger = [
+            CodeNotificationKey.sessionID: "s1",
+            CodeNotificationKey.approvalID: "a2",
+            CodeNotificationKey.digest: "digest-a2",
+        ]
+        await monitor.handle(actionIdentifier: CodeNotificationAction.allowOnce.rawValue, userInfo: stranger, text: nil)
+        await monitor.handle(actionIdentifier: CodeNotificationAction.decline.rawValue, userInfo: stranger, text: nil)
+        XCTAssertEqual(calls.list, ["open s1", "open s1"], "an approval nobody here announced only opens the session")
+
+        // Announced, then answered elsewhere: the banner left behind is stale.
+        calls.list = []
+        monitor.observeRuns([entry(.working)])
+        monitor.observeRuns([entry(.needsYou, reason: .needsYou, approval: approval("a2"))])
+        monitor.observeRuns([entry(.working)])
+        await monitor.handle(actionIdentifier: CodeNotificationAction.allowOnce.rawValue, userInfo: stranger, text: nil)
+        XCTAssertEqual(calls.list, ["open s1"])
+
+        // A remote push never answers, even naming a live approval.
+        calls.list = []
+        monitor.observeRuns([entry(.needsYou, reason: .needsYou, approval: approval("a2"))])
+        await monitor.handle(
+            actionIdentifier: CodeNotificationAction.allowOnce.rawValue,
+            userInfo: stranger,
+            text: nil,
+            fromPush: true
+        )
+        await monitor.handle(
+            actionIdentifier: CodeNotificationAction.keepGoing.rawValue,
+            userInfo: stranger,
+            text: nil,
+            fromPush: true
+        )
+        XCTAssertEqual(calls.list, ["open s1", "open s1"])
+        await monitor.handle(actionIdentifier: CodeNotificationAction.allowOnce.rawValue, userInfo: stranger, text: nil)
+        XCTAssertEqual(calls.list, ["open s1", "open s1", "allow s1 a2"], "the banner Juno posted for it does")
     }
 
     func testCISettledSaysHowManyPassed() throws {

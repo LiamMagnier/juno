@@ -248,6 +248,34 @@ final class RunIndexTests: XCTestCase {
         XCTAssertEqual(row.group, .needsYou)
         let approval = try XCTUnwrap(row.approval)
 
+        // A row that showed some other approval (answered elsewhere, this
+        // one arriving since) answers that one or nothing: never the action
+        // waiting now, which the reader did not read.
+        let otherRow = RunIndexEntry(
+            sessionID: created.id,
+            title: row.title,
+            project: row.project,
+            group: .needsYou,
+            sentence: "Waiting for you to allow `ls`",
+            approval: ApprovalRequest(
+                id: "answered-elsewhere",
+                sessionID: created.id,
+                actionDigest: "digest-of-ls",
+                toolName: "run_command",
+                summary: "Run: ls",
+                risk: .execute,
+                requestedAt: Date(),
+                expiresAt: Date().addingTimeInterval(900)
+            ),
+            actions: [.allowOnce, .decline],
+            updatedAt: Date()
+        )
+        let fromOtherRow = await workbench.answer(.allowOnce, shown: otherRow)
+        guard case .refused = fromOtherRow else { return XCTFail("a row's answer is bound to what it showed") }
+        let declinedFromOtherRow = await workbench.answer(.decline, shown: otherRow)
+        guard case .refused = declinedFromOtherRow else { return XCTFail("Decline is bound the same way") }
+        XCTAssertEqual(controller.pendingApprovals.map(\.id), [approval.id], "the waiting approval is untouched")
+
         let stale = await workbench.allowOnce(sessionID: created.id, approvalID: approval.id, digest: "not-the-digest")
         guard case .refused = stale else { return XCTFail("a stale digest must be refused") }
         let stillPending = controller.pendingApprovals.map(\.id)
@@ -277,5 +305,17 @@ final class RunIndexTests: XCTestCase {
             digest: approval.actionDigest
         )
         guard case .refused = answeredAgain else { return XCTFail("an answered approval cannot be answered twice") }
+        let rowAgain = await workbench.answer(.allowOnce, shown: row)
+        guard case .refused = rowAgain else { return XCTFail("nor from the row that showed it") }
+
+        // A Keep going or Retry banner left behind starts nothing once the
+        // run no longer needs it: the run finished.
+        let requestsBefore = client.requestCount
+        let keptGoing = await workbench.keepGoing(sessionID: created.id)
+        guard case .refused = keptGoing else { return XCTFail("a stale Keep going is refused") }
+        let retried = await workbench.retry(sessionID: created.id)
+        guard case .refused = retried else { return XCTFail("a stale Retry is refused") }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(client.requestCount, requestsBefore, "no run started")
     }
 }

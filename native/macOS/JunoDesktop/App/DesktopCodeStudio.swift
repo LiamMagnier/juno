@@ -519,7 +519,8 @@ struct DesktopCodeSidebar: View {
                 Section {
                     ForEach(section.entries) { entry in
                         StudioRunRow(entry: entry) { answer in
-                            await workbench.answer(answer, for: entry.sessionID)
+                            // Bound to the approval this row showed.
+                            await workbench.answer(answer, shown: entry)
                         }
                         .padding(.leading, JunoSidebarMetrics.titleLeading)
                         .junoSidebarRowSelection(selection == .session(entry.sessionID))

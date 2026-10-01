@@ -467,21 +467,55 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
 
     // MARK: Answers
 
+    /// Whether Allow once and Decline may answer this approval from a
+    /// banner: only one this monitor announced in this launch, and still
+    /// waiting. Anything else — a push from elsewhere carrying the right
+    /// words, a banner left from an earlier launch — opens the session, where
+    /// the real card is.
+    func answersFromBanner(approvalID: String) -> Bool {
+        scheduledReminders[approvalID] != nil
+    }
+
     /// Routes an answer from a banner. Public so the app's own delegate,
     /// which owns the notification centre, can hand Code's answers on.
-    public func handle(actionIdentifier: String, userInfo: [String: String], text: String?) async {
+    ///
+    /// - Parameter fromPush: the notification came from a remote push, not
+    ///   from this monitor. A push only ever opens: it is another process's
+    ///   data, and an approval is answered from a banner Juno posted itself.
+    public func handle(
+        actionIdentifier: String,
+        userInfo: [String: String],
+        text: String?,
+        fromPush: Bool = false
+    ) async {
         guard let responder, let raw = userInfo[CodeNotificationKey.sessionID] else { return }
         let session = CodeSessionID(value: raw)
-        switch CodeNotificationAction(rawValue: actionIdentifier) {
+        let action = CodeNotificationAction(rawValue: actionIdentifier)
+        if fromPush, action != .open, action != nil {
+            NSApp?.activate()
+            responder.open(session)
+            return
+        }
+        switch action {
         case .allowOnce:
             guard let id = userInfo[CodeNotificationKey.approvalID],
                   let digest = userInfo[CodeNotificationKey.digest]
             else { return }
+            guard answersFromBanner(approvalID: id) else {
+                NSApp?.activate()
+                responder.open(session)
+                return
+            }
             await responder.allowOnce(session, id, digest)
         case .decline:
             guard let id = userInfo[CodeNotificationKey.approvalID],
                   let digest = userInfo[CodeNotificationKey.digest]
             else { return }
+            guard answersFromBanner(approvalID: id) else {
+                NSApp?.activate()
+                responder.open(session)
+                return
+            }
             await responder.decline(session, id, digest)
         case .reply:
             guard let id = userInfo[CodeNotificationKey.questionID],
@@ -517,10 +551,18 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
         }
         let action = response.actionIdentifier
         let text = (response as? UNTextInputNotificationResponse)?.userText
+        // Juno Code's own notifications are local; one that arrived as a
+        // push can only open the session it names.
+        let fromPush = response.notification.request.trigger is UNPushNotificationTrigger
         // Acknowledged at once; the answer is given on the main actor.
         completionHandler()
         Task { @MainActor in
-            await StudioRunMonitor.shared.handle(actionIdentifier: action, userInfo: info, text: text)
+            await StudioRunMonitor.shared.handle(
+                actionIdentifier: action,
+                userInfo: info,
+                text: text,
+                fromPush: fromPush
+            )
         }
     }
 
