@@ -5,8 +5,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CrewFace } from "./crew/face";
 import { CREW, crew, type CrewRow, type Segment } from "./fixtures";
 import { Composer } from "./composer";
-import { MemberPeek, Reaction, useMemberTheme, type PeekHandle } from "./crew-bridge";
-import { CrewEditor } from "./crew-editor";
+import { MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
+import { AvatarEditor, CrewCreate, normalizeAvatar, type AvatarConfig } from "./crew";
 import { Icon } from "./icons";
 import { FileMark } from "./marks";
 import { R, SPRING, T, useReduced } from "./motion";
@@ -166,19 +166,48 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
 
 type Sheet = { kind: "add" } | { kind: "customize"; id: string } | null;
 
-const DOES: Record<string, string> = {
-  mira: "Watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it.",
-  scout: "Researches markets and competitors and writes short briefs with sources.",
-  otto: "Reconciles invoices against the ledger every month and flags differences over €50.",
-  rhea: "Reads support escalations and drafts replies for you to send.",
-  ines: "Screens applicants for open roles and schedules first calls.",
-  tomas: "Watches alerts overnight and writes the incident summary for the morning.",
-};
-
+/** The dialog the crew designer's flows open in: a scrim, one raised sheet, a close button. */
 function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () => void }) {
-  if (sheet.kind === "add") return <CrewEditor sheet={{ kind: "add" }} onClose={onClose} />;
-  const m = crew(sheet.id);
-  return <CrewEditor sheet={{ kind: "customize", member: face(m), role: m.role, does: DOES[m.id] ?? m.long }} onClose={onClose} />;
+  const reduced = useReduced();
+  const m = sheet.kind === "customize" ? crew(sheet.id) : null;
+  const member = m ? face(m) : null;
+  const [look, setLook] = React.useState<AvatarConfig | null>(() => (member ? normalizeAvatar(member.avatar, member.seed) : null));
+  const [name, setName] = React.useState(m?.name ?? "");
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <>
+      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fade} onClick={onClose} />
+      <motion.div
+        className="jn-crewsheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={m ? `Customize ${m.name}` : "Add to crew"}
+        data-kind={sheet.kind}
+        initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.99 }}
+        transition={reduced ? R : T.slow}
+      >
+        <button type="button" className="jib jicon-trigger jn-crewsheet__close" aria-label="Close" onClick={onClose}>
+          <Icon name="close" size={20} />
+        </button>
+        <div className="jn-crewsheet__body">
+          {m && look ? (
+            <>
+              <h2 className="t-display jn-crewsheet__title">Customize {name.trim() || m.name}</h2>
+              <AvatarEditor value={look} onChange={setLook} name={name} onName={setName} onSave={onClose} onCancel={onClose} />
+            </>
+          ) : (
+            <CrewCreate onCancel={onClose} onDone={onClose} initial={{ name: "Nova", role: "Product analytics", seed: "nova-3c1d" }} />
+          )}
+        </div>
+      </motion.div>
+    </>
+  );
 }
 
 /* ———————————————————————————— A member's own thread ———————————————————————————— */
@@ -216,14 +245,14 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
   const reduced = useReduced();
   const [answered, setAnswered] = React.useState(true);
   const [sheet, setSheet] = React.useState<Sheet>(null);
-  const peek = React.useRef<PeekHandle | null>(null);
+  const [typing, setTyping] = React.useState(0);
   const lastBlink = React.useRef(0);
   // P4: the character blinks when the person starts typing to it, at most once every 4 s.
   const onType = React.useCallback(() => {
     const now = performance.now();
     if (now - lastBlink.current < 4000) return;
     lastBlink.current = now;
-    peek.current?.blink();
+    setTyping((n) => n + 1);
   }, []);
 
   React.useEffect(() => {
@@ -256,7 +285,7 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
             </span>
           </div>
           <div className="jn-mhead__peek">
-            <MemberPeek member={member} state={answered ? "working" : "waiting"} words={answered ? "Reading seat usage…" : undefined} arrive handleRef={peek} />
+            <MemberPeek member={member} state={answered ? "working" : "waiting"} words={answered ? "Reading seat usage…" : undefined} arrive typing={typing} />
           </div>
         </header>
 

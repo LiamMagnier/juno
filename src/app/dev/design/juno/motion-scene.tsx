@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { R, SPRING, T, useReduced } from "./motion";
 import { face } from "./shell";
-import { MemberPeek, Reaction, useMemberTheme, type PeekHandle } from "./crew-bridge";
+import { MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
 import { Approval, HANDOFF_ID, TaskCard } from "./thread";
 
 /*
@@ -239,14 +239,14 @@ function MemberMoment({ tall }: { tall?: boolean }) {
   const reduced = useReduced();
   const member = face(MIRA);
   const theme = useMemberTheme(member);
-  const peek = React.useRef<PeekHandle | null>(null);
+  const [typing, setTyping] = React.useState(0);
   const [k, setK] = React.useState(0);
   const [thanked, setThanked] = React.useState(false);
   const [draft, setDraft] = React.useState("");
   const [cheer, setCheer] = React.useState(0);
   useTimeline(() => [
     ...MEMBER_SEQ.map((s, i): Step => [600 + s.at, () => setK(i)]),
-    [3000, () => peek.current?.blink()],
+    [3000, () => setTyping(1)],
     ...Array.from("Thanks Mira, that saves me a morning.").map((_, i, all): Step => [3000 + i * 28, () => setDraft(all.slice(0, i + 1).join(""))]),
     [4200, () => {
       setDraft("");
@@ -260,7 +260,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
       <div className="jn-mthread jn-mthread--moment">
         <header className="jn-mhead">
           <div className="jn-mhead__peek">
-            <MemberPeek member={member} state={now.state} words={now.words} arrive handleRef={peek} cheer={cheer} />
+            <MemberPeek member={member} state={now.state} words={now.words} arrive typing={typing} cheer={cheer} />
           </div>
         </header>
         <div className="jn-thread jn-member">

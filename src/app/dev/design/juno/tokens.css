@@ -293,6 +293,13 @@ html:has(.jn) nextjs-portal {
   opacity: 0.4;
   pointer-events: none;
 }
+/* A primary that is not ready yet is a quiet well, not a greyed-out ink blob. */
+.jn .jb--primary:disabled,
+.jn .jb--primary[aria-disabled="true"]:not(.jsplit__main):not(.jsplit__caret) {
+  opacity: 1;
+  background: var(--well-2);
+  color: var(--ink-3);
+}
 .jn .jb--sm {
   height: 28px;
   padding: 0 12px;

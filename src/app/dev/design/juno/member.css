@@ -1,10 +1,13 @@
 /*
- * Crew as characters (D-032): a member's own thread, its colour, the peek,
- * reactions, and the editor (Add to crew / Customize).
+ * Crew as characters (D-032), as the screens host them: a member's own thread
+ * (the head the crew designer's CrewPeek leans on), its colour, where a
+ * reaction sits, and the sheet the crew designer's Add to crew and Customize
+ * flows open in.
  *
- * The member's colour is a thread colour: it paints the person's bubbles and
- * the armed send disc in that member's thread and nothing else. It arrives as
- * --m-* tokens from crew-bridge.tsx (threadColour), already light-dark().
+ * The member's colour is a thread colour: it paints the person's bubbles, the
+ * armed send disc, the selection and the keyboard ring in that member's thread
+ * and nothing else. It arrives as --m-* tokens from getCrewTheme (through
+ * crew-bridge.tsx), already light-dark().
  */
 
 /* ———————————————————————————— Thread colour ———————————————————————————— */
@@ -35,7 +38,7 @@
 /* In a member's thread the member is the presence: the keyboard ring and the
    selection take its colour instead of Juno's. */
 .jn [data-member-theme] .jn-composer::after {
-  box-shadow: 0 0 0 2px var(--m-soft);
+  box-shadow: 0 0 0 2px var(--m-ring, var(--m-soft));
 }
 .jn [data-member-theme] ::selection {
   background: var(--m-soft);
@@ -52,8 +55,8 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  height: 132px;
-  margin-bottom: -18px;
+  height: 144px;
+  margin-bottom: -22px;
   pointer-events: none;
 }
 .jn .jn-mhead::before {
@@ -86,65 +89,14 @@
   align-items: center;
   gap: 2px;
 }
+/* The peek spans the conversation's column, so the edge the character leans
+   on is the conversation's own top edge. */
 .jn .jn-mhead__peek {
   position: absolute;
-  top: 4px;
+  top: 6px;
   left: 50%;
+  width: min(720px, calc(100% - 64px));
   transform: translateX(-50%);
-}
-.jn .jn-peek {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.jn .jn-peek__char {
-  display: block;
-  line-height: 0;
-}
-/* The name tag: the member's name and what it is doing, in words (P1: the
-   words are always present). It tucks against the character's lower edge,
-   the way a name card sits against its owner. */
-.jn .jn-peek__tag {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 84px;
-  margin-top: -8px;
-  padding: 5px 14px 6px;
-  border-radius: 12px;
-  background: var(--raised);
-  box-shadow:
-    0 0 0 1px var(--line-2),
-    0 1px 2px light-dark(rgb(25 27 30 / 0.05), rgb(0 0 0 / 0.24));
-  transition:
-    background-color var(--d-fast) var(--e-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .jn .jn-peek__tag:hover {
-    box-shadow:
-      0 0 0 1px var(--line-3),
-      0 1px 2px light-dark(rgb(25 27 30 / 0.05), rgb(0 0 0 / 0.24));
-  }
-}
-.jn .jn-peek__tag:active {
-  background: var(--well);
-}
-.jn .jn-peek__name {
-  font-size: 13px;
-  line-height: 17px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.jn .jn-peek__state {
-  font-size: 12px;
-  line-height: 15px;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-.jn .jn-peek[data-state="waiting"] .jn-peek__state {
-  color: var(--attn);
 }
 
 .jn .jn-member {
@@ -221,436 +173,55 @@
 }
 .jn .jn-react {
   position: absolute;
-  top: -17px;
-  left: -19px;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: var(--ground);
-  box-shadow: 0 0 0 1px var(--line-2);
-}
-.jn .jn-react__heart {
-  position: absolute;
-  left: -5px;
-  bottom: -3px;
-  width: 14px;
-  height: 14px;
-  fill: var(--m-disc, var(--ink));
-  stroke: var(--ground);
-  stroke-width: 1.8px;
-  paint-order: stroke;
+  top: -20px;
+  left: -22px;
+  line-height: 0;
 }
 
 /* ———————————————————————————— Add to crew / Customize ———————————————————————————— */
 
-.jn .jn-editor {
+/* One raised sheet over a scrim; the crew designer's flow fills it. */
+.jn .jn-crewsheet {
   position: fixed;
   z-index: 51;
   inset: 0;
   margin: auto;
-  width: min(1020px, calc(100vw - 32px));
-  height: min(724px, calc(100dvh - 32px));
-  display: grid;
-  grid-template-columns: 372px minmax(0, 1fr);
+  width: min(1040px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
   border-radius: 22px;
   background: var(--raised);
   box-shadow: var(--shadow-sheet);
   overflow: hidden;
 }
-/* The stage: the character on a plane one tone below the form, lit only by
-   its own render. No gradient, no spotlight, no glow. */
-.jn .jn-editor__stage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px 28px;
-  background: var(--card);
+.jn .jn-crewsheet[data-kind="customize"] {
+  height: min(700px, calc(100dvh - 48px));
 }
-.jn .jn-editor__stage {
-  position: relative;
-}
-.jn .jn-editor__who {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-}
-.jn .jn-editor__char {
-  display: grid;
-  place-items: center;
-  width: 224px;
-  height: 224px;
-  cursor: grab;
-  touch-action: none;
-}
-.jn .jn-editor__char:active {
-  cursor: grabbing;
-}
-.jn .jn-editor__stagetools {
-  margin-top: 20px;
-}
-.jn .jn-editor__drag {
+.jn .jn-crewsheet__close {
   position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ink-3);
+  top: 16px;
+  right: 16px;
+  z-index: 1;
 }
-.jn .jn-editor__name {
-  margin-top: 18px;
-  font-family: var(--font-serif);
-  font-size: 30px;
-  line-height: 36px;
-  letter-spacing: -0.012em;
-  font-variation-settings: "opsz" 30;
-  color: var(--ink);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.jn .jn-editor__role {
-  margin-top: 2px;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ink-3);
-}
-
-.jn .jn-editor__form {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.jn .jn-editor__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 22px 16px 10px 28px;
-}
-.jn .jn-editor__fields {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 12px;
-  padding: 6px 28px 0;
-}
-.jn .jn-editor__tabs {
-  padding: 18px 28px 4px;
-}
-.jn .jn-editor__tabs .jseg {
-  width: 100%;
-}
-.jn .jn-editor__body {
-  flex: 1;
-  min-height: 0;
+.jn .jn-crewsheet__body {
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 14px 28px 22px;
-  scrollbar-width: thin;
+  padding: 28px 32px 24px;
 }
-.jn .jn-editor__panel {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+.jn .jn-crewsheet__title {
+  margin: 0 48px 22px 0;
 }
-.jn .jn-editor__pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
-.jn .jn-editor__switchrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.jn .jn-editor__switchrow > span:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.jn .jn-editor__switchlabel {
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ink);
-}
-.jn .jn-editor__note {
-  color: var(--ink-2);
-}
-
-/* Sliders: a 4 px track in the well, an ink thumb with a plane-coloured ring;
-   the two ends are words, not numbers. */
-.jn .jn-range {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.jn .jn-range__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.jn .jn-range__end {
-  flex: none;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ink-3);
-}
-.jn .jn-range input[type="range"] {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
-  margin: 0;
-  background: transparent;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
-}
-.jn .jn-range input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--well-2);
-}
-.jn .jn-range input[type="range"]::-moz-range-track {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--well-2);
-}
-.jn .jn-range input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  margin-top: -7px;
-  border-radius: 999px;
-  background: var(--ink);
-  box-shadow: 0 0 0 3px var(--raised);
-  transition: transform var(--d-press) var(--e-out);
-}
-.jn .jn-range input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--ink);
-  box-shadow: 0 0 0 3px var(--raised);
-}
-.jn .jn-range input[type="range"]:active::-webkit-slider-thumb {
-  transform: scale(0.94);
-}
-.jn .jn-range input[type="range"]:focus-visible {
-  outline: none;
-}
-.jn .jn-range input[type="range"]:focus-visible::-webkit-slider-thumb {
-  box-shadow:
-    0 0 0 3px var(--raised),
-    0 0 0 5px var(--focus);
-}
-
-/* Any colour: a swatch with a plus until a custom colour is chosen. */
-.jn .jn-swatch-custom {
-  position: relative;
-}
-.jn .jn-swatch-custom .jn-swatch {
-  display: grid;
-  place-items: center;
-  background: var(--well);
-  color: var(--ink-2);
-  box-shadow: inset 0 0 0 1px var(--line-2);
-}
-.jn .jn-choice__upload {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: var(--well);
-  color: var(--ink-2);
-}
-.jn .jn-flabel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 500;
-  color: var(--ink-3);
-}
-.jn .jn-flabel__field {
-  height: 38px;
-}
-.jn .jn-flabel__field input {
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--ink);
-}
-.jn .jn-editor__hint {
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--ink-3);
-  max-width: 56ch;
-}
-.jn .jn-editor__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 20px 16px 28px;
-  border-top: 1px solid var(--line);
-}
-.jn .jn-editor__actions {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
-
-/* Choices: a label, the chosen option in words, and one row of options. */
-.jn .jn-choice {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.jn .jn-choice__label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 500;
-  color: var(--ink-3);
-}
-.jn .jn-choice__said {
-  font-weight: 400;
-  color: var(--ink-2);
-}
-.jn .jn-choice__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.jn .jn-choice__opt {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 13px;
-  border-radius: var(--r-pill);
-  font-size: 13px;
-  color: var(--ink-2);
-  box-shadow: inset 0 0 0 1px var(--line-2);
-  transition:
-    background-color var(--d-fast) var(--e-out),
-    color var(--d-fast) var(--e-out),
-    transform var(--d-press) var(--e-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .jn .jn-choice__opt:hover {
-    background: var(--fill-hover);
-    color: var(--ink);
-  }
-}
-.jn .jn-choice__opt:active {
-  background: var(--fill-press);
-}
-.jn .jn-choice__opt[aria-checked="true"] {
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1.5px var(--ink);
-}
-
-/* Body tiles: the member itself in each shape, so the choice is a picture. */
-.jn .jn-choice__row[data-shape="tile"] {
-  gap: 8px;
-}
-.jn .jn-choice__row[data-shape="tile"] .jn-choice__opt {
-  flex-direction: column;
-  width: 92px;
-  height: 92px;
-  padding: 8px 4px 8px;
-  gap: 4px;
-  border-radius: 16px;
-}
-.jn .jn-choice__row[data-shape="tile"] .jn-choice__text {
-  max-width: 88px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.jn .jn-choice__text {
-  font-size: 12px;
-  line-height: 16px;
-}
-
-/* Colour swatches: 28 px discs inside a 36 px target; the chosen one wears an
-   ink ring with a gap of the plane, so the colour itself is never covered. */
-.jn .jn-choice__row[data-shape="swatch"] {
-  gap: 4px;
-}
-.jn .jn-choice__row[data-shape="swatch"] .jn-choice__opt {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  box-shadow: none;
-}
-.jn .jn-choice__row[data-shape="swatch"] .jn-choice__opt[aria-checked="true"] {
-  box-shadow:
-    inset 0 0 0 2px var(--raised),
-    inset 0 0 0 3.5px var(--ink);
-}
-.jn .jn-swatch {
-  display: block;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px light-dark(rgb(25 27 30 / 0.08), rgb(255 255 255 / 0.1));
-}
-
-/* The thread sample: one of the person's bubbles and the disc, in the colour. */
-.jn .jn-tsample {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 14px 14px 16px;
-  border-radius: 16px;
-  background: var(--ground);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.jn .jn-tsample__bubble {
-  padding: 8px 14px 9px;
-  border-radius: 18px;
-  background: var(--m-bubble);
-  color: var(--m-on-bubble);
-  font-size: 14px;
-  line-height: 20px;
-  transition:
-    background-color var(--d-base) var(--e-out),
-    color var(--d-base) var(--e-out);
-}
-.jn .jn-tsample__disc {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: var(--m-disc);
-  color: var(--m-on-disc);
-  transition:
-    background-color var(--d-base) var(--e-out),
-    color var(--d-base) var(--e-out);
+.jn .jn-crewsheet[data-kind="add"] .jcc__head {
+  margin-right: 44px;
 }
 
 /* ———————————————————————————— Phone ———————————————————————————— */
 
 @media (max-width: 760px) {
   .jn .jn-mhead {
-    height: 112px;
+    height: 132px;
   }
   .jn .jn-mhead__bar {
     padding: 0 6px;
@@ -662,7 +233,8 @@
     display: none;
   }
   .jn .jn-mhead__peek {
-    top: 4px;
+    top: 2px;
+    width: calc(100% - 120px);
   }
   .jn .jn-member {
     padding-top: 16px;
@@ -670,73 +242,15 @@
   .jn .jn-portrait__face > .jcf {
     transform: scale(0.86);
   }
-  .jn .jn-editor {
+  .jn .jn-crewsheet {
     inset: auto 0 0 0;
     width: 100%;
-    height: calc(100dvh - 24px);
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    max-height: calc(100dvh - 24px);
     border-radius: 22px 22px 0 0;
   }
-  .jn .jn-editor__stage {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 12px;
-    padding: 12px 16px;
-  }
-  .jn .jn-editor__who {
-    align-items: flex-start;
-  }
-  .jn .jn-editor__name {
-    margin-top: 0;
-    font-size: 24px;
-    line-height: 30px;
-  }
-  .jn .jn-editor__char {
-    position: relative;
-    flex: none;
-    width: 104px;
-    height: 104px;
-  }
-  .jn .jn-editor__char > .jcf {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%) scale(0.5);
-  }
-  .jn .jn-editor__stage {
-    align-items: center;
-  }
-  .jn .jn-editor__fields {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 4px 16px 0;
-  }
-  .jn .jn-editor__head {
-    padding: 14px 8px 6px 16px;
-  }
-  .jn .jn-editor__tabs {
-    padding: 14px 16px 2px;
-  }
-  .jn .jn-editor__body {
-    padding: 12px 16px 18px;
-  }
-  .jn .jn-editor__pair {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .jn .jn-editor__drag {
-    display: none;
-  }
-  .jn .jn-editor__stagetools {
-    margin-top: 8px;
-  }
-  .jn .jn-choice__row[data-shape="tile"] .jn-choice__opt {
-    width: calc((100% - 24px) / 4);
+  .jn .jn-crewsheet__body {
+    padding: 20px 16px 16px;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .jn .jn-tsample__bubble,
-  .jn .jn-tsample__disc {
-    transition-duration: var(--d-exit);
-  }
-}
+
