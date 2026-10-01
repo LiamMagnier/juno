@@ -587,6 +587,22 @@ public struct DelegateTaskTool: CodeTool {
             startedAt: startedAt
         )
 
+        // `SubagentStart` hooks may add context to the child's task; they
+        // cannot stop the delegation (Lane F, §5.9).
+        let agentType = spec.agent?.name ?? spec.role.rawValue
+        var childTask = spec.task
+        if let start = await lifecycleHooks?.subagentStarted(
+            sessionID: parentSessionID,
+            agentID: spec.agentID,
+            agentType: agentType,
+            task: spec.task
+        ) {
+            for notice in start.notices {
+                _ = try? await store.appendEvent(sessionID: parentSessionID, payload: .hookActivity(notice))
+            }
+            childTask = AgentHookContext.appending(start.context, to: childTask)
+        }
+
         let permissions = PermissionCoordinator(
             sessionID: child.id,
             mode: environment.permissionMode
@@ -629,8 +645,12 @@ public struct DelegateTaskTool: CodeTool {
             ),
             modelID: childModelID,
             reasoningEffort: childReasoningEffort,
+            // Told which agent it is, so `SubagentStop` and the child's tool
+            // hooks carry `agent_id` and `agent_type`.
             lifecycleHooks: lifecycleHooks?.subagentHooks(
-                executionRootPath: environment.executionRootPath
+                executionRootPath: environment.executionRootPath,
+                agentID: spec.agentID,
+                agentType: agentType
             ),
             fallbackResolver: fallbackResolver
         )
@@ -676,7 +696,7 @@ public struct DelegateTaskTool: CodeTool {
             // beyond its 18-iteration cap, so one that made no progress could
             // hold the parent open indefinitely.
             try await withTaskCancellationHandler {
-                try await orchestrator.submit(prompt: spec.task)
+                try await orchestrator.submit(prompt: childTask)
                 // A cancel that came before the run existed ran its `stop()`
                 // against nothing (the handler fires at once for a task
                 // already cancelled, and its hop can land before `submit`):

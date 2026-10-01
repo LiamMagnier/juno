@@ -65,6 +65,9 @@ final class DesktopWorkbenchRegistry {
     func register(workbench: WorkbenchModel?, codeModel: NativeCodeModel?) {
         self.workbench = workbench
         self.codeModel = codeModel
+        // `/resume` and `/fork` ask for a session by notification, since the
+        // Code package knows nothing of windows (CODE_AGENT_SPEC §5.4).
+        JunoCodeOpenSessionRelay.start()
         // The run monitor follows the workbench for as long as it exists, not
         // a window: its notifications and its keep-awake assertion matter
         // most while Chat is showing or the window is closed. The workbench's

@@ -12,6 +12,10 @@ public struct HookRunner: Sendable {
     private let policy: HookExecutionPolicy
     private let approvalAuthorizer: (any HookAuthorizing)?
     private let projectDirectory: String?
+    /// Sends `http` hooks' POSTs.
+    private let poster: any HookHTTPPosting
+    /// Answers `prompt` hooks; nil fails them as a non-blocking error.
+    private let promptEvaluator: (any HookPromptEvaluating)?
 
     /// - Parameters:
     ///   - executor: In production, a `CommandExecutionService` created with
@@ -27,12 +31,16 @@ public struct HookRunner: Sendable {
         executor: any HookCommandExecuting,
         policy: HookExecutionPolicy = .denyAll,
         approvalAuthorizer: (any HookAuthorizing)? = nil,
-        projectDirectory: String? = nil
+        projectDirectory: String? = nil,
+        poster: any HookHTTPPosting = URLSessionHookPoster(),
+        promptEvaluator: (any HookPromptEvaluating)? = nil
     ) {
         self.executor = executor
         self.policy = policy
         self.approvalAuthorizer = approvalAuthorizer
         self.projectDirectory = projectDirectory
+        self.poster = poster
+        self.promptEvaluator = promptEvaluator
     }
 
     /// Runs every hook that matches one event, all at once, and folds their
@@ -51,7 +59,7 @@ public struct HookRunner: Sendable {
         let matching = hooks.filter {
             $0.event == context.event
                 && $0.matcher.matches(context)
-                && seenCommands.insert($0.command).inserted
+                && seenCommands.insert($0.kind.rawValue + "\u{1f}" + $0.command).inserted
         }
         let bounded = Array(matching.prefix(HookExecutionLimits.maximumHooksPerRun))
         let input = Self.standardInput(for: context, projectDirectory: projectDirectory)
@@ -105,7 +113,7 @@ public struct HookRunner: Sendable {
         standardInput: Data
     ) async -> HookExecutionResult {
         let invocation = HookInvocation(hook: hook, context: context)
-        guard executor.isContained else {
+        guard hook.kind != .command || executor.isContained else {
             return denied(hook: hook, reason: "The hook executor is not kernel-contained.")
         }
 
@@ -132,6 +140,16 @@ public struct HookRunner: Sendable {
             return denied(hook: hook, reason: reason)
         case let .denied(reason):
             return denied(hook: hook, reason: reason)
+        }
+
+        switch hook.kind {
+        case .http:
+            return await HookHTTPRunner(poster: poster).run(hook: hook, event: context.event, body: standardInput)
+        case .prompt:
+            return await HookPromptRunner(evaluator: promptEvaluator)
+                .run(hook: hook, event: context.event, input: standardInput)
+        case .command:
+            break
         }
 
         // The policy classifies the command too, but this second check stays
@@ -278,6 +296,12 @@ public struct HookEventOutcome: Equatable, Sendable {
     public private(set) var errors: [HookVerdict] = []
     /// `systemMessage`s, for the reader.
     public private(set) var messages: [HookVerdict] = []
+    /// `PreToolUse`: arguments to run the call with instead, from the first
+    /// hook, in configuration order, that gave any. Only when nothing
+    /// blocked. Validated and authorized again by the runtime.
+    public private(set) var updatedInput: JSONValue?
+    /// The hook that changed the arguments, for the thread.
+    public private(set) var updatedInputBy: HookVerdict?
 
     public init(event: HookLifecycleEvent, results: [HookExecutionResult]) {
         self.event = event
@@ -306,11 +330,33 @@ public struct HookEventOutcome: Equatable, Sendable {
                     if !output.continueRun, halt == nil {
                         halt = verdict(result, output.stopReason ?? "A hook ended the run.")
                     }
-                    if let message = output.systemMessage, !message.isEmpty {
+                    if let message = output.systemMessage, !message.isEmpty, !output.suppressOutput {
                         messages.append(verdict(result, message))
                     }
                     if output.decision == "block", event.canBlock, block == nil {
                         block = verdict(result, output.reason ?? "A hook blocked this.")
+                    }
+                    if event == .preToolUse, let updated = output.updatedInput {
+                        if updatedInput == nil {
+                            updatedInput = updated
+                            updatedInputBy = verdict(result, "Changed this call's arguments before it ran.")
+                        } else {
+                            errors.append(verdict(result, "Another hook had already changed this call's arguments, so this hook's change was not used."))
+                        }
+                    }
+                    if event == .permissionRequest {
+                        // A hook may decline a pending approval. It may never
+                        // grant one: only the reader approves.
+                        switch output.permissionDecision ?? (output.decision == "deny" ? .deny : nil) {
+                        case .deny?:
+                            if block == nil {
+                                block = verdict(result, output.permissionDecisionReason ?? output.reason ?? "A hook declined this request.")
+                            }
+                        case .allow?:
+                            errors.append(verdict(result, "A hook cannot approve a request; it is waiting for you."))
+                        case .ask?, nil:
+                            break
+                        }
                     }
                     if event == .preToolUse {
                         // `"decision": "approve"` is the older spelling of
@@ -356,6 +402,12 @@ public struct HookEventOutcome: Equatable, Sendable {
             case let .denied(reason), let .skipped(reason):
                 errors.append(verdict(result, reason))
             }
+        }
+        // A block outranks a change: a call that does not run is not run
+        // with other arguments either.
+        if block != nil || halt != nil {
+            updatedInput = nil
+            updatedInputBy = nil
         }
     }
 

@@ -96,19 +96,28 @@ public struct AgentHookResponse: Equatable, Sendable {
     /// What the thread shows. Recorded by the runtime as `hookActivity`
     /// events, in order, at the point the hooks ran.
     public var notices: [HookActivityEvent]
+    /// `PreToolUse`: arguments to run the call with instead
+    /// (`hookSpecificOutput.updatedInput`). The runtime validates them
+    /// against the tool's schema and authorizes the call again from scratch,
+    /// never at a lower risk than the model's own arguments, and without the
+    /// hook's `allow`: a hook that rewrites a call does not also get to wave
+    /// the rewrite through.
+    public var updatedInput: JSONValue?
 
     public init(
         blockReason: String? = nil,
         permission: AgentHookPermission? = nil,
         haltReason: String? = nil,
         context: [String] = [],
-        notices: [HookActivityEvent] = []
+        notices: [HookActivityEvent] = [],
+        updatedInput: JSONValue? = nil
     ) {
         self.blockReason = blockReason
         self.permission = permission
         self.haltReason = haltReason
         self.context = context
         self.notices = notices
+        self.updatedInput = updatedInput
     }
 
     public static let empty = AgentHookResponse()
@@ -160,10 +169,10 @@ public protocol AgentLifecycleHooks: Sendable {
     /// Told when a run has ended, however it ended.
     func sessionStopped(sessionID: CodeSessionID, status: SessionStatus) async
 
-    // The four points below are seams Lane F fills with hook handlers
-    // (CODE_AGENT_SPEC §5.8). The runtime already calls each at its point and
-    // records what the hooks ask the thread to show; the defaults do nothing,
-    // so until an integration answers, nothing changes.
+    // The four points below are the seams commit's hook points (CODE_AGENT_SPEC
+    // §6.0), filled by Juno Code's hook adapter (`WorkspaceAgentHooks`, §5.9).
+    // The runtime calls each at its point and records what the hooks ask the
+    // thread to show; the defaults do nothing.
 
     /// Runs before the conversation is compacted (`PreCompact`). It cannot
     /// stop the fold: the provider's limit does not wait.
@@ -207,6 +216,33 @@ public protocol AgentLifecycleHooks: Sendable {
     /// - Parameter executionRootPath: the folder the sub-agent works in, when
     ///   it has its own worktree.
     func subagentHooks(executionRootPath: String?) -> (any AgentLifecycleHooks)?
+
+    /// The hooks a delegated sub-agent's run should see, told which agent it
+    /// is, so `SubagentStop` and the child's tool hooks carry `agent_id` and
+    /// `agent_type`. Defaults to ``subagentHooks(executionRootPath:)``.
+    func subagentHooks(
+        executionRootPath: String?,
+        agentID: String,
+        agentType: String
+    ) -> (any AgentLifecycleHooks)?
+
+    /// Runs as a sub-agent starts (`SubagentStart`). Its context reaches the
+    /// sub-agent with its task; it cannot stop the delegation.
+    func subagentStarted(
+        sessionID: CodeSessionID,
+        agentID: String,
+        agentType: String,
+        task: String
+    ) async -> AgentHookResponse
+
+    /// Runs when the agent asks the reader for an approval
+    /// (`PermissionRequest`). A block declines the request, the way the
+    /// reader's Decline does; nothing a hook says can approve it.
+    func permissionRequested(_ request: ApprovalRequest) async -> AgentHookResponse
+
+    /// Told how an approval request ended (`PermissionDenied` when it was
+    /// declined, whoever declined it).
+    func permissionResolved(sessionID: CodeSessionID, approvalID: String, decision: ApprovalDecision) async
 }
 
 public extension AgentLifecycleHooks {
@@ -281,6 +317,29 @@ public extension AgentLifecycleHooks {
     func subagentHooks(executionRootPath _: String?) -> (any AgentLifecycleHooks)? {
         nil
     }
+
+    func subagentHooks(
+        executionRootPath: String?,
+        agentID _: String,
+        agentType _: String
+    ) -> (any AgentLifecycleHooks)? {
+        subagentHooks(executionRootPath: executionRootPath)
+    }
+
+    func subagentStarted(
+        sessionID _: CodeSessionID,
+        agentID _: String,
+        agentType _: String,
+        task _: String
+    ) async -> AgentHookResponse {
+        .empty
+    }
+
+    func permissionRequested(_: ApprovalRequest) async -> AgentHookResponse {
+        .empty
+    }
+
+    func permissionResolved(sessionID _: CodeSessionID, approvalID _: String, decision _: ApprovalDecision) async {}
 }
 
 /// How hook context is put in front of the model.

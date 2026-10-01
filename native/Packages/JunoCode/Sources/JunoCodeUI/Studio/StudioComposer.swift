@@ -23,6 +23,8 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// Nil where there is no project to search.
     var searchFiles: ((String) async -> [FileEntry])?
     var chooseFile: (FileEntry) -> Void = { _ in }
+    /// The session's running background shells, offered as `@shell:` mentions.
+    var shellIDs: [String] = []
     /// Runs a chosen command. Returns false when the host could not run it
     /// now, so a verb's typed argument stays in the field for later instead
     /// of being cleared with nothing to show for it.
@@ -91,7 +93,15 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         return fileResults
     }
 
-    private var menuCount: Int { slashMatches.isEmpty ? fileMatches.count : slashMatches.count }
+    /// `@diff` and `@shell:` above the files, while their names are typed.
+    private var specialMatches: [ComposerMention] {
+        guard slashMatches.isEmpty, let token = fileToken else { return [] }
+        return ComposerMentionSuggestions.special(for: token.query, shellIDs: shellIDs)
+    }
+
+    private var mentionCount: Int { specialMatches.count + fileMatches.count }
+
+    private var menuCount: Int { slashMatches.isEmpty ? mentionCount : slashMatches.count }
 
     // MARK: Body
 
@@ -139,14 +149,12 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             receive(providers)
             return true
         }
-        .fileImporter(isPresented: $isChoosingImage, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $isChoosingImage, allowedContentTypes: [.image, .pdf], allowsMultipleSelection: true) { result in
             guard case let .success(urls) = result else { return }
-            for url in urls {
+            for url in urls.prefix(CodeAttachment.maximumPerMessage) {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                if let attachment = CodeAttachment.load(contentsOf: url) {
-                    addAttachment?(attachment)
-                }
+                CodeAttachment.loadAll(contentsOf: url).forEach { addAttachment?($0) }
             }
         }
         .onChange(of: slashToken?.query) { _, _ in highlighted = 0 }
@@ -204,11 +212,12 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 return .handled
             }
             .onKeyPress(keys: ["v"], phases: .down) { press in
-                guard press.modifiers.contains(.command),
-                      let addAttachment,
-                      let attachment = StudioPasteboard.image()
-                else { return .ignored }
-                addAttachment(attachment)
+                guard press.modifiers.contains(.command), let addAttachment else { return .ignored }
+                // Pictures and PDFs; anything else is text, and the field
+                // pastes it as usual.
+                let attachments = StudioPasteboard.attachments()
+                guard !attachments.isEmpty else { return .ignored }
+                attachments.forEach(addAttachment)
                 return .handled
             }
             .accessibilityLabel("Message Juno")
@@ -222,14 +231,12 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         HStack(spacing: JunoSpace.hairline) {
             if addAttachment != nil {
                 Menu {
-                    Button("Add Images…") { isChoosingImage = true }
+                    Button("Add Images or PDFs…") { isChoosingImage = true }
                     Button("Paste Image") {
-                        if let attachment = StudioPasteboard.image() {
-                            addAttachment?(attachment)
-                        }
+                        StudioPasteboard.attachments().forEach { addAttachment?($0) }
                     }
                     if searchFiles != nil {
-                        Button("Mention a File") { text += text.isEmpty || text.hasSuffix(" ") ? "@" : " @" }
+                        Button("Mention a File or Folder") { text += text.isEmpty || text.hasSuffix(" ") ? "@" : " @" }
                     }
                     Button("Commands") { if text.isEmpty { text = "/" } }
                 } label: {
@@ -348,23 +355,39 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 highlighted: min(highlighted, slashMatches.count - 1),
                 choose: { index in apply(slashMatches[index]) }
             )
-        } else if !fileMatches.isEmpty || searchingQuery != nil {
-            StudioSuggestionList(
-                rows: fileMatches.map {
-                    .init(id: $0.path.value, title: $0.path.value, detail: $0.isDirectory ? "Folder" : nil, isMono: true)
-                },
-                highlighted: min(highlighted, max(fileMatches.count - 1, 0)),
+        } else if mentionCount > 0 || searchingQuery != nil {
+            StudioMentionPicker(
+                special: specialMatches,
+                files: fileMatches,
+                highlighted: min(highlighted, max(mentionCount - 1, 0)),
                 isSearching: searchingQuery != nil && fileMatches.isEmpty,
-                choose: { index in apply(fileMatches[index]) }
+                choose: chooseMention
             )
         }
+    }
+
+    private func chooseMention(_ index: Int) {
+        if index < specialMatches.count {
+            apply(specialMatches[index])
+        } else if index - specialMatches.count < fileMatches.count {
+            apply(fileMatches[index - specialMatches.count])
+        }
+    }
+
+    private func apply(_ mention: ComposerMention) {
+        guard let token = fileToken else { return }
+        text = token.replacing(in: text, withPath: String(mention.token.dropFirst()))
+        highlighted = 0
+        fileResults = []
+        fileResultsQuery = nil
+        focus?.wrappedValue = true
     }
 
     private func choose() {
         if !slashMatches.isEmpty {
             apply(slashMatches[min(highlighted, slashMatches.count - 1)])
-        } else if !fileMatches.isEmpty {
-            apply(fileMatches[min(highlighted, fileMatches.count - 1)])
+        } else if mentionCount > 0 {
+            chooseMention(min(highlighted, mentionCount - 1))
         }
     }
 
@@ -423,11 +446,16 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     }
 
     private func receive(_ providers: [NSItemProvider]) {
-        for provider in providers {
+        // A message takes a handful of pictures; a drop of a hundred files
+        // reads no more than that many.
+        for provider in providers.prefix(CodeAttachment.maximumPerMessage) {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                // A dropped picture, a PDF, or the screenshot thumbnail macOS
+                // lets the reader drag in, which arrives as a file.
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url, let attachment = CodeAttachment.load(contentsOf: url) else { return }
-                    Task { @MainActor in addAttachment?(attachment) }
+                    guard let url else { return }
+                    let attachments = CodeAttachment.loadAll(contentsOf: url)
+                    Task { @MainActor in attachments.forEach { addAttachment?($0) } }
                 }
                 continue
             }
@@ -482,6 +510,9 @@ struct StudioSuggestionList: View {
     var isSearching = false
     let choose: (Int) -> Void
 
+    /// Rows shown at once; the rest scroll, following the highlight.
+    static let visibleRows = 8
+
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             if isSearching {
@@ -491,7 +522,39 @@ struct StudioSuggestionList: View {
                 }
                 .padding(JunoSpace.snug)
             }
-            ForEach(Array(rows.prefix(8).enumerated()), id: \.element.id) { index, row in
+            if rows.count > Self.visibleRows {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        list
+                    }
+                    .frame(height: CGFloat(Self.visibleRows) * (Studio.Metrics.rowHeight + 1))
+                    .onChange(of: highlighted) { _, index in
+                        guard rows.indices.contains(index) else { return }
+                        proxy.scrollTo(rows[index].id)
+                    }
+                }
+            } else {
+                list
+            }
+        }
+        .padding(JunoSpace.hairline)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .fill(Studio.Surface.raised)
+                .shadow(color: .black.opacity(0.10), radius: 16, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.opacity)
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 Button { choose(index) } label: {
                     HStack(spacing: JunoSpace.snug) {
                         Text(row.title)
@@ -524,22 +587,10 @@ struct StudioSuggestionList: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!row.isEnabled)
+                .id(row.id)
                 .accessibilityIdentifier("juno.code.composer.suggestion.\(row.id)")
             }
         }
-        .padding(JunoSpace.hairline)
-        .frame(maxWidth: 520, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
-                .fill(Studio.Surface.raised)
-                .shadow(color: .black.opacity(0.10), radius: 16, y: 6)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
-                .strokeBorder(Studio.Surface.hairline)
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .transition(.opacity)
     }
 }
 
@@ -708,6 +759,14 @@ struct StudioContextMeter: View {
     var spent: ModelUsageTotals?
     /// Those calls at the models' published rates, when there are any.
     var cost: Double?
+    /// Opens `/context` (§5.5); nil leaves the meter a readout.
+    var openDetails: (() -> Void)?
+
+    /// The session's cost beside the ring, once there is one: "$1.12".
+    static func costLabel(_ cost: Double?) -> String? {
+        guard let cost, cost >= 0.01 else { return nil }
+        return String(format: "$%.2f", cost)
+    }
 
     private var fraction: Double { min(1, Double(used) / Double(max(window, 1))) }
 
@@ -738,32 +797,72 @@ struct StudioContextMeter: View {
     }
 
     var body: some View {
-        ZStack {
-            Circle().stroke(Studio.Surface.hairline, lineWidth: 2)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(
-                    fraction > 0.8 ? Studio.Ink.accent : Studio.Ink.tertiary,
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
+        Button {
+            openDetails?()
+        } label: {
+            HStack(spacing: JunoSpace.hairline) {
+                ZStack {
+                    Circle().stroke(Studio.Surface.hairline, lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            fraction > 0.8 ? Studio.Ink.accent : Studio.Ink.tertiary,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 14, height: 14)
+                if let label = Self.costLabel(cost) {
+                    Text(label)
+                        .font(Studio.Font.metaDigits)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                }
+            }
+            .padding(.horizontal, Self.costLabel(cost) == nil ? 0 : JunoSpace.tight)
+            .frame(minWidth: Studio.Metrics.control, minHeight: Studio.Metrics.control)
+            .contentShape(Rectangle())
         }
-        .frame(width: 14, height: 14)
-        .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
-        .help(help)
+        .buttonStyle(.plain)
+        .disabled(openDetails == nil)
+        .help(help + (openDetails == nil ? "" : "\nClick for the breakdown."))
         .accessibilityLabel("Context used")
-        .accessibilityValue("\(Int(fraction * 100)) percent")
+        .accessibilityValue("\(Int(fraction * 100)) percent" + (Self.costLabel(cost).map { ", \($0) this session" } ?? ""))
+        .accessibilityIdentifier("juno.code.composer.context-meter")
     }
 }
 
 /// Reads a picture off the general pasteboard for the composer.
 enum StudioPasteboard {
+    /// Everything on the general pasteboard the composer can attach: a
+    /// picture, a PDF's first pages, or the files Finder copied.
+    static func attachments(from pasteboard: NSPasteboard = .general) -> [CodeAttachment] {
+        if let pdf = pasteboard.data(forType: .pdf) {
+            let pages = CodeAttachment.pdfPages(data: pdf, name: "Pasted PDF")
+            if !pages.isEmpty { return pages }
+        }
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] {
+            let files = urls.filter(\.isFileURL)
+            // Finder puts each copied file's icon on the pasteboard beside
+            // it, as a TIFF. Files are answered for themselves: a copied
+            // `.zip` attaches nothing (and the field pastes its name), never
+            // a picture of its icon.
+            if !files.isEmpty {
+                // No more files are read than one message can carry.
+                var found: [CodeAttachment] = []
+                for file in files where found.count < CodeAttachment.maximumPerMessage {
+                    found += CodeAttachment.loadAll(contentsOf: file)
+                }
+                return found
+            }
+        }
+        return image(from: pasteboard).map { [$0] } ?? []
+    }
+
     /// The image currently on the general pasteboard, if there is one.
     ///
     /// Reads the declared type so a copied PNG stays a PNG rather than being
     /// re-encoded; `CodeAttachment` transcodes only what the providers reject.
-    static func image() -> CodeAttachment? {
-        let pasteboard = NSPasteboard.general
+    static func image(from pasteboard: NSPasteboard = .general) -> CodeAttachment? {
         for type in [NSPasteboard.PasteboardType.png, .tiff] {
             guard let data = pasteboard.data(forType: type) else { continue }
             return CodeAttachment.pasted(

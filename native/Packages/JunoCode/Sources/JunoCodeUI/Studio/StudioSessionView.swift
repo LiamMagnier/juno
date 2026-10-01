@@ -12,7 +12,6 @@ public struct StudioSessionView: View {
     let openReview: (String?) -> Void
     let beginDictation: (() -> Void)?
 
-    @State private var slashCommands: CodeSlashCommandLibrary = .builtIn
     @State private var isRewindPickerPresented = false
     @FocusState private var composerFocused: Bool
 
@@ -80,6 +79,8 @@ public struct StudioSessionView: View {
                 // The verify recipe card (CODE_AGENT_SPEC §1.8). Lane B.
                 StudioVerifyRecipeSlot(controller: controller)
                 goalSurfaces
+                // `/loop`s running in this session, in words (Lane F).
+                StudioCommandStatusLines(commands: controller.commands)
                 composer
             }
             .frame(maxWidth: Studio.Metrics.measure)
@@ -92,10 +93,10 @@ public struct StudioSessionView: View {
         .background(Studio.Surface.canvas)
         .task(id: controller.sessionID) {
             composerFocused = true
-            if let context = controller.context {
-                slashCommands = .merged(workspace: await context.slashCommands())
-            }
+            await controller.commands.reload(context: controller.context)
         }
+        // The sheets, questions and side answers slash verbs open (Lane F).
+        .studioCommandCenter(controller: controller, models: models)
         .onChange(of: isRunning) { _, running in
             if running { controller.activeInstructionKind = preferences.followUp.instructionKind }
         }
@@ -182,15 +183,21 @@ public struct StudioSessionView: View {
             text: $controller.composerText,
             placeholder: placeholder,
             attachments: controller.pendingAttachments,
-            addAttachment: controller.currentModelSupportsVision ? { controller.attach($0) } : nil,
+            // Offered whatever the model: a picture pasted for a model that
+            // cannot see says so, instead of vanishing (§5.11).
+            addAttachment: { controller.attach($0) },
             removeAttachment: { controller.removeAttachment(id: $0) },
-            slashCommands: slashCommands,
+            slashCommands: controller.commands.library,
             searchFiles: controller.context == nil
                 ? nil
                 : { query in await controller.findFiles(nameContains: query, limit: 24) },
             chooseFile: { entry in
-                if !entry.isDirectory { controller.registerComposerFileReference(entry.path) }
+                // A folder is a mention too: it is listed when the message goes.
+                controller.registerComposerFileReference(entry.path)
             },
+            shellIDs: controller.context.map { context in
+                context.shells.sessions(ownedBy: controller.sessionID).filter(\.state.isRunning).map(\.id)
+            } ?? [],
             runCommand: run,
             commandUnavailableReason: unavailableReason,
             canSend: canSend,
@@ -231,7 +238,8 @@ public struct StudioSessionView: View {
                     used: used,
                     window: window,
                     spent: controller.sessionUsage,
-                    cost: controller.sessionCostEstimate
+                    cost: controller.sessionCostEstimate,
+                    openDetails: { controller.commands.present(.context) }
                 )
             }
             StudioModelChip(
@@ -261,45 +269,30 @@ public struct StudioSessionView: View {
         }
     }
 
+    /// Every command goes through the session's command centre (Lane F,
+    /// CODE_AGENT_SPEC §5.4): verbs run their handlers, prompts switch the
+    /// behaviour they imply.
     private func run(_ command: CodeSlashCommand, argument: String) -> Bool {
-        if let action = command.action {
-            switch action {
-            case .compact:
-                // The controller refuses mid-run and says why; the typed
-                // focus stays in the field so it can be sent once the run ends.
-                let accepted = !isBusy
-                Task { await controller.compactConversation(focus: argument) }
-                return accepted
-            case .review:
-                openReview(nil)
-                return true
-            case .rewind:
-                // The picker, or the reason there is none, answers the
-                // command, so the field is cleared either way.
-                if let openRewindPicker {
-                    openRewindPicker()
-                } else {
-                    controller.explainRewindUnavailable()
-                }
-                return true
-            case .goal:
-                // Typing `/goal` is the reader's approval of the goal itself;
-                // the start card asks only for Start.
-                Task { await controller.goal.perform(GoalCommand.parse(argument)) }
-                return true
-            }
-        }
-        if let behavior = command.behavior, behavior != controller.session.configuration.behavior {
+        if command.action == nil, let behavior = command.behavior,
+           behavior != controller.session.configuration.behavior
+        {
             Task { await controller.setBehavior(behavior) }
         }
-        return true
+        return controller.commands.run(
+            command,
+            argument: argument,
+            host: controller,
+            view: SlashCommandViewActions(
+                openRewind: openRewindPicker ?? { controller.explainRewindUnavailable() },
+                openReview: openReview
+            ),
+            imports: controller.context?.userExtensionPolicy
+        )
     }
 
     private func unavailableReason(_ command: CodeSlashCommand) -> String? {
-        guard command.action == .compact else { return nil }
-        if controller.isCompacting { return "Compacting now" }
-        if isRunning { return "Available when Juno finishes" }
-        return nil
+        if command.action == .compact, controller.isCompacting { return "Compacting now" }
+        return controller.commands.unavailableReason(command, isBusy: isBusy)
     }
 }
 

@@ -222,6 +222,30 @@ extension SessionController {
 
     /// Keeps the goal model in step with the transcript.
     func integrateAutonomy(_ event: SessionEvent) {
+        // Lane F's two goal hooks (§5.9), told as the goal runtime records:
+        // `GoalSet` when a goal is set or replaced, `GoalVerdict` after each
+        // verdict. Their answers are notices; they decide nothing.
+        switch event.payload {
+        case let .goalSet(set):
+            Task { @MainActor [weak self] in
+                await self?.signalHooks { hooks, id in
+                    await hooks.goalSet(sessionID: id, objective: set.objective, criteria: set.criteria.map(\.text))
+                }
+            }
+        case let .goalVerdict(verdict):
+            Task { @MainActor [weak self] in
+                await self?.signalHooks { hooks, id in
+                    await hooks.goalVerdict(
+                        sessionID: id,
+                        verdict: verdict.verdict.rawValue,
+                        reason: verdict.reason,
+                        unmetCriteria: verdict.unmetCriteria
+                    )
+                }
+            }
+        default:
+            break
+        }
         switch event.payload {
         case .goalSet, .goalEdited, .goalStatus, .goalVerdict, .budgetReached, .runCompleted, .runContinued:
             Task { @MainActor [weak self] in await self?.goal.refresh() }

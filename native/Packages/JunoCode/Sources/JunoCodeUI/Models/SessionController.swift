@@ -625,6 +625,8 @@ public final class SessionController {
     /// The system prompt last built, and what it was built from. See
     /// ``stableSystemPrompt(context:contract:)``.
     private var systemPromptMemo: (key: String, prompt: String)?
+    /// The system prompt last built, for `/context` (Lane F).
+    var currentSystemPrompt: String? { systemPromptMemo?.prompt }
     /// The tool call that has started and not yet completed. Side effects are
     /// appended while the call is still open, which is what lets a test result
     /// be attributed to the run that produced it.
@@ -733,7 +735,10 @@ public final class SessionController {
                 : (behavior == .code ? session.configuration.permissionMode : .readOnly)
         ) ?? .denyAll
         self.hookDiscoveryResult = context?.hookDiscoveryResult ?? HookDiscoveryResult()
-        self.customAgents = context.map { CustomAgentDiscovery(access: $0.access).discover() } ?? []
+        self.customAgents = context.map {
+            CustomAgentDiscovery(access: $0.access, user: $0.userExtensionDirectories)
+                .discoverEnabled(imports: $0.userExtensionPolicy)
+        } ?? []
         self.workspaceSurface = context.map {
             WorkspaceSurface(
                 displayName: $0.record.descriptor.displayName,
@@ -938,7 +943,12 @@ public final class SessionController {
                 reasoningEffort: contract.reasoningEffort,
                 parentSystemPrompt: systemPrompt,
                 sessionState: childSessionState,
-                executionFactory: { [permissions = live.permissions, supportsVision = contract.supportsVision] request in
+                executionFactory: { [
+                    permissions = live.permissions,
+                    supportsVision = contract.supportsVision,
+                    store = live.store,
+                    worktreeHooks = lifecycleHooks
+                ] request in
                     // A child never outranks the session that spawned it.
                     let childMode = PermissionMode.workspaceWrite.capped(
                         at: await permissions.permissionMode
@@ -948,6 +958,22 @@ public final class SessionController {
                         let worktree = try await context.worktrees.create(
                             branch: request.branch
                         )
+                        // `WorktreeCreate` for a sub-agent's worktree too
+                        // (§5.9), told to the session that delegated.
+                        if let worktreeHooks {
+                            let answer = await worktreeHooks.worktreeChanged(
+                                sessionID: request.parentSessionID,
+                                created: true,
+                                path: worktree.rootPath,
+                                branch: worktree.branch
+                            )
+                            for notice in answer.notices {
+                                _ = try? await store.appendEvent(
+                                    sessionID: request.parentSessionID,
+                                    payload: .hookActivity(notice)
+                                )
+                            }
+                        }
                         let isolated = try context.isolatedContext(at: worktree.rootURL)
                         // No screen control and no background shells: a
                         // bounded child has no reader to start either for,
@@ -996,6 +1022,10 @@ public final class SessionController {
                 lifecycleHooks: lifecycleHooks,
                 // A write child gets a quarter of the session's own step
                 // limit, at most 60 (§5.2).
+                // Built-in and custom agents as targets (§5.2): Lane B's
+                // built-ins, then the session's custom agents (Lane F's
+                // discovery); a custom agent never takes a built-in's name.
+                agents: subagentTargets,
                 parentStepLimit: settings.maxTurns
             ))
         } else if contract.behavior == .survey {
@@ -1072,11 +1102,12 @@ public final class SessionController {
     }
 
     /// The hook adapter for a Code run, or nil when no hook would run.
-    private func makeHookAdapter(context: WorkspaceContext, live: Live) -> WorkspaceAgentHooks? {
+    func makeHookAdapter(context: WorkspaceContext, live: Live) -> WorkspaceAgentHooks? {
         let definitions = activeHooks
         guard !definitions.isEmpty else { return nil }
         let permissions = live.permissions
         let store = live.store
+        let modelID = session.configuration.modelID
         return WorkspaceAgentHooks(
             definitions: definitions,
             executor: context.executor,
@@ -1093,8 +1124,33 @@ public final class SessionController {
             },
             didRun: { hookID in
                 Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
-            }
+            },
+            promptEvaluator: ModelHookPromptEvaluator(
+                client: live.modelClient,
+                sessionID: sessionID,
+                defaultModelID: { modelID },
+                recordUsage: { [sessionID] ledger in
+                    _ = try? await store.recordUsage(ledger, for: sessionID)
+                }
+            ),
+            instructionFiles: { await context.instructionFiles().map(\.path.value) }
         )
+    }
+
+    /// Runs one hook signal the app raises outside a run — a model switch, a
+    /// worktree, a settings change made in the app — through a fresh hook
+    /// adapter, and records what the hooks ask the thread to show. Code
+    /// sessions only, as for every hook.
+    func signalHooks(
+        _ signal: (WorkspaceAgentHooks, CodeSessionID) async -> AgentHookResponse
+    ) async {
+        guard let live, let context = live.context, session.configuration.behavior == .code else { return }
+        reloadHooks(from: context)
+        guard let hooks = makeHookAdapter(context: context, live: live) else { return }
+        let answer = await signal(hooks, sessionID)
+        for notice in answer.notices {
+            _ = try? await live.store.appendEvent(sessionID: sessionID, payload: .hookActivity(notice))
+        }
     }
 
     /// Runs `SessionEnd` hooks for a session that is going away: deleted, or
@@ -1397,6 +1453,8 @@ public final class SessionController {
     /// each is handed a controller it will read the transcript from.
     /// A preview controller is already fully seeded, so this is a no-op there.
     public func attach() async {
+        // The verbs other lanes own (`/goal`, `/fork`), bound once.
+        installLaneRoutes()
         guard let live else { return }
         if let attaching {
             await attaching.value
@@ -1860,8 +1918,7 @@ public final class SessionController {
         // attach there keeps the fixture surfaces working without teaching them
         // about capabilities.
         guard live?.modelSupportsVision(session.configuration.modelID) ?? true else {
-            transientError =
-                "\(session.configuration.modelID) cannot see images. Choose a model with vision to attach one."
+            transientError = Self.cannotSeeImagesMessage
             return
         }
         guard attachment.image.data.count <= Self.maximumAttachmentBytes else {
@@ -1880,10 +1937,14 @@ public final class SessionController {
         pendingAttachments.removeAll { $0.id == id }
     }
 
+    /// What a paste, drop or choice of a picture says when the model cannot
+    /// see (§5.11).
+    static let cannotSeeImagesMessage = "This model cannot see images; switch to one that can."
+
     /// The per-image and per-message ceilings, matching the orchestrator's own
     /// limits for tool-result images.
     static let maximumAttachmentBytes = 8 * 1_024 * 1_024
-    static let maximumAttachments = 4
+    static let maximumAttachments = CodeAttachment.maximumPerMessage
 
     public func stop() async {
         guard live != nil else {
@@ -1898,6 +1959,8 @@ public final class SessionController {
         // prompt is turned away rather than delivered after the Stop.
         remoteHandover?.cancel()
         approvedPlanHandoff = nil
+        // Stop means every child and every loop too (Lane F).
+        await commands.stopEverything(sessionID: sessionID)
         await orchestrator?.stop()
         await live?.questions.cancelAll()
         liveAssistantText = ""
@@ -1938,9 +2001,9 @@ public final class SessionController {
         }
     }
 
-    /// Records a file chosen from the composer typeahead. Duplicate choices do
-    /// not duplicate model context, and directories are never registered by the
-    /// menu.
+    /// Records a file or folder chosen from the composer typeahead. Duplicate
+    /// choices do not duplicate model context; a folder is listed, not read
+    /// (`MentionResolver`).
     public func registerComposerFileReference(_ path: WorkspacePath) {
         guard !composerFileReferences.contains(path) else { return }
         composerFileReferences.append(path)
@@ -1952,6 +2015,16 @@ public final class SessionController {
     /// Each file and the aggregate are independently bounded so a large or
     /// malicious source file cannot consume an unbounded context window.
     private func explicitFileContextPrompt(
+        visiblePrompt: String,
+        live: Live
+    ) async -> String {
+        // Files first, as before; then folders, `@diff`, `@preview:` and
+        // `@shell:` mentions (Lane F, §5.12).
+        let withFiles = await explicitFileOnlyContextPrompt(visiblePrompt: visiblePrompt, live: live)
+        return await appendingMentionContext(to: withFiles, visiblePrompt: visiblePrompt)
+    }
+
+    private func explicitFileOnlyContextPrompt(
         visiblePrompt: String,
         live: Live
     ) async -> String {
@@ -2384,6 +2457,29 @@ public final class SessionController {
         guard let live else {
             session.configuration.modelID = modelID
             return
+        }
+        let previousModelID = session.configuration.modelID
+        if previousModelID != modelID {
+            // `PreModelSwitch` hooks may keep the current model (§5.9).
+            var refusal: String?
+            await signalHooks { hooks, id in
+                let answer = await hooks.modelSwitching(sessionID: id, from: previousModelID, to: modelID)
+                refusal = answer.blockReason
+                return answer
+            }
+            if let refusal {
+                transientError = "A hook kept the current model: \(refusal)"
+                return
+            }
+        }
+        defer {
+            if previousModelID != modelID {
+                Task { [weak self] in
+                    await self?.signalHooks { hooks, id in
+                        await hooks.modelSwitched(sessionID: id, from: previousModelID, to: modelID)
+                    }
+                }
+            }
         }
         let supportsVision = live.modelSupportsVision(modelID)
         if modelID != session.configuration.modelID {
@@ -3115,6 +3211,9 @@ public final class SessionController {
             let worktree = try await context.worktrees.create(branch: name)
             managedWorktrees = context.worktrees.worktrees
             transientError = "Created isolated worktree at " + worktree.rootPath
+            await signalHooks { hooks, id in
+                await hooks.worktreeChanged(sessionID: id, created: true, path: worktree.rootPath, branch: worktree.branch)
+            }
             return worktree
         } catch {
             transientError = "Could not create an isolated worktree: " + String(describing: error)
@@ -3127,6 +3226,9 @@ public final class SessionController {
         do {
             try await context.worktrees.remove(worktree)
             managedWorktrees = context.worktrees.worktrees
+            await signalHooks { hooks, id in
+                await hooks.worktreeChanged(sessionID: id, created: false, path: worktree.rootPath, branch: worktree.branch)
+            }
         } catch {
             transientError = "Could not remove the isolated worktree: " + String(describing: error)
         }
@@ -3176,7 +3278,8 @@ public final class SessionController {
         reloadHooks(from: context)
         skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
         CodeDefaults.shared.migrateSkillSwitches(for: skillDiscoveryResult.skills)
-        customAgents = CustomAgentDiscovery(access: context.access).discover()
+        customAgents = CustomAgentDiscovery(access: context.access, user: context.userExtensionDirectories)
+            .discoverEnabled(imports: context.userExtensionPolicy)
         mcpConfigurationError = context.mcpConfigurationError
         if let registry = context.mcpRegistry {
             mcpServerConfigurations = await registry.serverConfigurations()
