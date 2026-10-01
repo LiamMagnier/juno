@@ -393,6 +393,7 @@ function States() {
           </button>
         ))}
         <SwapDemo />
+        <LiveDemo />
       </div>
     </main>
   );
@@ -404,6 +405,37 @@ function SwapDemo() {
     <button type="button" className="jig-statebtn jicon-trigger" data-name="name-turn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
       <Icon name={open ? "chevron-down" : "chevron-right"} size={20} />
       <span>Name change turns</span>
+    </button>
+  );
+}
+
+/**
+ * Dictation with live input: the mic swaps to the meter and the bars follow a
+ * level signal (here a recorded-speech-like envelope, for 2.4 s, then it
+ * stops, as a real take would). Under reduced motion the bars hold each value
+ * for 250 ms and jump, with no easing.
+ */
+function LiveDemo() {
+  const [levels, setLevels] = React.useState<number[] | null>(null);
+  const start = () => {
+    if (levels) return;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = (now - t0) / 1000;
+      if (t > 2.4) {
+        setLevels(null);
+        return;
+      }
+      const env = Math.min(1, t * 4) * Math.min(1, (2.4 - t) * 4);
+      setLevels([0.9, 1.7, 2.3, 1.3, 0.7].map((f, i) => env * (0.35 + 0.3 * Math.sin(t * 7 * f + i * 1.3)) * [0.6, 0.85, 1, 0.8, 0.55][i]));
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  return (
+    <button type="button" className="jig-statebtn jicon-trigger" data-name="live" aria-pressed={levels != null} onClick={start}>
+      <Icon name="mic" size={20} state={levels ? "active" : "rest"} levels={levels ?? undefined} />
+      <span>Listening, live levels</span>
     </button>
   );
 }

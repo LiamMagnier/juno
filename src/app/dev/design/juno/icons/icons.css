@@ -10,8 +10,10 @@
  * Tokens (INTERACTION_SPEC §1): hover articulation goes out on out-soft in
  * 200 ms and comes back in 150 ms; the press dip is 70 ms on out-strong; state
  * swaps are `fast` (120 ms); a turn to an on state (plus to close, a chevron
- * opening) is `base` (220 ms) on in-out; one-shots stay within 360 ms. Only
- * transform and opacity move.
+ * opening) is `base` (220 ms) on in-out. One-shots are 200 to 240 ms, except
+ * the three that travel furthest (the bell's damped swing, the hand's wave,
+ * retry's full turn), which take 280 to 300 ms: under the spec's 360 ms cap
+ * for UI transitions, and never looped. Only transform and opacity move.
  */
 
 .ji {
@@ -52,8 +54,10 @@
     scale 150ms var(--ji-soft),
     opacity 120ms var(--ji-soft);
 }
+/* A drawn stroke: one dash as long as the path, then a gap twice as long, so
+ * while it draws in no second dash (a round cap's dot) shows at the far end. */
 .ji .jd {
-  stroke-dasharray: 1 1;
+  stroke-dasharray: 1 2;
   stroke-dashoffset: 0;
 }
 
@@ -107,15 +111,15 @@
 
 .ji .jp[data-anim="swing"] {
   --ji-anim: ji-swing;
-  --ji-anim-dur: 360ms;
+  --ji-anim-dur: 300ms;
 }
 .ji .jp[data-anim="nod"] {
   --ji-anim: ji-nod;
-  --ji-anim-dur: 360ms;
+  --ji-anim-dur: 280ms;
 }
 .ji .jp[data-anim="pop"] {
   --ji-anim: ji-pop;
-  --ji-anim-dur: 260ms;
+  --ji-anim-dur: 220ms;
 }
 .ji .jp[data-anim="levels"] {
   --ji-anim: ji-levels;
@@ -123,22 +127,22 @@
 }
 .ji .jp[data-anim="wave"] {
   --ji-anim: ji-wave;
-  --ji-anim-dur: 260ms;
+  --ji-anim-dur: 220ms;
 }
 .ji .jp[data-anim="blink"] {
   --ji-anim: ji-blink;
-  --ji-anim-dur: 240ms;
+  --ji-anim-dur: 200ms;
 }
 .ji .jp[data-anim="spin"] {
   --ji-anim: ji-spin;
-  --ji-anim-dur: 360ms;
+  --ji-anim-dur: 300ms;
 }
 .ji .jp[data-anim="draw"] {
   --ji-anim: none;
 }
 @media (hover: hover) and (pointer: fine) {
   .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
-    animation: ji-draw 320ms var(--ji-soft) var(--hd, 0ms) 1 both;
+    animation: ji-draw 240ms var(--ji-soft) var(--hd, 0ms) 1 both;
   }
 }
 
@@ -146,14 +150,11 @@
   0% {
     rotate: 0deg;
   }
-  24% {
-    rotate: 12deg;
+  30% {
+    rotate: 11deg;
   }
-  56% {
-    rotate: -7deg;
-  }
-  80% {
-    rotate: 3deg;
+  68% {
+    rotate: -5deg;
   }
   100% {
     rotate: 0deg;
@@ -225,7 +226,7 @@
 }
 @keyframes ji-draw {
   0% {
-    stroke-dashoffset: 1.02;
+    stroke-dashoffset: 1.05;
   }
   100% {
     stroke-dashoffset: 0;
@@ -300,9 +301,13 @@
   scale: 1 !important;
 }
 
-/* draw: the check draws itself when it becomes the on state */
-.ji[data-state="active"][data-on="draw"] .jd {
-  animation: ji-draw 240ms var(--ji-soft) 1 both;
+/* draw: the check draws itself when it becomes the on state, when it is
+ * swapped in as another glyph's on state (copy to check), and when a name
+ * change brings it in (<Icon name={copied ? "check" : "copy"} />). */
+.ji[data-state="active"][data-on="draw"] .jd,
+.ji[data-state="active"] .jg-alt .jd,
+.ji[data-on="draw"] .jg-enter .jd {
+  animation: ji-draw 240ms var(--ji-soft) 40ms 1 both;
 }
 
 /* disabled */
@@ -397,6 +402,11 @@
   .ji .jg-exit {
     animation: ji-fade-out 120ms linear both;
   }
+  /* A live meter stays live: a static bar per level, no easing (index.tsx holds each value for 250 ms). */
+  .ji .jp[data-lv] {
+    scale: 1 var(--lv, 1) !important;
+    transition: none;
+  }
 }
 :is([data-rm], [data-motion="reduced"]) .ji,
 :is([data-rm], [data-motion="reduced"]) .ji .jp,
@@ -421,4 +431,8 @@
 }
 :is([data-rm], [data-motion="reduced"]) .ji .jg-exit {
   animation: ji-fade-out 120ms linear both;
+}
+:is([data-rm], [data-motion="reduced"]) .ji .jp[data-lv] {
+  scale: 1 var(--lv, 1) !important;
+  transition: none;
 }

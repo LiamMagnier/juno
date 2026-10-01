@@ -115,7 +115,9 @@ function attrsFor(el: IconElement, ctx: Ctx): Record<string, string | number> {
   for (const [k, v] of Object.entries(el.attrs)) a[k] = v;
   if (ctx.value != null && a.strokeDasharray != null) {
     const v = Math.max(0, Math.min(1, ctx.value));
-    a.strokeDasharray = `${v} 1`;
+    a.strokeDasharray = `${v} 2`;
+    // At zero a round cap on an empty dash would still paint a dot at twelve o'clock.
+    if (v === 0) a.strokeOpacity = 0;
   }
   if (el.draw) {
     a.pathLength = 1;
@@ -132,6 +134,19 @@ function renderShape(el: IconElement, key: React.Key, ctx: Ctx, extra?: Record<s
   return null;
 }
 
+/**
+ * A live bar's scale: level 0..1 maps to a height of 3 to 16.5 units whatever
+ * the bar's rest height (a loud outer bar can stand as tall as the middle
+ * one), inside the live area. The bar is the group's first path, drawn upright.
+ */
+function levelScale(el: IconElement, level: number): number {
+  const d = String(el.children?.[0]?.attrs.d ?? "");
+  const ys = [...d.matchAll(/[ML]\s*-?[\d.]+\s+(-?[\d.]+)/g)].map((m) => Number(m[1]));
+  const rest = ys.length >= 2 ? Math.abs(ys[ys.length - 1] - ys[0]) : 9;
+  const h = 3 + Math.max(0, Math.min(1, level)) * 13.5;
+  return Math.round((h / rest) * 1000) / 1000;
+}
+
 function renderEl(el: IconElement, key: string, ctx: Ctx): React.ReactNode {
   if (el.tag === "g") {
     let lv: CSSProperties | undefined;
@@ -140,7 +155,7 @@ function renderEl(el: IconElement, key: string, ctx: Ctx): React.ReactNode {
       const i = ctx.levelIndex.i++;
       if (ctx.levels) {
         isLevel = true;
-        lv = { "--lv": Math.max(0.2, Math.min(1.4, ctx.levels[i] ?? 0.2)) } as CSSProperties;
+        lv = { "--lv": levelScale(el, ctx.levels[i] ?? 0) } as CSSProperties;
       }
     }
     const style = el.hover || lv ? { ...moveStyle(el.hover), ...lv } : undefined;
@@ -261,9 +276,64 @@ function turnBetween(from: string, to: string): number | null {
 
 const warned = new Set<string>();
 
+/* —————————————————————————————— Live levels —————————————————————————————— */
+
+const RM_QUERY = "(prefers-reduced-motion: reduce)";
+/** INTERACTION_SPEC §1.7: under reduced motion a level meter is a static bar that updates at most four times a second. */
+const RM_LEVEL_INTERVAL = 250;
+
+function reducedMotionAt(el: Element | null): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.matchMedia?.(RM_QUERY).matches || el?.closest("[data-rm], [data-motion='reduced']"));
+}
+
+/**
+ * The levels the bars draw. With full motion, every update the caller sends
+ * (one per animation frame, smoothed by the analyser). Under reduced motion,
+ * the latest value at most every 250 ms, drawn with no easing (icons.css).
+ */
+function useCalmLevels(levels: number[] | undefined, svg: React.RefObject<SVGSVGElement | null>): number[] | undefined {
+  const [held, setHeld] = React.useState<number[] | undefined>(undefined);
+  const [reduced, setReduced] = React.useState(false);
+  const latest = React.useRef(levels);
+  const last = React.useRef(0);
+  const timer = React.useRef<number | null>(null);
+  latest.current = levels;
+
+  React.useEffect(() => {
+    if (!levels) return;
+    const rm = reducedMotionAt(svg.current);
+    setReduced(rm);
+    if (!rm) return;
+    const wait = RM_LEVEL_INTERVAL - (performance.now() - last.current);
+    if (wait <= 0) {
+      last.current = performance.now();
+      setHeld(levels);
+    } else if (timer.current == null) {
+      timer.current = window.setTimeout(() => {
+        timer.current = null;
+        last.current = performance.now();
+        setHeld(latest.current);
+      }, wait);
+    }
+  }, [levels, svg]);
+
+  React.useEffect(
+    () => () => {
+      if (timer.current != null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  if (!levels) return undefined;
+  return reduced ? (held ?? levels) : levels;
+}
+
 export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, line, className, style, ...rest }: IconProps) {
   const rawId = React.useId();
   const uid = `ji${rawId.replace(/[^a-zA-Z0-9]/g, "")}`;
+  const svgRef = React.useRef<SVGSVGElement | null>(null);
+  const shownLevels = useCalmLevels(levels, svgRef);
 
   // A name change is remembered for one swap: the old glyph leaves while the new one enters.
   const [shown, setShown] = React.useState<string>(name);
@@ -277,7 +347,7 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
   const sw = line ?? Math.round(((strokePx * 24) / size) * 1000) / 1000;
   const snap = line ? 0 : snapUnits(size, strokePx);
   const d = resolveIcon(name);
-  const ctx: Ctx = { uid, sw, value, levels, levelIndex: { i: 0 } };
+  const ctx: Ctx = { uid, sw, value, levels: shownLevels, levelIndex: { i: 0 } };
 
   if (!d && process.env.NODE_ENV !== "production" && !warned.has(name)) {
     warned.add(name);
@@ -298,6 +368,7 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
 
   return (
     <svg
+      ref={svgRef}
       width={size}
       height={size}
       viewBox="0 0 24 24"

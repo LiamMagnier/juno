@@ -196,9 +196,9 @@ export function pencil(tx: number, ty: number, deg: number, len: number, w: numb
 
 /**
  * A crew member, flattened to a line: the gumdrop the 3D crew is sculpted
- * from (crew/forms.ts). A broad base with soft corners, sides that rise and
- * narrow a little, a domed top. `soft` is the base corner as a share of the
- * half width.
+ * from (the Pebble and Dome bodies in crew/shapes.ts). A broad base with
+ * soft corners, sides that rise and narrow a little, a domed top. `soft` is
+ * the base corner as a share of the half width.
  */
 export function gumdrop(cx: number, top: number, bottom: number, w: number, soft = 0.62): string {
   const hw = w / 2;
@@ -548,8 +548,7 @@ export const ICONS = {
   library: I({
     group: "Navigation",
     elements: [
-      p(rr(4.5, 4.5, 6, 15, 1.5)),
-      p(poly(4.5, 9, 10.5, 9)),
+      p(rr(4.5, 4.5, 5.25, 15, 1.5)),
       g([p(leanBook), p(leanBand)], { r: -LEAN, o: [13.5, 19.5], y: -1 }),
     ],
     motion: "The leaning volume straightens and lifts, as a book comes off the shelf.",
@@ -699,10 +698,10 @@ export const ICONS = {
     group: "Composer",
     elements: [
       g([p(poly(4.5, 9.75, 4.5, 14.25))], { sy: 0.6, o: [4.5, 12], anim: "levels", delay: 0 }),
-      g([p(poly(8.25, 7.5, 8.25, 16.5))], { sy: 1.25, o: [8.25, 12], anim: "levels", delay: 40 }),
-      g([p(poly(12, 4.5, 12, 19.5))], { sy: 0.7, o: [12, 12], anim: "levels", delay: 80 }),
-      g([p(poly(15.75, 7.5, 15.75, 16.5))], { sy: 1.2, o: [15.75, 12], anim: "levels", delay: 120 }),
-      g([p(poly(19.5, 9.75, 19.5, 14.25))], { sy: 0.7, o: [19.5, 12], anim: "levels", delay: 160 }),
+      g([p(poly(8.25, 7.5, 8.25, 16.5))], { sy: 1.25, o: [8.25, 12], anim: "levels", delay: 30 }),
+      g([p(poly(12, 4.5, 12, 19.5))], { sy: 0.7, o: [12, 12], anim: "levels", delay: 60 }),
+      g([p(poly(15.75, 7.5, 15.75, 16.5))], { sy: 1.2, o: [15.75, 12], anim: "levels", delay: 90 }),
+      g([p(poly(19.5, 9.75, 19.5, 14.25))], { sy: 0.7, o: [19.5, 12], anim: "levels", delay: 120 }),
     ],
     motion: "One pass of levels runs across the bars, then they rest. With `levels`, the bars follow the input.",
   }),
@@ -805,7 +804,7 @@ export const ICONS = {
     elements: [
       p(roundPoly(0.9, 3.75, 9.375, 7.125, 9.375, 11.25, 5.625, 11.25, 18.375, 7.125, 14.625, 3.75, 14.625)),
       g([p(arc(11.625, 12, 3.75, -48, 48))], { anim: "wave", delay: 0 }),
-      g([p(arc(11.625, 12, 7.125, -48, 48))], { anim: "wave", delay: 90 }),
+      g([p(arc(11.625, 12, 7.125, -48, 48))], { anim: "wave", delay: 80 }),
     ],
     motion: "The two waves sound once, near then far.",
   }),
@@ -885,8 +884,8 @@ export const ICONS = {
   }),
   sheet: I({
     group: "Files",
-    elements: page(p(poly(9, 12, 15, 12)), p(poly(9, 15.75, 15, 15.75)), p(poly(12, 10.5, 12, 17.25))),
-    motion: "None.",
+    elements: [p(rr(3.75, 4.5, 16.5, 15, 3)), p(poly(3.75, 9.75, 20.25, 9.75)), p(poly(3.75, 14.625, 20.25, 14.625)), p(poly(9.75, 4.5, 9.75, 19.5))],
+    motion: "None. A table, not a page: a page with lines in it read as a plus-minus sign at 16 px.",
   }),
   deck: I({
     group: "Files",
@@ -938,9 +937,9 @@ export const ICONS = {
   connect: I({
     group: "Apps",
     elements: [
-      ...PLUG.map((d) => p(shift(d, -1.5, 0))),
-      ko(`${poly(18, 14.25, 18, 20.25)}${poly(15, 17.25, 21, 17.25)}`),
-      g([p(poly(18, 14.25, 18, 20.25)), p(poly(15, 17.25, 21, 17.25))], { r: 90, o: [18, 17.25] }),
+      ...PLUG.map((d) => p(shift(d, -2.25, -0.75))),
+      ko(`${poly(18, 15, 18, 21)}${poly(15, 18, 21, 18)}`),
+      g([p(poly(18, 15, 18, 21)), p(poly(15, 18, 21, 18))], { r: 90, o: [18, 18] }),
     ],
     motion: "The plus turns a quarter: add a connection.",
   }),
@@ -1097,8 +1096,8 @@ export const ICONS = {
   }),
   repo: I({
     group: "Code",
-    elements: [p("M6 18.75V5.25A2.25 2.25 0 0 1 8.25 3H18V21H15.75M11.25 21H8.25A2.25 2.25 0 0 1 6 18.75A2.25 2.25 0 0 1 8.25 16.5H18"), g([p("M11.25 16.5V22.125L13.5 20.625L15.75 22.125V16.5")], { y: 0.75 })],
-    motion: "The ribbon slips down a little.",
+    elements: [p(rr(5.25, 3, 13.5, 18, 2.25)), p(poly(9, 3, 9, 21)), g([p(poly(12.75, 3.75, 12.75, 9, 14.25, 7.875, 15.75, 9, 15.75, 3.75))], { sy: 1.25, o: [14.25, 3] })],
+    motion: "The bound book's ribbon lengthens, marking the place. (A spine and a ribbon: at 16 px it must not read as a phone.)",
   }),
   laptop: I({
     group: "Code",
