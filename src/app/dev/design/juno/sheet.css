@@ -335,9 +335,12 @@
 }
 .jn .jn-sys__matrix {
   display: grid;
-  grid-template-columns: 90px repeat(6, minmax(0, 1fr));
+  grid-template-columns: 72px repeat(6, minmax(0, 1fr));
   align-items: center;
-  gap: 14px 12px;
+  gap: 14px 10px;
+}
+.jn .jn-sys__matrix .jb {
+  padding: 0 11px;
 }
 .jn .jn-sys__colh,
 .jn .jn-sys__rowh {
