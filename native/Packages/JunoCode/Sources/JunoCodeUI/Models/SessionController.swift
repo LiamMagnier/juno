@@ -923,7 +923,12 @@ public final class SessionController {
                 reasoningEffort: contract.reasoningEffort,
                 parentSystemPrompt: systemPrompt,
                 sessionState: childSessionState,
-                executionFactory: { [permissions = live.permissions, supportsVision = contract.supportsVision] request in
+                executionFactory: { [
+                    permissions = live.permissions,
+                    supportsVision = contract.supportsVision,
+                    store = live.store,
+                    worktreeHooks = lifecycleHooks
+                ] request in
                     // A child never outranks the session that spawned it.
                     let childMode = PermissionMode.workspaceWrite.capped(
                         at: await permissions.permissionMode
@@ -933,6 +938,22 @@ public final class SessionController {
                         let worktree = try await context.worktrees.create(
                             branch: request.branch
                         )
+                        // `WorktreeCreate` for a sub-agent's worktree too
+                        // (§5.9), told to the session that delegated.
+                        if let worktreeHooks {
+                            let answer = await worktreeHooks.worktreeChanged(
+                                sessionID: request.parentSessionID,
+                                created: true,
+                                path: worktree.rootPath,
+                                branch: worktree.branch
+                            )
+                            for notice in answer.notices {
+                                _ = try? await store.appendEvent(
+                                    sessionID: request.parentSessionID,
+                                    payload: .hookActivity(notice)
+                                )
+                            }
+                        }
                         let isolated = try context.isolatedContext(at: worktree.rootURL)
                         // No screen control and no background shells: a
                         // bounded child has no reader to start either for,
@@ -1866,7 +1887,7 @@ public final class SessionController {
     /// The per-image and per-message ceilings, matching the orchestrator's own
     /// limits for tool-result images.
     static let maximumAttachmentBytes = 8 * 1_024 * 1_024
-    static let maximumAttachments = 4
+    static let maximumAttachments = CodeAttachment.maximumPerMessage
 
     public func stop() async {
         guard live != nil else {
