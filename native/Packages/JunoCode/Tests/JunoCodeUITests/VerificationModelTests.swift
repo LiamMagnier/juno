@@ -124,4 +124,28 @@ final class VerificationModelTests: XCTestCase {
             "Use these as this project's checks?"
         )
     }
+
+    /// A recipe file that appeared while the card for found checks was open
+    /// is kept, and the card says so instead of overwriting it.
+    func testAFileThatAppearedWhileTheCardWasOpenIsKept() async throws {
+        await model.update(workspaceRoot: project, events: [event(.userPrompt(UserPromptEvent(text: "x"))), try changed()])
+        guard case .discovered? = model.proposal?.kind else { return XCTFail("expected the found checks") }
+        let theirs = VerifyRecipe(checks: [VerifyCheck(id: "theirs", kind: .test, run: .shell("make test"))])
+        let folder = project.appendingPathComponent(".juno")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try theirs.encoded().write(to: folder.appendingPathComponent("verify.json"))
+        await model.accept(workspaceRoot: project)
+        XCTAssertNil(model.proposal)
+        XCTAssertEqual(model.problem, ".juno/verify.json appeared while this was open, so it was kept as it is. Look at its checks.")
+        XCTAssertEqual(try VerifyRecipe.decode(Data(contentsOf: folder.appendingPathComponent("verify.json"))), theirs)
+    }
+
+    /// The run report's divider renders the model's commands as code, never as
+    /// a link: a backtick inside a command must not open a `[words](url)`.
+    func testTheReportDividerNeverMakesALink() {
+        let caption = "Checked with `npm test -- \"`[Open settings](https://example.com/phish)`\"`"
+        let rendered = StudioRunReportRow.inlineCode(caption)
+        XCTAssertTrue(rendered.runs.allSatisfy { $0.link == nil })
+        XCTAssertTrue(String(rendered.characters).contains("Open settings"), "the words stay, as text")
+    }
 }

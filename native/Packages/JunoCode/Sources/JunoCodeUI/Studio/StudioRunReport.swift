@@ -111,11 +111,19 @@ struct StudioRunReportRow: View {
 
     /// `text` with its backtick spans in the monospaced face, as the
     /// runtime writes commands in the end-reason words.
+    ///
+    /// Never a link: the commands are the model's, and a backtick inside one
+    /// would close the code span and let `[words](url)` after it become
+    /// something to click in a row the reader trusts as Juno's own.
     static func inlineCode(_ text: String) -> AttributedString {
-        (try? AttributedString(
+        var attributed = (try? AttributedString(
             markdown: text,
             options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         )) ?? AttributedString(text)
+        for run in attributed.runs where run.link != nil {
+            attributed[run.range].link = nil
+        }
+        return attributed
     }
 
     /// Ledger rows for commands read as commands; Preview, Simulator, app

@@ -160,7 +160,7 @@ public final class VerificationModel {
             let acceptance: VerifyRecipeAcceptance?
             switch proposal.kind {
             case .discovered:
-                acceptance = try store.accept(proposal.recipe, runWithoutAsking: runWithoutAsking)
+                acceptance = try store.accept(proposal.recipe, runWithoutAsking: runWithoutAsking, expectingNoFile: true)
             case let .changed(digest):
                 acceptance = try store.acceptExisting(expectedDigest: digest, runWithoutAsking: runWithoutAsking)
             }
@@ -173,6 +173,10 @@ public final class VerificationModel {
             self.proposal = nil
             confirmation = Self.confirmation(for: acceptance, checks: proposal.recipe.checks.count)
             problem = nil
+        } catch VerifyRecipeAcceptError.fileAppeared {
+            problem = ".juno/verify.json appeared while this was open, so it was kept as it is. Look at its checks."
+            self.proposal = nil
+            lastCheckedKey = nil
         } catch {
             problem = "The checks could not be saved: \(error.localizedDescription)"
         }

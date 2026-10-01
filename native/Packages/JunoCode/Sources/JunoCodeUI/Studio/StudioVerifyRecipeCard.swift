@@ -35,8 +35,12 @@ struct StudioVerifyRecipeCard: View {
     @Bindable var model: VerificationModel
     let accept: () -> Void
 
-    /// More rows than this and the rest are counted, not listed.
+    /// More rows than this and the list scrolls inside the card. Every check
+    /// is still listed, in full: accepting takes all of them, and the file
+    /// can be anyone's, so no command may hide behind a count or an ellipsis.
     static let visibleChecks = 8
+    /// How tall the list grows before it scrolls.
+    static let maximumListHeight: CGFloat = 280
 
     var body: some View {
         if let proposal = model.proposal {
@@ -100,9 +104,31 @@ struct StudioVerifyRecipeCard: View {
         .junoLiftedSurface(cornerRadius: Studio.Radius.composer)
     }
 
+    @ViewBuilder
     private func checkList(_ checks: [VerifyCheck]) -> some View {
+        if checks.count > Self.visibleChecks {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                ScrollView(.vertical) {
+                    checkRows(checks)
+                }
+                .frame(maxHeight: Self.maximumListHeight)
+                .modifier(CheckListFrame())
+                // Overlay scrollers show nothing until used: say there is more.
+                Text("\(checks.count) checks. Scroll the list to read every one before you accept.")
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.tertiary)
+            }
+        } else {
+            checkRows(checks)
+                .modifier(CheckListFrame())
+        }
+    }
+
+    /// Each check with its whole command, wrapped rather than cut: a long
+    /// line shortened in the middle could hide what follows `&&`.
+    private func checkRows(_ checks: [VerifyCheck]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(checks.prefix(Self.visibleChecks).enumerated()), id: \.offset) { index, check in
+            ForEach(Array(checks.enumerated()), id: \.offset) { index, check in
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
                     Text(Self.kindWord(check.kind))
                         .font(Studio.Font.meta)
@@ -113,13 +139,19 @@ struct StudioVerifyRecipeCard: View {
                             .font(Studio.Font.mono)
                             .foregroundStyle(Studio.Ink.primary)
                             .textSelection(.enabled)
-                            .lineLimit(2)
-                            .truncationMode(.middle)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let targeted = check.targeted {
+                            Text("For changed files: \(targeted)")
+                                .font(Studio.Font.mono)
+                                .foregroundStyle(Studio.Ink.secondary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if let place = Self.place(of: check) {
                             Text(place)
                                 .font(Studio.Font.meta)
                                 .foregroundStyle(Studio.Ink.tertiary)
-                                .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer(minLength: 0)
@@ -132,14 +164,14 @@ struct StudioVerifyRecipeCard: View {
                     }
                 }
             }
-            if checks.count > Self.visibleChecks {
-                Text("and \(checks.count - Self.visibleChecks) more in .juno/verify.json")
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.tertiary)
-                    .padding(.vertical, JunoSpace.tight)
-                    .padding(.horizontal, JunoSpace.cozy)
-            }
         }
+    }
+}
+
+/// The quiet frame around the card's list of checks.
+private struct CheckListFrame: ViewModifier {
+    func body(content: Content) -> some View {
+        content
         .background(
             RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
                 .fill(Studio.Surface.muted)
@@ -149,7 +181,9 @@ struct StudioVerifyRecipeCard: View {
                 .strokeBorder(Studio.Surface.hairline)
         )
     }
+}
 
+extension StudioVerifyRecipeCard {
     // MARK: - Words
 
     static func title(for proposal: VerificationModel.Proposal) -> String {
@@ -178,14 +212,14 @@ struct StudioVerifyRecipeCard: View {
         }
     }
 
-    /// "In apps/web" or "For changed files: npx vitest run {tests}", and a
-    /// plain warning for a command Juno does not recognise as a check.
+    /// "In apps/web", and a plain warning for a command Juno does not
+    /// recognise as a check (which no rule will cover). The targeted command
+    /// has its own line.
     static func place(of check: VerifyCheck) -> String? {
         var parts: [String] = []
         if let cwd = check.normalizedCwd { parts.append("In \(cwd)") }
-        if let targeted = check.targeted { parts.append("For changed files: \(targeted)") }
         if CommandClassifier().checkKind(of: check.commandLine) == nil {
-            parts.append("Not a build or test command Juno recognises; read it before you accept")
+            parts.append("Not a build or test command Juno recognises, so the box below adds no rule for it; read it before you accept")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

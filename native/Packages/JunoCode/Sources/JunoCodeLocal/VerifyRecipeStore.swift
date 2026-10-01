@@ -66,6 +66,14 @@ public enum VerifyRecipeFile: Equatable, Sendable {
     case invalid(String, digest: String)
 }
 
+/// Why accepting the card wrote nothing.
+public enum VerifyRecipeAcceptError: Error, Equatable, Sendable {
+    /// The card offered checks for a project without `.juno/verify.json`,
+    /// and one appeared while it was open (a pull, a teammate, the agent):
+    /// it is not overwritten with what the card showed.
+    case fileAppeared
+}
+
 /// What accepting the card did.
 public struct VerifyRecipeAcceptance: Equatable, Sendable {
     /// Whether `.juno/verify.json` was written (it is a change in the
@@ -140,11 +148,23 @@ public struct VerifyRecipeStore: VerifyRecipeProviding {
     /// accepted, and, only when `runWithoutAsking`, adds the recipe's exact
     /// rules to the personal settings file. Nothing is written to a shared
     /// project file but the recipe itself.
+    ///
+    /// - Parameter expectingNoFile: the card was offered because there was
+    ///   no file; a different one that appeared since is kept, and this
+    ///   throws `VerifyRecipeAcceptError.fileAppeared` having written nothing.
     @discardableResult
-    public func accept(_ recipe: VerifyRecipe, runWithoutAsking: Bool) throws -> VerifyRecipeAcceptance {
+    public func accept(
+        _ recipe: VerifyRecipe,
+        runWithoutAsking: Bool,
+        expectingNoFile: Bool = false
+    ) throws -> VerifyRecipeAcceptance {
         let data = try recipe.encoded()
         var wrote = false
-        if (try? Data(contentsOf: recipeURL)) != data {
+        let existing = try? Data(contentsOf: recipeURL)
+        if expectingNoFile, let existing, existing != data {
+            throw VerifyRecipeAcceptError.fileAppeared
+        }
+        if existing != data {
             try FileManager.default.createDirectory(
                 at: recipeURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true

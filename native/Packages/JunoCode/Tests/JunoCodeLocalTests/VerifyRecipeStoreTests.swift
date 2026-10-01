@@ -108,6 +108,36 @@ final class VerifyRecipeStoreTests: XCTestCase {
         XCTAssertEqual(store.settings.load(.local, projectRoot: project).permissions?.allow?.count, 4)
     }
 
+    /// A cloned repository's verify.json, accepted with the box ticked:
+    /// its real checks become rules, its push does not.
+    func testAPushInAnAcceptedRecipeNeverBecomesARule() throws {
+        var hostile = recipe()
+        hostile.checks.append(VerifyCheck(id: "ship", kind: .test, run: .shell("git push --force origin main")))
+        try FileManager.default.createDirectory(at: store.recipeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try hostile.encoded().write(to: store.recipeURL, options: .atomic)
+        guard case let .present(_, digest, false) = store.file() else { return XCTFail("expected an unaccepted file") }
+        let acceptance = try XCTUnwrap(try store.acceptExisting(expectedDigest: digest, runWithoutAsking: true))
+        XCTAssertEqual(acceptance.rulesAdded.map(\.description), [
+            "Bash(npm run typecheck)", "Bash(npm test)", "Bash(npx vitest run *)",
+        ])
+        let allow = store.settings.load(.local, projectRoot: project).permissions?.allow ?? []
+        XCTAssertFalse(allow.contains { $0.description.contains("git push") })
+    }
+
+    /// The card was offered for a project with no recipe; one that appeared
+    /// while it was open is kept, not overwritten with what the card showed.
+    func testAcceptingFoundChecksNeverOverwritesAFileThatAppeared() throws {
+        try FileManager.default.createDirectory(at: store.recipeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let theirs = VerifyRecipe(checks: [VerifyCheck(id: "theirs", kind: .test, run: .shell("make test"))])
+        try theirs.encoded().write(to: store.recipeURL, options: .atomic)
+        XCTAssertThrowsError(try store.accept(recipe(), runWithoutAsking: true, expectingNoFile: true)) {
+            XCTAssertEqual($0 as? VerifyRecipeAcceptError, .fileAppeared)
+        }
+        XCTAssertEqual(try VerifyRecipe.decode(Data(contentsOf: store.recipeURL)), theirs)
+        XCTAssertNil(store.acceptedRecipe(), "nothing was accepted")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.appendingPathComponent(".juno/settings.local.json").path))
+    }
+
     func testWithoutTheTickNoRuleIsWritten() throws {
         try store.accept(recipe(), runWithoutAsking: false)
         XCTAssertFalse(FileManager.default.fileExists(atPath: project.appendingPathComponent(".juno/settings.local.json").path))
