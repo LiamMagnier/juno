@@ -9,6 +9,7 @@ import { chatSkillsFromLibrary } from "@/components/chat/use-chat-skills";
 import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { ImportSkillsDialog, ImportSkillsFlow } from "@/components/skills/import-skills-dialog";
+import type { SkillImportPreview } from "@/components/skills/skills-transport";
 import { SkillDetailView, type SkillUsage } from "@/components/skills/skill-detail-view";
 import { SkillsLibraryView, type SkillsLibraryActions } from "@/components/skills/skills-library-view";
 import { RemoveSourceDialog } from "@/components/skills/skills-library-page";
@@ -91,6 +92,12 @@ function View({ view }: { view: SkillsGalleryView }) {
           <ImportSkillsFlow onInstalled={() => undefined} handlers={fixtureImport} initialPreview={FIXTURE_PREVIEW} />
         </DialogFrame>
       );
+    case "choose-file":
+      return (
+        <DialogFrame>
+          <ImportSkillsFlow onInstalled={() => undefined} handlers={fixtureImport} initialPreview={FIXTURE_PACKAGE_PREVIEW} />
+        </DialogFrame>
+      );
     case "dialog":
       return <DialogFixture />;
     case "update":
@@ -159,10 +166,39 @@ function View({ view }: { view: SkillsGalleryView }) {
   }
 }
 
+/** A zipped package of two skills, as the file importer previews it. */
+const FIXTURE_PACKAGE_PREVIEW: SkillImportPreview = {
+  repository: null,
+  origin: { kind: "file", label: "team-skills.zip" },
+  skills: FIXTURE_PREVIEW.skills.slice(0, 2).map((skill, index) => ({
+    ...skill,
+    path: index === 0 ? "weekly-report/SKILL.md" : "meeting-notes/SKILL.md",
+    directory: index === 0 ? "weekly-report" : "meeting-notes",
+    url: "",
+    companionFiles: index === 0 ? ["templates/weekly.md", "scripts/collect.py"] : [],
+    installed: false,
+  })),
+  problems: [],
+  more: false,
+  total: 2,
+  connected: false,
+};
+
 const fixtureImport = {
   preview: async () => {
     await wait(500);
     return { kind: "ok" as const, value: FIXTURE_PREVIEW };
+  },
+  previewPackage: async () => {
+    await wait(600);
+    return { kind: "ok" as const, value: FIXTURE_PACKAGE_PREVIEW };
+  },
+  installPackage: async () => {
+    await wait(700);
+    return {
+      kind: "ok" as const,
+      value: { imported: [], skipped: [], problems: [], blocked: 0, source: null, repository: null },
+    };
   },
   install: async () => {
     await wait(700);

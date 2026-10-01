@@ -254,3 +254,22 @@ test("an import catches two chosen skills that would install under one slash nam
   // An unchosen row claims nothing.
   assert.equal(renameProblems(skills, new Set(["a/SKILL.md"]), { "a/SKILL.md": "skills-pdf" }).size, 0);
 });
+
+test("a pasted SKILL.md is recognised; a repository name or a link is not", async () => {
+  const { looksLikeSkillMarkdown } = await import("@/components/skills/skill-library-model");
+  assert.equal(looksLikeSkillMarkdown("---\nname: weekly-report\ndescription: x\n---\nDo it."), true);
+  assert.equal(looksLikeSkillMarkdown("﻿  ---\r\nname: bom\n---\nbody"), true);
+  assert.equal(looksLikeSkillMarkdown("anthropics/skills"), false);
+  assert.equal(looksLikeSkillMarkdown("https://example.com/SKILL.md"), false);
+  assert.equal(looksLikeSkillMarkdown("---\ntitle: a blog post\n---\ntext"), false);
+});
+
+test("a SKILL.md is found in a chat answer, bare or fenced, and nothing else is", async () => {
+  const { extractSkillMarkdown } = await import("@/components/skills/skill-library-model");
+  const md = "---\nname: weekly-report\ndescription: Writes the report.\n---\n\nDo it.";
+  assert.equal(extractSkillMarkdown(md), md);
+  assert.equal(extractSkillMarkdown(`Here's your skill:\n\n\`\`\`markdown\n${md}\n\`\`\`\n\nSave it when ready.`), md);
+  assert.equal(extractSkillMarkdown(`\`\`\`\n${md}\n\`\`\``), md);
+  assert.equal(extractSkillMarkdown("```ts\nconst x = 1;\n```"), null);
+  assert.equal(extractSkillMarkdown("Just an answer."), null);
+});

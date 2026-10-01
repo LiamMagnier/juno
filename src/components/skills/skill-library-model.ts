@@ -331,3 +331,29 @@ export function securityFindingsOf(raw: unknown): SkillSecurityFinding[] {
       : [];
   });
 }
+
+/** A pasted SKILL.md, not a repository name: a fence, then a name. */
+export function looksLikeSkillMarkdown(text: string): boolean {
+  return /^\uFEFF?\s*---\s*\r?\n[\s\S]*?\bname\s*:/.test(text);
+}
+
+/**
+ * The SKILL.md in a chat answer, when there is one: the whole answer if it
+ * IS one, or the first fenced block (```markdown, ```md, ```yaml or bare)
+ * that holds one. "Create with Juno" drafts a skill in chat; this is what
+ * lets that answer become a skill with one press instead of a copy and paste.
+ */
+export function extractSkillMarkdown(text: string): string | null {
+  const whole = text.trim();
+  if (looksLikeSkillMarkdown(whole)) return whole;
+  const fence = /(^|\n)(```+|~~~+)[ \t]*(?:markdown|md|yaml|skill)?[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/g;
+  for (const match of whole.matchAll(fence)) {
+    const body = match[3].trim();
+    if (looksLikeSkillMarkdown(body)) return body;
+  }
+  return null;
+}
+
+/** A SKILL.md handed from a chat answer to the importer, across a navigation. */
+export const PENDING_SKILL_MARKDOWN_KEY = "juno:skills:pending-markdown";
+

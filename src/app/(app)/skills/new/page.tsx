@@ -12,6 +12,8 @@ import { AppIcons } from "@/lib/app-icons";
 import { skillSlugFromName } from "@/lib/work/skills";
 import { openSkillDraftingChat } from "@/components/skills/add-skill-menu";
 import { createSkill, skillsFailureMessage } from "@/components/skills/skills-transport";
+import { looksLikeSkillMarkdown } from "@/components/skills/skill-library-model";
+import { parseSkillMd, titleFromSkillName } from "@/lib/skills/skill-md";
 
 /**
  * Writing a skill: a name, one line, and the instructions.
@@ -25,6 +27,10 @@ import { createSkill, skillsFailureMessage } from "@/components/skills/skills-tr
  *
  * The slash name is derived rather than asked for, by the same function the
  * route uses, so the preview under the name cannot disagree with what is saved.
+ *
+ * A whole SKILL.md pasted into any field is taken apart into the three
+ * fields (name, description, instructions) by the importer's own parser,
+ * instead of landing as YAML inside the instructions. A note says so, once.
  */
 export default function NewSkillPage() {
   const router = useRouter();
@@ -33,6 +39,19 @@ export default function NewSkillPage() {
   const [instructions, setInstructions] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
+  const [filledFrom, setFilledFrom] = React.useState(false);
+
+  const onPaste = (event: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const text = event.clipboardData.getData("text/plain");
+    if (!looksLikeSkillMarkdown(text)) return;
+    const parsed = parseSkillMd(text);
+    if (!parsed.ok) return; // not a skill after all: let it paste as text
+    event.preventDefault();
+    setName(titleFromSkillName(parsed.skill.name));
+    setDescription(parsed.skill.description);
+    setInstructions(parsed.skill.instructions);
+    setFilledFrom(true);
+  };
 
   const slug = skillSlugFromName(name);
   const canSave = name.trim().length > 0 && instructions.trim().length > 0 && slug !== null && !saving;
@@ -93,6 +112,7 @@ export default function NewSkillPage() {
             id="skill-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
+            onPaste={onPaste}
             placeholder="File the invoices"
             disabled={saving}
             autoFocus
@@ -119,6 +139,7 @@ export default function NewSkillPage() {
             id="skill-description"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
+            onPaste={onPaste}
             placeholder="Sorts incoming invoices into the right folder and renames them."
             disabled={saving}
             className="mt-1.5"
@@ -134,13 +155,20 @@ export default function NewSkillPage() {
             id="skill-instructions"
             value={instructions}
             onChange={(event) => setInstructions(event.target.value)}
+            onPaste={onPaste}
             placeholder="Write it the way you would brief a person doing it for the first time: the steps, the edge cases, and what to do when something doesn’t fit."
             rows={14}
             disabled={saving}
             className="mt-1.5 font-mono text-ui leading-relaxed"
           />
-          <p className="mt-1.5 text-caption text-muted-foreground">Markdown works.</p>
+          <p className="mt-1.5 text-caption text-muted-foreground">Markdown works. Paste a whole SKILL.md to fill every field.</p>
         </div>
+
+        {filledFrom ? (
+          <WorkStateNote tone="info" className="motion-safe:animate-rise-in">
+            Filled in from the SKILL.md you pasted. Check the name and description, then create it.
+          </WorkStateNote>
+        ) : null}
 
         {refusal !== null ? (
           <WorkStateNote tone="error" className="motion-safe:animate-rise-in">

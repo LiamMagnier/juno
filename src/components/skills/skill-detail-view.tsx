@@ -28,6 +28,7 @@ import {
   type SkillResource,
 } from "@/lib/work/skills";
 import { sourceLabel, type ClientSkillSource } from "@/lib/skills/library-contract";
+import { skillExportHref } from "@/components/skills/skills-transport";
 import { cn } from "@/lib/utils";
 import { SkillEditor, type SkillDraft } from "@/components/skills/skill-editor";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
@@ -181,6 +182,21 @@ export function SkillDetailView({
                 <DropdownMenuItem onSelect={actions.onMove}>
                   <AppIcons.projects aria-hidden="true" />
                   Move to project…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* Portable copies: the SKILL.md itself, or zipped in its
+                    folder, the shape claude.ai and Claude Code install. */}
+                <DropdownMenuItem asChild>
+                  <a href={skillExportHref(skill.id)} download>
+                    <ActionIcons.download aria-hidden="true" />
+                    Download SKILL.md
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href={skillExportHref(skill.id, "zip")} download>
+                    <ActionIcons.download aria-hidden="true" />
+                    Download as .zip
+                  </a>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={actions.onDelete}>
