@@ -3,7 +3,8 @@
  *
  * Runs with `--conditions=react-server` because the modules under test are
  * `server-only`. Spins up a throwaway OAuth-protected MCP server on loopback
- * (allowed only through the dev override, which this script sets) and walks
+ * (allowed only when NODE_ENV is explicitly development or test, which this
+ * script sets; see allowsLocalDevelopment in src/lib/mcp-safe-fetch.ts) and walks
  * the whole path a person's server takes: probe → discovery → dynamic client
  * registration → token exchange → a streamed tools/list and tools/call
  * through the SSRF-safe fetcher. Then checks the fetcher refuses what it
@@ -19,8 +20,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
+// Next declares NODE_ENV read-only on ProcessEnv; the policy reads it per call.
+const env = process.env as Record<string, string | undefined>;
+
 async function main() {
-  process.env.JUNO_DEV_ALLOW_LOCAL_MCP = "1";
+  // The loopback exception fails closed: only an explicit development or test
+  // NODE_ENV opens it, so a hand-started worker without NODE_ENV cannot dial
+  // the VM's own services.
+  env.NODE_ENV = "test";
 
   const {
     canonicalMcpUrl,
@@ -237,13 +244,17 @@ async function main() {
     });
 
     await check("without the override, loopback is refused too", async () => {
-      process.env.JUNO_DEV_ALLOW_LOCAL_MCP = "0";
-      try {
-        await assert.rejects(safeMcpFetch(mcpUrl), /Blocked/);
-        const probe = await probeCustomMcpServer(mcpUrl);
-        assert.equal(probe.ok, false);
-      } finally {
-        process.env.JUNO_DEV_ALLOW_LOCAL_MCP = "1";
+      for (const mode of ["production", undefined]) {
+        if (mode === undefined) delete env.NODE_ENV;
+        else env.NODE_ENV = mode;
+        try {
+          assert.match(customMcpUrlProblem(mcpUrl) ?? "", /own machine/, `NODE_ENV=${mode}`);
+          await assert.rejects(safeMcpFetch(mcpUrl), /Blocked/);
+          const probe = await probeCustomMcpServer(mcpUrl);
+          assert.equal(probe.ok, false);
+        } finally {
+          env.NODE_ENV = "test";
+        }
       }
     });
   } finally {
