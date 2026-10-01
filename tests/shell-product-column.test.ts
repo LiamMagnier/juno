@@ -97,20 +97,38 @@ test("the Needs you toggle is a full touch target in the phone drawer", () => {
 
 test("More holds only what earns no row of its own", () => {
   /*
-   * The owner's request: Permissions out of More. Its Macs moved to Settings
-   * (Devices) and the /permissions routes stay for the palette and old links.
-   * Connections is reachable from Settings and the composer's "+", and Pull
-   * requests became a top-level Code row, so neither may drift back in.
+   * Shell contract v2: what used to sit in More (Assistants, Skills,
+   * Automations, Connections, Pull requests) left it. The row is Archived and
+   * holds only the archive dialog, in both products. Permissions stays out,
+   * as the owner asked. The old destinations are kept for links and the
+   * palette (`legacyDestinations`), so none of them becomes unreachable.
    */
+  const contract = JSON.parse(
+    readFileSync(new URL("../contracts/product/juno-shell-v1.json", import.meta.url), "utf8")
+  ) as {
+    sidebar: Record<"chat" | "code", { more: { label: string; items: unknown[]; archived: { label: string } } }>;
+    legacyDestinations: string[];
+  };
   const more = sidebarFunction("MoreFlyout");
   const hrefs = [...more.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(hrefs, ["/connections", "/assistants", "/skills", "/automations"]);
+  assert.deepEqual(hrefs, [], "More links to no page of its own");
+  assert.match(more, /= isCode\s*\?\s*\[\]\s*:\s*\[\];/, "both products' item lists are empty");
+  for (const product of ["chat", "code"] as const) {
+    assert.deepEqual(contract.sidebar[product].more.items, [], `${product}: the contract's More is empty too`);
+    assert.equal(contract.sidebar[product].more.label, "Archived");
+  }
+  assert.ok(more.includes(">\n          Archived\n"), "the row says Archived");
   assert.ok(!more.includes('"/permissions"'), "Permissions is not in More");
   assert.ok(more.includes("Archived chats") && more.includes("Archived sessions"), "Archived stays in both products");
 
-  const codeStart = SIDEBAR.indexOf("Code's three destinations");
-  const code = SIDEBAR.slice(codeStart, SIDEBAR.indexOf("] as const)", codeStart));
-  assert.ok(code.includes('href: "/code/pulls"'), "Pull requests is a top-level Code row");
+  // Every page that left More is still a palette row, so it stays reachable.
+  const palette = readFileSync(new URL("../src/components/app/command-palette.tsx", import.meta.url), "utf8");
+  for (const href of ["/assistants", "/skills", "/automations", "/connections", "/code/pulls"]) {
+    assert.ok(palette.includes(`go("${href}")`), `the palette still opens ${href}`);
+  }
+  for (const id of ["assistants", "skills", "automations", "connections", "pulls"]) {
+    assert.ok(contract.legacyDestinations.includes(id), `${id} stays a legacy destination`);
+  }
 });
 
 test("bringing the open chat into view scrolls the list and nothing around it", () => {

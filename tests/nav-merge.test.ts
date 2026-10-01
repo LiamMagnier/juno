@@ -13,9 +13,10 @@ import type { ClientArtifact } from "@/types/chat";
  *
  * What the chat shell owes the merge at First light, held in one place:
  *
- *   - the sidebar has no Design door: Chat's destinations are Library,
- *     Projects and Artifacts, on the panel and the rail alike (they are one
- *     list, drawn twice);
+ *   - the sidebar has no Design door: Chat's destinations are Projects,
+ *     Library and Customize (shell contract v2; Artifacts live inside
+ *     Library), on the panel and the rail alike (they are one list, drawn
+ *     twice);
  *   - ⌘K still answers the word "design", and every design row lands on
  *     Artifacts filtered to designs, never on the retired `/design` page;
  *   - no word keys two destinations, which is how "canvas" used to offer two
@@ -33,17 +34,19 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-test("Chat's destinations are Library, Projects, Artifacts and Agents, with no Design row", () => {
+test("Chat's destinations are Projects, Library and Customize, with no Design row", () => {
   const sidebar = withoutComments(SIDEBAR);
   // The Chat list is the second array in the `isCode ? [...] : [...]` choice,
   // after Code's; read it from its first row to its close.
-  const start = sidebar.indexOf('{ href: "/library"');
-  assert.ok(start >= 0, "the Chat list starts with Library");
+  const start = sidebar.indexOf('{ href: "/projects"');
+  assert.ok(start >= 0, "the Chat list starts with Projects");
   const chat = sidebar.slice(start, sidebar.indexOf("] as const)", start));
   const hrefs = [...chat.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  // Agents (docs/design/AGENTS.md §3.1) is a place that holds things, like
-  // Projects; what this guards is that Design is not one.
-  assert.deepEqual(hrefs, ["/library", "/projects", "/artifacts", "/agents"]);
+  // The shell contract's Chat destinations, in its order (v2: Artifacts are a
+  // view of Library, agents are a section of the list, not a door).
+  assert.deepEqual(hrefs, ["/projects", "/library", "/customize"]);
+  // Library stays lit on /artifacts, so a design opened from it keeps its place.
+  assert.match(chat, /label: "Library", active: pathname === "\/library" \|\| pathname === "\/artifacts"/);
 
   // Nowhere else in the column either: not a pinned row, not the rail.
   assert.ok(!sidebar.includes('"/design"'), "no sidebar row links to /design");
