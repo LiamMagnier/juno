@@ -5,7 +5,7 @@ import JunoCodeCore
 /// A driver that fails the test if anything asks macOS for a grant. The probe
 /// backs a settings page and a notice that draw on their own; neither may
 /// ever put a TCC dialog in front of the reader.
-private final class PromptTrap: ComputerUseDriving, @unchecked Sendable {
+private final class PromptTrap: ComputerUsePermissionChecking, @unchecked Sendable {
     let screen: ComputerUsePermissionState
     let accessibility: ComputerUsePermissionState
     private(set) var requests = 0
@@ -25,9 +25,6 @@ private final class PromptTrap: ComputerUseDriving, @unchecked Sendable {
         requests += 1
         return accessibility
     }
-    func displayBounds() async throws -> CGRect { .zero }
-    func captureScreen() async throws -> Data { Data() }
-    func perform(_ action: ComputerUseActionKind) async throws {}
 }
 
 /// A grant the test flips between reads, the way the reader does in System
@@ -97,7 +94,7 @@ final class ComputerUsePermissionProbeTests: XCTestCase {
 
     func testDriverProbeReadsWithoutEverPrompting() {
         let trap = PromptTrap(screen: .denied, accessibility: .granted)
-        let status = ComputerUsePermissionProbe(driver: trap).read()
+        let status = ComputerUsePermissionProbe(checker: trap).read()
         XCTAssertEqual(
             status,
             ComputerUsePermissionStatus(screenRecording: .denied, accessibility: .granted)
@@ -133,8 +130,46 @@ final class ComputerUsePermissionProbeTests: XCTestCase {
 
     func testSnapshotCarriesTheSamePermissionStatus() async {
         let trap = PromptTrap(screen: .granted, accessibility: .denied)
-        let snapshot = await ComputerUseCoordinator(driver: trap).snapshot()
+        let snapshot = await ComputerUseCoordinator(service: makeTestScreenService(), permissions: trap).snapshot()
         XCTAssertEqual(snapshot.permissions.missing, [.accessibility])
         XCTAssertEqual(trap.requests, 0)
+    }
+
+    // MARK: CU-20
+
+    private func trustMemory(build: String, suite: String) -> AccessibilityTrustMemory {
+        AccessibilityTrustMemory(defaults: UserDefaults(suiteName: suite)!, build: build)
+    }
+
+    func testAGrantLostWithAnUpdateIsToldApartFromOneNeverGiven() {
+        let suite = "juno.tests.trust.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        // Never trusted: just missing.
+        XCTAssertFalse(trustMemory(build: "1.9.3 (94)", suite: suite).observe(.denied))
+        // Trusted on 1.9.3 …
+        XCTAssertFalse(trustMemory(build: "1.9.3 (94)", suite: suite).observe(.granted))
+        // … and the ad-hoc 1.9.4 update voided it while Settings shows it on.
+        let probe = ComputerUsePermissionProbe(
+            screenRecording: { .granted },
+            accessibility: { .denied },
+            trustMemory: trustMemory(build: "1.9.4 (95)", suite: suite)
+        )
+        let status = probe.read()
+        XCTAssertTrue(status.accessibilityTrustLostAfterUpdate)
+        XCTAssertEqual(
+            ComputerUsePermissionStatus.trustLostAdvice,
+            "macOS no longer trusts this build of Juno. Remove Juno from the Accessibility list and add it again."
+        )
+        // Re-added: trusted again, nothing to say.
+        XCTAssertFalse(trustMemory(build: "1.9.4 (95)", suite: suite).observe(.granted))
+        XCTAssertFalse(trustMemory(build: "1.9.4 (95)", suite: suite).observe(.denied))
+    }
+
+    func testErrorsAreSentences() {
+        XCTAssertEqual(
+            ComputerUseError.accessibilityPermissionMissing.errorDescription,
+            "macOS has not given Juno Accessibility. Allow it in System Settings › Privacy & Security."
+        )
+        XCTAssertFalse(ComputerUseError.notActive.errorDescription!.contains("notActive"))
     }
 }

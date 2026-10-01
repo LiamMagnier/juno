@@ -165,8 +165,9 @@ public final class WorkspaceContext: Sendable {
             self.mcpRegistry = nil
             self.mcpConfigurationError = error.localizedDescription
         }
-        let computerUse = ComputerUseCoordinator(driver: SystemComputerUseDriver())
-        self.computerUse = computerUse
+        // An adapter onto the app-wide screen-control service: every
+        // workspace shares one lock and one stop with Juno Work (CU-09).
+        self.computerUse = ComputerUseCoordinator()
         self.registry = ToolRegistry.standard(
             // The agent's writes, and only the agent's, are snapshotted into
             // the turn that made them.
@@ -183,14 +184,10 @@ public final class WorkspaceContext: Sendable {
             shells: shells,
             workingDirectories: workingDirectories,
             workspaceRoot: access.rootURL.path,
-            additionalTools: [
-                ComputerScreenshotTool(computer: computerUse),
-                ComputerClickTool(computer: computerUse),
-                ComputerTypeTool(computer: computerUse),
-                ComputerKeyTool(computer: computerUse),
-                ComputerScrollTool(computer: computerUse),
-                InspectEditorBufferTool(reader: AccessibilityEditorBufferReader.shared),
-            ],
+            // The computer tools and `inspect_active_editor` come from the
+            // screen lane's provider, for Code turns only: never Ask, Plan or
+            // a sub-agent, which take their tools from this registry (CU-12).
+            additionalTools: [],
             // A command that is one of this project's checks, or a recognised
             // build, test, lint or typecheck, leaves a record of its result
             // (CODE_AGENT_SPEC §1.8). Lane B.

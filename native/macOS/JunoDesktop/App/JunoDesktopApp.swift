@@ -153,6 +153,9 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
                 DesktopWorkbenchRegistry.shared.request(.openSession(id))
                 Self.presentMainWindowIfWithheld()
             }
+            // While Juno uses other apps: the caption, the takeover glow and
+            // the start and stop notifications (CODE_AGENT_SPEC §3.7).
+            DesktopScreenPresence.shared.install()
             // After the monitor, which claims the same slot when it installs.
             UNUserNotificationCenter.current().delegate = self
             // Every launch, as Apple asks: the token can change, and asking

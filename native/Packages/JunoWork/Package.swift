@@ -23,6 +23,12 @@ let package = Package(
         .library(name: "JunoWorkRuntime", targets: ["JunoWorkRuntime"]),
         .library(name: "JunoWorkAutomation", targets: ["JunoWorkAutomation"]),
     ],
+    dependencies: [
+        // The app-wide screen-control lock and stop, shared with Juno Code
+        // (CODE_AGENT_SPEC §3.2): two products driving one mouse is the bug
+        // it exists to prevent.
+        .package(path: "../JunoScreenControl"),
+    ],
     targets: [
         // No dependencies, deliberately. Everything here is pure value logic so
         // that the containment rules, the batch planner and the undo journal can
@@ -46,7 +52,20 @@ let package = Package(
         // file operation is: a second approval path would be a second thing to
         // keep correct, and the one that got less attention would be the one
         // driving somebody's screen.
-        .target(name: "JunoWorkAutomation", dependencies: ["JunoWorkCore", "JunoWorkRuntime"]),
+        .target(
+            name: "JunoWorkAutomation",
+            dependencies: [
+                "JunoWorkCore",
+                "JunoWorkRuntime",
+                // Only the lock and the stop, and only on the Mac: the phone
+                // never drives a screen.
+                .product(
+                    name: "JunoScreenControl",
+                    package: "JunoScreenControl",
+                    condition: .when(platforms: [.macOS])
+                ),
+            ]
+        ),
         .testTarget(name: "JunoWorkCoreTests", dependencies: ["JunoWorkCore"]),
         .testTarget(
             name: "JunoWorkLocalTests",
@@ -58,7 +77,10 @@ let package = Package(
         ),
         .testTarget(
             name: "JunoWorkAutomationTests",
-            dependencies: ["JunoWorkCore", "JunoWorkRuntime", "JunoWorkAutomation"]
+            dependencies: [
+                "JunoWorkCore", "JunoWorkRuntime", "JunoWorkAutomation",
+                .product(name: "JunoScreenControl", package: "JunoScreenControl", condition: .when(platforms: [.macOS])),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

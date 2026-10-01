@@ -44,6 +44,9 @@ public struct CodeToolProviderContext: Sendable {
     /// The session's durable shells, when the workspace has them (Lane D's
     /// `preview_server attach` promotes a shell's server).
     public var shells: (any ShellSessionManaging)?
+    /// Screen control and the Simulator, for Lane C's provider. Nil where the
+    /// session has neither (Lane C).
+    public var screen: ScreenToolServices?
 
     public init(
         sessionID: CodeSessionID,
@@ -59,7 +62,8 @@ public struct CodeToolProviderContext: Sendable {
         git: any GitServicing,
         tests: any TestRunning,
         runLedger: RunLedgerRecorder? = nil,
-        shells: (any ShellSessionManaging)? = nil
+        shells: (any ShellSessionManaging)? = nil,
+        screen: ScreenToolServices? = nil
     ) {
         self.sessionID = sessionID
         self.workspaceID = workspaceID
@@ -75,6 +79,7 @@ public struct CodeToolProviderContext: Sendable {
         self.tests = tests
         self.runLedger = runLedger
         self.shells = shells
+        self.screen = screen
     }
 }
 

@@ -90,7 +90,8 @@ final class DesktopWorkLocalRuntime {
     /// gone wrong, and a per-run stop would only halt the run they happened to be
     /// looking at. The audit is capped and shared for the same reason: two logs
     /// are two things to read when explaining what a Mac did.
-    private let emergencyStop = EmergencyStop()
+    // The app-wide screen lock and stop, shared with Juno Code (CU-09).
+    private let emergencyStop = EmergencyStop(sharedScreen: .app)
     private let audit = AutomationAuditLog()
     private var executor: LocalWorkExecutor?
 

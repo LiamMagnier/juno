@@ -662,3 +662,182 @@ PV-11 (Lane B).
   session, deletable with it).
 - Merge points with Lanes A and B listed above (`SessionController` gate
   wrapper, UI records as side effects, `CommandClassifier` copy).
+
+### Lane C: computer use and Simulator tools (`rf/code-screen`, §3, §5.14, §6.3)
+
+Screen control now goes through one app-wide service shared by Juno Code and
+Juno Work, with per-app per-session grants, the always-confirm floor, a
+consumed Esc and scaled, mapped frames. Nothing in a test captures the screen
+or posts an event; the calibration test renders an offscreen window to a
+bitmap. Commits: `6a806f73` (package), `8069869a` (Code), `ba419930` (Work),
+`41fc6cc1` (Mac presence), plus this entry.
+
+| Item | Status | Where / notes |
+|---|---|---|
+| §3.2 one service, one lock | done | `native/Packages/JunoScreenControl` (`ScreenControlService.shared`, `ScreenControlLock`); `ComputerUseCoordinator` is an adapter that keeps the consent rules; Work's `EmergencyStop(sharedScreen: .app)` takes the lock for its visual and accessibility tiers and shares the stop |
+| §3.3 grants, tiers, refused list, floor, lapse | done | `AppGrants`, `AppCategories`, `ConsequentialActionFloor` (English, French, German, Spanish; Return after typing in messaging apps; finance; credential-like text); frontmost-app and hit-test checks before every action; secure fields and Juno windows refused; lapse at stop, deactivate, Plan/Ask, model change, 30 idle minutes. Always allow is never offered (D-021); `ScreenInputRule` keeps the bundle × action-class scope for later |
+| §3.3 approval card bound to the frame | done | the tool asks `PermissionCoordinator` itself after the hit test: exact text, marked crop, app, element; digest includes the frame hash; the target's neighbourhood is re-compared before input ("The screen changed; take a new screenshot") |
+| §3.4 vocabulary | done | `computer` with the 17 toolset actions; `computer_batch`, `computer_apps`, `computer_ax`, `computer_menu`, `computer_display`; batch stops at the first failure with Anthropic's exact text, also across separate toolset calls of one turn (`ScreenTurnTracker`); hold_key and wait capped at 30 s; settled after-frame and header on every action |
+| §3.4 provider wire | done (OpenAI partial) | `JunoCodeBridge/ComputerToolWire.swift`: Opus 5.5, Sonnet 5.5 and Opus 5 get `{"type":"computer_toolset_20260801"}` (no name, no size, all members on, so no `configs`), member calls mapped back to `computer`, `toolset_name` echoed on results; `computer_20251124` never sent. OpenAI uses the function tool with `detail: "original"` on Responses and `high` inside the no-resize box on Chat; OpenAI's native `computer_call` items are not used. Routes without a verified coordinate convention (Gemini, Qwen, others) get no computer tools |
+| §3.5 capture, scaling, map-back, zoom | done | `CaptureScaler` (1568 px / 1.15 MP; 2576 px / 4784 tokens with the ⌈w/28⌉×⌈h/28⌉ rule; OpenAI boxes), vImage resampling, PNG for text-heavy frames; window capture via `desktopIndependentWindow`, takeover via `excludingApplications`; `FrameGeometry` maps in global space |
+| §3.5 retention (CU-05) | partial | closed by `ImageRetention` as the spec says; screen sessions keep the runtime's default batched budget (20 images / 6 MB) rather than 3 per 25 steps — that is orchestrator configuration (Lane A), and on Opus 5.5 client pruning drops thinking anyway. The proxy forwards `context_management` and `anthropic-beta` untouched (read in `src/app/api/agent/[...path]/route.ts`, `src/lib/agent-proxy.ts`), so server-side clearing can be turned on without web changes |
+| §3.6 input | done | Accessibility first in background mode (AXPress, AXShowMenu, AXSelectedText insert, AXValue only with `mode: replace`), events to the pid in background and global only in takeover, layout-aware chords (`KeyboardLayoutMapper`), 16-unit chunks with read-back, key path for mappable characters, move before click, horizontal scroll |
+| §3.7 activation, presence, stop | done (two gaps) | tools declared whenever screen control is on for a vision model (CU-15); grant sheet in the approval card; takeover needs its own card; session row (thumbnail, "Juno is using Safari", Take over, Stop); Mac caption under the menu bar, takeover edge glow, menu bar "Stop Juno using apps", start and stop notifications; consumed global Esc (`EmergencyStopTap`); Stop ends the turn; reader input pauses takeover. Gaps: no outline glow around the target window in background mode (the spec's fallback, caption alone), and takeover does not hide other apps |
+| §3.8 prompt-injection rules | done | untrusted line on every frame, tree and buffer; app lists DATA ONLY; floor by rule; browsers view-only; secure fields refused, credential text always asks; descriptions carry the ladder and say to stop and tell the reader |
+| §3.9 CU-11 | skipped | needs the manual probe below on a signed build holding both grants; denying WindowServer lookups in the sandbox profile would break AppKit and XCTest runs the verify loop depends on, and the disclaim fix belongs in `CommandExecutionService`'s spawn path |
+| §3.9 CU-12 | done | `inspect_active_editor` only via the screen provider (never Ask, Plan or sub-agents), needs the editor granted, refuses documents outside the workspace |
+| §5.14 Simulator tools | done (evidence revision partial) | `simulator` tool over `SimulatorAgentService` (simctl only, D-024): consent once per device per session, `open_url` follows the mode, screenshots scaled and recorded as `UIVerificationRecord(surface: .ios)`. The record's `workspaceRevision` comes from `ScreenToolServices.workspaceRevision`, which reads 0 until Lane A/B's ledger is wired in. Taps go through `computer` on Simulator.app under a grant. `DesktopSimulatorDock` unchanged |
+| Settings › Screen control | done | grants, the CU-20 re-add notice, Apps (lower or deny only, user defaults, never a project file) |
+
+Bug list: CU-01, 02, 03, 04, 06, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17, 18,
+19, 21, 22, 24 fixed; CU-05 partial (above); CU-11 skipped (above); CU-20
+partial (the re-add guidance; stable signing is the release lane's); CU-23
+was already fixed on the trunk (`ToolConflictEffect` names only real tools).
+
+Shared files touched, additively: `SessionController` (contract counts
+"turned on", the provider gets `screen.toolServices`, `screen.bind`, the
+session title for the lock sentence, CU-21, grants lapse on a model change),
+`WorkspaceContext` (adapter init; the computer tools left the shared
+registry), `CodeToolProvider` (`screen` field), `PermissionCoordinator` (no
+suggested rule for screen tools), `StudioApprovalPrompt` (the screen detail
+and copy), `StudioThreadItems` (one step row per call),
+`BackendCodeModelClient` (wire calls), `StudioSnapshotTests` (screen
+snapshots moved to `StudioScreenSnapshotTests`), the Mac app's
+`JunoDesktopApp`, `DesktopMenuBarExtra`, `DesktopCodeWorkspace` (menu label
+"Let Juno Use Apps"), `DesktopCodeHost`, `DesktopWorkExecutorAdapter`,
+`Info.plist`, entitlements comment, regenerated `project.pbxproj`;
+`scripts/native-test.sh`, `.github/workflows/native.yml` and
+`scripts/check-code-runtime-wiring.mjs` know the new package and wiring.
+
+For Lane A: the §1.7 workflow text should carry the ladder (structured tools,
+Preview, Simulator, then app-scoped screen control); every screen tool's
+description already does. For Lane B: wire the ledger's revision into
+`ScreenToolServices.workspaceRevision` so iOS evidence counts after edits.
+
+Tests (all with fakes; counts are new or rewritten tests):
+- `JunoScreenControlTests` 79: `CaptureScalerTests` 12, `CalibrationTests` 1
+  (1512×982, 1728×1117, 3008×1692 at backing scale 2, three budgets, a display
+  at a negative origin, every marker within 2 pt), `KeyboardLayoutMapperTests`
+  6 (French `cmd+a` → the key that types a, never ⌘Q; Dvorak; unmappable is a
+  named error), `KeyChordTests` 5, `InputDriverTests` 8 (200 characters with
+  emoji and accents in ordered chunks of ≤ 16 units), `AppGrantPolicyTests` 11,
+  `ScreenControlLockTests` 5, `ScreenControlServiceTests` 28 (Terminal never
+  typed into, Juno refused and excluded from captures, secure fields,
+  prompts in front, the frame binding, Esc ends the turn, a stop mid-action
+  sends nothing, takeover pause), `EmergencyStopTapTests` 3.
+- JunoCode: `ComputerUseToolsTests` 23 (floor asks in Full access and past an
+  allow rule, no Always allow, one card in Ask, read-only refuses, digest bound
+  to the frame, batch rule, Stop ends the run, provider declares tools before
+  any grant, unverified routes get none, editor gate), `ComputerToolWireTests`
+  10, `SimulatorToolsTests` 7, `ComputerUseCoordinatorTests` 9,
+  `ComputerUsePermissionProbeTests` +2 (CU-20), `StudioScreenControlTests` +6,
+  `InspectEditorBufferToolTests` updated, old `ComputerUseKeyChordTests`
+  (US-ANSI) removed.
+- JunoWork: `SharedScreenControlTests` 5.
+- Snapshots (`JUNO_SNAPSHOT_DIR`, reviewed by eye, light and dark; words only,
+  no dots or pills): `testRenderScreenControlRow`, `testRenderScreenGrantSheet`,
+  `testRenderScreenApprovalCard` (literal text, marked crop, floor sentence),
+  `testRenderScreenStepRows`, `testRenderScreenControlSettings`.
+
+Manual probes (not CI):
+1. CU-11: with Juno holding Screen Recording and Accessibility and screen
+   control off, in a Full-access session run `screencapture -x
+   /tmp/juno-cu11.png` and an Apple Events keystroke through `run_command`.
+   Pass: both fail. If they succeed, spawn agent commands with TCC
+   responsibility disclaimed in `CommandExecutionService`.
+2. Live click test: grant TextEdit, open a document, `computer` left_click on
+   a known control and `key cmd+a` on the French layout: selects all, never
+   quits.
+3. Esc from another app while Juno drives TextEdit: screen control stops in
+   under 100 ms and the run ends with "You stopped screen control."
+
+Gates on the branch (through `gate.sh`):
+
+| Command | Result |
+|---|---|
+| `npm run native:test JunoScreenControl` | pass: 79 XCTests, 0 failures |
+| `npm run native:test JunoCode` | pass: 1,350 XCTests (16 skipped) + 78 Swift Testing, 0 failures |
+| `npm run native:test JunoWork` | pass: 303 XCTests, 0 failures |
+| `xcodebuild -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj -scheme JunoDesktop -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/juno-rf-dd-code-screen CODE_SIGNING_ALLOWED=NO build` | BUILD SUCCEEDED |
+| `node scripts/check-code-runtime-wiring.mjs` (`code:runtime:check`) | pass |
+| `xcodegen generate` for JunoDesktop | the only `project.pbxproj` change is `DesktopScreenPresence.swift` |
+
+Risks: the production drivers (ScreenCaptureKit window capture,
+Accessibility presses and text, `postToPid` input, the CGEvent tap) are
+compiled and wired but untested against the real screen by design; the three
+manual probes above are the first real run. Background-mode pointer events
+go to the target process, which some apps ignore for windows behind others;
+Accessibility presses come first for that reason. A Simulator screenshot's
+evidence counts only until the next edit once the ledger revision is wired.
+
+#### Lane C review (adversarial pass, 2026-10-01)
+
+Each DONE claim was traced end to end. These defects were real and are fixed
+on `rf/code-screen` (commits after `79e03867`):
+
+- **Esc and Stop did not end the action in flight.** A long `type`, a key
+  with `repeat`, a 30-second `hold_key` or `wait` and a drag ran to the end
+  after Esc; only the next checkpoint saw the stop. The input driver now
+  checks between chunks, repeats, drag steps and 100 ms slices of a held key
+  (and releases the key or button), waits sleep in 250 ms slices, and a
+  button left down by `left_mouse_down` is released on stop.
+- **Floor gaps.** A typed line break is the Return key and now asks in
+  messaging apps and on a consequential default button; `hold_key` Return,
+  Space on a focused button and ⌘⌫ ask; a key inside a sentence reads as a
+  credential. The floor read the hit-tested element only, so a "Send"
+  button whose words sit in a child static text (SwiftUI, web) passed: the
+  driver now reports the pressable ancestor's words, an element id brings its
+  snapshot words, and elements with no frame or outside the window are
+  refused. In takeover, keys are judged in the app that has the keyboard.
+- **Approved actions were not re-proved for keys.** After the card's wait, a
+  focused field that turned secure, or a Return whose default button became
+  "Delete", now refuses; in takeover, Juno or a system prompt now in front or
+  under the point refuses; `performMenu` must match the card's app and path.
+- **Clipboard grant bypass.** Edit › Paste/Copy through `computer_menu`, or a
+  click on those items, now need the clipboard grant like ⌘V/⌘C.
+- **Unbounded memory.** Frames bound to denied approvals stayed until the
+  session ended (each up to ~16 MB decoded); they are discarded on denial
+  and capped at four. Open grant proposals are capped at sixteen. The
+  service's `discard` had to be `async` to be the protocol witness rather
+  than the empty default.
+- **Work and Esc.** The Esc tap and the caption ran only for Code sessions;
+  they now follow the lock holder, so a Work task stops on Esc too.
+- **Settings narrowing ignored after relaunch.** The service started with no
+  preferences and only Settings edits pushed them; the coordinator now loads
+  them at every start, and a deny or lowered tier applies to live grants.
+- **Grant sheet race.** Unticking an app and pressing Allow quickly could
+  grant the unticked app; choices are now sent in order from the main actor
+  and Allow waits for them.
+- **Stop while a card waits.** The card stayed and, answered later, read as a
+  declined step; pending screen cards are now answered no when this
+  session's screen control ends, and that denial ends the turn.
+- **Phones allowing screen actions.** A phone could allow a screen card it
+  cannot see; screen cards are now allowed only at the Mac (declining from a
+  phone still works).
+- **iOS evidence.** A model-written `bundle_id` made any device screenshot a
+  check of that app; the record now names an app only if this session
+  launched it on that device.
+- **System Settings.** "Change permissions" is on the floor, but System
+  Settings had full control with a warning only; every press, keystroke,
+  drag and menu choice there now always asks.
+- **Takeover.** Reader input paused the agent, and every tool then failed at
+  once, so the model could call again and again: tools now wait for Resume
+  (Stop cancels; 15 minutes ends the turn). Clicking Approve no longer counts
+  as taking the Mac back, the approved app is brought back to the front
+  before its keys (never sent into Juno), and clicks work with Juno in
+  front. Display frames now leave out password managers, security prompts,
+  denied apps and finance apps not allowed.
+- Smaller: the turn tracker is fed through one ordered stream;
+  `computer_batch` follows the cross-call failure rule; the Esc tap's box is
+  released on main and its shared flag is locked.
+
+Still partial, unchanged: CU-05 retention budget (Lane A), CU-11 (manual
+probe), background-window outline glow and hiding other apps in takeover,
+OpenAI's native computer tool, the evidence revision (Lane B).
+
+Gates after the review (through `gate.sh`): `npm run native:test
+JunoScreenControl` 108 XCTests pass (79 before; 29 new); `npm run
+native:test JunoCode` 1,360 XCTests (15 skipped) + 78 Swift Testing pass;
+`npm run native:test JunoWork` 303 pass; the JunoDesktop Debug `xcodebuild`
+succeeds; `node scripts/check-code-runtime-wiring.mjs` passes; the screen
+snapshots (`StudioScreenSnapshotTests`, `JUNO_SNAPSHOT_DIR`) render.

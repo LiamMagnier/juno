@@ -491,6 +491,10 @@ public final class WorkbenchRemoteBridge:
     ) async throws {
         let controller = try await require(sessionID)
         if approved {
+            // A screen card is allowed at the Mac only (CU-07).
+            guard await controller.mayAllowRemotely(approvalID) else {
+                throw CodeRemoteCommandError.notAvailableRemotely(ComputerUseToolName.allowAtTheMacSentence)
+            }
             await controller.approve(approvalID)
         } else {
             await controller.deny(approvalID)

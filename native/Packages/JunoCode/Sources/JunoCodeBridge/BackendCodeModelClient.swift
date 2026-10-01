@@ -252,10 +252,15 @@ public struct BackendCodeModelClient: AgentModelClient {
                     let bearer: NativeBearerRequest
                     switch route.wireProtocol {
                     case .anthropicMessages:
-                        let body = AnthropicRequestBuilder.body(
-                            for: request,
-                            providerModelID: route.providerModelID,
-                            maxTokens: maxTokens
+                        // Computer use takes the native toolset on the models
+                        // that have it (`ComputerToolWire`).
+                        let body = ComputerToolWire.anthropic(
+                            AnthropicRequestBuilder.body(
+                                for: request,
+                                providerModelID: route.providerModelID,
+                                maxTokens: maxTokens
+                            ),
+                            providerModelID: route.providerModelID
                         )
                         var headers = [
                             "Accept": "text/event-stream",
@@ -282,11 +287,15 @@ public struct BackendCodeModelClient: AgentModelClient {
                                 "Content-Type": "application/json",
                             ]),
                             body: try JSONEncoder().encode(
-                                OpenAIChatRequestBuilder.body(
-                                    for: request,
-                                    providerModelID: route.providerModelID,
+                                ComputerToolWire.openAI(
+                                    OpenAIChatRequestBuilder.body(
+                                        for: request,
+                                        providerModelID: route.providerModelID,
+                                        providerID: route.providerID,
+                                        maxTokens: maxTokens
+                                    ),
                                     providerID: route.providerID,
-                                    maxTokens: maxTokens
+                                    wire: .openAIChat
                                 )
                             )
                         )
@@ -299,10 +308,14 @@ public struct BackendCodeModelClient: AgentModelClient {
                                 "Content-Type": "application/json",
                             ]),
                             body: try JSONEncoder().encode(
-                                OpenAIResponsesRequestBuilder.body(
-                                    for: request,
-                                    providerModelID: route.providerModelID,
-                                    maxTokens: maxTokens
+                                ComputerToolWire.openAI(
+                                    OpenAIResponsesRequestBuilder.body(
+                                        for: request,
+                                        providerModelID: route.providerModelID,
+                                        maxTokens: maxTokens
+                                    ),
+                                    providerID: route.providerID,
+                                    wire: .openAIResponses
                                 )
                             )
                         )
@@ -1292,6 +1305,7 @@ struct AnthropicStreamDecoder {
         let id: String
         let name: String
         var partialJSON: String
+        var toolsetName: String?
     }
 
     mutating func consume(_ byte: UInt8) throws -> [Data] {
@@ -1366,7 +1380,7 @@ struct AnthropicStreamDecoder {
             switch block.type {
             case "tool_use":
                 if let id = block.id, let name = block.name {
-                    toolBlocks[index] = ToolBlock(id: id, name: name, partialJSON: "")
+                    toolBlocks[index] = ToolBlock(id: id, name: name, partialJSON: "", toolsetName: block.toolsetName)
                 }
             case "thinking":
                 thinkingBlocks[index] = ThinkingBlock(
@@ -1418,7 +1432,10 @@ struct AnthropicStreamDecoder {
                 return [.thinkingBlock(text: thinking.text, signature: thinking.signature)]
             }
             guard let block = toolBlocks.removeValue(forKey: index) else { return [] }
-            return [toolCallEvent(id: block.id, name: block.name, arguments: block.partialJSON)]
+            let call = ComputerToolWire.internalCall(
+                name: block.name, toolsetName: block.toolsetName, arguments: block.partialJSON
+            )
+            return [toolCallEvent(id: block.id, name: call.name, arguments: call.arguments)]
         case "message_delta":
             if let reason = wire.delta?.stopReason {
                 stopReason = Self.mapStopReason(reason)
@@ -1458,6 +1475,13 @@ private struct StreamEventWire: Decodable {
         let signature: String?
         /// The encrypted payload of a `redacted_thinking` block.
         let data: String?
+        /// `computer` on a computer-toolset member call (`ComputerToolWire`).
+        let toolsetName: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case type, id, name, thinking, signature, data
+            case toolsetName = "toolset_name"
+        }
     }
     struct Delta: Decodable {
         let type: String?

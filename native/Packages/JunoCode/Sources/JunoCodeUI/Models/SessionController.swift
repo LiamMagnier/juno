@@ -768,7 +768,9 @@ public final class SessionController {
                 ? session.configuration.reasoningEffort
                 : nil,
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
-            computerUseActive: computerUseActive,
+            // Declared while turned on, not only while running, so Start
+            // mid-run needs no rebuild; the service refuses until then (CU-15).
+            computerUseActive: computerUseActive || session.configuration.computerUseEnabled,
             hookPolicyFingerprint: Self.hookPolicyFingerprint(activeHooks),
             customAgentID: session.configuration.customAgentID,
             extensionsFingerprint: Self.extensionsFingerprint(),
@@ -871,7 +873,18 @@ public final class SessionController {
                 git: context.git,
                 tests: context.tests,
                 runLedger: autonomy?.ledger,
-                shells: context.shells
+                shells: context.shells,
+                screen: screen.toolServices(
+                    context: context,
+                    modelID: contract.modelID,
+                    computerUseEnabled: contract.computerUseActive,
+                    // Simulator evidence is stamped with the transcript's
+                    // revision (Lane B's ledger), so an iOS check made after
+                    // an edit counts against it (Lane C's seam).
+                    workspaceRevision: { [sessionID, store = live.store] in
+                        await VerificationLedgers.shared.ledger(for: sessionID, store: store).workspaceRevision
+                    }
+                )
             )
         )
         if !contract.supportsVision || !contract.computerUseActive {
@@ -1412,6 +1425,7 @@ public final class SessionController {
                 self?.apply(update, own: sessionID)
             }
         }
+        screen.bind(sessionID: sessionID, coordinator: live.context?.computerUse, store: live.store, permissions: live.permissions)
         let restored = await live.store.events(for: sessionID)
         usageLedger = await live.store.usageLedger(for: sessionID)
         let delivered = eventsDeliveredWhileRestoring ?? []
@@ -2040,7 +2054,8 @@ public final class SessionController {
         do {
             try await context.computerUse.activate(
                 sessionID: sessionID,
-                userConsented: true
+                userConsented: true,
+                title: session.title
             )
             computerUseActive = true
             computerUseStartBlocked = false
@@ -2122,7 +2137,21 @@ public final class SessionController {
             #endif
             return
         }
+        // A grant sheet's unticks reach the service before its Allow does.
+        await screen.settleGrantChoices()
         await live.permissions.resolve(approvalID: approvalID, decision: .approved)
+    }
+
+    /// Whether another device may allow this approval. A screen card is
+    /// allowed at the Mac only (CU-07): read from the permission coordinator,
+    /// which knows a request the moment it is raised, not from the mirrored
+    /// list the window draws.
+    public func mayAllowRemotely(_ approvalID: String) async -> Bool {
+        guard let live else { return true }
+        guard let request = await live.permissions.pendingApprovals.first(where: { $0.id == approvalID }) else {
+            return true
+        }
+        return !ComputerUseToolName.allowedOnlyAtTheMac.contains(request.toolName)
     }
 
     public func deny(_ approvalID: String) async {
@@ -2350,6 +2379,10 @@ public final class SessionController {
             return
         }
         let supportsVision = live.modelSupportsVision(modelID)
+        if modelID != session.configuration.modelID {
+            // App grants lapse on a model change (§3.3); screen control stays on.
+            await live.context?.computerUse.revokeGrants(sessionID: sessionID)
+        }
         if !supportsVision, session.configuration.computerUseEnabled {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseLatestCapture = nil
@@ -3651,6 +3684,9 @@ public final class SessionController {
         }
         if session.configuration.location != .local {
             return "Screen control runs on the Mac the session runs on."
+        }
+        if live?.context == nil {
+            return "Open a project to use screen control."
         }
         if session.configuration.behavior != .code {
             return "Ask and Plan sessions cannot control the computer."

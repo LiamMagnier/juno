@@ -36,6 +36,9 @@ struct DesktopMenuBarExtraContent: View {
     // nothing else — and which tells the targets gate these are system-drawn
     // menu items, not views laid out here.
     var body: some View {
+        // "Stop Juno using apps", only while Juno is using them.
+        DesktopScreenPresenceMenuSection()
+
         Section {
             Button {
                 registry.request(.newChat(prompt: nil))

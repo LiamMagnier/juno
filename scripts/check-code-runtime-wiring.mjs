@@ -64,7 +64,8 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchModel.s
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkspaceContext.swift", [
   "self.mcpRegistry = try MCPToolRegistry(",
   "public func mcpTools(excludingServers disabled: Set<String> = []) async -> [any CodeTool]",
-  "ComputerScreenshotTool(computer: computerUse)",
+  // Every workspace adapts onto the one app-wide screen-control service.
+  "self.computerUse = ComputerUseCoordinator()",
   "self.worktrees = WorktreeManager(",
 ]);
 
@@ -73,9 +74,24 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/SessionControlle
   "excludingServers: CodeDefaults.shared.disabledMCPServers",
   "DelegateTaskTool(",
   "WorkspaceAgentHooks(",
+  // Computer use and the Simulator reach Code turns through the screen
+  // lane's provider, with the session's services.
+  "screen: screen.toolServices(",
   // The reader's terminal is the real PTY, owned by the session controller.
   "private var interactiveTerminalService: NativeTerminalSession?",
   "public func startInteractiveTerminal(_ command: String) async {",
+]);
+
+requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/CodeToolProviders.swift", [
+  "ScreenToolProvider()",
+]);
+requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/Tools/SimulatorTools.swift", [
+  "ComputerTool(computer: computer, permissions: context.permissions",
+  "SimulatorTool(",
+]);
+// The on-screen presence and the menu bar's stop are installed at launch.
+requireText("native/macOS/JunoDesktop/App/JunoDesktopApp.swift", [
+  "DesktopScreenPresence.shared.install()",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/AgentOrchestrator.swift", [
