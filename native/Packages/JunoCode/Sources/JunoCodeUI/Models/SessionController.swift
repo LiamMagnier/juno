@@ -1074,7 +1074,10 @@ public final class SessionController {
             promptEvaluator: ModelHookPromptEvaluator(
                 client: live.modelClient,
                 sessionID: sessionID,
-                defaultModelID: { modelID }
+                defaultModelID: { modelID },
+                recordUsage: { [sessionID] ledger in
+                    _ = try? await store.recordUsage(ledger, for: sessionID)
+                }
             ),
             instructionFiles: { await context.instructionFiles().map(\.path.value) }
         )

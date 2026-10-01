@@ -36,7 +36,11 @@ public struct URLSessionHookPoster: HookHTTPPosting {
         configuration.timeoutIntervalForRequest = timeoutSeconds
         configuration.timeoutIntervalForResource = timeoutSeconds
         let session = URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
-        defer { session.finishTasksAndInvalidate() }
+        // Cancelled, not finished: once the answer is read (or cut off at
+        // `maximumBytes`) nothing more of it is wanted, and an endpoint that
+        // kept streaming would otherwise hold the request open until the
+        // resource timeout.
+        defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url, timeoutInterval: timeoutSeconds)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -326,7 +326,15 @@ extension SessionController {
                 var isDirectory: ObjCBool = false
                 return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
             },
-            diff: { try? await context.git.diff(staged: false, path: nil) },
+            // Uncommitted means staged and unstaged both: a reader who has
+            // staged half their change still means all of it.
+            diff: {
+                let staged = (try? await context.git.diff(staged: true, path: nil)) ?? ""
+                let unstaged = (try? await context.git.diff(staged: false, path: nil)) ?? ""
+                return [staged, unstaged]
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .joined(separator: "\n")
+            },
             preview: commands.previewMentions,
             shellTail: { id in
                 try? await context.shells.output(

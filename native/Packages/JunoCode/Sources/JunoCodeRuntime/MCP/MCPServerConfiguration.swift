@@ -263,8 +263,17 @@ public enum MCPConfigurationLoader {
         for (file, scope) in [(userConfigurationFile, ExtensionScope.user), (claudeConfigurationFile, .claudeImport)] {
             guard let file, FileManager.default.fileExists(atPath: file.path) else { continue }
             do {
+                // `~/.claude.json` keeps Claude Code's per-project history
+                // beside its servers and grows past a megabyte on a busy Mac;
+                // the reader's own `mcp.json` is servers alone.
+                let limit = scope == .claudeImport ? 16 * 1_024 * 1_024 : 1_024 * 1_024
+                let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                guard size <= limit else {
+                    problems.append("\(file.lastPathComponent) is larger than Juno reads.")
+                    continue
+                }
                 let data = try Data(contentsOf: file)
-                guard data.count <= 1_024 * 1_024 else {
+                guard data.count <= limit else {
                     problems.append("\(file.lastPathComponent) is larger than Juno reads.")
                     continue
                 }
