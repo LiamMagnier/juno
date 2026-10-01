@@ -54,7 +54,7 @@ export type IconMove = {
   o?: [number, number];
   rest?: number;
   op?: number;
-  anim?: "swing" | "levels" | "wave" | "blink" | "draw" | "pop" | "nod" | "spin" | "hop";
+  anim?: "swing" | "levels" | "wave" | "blink" | "caret" | "draw" | "pop" | "nod" | "spin" | "hop";
   delay?: number;
 };
 
@@ -672,6 +672,11 @@ export const ICONS = {
     on: { kind: "fill" },
     hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
     motion: "The bubble speaks: a small pop from the tail.",
+  }),
+  orbit: I({
+    group: "Navigation",
+    elements: orbitArcs(18, 18).map((d) => p(d)),
+    motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
   }),
   code: I({
     group: "Navigation",
@@ -1503,11 +1508,6 @@ export const ICONS = {
   }),
 
   /* ——— Alevr: the semantic inventory (NAMES_AND_ICONS.md), revision 1 ——— */
-  orbit: I({
-    group: "Navigation",
-    elements: orbitArcs(18, 18).map((d) => p(d)),
-    motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
-  }),
   profile: I({
     group: "Agents and time",
     elements: [g([c(...HEAD)], { y: -0.75 }), p(SHOULDERS)],
@@ -1529,7 +1529,7 @@ export const ICONS = {
       p(MIC_SMALL),
       p("M4.5 10.5A5.25 5.25 0 0 0 15 10.5"),
       p(poly(9.75, 15.75, 9.75, 20.25)),
-      g([p(ibeam(18.75, 6, 18, 2.25))], { anim: "blink" }),
+      g([p(ibeam(18.75, 6, 18, 2.25))], { anim: "caret" }),
     ],
     motion: "The microphone beside the text cursor (speech becomes text, not a conversation). The cursor blinks once.",
   }),
@@ -1540,7 +1540,7 @@ export const ICONS = {
   }),
   rename: I({
     group: "Message",
-    elements: [p(rr(3, 6.75, 18, 10.5, 2.25)), p(poly(6.75, 12, 10.5, 12)), ko(ibeam(15, 4.5, 19.5)), g([p(ibeam(15, 4.5, 19.5))], { anim: "blink" })],
+    elements: [p(rr(3, 6.75, 18, 10.5, 2.25)), p(poly(6.75, 12, 9.75, 12)), ko(ibeam(14.25, 4.5, 19.5)), g([p(ibeam(14.25, 4.5, 19.5))], { anim: "caret" })],
     motion: "A field with the text cursor standing in it, cut clear by the house gap. The cursor blinks once.",
   }),
   refresh: I({
@@ -1565,10 +1565,10 @@ export const ICONS = {
       p(poly(12, 6.75, 20.25, 6.75)),
       p(tick(12)),
       p(poly(12, 12, 20.25, 12)),
-      g([dot(6.375, 17.25, 1.5)], { s: 1.25, o: [6.375, 17.25], anim: "pop" }),
-      p(poly(12, 17.25, 17.25, 17.25)),
+      dot(6.375, 17.25, 1.5),
+      g([p(poly(12, 17.25, 17.25, 17.25), { draw: true })], { anim: "draw" }),
     ],
-    motion: "Ordered steps: two done, one next. The next step's point pops once.",
+    motion: "Ordered steps: two done, one next. The next step's line writes itself in.",
   }),
   activity: I({
     group: "Work and evidence",

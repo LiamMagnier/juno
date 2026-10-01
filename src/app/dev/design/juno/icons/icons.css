@@ -137,6 +137,11 @@
   --ji-anim: ji-blink;
   --ji-anim-dur: 200ms;
 }
+/* The text cursor: one blink (out and back), as a caret does when it lands. Never repeats. */
+.ji .jp[data-anim="caret"] {
+  --ji-anim: ji-caret;
+  --ji-anim-dur: 240ms;
+}
 .ji .jp[data-anim="spin"] {
   --ji-anim: ji-spin;
   --ji-anim-dur: 300ms;
@@ -222,6 +227,16 @@
   40%,
   55% {
     scale: 1 var(--hsy, 0.15);
+  }
+}
+@keyframes ji-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  35%,
+  65% {
+    opacity: 0;
   }
 }
 @keyframes ji-spin {
