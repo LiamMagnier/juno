@@ -146,6 +146,7 @@ elif mode == "lineup":
     right = pos[-1] + widths[-1][1]
     mid = 0.5 * (left + right)
     objs = []
+    placed = []  # (index, depth y, root, objects) for the layered render
     for i, m in enumerate(members):
         x = pos[i] - mid
         yaw = -x * float(os.environ.get("TURN", 5))
@@ -157,11 +158,13 @@ elif mode == "lineup":
             cc, _ = FB.build_meshes(m)
             ez = m.get("eyes", {}).get("z", cc.face["z"])
             z = float(os.environ["EYEUP"]) - ez + m.get("lift", 0.0)
-        root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
+        layered = os.environ.get("LAYERED") == "1"
+        root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ and not layered)
         lean = m.get("lean", 0.0)
         if lean:
             root.rotation_euler[1] = math.radians(lean)
         objs += ob
+        placed.append((i, y, (x, y, z), yaw, m))
     span = right - left
     if os.environ.get("PPU"):
         # A fixed scale (pixels per body unit), like the dots key art: big heads.
@@ -174,7 +177,57 @@ elif mode == "lineup":
     crop = 0.0 if os.environ.get("EYEUP") else float(os.environ.get("CROP", 0.08))
     zc = crop + vis_h / 2
     B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)
-    render(sc, os.path.join(out_dir, f"lineup_{sheet}.png"))
+    if os.environ.get("LAYERED") != "1":
+        render(sc, os.path.join(out_dir, f"lineup_{sheet}.png"))
+    else:
+        # One character's flock per render (memory), the others present as bare
+        # meshes that cast shadows and bounce light but are invisible to the
+        # camera; then composite the layers back to front.
+        import numpy as np
+
+        layers = []
+        for k, (i, y, loc, yaw, m) in enumerate(placed):
+            for ob in list(bpy.data.objects):
+                if ob.name.startswith(m["id"] + "_") and ob.type == "MESH":
+                    bpy.data.objects.remove(ob, do_unlink=True)
+            root, ob_k, c = FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
+            for ob in bpy.data.objects:
+                if ob.type == "MESH" and ob.name != "floor":
+                    ob.visible_camera = ob in ob_k
+            path = os.path.join(out_dir, f".layer_{sheet}_{k}.png")
+            render(sc, path)
+            layers.append((y, path))
+            # back to a bare stand-in for the next layer
+            for ob in ob_k:
+                bpy.data.objects.remove(ob, do_unlink=True)
+            FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=False)
+
+        def load(pth):
+            im = bpy.data.images.load(pth)
+            w, h = im.size
+            a = np.zeros(w * h * 4, np.float32)
+            im.pixels.foreach_get(a)
+            bpy.data.images.remove(im)
+            return a.reshape(h, w, 4)
+
+        acc = None
+        for y, pth in sorted(layers, key=lambda t: -t[0]):  # far first
+            L_ = load(pth)
+            if acc is None:
+                acc = L_
+                continue
+            a = L_[..., 3:4]
+            da = acc[..., 3:4]
+            oa = a + da * (1 - a)
+            rgb = (L_[..., :3] * a + acc[..., :3] * da * (1 - a)) / np.maximum(oa, 1e-6)
+            acc = np.concatenate([rgb, oa], -1)
+        h, w = acc.shape[:2]
+        out = bpy.data.images.new("lineup", w, h, alpha=True)
+        out.pixels.foreach_set(acc.ravel())
+        out.filepath_raw = os.path.join(out_dir, f"lineup_{sheet}.png")
+        out.file_format = "PNG"
+        out.save()
+        print("WROTE", out.filepath_raw, flush=True)
 
 elif mode == "variants":
     if os.environ.get("VARIANTS"):

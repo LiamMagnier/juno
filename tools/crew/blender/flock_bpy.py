@@ -229,7 +229,7 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     """
     E = os.environ.get
     if density is None:
-        density = float(E("FUZZ_DENSITY", 65000))
+        density = float(E("FUZZ_DENSITY", 52000))
     length = float(E("FUZZ_LEN_ABS", 0)) or length
     ob.data.materials.append(mat)
     ob.modifiers.new("fuzz", "PARTICLE_SYSTEM")
@@ -239,9 +239,12 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     ps.use_advanced_hair = True
     area = surface_area(ob)
     ps.count = max(500, int(area * density * quality))
+    # Flock fibres are short and straight: two segments each are enough, and
+    # halve the curve memory (renders must stay well under 10 GB).
+    steps = int(E("FUZZ_STEPS", 1))
     ps.hair_step = 2
-    ps.render_step = 2
-    ps.display_step = 2
+    ps.render_step = steps
+    ps.display_step = steps
     ps.emit_from = "FACE"
     ps.use_even_distribution = True
     ps.distribution = "RAND"
