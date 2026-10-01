@@ -254,3 +254,47 @@ tests, 4,416 pass, 67 skipped, 2 fail, both outside this change and failing
 on the trunk too since 2026-10-01: `google:gemini-omni-flash-preview` passed
 its `retiresOn: 2026-09-30` and left the catalog
 (`tests/model-catalog-fidelity.test.ts`, `tests/video-gen.test.ts`).
+
+### Lane E: review, ship, sessions and away (`rf/code-ship`, §6.5)
+
+Branched from the trunk at `e1fde2fa` (the seams merge). Five commits,
+`047d9e6e`..`ae36c3d4`, not pushed.
+
+| Spec item | State | Notes |
+|---|---|---|
+| §1.11 approvals park | DONE | `PermissionCoordinator.sweepExpired` reports and keeps; an approval given later is valid from the decision, digest-bound. Lane A owns the file: the change is the sweep, the post-decision check and an injected clock |
+| §1.11 notifications | DONE | `code.done`, `code.needs-approval` (Allow once, Decline), `code.question` (Reply), `code.needs-you` (+ Keep going variant), `code.ci` (Fix it), `code.failed` (Retry). Nothing for the session in view; approvals and questions speak with Juno in front; reminders at 15, 60, 240 min |
+| §1.11 menu bar | DONE | "2 working, 1 waiting for you" and Stop Screen Control (stops `computerUse` on every controller until Lane C's service owns it) |
+| §1.12 quit guard, Resume | DONE | `applicationShouldTerminate` with Keep Working default; staged update deferred; Resume (row, Runs list, notification) calls `resume(note: .afterQuit(unknownOutcomes:))`; resume-on-launch setting, off (D-025) |
+| §5.1 Runs list | DONE | `RunIndex` + `RunTracker` in `WorkbenchModel`, `StudioRunsList`, embedded at the top of the Code sidebar |
+| §5.3 PR, CI, auto-fix | PARTIAL | Watch, CI bar, Fix it, Auto-fix (3 per PR), `git_push`/`ci_status`/`ci_logs`, `ci.status` events. Fix it records `goalSet` (origin ci) and resumes with a runtime note; binding the plan to Lane A's goal runtime waits for `GoalModel` |
+| §5.6 rewind and fork | PARTIAL | Goal and run journal restored with the conversation (file snapshots per turn), todos with the transcript, shell-change warning, Fork from here / into a worktree, relay fork. Not done: (d) "Summarize from here" |
+| §5.7 worktree sessions | DONE | Creation choice existed; `.juno/worktree.json` include and approved-bytes setup, header, Bring changes back per step, removal at archive, Fork into Its Own Worktree from the session menu |
+| §5.10 diff review | DONE, one deviation | Click a line to comment (Return adds, ⌘Return sends all), queue saved with the session, sent as `path:line` blocks with the quoted line without touching the draft; Keep (stage the exact hunk) and Revert per hunk, file, all; the four scopes; findings inline with Fix this and Dismiss. The queue rides as a text block on the message rather than a `CodeAttachment.reviewComments` case, which is Lane F's file |
+| §5.17 export, archive, search | PARTIAL | Markdown and redacted protocol JSON export, manual archive (with worktree removal), search over titles, PR links and transcripts. Not done: archiving automatically when the PR merges or closes |
+
+Tests (66 new in the package, 5 in the Mac app):
+`ApprovalParkingTests` 4, `ShipToolsTests` 8, `CIWatchServiceTests` 5,
+`RunIndexTests` 9, `StudioRunMonitorTests` 10, `InterruptedRunTests` 3,
+`QuitGuardTests` 4, `SessionForkTests` 5, `RewindGoalStateTests` 3,
+`ReviewCommentQueueTests` 6, `WorktreeSessionTests` 3, `ShipSnapshotTests` 6
+(rendered with `JUNO_SNAPSHOT_DIR`, reviewed light and dark: Runs list, CI
+bar in four states, line comments, inline findings, interrupted row,
+Fork from here); `native/macOS/JunoDesktop/Tests/QuitAndLifecycleTests` 5
+(compiled by `build-for-testing`, not run: the desktop test host launches
+the app). One seam expectation changed: the CI row now puts check names in
+code voice. `PermissionCoordinatorTests.testExpirySweep…` now asserts
+parking.
+
+Gates (through `gate.sh`): `npm run native:test JunoCode` passed, 1,388
+XCTests (19 skipped, 6 of them the snapshots) and 78 Swift Testing, 0
+failures; JunoDesktop Debug `xcodebuild … build` succeeded and
+`build-for-testing` succeeded (DerivedData `/private/tmp/juno-rf-dd-code-ship`);
+`code:runtime:check`, `code:preview:check`, `code:remote:check` pass;
+`native:design:check` passes (targets 197 → 192, glass 24 → 19; baselines
+not re-recorded).
+
+For integration: `SessionController.reviewComments` / `submitReviewComments`
+are superseded by the review queue and unused; the phone still reads an
+approval's `expiresAt` as a deadline; `RunTracker` derives a run's ending
+from its status until Lane A records `run.outcome`.
