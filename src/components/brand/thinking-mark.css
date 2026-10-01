@@ -1,0 +1,79 @@
+/*
+ * The Continuum thinking mark (thinking-mark.tsx; timing in thinking-schedule.ts).
+ *
+ * The silhouette never moves. A pass hands presence ink along the four blades
+ * in their clockwise order: each blade rises toward presence over `base`
+ * (220 ms, out-soft) and falls back over `base` (in-out), the next starting one
+ * `press` (70 ms) later. Finished settles once over `emphasis`: the blades
+ * take a little presence together (`fast`) and exhale to rest. Visibility fades
+ * on `fast`; under reduced motion that fade is the only movement left.
+ */
+.alevr-thinking-mark {
+  --tm-ink: currentColor;
+  --tm-presence: hsl(var(--primary-ink));
+  /* A gentle shift toward presence, not a swap: some of the ink stays in it. */
+  --tm-hot: color-mix(in oklab, var(--tm-presence) 85%, var(--tm-ink));
+  --tm-soft: color-mix(in oklab, var(--tm-presence) 40%, var(--tm-ink));
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+  color: hsl(var(--foreground));
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out-soft);
+}
+
+.alevr-thinking-mark[data-visible="true"] {
+  opacity: 1;
+}
+
+.alevr-thinking-mark path {
+  fill: var(--tm-ink);
+}
+
+.alevr-thinking-mark [data-mode="pass"] path {
+  animation: alevr-continuum-handoff calc(2 * var(--dur-base)) both;
+  animation-delay: calc(var(--blade, 0) * var(--dur-press));
+}
+
+.alevr-thinking-mark [data-mode="settle"] path {
+  animation: alevr-continuum-settle var(--dur-emphasis) both;
+}
+
+@keyframes alevr-continuum-handoff {
+  0% {
+    fill: var(--tm-ink);
+    animation-timing-function: var(--ease-out-soft);
+  }
+  50% {
+    fill: var(--tm-hot);
+    animation-timing-function: var(--ease-in-out);
+  }
+  100% {
+    fill: var(--tm-ink);
+  }
+}
+
+@keyframes alevr-continuum-settle {
+  0% {
+    fill: var(--tm-ink);
+    animation-timing-function: var(--ease-out-soft);
+  }
+  21% {
+    fill: var(--tm-soft);
+    animation-timing-function: var(--ease-in-out);
+  }
+  100% {
+    fill: var(--tm-ink);
+  }
+}
+
+/* Reduced motion: the static mark; only the brief visibility fade remains. */
+.alevr-thinking-mark[data-reduced] [data-mode] path {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alevr-thinking-mark [data-mode] path {
+    animation: none;
+  }
+}
