@@ -1,0 +1,275 @@
+import Foundation
+
+/// Proposes a first `.juno/launch.json` from what the project is
+/// (CODE_AGENT_SPEC §4.2, PV-10, PV-16).
+///
+/// Node scripts (the existing `package.json` scan, nested packages to depth 3),
+/// Django, Flask, FastAPI, Rails, PHP, Hugo, Go, and static sites as
+/// `juno:static`. Nothing here starts anything: the proposal is shown to the
+/// reader, who saves it as the file, and after that the file is the only
+/// source of truth. Until then the registry offers these as discovered
+/// configurations, each asked about by its bytes before it runs.
+public enum LaunchConfigurationDiscovery {
+    static let maximumPackageDepth = 3
+    static let maximumPackageCount = 48
+    static let ignoredDirectoryNames: Set<String> = [
+        ".git", ".hg", ".svn", ".next", ".nuxt", ".turbo", ".cache",
+        "node_modules", "vendor", "Pods", "DerivedData", "build", "dist",
+        "coverage", ".venv", "venv", "__pycache__", "target",
+    ]
+
+    /// The configurations Juno would write for `workspaceRoot`.
+    public static func propose(workspaceRoot: URL) -> PreviewLaunchFile {
+        let root = workspaceRoot.resolvingSymlinksInPath().standardizedFileURL
+        var configurations: [PreviewLaunchConfiguration] = []
+        configurations += nodeConfigurations(root: root)
+        configurations += pythonConfigurations(root: root)
+        configurations += railsConfigurations(root: root)
+        configurations += phpConfigurations(root: root)
+        configurations += hugoConfigurations(root: root)
+        configurations += goConfigurations(root: root)
+        if configurations.isEmpty, let site = staticConfiguration(root: root) {
+            configurations.append(site)
+        }
+        var seen: Set<String> = []
+        configurations = configurations.filter { seen.insert($0.name).inserted }
+        return PreviewLaunchFile(configurations: configurations)
+    }
+
+    // MARK: - Node
+
+    static func nodeConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
+        let packages = packageRoots(in: root)
+        guard !packages.isEmpty else { return [] }
+        let rootManager = lockfileManager(in: root)
+        var result: [PreviewLaunchConfiguration] = []
+        for package in packages {
+            guard let scripts = scripts(in: package) else { continue }
+            let manager = package == root ? (lockfileManager(in: package) ?? "npm") : (rootManager ?? lockfileManager(in: package) ?? "npm")
+            let relative = relativePath(of: package, under: root)
+            let servers = scripts
+                .filter { DevServerCommandDiscovery.looksLikeServer(name: $0.key, script: $0.value) }
+                .sorted { DevServerCommandDiscovery.rank(of: $0.key) < DevServerCommandDiscovery.rank(of: $1.key)
+                    || (DevServerCommandDiscovery.rank(of: $0.key) == DevServerCommandDiscovery.rank(of: $1.key) && $0.key < $1.key) }
+            for (script, _) in servers {
+                let name = relative == "." ? script : "\(relative) \(script)"
+                result.append(PreviewLaunchConfiguration(
+                    name: name,
+                    runtimeExecutable: manager,
+                    runtimeArgs: manager == "yarn" ? [script] : ["run", script],
+                    cwd: relative == "." ? nil : relative,
+                    autoPort: true
+                ))
+            }
+        }
+        return result
+    }
+
+    static func scripts(in package: URL) -> [String: String]? {
+        guard let data = try? Data(contentsOf: package.appendingPathComponent("package.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let scripts = json["scripts"] as? [String: Any]
+        else { return nil }
+        return scripts.compactMapValues { $0 as? String }
+    }
+
+    static func lockfileManager(in root: URL) -> String? {
+        let lockfiles: [(String, String)] = [
+            ("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"), ("bun.lockb", "bun"),
+            ("bun.lock", "bun"), ("package-lock.json", "npm"),
+        ]
+        return lockfiles.first { exists(root, $0.0) }?.1
+    }
+
+    /// Folders holding a `package.json`, the root first, to depth 3.
+    static func packageRoots(in root: URL) -> [URL] {
+        var roots: [URL] = []
+        if exists(root, "package.json") { roots.append(root) }
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return roots }
+        while let candidate = enumerator.nextObject() as? URL {
+            let name = candidate.lastPathComponent
+            if ignoredDirectoryNames.contains(name) {
+                enumerator.skipDescendants()
+                continue
+            }
+            let depth = candidate.pathComponents.count - root.pathComponents.count
+            if depth > maximumPackageDepth + 1 {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard name == "package.json" else { continue }
+            let folder = candidate.deletingLastPathComponent().standardizedFileURL
+            guard folder.path != root.path else { continue }
+            roots.append(folder)
+            if roots.count >= maximumPackageCount { break }
+        }
+        return roots.sorted { left, right in
+            if left.path == root.path { return true }
+            if right.path == root.path { return false }
+            return left.path.localizedStandardCompare(right.path) == .orderedAscending
+        }
+    }
+
+    // MARK: - Python
+
+    static func pythonConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
+        let runner = pythonRunner(root: root)
+        let dependencies = pythonDependencies(root: root)
+        if exists(root, "manage.py") {
+            return [PreviewLaunchConfiguration(
+                name: "django",
+                runtimeExecutable: runner.executable,
+                runtimeArgs: runner.prefix + ["manage.py", "runserver", "127.0.0.1:${port}"],
+                port: 8000,
+                autoPort: true
+            )]
+        }
+        if dependencies.contains("fastapi") {
+            let module = exists(root, "main.py") ? "main:app" : (exists(root, "app/main.py") ? "app.main:app" : nil)
+            if let module {
+                return [PreviewLaunchConfiguration(
+                    name: "fastapi",
+                    runtimeExecutable: runner.executable,
+                    runtimeArgs: runner.prefix + ["-m", "uvicorn", module, "--host", "127.0.0.1", "--port", "${port}", "--reload"],
+                    port: 8000,
+                    autoPort: true
+                )]
+            }
+        }
+        if dependencies.contains("flask"), exists(root, "app.py") || exists(root, "wsgi.py") {
+            return [PreviewLaunchConfiguration(
+                name: "flask",
+                runtimeExecutable: runner.executable,
+                runtimeArgs: runner.prefix + ["-m", "flask", "run", "--host", "127.0.0.1", "--port", "${port}", "--debug"],
+                port: 5000,
+                autoPort: true
+            )]
+        }
+        return []
+    }
+
+    /// `uv run python`, `poetry run python` or `python3`, from the lockfile.
+    static func pythonRunner(root: URL) -> (executable: String, prefix: [String]) {
+        if exists(root, "uv.lock") { return ("uv", ["run", "python"]) }
+        if exists(root, "poetry.lock") { return ("poetry", ["run", "python"]) }
+        return ("python3", [])
+    }
+
+    static func pythonDependencies(root: URL) -> Set<String> {
+        var text = ""
+        for file in ["requirements.txt", "pyproject.toml", "Pipfile", "requirements-dev.txt"] {
+            if let contents = try? String(contentsOf: root.appendingPathComponent(file), encoding: .utf8) {
+                text += contents.lowercased() + "\n"
+            }
+        }
+        var found: Set<String> = []
+        for name in ["django", "flask", "fastapi", "uvicorn"] where text.range(
+            of: "(^|[^a-z0-9_-])\(name)([^a-z0-9_-]|$)", options: .regularExpression
+        ) != nil {
+            found.insert(name)
+        }
+        return found
+    }
+
+    // MARK: - Rails, PHP, Hugo, Go
+
+    static func railsConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
+        guard let gemfile = try? String(contentsOf: root.appendingPathComponent("Gemfile"), encoding: .utf8),
+              gemfile.range(of: #"gem\s+["']rails["']"#, options: .regularExpression) != nil
+        else { return [] }
+        let executable = exists(root, "bin/rails") ? "bin/rails" : "rails"
+        return [PreviewLaunchConfiguration(
+            name: "rails",
+            runtimeExecutable: executable,
+            runtimeArgs: ["server", "-b", "127.0.0.1", "-p", "${port}"],
+            port: 3000,
+            autoPort: true
+        )]
+    }
+
+    static func phpConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
+        if exists(root, "artisan") {
+            return [PreviewLaunchConfiguration(
+                name: "laravel",
+                runtimeExecutable: "php",
+                runtimeArgs: ["artisan", "serve", "--host=127.0.0.1", "--port=${port}"],
+                port: 8000,
+                autoPort: true
+            )]
+        }
+        for folder in [".", "public"] where exists(root, folder == "." ? "index.php" : "public/index.php") {
+            return [PreviewLaunchConfiguration(
+                name: "php",
+                runtimeExecutable: "php",
+                runtimeArgs: ["-S", "127.0.0.1:${port}"] + (folder == "." ? [] : ["-t", "public"]),
+                port: 8000,
+                autoPort: true
+            )]
+        }
+        return []
+    }
+
+    static func hugoConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
+        let configs = ["hugo.toml", "hugo.yaml", "hugo.json"]
+        let isHugo = configs.contains { exists(root, $0) }
+            || (exists(root, "config.toml") && exists(root, "content") && (exists(root, "themes") || exists(root, "layouts")))
+        guard isHugo else { return [] }
+        return [PreviewLaunchConfiguration(
+            name: "hugo",
+            runtimeExecutable: "hugo",
+            runtimeArgs: ["server", "--bind", "127.0.0.1", "--port", "${port}"],
+            port: 1313,
+            autoPort: true
+        )]
+    }
+
+    static func goConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
+        guard exists(root, "go.mod"), exists(root, "main.go"),
+              let main = try? String(contentsOf: root.appendingPathComponent("main.go"), encoding: .utf8),
+              main.contains("net/http") || main.contains("ListenAndServe") || main.contains("gin") || main.contains("echo")
+        else { return [] }
+        return [PreviewLaunchConfiguration(
+            name: "go",
+            runtimeExecutable: "go",
+            runtimeArgs: ["run", "."],
+            port: 8080,
+            autoPort: true
+        )]
+    }
+
+    // MARK: - Static
+
+    /// A static site served by Juno itself, from the folder that holds its
+    /// `index.html` (PV-16: never the repository root when the page is in
+    /// `public/`).
+    static func staticConfiguration(root: URL) -> PreviewLaunchConfiguration? {
+        for folder in [".", "public", "site", "docs"] {
+            let index = folder == "." ? "index.html" : "\(folder)/index.html"
+            if exists(root, index) {
+                return PreviewLaunchConfiguration(
+                    name: "static",
+                    runtimeExecutable: ResolvedPreviewConfiguration.staticExecutable,
+                    cwd: folder == "." ? nil : folder
+                )
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Helpers
+
+    static func exists(_ root: URL, _ relative: String) -> Bool {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent(relative).path)
+    }
+
+    static func relativePath(of folder: URL, under root: URL) -> String {
+        let path = folder.resolvingSymlinksInPath().standardizedFileURL.path
+        guard path != root.path else { return "." }
+        if path.hasPrefix(root.path + "/") { return String(path.dropFirst(root.path.count + 1)) }
+        return folder.lastPathComponent
+    }
+}

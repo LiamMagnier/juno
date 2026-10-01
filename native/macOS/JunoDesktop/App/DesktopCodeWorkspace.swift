@@ -278,11 +278,14 @@ struct DesktopCodeWorkspace: View {
             else { return }
             withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
                 simulatorHost.closePane()
+                bindPreviewAnnotations()
                 previewTarget = target
             }
         }
         .onChange(of: selectedSessionID) { _, _ in
             simulatorHost.tearDown()
+            // Hides the pane only: the session's preview server is leased to
+            // the session and keeps running (PV-1).
             previewTarget = nil
         }
         .onChange(of: controller?.review.isPresented) { _, presented in
@@ -308,6 +311,7 @@ struct DesktopCodeWorkspace: View {
         }
         .onAppear {
             if storedColumnVisibility == "detailOnly" { columnVisibility = .detailOnly }
+            PreviewHost.configureForApp()
         }
         .onDisappear {
             simulatorHost.tearDown()
@@ -325,6 +329,7 @@ struct DesktopCodeWorkspace: View {
     private var canvas: some View {
         DesktopCodePreviewDock(
             target: previewTarget,
+            lease: controller?.previewLease,
             close: { previewTarget = nil },
             openInWindow: {
                 guard let previewTarget else { return }
@@ -792,7 +797,22 @@ struct DesktopCodeWorkspace: View {
             return
         }
         simulatorHost.closePane()
+        bindPreviewAnnotations()
         previewTarget = CodePreviewTarget(workspaceRoot: root, sessionID: controller?.sessionID)
+    }
+
+    /// Annotations from the Preview land in this session's composer: the
+    /// crop as an image, the element and the note as text (§5.15).
+    private func bindPreviewAnnotations() {
+        guard let controller else { return }
+        controller.previewLease.annotationSink = { [weak controller] annotation in
+            guard let controller else { return }
+            if let image = annotation.screenshot {
+                controller.attach(CodeAttachment(name: annotation.title, image: image))
+            }
+            let separator = controller.composerText.isEmpty || controller.composerText.hasSuffix("\n") ? "" : "\n\n"
+            controller.composerText += separator + annotation.composerText
+        }
     }
 
     private func openPreviewWindow(_ target: CodePreviewTarget) {

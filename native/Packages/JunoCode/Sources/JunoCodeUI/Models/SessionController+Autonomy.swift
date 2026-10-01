@@ -99,8 +99,16 @@ extension SessionController {
     }
 
     /// The stop check for a Code orchestrator.
-    func autonomyGate(_ configuration: AutonomyConfiguration) -> AutonomyGate {
-        AutonomyGate(settings: configuration.settings, recipe: configuration.recipe, goals: configuration.goals)
+    func autonomyGate(
+        _ configuration: AutonomyConfiguration,
+        uiAdvisor: (any PreviewUIVerifyAdvising)? = nil
+    ) -> AutonomyGate {
+        AutonomyGate(
+            settings: configuration.settings,
+            recipe: configuration.recipe,
+            goals: configuration.goals,
+            uiAdvisor: uiAdvisor
+        )
     }
 
     // MARK: - What the model is told each turn

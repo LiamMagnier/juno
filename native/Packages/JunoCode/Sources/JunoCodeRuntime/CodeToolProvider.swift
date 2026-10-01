@@ -41,6 +41,9 @@ public struct CodeToolProviderContext: Sendable {
     /// evidence minted outside a tool call: the runtime's own check runner,
     /// a Preview check that settles later.
     public var runLedger: RunLedgerRecorder?
+    /// The session's durable shells, when the workspace has them (Lane D's
+    /// `preview_server attach` promotes a shell's server).
+    public var shells: (any ShellSessionManaging)?
 
     public init(
         sessionID: CodeSessionID,
@@ -55,7 +58,8 @@ public struct CodeToolProviderContext: Sendable {
         executor: any CommandExecuting,
         git: any GitServicing,
         tests: any TestRunning,
-        runLedger: RunLedgerRecorder? = nil
+        runLedger: RunLedgerRecorder? = nil,
+        shells: (any ShellSessionManaging)? = nil
     ) {
         self.sessionID = sessionID
         self.workspaceID = workspaceID
@@ -70,6 +74,7 @@ public struct CodeToolProviderContext: Sendable {
         self.git = git
         self.tests = tests
         self.runLedger = runLedger
+        self.shells = shells
     }
 }
 

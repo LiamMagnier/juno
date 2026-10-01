@@ -216,7 +216,8 @@ public struct CompletionGate: Sendable {
         _ ledger: RunLedger,
         recipe: GateRecipe?,
         goal: GoalRun?,
-        situation: GateSituation = GateSituation()
+        situation: GateSituation = GateSituation(),
+        uiAdvice: PreviewUIDecision? = nil
     ) -> GateStep {
         let verdict = ledger.verdict
 
@@ -296,6 +297,20 @@ public struct CompletionGate: Sendable {
             }
         }
 
+        // 8b. The Preview's own rule 8 for the web surface (§4.6): it knows
+        //     the launch configurations' folders and the routes an edit
+        //     touches, and caps its own rounds (three) and repeated failures.
+        if settings.autoVerify.web, let uiAdvice {
+            switch uiAdvice {
+            case .none:
+                break
+            case let .continueWith(detail):
+                return .decided(.continueWith(.uiUnchecked, detail: detail))
+            case .stopFailing:
+                return .decided(.finish(.checksFailing))
+            }
+        }
+
         // 9. The diff has not been read since the last edit.
         if settings.reviewBeforeFinish != .off, changed, !ledger.diffReadIsFresh {
             let large = ledger.linesChanged > settings.reviewThresholdLines || ledger.filesChanged.count >= 3
@@ -347,6 +362,16 @@ public struct CompletionGate: Sendable {
 
         // 12. Done, with the verdict the evidence supports.
         return .decided(.finish(verdict))
+    }
+
+    /// Whether the rules could still send the agent back, so the Preview's
+    /// advice is worth asking for: the same guards as the top of
+    /// ``evaluate(_:recipe:goal:situation:uiAdvice:)``.
+    public static func mayAskForUIAdvice(settings: AutonomySettings, situation: GateSituation) -> Bool {
+        settings.enforces && settings.autoVerify.web
+            && !situation.pendingApproval && !situation.pendingQuestion && !situation.stoppedByReader
+            && !situation.pendingSteer && situation.behavior == .code && !situation.planLimitReached
+            && situation.backgroundWork.isEmpty
     }
 
     // MARK: - The facts each continuation names

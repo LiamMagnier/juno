@@ -470,15 +470,20 @@ public actor AutonomyGate: CompletionGating {
     private let settings: AutonomySettings
     private let recipe: @Sendable () async -> GateRecipe?
     private let goals: GoalRuntime?
+    /// The Preview's answer to rule 8 for the web surface (Lane D), asked
+    /// only when the rules could still send the agent back.
+    private let uiAdvisor: (any PreviewUIVerifyAdvising)?
 
     public init(
         settings: AutonomySettings,
         recipe: @escaping @Sendable () async -> GateRecipe? = { nil },
-        goals: GoalRuntime? = nil
+        goals: GoalRuntime? = nil,
+        uiAdvisor: (any PreviewUIVerifyAdvising)? = nil
     ) {
         self.settings = settings
         self.recipe = recipe
         self.goals = goals
+        self.uiAdvisor = uiAdvisor
     }
 
     public func evaluate(_ context: CompletionGateContext) async -> GateDecision {
@@ -487,11 +492,16 @@ public actor AutonomyGate: CompletionGating {
         }
         let recipe = await recipe()
         let goal = await goals?.currentGoal()
+        var uiAdvice: PreviewUIDecision?
+        if let uiAdvisor, CompletionGate.mayAskForUIAdvice(settings: settings, situation: context.situation) {
+            uiAdvice = await uiAdvisor.uiDecision(for: context)
+        }
         let step = CompletionGate(settings: settings).evaluate(
             ledger,
             recipe: recipe,
             goal: goal,
-            situation: context.situation
+            situation: context.situation,
+            uiAdvice: uiAdvice
         )
         switch step {
         case let .decided(decision):
