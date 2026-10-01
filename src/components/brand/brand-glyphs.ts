@@ -13,10 +13,12 @@
  * stems are placed so one edge of the stroke lands on a whole pixel.
  *
  * ORBIT: two separated open elliptical arcs of one ellipse. a : b is the golden
- * ratio (b = a / phi, so e = 0.786), the major axis is tilted 20 degrees up to
- * the right, and the two gaps sit opposite each other (180 degrees apart in the
- * ellipse's parameter), so the arcs are in point symmetry, the same pairing the
- * Continuum's blades have. Each gap reads as the house gap between round caps.
+ * ratio (b = a / phi, so e = 0.786), the major axis is tilted 24 degrees up to
+ * the right, and the two gaps sit at the two ends of the major axis (180
+ * degrees apart in the ellipse's parameter), so the arcs are in point symmetry,
+ * the same pairing the Continuum's blades have. Each gap is a clear 2 units
+ * between round caps. The proportions match the V3 icon set's Orbit drawing
+ * (rf/design-v3h), so the product icon and the brand glyph are one drawing.
  * Static: it is a place, not a spinner.
  *
  * CODE: opposed square brackets with an inset cursor. The cursor is about half
@@ -34,14 +36,14 @@ const f = (n: number): string => String(n3(n));
 
 /** Ellipse geometry shared by every size, in 24-unit grid terms. */
 export const ORBIT_CONSTRUCTION = {
-  /** Semi-major axis (grid units). */
-  a: 9,
+  /** Semi-major axis (grid units); matches the V3 icon set's Orbit drawing (rf/design-v3h). */
+  a: 9.375,
   /** b = a / phi. */
   ratio: 1 / PHI,
   /** Tilt of the major axis, degrees (negative = up to the right in SVG's y-down space). */
-  tilt: -20,
-  /** Where the first gap is centred, in the ellipse's parameter (degrees); the second is 180 degrees on. */
-  gapAt: 160,
+  tilt: -24,
+  /** Where the first gap is centred, in the ellipse's parameter (degrees): the major-axis vertex; the second is 180 degrees on. */
+  gapAt: 0,
   /** The clear gap between the round caps (grid units): the 1.5 unit house gap, opened to 2 so it survives 16 px. */
   gap: 2,
 } as const;
@@ -102,10 +104,13 @@ function bracket(stemX: number, top: number, bottom: number, armX: number, r: nu
 }
 
 /** Per-size bracket placements (px): stem centrelines put one stroke edge on a whole pixel. */
+// The 24-unit drawing follows the V3 icon set's Code (stem 4.5, corner 2.25, cursor 8.25 to
+// 15.75); each size moves stems and arms to its own pixel grid, and the arms stop short enough
+// to keep the V3 drawing's clear gap (3 units at 24) across the half-pixel axis shift.
 const CODE_GRID: Record<GlyphSize, { stroke: number; stem: number; top: number; bottom: number; arm: number; r: number; cursor: [number, number] }> = {
-  16: { stroke: 1.25, stem: 3.625, top: 2.625, bottom: 13.375, arm: 6, r: 1, cursor: [6, 10] },
-  20: { stroke: 1.5, stem: 4.75, top: 3.75, bottom: 16.25, arm: 7.5, r: 1.25, cursor: [7.5, 12.5] },
-  24: { stroke: 1.5, stem: 4.75, top: 4.75, bottom: 19.25, arm: 9, r: 1.5, cursor: [9, 15] },
+  16: { stroke: 1.25, stem: 2.625, top: 2.625, bottom: 13.375, arm: 6, r: 1.5, cursor: [5.5, 10.5] },
+  20: { stroke: 1.5, stem: 3.75, top: 3.75, bottom: 16.25, arm: 7.5, r: 1.75, cursor: [7, 13] },
+  24: { stroke: 1.5, stem: 4.75, top: 4.75, bottom: 19.25, arm: 9.25, r: 2.25, cursor: [8.25, 15.75] },
 };
 
 function codePaths(size: GlyphSize): string[] {

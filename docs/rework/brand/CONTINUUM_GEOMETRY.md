@@ -132,8 +132,8 @@ Mark height 1.18 cap heights (an open, pointed silhouette reads smaller than ser
 
 Both follow the V3 icon grammar (1.25 px stroke at 16, 1.5 px from 18, round caps and joins, 24-unit grid, live area 3–21, continuous corners). Each size is drawn for its own pixel grid.
 
-- **Orbit.** Two separated open arcs of one ellipse: a = 9 grid units, **b = a / φ** (e = 0.786, the board's construction), major axis tilted 20° up to the right. The two gaps sit 180° apart in the ellipse's parameter (160° and 340°), so the arcs are in point symmetry, the same pairing the Continuum's blades have. The gap is the clear chord between round caps: 2 units, held at 1.5 px at 16. Static.
-- **Code.** Opposed square brackets (continuous corners) with an inset cursor about half their height. The axis sits half a pixel left of the box centre at every size so the cursor's stroke covers whole pixels; stems put one stroke edge on a whole pixel.
+- **Orbit.** Two separated open arcs of one ellipse: a = 9.375 grid units, **b = a / φ** (e = 0.786, the board's construction), major axis tilted 24° up to the right. The two gaps sit at the two ends of the major axis, 180° apart in the ellipse's parameter, so the arcs are in point symmetry, the same pairing the Continuum's blades have. The gap is the clear chord between round caps: 2 units, held at 1.5 px at 16. The proportions match the V3 icon set's Orbit draft (`rf/design-v3h`), so the product icon and the brand glyph are one drawing. Static.
+- **Code.** Opposed square brackets (continuous corners, 2.25 at 24) with an inset cursor half their height, after the V3 icon set's Code draft. The axis sits half a pixel left of the box centre at every size so the cursor's stroke covers whole pixels; stems put one stroke edge on a whole pixel; the arms stop short enough to keep the draft's 3-unit clear gap across that shift.
 
 ## 10. Thinking mark
 
