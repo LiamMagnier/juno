@@ -8,8 +8,9 @@ Three candidate style sheets (pass 1), six characters each:
   B  "Snack bar"     food icons (onigiri, toast, jelly bean, macaron, acorn,
                      peach bun); flat white STICKER eyes with black pupils and
                      closed arcs; food-part accessories built into the shape.
-  C  "Night sky"     sky symbols (soft star, moon, sparkle, planet, droplet,
-                     flower); SMILE (half-moon) eyes, dashes, visor shades.
+  C  "Soft symbols"  glyph shapes (soft star, crescent, sparkle, bolt, droplet,
+                     flower); round button eyes, happy half-moons, sleepy arcs,
+                     one-piece shades. Agents never become planets.
 
 Rules every character follows (the creepiness diagnosis):
   - graphic eyes only: matte black shapes, white stickers with a black pupil,
@@ -25,13 +26,15 @@ kind: "body" (velvet flock + fuzz), "felt" (flocked accessory + fuzz),
 from __future__ import annotations
 
 import math
+import os
+
 import numpy as np
 
 import flock_sdf as S
 from flock_sdf import smin, smax
 
 INK = "#17171c"
-EYE_SCALE = 1.3
+EYE_SCALE = float(os.environ.get("EYE_SCALE", 1.65))
 WHITE = "#fbfaf6"
 
 # ---------------------------------------------------------------- palette
@@ -85,6 +88,27 @@ def tri2(x, z, c, r):
     Z2 = np.where(m, (-k * X - Z) / 2, Z)
     X2 = X2 - np.clip(X2, -2 * r, 0.0)
     return -np.sqrt(X2 * X2 + Z2 * Z2) * np.sign(Z2)
+
+
+def poly2(x, z, pts):
+    """Quilez's exact distance to a simple polygon (x, z vertices, either winding)."""
+    v = np.asarray(pts, float)
+    d = (x - v[0, 0]) ** 2 + (z - v[0, 1]) ** 2
+    s = np.ones_like(x)
+    n = len(v)
+    for i in range(n):
+        j = i - 1
+        ex, ez = v[j, 0] - v[i, 0], v[j, 1] - v[i, 1]
+        wx, wz = x - v[i, 0], z - v[i, 1]
+        t = np.clip((wx * ex + wz * ez) / (ex * ex + ez * ez), 0.0, 1.0)
+        bx, bz = wx - ex * t, wz - ez * t
+        d = np.minimum(d, bx * bx + bz * bz)
+        c1 = z >= v[i, 1]
+        c2 = z < v[j, 1]
+        c3 = ex * wz > ez * wx
+        flip = (c1 & c2 & c3) | (~c1 & ~c2 & ~c3)
+        s = np.where(flip, -s, s)
+    return s * np.sqrt(d)
 
 
 # ---------------------------------------------------------------- bodies
@@ -283,7 +307,29 @@ def b_flower():
     return flat(f, 0.04), dict(z=0.48, gap=0.16, w=0.046, h=0.08)
 
 
+def b_peanut():
+    def f(p):
+        lo = S.ellipsoid(p, (0, 0, 0.33), (0.4, 0.36, 0.34))
+        hi = S.ellipsoid(p, (0, 0, 0.8), (0.33, 0.3, 0.29))
+        return smin(lo, hi, 0.16)
+
+    return flat(f, 0.08), dict(z=0.78, gap=0.19, w=0.054, h=0.09)
+
+
+BOLT = [(-0.06, 1.1), (0.4, 1.1), (0.14, 0.62), (0.4, 0.62), (-0.2, -0.04), (-0.02, 0.48), (-0.32, 0.48)]
+
+
+def b_bolt():
+    def f(p):
+        d2 = poly2(p[:, 0], p[:, 2], BOLT) - 0.075
+        return pillow2d(d2, 0.15, 0.08, 0.13, p, cap=0.2)
+
+    return flat(f, 0.04), dict(z=0.80, gap=0.18, w=0.05, h=0.084, dx=0.05)
+
+
 BODIES = {
+    "bolt": b_bolt,
+    "peanut": b_peanut,
     "pill": b_pill,
     "cube": b_cube,
     "gumdrop": b_gumdrop,
@@ -358,12 +404,18 @@ class Ctx:
 # ---------------------------------------------------------------- eyes
 
 
+# Line-like eyes (closed arcs) read heavier than filled ovals at the same
+# scale and merge into a brow or a moustache when big: they scale less.
+STYLE_SCALE = {"arc": 0.84, "sleep": 0.84, "smile": 0.9, "sleepy": 0.9, "dash": 0.85, "sticker": 0.94}
+
+
 def eye_frame(c, eyes):
     fc = c.face
     z = eyes.get("z", fc["z"])
     gap = fc["gap"] * eyes.get("gap", 1.0)
-    w = fc["w"] * eyes.get("size", 1.0) * EYE_SCALE
-    h = fc["h"] * eyes.get("size", 1.0) * EYE_SCALE
+    k = eyes.get("size", 1.0) * EYE_SCALE * STYLE_SCALE.get(eyes.get("style", "dot"), 1.0)
+    w = fc["w"] * k
+    h = fc["h"] * k
     dx = fc.get("dx", 0.0) + eyes.get("dx", 0.0)
     return z, gap, w, h, dx
 
@@ -488,13 +540,13 @@ def acc_cap(c, color, back=False):
     c.add("button", lambda p: S.sphere(p, (0, 0, zt + 0.03), 0.04), 0.004, "felt", color)
 
 
-def acc_cone(c, color, ball=WHITE, tilt=12, h=0.42):
+def acc_cone(c, color, ball=WHITE, tilt=12, h=0.46, r=0.22):
     zt = c.top()
     ang = math.radians(tilt)
-    base = np.array([0.0, 0.0, zt - 0.06])
+    base = np.array([0.0, 0.0, zt - 0.07])
     tip = base + np.array([math.sin(ang) * h, 0, math.cos(ang) * h])
-    c.add("cone", lambda p: S.round_cone(p, base, tip, 0.19, 0.02), 0.005, "felt", color)
-    c.add("ball", lambda p: S.sphere(p, tip + np.array([0, 0, 0.02]), 0.075), 0.004, "felt", ball, fuzz_len=1.6)
+    c.add("cone", lambda p: S.round_cone(p, base, tip, r, 0.022), 0.005, "felt", color)
+    c.add("ball", lambda p: S.sphere(p, tip + np.array([0, 0, 0.025]), 0.085), 0.004, "felt", ball, fuzz_len=1.6)
 
 
 def acc_sprout(c, color=PAL["chartreuse"], tilt=6):
@@ -515,7 +567,8 @@ def acc_sprout(c, color=PAL["chartreuse"], tilt=6):
 def acc_frames(c, eyes, color=INK, shape="square"):
     """Chunky square frames, oversized, in front of the eyes."""
     z, gap, w, h, dx = eye_frame(c, eyes)
-    hw, hh = w * 1.75, h * 0.98
+    hw = min(w * 1.75, gap * 0.42)
+    hh = max(h * 0.86, hw * 0.92)
     ys = [c.front(dx + s * gap / 2, z)[0][1] for s in (-1, 1)]
     yf = min(ys) - 0.03
     t = 0.024
@@ -724,11 +777,11 @@ CAST = {
     # A — soft solids, dot eyes, felt hats
     "A": [
         dict(id="pip", name="Pip", shape="pill", color=PAL["tomato"], eyes=dict(style="dot"), acc=[dict(id="bucket", color=INK)]),
-        dict(id="cubby", name="Cubby", shape="cube", color=PAL["cobalt"], eyes=dict(style="dot", gap=1.25), acc=[dict(id="frames", color=INK)]),
+        dict(id="cubby", name="Cubby", shape="cube", color=PAL["cobalt"], eyes=dict(style="dot", gap=1.35), acc=[dict(id="frames", color=INK)]),
         dict(id="gus", name="Gus", shape="gumdrop", color=PAL["violet"], eyes=dict(style="dot"), acc=[dict(id="sprout", color=PAL["chartreuse"])]),
         dict(id="belle", name="Belle", shape="bell", color=PAL["aqua"], eyes=dict(style="pill"), acc=[]),
         dict(id="momo", name="Momo", shape="mochi", color=PAL["magenta"], eyes=dict(style="arc"), acc=[dict(id="beanie", color=PAL["butter"], pom=WHITE)]),
-        dict(id="bo", name="Bo", shape="button", color=PAL["sunflower"], eyes=dict(style="dot"), acc=[dict(id="cone", color=INK, ball=WHITE)]),
+        dict(id="bo", name="Bo", shape="peanut", color=PAL["sunflower"], eyes=dict(style="dot"), acc=[dict(id="cone", color=INK, ball=WHITE)]),
     ],
     # B — snack bar, sticker eyes and arcs
     "B": [
@@ -739,12 +792,12 @@ CAST = {
         dict(id="acorn", name="Hazel", shape="acorn", color=PAL["tangerine"], eyes=dict(style="sticker", look=(0.0, 0.3)), acc=[dict(id="acorncap", color=PAL["cocoa"])]),
         dict(id="bun", name="Peaches", shape="bun", color=PAL["peach"], gradient=("#fff1e4", "#ff7aa8"), eyes=dict(style="arc"), acc=[dict(id="leaf", color=PAL["emerald"])]),
     ],
-    # C — night sky: round button eyes, sleepy arcs, one-piece shades
+    # C — soft symbols: round button eyes, happy half-moons, sleepy arcs, one-piece shades
     "C": [
         dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="round", gap=1.3, z=0.47), acc=[dict(id="visor", color=INK)]),
         dict(id="luna", name="Luna", shape="moon", color=PAL["cobalt"], eyes=dict(style="sleep"), acc=[dict(id="nightcap", color=PAL["sky"], pom=WHITE)]),
         dict(id="zap", name="Zip", shape="sparkle", color=PAL["aqua"], eyes=dict(style="round"), acc=[]),
-        dict(id="orbit", name="Orbit", shape="planet", color=PAL["tangerine"], eyes=dict(style="round"), acc=[dict(id="ring", color=PAL["cream"])]),
+        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8), acc=[]),
         dict(id="drip", name="Drip", shape="drop", color=PAL["emerald"], eyes=dict(style="sleep"), acc=[]),
         dict(id="daisy", name="Daisy", shape="flower", color=PAL["bubblegum"], center=PAL["butter"], eyes=dict(style="round", gap=1.15), acc=[]),
     ],
@@ -790,10 +843,10 @@ VARIANTS = {
         ],
     ),
     "C": dict(
-        base="orbit",
+        base="drip",
         items=[
-            dict(title="Violet, sleepy arcs, butter ring", over=dict(color=PAL["violet"], eyes=dict(style="sleep"), acc=[dict(id="ring", color=PAL["butter"])])),
-            dict(title="Aqua, wraparound shades, magenta ring", over=dict(color=PAL["aqua"], eyes=dict(style="round"), acc=[dict(id="ring", color=PAL["magenta"]), dict(id="visor", color=INK)])),
+            dict(title="Violet, stickers looking up, butter beanie", over=dict(color=PAL["violet"], eyes=dict(style="sticker", look=(0.1, 0.45)), acc=[dict(id="beanie", color=PAL["butter"], pom=WHITE)])),
+            dict(title="Sky, round eyes, tomato bucket hat", over=dict(color=PAL["sky"], eyes=dict(style="round"), acc=[dict(id="bucket", color=PAL["tomato"], size=1.0, sink=0.2)])),
         ],
     ),
 }

@@ -102,6 +102,8 @@ def icon_cam(sc, objs, res):
 if mode in ("test", "portraits"):
     members = [find(i) for i in only] if only else cast(sheet)
     views = [("front", 0), ("34", 32)] if mode == "portraits" or os.environ.get("BOTH") else [("34", 32)]
+    if os.environ.get("VIEW") == "front":
+        views = [("front", 0)]
     for m in members:
         for vname, yaw in views:
             sc = scene(RES, RES)
@@ -147,12 +149,21 @@ elif mode == "lineup":
     for i, m in enumerate(members):
         x = pos[i] - mid
         yaw = -x * float(os.environ.get("TURN", 5))
-        y = 0.35 * (i % 2)
+        y = float(os.environ.get("DEPTH", 0.35)) * (i % 2)
         root, ob, c = FB.place(m, loc=(x, y, 0), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
+        lean = m.get("lean", 0.0)
+        if lean:
+            root.rotation_euler[1] = math.radians(lean)
         objs += ob
     span = right - left
-    vis_w = span / float(os.environ.get("FILLW", 0.88))
+    if os.environ.get("PPU"):
+        # A fixed scale (pixels per body unit), like the dots key art: big heads.
+        vis_w = W / float(os.environ["PPU"])
+    else:
+        vis_w = span / float(os.environ.get("FILLW", 0.88))
     vis_h = vis_w * H / W
+    # The frame's bottom edge cuts the characters at z = CROP (body units):
+    # they peek up from the bottom of the picture.
     crop = float(os.environ.get("CROP", 0.08))
     zc = crop + vis_h / 2
     B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)

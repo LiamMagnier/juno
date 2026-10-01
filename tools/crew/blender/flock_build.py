@@ -107,7 +107,7 @@ def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=
                     w = np.where(m, np.minimum(w, S.sstep(0.008, 0.026, r)), w)
                 B.set_group(ob, "dens", w)
                 group = "dens"
-            L = float(os.environ.get("FUZZ_LEN", 0.011)) * part.get("fuzz_len", 1.0)
+            L = float(os.environ.get("FUZZ_LEN", 0.012)) * part.get("fuzz_len", 1.0)
             B.fuzz(ob, fuzz_mat_for(part, sid), length=L, quality=quality, seed=seed + len(objs), density_group=group)
         objs.append(ob)
     return root, objs, c
