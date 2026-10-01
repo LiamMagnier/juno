@@ -241,3 +241,16 @@ soft mass; plush materials; no realistic irises) and are modeled in Blender
 5.2 (installed with the owner's OK via Homebrew), exported as glb for the live
 three.js renderer and USD for RealityKit, with Cycles hero renders. The owner
 marked the first-pass icon set as good for now.
+
+**D-034 · Crew characters are flocked designer toys, not furry creatures
+(owner, 2026-10-01).** The owner judged the Blender plush characters "still
+creepy compared to OpenAI versions". Agreed diagnosis: long shaggy fur reads
+as a hairy creature; glossy beady eyes with catchlights read as an animal's;
+dusty colours, amorphous blobs, small realistic accessories and blush all push
+toward uncanny. Direction: short velvet flocking with a crisp silhouette,
+graphic eyes only (matte ovals, white googly, closed arcs, opaque glasses),
+clean saturated colours, bold iconic silhouettes of our own, bold matte
+oversized accessories, no blush or mouth, high-key light. Same genre as dots,
+never their characters. Each Blender pass is scored by independent critics for
+appeal and creepiness against the dots key art in the same composition; the
+loop stops only at appeal ≥ 8, not creepy, ownable ≥ 7, premium ≥ 8.
