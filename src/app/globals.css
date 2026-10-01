@@ -677,9 +677,11 @@
   /*
    * Palette accents — swappable at runtime via [data-accent] on <html>.
    *
-   * The accent drives --primary and --ring. All other tokens (card, popover,
-   * border, input, muted, foreground) stay on their neutral ramps so text and
-   * surfaces do not shift tint when the user picks a different colour.
+   * The accent drives --primary. --ring is set per block but is the same
+   * neutral graphite in every one: keyboard focus never takes the accent's
+   * hue (JunoAccentTests holds the apps to that). All other tokens (card,
+   * popover, border, input, muted, foreground) stay on their neutral ramps so
+   * text and surfaces do not shift tint when the user picks a different colour.
    *
    * Contrast targets:
    *   Light mode: ≥ 4.5:1 against --background (50 22% 96%) for body text,
@@ -690,20 +692,20 @@
   :root[data-accent="coral"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
   .dark[data-accent="coral"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
 
-  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
-  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 45 10% 80%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
+  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 220 9% 11%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
+  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 220 7% 91%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
 
-  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
-  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
+  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
+  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 220 7% 91%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
 
-  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
-  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
+  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 220 9% 11%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
+  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 220 7% 91%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
 
-  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 48 6% 35%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
-  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 45 10% 80%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
+  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 220 9% 11%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
+  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 220 7% 91%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
 
-  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
-  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
+  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
+  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 220 7% 91%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
 
   * {
     border-color: hsl(var(--border));

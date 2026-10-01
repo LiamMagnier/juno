@@ -215,7 +215,9 @@ final class JunoTokenConsumptionTests: XCTestCase {
     /// back, and a retune on the web shows up as a deliberate edit here.
     func testTheAccentTriplesComeBackOutOfTheProjection() {
         let web: [JunoAccent: (light: (Double, Double, Double), dark: (Double, Double, Double))] = [
-            .coral: ((15, 0.54, 0.46), (15, 0.54, 0.46)),
+            // The default accent keeps its stored name; V3 made it ultramarine
+            // and lifts it on the charcoal.
+            .coral: ((229.231, 0.63415, 0.48235), (228.608, 0.61240, 0.74706)),
             .juniper: ((152, 0.44, 0.31), (152, 0.42, 0.54)),
             .teal: ((180, 0.63, 0.315), (187, 0.58, 0.49)),
             .violet: ((249, 0.59, 0.60), (249, 0.66, 0.71)),
@@ -374,6 +376,12 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedRadius.surface": "The web's per-component name for `card` (16), which the apps read as JunoRadius.card.",
             "JunoGeneratedSpace.all": "The whole ladder, for JunoDesignTokensTests.",
             "JunoGeneratedEasing.drawer": "The web's sheet curve; native sheets move on the system's own curve.",
+            // Round-3 (V3) tokens the web paints and the apps have not adopted
+            // yet. Each is a real gap, listed so it stays visible; delete the
+            // entry in the change that consumes it.
+            "JunoGeneratedColors.attention": "V3's needs-you text ink (attention is words, never a pill). Not adopted natively yet: needs-you lines keep their current ink until the native V3 shell pass.",
+            "JunoGeneratedColors.faintForeground": "V3's faint text. Not adopted natively yet: the quietest native ink is still junoTertiaryInk (muted-foreground at 70%).",
+            "JunoGeneratedColors.userBubble": "V3's user-message fill. Not adopted natively yet: the Mac bubble still fills with junoSecondary (MessageRow.swift).",
         ]
     }()
 

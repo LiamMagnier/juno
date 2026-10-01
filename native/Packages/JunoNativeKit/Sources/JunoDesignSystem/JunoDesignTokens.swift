@@ -44,13 +44,13 @@ public struct JunoColorToken: Hashable, Sendable {
     // hand-kept ground left is the phone's dark canvas, held at its shipped 4%
     // on purpose and documented where it is declared.
 
-    /// `--primary`: Juno's coral, the same value in light and dark — the web
-    /// does not brighten it, and neither should we.
-    ///
-    /// `15 54% 46%`, darkened from 51% on the web so white on it clears the
-    /// 4.5:1 the primary CTA's label needs. This is the *brand* coral, not the
-    /// account's accent: anything that should follow the accent picker reads
-    /// ``SwiftUI/Color/junoAccent`` instead.
+    /// `--primary` on light: V3's ultramarine, `229.231 63.415% 48.235%`
+    /// (#2D49C9). The name is the default accent's stored setting ("coral"),
+    /// kept stable so saved preferences still resolve; the colour is not
+    /// coral any more. White on it clears the 4.5:1 the primary CTA's label
+    /// needs. This is the *brand* primary, not the account's accent: anything
+    /// that should follow the accent picker reads ``SwiftUI/Color/junoAccent``
+    /// instead.
     public static let coral = JunoGeneratedColors.primary.light
 
     /// This token at a fraction of its current alpha.

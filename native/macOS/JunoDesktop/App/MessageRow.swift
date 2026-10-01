@@ -149,7 +149,7 @@ struct DesktopMessageRow: View {
 
     /// A reply's parts as the row draws them: its words without the trailing
     /// "Sources" section the sources pill replaces, split around artifacts.
-    static func parts(of message: NativeChatMessage) -> [NativeMessageContent.Part] {
+    nonisolated static func parts(of message: NativeChatMessage) -> [NativeMessageContent.Part] {
         NativeMessageContent.parts(
             of: message.sources.isEmpty
                 ? message.content
