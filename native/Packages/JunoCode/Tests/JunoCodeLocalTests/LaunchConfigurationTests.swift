@@ -335,8 +335,14 @@ final class PreviewServerLedgerTests: XCTestCase {
         let lock = NSLock()
         var startTimes: [pid_t: ProcessStartTime] = [:]
         var members: [pid_t: [pid_t]] = [:]
+        var directories: [pid_t: String] = [:]
         var signals: [(pid_t, Int32)] = []
         var currentPID: pid_t = 100
+
+        func currentDirectory(of pid: pid_t) -> String? {
+            lock.lock(); defer { lock.unlock() }
+            return directories[pid]
+        }
 
         func startTime(of pid: pid_t) -> ProcessStartTime? {
             lock.lock(); defer { lock.unlock() }
@@ -421,6 +427,7 @@ final class PreviewServerLedgerTests: XCTestCase {
         let control = FakeControl()
         control.startTimes = [100: t(5_000), 4_300: t(1_002)]
         control.members = [4_211: [4_300]]
+        control.directories = [4_300: "/private/tmp/app/web"]
         let ledger = ledger(control)
         ledger.record(entry(pgid: 4_211, started: 1_000, owner: 77, ownerStarted: 900))
         XCTAssertEqual(ledger.reapOrphans(killDelay: 5).reaped.map(\.pgid), [4_211])
@@ -430,6 +437,32 @@ final class PreviewServerLedgerTests: XCTestCase {
         let other = self.ledger(empty)
         other.record(entry(pgid: 4_211, started: 1_000, owner: 77, ownerStarted: 900))
         XCTAssertEqual(other.reapOrphans(killDelay: 5).dropped.map(\.pgid), [4_211])
+    }
+
+    /// The pid went to an unrelated process that led a new group of the same
+    /// number and exited; its members started later too, but they work
+    /// elsewhere. They are someone else's and are never signalled.
+    func testALaterGroupOfTheSameNumberElsewhereIsNotSignalled() async throws {
+        let control = FakeControl()
+        control.startTimes = [100: t(5_000), 4_300: t(4_000)]
+        control.members = [4_211: [4_300]]
+        control.directories = [4_300: "/Users/someone/build"]
+        let ledger = ledger(control)
+        ledger.record(entry(pgid: 4_211, started: 1_000, owner: 77, ownerStarted: 900))
+        let report = ledger.reapOrphans(killDelay: 0.05)
+        XCTAssertEqual(report.dropped.map(\.pgid), [4_211])
+        XCTAssertEqual(report.reaped, [])
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(control.recordedSignals.isEmpty)
+        XCTAssertEqual(PreviewServerLedger.normalizedPath("/private/tmp/app/"), "/tmp/app")
+    }
+
+    func testTheWorkingDirectoryOfThisProcessIsReadable() {
+        let directory = ListeningSocketOwnership.currentDirectory(of: getpid())
+        XCTAssertEqual(
+            directory.map(PreviewServerLedger.normalizedPath),
+            PreviewServerLedger.normalizedPath(FileManager.default.currentDirectoryPath)
+        )
     }
 
     func testRemoveForgetsAStoppedServer() {

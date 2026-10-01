@@ -221,6 +221,18 @@ public enum ListeningSocketOwnership {
         return ProcessStartTime(seconds: Int64(info.pbi_start_tvsec), microseconds: Int64(info.pbi_start_tvusec))
     }
 
+    /// The working directory of `pid`, nil when it is gone or not this
+    /// user's.
+    public static func currentDirectory(of pid: pid_t) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, Int32(MemoryLayout<proc_vnodepathinfo>.size))
+        guard size == Int32(MemoryLayout<proc_vnodepathinfo>.size) else { return nil }
+        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        return path.isEmpty ? nil : path
+    }
+
     /// The process group `pid` is in.
     public static func processGroup(of pid: pid_t) -> pid_t? {
         let group = getpgid(pid)

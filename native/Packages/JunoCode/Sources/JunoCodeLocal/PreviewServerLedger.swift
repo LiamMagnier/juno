@@ -56,6 +56,8 @@ public final class PreviewServerLedger: @unchecked Sendable {
     public protocol ProcessControl: Sendable {
         func startTime(of pid: pid_t) -> ProcessStartTime?
         func groupMembers(_ pgid: pid_t) -> [pid_t]
+        /// The process's working directory, nil when it cannot be read.
+        func currentDirectory(of pid: pid_t) -> String?
         func signalGroup(_ pgid: pid_t, _ signal: Int32)
         var currentPID: pid_t { get }
     }
@@ -65,6 +67,7 @@ public final class PreviewServerLedger: @unchecked Sendable {
         public init() {}
         public func startTime(of pid: pid_t) -> ProcessStartTime? { ListeningSocketOwnership.startTime(of: pid) }
         public func groupMembers(_ pgid: pid_t) -> [pid_t] { ListeningSocketOwnership.groupMembers(pgid) }
+        public func currentDirectory(of pid: pid_t) -> String? { ListeningSocketOwnership.currentDirectory(of: pid) }
         public func signalGroup(_ pgid: pid_t, _ signal: Int32) { _ = kill(-pgid, signal) }
         public var currentPID: pid_t { getpid() }
     }
@@ -192,19 +195,39 @@ public final class PreviewServerLedger: @unchecked Sendable {
     }
 
     /// The leader still has its recorded start time; or the leader is gone but
-    /// the group still has members that started no earlier than it did (and so
-    /// can only be its descendants, since a pgid is not reused while members
-    /// remain).
+    /// the group still has members that started no earlier than it did and
+    /// work inside the server's folder.
+    ///
+    /// The start time alone is not proof once the leader is gone: after the
+    /// old group died, the pid can go to an unrelated process that leads a new
+    /// group of the same number and then exits, leaving members that also
+    /// started later. Those are someone else's (a Terminal job, a build), and
+    /// their working directory says so; a server's processes run in its
+    /// folder.
     static func isSameServer(_ entry: Entry, control: any ProcessControl) -> Bool {
         if let started = control.startTime(of: entry.pid) {
             return started == entry.startedAt
         }
         let members = control.groupMembers(entry.pgid)
         guard !members.isEmpty else { return false }
+        let folder = normalizedPath(entry.cwd)
         return members.allSatisfy { member in
-            guard let started = control.startTime(of: member) else { return false }
-            return (started.seconds, started.microseconds) >= (entry.startedAt.seconds, entry.startedAt.microseconds)
+            guard let started = control.startTime(of: member),
+                  (started.seconds, started.microseconds) >= (entry.startedAt.seconds, entry.startedAt.microseconds),
+                  let directory = control.currentDirectory(of: member).map(normalizedPath)
+            else { return false }
+            return directory == folder || directory.hasPrefix(folder + "/")
         }
+    }
+
+    /// `/private/tmp/x` and `/tmp/x` are one folder: the kernel reports the
+    /// former, Foundation often writes the latter.
+    static func normalizedPath(_ path: String) -> String {
+        var trimmed = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
+        for prefix in ["/private/tmp", "/private/var", "/private/etc"] where trimmed == prefix || trimmed.hasPrefix(prefix + "/") {
+            trimmed = String(trimmed.dropFirst("/private".count))
+        }
+        return trimmed
     }
 
     // MARK: - Storage
