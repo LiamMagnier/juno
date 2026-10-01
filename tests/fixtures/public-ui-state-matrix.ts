@@ -13,9 +13,15 @@ export const UI_STATE_FIXTURES = [
       /export function EmptyGreeting\(\)/,
       /<h1\b/,
       /How can I help/,
-      /motion-safe:/,
-
+      // The V3 greeting: regular-weight serif, the name not set apart in italic.
+      /font-serif text-display font-normal/,
     ],
+    /*
+     * The greeting arrives still (V3 foundations: no entrance animation), so it
+     * owes reduced motion nothing and must not grow an animation back without
+     * one. It used to require `motion-safe:` for its rise-in.
+     */
+    forbidden: [/className="[^"]*\banimate-/, /className="[^"]*motion-safe:/, /className="[^"]*\bitalic\b/],
     /*
      * The contract is "this surface adapts to the space it has". It used to be
      * spelled `/sm:/` — a grep for a VIEWPORT breakpoint prefix — and the
@@ -48,6 +54,7 @@ export const UI_STATE_FIXTURES = [
       /data-stage=/,
       /motion-safe:/,
     ],
+    forbidden: [],
     responsive: [/w-full/, /max-w-\[min\(100%/],
   },
   {
@@ -60,6 +67,7 @@ export const UI_STATE_FIXTURES = [
       /Juno can(?:&rsquo;|')t reach its backend/,
       /<main\b/,
     ],
+    forbidden: [],
     responsive: [/flex-wrap/, /width: 100%/, /max-width:/],
   },
   {
@@ -72,6 +80,7 @@ export const UI_STATE_FIXTURES = [
       /aria-live="off"/,
       /status=\{/,
     ],
+    forbidden: [],
     responsive: [/w-full/, /max-w-3xl/, /coarse:/],
   },
   {
@@ -84,6 +93,7 @@ export const UI_STATE_FIXTURES = [
       /auth boundary \/chat/,
       /location/,
     ],
+    forbidden: [],
     responsive: [],
   },
 ] as const;

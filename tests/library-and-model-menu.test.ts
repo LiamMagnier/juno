@@ -18,6 +18,9 @@ import { AUTO_MODEL_ID } from "@/lib/auto-model";
 
 const ROUTE = readFileSync(new URL("../src/app/api/library/route.ts", import.meta.url), "utf8");
 const PAGE = readFileSync(new URL("../src/app/(app)/library/page.tsx", import.meta.url), "utf8");
+const LIBRARY_HOME = readFileSync(new URL("../src/components/library/library-home.tsx", import.meta.url), "utf8");
+const LIBRARY_FILES = readFileSync(new URL("../src/components/library/library-files-page.tsx", import.meta.url), "utf8");
+const LIBRARY_TRASH = readFileSync(new URL("../src/components/library/library-trash.tsx", import.meta.url), "utf8");
 
 /*
  * The Library's search, filter and sort run on the server, and the page puts
@@ -63,7 +66,16 @@ test("the library route searches, filters and sorts in the database", () => {
 });
 
 test("the library page keeps the e2e contract: an h1 that says library", () => {
-  assert.match(PAGE, /heading=\{deletedView \? "Recently deleted" : "Library"\}/);
+  // /library with no view opens the unified Library, whose page header (an
+  // h1, AppPageHeader) says Library; the e2e suite visits exactly that URL.
+  assert.match(PAGE, /return params\.get\("view"\) === "files" \? <LibraryFilesPage \/> : <LibraryHome \/>;/);
+  assert.match(LIBRARY_HOME, /<AppPageHeader heading="Library"/);
+  // The other views keep their own headings, and both stay reachable from it.
+  assert.match(PAGE, /if \(params\.get\("view"\) === "trash"\) return <LibraryTrash \/>;/);
+  assert.match(LIBRARY_TRASH, /<AppPageHeader heading="Recently deleted"/);
+  assert.match(LIBRARY_FILES, /heading=\{deletedView \? "Recently deleted" : "Uploaded files"\}/);
+  assert.match(LIBRARY_HOME, /href="\/library\?view=trash"/);
+  assert.match(LIBRARY_HOME, /href="\/library\?view=files&upload=1"/);
 });
 
 test("a sort the route does not offer falls back to newest, prototype keys included", () => {
