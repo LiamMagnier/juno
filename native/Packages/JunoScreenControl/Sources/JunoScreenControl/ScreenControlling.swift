@@ -263,4 +263,11 @@ public protocol ScreenControlling: Sendable {
     /// Whether `bundleID` is granted at any tier, for gated readers like
     /// `inspect_active_editor` (CU-12).
     func isGranted(sessionID: String, bundleID: String) async -> Bool
+    /// Drops what a prepared action holds — its bound frame — when it will
+    /// never be performed: the reader denied it, or the approval failed.
+    func discard(sessionID: String, preparedID: String) async
+}
+
+public extension ScreenControlling {
+    func discard(sessionID _: String, preparedID _: String) async {}
 }

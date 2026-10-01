@@ -100,15 +100,27 @@ public struct InputDriver: Sendable {
     public let sink: any EventSink
     /// Pacing between typed chunks and keys, and the settle after a move.
     public let pause: @Sendable (Duration) async throws -> Void
+    /// Throws once the reader has stopped screen control. Called between
+    /// every typed unit, repeated key, drag step and slice of a held key, so
+    /// Esc ends a long `type` or a 30-second `hold_key` where it is rather
+    /// than after the last character has gone in (CODE_AGENT_SPEC §3.7:
+    /// "Stop cancels the in-flight action").
+    public let checkpoint: @Sendable () async throws -> Void
+
+    /// The longest single sleep inside a held key, so a stop is seen within
+    /// this much time.
+    static let holdSlice: Duration = .milliseconds(100)
 
     public init(
         layout: KeyboardLayout,
         sink: any EventSink,
-        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        checkpoint: @escaping @Sendable () async throws -> Void = {}
     ) {
         self.layout = layout
         self.sink = sink
         self.pause = pause
+        self.checkpoint = checkpoint
     }
 
     // MARK: Pointer
@@ -125,6 +137,7 @@ public struct InputDriver: Sendable {
     ) async throws {
         try await sink.post([.mouseMove(point)], to: target)
         try await pause(.milliseconds(40))
+        try await checkpoint()
         var events: [SyntheticEvent] = []
         for index in 1...max(1, min(count, 3)) {
             events.append(.mouseDown(button, point, clickCount: index, modifiers: modifiers))
@@ -149,14 +162,24 @@ public struct InputDriver: Sendable {
     public func drag(from start: ScreenPoint, to end: ScreenPoint, target: EventTarget) async throws {
         try await sink.post([.mouseMove(start), .mouseDown(.left, start, clickCount: 1, modifiers: [])], to: target)
         let steps = 8
-        for step in 1...steps {
-            let fraction = Double(step) / Double(steps)
-            let point = ScreenPoint(
-                x: start.x + (end.x - start.x) * fraction,
-                y: start.y + (end.y - start.y) * fraction
-            )
-            try await pause(.milliseconds(12))
-            try await sink.post([.mouseDrag(.left, point)], to: target)
+        var reached = start
+        do {
+            for step in 1...steps {
+                let fraction = Double(step) / Double(steps)
+                let point = ScreenPoint(
+                    x: start.x + (end.x - start.x) * fraction,
+                    y: start.y + (end.y - start.y) * fraction
+                )
+                try await pause(.milliseconds(12))
+                try await checkpoint()
+                try await sink.post([.mouseDrag(.left, point)], to: target)
+                reached = point
+            }
+        } catch {
+            // A stop mid-drag still lets the button go, where the pointer
+            // is, so nothing is left held down.
+            try? await sink.post([.mouseUp(.left, reached, clickCount: 1, modifiers: [])], to: target)
+            throw error
         }
         try await sink.post([.mouseUp(.left, end, clickCount: 1, modifiers: [])], to: target)
     }
@@ -186,7 +209,10 @@ public struct InputDriver: Sendable {
     public func key(_ chord: String, repeatCount: Int = 1, target: EventTarget) async throws {
         let stroke = try layout.resolve(chord: chord)
         for index in 0..<max(1, min(repeatCount, 100)) {
-            if index > 0 { try await pause(.milliseconds(15)) }
+            if index > 0 {
+                try await pause(.milliseconds(15))
+                try await checkpoint()
+            }
             // The modifiers go on both halves. A key-down with ⌘ and a key-up
             // without leaves the app believing ⌘ is still held.
             try await sink.post([
@@ -202,7 +228,15 @@ public struct InputDriver: Sendable {
         let duration = max(0, min(seconds, ScreenAction.maximumDurationSeconds))
         try await sink.post([.keyDown(keyCode: stroke.keyCode, modifiers: stroke.modifiers, text: [])], to: target)
         do {
-            try await pause(.milliseconds(Int(duration * 1_000)))
+            // In slices, each followed by the stop check: Esc lets the key go
+            // within a slice, not at the end of the hold.
+            var remaining = Duration.milliseconds(Int((duration * 1_000).rounded()))
+            while remaining > .zero {
+                let slice = min(remaining, Self.holdSlice)
+                try await pause(slice)
+                remaining -= slice
+                try await checkpoint()
+            }
         } catch {
             // A stop while a key is held still lets the key go.
             try? await sink.post([.keyUp(keyCode: stroke.keyCode, modifiers: stroke.modifiers, text: [])], to: target)
@@ -216,7 +250,11 @@ public struct InputDriver: Sendable {
     public func type(_ text: String, target: EventTarget) async throws -> TypingPlan {
         let plan = Self.plan(text, layout: layout)
         for (index, unit) in plan.units.enumerated() {
-            if index > 0 { try await pause(.milliseconds(8)) }
+            if index > 0 {
+                try await pause(.milliseconds(8))
+                // A stop between two chunks ends the typing there.
+                try await checkpoint()
+            }
             switch unit {
             case let .key(stroke, text):
                 try await sink.post([

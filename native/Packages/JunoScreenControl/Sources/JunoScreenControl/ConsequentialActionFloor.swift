@@ -62,6 +62,29 @@ public enum ConsequentialActionFloor {
         return false
     }
 
+    /// Space with no modifier: it presses the focused button, as a click
+    /// would.
+    static func pressesFocusedControl(_ chord: String) -> Bool {
+        guard let parsed = try? KeyChord.parse(chord), parsed.modifiers.isEmpty else { return false }
+        if case .named(.space) = parsed.key { return true }
+        return false
+    }
+
+    /// ⌘⌫ and ⌘⌦ in any combination: Move to Trash in Finder, delete the
+    /// message in Mail, delete the selection in most document apps.
+    static func deletesSelection(_ chord: String) -> Bool {
+        guard let parsed = try? KeyChord.parse(chord), parsed.modifiers.contains(.command) else { return false }
+        switch parsed.key {
+        case .named(.delete), .named(.forwardDelete): return true
+        default: return false
+        }
+    }
+
+    /// Whether typed text contains a line break, which is the Return key.
+    static func containsReturn(_ text: String) -> Bool {
+        text.unicodeScalars.contains { $0 == "\n" || $0 == "\r" }
+    }
+
     /// The floor for one action against its resolved target, or nil.
     ///
     /// - Parameters:
@@ -85,12 +108,29 @@ public enum ConsequentialActionFloor {
         }
         switch action.kind {
         case .type:
-            if let text = action.text, looksLikeCredential(text) { return .credentialText }
+            guard let text = action.text else { return nil }
+            if looksLikeCredential(text) { return .credentialText }
+            // A line break is typed as the Return key: in a messaging app it
+            // sends, and in a dialog it presses the default button. Typing
+            // "hi\n" must ask exactly as typing "hi" then pressing Return does.
+            if containsReturn(text) {
+                if category == .messaging { return .sendsMessage }
+                if let word = matchingWord(in: targetTexts) { return .consequentialControl(word) }
+            }
             return nil
-        case .key:
-            guard let chord = action.text, commits(chord) else { return nil }
-            if category == .messaging, typedSinceLastCommit { return .sendsMessage }
-            if let word = matchingWord(in: targetTexts) { return .consequentialControl(word) }
+        case .key, .holdKey:
+            // A held key is one press and one release: holding Return sends
+            // as surely as pressing it.
+            guard let chord = action.text else { return nil }
+            if commits(chord) {
+                if category == .messaging, typedSinceLastCommit { return .sendsMessage }
+                if let word = matchingWord(in: targetTexts) { return .consequentialControl(word) }
+                return nil
+            }
+            if pressesFocusedControl(chord), let word = matchingWord(in: targetTexts) {
+                return .consequentialControl(word)
+            }
+            if deletesSelection(chord) { return .consequentialControl("delete") }
             return nil
         case .leftClick, .doubleClick, .tripleClick, .middleClick, .leftMouseUp:
             if let word = matchingWord(in: targetTexts) { return .consequentialControl(word) }
@@ -151,17 +191,59 @@ public enum CredentialHeuristics {
         if prefixes.contains(where: { lowered.hasPrefix($0) }) { return true }
         if lowered.contains("password=") || lowered.contains("passwd=") || lowered.contains("secret=")
             || lowered.contains("api_key=") || lowered.contains("token=")
+            || lowered.contains("-----begin")
         {
             return true
         }
+        // Word by word, so a key inside a sentence ("the key is sk-live-…")
+        // asks as a bare key does.
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" || $0 == "`" })
+        return words.contains { looksLikeSecretWord(String($0)) }
+    }
+
+    static func looksLikeSecretWord(_ word: String) -> Bool {
+        let lowered = word.lowercased()
+        // Inside a sentence a prefix counts only on a word as long as a key:
+        // "Asiatique" starts like an AWS key id and is not one.
+        if lowered.count >= 16, prefixes.contains(where: { lowered.hasPrefix($0) }) { return true }
         // One long unbroken run mixing letters and digits, the shape of a
         // generated key or a strong password.
-        guard !trimmed.contains(" "), trimmed.count >= 20 else { return false }
-        let hasLetter = trimmed.contains(where: \.isLetter)
-        let hasDigit = trimmed.contains(where: \.isNumber)
-        let hasUpper = trimmed.contains(where: \.isUppercase)
-        let hasLower = trimmed.contains(where: \.isLowercase)
+        guard word.count >= 20 else { return false }
+        let hasLetter = word.contains(where: \.isLetter)
+        let hasDigit = word.contains(where: \.isNumber)
+        let hasUpper = word.contains(where: \.isUppercase)
+        let hasLower = word.contains(where: \.isLowercase)
         let isURL = lowered.hasPrefix("http://") || lowered.hasPrefix("https://") || lowered.contains("/")
         return hasLetter && hasDigit && hasUpper && hasLower && !isURL
+    }
+}
+
+/// Which way a control moves the reader's clipboard, for the clipboard
+/// grant: pasting reads it into the app, copying and cutting replace it.
+///
+/// The grant was checked only on ⌘V, ⌘C and ⌘X, so Edit › Paste through
+/// `computer_menu`, or a click on Paste in a context menu, put the reader's
+/// clipboard — often a password just copied from a manager — into an app
+/// the reader never let read it.
+public enum ClipboardControls {
+    public enum Use: Hashable, Sendable {
+        case read
+        case write
+    }
+
+    static let pasteWords = ["paste", "coller", "einfugen", "pegar", "incolla", "plakken"]
+    static let copyWords = [
+        "copy", "cut", "copier", "couper", "kopieren", "ausschneiden", "copiar", "cortar", "copia", "taglia",
+        "kopieren", "knippen",
+    ]
+
+    /// The clipboard use of a control with these texts, or nil.
+    public static func use(of texts: [String]) -> Use? {
+        for text in texts {
+            let tokens = Set(ConsequentialActionFloor.tokenize(text))
+            if pasteWords.contains(where: tokens.contains) { return .read }
+            if copyWords.contains(where: tokens.contains) { return .write }
+        }
+        return nil
     }
 }

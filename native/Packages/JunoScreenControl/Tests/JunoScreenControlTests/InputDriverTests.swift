@@ -104,6 +104,33 @@ final class InputDriverTests: XCTestCase {
         }
     }
 
+    func testAStopBetweenChunksEndsTyping() async throws {
+        let sink = RecordingEventSink()
+        let gate = StopAfter(checks: 5)
+        let driver = InputDriver(layout: .usANSI, sink: sink, pause: { _ in }, checkpoint: { try await gate.check() })
+        do {
+            try await driver.type(String(repeating: "x", count: 100), target: .process(pid: 1))
+            XCTFail("typing outlived the stop")
+        } catch is StoppedForTest {}
+        let downs = await sink.events.filter { if case .keyDown = $0 { return true } else { return false } }
+        XCTAssertEqual(downs.count, 6, "the first unit, then one per passed check")
+    }
+
+    func testAStopMidDragLetsTheButtonGo() async throws {
+        let sink = RecordingEventSink()
+        let gate = StopAfter(checks: 3)
+        let driver = InputDriver(layout: .usANSI, sink: sink, pause: { _ in }, checkpoint: { try await gate.check() })
+        do {
+            try await driver.drag(from: ScreenPoint(x: 0, y: 0), to: ScreenPoint(x: 80, y: 0), target: .global)
+            XCTFail("the drag outlived the stop")
+        } catch is StoppedForTest {}
+        let events = await sink.events
+        guard case let .mouseUp(_, point, _, _)? = events.last else {
+            return XCTFail("the button stayed down: \(events)")
+        }
+        XCTAssertEqual(point, ScreenPoint(x: 30, y: 0), "released where the pointer got to")
+    }
+
     func testHoldKeyIsCappedAtThirtySeconds() async throws {
         let sink = RecordingEventSink()
         let held = HeldDuration()
@@ -119,4 +146,16 @@ final class InputDriverTests: XCTestCase {
 private actor HeldDuration {
     var total: Duration = .zero
     func add(_ duration: Duration) { total += duration }
+}
+
+private struct StoppedForTest: Error {}
+
+/// Passes `checks` stop checks, then throws.
+private actor StopAfter {
+    private var remaining: Int
+    init(checks: Int) { remaining = checks }
+    func check() throws {
+        guard remaining > 0 else { throw StoppedForTest() }
+        remaining -= 1
+    }
 }

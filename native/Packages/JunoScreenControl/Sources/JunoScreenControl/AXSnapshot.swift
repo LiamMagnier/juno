@@ -183,6 +183,14 @@ public struct ScreenTarget: Hashable, Sendable {
     public var element: AXElementInfo?
     /// For Return: the window's default button, which Return presses.
     public var defaultButtonTitle: String?
+    /// What a press here would actually reach, when that is not the element
+    /// itself: the title and description of the nearest ancestor that takes
+    /// `AXPress` (a click on a button's label presses the button), and the
+    /// label's own text. Without them a "Send" button whose words live in a
+    /// child static text — SwiftUI, Catalyst and every web view draw buttons
+    /// that way — read to the floor as an untitled label (CODE_AGENT_SPEC
+    /// §3.3: the floor reads the target that is hit, not the model's word).
+    public var actionTexts: [String]
 
     public init(
         pid: Int32,
@@ -190,7 +198,8 @@ public struct ScreenTarget: Hashable, Sendable {
         appName: String,
         appStoreCategory: String? = nil,
         element: AXElementInfo? = nil,
-        defaultButtonTitle: String? = nil
+        defaultButtonTitle: String? = nil,
+        actionTexts: [String] = []
     ) {
         self.pid = pid
         self.bundleID = bundleID
@@ -198,6 +207,7 @@ public struct ScreenTarget: Hashable, Sendable {
         self.appStoreCategory = appStoreCategory
         self.element = element
         self.defaultButtonTitle = defaultButtonTitle
+        self.actionTexts = actionTexts
     }
 
     public var category: AppCategory {
@@ -206,7 +216,13 @@ public struct ScreenTarget: Hashable, Sendable {
 
     /// Everything the floor reads about this target.
     public var floorTexts: [String] {
-        (element?.floorTexts ?? []) + [defaultButtonTitle].compactMap { $0 }
+        (element?.floorTexts ?? []) + actionTexts.filter { !$0.isEmpty } + [defaultButtonTitle].compactMap { $0 }
+    }
+
+    /// The texts of what a click here presses, without the default button,
+    /// which only Return reaches.
+    public var pressTexts: [String] {
+        (element?.floorTexts ?? []) + actionTexts.filter { !$0.isEmpty }
     }
 
     /// "the “Save” button in TextEdit".

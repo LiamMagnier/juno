@@ -350,8 +350,30 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
             appName: app?.localizedName ?? bundleID,
             appStoreCategory: AppCategoryCache.category(of: app?.bundleURL),
             element: info(element, id: "h", depth: 0),
-            defaultButtonTitle: defaultButton
+            defaultButtonTitle: defaultButton,
+            actionTexts: pressedTexts(from: element)
         )
+    }
+
+    /// The words of what `AXPress` here would press: the nearest ancestor
+    /// that takes it (as `perform` walks), and the hit element's own text
+    /// when it is that control's label. The floor reads these too, because
+    /// the label of a "Send" button is often a child static text with no
+    /// title of its own.
+    private func pressedTexts(from element: AXUIElement) -> [String] {
+        var texts: [String] = []
+        let role = string(element, kAXRoleAttribute)
+        guard let pressable = performable(element, action: kAXPressAction) else { return texts }
+        if !CFEqual(pressable, element) {
+            texts += [string(pressable, kAXTitleAttribute), string(pressable, kAXDescriptionAttribute)].compactMap { $0 }
+            if let value = attribute(pressable, kAXValueAttribute) as? String { texts.append(value) }
+        }
+        if role == "AXStaticText" || role == "AXButton" || role == "AXLink" || role == "AXMenuItem",
+           let value = attribute(element, kAXValueAttribute) as? String
+        {
+            texts.append(value)
+        }
+        return texts.filter { !$0.isEmpty }.map { String($0.prefix(200)) }
     }
 
     private func element(at point: ScreenPoint, within pid: Int32?) -> AXUIElement? {

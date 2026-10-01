@@ -158,7 +158,12 @@ public final class SystemEmergencyStopTap: EmergencyStopTapping, @unchecked Send
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
         if let box {
-            Unmanaged.passUnretained(box).release()
+            // The callback runs on the main run loop and takes the box from
+            // a raw pointer. Stop is called from the service's executor, so
+            // the release waits for main: a callback already running there
+            // finishes before the box can go away.
+            let unmanaged = Unmanaged.passUnretained(box)
+            DispatchQueue.main.async { unmanaged.release() }
         }
         tap = nil
         source = nil

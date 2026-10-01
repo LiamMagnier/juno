@@ -193,6 +193,9 @@ struct ScreenFixture {
     let sink = RecordingEventSink()
     let tap = FakeStopTap()
     let clock = TestClock()
+    /// Runs inside every pause the service or driver takes, so a test can
+    /// press Esc in the middle of an action.
+    let pauseHook = PauseHook()
     let service: ScreenControlService
 
     static let textEdit = RunningApp(pid: 101, bundleID: "com.apple.TextEdit", name: "TextEdit")
@@ -224,6 +227,7 @@ struct ScreenFixture {
                                          element: AXElementInfo(id: "h", role: "AXTextField", roleDescription: "text field", title: "Name", frame: Self.nameField))),
         ]
         let clock = self.clock
+        let hook = self.pauseHook
         service = ScreenControlService(
             dependencies: .init(
                 capture: capture,
@@ -235,6 +239,7 @@ struct ScreenFixture {
                 now: { clock.now },
                 pause: { duration in
                     clock.advance(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)
+                    await hook.run()
                     await Task.yield()
                 },
                 pointerLocation: { ScreenPoint(x: 400, y: 300) },
@@ -266,4 +271,27 @@ final class TestClock: @unchecked Sendable {
     private var current = Date(timeIntervalSince1970: 1_790_000_000)
     var now: Date { lock.withLock { current } }
     func advance(_ seconds: TimeInterval) { lock.withLock { current = current.addingTimeInterval(seconds) } }
+}
+
+/// A closure run inside the fixture's pauses, counting them.
+final class PauseHook: @unchecked Sendable {
+    private let lock = NSLock()
+    private var action: (@Sendable (Int) async -> Void)?
+    private var count = 0
+
+    /// `action` gets the 1-based number of the pause it runs in.
+    func set(_ action: @escaping @Sendable (Int) async -> Void) {
+        lock.withLock {
+            self.action = action
+            count = 0
+        }
+    }
+
+    func run() async {
+        let (action, number) = lock.withLock { () -> ((@Sendable (Int) async -> Void)?, Int) in
+            count += 1
+            return (self.action, count)
+        }
+        await action?(number)
+    }
 }

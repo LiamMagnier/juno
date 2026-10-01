@@ -69,6 +69,10 @@ public actor ScreenControlService: ScreenControlling {
     private var preferences: ScreenControlPreferences
     private var sessions: [String: Session] = [:]
     private var proposals: [String: GrantProposal] = [:]
+    /// Proposal ids, oldest first: a request the reader denied is never
+    /// applied, so the oldest go once there are too many.
+    private var proposalOrder: [String] = []
+    static let maximumOpenProposals = 16
     private var approvalDetails: [String: ScreenApprovalDetail] = [:]
     private var activityContinuations: [UUID: AsyncStream<ScreenActivity>.Continuation] = [:]
     private var presenceContinuations: [UUID: AsyncStream<ScreenPresenceState>.Continuation] = [:]
@@ -168,11 +172,13 @@ public actor ScreenControlService: ScreenControlling {
         session.frame = nil
         session.snapshot = nil
         session.pendingFrames = [:]
+        session.typedSinceCommit = []
         session.mode = .background
         session.takeoverDisplayID = nil
         session.paused = false
         session.target = nil
         sessions[sessionID] = session
+        dropProposals(sessionID: sessionID)
         stopTapIfIdle()
         await publishPresence()
     }
@@ -183,6 +189,17 @@ public actor ScreenControlService: ScreenControlling {
         sessions[sessionID]?.generation &+= 1
         sessions[sessionID]?.target = nil
         sessions[sessionID]?.frame = nil
+        sessions[sessionID]?.snapshot = nil
+        sessions[sessionID]?.pendingFrames = [:]
+        sessions[sessionID]?.typedSinceCommit = []
+        dropProposals(sessionID: sessionID)
+        await lock.setApp(nil, for: sessionID)
+        await publishPresence()
+    }
+
+    private func dropProposals(sessionID: String) {
+        proposals = proposals.filter { $0.value.sessionID != sessionID }
+        proposalOrder.removeAll { proposals[$0] == nil }
     }
 
     /// The one stop. Every session and every Work task stops; the in-flight
@@ -207,12 +224,15 @@ public actor ScreenControlService: ScreenControlling {
             session.frame = nil
             session.snapshot = nil
             session.pendingFrames = [:]
+            session.typedSinceCommit = []
             session.mode = .background
             session.takeoverDisplayID = nil
             session.paused = false
             session.target = nil
             sessions[id] = session
         }
+        proposals = [:]
+        proposalOrder = []
         deps.stopTap?.stop()
         tapRunning = false
     }
@@ -251,6 +271,31 @@ public actor ScreenControlService: ScreenControlling {
         await lock.addStopListener { [weak self] reason in
             Task { await self?.handleStopFromLock(reason) }
         }
+        // Juno Work takes the lock without going through a session here.
+        // While it holds it, Esc must stop it and the caption must say so,
+        // exactly as for a Code session (§3.7, CU-09).
+        await lock.addHolderListener { [weak self] _ in
+            Task { await self?.holderChanged() }
+        }
+    }
+
+    /// The lock changed hands. Read the holder now rather than trusting the
+    /// order these hops arrive in: the last one to run sees the last state.
+    private func holderChanged() async {
+        let holder = await lock.currentHolder
+        if holder != nil || sessions.values.contains(where: \.isRunning) {
+            startTapIfNeeded()
+        } else if tapRunning {
+            deps.stopTap?.stop()
+            tapRunning = false
+        }
+        await publishPresence()
+    }
+
+    /// Starts following the lock, for the app's presence surfaces and Juno
+    /// Work, before any Code session has started screen control.
+    public func connect() async {
+        await listenToLockIfNeeded()
     }
 
     private func handleStopFromLock(_ reason: ScreenControlStopReason) async {
@@ -279,6 +324,8 @@ public actor ScreenControlService: ScreenControlling {
         }
         deps.stopTap?.stop()
         tapRunning = false
+        // A Work task may hold the lock: the holder hop restarts the tap.
+        Task { await self.holderChanged() }
     }
 
     /// Real input arrived while Juno held the whole screen: it pauses.
@@ -315,7 +362,10 @@ public actor ScreenControlService: ScreenControlling {
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.removePresence(id) }
             }
-            Task { await self.publishPresence() }
+            Task {
+                await self.listenToLockIfNeeded()
+                await self.publishPresence()
+            }
         }
     }
 
@@ -478,6 +528,10 @@ public actor ScreenControlService: ScreenControlling {
         }
         let proposal = GrantProposal(sessionID: sessionID, reason: reason, offers: offers)
         proposals[proposal.id] = proposal
+        proposalOrder.append(proposal.id)
+        while proposalOrder.count > Self.maximumOpenProposals {
+            proposals[proposalOrder.removeFirst()] = nil
+        }
         return proposal
     }
 
@@ -506,6 +560,7 @@ public actor ScreenControlService: ScreenControlling {
 
     public func applyGrants(sessionID: String, proposalID: String) async throws -> [AppGrant] {
         _ = try await requireRunning(sessionID)
+        proposalOrder.removeAll { $0 == proposalID }
         guard let proposal = proposals.removeValue(forKey: proposalID), proposal.sessionID == sessionID else {
             throw ScreenControlError.invalidInput("That grant request is no longer open. Ask again with computer_apps request.")
         }
@@ -580,7 +635,15 @@ public actor ScreenControlService: ScreenControlling {
         }
         let grant = book.grant(for: bundleID, now: deps.now())
         sessions[sessionID]?.grants = book
-        guard let grant else { throw ScreenControlError.appNotGranted(app: appName) }
+        guard var grant else { throw ScreenControlError.appNotGranted(app: appName) }
+        // A change in Settings applies to grants already made: denying an
+        // app or lowering it takes effect on the next action, not the next
+        // session.
+        let key = bundleID.lowercased()
+        if preferences.denied.contains(key) {
+            throw ScreenControlError.appRefused(app: appName, reason: "you denied it in Settings")
+        }
+        if let lowered = preferences.loweredTiers[key] { grant.tier = min(grant.tier, lowered) }
         return grant
     }
 
@@ -769,10 +832,8 @@ public actor ScreenControlService: ScreenControlling {
         if let refusal = AppGrantPolicy.check(action.actionClass, against: grant, appName: target.name) {
             throw ScreenControlError.tierTooLow(refusal)
         }
-        try await checkClipboard(action, grant: grant)
-
-        var summaryTarget = ScreenTargetSummary(bundleID: target.bundleID, appName: target.name)
         if action.kind.isObservation {
+            let summaryTarget = ScreenTargetSummary(bundleID: target.bundleID, appName: target.name)
             return PreparedScreenAction(
                 sessionID: sessionID, action: action, target: summaryTarget,
                 frameHash: sessions[sessionID]?.frame?.hash ?? "",
@@ -781,6 +842,11 @@ public actor ScreenControlService: ScreenControlling {
         }
 
         // A system or password prompt in front: never act under it.
+        // Keys and typing land in the app that has the keyboard: the target
+        // in background mode (they are posted to its process), whatever is in
+        // front in takeover (they go to the whole session). The floor reads
+        // that app, not the one the model named.
+        var keyApp = target
         if let front = await deps.environment.frontmostApp() {
             let ownsFront = deps.environment.ownProcess.owns(pid: front.pid, bundleID: front.bundleID)
             let frontCategory = AppCategories.category(bundleID: front.bundleID, appStoreCategory: front.appStoreCategory)
@@ -796,16 +862,28 @@ public actor ScreenControlService: ScreenControlling {
                     if let refusal = AppGrantPolicy.check(action.actionClass, against: frontGrant, appName: front.name) {
                         throw ScreenControlError.tierTooLow(refusal)
                     }
+                    keyApp = Target(bundleID: front.bundleID, name: front.name, pid: front.pid, appStoreCategory: front.appStoreCategory)
                 }
             }
         }
         try checkpoint(sessionID, generation)
+        // ⌘V and ⌘C against the clipboard grant of the app that gets them.
+        try await checkClipboard(
+            action,
+            grant: keyApp == target ? grant : liveGrant(sessionID, bundleID: keyApp.bundleID, appName: keyApp.name)
+        )
 
         var point: ScreenPoint?
         var startPoint: ScreenPoint?
         var framePoint: [Double]?
         var hit: ScreenTarget?
         var freshFrame: Frame?
+        /// What the named element says about itself, from the snapshot the
+        /// model chose it from. `AXPress` by id presses that element (or its
+        /// pressable ancestor), so its words count for the floor whatever the
+        /// hit-test at its centre finds.
+        var elementTexts: [String] = []
+        var floorApp = keyApp
 
         if action.kind.takesPoint || action.element != nil {
             guard let frame = sessions[sessionID]?.frame,
@@ -815,9 +893,22 @@ public actor ScreenControlService: ScreenControlling {
                 guard let element = sessions[sessionID]?.snapshot?.element(elementID) else {
                     throw ScreenControlError.unknownElement(elementID)
                 }
+                // An element with no frame, or one outside the captured
+                // window, is not something the reader can see on the card or
+                // the model in its frame: the hit-test would read another
+                // element than the one pressed.
+                guard !element.frame.isEmpty, frame.geometry.globalBounds.contains(element.frame.center) else {
+                    throw ScreenControlError.invalidInput(
+                        "Element \(elementID) is not visible in the latest screenshot. Scroll it into view, or take a new screenshot and snapshot."
+                    )
+                }
                 point = element.frame.center
                 let fp = frame.geometry.framePoint(global: element.frame.center)
                 framePoint = [fp.x, fp.y]
+                elementTexts = element.floorTexts
+                if let value = element.value, ["AXStaticText", "AXButton", "AXLink", "AXMenuItem"].contains(element.role) {
+                    elementTexts.append(value)
+                }
             } else if let coordinate = action.coordinate {
                 guard frame.geometry.containsFramePoint(x: coordinate[0], y: coordinate[1]) else {
                     throw ScreenControlError.coordinateOutOfFrame(x: coordinate[0], y: coordinate[1], frame: frame.geometry.frameSize)
@@ -863,10 +954,20 @@ public actor ScreenControlService: ScreenControlling {
                     if let refusal = AppGrantPolicy.check(action.actionClass, against: hitGrant, appName: systemHit.appName) {
                         throw ScreenControlError.tierTooLow(refusal)
                     }
+                    if action.kind.takesPoint {
+                        floorApp = Target(
+                            bundleID: systemHit.bundleID, name: systemHit.appName, pid: systemHit.pid,
+                            appStoreCategory: systemHit.appStoreCategory
+                        )
+                    }
                 }
                 hit = systemHit
             } else {
-                hit = await deps.accessibility.target(at: point, within: target.pid) ?? systemHit
+                // In background mode the press goes to the target's process,
+                // so only the target's own element counts; another app's
+                // window over the point (Juno's, say) is not what is pressed.
+                hit = await deps.accessibility.target(at: point, within: target.pid)
+                    ?? (systemHit?.pid == target.pid ? systemHit : nil)
                 try checkpoint(sessionID, generation)
             }
             if hit?.element?.isSecure == true { throw ScreenControlError.secureField }
@@ -886,24 +987,42 @@ public actor ScreenControlService: ScreenControlling {
             } else {
                 freshFrame = frame
             }
-        } else {
-            // Keys and typing land on the focused element.
-            hit = await deps.accessibility.focusedTarget(pid: target.pid)
-            try checkpoint(sessionID, generation)
-            if hit?.element?.isSecure == true { throw ScreenControlError.secureField }
-            freshFrame = sessions[sessionID]?.frame
         }
 
+        var focus: ScreenTarget?
+        if !action.kind.takesPoint {
+            // Keys and typing land on the focused element of the app that has
+            // the keyboard, whatever element the model named.
+            focus = await deps.accessibility.focusedTarget(pid: keyApp.pid)
+            try checkpoint(sessionID, generation)
+            if focus?.element?.isSecure == true { throw ScreenControlError.secureField }
+            if hit == nil { hit = focus }
+            if freshFrame == nil { freshFrame = sessions[sessionID]?.frame }
+        }
+
+        // The clipboard grant covers more than ⌘V and ⌘C: a click on Paste
+        // or Copy in a menu moves the clipboard as surely.
+        if Self.isPress(action.kind), let use = ClipboardControls.use(of: (hit?.pressTexts ?? []) + elementTexts) {
+            let grant = try liveGrant(sessionID, bundleID: floorApp.bundleID, appName: floorApp.name)
+            if let refusal = Self.clipboardRefusal(use, grant: grant) { throw ScreenControlError.tierTooLow(refusal) }
+        }
+
+        var summaryTarget = ScreenTargetSummary(bundleID: floorApp.bundleID, appName: floorApp.name)
         if let element = hit?.element {
             summaryTarget.element = element.spokenName
             summaryTarget.role = element.roleDescription ?? element.role
             summaryTarget.title = element.title ?? element.label
         }
+        let targetTexts: [String] = action.kind.takesPoint
+            // A click presses what is under it, never the default button.
+            ? (hit?.pressTexts ?? []) + elementTexts
+            // Return also presses the window's default button.
+            : (focus?.floorTexts ?? []) + elementTexts + (hit == focus ? [] : (hit?.pressTexts ?? []))
         let floor = ConsequentialActionFloor.evaluate(
             action: action,
-            category: target.category,
-            targetTexts: hit?.floorTexts ?? [],
-            typedSinceLastCommit: sessions[sessionID]?.typedSinceCommit.contains(target.bundleID.lowercased()) ?? false,
+            category: floorApp.category,
+            targetTexts: targetTexts,
+            typedSinceLastCommit: sessions[sessionID]?.typedSinceCommit.contains(floorApp.bundleID.lowercased()) ?? false,
             looksLikeCredential: deps.looksLikeCredential
         )
         let frameForCard = freshFrame ?? sessions[sessionID]?.frame
@@ -920,28 +1039,64 @@ public actor ScreenControlService: ScreenControlling {
             crop: frameForCard.flatMap { Self.markedCrop($0, at: framePoint) },
             isInput: true
         )
-        if let freshFrame { sessions[sessionID]?.pendingFrames[prepared.id] = freshFrame }
+        if let freshFrame {
+            // Bounded: a prepared action the reader denies is never
+            // performed, and its frame must not outlive the question.
+            while (sessions[sessionID]?.pendingFrames.count ?? 0) >= Self.maximumPendingFrames,
+                  let oldest = sessions[sessionID]?.pendingFrames.min(by: { $0.value.capturedAt < $1.value.capturedAt })?.key
+            {
+                sessions[sessionID]?.pendingFrames[oldest] = nil
+            }
+            sessions[sessionID]?.pendingFrames[prepared.id] = freshFrame
+        }
         return prepared
+    }
+
+    /// At most this many frames wait for an approval in one session.
+    static let maximumPendingFrames = 4
+
+    /// Clicks and releases that press a control.
+    static func isPress(_ kind: ScreenActionKind) -> Bool {
+        switch kind {
+        case .leftClick, .doubleClick, .tripleClick, .middleClick, .leftMouseUp: true
+        default: false
+        }
+    }
+
+    /// The sentence when a clipboard use is beyond what the reader allowed.
+    static func clipboardRefusal(_ use: ClipboardControls.Use, grant: AppGrant) -> String? {
+        switch use {
+        case .read where !grant.clipboardRead:
+            "Pasting puts your clipboard into \(grant.displayName), and clipboard reading was not allowed for it. Type the text instead, or ask the reader to allow the clipboard."
+        case .write where !grant.clipboardWrite:
+            "Copying would replace your clipboard, and clipboard writing was not allowed for \(grant.displayName). Ask the reader to allow the clipboard if you need it."
+        default:
+            nil
+        }
+    }
+
+    /// Drops a prepared action's bound frame: the reader said no, or the
+    /// action failed before it was sent.
+    public func discard(sessionID: String, preparedID: String) async {
+        sessions[sessionID]?.pendingFrames[preparedID] = nil
+    }
+
+    /// How many frames wait on approvals in a session, for tests.
+    func pendingFrameCount(sessionID: String) -> Int {
+        sessions[sessionID]?.pendingFrames.count ?? 0
     }
 
     private func checkClipboard(_ action: ScreenAction, grant: AppGrant) async throws {
         guard action.kind == .key, let text = action.text, let chord = try? KeyChord.parse(text),
               chord.modifiers.contains(.command), case let .character(character) = chord.key
         else { return }
+        let use: ClipboardControls.Use
         switch character {
-        case "v" where !grant.clipboardRead:
-            throw ScreenControlError.tierTooLow(
-                "Pasting puts your clipboard into \(grant.displayName), and clipboard reading was not allowed for it. Type the text instead, or ask the reader to allow the clipboard."
-            )
-        case "c", "x":
-            if !grant.clipboardWrite {
-                throw ScreenControlError.tierTooLow(
-                    "Copying would replace your clipboard, and clipboard writing was not allowed for \(grant.displayName). Ask the reader to allow the clipboard if you need it."
-                )
-            }
-        default:
-            return
+        case "v": use = .read
+        case "c", "x": use = .write
+        default: return
         }
+        if let refusal = Self.clipboardRefusal(use, grant: grant) { throw ScreenControlError.tierTooLow(refusal) }
     }
 
     static func validate(_ action: ScreenAction) throws {
@@ -1111,8 +1266,15 @@ public actor ScreenControlService: ScreenControlling {
         switch action.kind {
         case .wait:
             let seconds = min(max(action.duration ?? 1, 0), ScreenAction.maximumDurationSeconds)
-            try await deps.pause(.milliseconds(Int(seconds * 1_000)))
-            try checkpoint(sessionID, generation)
+            // In slices, so a stop ends a 30-second wait at once rather than
+            // after it, and the turn ends while the reader is still looking.
+            var remaining = Int((seconds * 1_000).rounded())
+            repeat {
+                let slice = min(remaining, Self.stopCheckSliceMilliseconds)
+                try await deps.pause(.milliseconds(slice))
+                remaining -= slice
+                try checkpoint(sessionID, generation)
+            } while remaining > 0
             let note = (action.duration ?? 0) > ScreenAction.maximumDurationSeconds
                 ? ["Waits are capped at 30 s; waited 30 s."] : []
             let frame = attachFrame && sessions[sessionID]?.target != nil
@@ -1149,6 +1311,16 @@ public actor ScreenControlService: ScreenControlling {
         if let refusal = AppGrantPolicy.check(action.actionClass, against: grant, appName: target.name) {
             throw ScreenControlError.tierTooLow(refusal)
         }
+        // The app the card named, when it is not the target (keys to the app
+        // in front, a click on another granted app in takeover).
+        let actedBundle = prepared.target.bundleID
+        if !actedBundle.isEmpty, actedBundle.lowercased() != target.bundleID.lowercased() {
+            let actedGrant = try liveGrant(sessionID, bundleID: actedBundle, appName: prepared.target.appName)
+            if let refusal = AppGrantPolicy.check(action.actionClass, against: actedGrant, appName: prepared.target.appName) {
+                throw ScreenControlError.tierTooLow(refusal)
+            }
+        }
+        let keyPID = try await recheckLanding(prepared, sessionID: sessionID, generation: generation, target: target)
         if let pending = sessions[sessionID]?.pendingFrames[prepared.id],
            sessions[sessionID]?.mode == .background, prepared.point != nil
         {
@@ -1170,11 +1342,18 @@ public actor ScreenControlService: ScreenControlling {
         }
         let mode = sessions[sessionID]?.mode ?? .background
         let eventTarget: EventTarget = mode == .takeover ? .global : .process(pid: target.pid)
-        let driver = InputDriver(layout: await deps.layout(), sink: deps.sink, pause: deps.pause)
+        let driver = InputDriver(
+            layout: await deps.layout(),
+            sink: deps.sink,
+            pause: deps.pause,
+            // Between every chunk, repeat and drag step: Esc or Stop ends the
+            // action where it is.
+            checkpoint: { [self] in try await self.verifyLive(sessionID, generation) }
+        )
         try checkpoint(sessionID, generation)
 
         var notes: [String] = []
-        let bundleKey = target.bundleID.lowercased()
+        let bundleKey = (actedBundle.isEmpty ? target.bundleID : actedBundle).lowercased()
         switch action.kind {
         case .leftClick, .doubleClick, .tripleClick, .rightClick, .middleClick:
             guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
@@ -1222,7 +1401,7 @@ public actor ScreenControlService: ScreenControlling {
             )
         case .type:
             let text = action.text ?? ""
-            notes += try await type(text, action: action, target: target, driver: driver, eventTarget: eventTarget, mode: mode)
+            notes += try await type(text, action: action, pid: keyPID, driver: driver, eventTarget: eventTarget, mode: mode)
             sessions[sessionID]?.typedSinceCommit.insert(bundleKey)
         case .key:
             let chord = action.text ?? ""
@@ -1247,21 +1426,105 @@ public actor ScreenControlService: ScreenControlling {
         return result(summary: summary, frame: frame, notes: notes)
     }
 
+    /// The longest sleep between two stop checks in a wait.
+    static let stopCheckSliceMilliseconds = 250
+
+    /// The stop check, for the input driver between its events.
+    func verifyLive(_ sessionID: String, _ generation: UInt64) throws {
+        try checkpoint(sessionID, generation)
+    }
+
+    /// What an approved action lands on, proved again after the approval
+    /// wait: the card is about one place, and the input must go there.
+    ///
+    /// - Keys and typing: the focused element of the app with the keyboard
+    ///   must not have become a password field, and must not now be a control
+    ///   the floor asks about when the card did not (a "Delete" dialog that
+    ///   opened while the card waited takes Return as its own).
+    /// - Takeover: a Juno window or a system prompt now in front, or under
+    ///   the point, refuses; the global event stream would deliver there.
+    /// - Returns: the process that has the keyboard, for the read-back.
+    @discardableResult
+    private func recheckLanding(
+        _ prepared: PreparedScreenAction,
+        sessionID: String,
+        generation: UInt64,
+        target: Target
+    ) async throws -> Int32 {
+        let action = prepared.action
+        let mode = sessions[sessionID]?.mode ?? .background
+        var keyPID = target.pid
+        var keyCategory = target.category
+        var keyBundle = target.bundleID
+        if mode == .takeover {
+            if let front = await deps.environment.frontmostApp() {
+                try checkpoint(sessionID, generation)
+                if deps.environment.ownProcess.owns(pid: front.pid, bundleID: front.bundleID) {
+                    throw ScreenControlError.junoWindow
+                }
+                if AppCategories.category(bundleID: front.bundleID, appStoreCategory: front.appStoreCategory) == .refused {
+                    throw ScreenControlError.systemPromptInFront(app: front.name)
+                }
+                if !action.kind.takesPoint {
+                    guard front.bundleID.lowercased() == prepared.target.bundleID.lowercased() else {
+                        throw ScreenControlError.screenChanged
+                    }
+                    keyPID = front.pid
+                    keyCategory = AppCategories.category(bundleID: front.bundleID, appStoreCategory: front.appStoreCategory)
+                    keyBundle = front.bundleID
+                }
+            }
+            if action.kind.takesPoint, let point = prepared.point {
+                let hit = await deps.accessibility.target(at: point, within: nil)
+                try checkpoint(sessionID, generation)
+                if let hit {
+                    if deps.environment.ownProcess.owns(pid: hit.pid, bundleID: hit.bundleID) {
+                        throw ScreenControlError.junoWindow
+                    }
+                    if hit.category == .refused { throw ScreenControlError.systemPromptInFront(app: hit.appName) }
+                    if hit.bundleID.lowercased() != prepared.target.bundleID.lowercased() {
+                        throw ScreenControlError.screenChanged
+                    }
+                }
+            }
+        }
+        switch action.kind {
+        case .type, .key, .holdKey:
+            let focus = await deps.accessibility.focusedTarget(pid: keyPID)
+            try checkpoint(sessionID, generation)
+            if focus?.element?.isSecure == true { throw ScreenControlError.secureField }
+            if prepared.floor == nil,
+               ConsequentialActionFloor.evaluate(
+                   action: action,
+                   category: keyCategory,
+                   targetTexts: focus?.floorTexts ?? [],
+                   typedSinceLastCommit: sessions[sessionID]?.typedSinceCommit.contains(keyBundle.lowercased()) ?? false,
+                   looksLikeCredential: deps.looksLikeCredential
+               ) != nil
+            {
+                throw ScreenControlError.screenChanged
+            }
+        default:
+            break
+        }
+        return keyPID
+    }
+
     /// Typing: Accessibility first in background mode, with the overwrite
     /// guard; key events otherwise; then the read-back (CU-03).
     private func type(
         _ text: String,
         action: ScreenAction,
-        target: Target,
+        pid: Int32,
         driver: InputDriver,
         eventTarget: EventTarget,
         mode: ScreenControlMode
     ) async throws -> [String] {
-        let before = await deps.accessibility.value(elementID: action.element, pid: target.pid)
+        let before = await deps.accessibility.value(elementID: action.element, pid: pid)
         if mode == .background {
             let replace = action.mode == .replace
-            if try await deps.accessibility.setText(text, elementID: action.element, pid: target.pid, replace: replace) {
-                return readBack(text, before: before, after: await deps.accessibility.value(elementID: action.element, pid: target.pid), replace: replace)
+            if try await deps.accessibility.setText(text, elementID: action.element, pid: pid, replace: replace) {
+                return readBack(text, before: before, after: await deps.accessibility.value(elementID: action.element, pid: pid), replace: replace)
             }
         }
         if action.mode == .replace {
@@ -1269,7 +1532,7 @@ public actor ScreenControlService: ScreenControlling {
             try await driver.key("cmd+a", target: eventTarget)
         }
         try await driver.type(text, target: eventTarget)
-        let after = await deps.accessibility.value(elementID: action.element, pid: target.pid)
+        let after = await deps.accessibility.value(elementID: action.element, pid: pid)
         return readBack(text, before: before, after: after, replace: action.mode == .replace)
     }
 
@@ -1420,9 +1683,15 @@ public actor ScreenControlService: ScreenControlling {
             throw ScreenControlError.systemPromptInFront(app: front.name)
         }
         let item = path.last ?? ""
+        // Edit › Paste reads the clipboard exactly as ⌘V does.
+        if let use = ClipboardControls.use(of: [item]), let refusal = Self.clipboardRefusal(use, grant: grant) {
+            throw ScreenControlError.tierTooLow(refusal)
+        }
+        // Every level counts: Share › AirDrop sends though "AirDrop" alone
+        // says nothing.
         let floor: FloorReason? = target.category == .finance
             ? .financeApp
-            : ConsequentialActionFloor.matchingWord(in: [item]).map(FloorReason.consequentialControl)
+            : ConsequentialActionFloor.matchingWord(in: path.reversed()).map(FloorReason.consequentialControl)
         let frame = sessions[sessionID]?.frame
         return PreparedScreenAction(
             sessionID: sessionID,
@@ -1444,7 +1713,21 @@ public actor ScreenControlService: ScreenControlling {
     ) async throws -> ScreenActionResult {
         let generation = try await requireRunning(sessionID)
         guard let target = sessions[sessionID]?.target else { throw ScreenControlError.noTargetApp }
-        _ = try liveGrant(sessionID, bundleID: target.bundleID, appName: target.name)
+        // The card named one app and one path; anything else is refused.
+        guard target.bundleID.lowercased() == prepared.target.bundleID.lowercased(),
+              prepared.action.text == path.joined(separator: " › ")
+        else { throw ScreenControlError.screenChanged }
+        let grant = try liveGrant(sessionID, bundleID: target.bundleID, appName: target.name)
+        if let refusal = AppGrantPolicy.check(.full, against: grant, appName: target.name) {
+            throw ScreenControlError.tierTooLow(refusal)
+        }
+        if let front = await deps.environment.frontmostApp(),
+           !deps.environment.ownProcess.owns(pid: front.pid, bundleID: front.bundleID),
+           AppCategories.category(bundleID: front.bundleID, appStoreCategory: front.appStoreCategory) == .refused
+        {
+            throw ScreenControlError.systemPromptInFront(app: front.name)
+        }
+        try checkpoint(sessionID, generation)
         let pressed = try await deps.accessibility.pressMenu(pid: target.pid, path: path)
         try checkpoint(sessionID, generation)
         sessions[sessionID]?.lastInputEnd = deps.now()

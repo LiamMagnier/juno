@@ -125,6 +125,62 @@ final class AppGrantPolicyTests: XCTestCase {
         )
     }
 
+    func testALineBreakTypedIsAReturn() {
+        let typed = ScreenAction(kind: .type, text: "On my way\n")
+        XCTAssertEqual(
+            ConsequentialActionFloor.evaluate(action: typed, category: .messaging, targetTexts: [], typedSinceLastCommit: false),
+            .sendsMessage,
+            "typing a line break in a messaging app sends"
+        )
+        XCTAssertEqual(
+            ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: "ok\r\n"), category: .other, targetTexts: ["Supprimer"], typedSinceLastCommit: false),
+            .consequentialControl("supprimer"),
+            "and presses a dialog's default button anywhere"
+        )
+        XCTAssertNil(ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: "line one\nline two"), category: .other, targetTexts: [], typedSinceLastCommit: false))
+        XCTAssertNil(ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: "no break"), category: .messaging, targetTexts: [], typedSinceLastCommit: false))
+    }
+
+    func testHeldReturnSpaceOnAButtonAndCommandDeleteAsk() {
+        XCTAssertEqual(
+            ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .holdKey, text: "return", duration: 1), category: .messaging, targetTexts: [], typedSinceLastCommit: true),
+            .sendsMessage,
+            "holding Return is pressing it"
+        )
+        XCTAssertEqual(
+            ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .key, text: "space"), category: .other, targetTexts: ["Send"], typedSinceLastCommit: false),
+            .consequentialControl("send"),
+            "space presses the focused button"
+        )
+        XCTAssertNil(ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .key, text: "space"), category: .other, targetTexts: ["Bold"], typedSinceLastCommit: false))
+        for chord in ["cmd+delete", "cmd+backspace", "cmd+shift+delete", "cmd+option+forward_delete"] {
+            XCTAssertEqual(
+                ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .key, text: chord), category: .systemReach, targetTexts: [], typedSinceLastCommit: false),
+                .consequentialControl("delete"),
+                chord
+            )
+        }
+        XCTAssertNil(ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .key, text: "delete"), category: .other, targetTexts: [], typedSinceLastCommit: false), "a plain backspace edits text")
+    }
+
+    func testAKeyInsideASentenceStillReadsAsACredential() {
+        let line = ScreenAction(kind: .type, text: "Here is the key: sk-live-4f9a8b7c6d5e4f3a2b1c")
+        XCTAssertEqual(
+            ConsequentialActionFloor.evaluate(action: line, category: .messaging, targetTexts: [], typedSinceLastCommit: false),
+            .credentialText
+        )
+        XCTAssertNil(ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: "Cuisine asiatique et akira"), category: .other, targetTexts: [], typedSinceLastCommit: false))
+    }
+
+    func testClipboardControlsAreRecognisedInTheOwnersLanguages() {
+        XCTAssertEqual(ClipboardControls.use(of: ["Paste and Match Style"]), .read)
+        XCTAssertEqual(ClipboardControls.use(of: ["Coller"]), .read)
+        XCTAssertEqual(ClipboardControls.use(of: ["Einfügen"]), .read)
+        XCTAssertEqual(ClipboardControls.use(of: ["Copy Link"]), .write)
+        XCTAssertEqual(ClipboardControls.use(of: ["Couper"]), .write)
+        XCTAssertNil(ClipboardControls.use(of: ["Copyright", "Pasted Items", "Cutting Board"]))
+    }
+
     func testCredentialLikeTextAlwaysAsks() {
         for secret in ["sk-ant-api03-abcdefghijklmnop", "ghp_0123456789abcdefABCDEF0123456789", "AKIAIOSFODNN7EXAMPLE", "Tr0ub4dor&3xyzQWERTY77"] {
             XCTAssertEqual(
