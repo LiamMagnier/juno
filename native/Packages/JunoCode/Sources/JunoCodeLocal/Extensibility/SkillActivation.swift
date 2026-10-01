@@ -60,6 +60,10 @@ public struct SkillDefinition: Identifiable, Equatable, Codable, Sendable {
     public var isUntrusted: Bool {
         trust == .untrustedWorkspace
     }
+
+    /// Where it was declared: the project, the reader's `~/.juno/skills`,
+    /// or Claude Code's `~/.claude/skills`, imported (§5.8).
+    public var scope: ExtensionScope { ExtensionScope.of(path: path) }
 }
 
 public struct SkillDiagnostic: Equatable, Codable, Sendable {
@@ -88,14 +92,45 @@ public struct SkillDiscoveryResult: Equatable, Sendable {
 /// Workspace-bounded discovery for instruction-only skills.
 public struct SkillDiscovery: Sendable {
     private let access: any WorkspaceAccessing
+    /// The reader's own folders, for `~/.juno/skills` and the read-only
+    /// `~/.claude/skills` import (§5.8). Nil reads the project alone.
+    private let user: UserExtensionDirectories?
 
-    public init(access: any WorkspaceAccessing) {
+    public init(access: any WorkspaceAccessing, user: UserExtensionDirectories? = nil) {
         self.access = access
+        self.user = user
     }
 
     public func discover() -> SkillDiscoveryResult {
         var byName: [String: SkillDefinition] = [:]
         var diagnostics: [SkillDiagnostic] = []
+
+        // The reader's own first, so a project skill of the same name, read
+        // after, wins (§5.8: project over user, user over an import).
+        for scope in [ExtensionScope.claudeImport, .user] {
+            guard let user, let folder = user.folder(.skills, scope: scope) else { continue }
+            for entry in UserExtensionDirectories.entries(of: folder.url, directories: true) {
+                let name = entry.lastPathComponent
+                guard SkillDiscovery.isSafeSkillName(name) else { continue }
+                let display = "\(folder.displayPath)/\(name)/SKILL.md"
+                guard let contents = UserExtensionDirectories.readText(
+                    at: entry.appendingPathComponent("SKILL.md"),
+                    maximumBytes: HookExecutionLimits.maximumSkillBytes
+                ) else { continue }
+                let parsed = Self.parse(contents)
+                guard !parsed.body.isEmpty else { continue }
+                let skill = SkillDefinition(
+                    name: name,
+                    description: parsed.description,
+                    instructions: parsed.body,
+                    source: scope == .claudeImport ? .claude : .juno,
+                    path: display,
+                    trust: .readerConfiguration,
+                    contentDigest: Digests.sha256Hex(contents)
+                )
+                byName[skill.name] = skill
+            }
+        }
 
         // Keep the same precedence as SlashCommands: .juno can override a
         // same-named Claude skill while a repository migrates conventions.

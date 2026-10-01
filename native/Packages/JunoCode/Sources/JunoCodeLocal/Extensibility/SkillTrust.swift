@@ -72,16 +72,39 @@ public struct WorkspaceSkillProvider: SkillProviding {
     private let access: any WorkspaceAccessing
     private let policy: SkillPolicyStore
     private let disabledIDs: Set<String>
+    private let user: UserExtensionDirectories?
+    private let imports: UserExtensionPolicyStore?
 
-    public init(access: any WorkspaceAccessing, policy: SkillPolicyStore, disabledIDs: Set<String>) {
+    public init(
+        access: any WorkspaceAccessing,
+        policy: SkillPolicyStore,
+        disabledIDs: Set<String>,
+        user: UserExtensionDirectories? = nil,
+        imports: UserExtensionPolicyStore? = nil
+    ) {
         self.access = access
         self.policy = policy
         self.disabledIDs = disabledIDs
+        self.user = user
+        self.imports = imports
     }
 
     public func offered() -> [SkillDefinition] {
-        SkillDiscovery(access: access).discover().skills.filter {
-            !isSwitchedOff($0) && policy.isTrusted($0)
+        discovery.discover().skills.filter {
+            !isSwitchedOff($0) && isTrusted($0)
+        }
+    }
+
+    private var discovery: SkillDiscovery { SkillDiscovery(access: access, user: user) }
+
+    /// A project skill by the reader's trust in its current text; the
+    /// reader's own `~/.juno/skills` always; an imported Claude Code skill
+    /// once the reader turned it on (§5.8).
+    private func isTrusted(_ skill: SkillDefinition) -> Bool {
+        switch skill.scope {
+        case .project: policy.isTrusted(skill)
+        case .user: true
+        case .claudeImport: imports?.isEnabled(kind: "skill", name: skill.name) ?? false
         }
     }
 
@@ -99,9 +122,15 @@ public struct WorkspaceSkillProvider: SkillProviding {
 
     public func loadSkill(named name: String) async throws -> LoadedSkill {
         let wanted = name.lowercased()
-        let discovered = SkillDiscovery(access: access).discover().skills
+        let discovered = discovery.discover().skills
         guard let skill = discovered.first(where: { $0.name == wanted }), !isSwitchedOff(skill) else {
             throw SkillLoadError.unknown(name: name, available: offered().map(\.name))
+        }
+        guard skill.scope == .project else {
+            guard isTrusted(skill) else {
+                throw SkillLoadError.unknown(name: name, available: offered().map(\.name))
+            }
+            return LoadedSkill(name: skill.name, path: skill.path, body: skill.instructions)
         }
         switch policy.state(of: skill) {
         case .trusted:

@@ -152,13 +152,21 @@ public final class WorkspaceContext: Sendable {
                 .appendingPathComponent(record.id.value + ".json", isDirectory: false)
         )
         do {
-            let configurations = try MCPConfigurationLoader.load(from: access)
+            // The project's servers, the reader's own and Claude Code's,
+            // each started on its own terms (§5.8, `MCPServerPolicyStore`).
+            let user = userSettingsDirectory.map { UserExtensionDirectories(junoHome: $0) }
+            let configurations = try MCPConfigurationLoader.loadAll(
+                from: access,
+                userConfigurationFile: user?.junoHome.appendingPathComponent("mcp.json"),
+                claudeConfigurationFile: user?.claudeConfigFile
+            ).servers
             self.mcpRegistry = try MCPToolRegistry(
                 workspaceRootURL: access.rootURL,
                 configurations: configurations,
-                startupAuthorizer: { [mcpPolicyStore] configuration in
-                    mcpPolicyStore.allows(configuration)
-                }
+                startupAuthorizer: MCPServerPolicyStore.startupAuthorizer(
+                    project: mcpPolicyStore,
+                    imports: user.map { UserExtensionPolicyStore(junoHome: $0.junoHome) }
+                )
             )
             self.mcpConfigurationError = nil
         } catch {
@@ -231,7 +239,13 @@ public final class WorkspaceContext: Sendable {
     /// The skills a session may load, with the reader's switched-off ones
     /// left out.
     public func skillProvider(disabledIDs: Set<String>) -> WorkspaceSkillProvider {
-        WorkspaceSkillProvider(access: access, policy: skillPolicyStore, disabledIDs: disabledIDs)
+        WorkspaceSkillProvider(
+            access: access,
+            policy: skillPolicyStore,
+            disabledIDs: disabledIDs,
+            user: userExtensionDirectories,
+            imports: userExtensionPolicy
+        )
     }
 
     /// Allows or revokes this project's hooks, as the reader decided.
