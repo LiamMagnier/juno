@@ -6,6 +6,8 @@ import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
 import { designCardFace } from "@/components/chat/artifact-inline-card";
 import { readSession } from "@/components/chat/session-outputs";
 import type { ClientArtifact } from "@/types/chat";
+import * as BrandNames from "@/lib/brand/names";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /*
  * DESIGN IS A TYPE, NOT A PLACE (docs/design/artifacts-design/04-MERGE-PLAN.md
@@ -46,7 +48,7 @@ test("Chat's destinations are Projects, Library and Customize, with no Design ro
   // view of Library, agents are a section of the list, not a door).
   assert.deepEqual(hrefs, ["/projects", "/library", "/customize"]);
   // Library stays lit on /artifacts, so a design opened from it keeps its place.
-  assert.match(chat, /label: "Library", active: pathname === "\/library" \|\| pathname === "\/artifacts"/);
+  assert.match(chat, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library" \|\| pathname === "\/artifacts"/);
 
   // Nowhere else in the column either: not a pinned row, not the rail.
   assert.ok(!sidebar.includes('"/design"'), "no sidebar row links to /design");
@@ -55,12 +57,27 @@ test("Chat's destinations are Projects, Library and Customize, with no Design ro
 
 type PaletteRow = { id: string; label: string; keywords: string; href: string };
 
+/** A name the palette reads from the registry (src/lib/brand/names.ts). */
+function registryText(path: string): string {
+  let value: unknown = BrandNames;
+  for (const key of path.split(".")) value = (value as Record<string, unknown>)?.[key];
+  assert.equal(typeof value, "string", `${path} is a registry name`);
+  return value as string;
+}
+
+/** A label as written: "Literal", `Open ${FEATURE_NAMES.x.label}` or FEATURE_NAMES.x.label. */
+function labelText(written: string): string {
+  if (written.startsWith('"')) return written.slice(1, -1);
+  if (written.startsWith("`")) return written.slice(1, -1).replace(/\$\{([\w.]+)\}/g, (_, path) => registryText(path));
+  return registryText(written);
+}
+
 /** The palette's one-line navigation rows, as data. */
 function paletteRows(): PaletteRow[] {
   const source = withoutComments(PALETTE);
   const rows: PaletteRow[] = [];
-  const pattern = /\{ id: "([^"]+)", group: "[^"]+", label: "([^"]+)",[^\n]*?keywords: "([^"]*)",[^\n]*?go\("([^"]+)"\)/g;
-  for (const m of source.matchAll(pattern)) rows.push({ id: m[1], label: m[2], keywords: m[3], href: m[4] });
+  const pattern = /\{ id: "([^"]+)", group: "[^"]+", label: ("[^"]+"|`[^`]+`|[A-Z_]+(?:\.\w+)+),[^\n]*?keywords: "([^"]*)",[^\n]*?go\("([^"]+)"\)/g;
+  for (const m of source.matchAll(pattern)) rows.push({ id: m[1], label: labelText(m[2]), keywords: m[3], href: m[4] });
   return rows;
 }
 
@@ -80,7 +97,7 @@ test("⌘K sends every design row to Artifacts, and New design opens its presets
   const byLabel = new Map(rows.map((r) => [r.label, r]));
   assert.equal(byLabel.get("New design")?.href, "/artifacts?type=DESIGN&new=design");
   assert.equal(byLabel.get("Open Designs")?.href, "/artifacts?type=DESIGN");
-  assert.equal(byLabel.get("Open Artifacts")?.href, "/artifacts");
+  assert.equal(byLabel.get(FEATURE_NAMES.artifacts.label)?.href, "/artifacts");
 
   // "Design" is still a word that finds designs: typing it offers the list
   // and the way to make one, and nothing that leads anywhere else.

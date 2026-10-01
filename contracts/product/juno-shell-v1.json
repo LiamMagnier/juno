@@ -55,7 +55,7 @@
     },
     {
       "id": "artifacts",
-      "label": "Artifacts",
+      "label": "Made by Alevr",
       "href": "/artifacts",
       "kind": "artifacts",
       "icon": "AppIcons.artifacts"
@@ -282,7 +282,7 @@
         },
         {
           "id": "research",
-          "label": "Research",
+          "label": "Deep Field",
           "kind": "toggle",
           "icon": "ComposerIcons.research",
           "optional": true

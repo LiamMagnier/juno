@@ -93,7 +93,7 @@ import Testing
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
             "Add Files or Photos", "Take a Screenshot", "Add from Library",
             "Add to Project", "Apps",
-            "Use a Skill", "Research", "Web Search", "Memory",
+            "Use a Skill", "Deep Field", "Web Search", "Memory",
         ])
         #expect(JunoShellPlusMenu.label == "Add")
         // The paperclip the Mac drew as `.paperclip` is the registry's

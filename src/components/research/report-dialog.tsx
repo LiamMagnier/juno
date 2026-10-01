@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ReportReader } from "@/components/research/report-reader";
 import { parseArtifacts } from "@/lib/message-content";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * The full report, as a document.
@@ -30,7 +31,7 @@ import type { ResearchSourceView } from "@/components/research/use-research-run"
  * error: a report that renders with its wrapper showing beats a blank dialog.
  */
 
-const REPORT_COPY = { title: "Research report" } as const;
+const REPORT_COPY = { title: `${FEATURE_NAMES.research.label} report` } as const;
 
 /** The artifact the writer produced, if it produced one. */
 function reportArtifact(report: string) {

@@ -9,7 +9,7 @@ import { MAX_CONTEXT_TOKENS, type ContextToken } from "@/lib/chat/context-tokens
 import { mentionToToken, type MentionItem, type MentionSearchResult } from "@/lib/mentions/types";
 import { readEditor, editorOffset, setEditorSelection } from "./context-editor-dom";
 import { cn } from "@/lib/utils";
-import { AGENT_NOUN, PRODUCT_NAME } from "@/lib/brand/names";
+import { AGENT_NOUN, FEATURE_NAMES } from "@/lib/brand/names";
 
 type Props = Omit<React.ComponentPropsWithoutRef<"textarea">, "value"> & {
   value: string;
@@ -20,7 +20,7 @@ type Props = Omit<React.ComponentPropsWithoutRef<"textarea">, "value"> & {
   loadMentions?: (query: string, signal: AbortSignal) => Promise<MentionSearchResult>;
 };
 
-const GROUPS: Record<string, string> = { crew: AGENT_NOUN.pluralLabel, file: "Files", project: "Projects", app: "Apps", skill: "Skills", chat: "Chats", artifact: `Made by ${PRODUCT_NAME}` };
+const GROUPS: Record<string, string> = { crew: AGENT_NOUN.pluralLabel, file: "Files", project: "Projects", app: "Apps", skill: "Skills", chat: "Chats", artifact: FEATURE_NAMES.artifacts.label };
 
 function MentionMark({ item }: { item: MentionItem }) {
   if (item.kind === "app") return <ConnectorMark id={item.connectorId ?? item.id} className="size-4" />;

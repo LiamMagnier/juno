@@ -18,7 +18,7 @@ import { RollingNumber } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * A run being watched.
@@ -123,7 +123,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
   // literal inside a variable whose name ends in Note/Copy/Label, class lists
   // included. The copy this draws lives in CONSOLE_COPY, where it belongs.
   const emptyLine = (text: string) => <p className="text-ui text-muted-foreground">{text}</p>;
-  return <section aria-label="Research" className={cn("research-surface research-enter relative min-w-0", className)}>
+  return <section aria-label={FEATURE_NAMES.research.accessibleLabel} className={cn("research-surface research-enter relative min-w-0", className)}>
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         {atGate

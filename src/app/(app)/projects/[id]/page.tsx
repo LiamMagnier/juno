@@ -55,7 +55,7 @@ import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/pro
 import { ProjectCodeList } from "@/components/projects/project-code-list";
 import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/projects/project-sources-list";
 import { madeInConversations } from "@/lib/artifact-links";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -111,7 +111,7 @@ interface Detail {
 
 const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
   webSearch: "Web search",
-  deepResearch: "Research",
+  deepResearch: FEATURE_NAMES.research.label,
   canvas: "Canvas",
   mediaGeneration: "Image & video",
   connectors: "Connected apps",

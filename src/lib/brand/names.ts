@@ -16,9 +16,12 @@
  *   Features     Projects, Library, Customize, Apps, Skills, Routines, Memory,
  *                Instructions, Research: plain capability names, not brands.
  *
- * Names still being chosen (an artifact's and memory's, see
- * docs/rework/brand/FEATURE_NAMES_PROPOSAL.md) sit here at their current
- * defaults, so the owner's choice lands as a one-line change.
+ * D-038 (revised 2026-10-02) settled the rest: brand the places you go and the
+ * modes you start, keep plain words for the things you count and the controls
+ * you trust. Deep research is Deep Field (descriptor "Deep research"; a mode,
+ * never "a Deep Field"). What Alevr makes is called by its real type (a deck,
+ * a document, a site) and collected under "Made by Alevr". Memory stays Memory.
+ * A branded noun carries its descriptor on first use and in accessible names.
  *
  * TRANSLATION. The interface is translated by matching rendered text against
  * the build-time catalog (scripts/generate-i18n-catalog.mjs). The generator
@@ -73,11 +76,15 @@ export const FEATURE_NAMES = {
   routines: { label: "Routines" },
   memory: { label: "Memory" },
   instructions: { label: "Instructions" },
-  research: { label: "Research" },
+  /** Deep research (D-038): a mode, always two words; quick lookups stay Search. */
+  research: { label: "Deep Field", description: "Deep research", accessibleLabel: "Deep Field, deep research" },
   needsYou: { label: "Needs you" },
   createAgent: { label: "Create agent" },
-  /** Pending the owner's naming choice; NAMES_AND_ICONS keeps "Artifacts" inside an item. */
-  artifacts: { label: "Artifacts", singular: "Artifact" },
+  /**
+   * What Alevr makes (stored and routed as artifacts). The collection is
+   * "Made by Alevr"; one item is named by its real type wherever it is known.
+   */
+  artifacts: { label: `Made by ${PRODUCT_NAME}`, singular: "Artifact" },
 } as const;
 
 /**

@@ -27,7 +27,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 const PLAN_COPY = {
   lede: `Here's how ${PRODUCT_NAME} will research this. Adjust anything before it starts.`,
   ledeFallback: `${PRODUCT_NAME} will run these searches. Edit any of them before it starts.`,
-  start: "Start researching",
+  start: "Start research",
   discard: "Cancel research",
   showQueries: "Show the searches",
   hideQueries: "Hide the searches",
@@ -235,7 +235,7 @@ export function PlanOutline({
  */
 const CLARIFY_COPY = {
   lede: `A few details would sharpen this. Answer what you can — anything you skip, ${PRODUCT_NAME} decides for itself.`,
-  start: "Start researching",
+  start: "Start research",
   skip: "Skip and research as written",
   optional: "Optional",
   needed: "Needed",

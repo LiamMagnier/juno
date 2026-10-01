@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "79ce1aef60ea22dc12e14ade3f9a1ed542faff5ef81f00138030dc5645c2cf75"
+    static let digest = "487cff41d3a79556c432dddd183094e153ec47e29c7c86765e85b98caf2cacc0"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -108,7 +108,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         switch self {
         case .library: "Library"
         case .projects: "Projects"
-        case .artifacts: "Artifacts"
+        case .artifacts: "Made by Alevr"
         case .agents: "Orbit"
         case .customize: "Customize"
         case .pulls: "Pull requests"
@@ -125,7 +125,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         switch self {
         case .library: "Library"
         case .projects: "Projects"
-        case .artifacts: "Artifacts"
+        case .artifacts: "Made by Alevr"
         case .agents: "Orbit"
         case .customize: "Customize"
         case .pulls: "Pull Requests"
@@ -349,7 +349,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: "Add to project"
         case .connectors: "Apps"
         case .skill: "Use a skill"
-        case .research: "Research"
+        case .research: "Deep Field"
         case .search: "Web search"
         case .memory: "Memory"
         }
@@ -365,7 +365,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: "Add to Project"
         case .connectors: "Apps"
         case .skill: "Use a Skill"
-        case .research: "Research"
+        case .research: "Deep Field"
         case .search: "Web Search"
         case .memory: "Memory"
         }

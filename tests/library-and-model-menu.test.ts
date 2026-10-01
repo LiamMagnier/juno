@@ -69,7 +69,7 @@ test("the library page keeps the e2e contract: an h1 that says library", () => {
   // /library with no view opens the unified Library, whose page header (an
   // h1, AppPageHeader) says Library; the e2e suite visits exactly that URL.
   assert.match(PAGE, /return params\.get\("view"\) === "files" \? <LibraryFilesPage \/> : <LibraryHome \/>;/);
-  assert.match(LIBRARY_HOME, /<AppPageHeader heading="Library"/);
+  assert.match(LIBRARY_HOME, /<AppPageHeader heading=\{FEATURE_NAMES\.library\.label\}/);
   // The other views keep their own headings, and both stay reachable from it.
   assert.match(PAGE, /if \(params\.get\("view"\) === "trash"\) return <LibraryTrash \/>;/);
   assert.match(LIBRARY_TRASH, /<AppPageHeader heading="Recently deleted"/);

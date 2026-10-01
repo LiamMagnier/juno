@@ -2,7 +2,7 @@ import { ArrowRight, AudioLines, EyeOff, FileUp, Lock, ShieldCheck, type IconCom
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { LandingColumn } from "@/components/landing/section";
 import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What ships, every line of it today. The heading holds its place on the left
@@ -39,9 +39,9 @@ const FEATURES: Feature[] = [
     body: `Group related work, attach files, and let ${PRODUCT_NAME} carry context across conversations when you want it to.`,
   },
   {
-    title: "Research",
+    title: FEATURE_NAMES.research.label,
     icon: AppIcons.research,
-    body: "Approve the search plan, follow the sources live, steer the run, and get a report with checked citations.",
+    body: `${FEATURE_NAMES.research.description}: approve the search plan, follow the sources live, steer the run, and get a report with checked citations.`,
   },
   {
     title: `${PRODUCT_NAME} Code`,

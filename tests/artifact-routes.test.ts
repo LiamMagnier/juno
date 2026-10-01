@@ -374,7 +374,7 @@ pageTest("/design/{id} is a 307 to /a/{id}, without a read of its own", async ()
 
 test("the tab reads Artifact on /a/{id}, and the prefix catches nothing else", () => {
   assert.equal(titleForPath("/a/ck123"), "Artifact");
-  assert.equal(titleForPath("/artifacts"), "Artifacts");
+  assert.equal(titleForPath("/artifacts"), "Made by Alevr");
   assert.equal(titleForPath("/admin"), "Admin");
   assert.equal(titleForPath("/design"), "Alevr", "a redirect draws no window to caption");
 });

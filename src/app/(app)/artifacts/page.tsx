@@ -74,7 +74,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ArtifactPreview, DesignPoster } from "@/components/artifacts/artifact-preview";
 import { IconSwap } from "@/components/ui/icon-swap";
 import ArtifactsLoading from "./loading";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -598,7 +598,7 @@ function ArtifactsHome() {
          * lives). docs/design/PREMIUM_AUDIT.md §3 rule 15: anything above the
          * title has to say something the title does not.
          */
-        heading="Made in chats"
+        heading={FEATURE_NAMES.artifacts.label}
         /*
          * WHAT IS HERE, NOT "EVERYTHING". It read "Everything Juno built with
          * you, newest first", and neither half was true: generated images and

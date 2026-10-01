@@ -2524,9 +2524,9 @@ export function Composer({
           label: FEATURE_NAMES.research.label,
           // No depth word: Research sizes itself, and a level name told people
           // to pick a model to get a "deeper" run it did not give them.
-          tooltip: <>Plans, reads the web and writes a cited report. Usually 5–15 minutes.</>,
-          openLabel: "Research on. Opens the add menu.",
-          removeLabel: "Turn off research",
+          tooltip: <>{`${FEATURE_NAMES.research.description}: plans, reads the web and writes a cited report. Usually 5–15 minutes.`}</>,
+          openLabel: `${FEATURE_NAMES.research.accessibleLabel} on. Opens the add menu.`,
+          removeLabel: `Turn off ${FEATURE_NAMES.research.label}`,
           remove: () => setResearch(false),
         }]
       : []),
@@ -2835,6 +2835,9 @@ export function Composer({
           kind: "toggle",
           id: "research",
           label: FEATURE_NAMES.research.label,
+          // A branded mode carries its plain descriptor (D-038).
+          description: FEATURE_NAMES.research.description,
+          ariaLabel: FEATURE_NAMES.research.accessibleLabel,
           icon: ComposerIcons.research,
           checked: research,
           onToggle: () => setResearch((on) => !on),
