@@ -445,7 +445,7 @@ struct JunoMobileRootView: View {
 
   /// The shell: one tab bar carrying the three products and search.
   ///
-  /// Chat, Code and Work are the only top-level destinations — the same three
+  /// Chat, Crew and Code are the top-level destinations — the same three
   /// the Mac's product switcher and the website's sidebar carry. Everything
   /// else is nested: the workspace surfaces (Projects, Library, Artifacts,
   /// Tasks, Connections) sit in sections that `.sidebarAdaptable` shows in the
@@ -547,7 +547,7 @@ struct JunoMobileRootView: View {
 
   /// The phone's shell: one tab bar carrying the three products and search.
   ///
-  /// Chat, Code and Work are the only top-level destinations — the same three
+  /// Chat, Crew and Code are the top-level destinations — the same three
   /// the Mac's product switcher and the website's sidebar carry. Everything
   /// else is reached from the history sheet and pushed on the Chat stack.
   /// The system tab bar is Liquid Glass, minimises on scroll so a long
@@ -566,6 +566,14 @@ struct JunoMobileRootView: View {
       }
       .accessibilityIdentifier("juno.mobile.tab.chat")
 
+      Tab(value: JunoMobileSection.agents) {
+        productStack(.agents)
+      } label: {
+        JunoMobileTabLabel(section: .agents)
+      }
+      .badge(workAttentionCount)
+      .accessibilityIdentifier("juno.mobile.tab.crew")
+
       Tab(value: JunoMobileSection.code) {
         productStack(.code)
       } label: {
@@ -573,15 +581,6 @@ struct JunoMobileRootView: View {
       }
       .badge(codeAttentionCount)
       .accessibilityIdentifier("juno.mobile.tab.code")
-
-      Tab(value: JunoMobileSection.work) {
-        productStack(.work)
-      } label: {
-        JunoMobileTabLabel(section: .work)
-      }
-      .badge(workAttentionCount)
-      .accessibilityIdentifier("juno.mobile.tab.work")
-
       Tab(value: JunoMobileSection.search, role: .search) {
         productStack(.search)
       }
@@ -607,7 +606,7 @@ struct JunoMobileRootView: View {
         // The Mac's warm sidebar ground, opaque. Left to the column's glass
         // it sampled whatever the detail drew under it: a cool grey beside
         // the warm canvas, and a muddy one beside the incognito ink.
-        .background(Color.junoSidebar.ignoresSafeArea())
+        .background(.regularMaterial)
         .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
     } detail: {
       NavigationStack {

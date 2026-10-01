@@ -16,7 +16,7 @@
 # Usage (from anywhere inside the repo):
 #   deploy/deploy-from-mac.sh                 # deploy origin/main
 #   deploy/deploy-from-mac.sh some-branch     # deploy a branch, tag or SHA
-#   deploy/deploy-from-mac.sh --skip-checks   # skip typecheck/tests/lint (faster)
+# Production deployment requires the shared local gates; bypass is disabled.
 #
 # Needs, once:
 #   - Docker Desktop, running. Settings → Resources → Memory: 8 GB (the
@@ -41,7 +41,7 @@ SKIP_CHECKS=0
 
 for arg in "$@"; do
   case "$arg" in
-    --skip-checks) SKIP_CHECKS=1 ;;
+    --skip-checks) die "--skip-checks is disabled: production deployments must pass scripts/local-gates.sh" ;;
     -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) REF="$arg" ;;
@@ -102,6 +102,9 @@ ARCHIVE="juno-$SHA.tar.gz"
 ARTIFACT="juno-$SHA.build.tar.gz"
 UPLOAD_DIR="/tmp/juno-upload-$RUN_ID"
 
+say "Shared migration gate on isolated local Postgres"
+bash scripts/local-gates.sh --migrations-only "$SHA"
+
 # —— Production env for the build ———————————————————————————————————————————
 # Next.js bakes NEXT_PUBLIC_* values into the build, so it has to see the real
 # production env. The VM's ~/juno/.env is exactly the env the app runs with.
@@ -142,17 +145,10 @@ docker run --rm -i --platform linux/amd64 \
     step "vendored runner core"
     npm ci --prefix runner/agent-core --no-audit --no-fund
     npm run build --prefix runner/agent-core
-    if [ "$SKIP_CHECKS" != 1 ]; then
-      step "i18n catalog";                 npm run i18n:extract
-      step "typecheck";                    npm run typecheck
-      step "tests";                        npm test
-      step "lint";                         npm run lint
-      step "capability contract";          npm run capabilities:check
-      step "Work contract";                npm run work:contract:check
-      step "model capability evidence";    npm run models:capabilities:audit
-      step "cloud Work sandbox";           npm run work:sandbox:check
-      step "runner core tests";            npm test --prefix runner/agent-core
-    fi
+    step "relay dependencies"
+    npm ci --prefix relay --no-audit --no-fund
+    step "shared local gates"
+    bash scripts/local-gates.sh --without-migrations
     step "next build"
     cp /run/juno-build.env .env
     npm run build

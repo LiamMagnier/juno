@@ -146,8 +146,7 @@ struct ChatSkillCaptureSheet: View {
     private var slugHint: some View {
         Group {
             if let slug {
-                Text("You will type ") + Text("/\(slug)").monospaced()
-                    + Text(" to use it.")
+                Text("You will type \(Text("/\(slug)").monospaced()) to use it.")
             } else {
                 Text(WorkSkillDraft.slugHint(nil))
             }

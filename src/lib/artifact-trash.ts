@@ -209,12 +209,16 @@ export async function purgeExpiredArtifacts({
   days = ARTIFACT_TRASH_RETENTION_DAYS,
   dryRun = false,
   batchSize = 50,
-}: { now?: Date; days?: number; dryRun?: boolean; batchSize?: number } = {}): Promise<PurgeReport> {
+  maxBatches = Infinity,
+}: { now?: Date; days?: number; dryRun?: boolean; batchSize?: number; maxBatches?: number } = {}): Promise<PurgeReport> {
   if (!Number.isSafeInteger(days) || days < MIN_TRASH_RETENTION_DAYS) {
     throw new Error(`Trash retention must be a whole number of days, at least ${MIN_TRASH_RETENTION_DAYS} (got ${days}).`);
   }
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
     throw new Error(`Batch size must be a positive whole number (got ${batchSize}).`);
+  }
+  if (maxBatches !== Infinity && (!Number.isSafeInteger(maxBatches) || maxBatches < 1)) {
+    throw new Error("maxBatches must be a positive whole number");
   }
   const cutoff = new Date(now.getTime() - days * DAY_MS);
   const expired = { deletedAt: { not: null, lte: cutoff } } satisfies Prisma.ArtifactWhereInput;
@@ -224,7 +228,7 @@ export async function purgeExpiredArtifacts({
   if (dry || eligible === 0) return { eligible, purged: 0, dryRun: dry, cutoff };
 
   let purged = 0;
-  for (;;) {
+  for (let batches = 0; batches < maxBatches; batches++) {
     const batch = await prismaUnguarded.artifact.findMany({
       where: expired,
       select: { id: true },

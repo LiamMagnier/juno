@@ -281,7 +281,7 @@ struct StudioScreenControlRow: View {
             Button("Take over", action: takeOver)
                 .buttonStyle(StudioQuietButtonStyle())
                 .help("Pause Juno and use the Mac yourself")
-                .accessibilityIdentifier("juno.code.computer-use.take-over")
+                .accessibilityIdentifier("juno.code.computer-use.take-over").contentShape(.rect)
             Button("Stop", action: stop)
                 .buttonStyle(StudioSecondaryButtonStyle())
                 .contentShape(Capsule())
@@ -290,11 +290,11 @@ struct StudioScreenControlRow: View {
         case .paused:
             Button("Stop", action: stop)
                 .buttonStyle(StudioQuietButtonStyle())
-                .accessibilityIdentifier("juno.code.computer-use.stop")
+                .accessibilityIdentifier("juno.code.computer-use.stop").contentShape(.rect)
             Button("Resume", action: resume)
                 .buttonStyle(StudioSecondaryButtonStyle())
                 .help("Let Juno carry on from a fresh look at the screen")
-                .accessibilityIdentifier("juno.code.computer-use.resume")
+                .accessibilityIdentifier("juno.code.computer-use.resume").contentShape(.rect)
         case .needsPermission, .trustLost:
             if let permission = notice.nextPermission {
                 Button(compact ? "Open Settings" : "Open \(permission.title)") {
@@ -555,13 +555,13 @@ struct StudioScreenControlSettings: View {
             Spacer()
             Menu(current.map { $0.phrase.capitalized(with: nil) } ?? "Never") {
                 ForEach(AppTier.allCases.filter { candidate in cap.map { candidate <= $0 } ?? false }, id: \.self) { tier in
-                    Button(tier.phrase.capitalized(with: nil)) { preferences = preferencesStore.set(bundleID, tier: tier); push() }
+                    Button(tier.phrase.capitalized(with: nil)) { preferences = preferencesStore.set(bundleID, tier: tier); push() }.contentShape(.rect)
                 }
-                Button("Never") { preferences = preferencesStore.set(bundleID, tier: nil); push() }
+                Button("Never") { preferences = preferencesStore.set(bundleID, tier: nil); push() }.contentShape(.rect)
                 Divider()
-                Button("Remove from this list") { preferences = preferencesStore.remove(bundleID); push() }
+                Button("Remove from this list") { preferences = preferencesStore.remove(bundleID); push() }.contentShape(.rect)
             }
-            .fixedSize()
+            .fixedSize().contentShape(.rect)
         }
     }
 

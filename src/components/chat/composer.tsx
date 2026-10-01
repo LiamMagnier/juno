@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { ContextComposerField } from "./context-composer-field";
+import { type ContextToken, rangesForStoredText } from "@/lib/chat/context-tokens";
 import type { VoiceCallParts } from "@/components/voice/realtime-voice";
 import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import nextDynamic from "next/dynamic";
@@ -897,6 +899,7 @@ export function Composer({
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const [contextTokens, setContextTokens] = React.useState<ContextToken[]>([]);
   /*
    * ── The field tier's three pieces of bookkeeping ──────────────────────────
    *
@@ -1473,6 +1476,7 @@ export function Composer({
         // spread only where the rest of the per-send options survive.
         ...(quote?.mode === "modify" || !skillForSend ? null : { skillSlug: skillForSend }),
         ...(connectorsForSend ? { connectors: connectorsForSend } : null),
+        ...(contextTokens.length && !quote ? { context: rangesForStoredText(draft, contextTokens) } : null),
       });
       if (result && result.accepted === false) return;
       setText("");
@@ -1884,10 +1888,6 @@ export function Composer({
         return items.length ? { kind: "command", items } : null;
       }
       return null;
-    }
-    if (mentionAt) {
-      const items = filterRows(mentions, mentionAt.query.toLowerCase());
-      return items.length ? { kind: "mention", items } : null;
     }
     return null;
   }, [text, models, commands, mentions, mentionAt]);
@@ -3481,10 +3481,13 @@ export function Composer({
                * click.
                */
               <div className="relative">
-                {mirrored && (
+                {false && mirrored && (
                   <ComposerFieldMirror segments={draft} indent={leadIndent} viewportRef={mirrorRef} />
                 )}
-                <textarea
+                <ContextComposerField
+                  conversationId={conversationId}
+                  privateMode={privateMode}
+                  onTokensChange={setContextTokens}
                   ref={textareaRef}
                   id={CHAT_COMPOSER_FIELD_ID}
                   aria-label={
@@ -3565,7 +3568,7 @@ export function Composer({
                     // Hands the text to the mirror behind, and takes the caret
                     // and the selection colour back — see globals.css. Only
                     // while there is something the textarea cannot draw.
-                    mirrored && "composer-field--mirrored no-scrollbar",
+                    false && mirrored && "composer-field--mirrored no-scrollbar",
                   )}
                   // The marks drawn over the head of the field, as a hole in
                   // the first line. `text-indent` is the only property that

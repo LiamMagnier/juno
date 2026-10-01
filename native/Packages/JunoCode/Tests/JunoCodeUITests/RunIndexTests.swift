@@ -168,6 +168,27 @@ final class RunIndexTests: XCTestCase {
         XCTAssertEqual(checking?.sentence, "Checking: `swift test`")
     }
 
+    /// A screen card is allowed on the card in the session, which shows the
+    /// frame with the target marked (CU-07): its row only declines.
+    func testAScreenCardsRowOnlyDeclines() {
+        let screen = ApprovalRequest(
+            sessionID: CodeSessionID(),
+            actionDigest: "c1",
+            toolName: ComputerUseToolName.apps,
+            summary: "Use Mail and Notes",
+            risk: .critical,
+            requestedAt: now,
+            expiresAt: now.addingTimeInterval(900)
+        )
+        let waiting = RunIndex.entry(
+            for: RunFacts(session: session(.waitingForApproval, pendingApproval: true), project: "juno", approval: screen),
+            now: now
+        )
+        XCTAssertEqual(waiting?.group, .needsYou)
+        XCTAssertEqual(waiting?.actions, [.decline])
+        XCTAssertEqual(waiting?.approval?.actionDigest, "c1", "Decline is still bound to what the row showed")
+    }
+
     func testAnInterruptedRunOffersResume() {
         let interrupted = session(.failed, error: CodeSessionStore.interruptionMessage)
         let entry = RunIndex.entry(for: RunFacts(session: interrupted, project: "juno"), now: now)
@@ -209,6 +230,66 @@ final class RunIndexTests: XCTestCase {
     }
 
     // MARK: - Answering from a row
+
+    /// Allow once from a banner or a row never carries out a screen action,
+    /// even with the right id and digest: the card in the session is where
+    /// it is allowed (CU-07), and where the grant sheet's unticks are
+    /// settled first. Decline still works from anywhere.
+    func testAScreenCardIsNeverAllowedFromOutsideItsCard() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-run-index-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let workspace = root.appendingPathComponent("workspace")
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let workbench = WorkbenchModel(dependencies: WorkbenchModel.Dependencies(
+            storageRootURL: root.appendingPathComponent("storage"),
+            modelClient: WriteThenAnswerClient(),
+            availableModels: [ModelOption(modelID: "test-model", displayName: "Test")]
+        ))
+        workbench.resumesInterruptedRunsOnLaunch = { false }
+        await workbench.bootstrap()
+        let added = await workbench.addWorkspace(grantedURL: workspace)
+        let record = try XCTUnwrap(added)
+        let made = await workbench.createSession(
+            workspaceID: record.id,
+            configuration: AgentConfiguration(modelID: "test-model", permissionMode: .fullAccess)
+        )
+        let created = try XCTUnwrap(made)
+        let loaded = await workbench.controller(for: created.id)
+        let controller = try XCTUnwrap(loaded)
+        let permissions = try XCTUnwrap(controller.live?.permissions)
+
+        // A click on "Send" in Mail: the floor asks in every mode.
+        let authorization = Task {
+            await permissions.authorize(
+                toolName: ComputerUseToolName.computer,
+                actionDigest: "digest-send",
+                risk: .destructive,
+                summary: "Click “Send” in Mail",
+                approvalPolicy: .alwaysRequiresApproval
+            )
+        }
+        var pending: ApprovalRequest?
+        for _ in 0..<400 {
+            pending = await permissions.pendingApprovals.first
+            if pending != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let card = try XCTUnwrap(pending, "the screen card never became pending")
+
+        let fromRow = await workbench.allowOnce(sessionID: created.id, approvalID: card.id, digest: card.actionDigest)
+        guard case let .refused(why) = fromRow else { return XCTFail("a screen card is not allowed from a row or banner") }
+        XCTAssertTrue(why.contains("card in the session"), why)
+        let direct = await controller.allowOnce(approvalID: card.id, digest: card.actionDigest)
+        XCTAssertFalse(direct, "nor by the controller's outside path")
+        let stillPending = await permissions.pendingApprovals.map(\.id)
+        XCTAssertEqual(stillPending, [card.id], "a refused Allow once changes nothing")
+
+        let declined = await workbench.decline(sessionID: created.id, approvalID: card.id, digest: card.actionDigest)
+        XCTAssertEqual(declined, .done, "declining from anywhere stays open")
+        let outcome = await authorization.value
+        guard case .denied = outcome else { return XCTFail("expected the decline, got \(outcome)") }
+    }
 
     func testInlineAllowOnceResolvesWithThePendingDigestAndAStaleOneIsRefused() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())

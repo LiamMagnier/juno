@@ -51,7 +51,7 @@ extension DesktopDestination {
         case .assistants: self = .assistants
         case .skills: self = .skills
         case .automations: self = .automations
-        case .connections: self = .connections
+        case .connections, .accountCustomize: self = .connections
         case .customize, .pulls: return nil
         }
     }
@@ -69,7 +69,7 @@ extension DesktopDestination {
         case .assistants: .assistants
         case .skills: .skills
         case .automations: .automations
-        case .connections: .connections
+        case .connections: .accountCustomize
         case .chat, .search, .design, .memory, .permissions: nil
         }
     }

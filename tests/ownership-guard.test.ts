@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { OWNER_COLUMN, UNGUARDED_OWNED_MODELS } from "@/lib/db";
+import { OWNER_COLUMN, UNGUARDED_OWNED_MODELS, whereHasOwner, prisma } from "@/lib/db";
 
 /*
  * Drift test for the Prisma ownership guard.
@@ -97,5 +97,23 @@ test("the sync tables are guarded on accountId, not userId", () => {
   // literal `userId` key, so a query on them could never satisfy it.
   for (const model of ["AccountChange", "EntityRevision", "MutationReceipt"]) {
     assert.equal(OWNER_COLUMN.get(model), "accountId", `${model} must be guarded on accountId`);
+  }
+});
+
+test("ownership scope rejects negative filters and partially scoped disjunctions", () => {
+  for (const where of [undefined, {}, { userId: undefined }, { userId: null }, { userId: {} }, { userId: { not: "alice" } }, { NOT: { userId: "alice" } }, { OR: [{ userId: "alice" }, { id: "foreign" }] }, { conversation: { every: { userId: "alice" } } }]) {
+    assert.equal(whereHasOwner(where, "userId"), false, JSON.stringify(where));
+  }
+  for (const where of [{ userId: "alice" }, { userId: { equals: "alice" } }, { userId: { in: ["alice"] } }, { userId_id: { userId: "alice", id: "row" } }, { AND: [{ userId: "alice" }, { id: "row" }] }, { OR: [{ userId: "alice" }, { userId: "bob" }] }, { conversation: { is: { userId: "alice" } } }]) {
+    assert.equal(whereHasOwner(where, "userId"), true, JSON.stringify(where));
+  }
+});
+
+test("unscoped reads, aggregates, mutations and upserts fail before database dispatch", async () => {
+  const operations = ["findMany", "findFirst", "findUnique", "count", "aggregate", "groupBy", "update", "updateMany", "delete", "deleteMany", "upsert"];
+  // No database is needed: the extension must reject before the engine runs.
+  for (const operation of operations) {
+    const delegate = prisma.conversation as unknown as Record<string, (args: unknown) => Promise<unknown>>;
+    await assert.rejects(delegate[operation]({ where: { id: "unscoped" } }), /\[ownership-guard\]/, operation);
   }
 });

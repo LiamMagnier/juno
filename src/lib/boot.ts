@@ -1,4 +1,5 @@
 import "server-only";
+import { assertConnectorEncryptionConfigured } from "@/lib/crypto";
 import { assertDataEncryptionKeyConfigured } from "@/lib/message-crypto-config";
 import { sweepAbandonedFirstSubmissionReceipts } from "@/lib/chat-first-submission-receipt";
 import { installGracefulShutdown } from "@/lib/graceful-shutdown";
@@ -19,6 +20,7 @@ import { installGracefulShutdown } from "@/lib/graceful-shutdown";
 export async function bootNodeRuntime(): Promise<void> {
   try {
     assertDataEncryptionKeyConfigured();
+    if (process.env.NODE_ENV === "production") assertConnectorEncryptionConfigured();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[boot] ${message}`);

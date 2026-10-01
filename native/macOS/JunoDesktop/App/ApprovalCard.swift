@@ -186,13 +186,13 @@ struct DesktopApprovalCard: View {
     @ViewBuilder
     private var taskFacts: some View {
         if let teammate = detailText("teammate") {
-            (Text("To ") + Text(teammate).foregroundStyle(Color.junoForeground))
+            Text("To \(Text(teammate).foregroundStyle(Color.junoForeground))")
                 .junoFont(size: 12, relativeTo: .footnote)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .padding(.top, JunoSpace.hairline)
         }
         if let estimate = detailText("estimate") {
-            (Text("Estimated cost ") + Text(estimate).foregroundStyle(Color.junoForeground))
+            Text("Estimated cost \(Text(estimate).foregroundStyle(Color.junoForeground))")
                 .junoFont(size: 12, relativeTo: .footnote)
                 .monospacedDigit()
                 .foregroundStyle(Color.junoSecondaryInk)

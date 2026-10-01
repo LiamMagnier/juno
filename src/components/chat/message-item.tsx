@@ -97,6 +97,8 @@ import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
 import { cn, formatTokens, formatUsd } from "@/lib/utils";
+import { ContextReceiptLine, SentContextText } from "@/components/chat/context-receipt";
+import type { ContextReceipt } from "@/lib/chat/context-tokens";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
 import { parseQuotedMessage } from "@/lib/quote-context";
 import { QuotedSelection } from "@/components/chat/quoted-selection";
@@ -804,6 +806,7 @@ function BubbleEditor({
 }
 
 interface MessageItemProps {
+  contextReceipt?: ContextReceipt;
   message: ChatMessage;
   isLast: boolean;
   busy: boolean;
@@ -882,6 +885,7 @@ interface MessageItemProps {
  */
 export const MessageItem = React.memo(function MessageItem({
   surface = "chat",
+  contextReceipt,
   message,
   isLast,
   busy,
@@ -1198,7 +1202,7 @@ export const MessageItem = React.memo(function MessageItem({
                   isLong && !expanded && "max-h-60 overflow-hidden"
                 )}
               >
-                {userDisplayContent}
+                {contextReceipt ? <SentContextText text={userDisplayContent} receipt={contextReceipt} /> : userDisplayContent}
                 {isLong && (
                   <div
                     className={cn(
@@ -1212,6 +1216,7 @@ export const MessageItem = React.memo(function MessageItem({
                 )}
               </div>
               )}
+              {contextReceipt && <ContextReceiptLine receipt={contextReceipt} />}
               {isLong && (
                 <button
                   type="button"

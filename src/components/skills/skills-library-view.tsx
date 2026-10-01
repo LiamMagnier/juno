@@ -1,5 +1,6 @@
 "use client";
 
+import { CustomizeNav } from "@/components/customize/customize-nav";
 import * as React from "react";
 import { Search } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
@@ -167,6 +168,7 @@ export function SkillsLibraryView({
 
   return (
     <AppPage measure="reading">
+      <CustomizeNav current="skills" />
       <AppPageHeader
         heading="Skills"
         lede="Instructions Juno follows for a specific job. Type / in chat to use one."

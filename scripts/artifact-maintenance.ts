@@ -1,6 +1,6 @@
 /**
- * The artifact lifecycle's two scheduled jobs, in one PM2 loop
- * (`juno-artifact-maintenance`, deploy/ecosystem.config.js):
+ * Manual artifact maintenance. Production schedules these jobs inside the
+ * existing work-scheduler process; do not create another PM2 app:
  *
  *   - SEAL IDLE DRAFTS, every minute. A design draft untouched for
  *     ARTIFACT_DRAFT_IDLE_MS becomes the next immutable version

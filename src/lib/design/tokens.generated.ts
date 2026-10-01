@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 0589408f676909a2
+// tokens-digest: 820502d78627674e
 //
 
 /** `--dur-*` in milliseconds. */
@@ -45,7 +45,7 @@ export const RADIUS = {
   "popover": 16,
   "surface": 16,
   "panel": 20,
-  "composer": 20,
+  "composer": 22,
   "stage": 28,
 } as const;
 

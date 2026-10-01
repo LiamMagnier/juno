@@ -73,9 +73,9 @@ struct JunoMobileCommands: Commands {
       Section {
         Button("Chat") { actions?.show(.chat) }
           .keyboardShortcut("1", modifiers: .command)
-        Button("Code") { actions?.show(.code) }
+        Button("Crew") { actions?.show(.agents) }
           .keyboardShortcut("2", modifiers: .command)
-        Button("Work") { actions?.show(.work) }
+        Button("Code") { actions?.show(.code) }
           .keyboardShortcut("3", modifiers: .command)
       }
       .disabled(actions == nil)
@@ -83,7 +83,7 @@ struct JunoMobileCommands: Commands {
         Button("Projects") { actions?.show(.projects) }
         Button("Library") { actions?.show(.library) }
         Button("Artifacts") { actions?.show(.artifacts) }
-        Button("Agents") { actions?.show(.agents) }
+        Button("Crew") { actions?.show(.agents) }
       }
       .disabled(actions == nil)
     }

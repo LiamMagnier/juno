@@ -84,7 +84,7 @@ struct StudioGoalRow: View {
                 }
                 Button(action.rawValue) { perform(action) }
                     .buttonStyle(StudioGoalActionStyle(emphasis: index == 0 && action != .clear))
-                    .accessibilityIdentifier("juno.code.goal.\(action.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))")
+                    .accessibilityIdentifier("juno.code.goal.\(action.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))").contentShape(.rect)
             }
         }
         .fixedSize()

@@ -60,7 +60,7 @@ export function AgentsHome({
   if (error && !agents) {
     return (
       <AppPage measure="wide">
-        <LoadError title="Couldn’t load your agents" description={error} onRetry={refresh} />
+        <LoadError title="Couldn’t load your crew" description={error} onRetry={refresh} />
       </AppPage>
     );
   }
@@ -70,7 +70,7 @@ export function AgentsHome({
   return (
     <AppPage measure="wide">
       <header className="flex flex-col gap-1 pb-8">
-        <h1 className="font-serif text-page-title text-foreground">Agents</h1>
+        <h1 className="font-serif text-page-title text-foreground">Crew</h1>
         <p className="text-body text-muted-foreground">
           <TeamSentence agents={ordered} />
         </p>
@@ -78,7 +78,7 @@ export function AgentsHome({
 
       <JobComposer team={ordered} autoFocus={focusComposer} compact />
 
-      <ul className="mt-10 grid grid-cols-1 gap-3 pb-16 @[40rem]/page:grid-cols-2 @[66rem]/page:grid-cols-3" aria-label="Your agents">
+      <ul className="mt-10 grid grid-cols-1 gap-3 pb-16 @[40rem]/page:grid-cols-2 @[66rem]/page:grid-cols-3" aria-label="Your crew">
         {ordered.map((agent, index) => (
           <li key={agent.id} style={staggerDelay(index, "tight")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
             <AgentCard agent={agent} onChanged={refresh} />
@@ -183,7 +183,7 @@ function FirstAgent() {
       <div className="flex w-full max-w-2xl flex-col items-center">
         <JobComposer team={[]} autoFocus hero heading={
           <h1 className="text-balance text-center font-serif text-display font-normal text-foreground motion-safe:animate-rise-in">
-            Who should take care of it{firstName ? <>, <span className="italic">{firstName}</span></> : null}?
+            Who should take care of it{firstName ? <>, <span>{firstName}</span></> : null}?
           </h1>
         } />
       </div>
@@ -214,20 +214,13 @@ function JobComposer({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [arrived, setArrived] = React.useState(false);
-  const [example, setExample] = React.useState(0);
+  const example = 0;
   const [focused, setFocused] = React.useState(false);
   const salt = React.useMemo(() => Math.floor(Math.random() * 997), []);
   const face = React.useMemo(() => nextFace(team, salt), [team, salt]);
   const name = React.useMemo(() => nextName(team, salt), [team, salt]);
   const field = React.useRef<HTMLTextAreaElement | null>(null);
   const request = React.useRef<{ key: string; text: string } | null>(null);
-
-  // The placeholder cycles through examples while the field is empty.
-  React.useEffect(() => {
-    if (value) return;
-    const timer = window.setInterval(() => setExample((i) => (i + 1) % EXAMPLES.length), 4200);
-    return () => window.clearInterval(timer);
-  }, [value]);
 
   React.useLayoutEffect(() => {
     const el = field.current;

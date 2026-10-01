@@ -460,6 +460,7 @@ struct ChatComposerTurn {
     let documentCount: Int
     /// The skill the message is sent under (`skillSlug`), or nil.
     var skillSlug: String? = nil
+    var contextTokens: [NativeContextToken] = []
 }
 
 /// A new chat's first send, as the empty state needs to hear of it (§10.1).
@@ -882,6 +883,7 @@ struct ChatComposer: View {
     @State private var deepResearch = false
     /// The skill armed for the next message, by its slash name. Per-send, as
     /// research is, and as the web's is.
+    @State private var contextTokens: [NativeContextToken] = []
     @State private var skillSlug: String?
     /// A steer is on its way to the run; a second Return waits for it.
     @State private var isSteeringInFlight = false
@@ -1422,6 +1424,15 @@ struct ChatComposer: View {
 
     @ViewBuilder
     private var aboveSlot: some View {
+        if !isPrivate, !voiceActive {
+            NativeContextSuggestions(query: NativeContextMention.query(in: prompt), search: {
+                try await model.mentions(query: $0, conversationID: model.selectedConversationID)
+            }, select: { token in
+                guard contextTokens.count < 16 else { return }
+                if !contextTokens.contains(where: { $0.identity == token.identity }) { contextTokens.append(token) }
+                prompt = NativeContextMention.inserting(token, in: prompt)
+            })
+        }
         // The instructions the run has not read yet, rising in the moment the
         // server takes one and leaving when the run reads it — the steering
         // composer's one signature.
@@ -1545,21 +1556,7 @@ struct ChatComposer: View {
                 .transition(.opacity)
         } else if isPrivate {
             JunoComposerPrivateEdge()
-        } else if let beam = beamStyle {
-            // The border beam (premium pass): it breathes around an empty new
-            // chat's composer until the first keystroke, and travels the edge
-            // while a reply has been streaming for more than three seconds.
-            // One effect at a time, and never with the private or drop edge.
-            JunoBorderBeam(cornerRadius: JunoComposerMetrics.cornerRadius, style: beam, isActive: true)
         }
-    }
-
-    /// Which beam the shell wears now, if any.
-    private var beamStyle: JunoBorderBeamStyle? {
-        if isGenerating, streamedPastBeat { return .line }
-        let isEmptyLanding = model.selectedConversationID == nil && fixedProjectID == nil && !voiceActive
-            && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return isEmptyLanding && !isGenerating ? .pulse : nil
     }
 
     /// The one quiet line under the dock (the web's `footnote`): what is
@@ -2264,7 +2261,8 @@ struct ChatComposer: View {
             proMode: proMode,
             groundDocuments: documentGroundingArmed,
             documentCount: indexedDocumentCount,
-            skillSlug: armedSkill?.slug
+            skillSlug: armedSkill?.slug,
+            contextTokens: contextTokens.filter { prompt.contains("@" + $0.label) }
         )
     }
 
@@ -2287,10 +2285,12 @@ struct ChatComposer: View {
         attachmentModel?.clear()
         deepResearch = false
         skillSlug = nil
+        contextTokens = []
     }
 
     /// Puts a queued turn's words back in the field.
     private func restore(_ turn: ChatComposerTurn) {
+        contextTokens = turn.contextTokens
         if queuedTurn?.content == turn.content { queuedTurn = nil }
         if prompt.isEmpty { prompt = turn.content }
         focused = true
@@ -2392,7 +2392,8 @@ struct ChatComposer: View {
                 fastMode: turn.fastMode,
                 proMode: turn.proMode,
                 attachments: turn.attachments,
-                skillSlug: turn.skillSlug
+                skillSlug: turn.skillSlug,
+                contextTokens: turn.contextTokens
             )
             guard sent else {
                 if restoreOnRefusal { restore(turn) }

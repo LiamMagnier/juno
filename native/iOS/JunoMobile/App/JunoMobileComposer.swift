@@ -248,6 +248,7 @@ struct JunoMobileComposer: View {
       isImage: false
     )
     prompt = ""
+    contextTokens = []
     draftExpanded = false
   }
 
@@ -266,8 +267,17 @@ struct JunoMobileComposer: View {
       || attachmentModel.map { !$0.canSend } == true
   }
 
+  @State private var contextTokens: [NativeContextToken] = []
+
   var body: some View {
     VStack(spacing: JunoSpace.snug) {
+      NativeContextSuggestions(query: NativeContextMention.query(in: prompt), search: {
+        try await model.mentions(query: $0, conversationID: conversation?.id)
+      }, select: { token in
+        guard contextTokens.count < 16 else { return }
+        if !contextTokens.contains(where: { $0.identity == token.identity }) { contextTokens.append(token) }
+        prompt = NativeContextMention.inserting(token, in: prompt)
+      })
       if model.canRetrySelectedConversation && !model.isGenerating {
         retryBanner
       }
@@ -392,11 +402,7 @@ struct JunoMobileComposer: View {
           .junoGlass(
             in: RoundedRectangle(cornerRadius: 26, style: .continuous)
           )
-          // Native border beam (libraries.dev `line`, rebuilt in SwiftUI):
-          // only while a reply streams, and static under Reduce Motion.
-          .overlay {
-            JunoMobileComposerBeam(active: generatingHere, cornerRadius: 26)
-          }
+
         }
         .transition(.opacity)
       }
@@ -1127,7 +1133,8 @@ struct JunoMobileComposer: View {
       canvasEnabled: options.canvas ? nil : false,
       connectors: options.connectors,
       fastMode: options.fastMode,
-      proMode: options.proMode
+      proMode: options.proMode,
+      contextTokens: contextTokens.filter { prompt.contains("@" + $0.label) }
     )
     guard sent else { return }
     sendHaptic.fire()
@@ -1402,57 +1409,3 @@ struct JunoComposerGlassCircle: ViewModifier {
 }
 
 
-/// The composer's streaming beam: a short arc of accent light that travels
-/// the capsule's edge while a reply is being written. The native equivalent of
-/// libraries.dev's Border beam (`line`), per the premium brief. It appears
-/// only after the reply has been running for three seconds (a quick answer
-/// never lights it), and under Reduce Motion it is a still accent hairline.
-struct JunoMobileComposerBeam: View {
-  let active: Bool
-  let cornerRadius: CGFloat
-
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var lit = false
-
-  var body: some View {
-    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-    Group {
-      if lit {
-        if reduceMotion {
-          shape.strokeBorder(Color.junoAccent.opacity(0.55), lineWidth: 1)
-        } else {
-          TimelineView(.animation) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let angle = Angle.degrees((t.truncatingRemainder(dividingBy: 2.6) / 2.6) * 360)
-            shape.strokeBorder(
-              AngularGradient(
-                stops: [
-                  .init(color: .clear, location: 0),
-                  .init(color: .clear, location: 0.62),
-                  .init(color: Color.junoAccent.opacity(0.9), location: 0.8),
-                  .init(color: .clear, location: 0.86),
-                  .init(color: .clear, location: 1),
-                ],
-                center: .center,
-                angle: angle
-              ),
-              lineWidth: 1.25
-            )
-          }
-        }
-      }
-    }
-    .transition(.opacity)
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
-    .task(id: active) {
-      guard active else {
-        withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { lit = false }
-        return
-      }
-      try? await Task.sleep(for: .seconds(3))
-      guard !Task.isCancelled else { return }
-      withAnimation(JunoMotion.reduced(JunoMotion.slow, when: reduceMotion)) { lit = true }
-    }
-  }
-}

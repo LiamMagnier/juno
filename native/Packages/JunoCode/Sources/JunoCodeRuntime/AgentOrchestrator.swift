@@ -228,6 +228,7 @@ public actor AgentOrchestrator {
     /// The same calls by model, which is how they are priced and what a
     /// delegating session adds to its own ledger.
     public private(set) var usageLedger = SessionUsageLedger()
+    private var runUsageBaseline = ModelUsageTotals()
     /// Calls recorded since the store's ledger was last brought up to date.
     private var unsavedUsage = SessionUsageLedger()
     private var callUsageObserver: (@Sendable (ModelCallUsage) -> Void)?
@@ -991,6 +992,7 @@ public actor AgentOrchestrator {
     // MARK: - The loop
 
     private func runLoop() async {
+        runUsageBaseline = usageLedger.total
         let startedAt = Date()
         var filesChanged = Set<String>()
         var lastAssistantText = ""
@@ -2756,7 +2758,13 @@ public actor AgentOrchestrator {
                     testsPassed: testsPassed,
                     durationSeconds: duration,
                     endReason: endReason,
-                    endDetail: endDetail
+                    endDetail: endDetail,
+                    usage: RunTokenUsage(
+                        inputTokens: max(0, usageLedger.total.inputTokens - runUsageBaseline.inputTokens),
+                        outputTokens: max(0, usageLedger.total.outputTokens - runUsageBaseline.outputTokens),
+                        cacheReadTokens: max(0, usageLedger.total.cacheReadTokens - runUsageBaseline.cacheReadTokens),
+                        cacheWriteTokens: max(0, usageLedger.total.cacheWriteTokens - runUsageBaseline.cacheWriteTokens)
+                    )
                 )
             )
         )

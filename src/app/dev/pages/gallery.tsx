@@ -58,8 +58,9 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
   if (path.startsWith("/api/projects/") && path.endsWith("/memory")) return json(PROJECT_MEMORY);
   if (path.startsWith("/api/projects/")) return own(PROJECT_DETAIL, { ...PROJECT_DETAIL, conversations: [], files: [] });
   if (path === "/api/library") {
-    const deleted = url.searchParams.get("deleted") === "1" || url.searchParams.get("deleted") === "true";
-    const items = deleted ? DELETED_ITEMS : LIBRARY_ITEMS;
+    const deleted = url.searchParams.get("deleted") === "1" || url.searchParams.get("deleted") === "true" || url.searchParams.get("includeDeleted") === "true";
+    const q = (url.searchParams.get("q") ?? "").toLowerCase();
+    const items = (deleted ? DELETED_ITEMS : LIBRARY_ITEMS).filter((item) => item.fileName.toLowerCase().includes(q));
     const counts = {
       all: items.length,
       IMAGE: items.filter((i) => i.kind === "IMAGE").length,
@@ -70,6 +71,14 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
       { items: [], total: 0, nextCursor: null, counts: { all: 0, IMAGE: 0, FILE: 0 }, storage: { ...STORAGE, usedBytes: 0 } }
     );
   }
+  if (path === "/api/library/made") {
+    const q = (url.searchParams.get("q") ?? "").toLowerCase();
+    const items = ARTIFACTS.map((item) => ({ kind: "artifact", id: item.id, title: item.title, type: item.type, version: item.version, href: `/a/${item.id}`, conversationId: item.conversationId, projectId: null, createdAt: item.createdAt, updatedAt: item.updatedAt }));
+    return own({ items: items.filter((item) => item.title.toLowerCase().includes(q)), nextCursor: null }, { items: [], nextCursor: null });
+  }
+  if (path === "/api/approvals/grants") return own({ grants: [] }, { grants: [] });
+  if (path === "/api/settings") return json({ settings: { ...bootstrap().settings, actionApprovalPolicy: "ask_for_any_change", blockedConnectors: [], lockdownMode: false } });
+  if (/^\/api\/attachments\/[^/]+\/preview$/.test(path)) return json({ text: "Development fixture.\nThis document preview uses sample content for visual review.", thumbnailUrl: null });
   if (path === "/api/artifacts") {
     if (url.searchParams.get("projectId")) return json({ items: ARTIFACTS.slice(0, 2) });
     return own({ items: ARTIFACTS }, { items: [] });

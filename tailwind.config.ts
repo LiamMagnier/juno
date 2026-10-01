@@ -172,7 +172,7 @@ const config: Config = {
         // The composer is a raised soft card and takes the panel rung. It is
         // distinct through placement and material, not an oversized novelty
         // radius.
-        composer: "20px",
+        composer: "22px",
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",
@@ -303,6 +303,7 @@ const config: Config = {
         serif: [
           "var(--font-serif)",
           "Newsreader",
+          "var(--font-serif-cyr)",
           "Georgia",
           "Times New Roman",
           "serif",

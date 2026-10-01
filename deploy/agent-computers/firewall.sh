@@ -7,11 +7,13 @@ CHAIN=JUNO-COMPUTERS
 
 iptables -N "$CHAIN" 2>/dev/null || iptables -F "$CHAIN"
 iptables -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 \
-           127.0.0.0/8 0.0.0.0/8 224.0.0.0/4 240.0.0.0/4 168.63.129.16/32; do
-  iptables -A "$CHAIN" -d "$net" -j DROP
+# Computers have no direct Internet egress. Public DNS is the sole forwarding
+# exception; HTTP and HTTPS go through the host proxy's validated/pinned sockets.
+for resolver in 1.1.1.1 9.9.9.9; do
+  iptables -A "$CHAIN" -d "$resolver" -p udp --dport 53 -j RETURN
+  iptables -A "$CHAIN" -d "$resolver" -p tcp --dport 53 -j RETURN
 done
-iptables -A "$CHAIN" -j RETURN
+iptables -A "$CHAIN" -j DROP
 
 iptables -N DOCKER-USER 2>/dev/null || true
 iptables -C DOCKER-USER -i "$BRIDGE" -j "$CHAIN" 2>/dev/null \
@@ -24,6 +26,11 @@ iptables -C INPUT -i "$BRIDGE" -j DROP 2>/dev/null \
   || iptables -I INPUT 1 -i "$BRIDGE" -j DROP
 iptables -C INPUT -i "$BRIDGE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
   || iptables -I INPUT 1 -i "$BRIDGE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# The only new connection to the host is the egress proxy. Insert after the
+# blanket DROP above so this exception is at the front on every re-run.
+iptables -C INPUT -i "$BRIDGE" -d 172.30.0.1 -p tcp --dport 3128 -j ACCEPT 2>/dev/null \
+  || iptables -I INPUT 1 -i "$BRIDGE" -d 172.30.0.1 -p tcp --dport 3128 -j ACCEPT
 
 # The network is created without IPv6; refuse anything that appears anyway.
 if command -v ip6tables >/dev/null 2>&1; then

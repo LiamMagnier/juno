@@ -240,8 +240,28 @@ export interface SkillImportCandidate extends GithubSkillPreview {
   securityStatus: string | null;
 }
 
+/**
+ * Where a non-GitHub import came from, as the choose step names it: the file,
+ * the link's host, or "Pasted SKILL.md".
+ */
+export interface SkillImportOrigin {
+  kind: "file" | "url" | "paste";
+  label: string;
+  url?: string;
+}
+
+/**
+ * What a file import sends, kept by the dialog between preview and import
+ * because the server holds no copy in between (see the package route).
+ */
+export type SkillPackagePayload = { kind: "file"; file: File } | { kind: "url"; url: string } | { kind: "paste"; markdown: string };
+
 export interface SkillImportPreview {
-  repository: { owner: string; repo: string; ref: string; commit: string; url: string };
+  /** A GitHub walk. Null for a file, a link or a paste, which carry `origin`. */
+  repository: { owner: string; repo: string; ref: string; commit: string; url: string } | null;
+  origin?: SkillImportOrigin;
+  /** The exact package reviewed, checked again before installing. */
+  digest?: string;
   skills: SkillImportCandidate[];
   problems: GithubSkillProblem[];
   /** The walk stopped before the end of the repository. */
@@ -343,6 +363,85 @@ export function importSkills(input: SkillImportRequest): Promise<WorkResult<Skil
       };
     }
   );
+}
+
+// ---------------------------------------------------------------------------
+// Importing from a file, a link or a paste
+// ---------------------------------------------------------------------------
+
+async function packageRequest<T>(
+  payload: SkillPackagePayload,
+  choice: { paths?: string[]; renames?: Record<string, string>; digest?: string },
+  pick: (data: Record<string, unknown>) => T
+): Promise<WorkResult<T>> {
+  let init: RequestInit;
+  if (payload.kind === "file") {
+    const form = new FormData();
+    form.set("file", payload.file);
+    if (choice.digest) form.set("digest", choice.digest);
+    if (choice.paths) form.set("paths", JSON.stringify(choice.paths));
+    if (choice.renames && Object.keys(choice.renames).length > 0) form.set("renames", JSON.stringify(choice.renames));
+    init = { method: "POST", body: form };
+  } else {
+    init = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(payload.kind === "url" ? { url: payload.url } : { markdown: payload.markdown }),
+        ...(choice.paths ? { paths: choice.paths } : {}),
+        ...(choice.digest ? { digest: choice.digest } : {}),
+        ...(choice.renames && Object.keys(choice.renames).length > 0 ? { renames: choice.renames } : {}),
+      }),
+    };
+  }
+  let res: Response;
+  try {
+    res = await fetch("/api/skills/import/package", init);
+  } catch {
+    return { kind: "failed", cause: "offline", message: null };
+  }
+  if (!res.ok) return refusal(res);
+  return { kind: "ok", value: pick(await body(res)) };
+}
+
+function originOf(raw: unknown): SkillImportOrigin | undefined {
+  const origin = record(raw);
+  if (!origin || typeof origin.label !== "string") return undefined;
+  const kind = origin.kind === "file" || origin.kind === "url" || origin.kind === "paste" ? origin.kind : "file";
+  return { kind, label: origin.label, ...(typeof origin.url === "string" ? { url: origin.url } : {}) };
+}
+
+/** Reads a SKILL.md, a .zip / .skill package, or a link to either. Writes nothing. */
+export function previewSkillPackage(payload: SkillPackagePayload): Promise<WorkResult<SkillImportPreview>> {
+  return packageRequest(payload, {}, (data) => ({
+    repository: null,
+    origin: originOf(data.origin),
+    digest: typeof data.digest === "string" ? data.digest : undefined,
+    skills: candidates(data.skills),
+    problems: list<GithubSkillProblem>(data.problems),
+    more: data.more === true,
+    total: typeof data.total === "number" ? data.total : null,
+    connected: false,
+  }));
+}
+
+export function importSkillPackage(
+  payload: SkillPackagePayload,
+  input: { paths: string[]; renames: Record<string, string>; digest?: string }
+): Promise<WorkResult<SkillImportOutcome>> {
+  return packageRequest(payload, input, (data) => ({
+    imported: list<ClientWorkSkill>(data.imported),
+    skipped: list<SkillImportOutcome["skipped"][number]>(data.skipped),
+    problems: list<GithubSkillProblem>(data.problems),
+    blocked: typeof data.blocked === "number" ? data.blocked : 0,
+    source: null,
+    repository: null,
+  }));
+}
+
+/** Where a skill downloads as a portable file. */
+export function skillExportHref(id: string, format: "md" | "zip" = "md"): string {
+  return `/api/work/skills/${encodeURIComponent(id)}/export${format === "zip" ? "?format=zip" : ""}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -109,7 +109,7 @@ jobs:
       # regenerated project to be byte-identical to the committed one, which is
       # the drift check this was missing.
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: brew install xcodegen postgresql@16
 
       - name: Generate projects
         run: ./native/Scripts/generate-projects.sh
@@ -129,6 +129,7 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm ci --prefix relay
 
       - name: Build and test the Cloud Code runner
         run: |

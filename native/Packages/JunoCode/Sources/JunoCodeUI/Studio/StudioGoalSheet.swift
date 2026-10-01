@@ -22,7 +22,7 @@ struct StudioGoalSheet: View {
                 Spacer()
                 Button("Done", action: done)
                     .buttonStyle(StudioSecondaryButtonStyle())
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(.cancelAction).contentShape(.rect)
             }
             .padding(JunoSpace.regular)
             .studioHairline()
@@ -77,7 +77,7 @@ struct StudioGoalSheet: View {
                         Text("·").font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
                     }
                     Button(action.rawValue) { perform(action) }
-                        .buttonStyle(StudioGoalActionStyle(emphasis: index == 0 && action != .clear))
+                        .buttonStyle(StudioGoalActionStyle(emphasis: index == 0 && action != .clear)).contentShape(.rect)
                 }
             }
         }

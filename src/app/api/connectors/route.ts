@@ -16,7 +16,7 @@ export async function GET() {
 
   const linked = await prisma.connection.findMany({
     where: { userId: user.id },
-    select: { provider: true, accountLabel: true, createdAt: true },
+    select: { provider: true, accountLabel: true, scope: true, createdAt: true },
   });
   const byProvider = new Map(linked.map((c) => [c.provider, c]));
 
@@ -28,6 +28,7 @@ export async function GET() {
       label: def.label,
       description: def.description,
       capability: def.capability,
+      providerScopes: conn?.scope?.trim() ? conn.scope.trim().split(/[ ,]+/) : [],
       configured: isConnectorConfigured(def),
       connected: !!conn,
       accountLabel: conn?.accountLabel ?? null,

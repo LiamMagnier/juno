@@ -274,6 +274,10 @@ if [ -f runner/agent-core/package-lock.json ]; then
   npm run build --prefix runner/agent-core >/dev/null
   npm test --prefix runner/agent-core >/dev/null
 fi
+if [ ! -d relay/node_modules ]; then npm ci --prefix relay; fi
+step "Shared local gates"
+bash scripts/local-gates.sh
+
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$BUILD_DIR/test" CODE_SIGNING_ALLOWED=NO -only-testing:JunoDesktopTests test >/dev/null
 
 # ── Build ──────────────────────────────────────────────────────────────────
@@ -357,7 +361,8 @@ else
   ditto "$BUILD_DIR/archive.xcarchive/Products/Applications/Juno.app" "$BUILD_DIR/export/Juno.app"
   if [ "$IDENTITY" = "-" ]; then
     # Nothing to preserve and nothing to time-stamp: an ad-hoc signature is the
-    # only thing available, and this artifact can never be published.
+    # only thing available. --publish-dev can distribute it as an internal
+    # build, but its updater refuses automatic replacement without a Team ID.
     codesign --force --options runtime --sign - \
       --entitlements native/macOS/JunoDesktop/Resources/JunoDesktop.entitlements \
       "$BUILD_DIR/export/Juno.app"

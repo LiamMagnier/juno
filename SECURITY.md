@@ -22,7 +22,7 @@ In scope:
 - Hosted web application (`src/app/`, `src/components/`, `src/middleware.ts`)
 - The `/api/v1` native API contract
 - The Voice and Multimodal WebSocket relay (`relay/`)
-- Agent and tool execution runtime (`src/lib/agent/`, `src/lib/work/`, `src/lib/trust-boundary.ts`)
+- Agent and tool execution runtime (`src/lib/agent/`, `src/lib/work/`, `src/lib/computer/`)
 - Native macOS and iOS applications (`native/Packages/`, `native/macOS/`, `native/iOS/`)
 
 Out of scope:
@@ -34,18 +34,23 @@ Out of scope:
 
 1. **Content Security Policy (CSP)**:
    Strict per-request nonce-based CSP with `strict-dynamic`, disallowing `unsafe-eval` in production.
-2. **Deterministic Agent / Tool Trust Boundary**:
-   Strict input provenance tracking (`user`, `system`, `external_website`, `mcp_tool_response`, `uploaded_document`, etc.). External untrusted inputs are DATA, never INSTRUCTIONS, and cannot execute destructive tools without explicit user approval.
+2. **Untrusted-content detection and approval policy**:
+   Prompt-injection heuristics in connector and MCP dispatch mark suspicious
+   content and require approval for resulting mutations. This is heuristic
+   detection, not complete provenance tracking or a guarantee against injection.
 3. **Action-Bound Approval Receipts**:
    Cryptographic SHA-256 digests over tool, args, session, and user. Any mutation of arguments invalidates prior approvals.
 4. **CSRF & Origin Validation**:
    Cookie-authenticated browser mutations strictly require matching `Origin` or `Sec-Fetch-Site: same-origin`. Missing or cross-origin headers fail closed. Bearer-authenticated API/Native clients operate under the bearer authentication contract.
 5. **Immediate Native Credential Revocation**:
    Device session revocation immediately fails closed on subsequent bearer authentication and token rotation with zero grace period.
-6. **Cryptographic Enterprise SSO**:
-   OIDC ID Token verification via JWKS signature validation, audience verification, expiration checking, and replay defense.
-7. **Enterprise Data Loss Prevention (DLP)**:
-   Deterministic secret scanning and policy enforcement (allow/warn/block modes) with audit event logging before payload dispatch.
+6. **Ownership query guard**:
+   `src/lib/db.ts` rejects unscoped reads, aggregates, updates, deletes and
+   upserts on listed owned models in every environment. Explicit cross-account
+   paths use `prismaUnguarded` and require a separate authorization check.
+
+The standalone trust-boundary, enterprise SSO and DLP modules are prototypes.
+They are not wired into request dispatch and are not enforced product controls.
 
 ## Authentication
 
@@ -148,6 +153,7 @@ as harmless:
 - `MemoryEntry.content` — the individual distilled personal facts. (The
   consolidated `MemorySummary.content` above IS encrypted.)
 - `Message.sources` — search-result snippets.
+- `WorkEvent` and `WorkRunIO` — tool traces, run inputs and outputs.
 - Conversation and project titles, project instructions, uploaded file bytes in
   object storage.
 - An agent's brief, role, goals and ideas (`Agent.instructions`, `AgentGoal`,
@@ -175,3 +181,12 @@ ones.
 
 Full account deletion (`DELETE /api/account`) cascades across database records
 and object storage.
+
+### Connector key deployment requirement
+
+Production startup and secret encryption require an explicit non-`auth`
+`TOKEN_ENCRYPTION_PRIMARY` backed by a 32-byte key in `TOKEN_ENCRYPTION_KEYS`.
+The historical AUTH_SECRET-derived key remains in the decryption keyring for
+legacy rows. Configure the independent key, deploy, run `npm run crypto:rotate`,
+and verify all rows were rotated before changing AUTH_SECRET. A key migration
+and production restart have not been performed by this source change.

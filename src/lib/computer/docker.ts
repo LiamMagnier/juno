@@ -75,6 +75,8 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     "/var/tmp:rw,nosuid,nodev,size=256m",
     "--mount",
     `type=volume,source=${name},target=/home/agent`,
+    "--mount",
+    `type=volume,source=${name}-browser,target=/home/browser`,
     "--label",
     "app=juno",
     "--label",
@@ -165,18 +167,18 @@ export class DockerProvider implements ComputerProvider {
 
   async available(): Promise<{ ok: boolean; reason?: string }> {
     const image = env.agentComputer.image;
-    const res = await runDockerText(["image", "inspect", image], {
+    const res = await runDockerText(["image", "inspect", "--format", '{{index .Config.Labels "juno.security"}}', image], {
       allowNonZero: true,
       timeoutMs: 8_000,
     });
-    if (res.exitCode !== 0) {
+    if (res.exitCode !== 0 || res.stdout.trim() !== "pipe-v2") {
       if (!loggedMissingImage) {
         loggedMissingImage = true;
         console.warn(
           `[agent-computer] Docker image "${image}" not found; agent computers remain disabled.`
         );
       }
-      return { ok: false, reason: "Agent computer image is not set up on this server." };
+      return { ok: false, reason: "The protected browser image or Docker broker is not set up on this server." };
     }
     return { ok: true };
   }
@@ -248,6 +250,7 @@ export class DockerProvider implements ComputerProvider {
     }
 
     await runDockerText(["volume", "create", volume]);
+    await runDockerText(["volume", "create", `${volume}-browser`]);
 
     // Remove any leftover container with the same name before creating
     await runDockerText(["rm", "-f", name], { allowNonZero: true });
@@ -274,7 +277,7 @@ export class DockerProvider implements ComputerProvider {
         "exec",
         "-i",
         "--user",
-        "1000",
+        "1001",
         handle.name,
         "sh",
         "-c",
@@ -284,7 +287,7 @@ export class DockerProvider implements ComputerProvider {
     );
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const left = await runDockerText(
-        ["exec", "--user", "1000", handle.name, "test", "-e", "/tmp/.juno-cdp-token"],
+        ["exec", "--user", "1001", handle.name, "test", "-e", "/tmp/.juno-cdp-token"],
         { allowNonZero: true, timeoutMs: 5_000 }
       );
       if (left.exitCode !== 0) return;
@@ -318,6 +321,9 @@ export class DockerProvider implements ComputerProvider {
   async destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void> {
     await runDockerText(["rm", "-f", handle.name], { allowNonZero: true });
     if (opts?.removeVolume) {
+      await runDockerText(["volume", "rm", "-f", `${handle.volume}-browser`], {
+        allowNonZero: true,
+      });
       await runDockerText(["volume", "rm", "-f", handle.volume], {
         allowNonZero: true,
       });
@@ -695,7 +701,7 @@ export class DockerProvider implements ComputerProvider {
       "utf8"
     );
     await runDockerText(
-      ["exec", "--user", "1000", handle.name, "pkill", "-x", "x11vnc"],
+      ["exec", "--user", "1001", handle.name, "pkill", "-x", "x11vnc"],
       { allowNonZero: true }
     );
     await spawnDockerWithStdin(
@@ -703,7 +709,7 @@ export class DockerProvider implements ComputerProvider {
         "exec",
         "-i",
         "--user",
-        "1000",
+        "1001",
         handle.name,
         "sh",
         "-c",
@@ -714,7 +720,7 @@ export class DockerProvider implements ComputerProvider {
     await runDockerText([
       "exec",
       "--user",
-      "1000",
+      "1001",
       "-e",
       "DISPLAY=:0",
       handle.name,
@@ -736,7 +742,7 @@ export class DockerProvider implements ComputerProvider {
 
   async stopVnc(handle: ComputerHandle): Promise<void> {
     await runDockerText(
-      ["exec", "--user", "1000", handle.name, "pkill", "-x", "x11vnc"],
+      ["exec", "--user", "1001", handle.name, "pkill", "-x", "x11vnc"],
       { allowNonZero: true }
     );
   }

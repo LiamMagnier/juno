@@ -88,6 +88,7 @@ public struct NativeCodeDevice: Identifiable, Equatable, Sendable {
 public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
     public enum Kind: String, Sendable {
         case status
+        case protocolEvent = "protocol"
         case user
         case text
         case tool
@@ -226,6 +227,8 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
     }
 
     public let seq: Int
+    public let protocolType: String?
+    public let requestID: String?
     public let kind: Kind
     public let title: String
     public let detail: String?
@@ -248,8 +251,12 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
         agentInfo: AgentInfo? = nil,
         fileChangeInfo: FileChangeInfo? = nil,
         previewInfo: PreviewInfo? = nil,
-        createdAt: Date
+        createdAt: Date,
+        protocolType: String? = nil,
+        requestID: String? = nil
     ) {
+        self.protocolType = protocolType
+        self.requestID = requestID
         self.seq = seq
         self.kind = kind
         self.title = title
@@ -702,6 +709,22 @@ public struct NativeCodeTaskClient: Sendable {
         try requireSuccess(response)
     }
 
+    public func answerQuestion(id: String, requestID: String, answer: String, for accountID: AccountID) async throws {
+        try await sendInput(id: id, body: ["type": .string("question.answer"), "requestId": .string(requestID), "answer": .string(answer)], for: accountID)
+    }
+
+    public func decidePlan(id: String, requestID: String, approve: Bool, for accountID: AccountID) async throws {
+        try await sendInput(id: id, body: ["type": .string("plan.decide"), "requestId": .string(requestID), "decision": .string(approve ? "approve" : "reject")], for: accountID)
+    }
+
+    private func sendInput(id: String, body: [String: NativeJSONValue], for accountID: AccountID) async throws {
+        let response = try await sender.send(try NativeBearerRequest(
+            path: "/api/code/tasks/\(id)/respond", method: .post,
+            headers: try HTTPHeaders(["accept": "application/json", "content-type": "application/json"]),
+            body: try JSONEncoder().encode(body)), for: accountID)
+        try requireSuccess(response)
+    }
+
     /// One frame of a task's live log.
     public enum StreamFrame: Sendable {
         case snapshot(task: NativeCodeTask, events: [NativeCodeEvent], approval: NativeCodeApproval?)
@@ -860,6 +883,14 @@ public struct NativeCodeTaskClient: Sendable {
         var detail = payload["detail"]?.stringValue
 
         switch kind {
+        case .protocolEvent:
+            switch payload["type"]?.stringValue {
+            case "question.asked": title = payload["prompt"]?.stringValue ?? "Juno needs an answer"
+            case "question.answered": title = "Answer received"
+            case "plan.proposed": title = "Plan ready for review"; detail = payload["text"]?.stringValue
+            case "plan.resolved": title = "Plan reviewed"
+            default: return nil // Existing legacy twins supply all other rows.
+            }
         case .text:
             guard let text = payload["text"]?.stringValue, !text.isEmpty else { return nil }
             title = text
@@ -1055,7 +1086,9 @@ public struct NativeCodeTaskClient: Sendable {
             agentInfo: agentInfo,
             fileChangeInfo: fileChangeInfo,
             previewInfo: previewInfo,
-            createdAt: createdAt
+            createdAt: createdAt,
+            protocolType: payload["type"]?.stringValue,
+            requestID: payload["questionId"]?.stringValue ?? payload["planId"]?.stringValue
         )
     }
 

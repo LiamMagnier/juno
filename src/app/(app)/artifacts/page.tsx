@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { LibraryNav } from "@/components/library/library-nav";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -586,6 +587,7 @@ function ArtifactsHome() {
     // only list route at `reading`, so hopping Library → Artifacts in the
     // sidebar moved the column 16rem for no reason the user could see.
     <AppPage measure="wide">
+        <LibraryNav current="made" />
       <AppPageHeader
         /*
          * NO EYEBROW. It read "Canvas" over a heading that reads "Artifacts",
@@ -595,7 +597,7 @@ function ArtifactsHome() {
          * lives). docs/design/PREMIUM_AUDIT.md §3 rule 15: anything above the
          * title has to say something the title does not.
          */
-        heading="Artifacts"
+        heading="Made in chats"
         /*
          * WHAT IS HERE, NOT "EVERYTHING". It read "Everything Juno built with
          * you, newest first", and neither half was true: generated images and

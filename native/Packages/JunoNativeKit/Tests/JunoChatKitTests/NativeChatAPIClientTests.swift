@@ -488,6 +488,29 @@ final class NativeChatAPIClientTests: XCTestCase {
         XCTAssertEqual(shown.versionCount, 1)
     }
 
+    func testContextReferencesUseTheChatWireWithoutReappendingTheMessage() async throws {
+        let streamer = ChatQueueStreamer(responses: [streamResponse("data: {\"type\":\"delta\",\"text\":\"ok\"}\n\n")])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        _ = try await client.generationEvents(NativeChatGenerationRequest(
+            conversationID: "conv_12345678", modelID: "openai:gpt-5", reasoningEffort: nil,
+            generationID: "context-generation", context: [NativeContextToken(kind: .project, id: "cproject1234", label: "Juno")]
+        ), for: accountID)
+        let requests = await streamer.requests
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.body)) as? [String: Any])
+        let context = try XCTUnwrap(body["context"] as? [[String: Any]])
+        XCTAssertEqual(context.first?["kind"] as? String, "project")
+        XCTAssertEqual(context.first?["id"] as? String, "cproject1234")
+        XCTAssertNil(body["message"])
+    }
+
+    func testMentionTriggerKeepsEmailAddressesAsPlainText() {
+        XCTAssertNil(NativeContextMention.query(in: "liam@example.com"))
+        XCTAssertEqual(NativeContextMention.query(in: "Look at @Ju"), "Ju")
+        let token = NativeContextToken(kind: .project, id: "cproject1234", label: "Juno")
+        XCTAssertEqual(NativeContextMention.inserting(token, in: "Look at @Ju"), "Look at @Juno ")
+    }
+
     private func streamResponse(_ body: String, statusCode: Int = 200)
         -> HTTPByteStreamResponse
     {

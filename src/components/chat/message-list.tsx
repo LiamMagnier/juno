@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { contextReceiptFromActivity } from "@/lib/chat/context-tokens";
 import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -351,6 +352,7 @@ export function MessageList(props: MessageListProps) {
             <div key={m.renderKey ?? m.id} data-message-id={m.id}>
             <MessageItem
               message={m}
+              contextReceipt={m.role === "USER" ? contextReceiptFromActivity(messages[i + 1]?.activity) : undefined}
               isLast={i === messages.length - 1}
               busy={props.busy}
               status={i === messages.length - 1 ? props.status : undefined}

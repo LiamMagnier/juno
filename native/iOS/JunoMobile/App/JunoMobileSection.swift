@@ -31,12 +31,12 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .work: "Work"
         // A literal for the reason Work's is: the catalog has no
         // `navigation.agents` key, and a missing dotted key renders as itself.
-        case .agents: "Agents"
+        case .agents: "Crew"
         case .tasks: "navigation.tasks"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
         case .artifacts: "navigation.artifacts"
-        case .connections: "navigation.connections"
+        case .connections: "Customize"
         case .settings: "navigation.settings"
         }
     }
@@ -103,7 +103,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// both things you sit with. Agents sits beside it for the same reason:
     /// an agent is who that work is delegated to (docs/design/AGENTS.md §3.1).
     static let drawerDestinations: [JunoMobileSection] = [
-        .projects, .library, .artifacts, .work, .agents, .code, .tasks, .connections,
+        .chat, .agents, .code, .library, .projects, .connections, .settings,
     ]
 
     /// The surfaces that are not products. On iPhone they push on the Chat
@@ -115,7 +115,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// agent lives in Chat — its thread is an ordinary conversation — and its
     /// tasks are Work's, so it is reached the way the other surfaces are.
     static let workspaceDestinations: [JunoMobileSection] = [
-        .projects, .library, .artifacts, .agents, .tasks, .connections,
+        .library, .projects, .connections,
     ]
 
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the

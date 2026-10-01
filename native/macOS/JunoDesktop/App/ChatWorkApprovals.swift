@@ -271,7 +271,7 @@ struct ChatWorkApprovalCard: View {
     }
 
     private func targetLine(_ target: String) -> some View {
-        (Text("To ") + Text(target).foregroundStyle(Color.junoForeground))
+        Text("To \(Text(target).foregroundStyle(Color.junoForeground))")
             .junoFont(size: 12, relativeTo: .footnote)
             .foregroundStyle(Color.junoSecondaryInk)
             .lineLimit(2)

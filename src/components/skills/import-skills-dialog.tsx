@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { AnimatePresence } from "framer-motion";
-import { ChevronDown, Search } from "@/components/ui/icons";
+import { ChevronDown, FileText, FileUp, Globe, Search, TextQuote } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapse } from "@/components/ui/collapse";
@@ -18,18 +18,22 @@ import { cn } from "@/lib/utils";
 import { SkillDialogContent, SkillDialogStep } from "@/components/skills/skill-dialog-shell";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
 import {
+  looksLikeSkillMarkdown,
   POPULAR_SKILL_SOURCES,
   renameProblems,
   shortCommit,
   type RenameProblem,
 } from "@/components/skills/skill-library-model";
 import {
+  importSkillPackage,
   importSkills,
   previewSkillImport,
+  previewSkillPackage,
   skillsFailureMessage,
   type SkillImportCandidate,
   type SkillImportOutcome,
   type SkillImportPreview,
+  type SkillPackagePayload,
 } from "@/components/skills/skills-transport";
 
 /** Past this many skills the choose step grows a filter. */
@@ -39,10 +43,34 @@ export interface ImportSkillsHandlers {
   /** Walks a repository. The real transport unless the gallery hands in a fixture. */
   preview?: typeof previewSkillImport;
   install?: typeof importSkills;
+  /** Reads a file, a link or a paste. */
+  previewPackage?: typeof previewSkillPackage;
+  installPackage?: typeof importSkillPackage;
+}
+
+/** Accepted by the file picker and the drop zone. */
+const PACKAGE_ACCEPT = ".md,.markdown,.zip,.skill,text/markdown,application/zip";
+
+/** `owner/repo`, or any github.com link: the repository importer's to walk. */
+function isGithubSource(text: string): boolean {
+  const value = text.trim();
+  if (/^[\w.-]+\/[\w.-]+\/?$/.test(value)) return true;
+  try {
+    const url = new URL(/^[a-z]+:\/\//i.test(value) ? value : `https://${value}`);
+    return url.hostname === "github.com" || url.hostname === "www.github.com";
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Importing skills from a GitHub repository, as a dialog over the library.
+ * Importing skills, as a dialog over the library: from a GitHub repository,
+ * or from a FILE (a SKILL.md or a .zip / .skill package, dropped or chosen),
+ * a link to one on any host, or a SKILL.md pasted straight into the field.
+ * One field decides which: `owner/repo` and github.com links walk the
+ * repository, other links are downloaded, and a paste that starts with a
+ * `---` fence is read as the skill itself. Files and links share the choose
+ * step with repositories; only the header changes (see the package route).
  *
  * TWO STEPS AND A LANDING. Paste a repository, choose what to install, and the
  * dialog closes onto the library with the new folder open and flashed once;
@@ -113,6 +141,10 @@ export function ImportSkillsFlow({
 }) {
   const preview = handlers?.preview ?? previewSkillImport;
   const install = handlers?.install ?? importSkills;
+  const previewPackage = handlers?.previewPackage ?? previewSkillPackage;
+  const installPackage = handlers?.installPackage ?? importSkillPackage;
+  /** What a file, link or paste preview read, sent again to import (no server copy). */
+  const [payload, setPayload] = React.useState<SkillPackagePayload | null>(null);
 
   const [step, setStep] = React.useState<Step>(initialPreview ? "choose" : "source");
   const [source, setSource] = React.useState(initialSource ?? "");
@@ -123,14 +155,8 @@ export function ImportSkillsFlow({
   const [chosen, setChosen] = React.useState<Set<string>>(() => defaultChoice(initialPreview));
   const [renames, setRenames] = React.useState<Record<string, string>>(() => defaultRenames(initialPreview));
 
-  const look = React.useCallback(
-    async (raw: string) => {
-      const trimmed = raw.trim();
-      if (!trimmed) return;
-      setSource(trimmed);
-      setLooking(true);
-      setRefusal(null);
-      const result = await preview(trimmed);
+  const settle = React.useCallback(
+    (result: Awaited<ReturnType<typeof preview>>, fallback: string) => {
       setLooking(false);
       if (result.kind === "ok") {
         setDiscovery(result.value);
@@ -139,9 +165,39 @@ export function ImportSkillsFlow({
         setStep("choose");
         return;
       }
-      setRefusal(skillsFailureMessage(result, "Couldn’t look inside that repository. Nothing was installed."));
+      setRefusal(skillsFailureMessage(result, fallback));
     },
-    [preview]
+    []
+  );
+
+  const lookPackage = React.useCallback(
+    async (next: SkillPackagePayload) => {
+      setPayload(next);
+      setLooking(true);
+      setRefusal(null);
+      settle(await previewPackage(next), "Couldn’t read that. Nothing was installed.");
+    },
+    [previewPackage, settle]
+  );
+
+  const look = React.useCallback(
+    async (raw: string) => {
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+      if (looksLikeSkillMarkdown(trimmed)) {
+        setSource("");
+        return lookPackage({ kind: "paste", markdown: trimmed });
+      }
+      setSource(trimmed);
+      if (!isGithubSource(trimmed) && /^https?:\/\//i.test(trimmed)) {
+        return lookPackage({ kind: "url", url: trimmed });
+      }
+      setPayload(null);
+      setLooking(true);
+      setRefusal(null);
+      settle(await preview(trimmed), "Couldn’t look inside that repository. Nothing was installed.");
+    },
+    [lookPackage, preview, settle]
   );
 
   // A repository handed in from outside (a popular chip on the empty state)
@@ -159,14 +215,15 @@ export function ImportSkillsFlow({
     if (paths.length === 0) return;
     setInstalling(true);
     setRefusal(null);
-    const outcome = await install({
-      source,
-      commit: discovery.repository.commit,
-      paths,
-      renames: Object.fromEntries(
-        Object.entries(renames).filter(([path]) => chosen.has(path) && discovery.skills.some((s) => s.path === path && s.slugTaken))
-      ),
-    });
+    const chosenRenames = Object.fromEntries(
+      Object.entries(renames).filter(([path]) => chosen.has(path) && discovery.skills.some((s) => s.path === path && s.slugTaken))
+    );
+    const outcome =
+      discovery.repository === null
+        ? payload
+          ? await installPackage(payload, { paths, renames: chosenRenames, digest: discovery.digest })
+          : ({ kind: "failed", cause: "offline", message: "Choose the file again." } as const)
+        : await install({ source, commit: discovery.repository.commit, paths, renames: chosenRenames });
     setInstalling(false);
     if (outcome.kind === "ok") {
       onInstalled(outcome.value, discovery);
@@ -185,6 +242,7 @@ export function ImportSkillsFlow({
             looking={looking}
             refusal={refusal}
             onLook={(value) => void look(value)}
+            onFile={(file) => void lookPackage({ kind: "file", file })}
           />
         </SkillDialogStep>
       ) : (
@@ -224,7 +282,7 @@ function defaultRenames(preview: SkillImportPreview | null | undefined): Record<
   return Object.fromEntries(
     preview.skills
       .filter((skill) => skill.slugTaken && !skill.installed)
-      .map((skill) => [skill.path, skill.suggestedSlug ?? `${preview.repository.repo}-${skill.slug}`.toLowerCase()])
+      .map((skill) => [skill.path, skill.suggestedSlug ?? `${preview.repository?.repo ?? "imported"}-${skill.slug}`.toLowerCase()])
   );
 }
 
@@ -238,19 +296,21 @@ function SourceStep({
   looking,
   refusal,
   onLook,
+  onFile,
 }: {
   source: string;
   onSourceChange: (value: string) => void;
   looking: boolean;
   refusal: string | null;
   onLook: (value: string) => void;
+  onFile: (file: File) => void;
 }) {
   return (
     <>
       <div className="pr-10">
-        <DialogTitle>Import from GitHub</DialogTitle>
+        <DialogTitle>Import skills</DialogTitle>
         <DialogDescription className="mt-1 text-ui">
-          Paste a repository. You’ll choose which skills to install.
+          Paste a GitHub repository, a link, or a SKILL.md itself. You’ll choose which skills to install.
         </DialogDescription>
       </div>
 
@@ -264,8 +324,17 @@ function SourceStep({
         <Input
           value={source}
           onChange={(event) => onSourceChange(event.target.value)}
-          placeholder="owner/repo or a GitHub link"
-          aria-label="Repository"
+          // A SKILL.md pasted here would lose its line breaks in a one-line
+          // field, so a paste that is one is read straight away instead.
+          onPaste={(event) => {
+            const text = event.clipboardData.getData("text/plain");
+            if (looksLikeSkillMarkdown(text)) {
+              event.preventDefault();
+              onLook(text);
+            }
+          }}
+          placeholder="owner/repo, a link, or paste a SKILL.md"
+          aria-label="Repository, link or SKILL.md"
           autoFocus
           spellCheck={false}
           autoCapitalize="off"
@@ -283,6 +352,8 @@ function SourceStep({
           {refusal}
         </WorkStateNote>
       ) : null}
+
+      <PackageDropZone disabled={looking} onFile={onFile} />
 
       <div className="mt-5 flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-caption text-muted-foreground">Popular</span>
@@ -313,6 +384,88 @@ function SourceStep({
   );
 }
 
+/**
+ * Drop a SKILL.md or a .zip / .skill package, or press to choose one. A quiet
+ * dashed well at rest; while a file is held over it the hairline firms, the
+ * well fills with the hover tone and the glyph lifts, so "let go here" is
+ * said by the target itself. Keyboard: it is a button that opens the picker.
+ */
+function PackageDropZone({ disabled, onFile }: { disabled: boolean; onFile: (file: File) => void }) {
+  const input = React.useRef<HTMLInputElement>(null);
+  const [over, setOver] = React.useState(false);
+  const depth = React.useRef(0);
+  const take = (files: FileList | null) => {
+    const file = files?.[0];
+    if (file && !disabled) onFile(file);
+  };
+  return (
+    <div
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        depth.current += 1;
+        setOver(true);
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDragLeave={() => {
+        depth.current = Math.max(0, depth.current - 1);
+        if (depth.current === 0) setOver(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        depth.current = 0;
+        setOver(false);
+        take(event.dataTransfer.files);
+      }}
+      className="mt-3"
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => input.current?.click()}
+        className={cn(
+          "group flex w-full items-center gap-3 rounded-card border border-dashed px-3.5 py-3 text-left",
+          "transition-[border-color,background-color] duration-fast ease-out-soft",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+          over ? "border-solid border-foreground/40 bg-accent/60" : "border-border hover:border-foreground/25 hover:bg-accent/40"
+        )}
+      >
+        <span
+          className={cn(
+            "surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground",
+            "transition-[transform,color] duration-base ease-out-soft motion-reduce:transform-none",
+            over ? "-translate-y-0.5 text-foreground" : "group-hover:text-foreground"
+          )}
+        >
+          <FileUp className="size-4" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-ui font-medium text-foreground">
+            {over ? "Drop to read it" : "Upload a SKILL.md or .zip"}
+          </span>
+          <span className="block text-caption text-muted-foreground">
+            Drop it here or choose a file. A package can hold several skills.
+          </span>
+        </span>
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept={PACKAGE_ACCEPT}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          take(event.target.files);
+          event.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Step 2: which skills
 // ---------------------------------------------------------------------------
@@ -340,7 +493,8 @@ function ChooseStep({
 }) {
   const [filter, setFilter] = React.useState("");
   const [openDetails, setOpenDetails] = React.useState<string | null>(null);
-  const { repository, skills } = discovery;
+  const { repository, origin, skills } = discovery;
+  const OriginIcon = origin?.kind === "url" ? Globe : origin?.kind === "paste" ? TextQuote : FileText;
 
   const query = filter.trim().toLowerCase();
   const visible = query
@@ -378,16 +532,26 @@ function ChooseStep({
     <>
       <div className="shrink-0 px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
         <div className="flex items-center gap-3 pr-10">
-          <SkillSourceAvatar owner={repository.owner} size="md" />
+          {repository ? (
+            <SkillSourceAvatar owner={repository.owner} size="md" />
+          ) : (
+            <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+              <OriginIcon className="size-4" />
+            </span>
+          )}
           <div className="min-w-0">
             <DialogTitle className="truncate text-heading" translate="no">
-              {repository.owner}/{repository.repo}
+              {repository ? `${repository.owner}/${repository.repo}` : origin?.label ?? "Skills"}
             </DialogTitle>
             <DialogDescription className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-ui">
-              <span translate="no" className="font-mono text-caption">
-                {repository.ref}@{shortCommit(repository.commit)}
-              </span>
-              <span aria-hidden="true">·</span>
+              {repository ? (
+                <>
+                  <span translate="no" className="font-mono text-caption">
+                    {repository.ref}@{shortCommit(repository.commit)}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                </>
+              ) : null}
               <span>
                 <span className="tabular-nums">{skills.length}</span> {skills.length === 1 ? "skill" : "skills"}
               </span>
@@ -438,7 +602,7 @@ function ChooseStep({
 
       <div
         role="list"
-        aria-label="Skills in this repository"
+        aria-label={repository ? "Skills in this repository" : "Skills found"}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-border/70 divide-y divide-border/70"
       >
         {visible.length === 0 ? (
@@ -473,7 +637,9 @@ function ChooseStep({
                 of <span className="tabular-nums">{discovery.total}</span>
               </>
             ) : null}{" "}
-            skills in this repository. To reach the rest, paste a link to a folder inside it.
+            {repository
+              ? "skills in this repository. To reach the rest, paste a link to a folder inside it."
+              : "skills in this package. Split it into smaller packages to add the rest."}
           </p>
         ) : null}
       </div>

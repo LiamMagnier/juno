@@ -494,7 +494,7 @@ private enum DesktopAgentAlerts {
                 content: content,
                 trigger: nil
             )
-            center.add(request, withCompletionHandler: nil)
+            try? await center.add(request)
         }
     }
 }

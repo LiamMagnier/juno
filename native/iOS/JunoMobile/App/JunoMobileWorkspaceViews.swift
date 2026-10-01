@@ -400,7 +400,7 @@ struct JunoMobileProjectsView: View {
       } icon: {
         JunoIconView(.pin, size: 15)
       }
-    }
+    }.contentShape(.rect)
     Button {
       renameValue = project.name
       renameTarget = project
@@ -410,7 +410,7 @@ struct JunoMobileProjectsView: View {
       } icon: {
         JunoIconView(.pencil, size: 15)
       }
-    }
+    }.contentShape(.rect)
     Divider()
     Button(role: .destructive) {
       deleteTarget = project
@@ -420,7 +420,7 @@ struct JunoMobileProjectsView: View {
       } icon: {
         JunoIconView(.trash, size: 15)
       }
-    }
+    }.contentShape(.rect)
   }
 }
 
@@ -1379,7 +1379,7 @@ private struct JunoMobileProjectDetail: View {
           Button("New chat") { createProjectConversation() }
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
-            .disabled(project.isPending || conversationModel == nil)
+            .disabled(project.isPending || conversationModel == nil).contentShape(.rect)
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -1405,7 +1405,7 @@ private struct JunoMobileProjectDetail: View {
             Spacer()
             Button("New chat") { createProjectConversation() }
               .textCase(nil)
-              .disabled(project.isPending || conversationModel == nil)
+              .disabled(project.isPending || conversationModel == nil).contentShape(.rect)
           }
         }
       }
@@ -1426,7 +1426,7 @@ private struct JunoMobileProjectDetail: View {
           Button("Add file") { showingImporter = true }
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
-            .disabled(project.isPending || model.isPerformingFileAction)
+            .disabled(project.isPending || model.isPerformingFileAction).contentShape(.rect)
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -1467,7 +1467,7 @@ private struct JunoMobileProjectDetail: View {
             Spacer()
             Button("Add file") { showingImporter = true }
               .textCase(nil)
-              .disabled(project.isPending || model.isPerformingFileAction)
+              .disabled(project.isPending || model.isPerformingFileAction).contentShape(.rect)
           }
         }
       }
@@ -1802,6 +1802,10 @@ struct JunoMobileArtifactDetail: View {
   @State private var showingDelete = false
   @State private var exportURL: URL?
   @State private var localError: String?
+  @State private var publishedURL: URL?
+  @State private var showingDiff = false
+  @State private var editBaseVersion = 0
+  @State private var designBaseVersion: Int?
   @State private var designDraft: String?
   @State private var designReloadToken = UUID()
 
@@ -2067,7 +2071,10 @@ struct JunoMobileArtifactDetail: View {
           content: version.content,
           mode: resolvedMode,
           readOnly: !isLatestVersion,
-          onEdit: isLatestVersion ? { designDraft = $0 } : nil
+          onEdit: isLatestVersion ? {
+            if designDraft == nil { designBaseVersion = artifact.currentVersion }
+            designDraft = $0
+          } : nil
         )
         .id("\(artifact.id)#\(version.version)#\(designReloadToken)")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2125,9 +2132,18 @@ struct JunoMobileArtifactDetail: View {
   /// library can.
   private var actionsMenu: some View {
     Menu {
+      if let publishedURL {
+        ShareLink(item: publishedURL) { Text("Share published link") }
+        Link("Open published version", destination: publishedURL)
+      }
+      if artifact.versions.count > 1 {
+        Button("Compare with previous version") { showingDiff = true }
+      }
+
       Button("Edit") {
         editValue = artifact.currentContent ?? ""
-        showingEditor = true
+        editBaseVersion = artifact.currentVersion
+          showingEditor = true
       }
       .disabled(artifact.currentContent == nil || artifact.kind.isDesignDocument)
       Button("Rename") {
@@ -2171,13 +2187,23 @@ struct JunoMobileArtifactDetail: View {
         Task { await model.openArtifact(id: artifact.id) }
       }
       .onChange(of: artifact.currentVersion) { _, value in
-        selectedVersion = value
-        designDraft = nil
-        designReloadToken = UUID()
+        // Preserve local edits and their opened base when another device saves.
+        // The next save reports a conflict instead of silently replacing them.
+        if designDraft == nil { selectedVersion = value; designReloadToken = UUID() }
       }
       .onChange(of: selectedVersion) { _, _ in
         designDraft = nil
         designReloadToken = UUID()
+      }
+      .task(id: artifact.id) { publishedURL = await model.publicationURL(id: artifact.id) }
+      .sheet(isPresented: $showingDiff) {
+        NavigationStack {
+          let selected = version
+          let previous = artifact.versions.filter { $0.version < (selected?.version ?? 0) }.max { $0.version < $1.version }
+          JunoMobileArtifactVersionDiff(previous: previous, selected: selected)
+            .navigationTitle("Version changes")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingDiff = false }.contentShape(.rect) } }
+        }
       }
       .alert("Rename artifact", isPresented: $showingRename) {
         TextField("Title", text: $renameValue)
@@ -2228,12 +2254,10 @@ struct JunoMobileArtifactDetail: View {
               }
               ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                  showingEditor = false
                   Task {
-                    await model.saveArtifact(
-                      id: artifact.id,
-                      content: editValue
-                    )
+                    if await model.saveArtifact(id: artifact.id, content: editValue, baseVersion: editBaseVersion) {
+                      showingEditor = false
+                    }
                   }
                 }
               }
@@ -2273,7 +2297,7 @@ struct JunoMobileArtifactDetail: View {
       Button("Save") {
         guard let designDraft else { return }
         Task {
-          await model.saveArtifact(id: artifact.id, content: designDraft)
+          await model.saveArtifact(id: artifact.id, content: designDraft, baseVersion: designBaseVersion ?? selectedVersion)
           if model.lastErrorDescription == nil {
             self.designDraft = nil
           }
@@ -2296,5 +2320,42 @@ private enum JunoMobileExportFile {
       .appendingPathComponent("juno-\(UUID().uuidString)-\(safeName)")
     try data.write(to: url, options: [.atomic])
     return url
+  }
+}
+
+/// Changes are computed only for the opened version pair, with a bounded
+/// source size so a pasted log cannot stall the phone's main thread.
+private struct JunoMobileArtifactVersionDiff: View {
+  let previous: NativeArtifactVersion?
+  let selected: NativeArtifactVersion?
+
+  var body: some View {
+    if let previous, let selected {
+      let old = previous.content.components(separatedBy: "\n")
+      let new = selected.content.components(separatedBy: "\n")
+      if old.count > 2000 || new.count > 2000 {
+        Text("This version is too large to compare on the phone. Export both versions to inspect the changes.")
+          .padding().foregroundStyle(.secondary)
+      } else {
+        let difference = new.difference(from: old)
+        if difference.isEmpty {
+          Text("These versions have the same source.").padding().foregroundStyle(.secondary)
+        } else {
+          List {
+            Text("Version \(previous.version) → Version \(selected.version)").font(.caption)
+            ForEach(Array(difference.enumerated()), id: \.offset) { _, change in
+              switch change {
+              case .insert(let offset, let line, _):
+                Text("+ \(offset + 1)  \(line)").font(.system(.caption, design: .monospaced)).foregroundStyle(Color.junoSuccess).textSelection(.enabled)
+              case .remove(let offset, let line, _):
+                Text("− \(offset + 1)  \(line)").font(.system(.caption, design: .monospaced)).foregroundStyle(Color.junoDanger).textSelection(.enabled)
+              }
+            }
+          }
+        }
+      }
+    } else {
+      ContentUnavailableView("No previous version", systemImage: "doc.text")
+    }
   }
 }

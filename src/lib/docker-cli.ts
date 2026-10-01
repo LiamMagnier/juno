@@ -1,6 +1,13 @@
 import "server-only";
 import { execFile, spawn } from "node:child_process";
 
+/** Production invokes only a root-owned, sandbox-validating sudo broker. */
+export function dockerInvocation(argv: string[], production = process.env.NODE_ENV === "production"): { command: string; args: string[] } {
+  return production
+    ? { command: "sudo", args: ["-n", "/usr/local/sbin/juno-computer-docker-broker", ...argv] }
+    : { command: "docker", args: argv };
+}
+
 export function runDockerBuffer(
   argv: string[],
   options?: {
@@ -10,9 +17,10 @@ export function runDockerBuffer(
   }
 ): Promise<{ stdout: Buffer; stderr: Buffer; exitCode: number; timedOut: boolean }> {
   return new Promise((resolve) => {
+    const invocation = dockerInvocation(argv);
     execFile(
-      "docker",
-      argv,
+      invocation.command,
+      invocation.args,
       {
         encoding: "buffer",
         env: options?.env ? { ...process.env, ...options.env } : process.env,
@@ -59,7 +67,8 @@ export function spawnDockerWithStdin(
   timeoutMs = 15_000
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("docker", argv, {
+    const invocation = dockerInvocation(argv);
+    const child = spawn(invocation.command, invocation.args, {
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });

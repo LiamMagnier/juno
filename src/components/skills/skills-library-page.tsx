@@ -26,7 +26,7 @@ import { highlightClearMs, skillSourceAnchor } from "@/components/skills/skill-s
 import { SkillsLibraryView } from "@/components/skills/skills-library-view";
 import { UpdateSourceDialog } from "@/components/skills/update-source-dialog";
 import { useSkillLibrary } from "@/components/skills/use-skill-library";
-import { updateOutcomeMessage } from "@/components/skills/skill-library-model";
+import { PENDING_SKILL_MARKDOWN_KEY, updateOutcomeMessage } from "@/components/skills/skill-library-model";
 import type { SkillImportOutcome, SkillImportPreview } from "@/components/skills/skills-transport";
 
 /**
@@ -51,6 +51,21 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
   const [removing, setRemoving] = React.useState<LibrarySource | null>(null);
   const [removeBusy, setRemoveBusy] = React.useState(false);
   const [highlight, setHighlight] = React.useState<string | null>(null);
+
+  // A SKILL.md handed over from a chat answer ("Save as skill…"): the
+  // importer opens on it, already read. Taken once, so a reload of
+  // /skills/import doesn't bring it back.
+  React.useEffect(() => {
+    if (!importOnOpen) return;
+    let pending: string | null = null;
+    try {
+      pending = window.sessionStorage.getItem(PENDING_SKILL_MARKDOWN_KEY);
+      window.sessionStorage.removeItem(PENDING_SKILL_MARKDOWN_KEY);
+    } catch {
+      pending = null;
+    }
+    if (pending) setImportSeed((current) => ({ key: current.key + 1, source: pending ?? undefined }));
+  }, [importOnOpen]);
 
   const openImporter = (source?: string) => {
     setImportSeed((current) => ({ key: current.key + 1, source }));
@@ -84,12 +99,16 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
   );
 
   const onInstalled = async (outcome: SkillImportOutcome, preview: SkillImportPreview) => {
-    const repository = `${preview.repository.owner}/${preview.repository.repo}`;
+    // A repository lands in its folder; a file, link or paste lands in Your
+    // skills, which is already open at the top of the page.
+    const repository = preview.repository
+      ? `${preview.repository.owner}/${preview.repository.repo}`
+      : preview.origin?.label ?? "your file";
     const next: SkillLibrary | null = await reload();
-    const key = githubSourceKey(preview.repository.owner, preview.repository.repo);
+    const key = preview.repository ? githubSourceKey(preview.repository.owner, preview.repository.repo) : null;
     const landed =
       next?.sources.find((source) => source.id === outcome.source?.id) ??
-      next?.sources.find((source) => source.key === key);
+      (key ? next?.sources.find((source) => source.key === key) : undefined);
     if (landed) land(landed.id);
 
     const count = outcome.imported.length;

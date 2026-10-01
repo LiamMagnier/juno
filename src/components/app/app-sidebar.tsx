@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";
-import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
+import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
 import { JunoMark } from "@/components/brand/logo";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
@@ -64,12 +64,12 @@ import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
 import type { ClientAgent } from "@/lib/agents/types";
 import { AgentFace } from "@/components/agents/agent-face";
-import { NeedsYouDot, localStateSentence } from "@/components/agents/agent-bits";
+import { localStateSentence } from "@/components/agents/agent-bits";
 import { useAgents } from "@/components/agents/use-agents";
 import { NotificationsPopover } from "@/components/notifications/notifications-popover";
 import { useNotifications } from "@/components/notifications/use-notifications";
 import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
-import { dotTone, unreadDetail } from "@/components/notifications/inbox-model";
+import { unreadDetail } from "@/components/notifications/inbox-model";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -716,7 +716,6 @@ export function AppSidebar({
    */
   const inbox = useNotifications();
   const [inboxOpen, setInboxOpen] = React.useState(false);
-  const inboxTone = dotTone(inbox.count);
   const inboxDetail = unreadDetail(inbox.count);
   const rootRef = React.useRef<HTMLDivElement>(null);
 
@@ -902,6 +901,13 @@ export function AppSidebar({
           transition={layoutTransition}
           className={cn("flex items-center", collapsed ? "flex-col gap-1 px-2.5 pt-2" : "h-12 gap-1 pl-2.5 pr-2")}
         >
+          <NotificationsPopover inbox={inbox} open={inboxOpen} onOpenChange={setInboxOpen} onNavigate={() => setSidebarOpen(false)}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={inboxDetail ? `Notifications, ${inboxDetail}` : "Notifications"}>
+                <SidebarMotionIcon kind="notifications" className="size-4" />
+              </Button>
+            </PopoverTrigger>
+          </NotificationsPopover>
           {onToggleCollapse && (
             <motion.div layout="position" transition={layoutTransition} className="hidden shrink-0 md:flex">
               <Tooltip>
@@ -1112,38 +1118,7 @@ export function AppSidebar({
             transition={layoutTransition}
             reveal={revealOnMount}
           />
-          {/* NOTIFICATIONS IS A ROW TOO, and for Search's reason: it opens
-              something over the page rather than going somewhere, so it sits
-              with the actions, outside the <nav>, and never takes the
-              travelling fill. Not a bell in the header, which is budgeted to
-              collapse, the wordmark and the switch, and not a destination
-              among Library and Projects: there is no notifications page
-              (docs/design/TWO_PRODUCTS.md).
 
-              Its one signal is a dot at rest, never a count: the accent while
-              something unread is asking for a decision, muted while it is only
-              news. The number rides the accessible name and the rail's
-              tooltip, where a dot cannot say it. */}
-          <NotificationsPopover
-            inbox={inbox}
-            open={inboxOpen}
-            onOpenChange={setInboxOpen}
-            onNavigate={() => setSidebarOpen(false)}
-          >
-            <NavRow
-              collapsed={collapsed}
-              trigger={PopoverTrigger}
-              icon={<SidebarMotionIcon kind="notifications" />}
-              label="Notifications"
-              detail={inboxDetail ?? undefined}
-              signal={
-                inboxTone ? <NeedsYouDot className={inboxTone === "muted" ? "bg-muted-foreground" : undefined} /> : undefined
-              }
-              layoutId="nav-notifications"
-              transition={layoutTransition}
-              reveal={revealOnMount}
-            />
-          </NotificationsPopover>
         </div>
 
         {/* ── Destinations ─────────────────────────────────────────────── */}
@@ -1195,42 +1170,12 @@ export function AppSidebar({
         >
           {(isCode
             ? ([
-                /* Code's three destinations.
-
-                   Artifacts is shared with Chat: one library of generated
-                   things, not one per product.
-
-                   Customize is Code's and Chat has no equivalent, deliberately:
-                   Code is the product with page-sized configuration
-                   (repositories, Mac workspaces, the default permission mode;
-                   docs/design/TWO_PRODUCTS.md §2.2), while Chat's lives in
-                   Settings.
-
-                   Pull requests is where a finished run's outcome is read. It
-                   was in More, and once Connections left More it was the only
-                   Code destination there, a menu opened to reach one row. */
-                { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
                 { href: "/code/customize", kind: "settings", label: "Customize", active: pathname === "/code/customize" },
-                { href: "/code/pulls", kind: "pulls", label: "Pull requests", active: !!pathname?.startsWith("/code/pulls") },
               ] as const)
             : ([
-                { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
                 { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
-                /* NO DESIGN ROW. A design is an artifact with the DESIGN type,
-                   and Artifacts is the one index of made things, so a row of
-                   its own was a second door onto a subset of this one
-                   (docs/design/artifacts-design/04-MERGE-PLAN.md §4.1). It
-                   also could not be drawn honestly: with Artifacts filtered to
-                   designs, both rows had a claim on the selected fill. `/design`
-                   still answers, as a redirect to `/artifacts?type=DESIGN`
-                   with the presets above the grid, and ⌘K keeps "Design" as a
-                   word that finds it. */
-                { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
-                /* Agents: the teammates the account delegates to
-                   (docs/design/AGENTS.md §3.1). A destination like Projects —
-                   a place that holds things — and not a third product: an
-                   agent's thread is an ordinary chat, and its work is Work. */
-                { href: "/agents", kind: "agents", label: "Agents", active: !!pathname?.startsWith("/agents") },
+                { href: "/library", kind: "library", label: "Library", active: pathname === "/library" || pathname === "/artifacts" },
+                { href: "/customize", kind: "settings", label: "Customize", active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
               ] as const)
           ).map((item) => (
             <NavRow
@@ -1360,12 +1305,12 @@ export function AppSidebar({
                         heading is a promise the column cannot keep. */}
                     {!isCode && !needsYouOnly && agents.length > 0 && (
                       <Section
-                        label="Agents"
+                        label="Crew"
                         isCollapsed={sectionCollapsed.agents}
                         onToggleCollapse={() => toggleSection("agents")}
                         action={
                           <SectionAction
-                            label="New agent"
+                            label="Add to crew"
                             onClick={() => {
                               setSidebarOpen(false);
                               router.push("/agents/new");
@@ -2073,7 +2018,7 @@ function MoreFlyout({
   pathname: string | null;
   onNavigate: () => void;
   onOpenArchived: () => void;
-  /** The column's layout transition, so More slides with the rows around it. */
+  /** The column's layout transition, so Archived slides with the rows around it. */
   transition: object;
   /** Where the label fades in from when it mounts, as NavRow's does. */
   reveal?: { opacity: number } | false;
@@ -2093,18 +2038,12 @@ function MoreFlyout({
    * the composer's "+", which is where a chat reaches for one. Pull requests
    * left Code's list for a top-level row. `/tasks` redirects to Automations.
    */
-  const items = isCode
-    ? [
-        { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
-      ]
-    : [
-        { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
-        { href: "/skills", kind: "skills" as const, label: "Skills", active: !!pathname?.startsWith("/skills") },
-        { href: "/automations", kind: "automations" as const, label: "Automations", active: !!pathname?.startsWith("/automations") },
-      ];
+  const items: Array<{ href: string; kind: SidebarMotionIconKind; label: string; active: boolean; minPlan?: string }> = isCode
+    ? []
+    : [];
   const anyActive = items.some((item) => item.active);
   /*
-   * More is selected when the page you are on lives inside it, and while its
+   * Archived is selected when the page you are on lives inside it, and while its
    * flyout is open. Both used to resolve to `text-foreground` and nothing
    * else: this trigger is not a `NavRow`, so it never had the travelling fill,
    * and `navRowClass`'s active branch deliberately paints no background (the
@@ -2123,7 +2062,7 @@ function MoreFlyout({
   const trigger = (
     <button
       type="button"
-      aria-label={collapsed ? "More" : undefined}
+      aria-label={collapsed ? "Archived" : undefined}
       data-active={selected ? "" : undefined}
       className={cn(navRowClass(collapsed, selected), selected && "sidebar-row-selected")}
     >
@@ -2137,7 +2076,7 @@ function MoreFlyout({
           transition={transition.base}
           className="min-w-0 flex-1 truncate text-left text-nav"
         >
-          More
+          Archived
         </motion.span>
       )}
     </button>
@@ -2160,7 +2099,7 @@ function MoreFlyout({
             <DropdownMenuTrigger asChild>
               <TooltipTrigger asChild>{trigger}</TooltipTrigger>
             </DropdownMenuTrigger>
-            <TooltipContent side="right">More</TooltipContent>
+            <TooltipContent side="right">Archived</TooltipContent>
           </Tooltip>
         ) : (
           <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
@@ -2174,7 +2113,7 @@ function MoreFlyout({
         align="start"
         sideOffset={12}
         collisionPadding={16}
-        aria-label="More"
+        aria-label="Archived"
         className={MENU_W}
       >
         {items.map((item) => (

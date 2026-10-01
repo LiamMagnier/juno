@@ -247,7 +247,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 .buttonStyle(StudioIconButtonStyle())
                 .fixedSize()
                 .help("Add images, files or commands")
-                .accessibilityLabel("Add")
+                .accessibilityLabel("Add").contentShape(.rect)
             }
             leading()
             Spacer(minLength: JunoSpace.snug)
@@ -325,7 +325,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                         }
                         .buttonStyle(.plain)
                         .offset(x: 5, y: -5)
-                        .accessibilityLabel("Remove \(attachment.name)")
+                        .accessibilityLabel("Remove \(attachment.name)").frame(minWidth: 44, minHeight: 44).contentShape(.rect)
                     }
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
@@ -634,7 +634,7 @@ struct StudioModeChip: View {
         .help("\(mode.title): \(mode.detail)")
         .accessibilityLabel("Mode")
         .accessibilityValue(mode.title)
-        .accessibilityIdentifier("juno.code.composer.mode")
+        .accessibilityIdentifier("juno.code.composer.mode").contentShape(.rect)
     }
 }
 
@@ -723,7 +723,7 @@ struct StudioModelChip: View {
                     width: JunoModelSelectorMetrics.standard.width,
                     height: JunoModelSelectorMetrics.standard.height
                 )
-            }
+            }.contentShape(.rect)
 
             if ladder.isAdjustable {
                 Button { effortPresented = true } label: {
@@ -743,7 +743,7 @@ struct StudioModelChip: View {
                             width: JunoThinkingMetrics.width,
                             height: JunoThinkingMetrics.height(caption: ladder.caption != nil, modeToggles: false)
                         )
-                }
+                }.contentShape(.rect)
             }
         }
         .fixedSize()
@@ -827,7 +827,7 @@ struct StudioContextMeter: View {
         .help(help + (openDetails == nil ? "" : "\nClick for the breakdown."))
         .accessibilityLabel("Context used")
         .accessibilityValue("\(Int(fraction * 100)) percent" + (Self.costLabel(cost).map { ", \($0) this session" } ?? ""))
-        .accessibilityIdentifier("juno.code.composer.context-meter")
+        .accessibilityIdentifier("juno.code.composer.context-meter").frame(minWidth: 44, minHeight: 44)
     }
 }
 

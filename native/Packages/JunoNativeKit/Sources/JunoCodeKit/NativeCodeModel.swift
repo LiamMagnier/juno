@@ -35,6 +35,12 @@ public final class NativeCodeModel {
     /// The open session's log.
     public private(set) var openTask: NativeCodeTask?
     public private(set) var events: [NativeCodeEvent] = []
+    public struct PendingInput: Equatable, Sendable {
+        public let id: String
+        public let text: String
+    }
+    public private(set) var pendingQuestion: PendingInput?
+    public private(set) var pendingPlan: PendingInput?
     public private(set) var pendingApproval: NativeCodeApproval?
     public private(set) var isStreaming = false
     /// Number of reconnect attempts for the open task's event stream.
@@ -216,6 +222,8 @@ public final class NativeCodeModel {
         openTask = nil
         events = []
         pendingApproval = nil
+        pendingQuestion = nil
+        pendingPlan = nil
         isStreaming = false
         streamReconnectAttempt = 0
         selectedRepository = nil
@@ -373,6 +381,8 @@ public final class NativeCodeModel {
         openTask = task
         events = []
         pendingApproval = nil
+        pendingQuestion = nil
+        pendingPlan = nil
         streamReconnectAttempt = 0
         follow(taskID: task.id, afterSeq: 0)
     }
@@ -382,6 +392,8 @@ public final class NativeCodeModel {
         openTask = nil
         events = []
         pendingApproval = nil
+        pendingQuestion = nil
+        pendingPlan = nil
         streamReconnectAttempt = 0
     }
 
@@ -418,6 +430,42 @@ public final class NativeCodeModel {
         }
     }
 
+    public func answerQuestion(_ answer: String) async {
+        guard let accountID, let task = openTask, let request = pendingQuestion,
+              !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        isMutating = true
+        defer { isMutating = false }
+        do { try await client.answerQuestion(id: task.id, requestID: request.id, answer: answer, for: accountID) }
+        catch { lastErrorDescription = NativeFailureMessage.presentable(error) }
+    }
+
+    public func decidePlan(approve: Bool) async {
+        guard let accountID, let task = openTask, let request = pendingPlan else { return }
+        isMutating = true
+        defer { isMutating = false }
+        do { try await client.decidePlan(id: task.id, requestID: request.id, approve: approve, for: accountID) }
+        catch { lastErrorDescription = NativeFailureMessage.presentable(error) }
+    }
+
+    private func applyInput(_ event: NativeCodeEvent) {
+        guard event.kind == .protocolEvent else { return }
+        switch event.protocolType {
+        case "question.asked":
+            if let id = event.requestID, let text = Optional(event.title) {
+                pendingQuestion = PendingInput(id: id, text: text)
+            }
+        case "question.answered":
+            if pendingQuestion?.id == event.requestID { pendingQuestion = nil }
+        case "plan.proposed":
+            if let id = event.requestID, let text = event.detail {
+                pendingPlan = PendingInput(id: id, text: text)
+            }
+        case "plan.resolved":
+            if pendingPlan?.id == event.requestID { pendingPlan = nil }
+        default: break
+        }
+    }
+
     // MARK: Streaming
 
     /// Follows a task's log, reconnecting from the last sequence seen.
@@ -447,6 +495,7 @@ public final class NativeCodeModel {
                             .events(let task, let newEvents, let approval):
                             apply(task)
                             append(newEvents)
+                            newEvents.forEach(applyInput)
                             streamReconnectAttempt = 0
                             cursor = max(cursor, newEvents.last?.seq ?? cursor)
                             if let approval { pendingApproval = approval }

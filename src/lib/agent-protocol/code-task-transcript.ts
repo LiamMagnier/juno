@@ -165,6 +165,14 @@ export class CodeTaskTranscript {
     return { requestId: approval.approvalId, summary: approval.summary, risk: approval.risk, detail: approval.action || null };
   }
 
+  get pendingQuestion() {
+    return this.fold.view.items.find((item) => item.kind === "question" && !item.answered && item.questionId === this.fold.view.pendingQuestionId) as import("./fold").AgentQuestionItem | undefined;
+  }
+
+  get pendingPlan() {
+    return [...this.fold.view.items].reverse().find((item) => item.kind === "plan_proposal" && item.decision === undefined) as import("./fold").AgentPlanProposalItem | undefined;
+  }
+
   /** The files the run changed, last report per path. */
   get fileChanges(): Array<{ path: string; changeKind: string; added: number; removed: number; patch: string | null }> {
     const byPath = new Map<string, { path: string; changeKind: string; added: number; removed: number; patch: string | null }>();

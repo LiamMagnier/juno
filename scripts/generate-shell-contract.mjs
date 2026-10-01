@@ -103,7 +103,7 @@ function nativeIcon(item, where) {
   return name;
 }
 
-if (contract.version !== 1) fail("version: this generator reads v1 of the shell contract.");
+if (![1, 2].includes(contract.version)) fail("version: this generator reads v1 and v2 of the shell contract.");
 
 const plans = contract.plans ?? [];
 if (!Array.isArray(plans) || plans.length === 0) fail("plans: missing.");

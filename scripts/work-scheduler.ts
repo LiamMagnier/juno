@@ -53,6 +53,9 @@
  */
 
 import "server-only";
+import { createArtifactMaintenance } from "@/lib/artifact-maintenance";
+import { sealIdleDrafts } from "@/lib/artifact-writes";
+import { purgeExpiredArtifacts } from "@/lib/artifact-trash";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
@@ -141,6 +144,14 @@ function log(message: string, extra?: Record<string, unknown>): void {
   const suffix = extra ? ` ${JSON.stringify(extra)}` : "";
   console.log(`[work-scheduler] ${message}${suffix}`);
 }
+
+// One bounded page per pass; no eleventh PM2 process or database connection budget.
+// Purge remains dry unless JUNO_ARTIFACTS_PURGE=1; the library enforces that floor.
+const maintainArtifacts = createArtifactMaintenance({
+  seal: () => sealIdleDrafts({ limit: 25 }),
+  purge: () => purgeExpiredArtifacts({ batchSize: 25, maxBatches: 1 }),
+  report: log,
+});
 
 // ---------------------------------------------------------------------------
 // Budgets
@@ -1047,6 +1058,7 @@ async function findDueSchedules(now: Date, limit: number) {
 }
 
 async function tick(): Promise<void> {
+  await maintainArtifacts(Date.now());
   const now = new Date();
 
   if (now.getTime() >= nextMigrationSweepAt) {

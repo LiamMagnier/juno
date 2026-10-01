@@ -341,6 +341,8 @@ interface UseCodeSessionOptions {
 export function useCodeSession(opts: UseCodeSessionOptions) {
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [status, setStatus] = React.useState<CodeSessionStatus>("idle");
+  const [pendingQuestion, setPendingQuestion] = React.useState<import("@/lib/agent-protocol/fold").AgentQuestionItem | null>(null);
+  const [pendingPlan, setPendingPlan] = React.useState<import("@/lib/agent-protocol/fold").AgentPlanProposalItem | null>(null);
   const [pendingApproval, setPendingApproval] = React.useState<CodePendingApproval | null>(null);
   const [activeTask, setActiveTask] = React.useState<RemoteTask | null>(null);
   const [responding, setResponding] = React.useState(false);
@@ -414,6 +416,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setMessages(opts.initialMessages);
     setStatus("idle");
     setPendingApproval(null);
+    setPendingQuestion(null);
+    setPendingPlan(null);
     pendingApprovalIdRef.current = null;
     setActiveTask(null);
     setAgents([]);
@@ -540,6 +544,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       live.activity = transcript.activity();
       live.errorMessage = transcript.errorMessage ?? live.errorMessage;
 
+      setPendingQuestion(transcript.pendingQuestion ?? null);
+      setPendingPlan(transcript.pendingPlan ?? null);
       const pending = transcript.pendingApproval;
       if ((pending?.requestId ?? null) !== pendingApprovalIdRef.current) {
         pendingApprovalIdRef.current = pending?.requestId ?? null;
@@ -618,6 +624,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       });
       liveRef.current = null;
       setPendingApproval(null);
+    setPendingQuestion(null);
+    setPendingPlan(null);
       pendingApprovalIdRef.current = null;
       setActiveTask(null);
       setStatus("idle");
@@ -970,6 +978,22 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     }
   }, [activeTask]);
 
+  const respondToInput = React.useCallback(async (input: { type: "question.answer"; requestId: string; answer: string } | { type: "plan.decide"; requestId: string; decision: "approve" | "reject" }) => {
+    if (!activeTask || responding) return false;
+    setResponding(true);
+    try {
+      const response = await fetch(`/api/code/tasks/${activeTask.id}/respond`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+      });
+      if (!response.ok) throw new Error();
+      // Keep the card until the executing host acknowledges the answer.
+      return true;
+    } catch {
+      toast.error("Could not send your answer. Try again.");
+      return false;
+    } finally { setResponding(false); }
+  }, [activeTask, responding]);
+
   const respond = React.useCallback(
     async (requestId: string, approve: boolean) => {
       const task = activeTask;
@@ -1095,6 +1119,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     status,
     activeTask,
     pendingApproval,
+    pendingQuestion,
+    pendingPlan,
+    respondToInput,
     agents,
     fileChanges,
     rollbackSupport,

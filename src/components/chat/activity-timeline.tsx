@@ -31,7 +31,6 @@ const ThoughtProcessPanel = nextDynamic(
   { ssr: false },
 );
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
 import { Pressable } from "@/components/ui/pressable";
 import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
@@ -267,18 +266,6 @@ export function ActivityTimeline({
   if (!streaming && !hasReasoning && !restingDetail) return null;
   // A phase change should animate once. Reasoning-token growth never changes
   // this key, so the collapsed UI stays calm during long streams.
-  // The orb names the same phase the sentence does (see PhaseOrb): a scan
-  // while the run searches or reads, a sash while it writes, orbiting
-  // particles while a tool runs, a slow ring while it reasons.
-  const liveOrb: OrbState = live.warning
-    ? "working"
-    : active?.key === "research"
-      ? "searching"
-      : latest?.kind === "tool"
-        ? "working"
-        : active?.key === "write"
-          ? "composing"
-          : "breathing";
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
 
   // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. The elapsed number alone rewrites
@@ -351,17 +338,6 @@ export function ActivityTimeline({
             visible content is a clock the tree has no reason to see. */}
         {streaming ? (
           <>
-            {/* ONE BREATHING ELEMENT ON SCREEN AT A TIME. While the panel is
-                open it owns the live signature — same mark, same period, one
-                column over — and this strip stands down to a static primary
-                dot in the same 18px slot. Two matrices running the same loop
-                three hundred pixels apart is two indicators for one state, and
-                the eye reads them as two things happening. */}
-            {open ? (
-              <span aria-hidden="true" className="size-5 shrink-0" />
-            ) : (
-              <PhaseOrb state={liveOrb} />
-            )}
             {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep, a second
                 looping thing beside the matrix, moving a valley of alpha
                 through a sentence the reader is trying to read. The matrix

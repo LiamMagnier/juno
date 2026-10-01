@@ -13,6 +13,6 @@
  * move it here in the same change.
  */
 export const THEME_COLOR = {
-  light: "#faf9f6",
-  dark: "#1f1d1c",
+  light: "#fcfcfd",
+  dark: "#18191b",
 } as const;

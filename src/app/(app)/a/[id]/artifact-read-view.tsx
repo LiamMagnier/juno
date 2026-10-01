@@ -25,6 +25,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight, MessagesSquare } from "@/components/ui/icons";
+import { ArtifactLifecycleActions } from "@/components/artifacts/artifact-lifecycle-actions";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -111,6 +112,7 @@ export function ArtifactReadView({
         <VersionStepper id={id} version={version} latest={latest} previous={previous} next={next} />
 
         <div className="flex-1" />
+        <ArtifactLifecycleActions id={id} title={title} version={version} latest={latest} />
 
         {hasPreview && (
           <SegmentedControl

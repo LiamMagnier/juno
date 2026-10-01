@@ -24,7 +24,6 @@ import {
 import { deriveTurns } from "@/components/work/work-conversation";
 import {
   DegradationNotes,
-  WorkStatusPill,
   statusSentence,
 } from "@/components/work/work-vocabulary";
 import { ComposerIcons } from "@/lib/app-icons";
@@ -139,7 +138,6 @@ export function WorkRunPanel({
             transition={transition.fast}
             className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1"
           >
-            <WorkStatusPill status={session.status} describe={false} />
             <p className="min-w-0 text-ui text-muted-foreground">{statusSentence(session.status, actor)}</p>
           </motion.div>
         </div>
@@ -232,17 +230,17 @@ function LiveRun({
       <WorkCurrentAction action={work.currentAction} />
 
       {work.plan.length > 0 && (
-        <div className="px-2">
-          <h4 className="mb-2 flex items-baseline gap-2">
+        <details className="px-2">
+          <summary className="mb-2 flex cursor-pointer items-baseline gap-2 text-ui">
             <span className="text-ui font-medium text-foreground">Plan</span>
             {/* The tally rather than a percentage: "4/7" is a position in a list
                 somebody can see, and "57%" is a number they convert back. */}
             <span className="font-mono text-caption tabular-nums text-muted-foreground">
               {tally.done}/{tally.total}
             </span>
-          </h4>
+          </summary>
           <WorkProgressChecklist steps={work.plan} />
-        </div>
+        </details>
       )}
 
       {work.run !== null && (

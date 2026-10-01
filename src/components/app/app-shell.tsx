@@ -458,7 +458,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
      * context, so it reaches the dialogs and menus the shell portals out too.
      */
     <MotionConfig reducedMotion="user">
-      <div className="relative flex h-dvh overflow-hidden">
+      <div className="juno-frame relative flex h-dvh overflow-hidden">
         {/* Bypass Blocks (SC 2.4.1, Level A). */}
         <a
           href="#juno-main"
@@ -618,7 +618,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main
           id="juno-main"
           tabIndex={-1}
-          className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
+          className="app-main-canvas juno-content-panel relative flex min-w-0 flex-1 flex-col"
           style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
         >
           <StreamProgress active={streaming} />

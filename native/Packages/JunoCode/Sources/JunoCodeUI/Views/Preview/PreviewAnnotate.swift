@@ -261,9 +261,9 @@ struct PreviewAnnotateToolbar: View {
                 Spacer()
                 Button("Cancel", action: cancel)
                     .buttonStyle(StudioQuietButtonStyle())
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(.cancelAction).contentShape(.rect)
                 Button("Add to message", action: send)
-                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary)).contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)

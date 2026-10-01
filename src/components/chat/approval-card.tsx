@@ -390,6 +390,13 @@ type Outcome =
   | { kind: "done"; message: string }
   | { kind: "refused"; code: RefusalCode | null; message: string; terminal: boolean };
 
+/** Named verbs come from the tool identifier, never its untrusted arguments. */
+function approvalVerb(toolName: string): string {
+  const words = toolName.split("__").at(-1)?.replace(/_/g, " ").trim() ?? "";
+  const verbs = /(?:^|\s)(send|post|publish|delete|remove|create|update|change|add|move|archive|read|search|write|pay|transfer)\s+(.+)/i.exec(words);
+  return verbs ? `${verbs[1][0].toUpperCase()}${verbs[1].slice(1)} ${verbs[2]}` : "Allow this action";
+}
+
 export function ApprovalCard({
   approval,
   onDecided,
@@ -399,6 +406,13 @@ export function ApprovalCard({
 }) {
   const labelId = React.useId();
   const detailId = React.useId();
+  const visibleAt = React.useRef(0);
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    visibleAt.current = Date.now(); setArmed(false);
+    const timer = window.setTimeout(() => setArmed(true), 500);
+    return () => window.clearTimeout(timer);
+  }, [approval.id, approval.receiptDigest]);
   // Presentation only: whether the argument list is unfolded. It used to be a
   // native <details>, whose open state the browser kept and which gives no
   // height to animate, so the list cut in and out under its caret.
@@ -460,6 +474,7 @@ export function ApprovalCard({
 
   const decide = React.useCallback(
     async (decision: ActionApprovalDecision) => {
+      if (Date.now() - visibleAt.current < 500) return;
       setOutcome({ kind: "sending", decision });
       let response: Response;
       try {
@@ -608,20 +623,7 @@ export function ApprovalCard({
                   ? "Juno needs your approval"
                   : "Approval request"}
         </p>
-        {!task && !agentConfig && (
-          <span
-            className={cn(
-              "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-caption font-medium",
-              current.riskClass === "read_only"
-                ? "border-border/70 text-muted-foreground"
-                : current.riskClass === "reversible_write"
-                  ? "border-source/40 text-source"
-                  : "border-warning/50 text-warning-foreground"
-            )}
-          >
-            {risk.label}
-          </span>
-        )}
+        {!task && !agentConfig && <span className="text-caption text-muted-foreground">{risk.label}</span>}
         {answerable && remaining !== null && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-micro text-muted-foreground">
             <Clock className="size-3" aria-hidden="true" />
@@ -750,27 +752,22 @@ export function ApprovalCard({
 
       {answerable && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button
-            variant="destructive-outline"
-            disabled={sending}
-            onClick={() => decide("deny")}
-            className="h-11 px-4"
-          >
-            {handoff ? "Don’t hand off" : task ? "Don’t start" : agentConfig ? "Deny" : "Don’t allow"}
+          <Button disabled={sending || !armed} onClick={() => decide("allow_once")} className="h-11 px-4">
+            {handoff ? "Hand off" : task ? "Start task" : agentConfig ? "Apply setup change" : approvalVerb(current.toolName)}
           </Button>
-          <Button disabled={sending} onClick={() => decide("allow_once")} className="h-11 px-4">
-            {handoff ? "Hand off" : task ? "Start task" : "Allow once"}
-          </Button>
+          <Button variant="ghost" disabled={sending || !armed} onClick={() => decide("deny")} className="h-11 px-4">Deny</Button>
           {canAllowScope && !agentConfig && (
-            <Button
-              variant="outline"
-              disabled={sending}
-              onClick={() => decide("allow_scope")}
-              className="h-11 px-4"
-            >
-              Allow this action for this connector
-            </Button>
+            <details className="relative">
+              <summary className="flex h-11 cursor-pointer items-center rounded-control px-3 text-ui text-muted-foreground hover:bg-accent" aria-label="More approval choices">More choices</summary>
+              <div className="surface-float absolute left-0 top-full z-popper mt-1 rounded-menu p-1">
+                <Button variant="ghost" disabled={sending || !armed} onClick={() => decide("allow_scope")}>Always allow this action</Button>
+              </div>
+            </details>
           )}
+          <Button variant="ghost" className="basis-full justify-start px-0 text-muted-foreground" onClick={() => {
+            window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: "Instead of this action, " }));
+            document.getElementById("juno-composer-textarea")?.focus();
+          }}>Tell Juno what to do instead</Button>
         </div>
       )}
 

@@ -92,12 +92,12 @@ struct StudioVerifyRecipeCard: View {
             HStack(spacing: JunoSpace.snug) {
                 Button("Not now") { model.dismiss() }
                     .buttonStyle(StudioQuietButtonStyle())
-                    .accessibilityIdentifier("juno.code.verify.dismiss")
+                    .accessibilityIdentifier("juno.code.verify.dismiss").contentShape(.rect)
                 Spacer(minLength: JunoSpace.snug)
                 Button(proposal.kind == .discovered ? "Use these checks" : "Use the new checks") { accept() }
                     .buttonStyle(StudioPrimaryButtonStyle())
                     .disabled(model.isSaving)
-                    .accessibilityIdentifier("juno.code.verify.accept")
+                    .accessibilityIdentifier("juno.code.verify.accept").contentShape(.rect)
             }
         }
         .padding(JunoSpace.regular)

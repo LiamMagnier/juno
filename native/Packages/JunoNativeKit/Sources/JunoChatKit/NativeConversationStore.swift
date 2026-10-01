@@ -1544,6 +1544,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// The skill armed for this turn, carried through retries for the
         /// reason the tool flags are: a retry is the request the reader made.
         var skillSlug: String? = nil
+        var contextTokens: [NativeContextToken] = []
         /// Set only when this turn is a *fork*: the message it branches away
         /// from, and the parent both revisions will hang under.
         ///
@@ -2145,6 +2146,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         )
     }
 
+    public func mentions(query: String, conversationID: String? = nil) async throws -> [NativeMentionItem] {
+        guard let accountID, let chatClient else { return [] }
+        return try await chatClient.mentions(query: query, conversationID: conversationID, for: accountID)
+    }
+
     public func sendMessage(
         conversationID: String,
         prompt: String,
@@ -2165,7 +2171,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         attachments: [NativeChatAttachment] = [],
         // The skill the composer armed (`skillSlug` on the route). Defaulted
         // for the call sites with no skill UI.
-        skillSlug: String? = nil
+        skillSlug: String? = nil,
+        contextTokens: [NativeContextToken] = []
     ) -> Bool {
         sendMessage(
             conversationID: conversationID,
@@ -2181,7 +2188,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             proMode: proMode,
             branchPlacement: nil,
             attachments: attachments,
-            skillSlug: skillSlug
+            skillSlug: skillSlug,
+            contextTokens: contextTokens
         )
     }
 
@@ -2204,7 +2212,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         proMode: Bool,
         branchPlacement: BranchPlacement?,
         attachments: [NativeChatAttachment] = [],
-        skillSlug: String? = nil
+        skillSlug: String? = nil,
+        contextTokens: [NativeContextToken] = []
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -2269,6 +2278,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             fastMode: fastMode,
             proMode: proMode,
             skillSlug: skillSlug,
+            contextTokens: Array(contextTokens.prefix(16)),
             branchPlacement: branchPlacement,
             userMessageID: nil,
             userCreatedAt: now,
@@ -2655,7 +2665,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         proMode: context.proMode,
                         regenerateInstruction: context.regenerateInstruction,
                         workHandoff: claimsWorkHandoff,
-                        skillSlug: context.skillSlug
+                        skillSlug: context.skillSlug,
+                        context: context.contextTokens
                     ),
                     for: context.accountID
                 )

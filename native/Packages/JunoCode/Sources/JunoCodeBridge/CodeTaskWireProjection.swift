@@ -206,10 +206,10 @@ public struct CodeTaskWireProjection: Sendable {
         case .questionAsked(let question):
             return [(
                 "status",
-                ["status": .string("Waiting for an answer on the Mac"), "detail": .string(question.prompt)]
+                ["status": .string("Waiting for your answer"), "detail": .string(question.prompt)]
             )]
         case .planProposed:
-            return [("status", ["status": .string("Plan ready for review on the Mac")])]
+            return [("status", ["status": .string("Plan ready for review")])]
         case .sessionState(let state):
             return [("status", ["status": .string(taskWord(state.state))])]
         case .sessionError(let failure):

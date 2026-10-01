@@ -46,8 +46,8 @@ struct StudioCommandCenterHost: ViewModifier {
             ) { confirmation in
                 Button(confirmation.confirmLabel) {
                     Task { await commands.confirm(confirmation, host: controller) }
-                }
-                Button("Keep it", role: .cancel) { commands.confirmation = nil }
+                }.contentShape(.rect)
+                Button("Keep it", role: .cancel) { commands.confirmation = nil }.contentShape(.rect)
             } message: { confirmation in
                 Text(confirmation.message)
             }
@@ -88,7 +88,7 @@ struct StudioCommandStatusLines: View {
                         Spacer(minLength: JunoSpace.snug)
                         Button("Stop") { commands.stopLoop(loop.id) }
                             .buttonStyle(.link)
-                            .accessibilityLabel("Stop the loop: \(loop.prompt)")
+                            .accessibilityLabel("Stop the loop: \(loop.prompt)").contentShape(.rect)
                     }
                 }
             }
@@ -119,7 +119,7 @@ struct StudioSheetFrame<Content: View>: View {
                 }
                 Spacer()
                 Button("Done", action: done)
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.defaultAction).contentShape(.rect)
             }
             .padding(JunoSpace.regular)
             .studioHairline(.bottom)

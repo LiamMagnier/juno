@@ -229,14 +229,32 @@ public enum AgentProtocolProjection {
             ]
 
         case .runCompleted(let run):
-            return [
-                make(.turnCompleted(.init(
+            var events: [AgentEvent] = []
+            if let usage = run.usage {
+                events.append(make(.usageUpdated(.init(
+                    usage: AgentUsage(
+                        inputTokens: max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens),
+                        outputTokens: usage.outputTokens,
+                        cacheReadTokens: usage.cacheReadTokens,
+                        cacheWriteTokens: usage.cacheWriteTokens
+                    ), scope: .turn
+                ))))
+            }
+            if run.endReason == .error {
+                events.append(make(.turnFailed(.init(error: AgentErrorInfo(
+                    code: .internal, message: bounded(run.summary, maximumSummaryCharacters), retryable: true
+                )))))
+            } else if run.endReason == .stopped || run.endReason == .interrupted {
+                events.append(make(.turnInterrupted(.init(reason: run.endDetail ?? run.summary))))
+            } else {
+                events.append(make(.turnCompleted(.init(
                     stopReason: stopReason(run.endReason),
                     durationMs: milliseconds(run.durationSeconds),
                     filesChanged: run.filesChanged,
                     summary: bounded(run.summary, maximumTextCharacters)
-                ))),
-            ]
+                ))))
+            }
+            return events
 
         case .compaction(let compaction):
             return [

@@ -1,3 +1,22 @@
+# Juno Refoundation — active Codex continuation (2026-10-01)
+
+## Current continuation: read this before the historical pause notes
+
+The owner authorized completing the entire rework on 2026-10-01 and requested a detailed, continuously updated handoff for Claude. Work is active again. The historical pause notes below are preserved as evidence, but their older HEAD/deployment/worktree statements are superseded by this section.
+
+- **Actual workspace:** `/Users/liammagnier/Developer/project/juno-refoundation`, branch `rework/refoundation`, starting HEAD `756a93dc`; clean on entry. The supplied `/Users/liammagnier/Developer/project/juno/docs/rework/HANDOFF.md` does not exist on the local `main` checkout (`1feb392c`). Use this worktree for all continuation changes. Local main is older than the deployment reported in the previous handoff; do not infer production state from it.
+- **Scope:** all unfinished phases in PRODUCT_REFOUNDATION / INTERACTION_SPEC / CODE_AGENT_SPEC and this handoff. Dev galleries are design references; production components must receive the redesign. Keep existing agent faces until the new character work is accepted; preserve voice behavior while completing its presentation.
+- **Execution:** parallel lanes authorized by the handoff workflow: security/release/backend maintenance; native/Code runtime and parity; secondary pages/apps/skills/artifact UI. Codex root owns web foundations, sidebar, composer, transcript, integration and this file. All lanes share this worktree with explicit file ownership; no parallel commits or dependency reinstallations.
+- **Delivery status:** implementation and verification underway. Nothing from this continuation has been pushed, deployed, or released. Completion must be backed by gates and visual evidence; blocked hardware/service/release checks must be distinguished from completed implementation.
+
+### Continuation change and evidence log
+
+This section will be updated as each verified slice lands. Implementation details, commands, failures, screenshots and unresolved work are recorded here and in PROGRESS.md before ending the session.
+
+---
+
+## Historical Claude handoff (preserved)
+
 # Juno Refoundation — handoff (paused again 2026-10-01, afternoon)
 
 ## Third pause (2026-10-01, evening) — read this first

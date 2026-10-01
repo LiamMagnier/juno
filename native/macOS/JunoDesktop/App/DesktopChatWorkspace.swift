@@ -2362,7 +2362,7 @@ struct DesktopConversationView: View {
 
     /// Hides a run's recap on this Mac, for good (the web's ✕ lasts the page).
     private func dismissRecap(_ runID: String) {
-        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+        _ = withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
             dismissedRecaps.insert(runID)
         }
         UserDefaults.standard.set(Array(dismissedRecaps).sorted(), forKey: dismissedRecapsKey)

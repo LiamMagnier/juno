@@ -558,10 +558,12 @@ private enum CodeSignature {
             throw SignatureError("Juno's own bundle identifier could not be read.")
         }
 
-        // If the running app has no team identifier (e.g. ad-hoc signed development build),
-        // require matching the bundle identifier and valid code signature rather than deadlocking.
+        // An ad-hoc signature has no authenticated publisher. An identifier
+        // alone lets anyone re-sign a substituted bundle and satisfy the gate.
+        // Require a real signing identity before automated replacement; local
+        // development builds can still be installed manually.
         guard let team = teamIdentifier(of: running) else {
-            return "identifier \"\(identifier)\""
+            throw SignatureError("This development build has no trusted signing identity. Install a signed Juno release manually to enable automatic updates.")
         }
 
         // Apple-anchored, this identifier, this team — always. Each clause

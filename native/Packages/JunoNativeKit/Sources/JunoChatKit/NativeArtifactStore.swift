@@ -489,6 +489,12 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
         }
     }
 
+    public func publicationURL(id: String) async -> URL? {
+        guard let accountID else { return nil }
+        do { return try await apiClient.publicationURL(id: id, for: accountID) }
+        catch { record(error); return nil }
+    }
+
     public func exportArtifact(
         id: String,
         format: NativeArtifactExportFormat

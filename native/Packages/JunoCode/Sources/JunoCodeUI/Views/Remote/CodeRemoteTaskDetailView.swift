@@ -331,6 +331,7 @@ private extension NativeCodeEvent.Kind {
     var junoIcon: JunoIcon {
         switch self {
         case .status: .refresh
+        case .protocolEvent: .tasks
         case .user: .user
         case .text: .conversation
         case .tool: .tools

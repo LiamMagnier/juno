@@ -303,10 +303,6 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Permissions", "Juno Work is unavailable.")
             }
-        case .skills, .assistants:
-            // Phase 4 Stage B builds these pages; until it lands, More leads
-            // here.
-            unavailable(destination.label, "This page is not on the Mac yet.")
         case .connections:
             if let model = configuration.connectorModel {
                 DesktopConnectionsScreen(model: model)

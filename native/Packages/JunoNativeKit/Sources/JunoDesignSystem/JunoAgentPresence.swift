@@ -74,88 +74,10 @@ public struct JunoAgentPresence: View {
         self.level = level
     }
 
-    private var tone: Color { avatar.tone.color }
-
-    private var isMoving: Bool {
-        !reduceMotion && (state == .working || state == .thinking)
-    }
-
     public var body: some View {
         JunoAgentFace(avatar: avatar, state: state, size: size, name: name, level: level)
-            .background {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isMoving)) { context in
-                    halo(at: context.date.timeIntervalSinceReferenceDate)
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
     }
 
-    private func halo(at now: TimeInterval) -> some View {
-        let diameter = size * (1 + spread * 2)
-        let hovered = trigger.hovered
-        var opacity = hovered ? 1 : JunoAgentHalo.opacity(state)
-        var scale: CGFloat = hovered && !reduceMotion ? 1.06 : 1
-        if state == .working, !reduceMotion, !hovered {
-            let breath = JunoAgentHalo.breathe.loop(elapsed: now)
-            opacity = breath.opacity
-            scale = breath.scaleX
-        }
-        let turn = Angle.degrees((now.truncatingRemainder(dividingBy: JunoAgentHalo.turnPeriod) / JunoAgentHalo.turnPeriod) * 360)
-        return ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        stops: [
-                            .init(color: tone.opacity(0.26), location: 0),
-                            .init(color: tone.opacity(0.1), location: 0.58),
-                            .init(color: tone.opacity(0), location: 1),
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: diameter / 2
-                    )
-                )
-                .frame(width: diameter, height: diameter)
-                .scaleEffect(scale)
-                .opacity(opacity)
-            if JunoAgentHalo.turns(state) {
-                let sheen = size * (1 + spread * 1.6)
-                Circle()
-                    .fill(
-                        AngularGradient(
-                            stops: [
-                                .init(color: tone.opacity(0), location: 0),
-                                .init(color: tone.opacity(0.34), location: 70 / 360),
-                                .init(color: tone.opacity(0), location: 150 / 360),
-                                .init(color: tone.opacity(0), location: 1),
-                            ],
-                            center: .center
-                        )
-                    )
-                    .mask {
-                        Circle().fill(
-                            RadialGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0.52),
-                                    .init(color: .black, location: 0.7),
-                                    .init(color: .clear, location: 1),
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: sheen / 2
-                            )
-                        )
-                    }
-                    .frame(width: sheen, height: sheen)
-                    .rotationEffect(reduceMotion ? .zero : turn)
-                    .transition(.opacity)
-            }
-        }
-        .frame(width: size, height: size)
-        .animation(JunoMotion.reduced(JunoMotion.outSoft(0.6), when: reduceMotion, tier: .tint), value: state)
-        .animation(JunoMotion.reduced(JunoMotion.outSoft(0.6), when: reduceMotion, tier: .tint), value: hovered)
-    }
 }
 
 /// The agent's one live sentence ("Drafting the renewal comparison"). A new

@@ -157,7 +157,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ deviceId
       // the events-POST and detail-snapshot routes. Reset them only on create.
       const { lastEventSequence: _seq, transcriptVersion: _tv, snapshotVersion: _sv, createdAt: _c, ...updateData } = data;
       await tx.codeRemoteSession.upsert({
-        where: { deviceId_sessionId: { deviceId, sessionId: input.sessionId } },
+        where: { deviceId_sessionId: { deviceId, sessionId: input.sessionId }, userId: user.id },
         create: { userId: user.id, deviceId, ...data },
         update: updateData,
       });

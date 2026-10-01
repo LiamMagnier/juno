@@ -1,5 +1,6 @@
 "use client";
 
+import { CustomizeNav } from "@/components/customize/customize-nav";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -12,6 +13,8 @@ import { type ConnectorStatus, type UserMcpServerStatus } from "@/components/con
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { AddMcpServerDialog } from "@/components/connections/add-mcp-server-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
+import { StandingGrants } from "@/components/connections/standing-grants";
+import { queueSettingsPatch } from "@/components/settings/use-settings-save";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
@@ -32,7 +35,6 @@ const ERRORS: Record<string, string> = {
   unknown: "Unknown connector.",
 };
 
-const ENABLED_KEY = "juno:mcp:enabled";
 
 const CONNECTOR_BRAND_LABELS: Record<string, string> = {
   github: "GitHub",
@@ -64,6 +66,10 @@ export default function ConnectionsPage() {
   const [addMcpOpen, setAddMcpOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
+  const blockedRef = React.useRef<string[]>([]);
+  const savingEnabled = React.useRef(false);
+  const [permissionsReady, setPermissionsReady] = React.useState(false);
+  const [permissionTarget, setPermissionTarget] = React.useState<string | null>(null);
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
 
   const load = React.useCallback(async () => {
@@ -96,7 +102,7 @@ export default function ConnectionsPage() {
     if (connected) {
       const label = connectorResultLabel(connected);
       toast.success(`${label} is connected and ready to use.`);
-      // Brief "Connecting" hold so the pill visibly settles into Active.
+      // Hold the completed connection while the account list refreshes.
       setConnectingId(connected);
       settle = setTimeout(() => setConnectingId(null), 1400);
     }
@@ -105,16 +111,34 @@ export default function ConnectionsPage() {
     return () => clearTimeout(settle);
   }, [router]);
 
-  // "Expose to chats" toggles for REGISTRY connectors only, client-side and
-  // persisted per connector. User MCP servers do NOT use this key: their one
-  // switch is the server-side `enabled` column (lib/user-mcp.ts), so two
-  // machines cannot disagree about whether a server is on.
+  // The same account policy the tool broker checks; this setting travels
+  // across browsers and devices rather than only changing a local switch.
   React.useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(ENABLED_KEY);
-      if (raw) setEnabled(JSON.parse(raw) as Record<string, boolean>);
-    } catch {}
+    const controller = new AbortController();
+    fetch("/api/settings", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const data = await response.json() as { settings: { blockedConnectors: string[] } };
+        blockedRef.current = data.settings.blockedConnectors;
+        setEnabled(Object.fromEntries(blockedRef.current.map((id) => [id, false])));
+        setPermissionsReady(true);
+      }).catch(() => { if (!controller.signal.aborted) toast.error("Couldn’t read app permissions. Reload before changing them."); });
+    return () => controller.abort();
   }, []);
+
+  const applyEnabled = async (id: string, value: boolean) => {
+    if (!permissionsReady || savingEnabled.current) return;
+    savingEnabled.current = true;
+    const next = value ? blockedRef.current.filter((blocked) => blocked !== id) : [...new Set([...blockedRef.current, id])];
+    try {
+      const response = await queueSettingsPatch({ blockedConnectors: next });
+      if (!response.ok) throw new Error();
+      blockedRef.current = next;
+      setEnabled(Object.fromEntries(next.map((blocked) => [blocked, false])));
+      window.dispatchEvent(new CustomEvent("juno:connections-changed"));
+    } catch { toast.error("Couldn’t save app permissions. Your permissions are unchanged."); }
+    finally { savingEnabled.current = false; }
+  };
 
   const setEnabledFor = (id: string, value: boolean) => {
     if (id.startsWith("user_mcp:")) {
@@ -134,11 +158,8 @@ export default function ConnectionsPage() {
       })();
       return;
     }
-    const next = { ...enabled, [id]: value };
-    setEnabled(next);
-    try {
-      window.localStorage.setItem(ENABLED_KEY, JSON.stringify(next));
-    } catch {}
+    if (value) setPermissionTarget(id);
+    else void applyEnabled(id, false);
   };
 
   const connect = (c: ConnectorStatus) => {
@@ -239,6 +260,7 @@ export default function ConnectionsPage() {
 
   return (
     <AppPage measure="wide">
+      <CustomizeNav current="apps" />
       {/* No count in the header. It carried a "{n} connected" badge directly
           above a toolbar whose "Connected" segment prints the same number —
           and the segment is the control that filters to them, so its copy of
@@ -247,8 +269,8 @@ export default function ConnectionsPage() {
         /* No eyebrow: it restated the sidebar row that opens this page, above
            a title that already means the same thing. See the note in
            app/(app)/library/page.tsx — same fix, same rule. */
-        heading="Connections"
-        lede="Link your repositories, designs and docs so Juno can work with them."
+        heading="Customize"
+        lede="Connect the apps Juno can work with."
         actions={
           <Button size="sm" className="gap-1.5" onClick={() => setAddMcpOpen(true)}>
             <Plus className="size-4" />
@@ -283,6 +305,7 @@ export default function ConnectionsPage() {
           composioConfigured={composioConfigured}
           canConfigureServer={features.isOwner}
           enabled={enabled}
+          permissionsReady={permissionsReady}
           onEnabledChange={setEnabledFor}
           onConnectNative={connect}
           onDisconnect={setDisconnectTarget}
@@ -291,10 +314,24 @@ export default function ConnectionsPage() {
         />
       )}
 
+      <StandingGrants />
+
       <p className="mt-8 text-caption text-muted-foreground">
-        Connected tools are available to the model when you enable them in a chat. Each provider shows the exact
-        permissions during its consent flow.
+        Connected tools are available to the model when you enable them in a chat. Provider permissions appear in App details when the provider returned them.
       </p>
+
+      <Dialog open={permissionTarget !== null} onOpenChange={(open) => !open && setPermissionTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Allow Juno to use this app?</DialogTitle>
+            <DialogDescription>Its tools become available when you add it to a chat. Your action approval policy still applies.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPermissionTarget(null)}>Cancel</Button>
+            <Button onClick={() => { const id = permissionTarget; setPermissionTarget(null); if (id) void applyEnabled(id, true); }}>Allow app</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AddMcpServerDialog
         open={addMcpOpen}

@@ -4,6 +4,8 @@ export interface ConnectorStatus {
   label: string;
   description: string;
   capability: string;
+  /** Actual scope returned at connection time; an empty list means not reported. */
+  providerScopes?: string[];
   configured: boolean;
   connected: boolean;
   accountLabel: string | null;

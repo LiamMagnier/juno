@@ -113,7 +113,7 @@ export const transition = {
  */
 export const spring = {
   /** The default settle. Mirrors `JunoMotion.standard`. */
-  standard: { type: "spring", duration: duration.base, bounce: 0.05 },
+  standard: { type: "spring", duration: duration.base, bounce: 0 },
   /** More overshoot, for a change that should be noticed. `JunoMotion.emphasized`. */
   emphasized: { type: "spring", duration: duration.slow, bounce: 0.1 },
   /** For anything tracking a pointer. `JunoMotion.spring` (interactiveSpring). */

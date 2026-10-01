@@ -389,13 +389,9 @@ module.exports = {
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
-    // juno-artifact-maintenance (scripts/artifact-maintenance.ts: seal idle
-    // design drafts, purge the artifact trash) is deliberately NOT its own app.
-    // On the 887 MB / 2-vCPU VM an eleventh Node process pushed a release's
-    // restart past the voice-relay check and filled the database pool
-    // (2026-10-01). Drafts are also sealed on save, pause, page close and before
-    // any other write, and the purge is unarmed in production, so nothing waits
-    // on it; it moves into an existing worker's loop in the refoundation.
+    // Artifact maintenance runs inside juno-work-scheduler: one bounded idle
+    // draft pass per minute and one trash page per six hours, dry unless armed.
+    // Keep the 10-process ceiling and existing total 14-slot pooler budget.
     {
       name: "juno-voice-relay",
       // The relay is its own package inside the release, so it is the one app

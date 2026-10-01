@@ -7,8 +7,8 @@ export function EmptyGreeting() {
   const firstName = user.name?.trim().split(/\s+/)[0];
   return (
     <div className="flex w-full max-w-2xl flex-col items-center">
-      <h1 className="text-balance text-center font-serif text-display font-normal text-foreground motion-safe:animate-rise-in">
-        How can I help{firstName ? <>, <span className="italic">{firstName}</span></> : null}?
+      <h1 className="text-balance text-center font-serif text-display font-normal text-foreground ">
+        How can I help{firstName ? <>, <span>{firstName}</span></> : null}?
       </h1>
     </div>
   );
@@ -19,7 +19,7 @@ export function EmptyGreeting() {
  *  swap an arriving headline for one that simply appears. */
 export function PrivateGreeting() {
   return (
-    <div className="flex w-full flex-col items-center gap-2 text-center motion-safe:animate-rise-in">
+    <div className="flex w-full flex-col items-center gap-2 text-center ">
       <h1 className="font-sans text-page-title">
         You&apos;re incognito
       </h1>

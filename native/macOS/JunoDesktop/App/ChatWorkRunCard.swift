@@ -568,10 +568,11 @@ struct ChatWorkOutcomeDigest: View {
                         .frame(width: 4, height: 4)
                         .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 4 }
                         .accessibilityHidden(true)
-                    line.parts.reduce(Text(verbatim: "")) { text, part in
-                        // A figure takes the line's own size in mono.
-                        text + Text(part.text).monospaced(part.isFigure)
-                    }
+                    Text(line.parts.reduce(into: AttributedString()) { text, part in
+                        var value = AttributedString(part.text)
+                        if part.isFigure { value.font = .system(.callout, design: .monospaced) }
+                        text.append(value)
+                    })
                     .junoFont(size: 13, relativeTo: .callout)
                     .foregroundStyle(Color.junoForeground)
                     .fixedSize(horizontal: false, vertical: true)

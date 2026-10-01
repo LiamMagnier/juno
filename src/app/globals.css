@@ -67,23 +67,29 @@
        97%, a card sits two points above it as a fill with a hairline, and a
        well sits on the page's own value. No shadow carries depth in-flow, so
        the ground can sit close to white without starving a highlight. */
-    --background: 48 24% 97.2%;
-    --foreground: 48 4% 11%;
+
+    /* Refoundation round 3: floating layers only, solid fallbacks below. */
+    --faint-foreground: 217.500 3.704% 42.353%;
+    --attention: 34.161 91.946% 29.216%;
+    --user-bubble: 210.000 6.667% 94.118%;
+    --material-opacity: .70;
+    --background: 240.000 20.000% 99.020%;
+    --foreground: 216.000 9.091% 10.784%;
 
     /* 98%, not a pure white. A literal #fff card floating on warm paper is the
        one pairing that reads as somebody else's brand; a 2% step is the raised
        rung, and the highlight in --shadow-raised is what carries the lift. */
-    --card: 46 32% 99.2%;
-    --card-foreground: 48 4% 11%;
+    --card: 0.000 0.000% 100.000%;
+    --card-foreground: 216.000 9.091% 10.784%;
 
-    --popover: 46 32% 99.4%;
-    --popover-foreground: 48 4% 11%;
+    --popover: 0.000 0.000% 100.000%;
+    --popover-foreground: 216.000 9.091% 10.784%;
 
-    --primary: 15 54% 46%;
+    --primary: 229.231 63.415% 48.235%;
     --primary-foreground: 0 0% 100%;
-    --primary-ink: 15 54% 44%;
+    --primary-ink: 229.231 63.415% 48.235%;
 
-    --secondary: 46 20% 93.5%;
+    --secondary: 210.000 6.667% 94.118%;
     /* The slider knob — a light disc in BOTH themes, which no existing token
        is. It rides the accent fill on one side and the tonal track on the
        other, so it cannot take its colour from either: `--background` is
@@ -93,19 +99,19 @@
        track. A grabbable object needs to look like one under every accent, so
        it gets its own value. */
     --knob: 0 0% 100%;
-    --secondary-foreground: 48 4% 16%;
+    --secondary-foreground: 216.000 9.091% 10.784%;
 
-    --muted: 46 20% 93.5%;
+    --muted: 210.000 11.111% 96.471%;
     /* 40%, not 46%. This is the token `junoSecondaryInk()` and `junoMetaInk()`
        both resolve to, so it is the floor for every caption, timestamp and
        provenance line in the product. At 46% on `--muted` it measured 4.43:1
        against a 4.5 AA floor — a real accessibility failure, not a rounding
        argument. 40% clears it on all four reading grounds: 5.14 on the page,
        5.35 on a card, 4.84 on `--muted`, 4.57 on the `--accent` hover fill. */
-    --muted-foreground: 48 4% 40%;
+    --muted-foreground: 217.500 3.704% 42.353%;
 
-    --accent: 46 20% 91.5%;
-    --accent-foreground: 48 4% 14%;
+    --accent: 210.000 6.667% 94.118%;
+    --accent-foreground: 216.000 9.091% 10.784%;
 
     /* THE ON TONE: a control that is selected, pressed or held, one rung past
        the hover fill (docs/design/FLAT_UI.md §3.1).
@@ -128,18 +134,18 @@
        Foreground ink is 13.8:1 on it. The step is small on purpose, because
        the on state is not carried by the fill alone: `.control-neu` darkens
        its edge with it and Pressable adds the accent edge. */
-    --selected: 46 20% 90%;
+    --selected: 220.000 6.383% 90.784%;
 
-    --destructive: 11 51% 48%;
+    --destructive: 3.221 71.292% 40.980%;
     --destructive-foreground: 0 0% 100%;
-    --destructive-ink: 11 55% 41%;
+    --destructive-ink: 3.221 71.292% 40.980%;
 
-    --success: 140 33% 46%;
+    --success: 139.579 63.758% 29.216%;
     --success-foreground: 0 0% 100%;
-    --success-ink: 140 38% 33%;
+    --success-ink: 139.579 63.758% 29.216%;
 
-    --warning: 40 57% 45%;
-    --warning-foreground: 40 57% 32%;
+    --warning: 34.161 91.946% 29.216%;
+    --warning-foreground: 34.161 91.946% 29.216%;
     --source: 187 62% 34%;
     /*
      * Agent faces (docs/design/AGENTS.md §4). The six hues of the account
@@ -204,14 +210,14 @@
     --aura-thinking: var(--ultra);
     --aura-juno: var(--source);
 
-    --border: 44 14% 86.5%;
-    --input: 44 12% 78%;
-    --ring: 15 54% 46%;
+    --border: 220.000 4.918% 88.039%;
+    --input: 214.286 2.979% 53.922%;
+    --ring: 216.000 9.091% 10.784%;
 
     /* The sidebar is a flat panel a step below the page, painted by
        `.app-sidebar-frame`; its rows mark state with fills, never a lift. */
-    --sidebar: 46 22% 94.6%;
-    --sidebar-foreground: 48 4% 30%;
+    --sidebar: 210.000 9.091% 95.686%;
+    --sidebar-foreground: 220.000 3.704% 31.765%;
     /* THE SEAM HAS TO BE THE STRONGEST HAIRLINE IN THE PRODUCT, not the
        weakest. It was 88% against a page `--border` of 86.5% — a LIGHTER
        edge — separating two planes 1.7 points apart. Two near-identical
@@ -221,8 +227,8 @@
        the page and the seam goes one step darker than `--border`, so the
        edge is now the most definite hairline on screen — which is correct,
        because it divides the two largest planes in the app. */
-    --sidebar-border: 44 14% 84.5%;
-    --sidebar-accent: 46 20% 90.5%;
+    --sidebar-border: 220.000 4.918% 88.039%;
+    --sidebar-accent: 220.000 6.383% 90.784%;
     /* THE TWO ROW STATES ARE TWO FILLS, ranked, and neither has an edge.
 
        `--sidebar-accent` stays where it is: the panel's general tonal fill,
@@ -250,9 +256,9 @@
        (scripts/generate-design-tokens.ts). The half-step of extra saturation
        (22% on a 22% panel, and 6% on dark) is what keeps the fill warm paper
        rather than grey shadow. */
-    --sidebar-hover: 46 20% 92.8%;
-    --sidebar-selected: 46 22% 89.8%;
-    --sidebar-selected-border: 43 16% 81%;
+    --sidebar-hover: 210.000 4.545% 91.373%;
+    --sidebar-selected: 220.000 5.455% 89.216%;
+    --sidebar-selected-border: 216.000 5.618% 82.549%;
 
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
@@ -391,7 +397,7 @@
      * both, so a shadow is always something the surface blocks rather than
      * something it emits.
      */
-    --shadow-ink: 48 10% 18%;
+    --shadow-ink: 216.000 9.091% 10.784%;
 
     /* ---- Soft UI depth kit (SOFT_UI.md §2.2) -------------------------------
        Light comes from the top-left. Every raised surface carries a light
@@ -524,58 +530,64 @@
      * same paper family the light theme uses and the coral has something to
      * sit on, low enough that nobody can name the colour.
      */
-    --background: 30 5% 11.5%;
-    --foreground: 45 12% 95%;
 
-    --card: 30 5% 14%;
-    --card-foreground: 45 12% 95%;
+    /* Refoundation round 3: floating layers only, solid fallbacks below. */
+    --faint-foreground: 222.857 3.415% 59.804%;
+    --attention: 35.575 57.949% 61.765%;
+    --user-bubble: 225.000 5.128% 15.294%;
+    --material-opacity: .92;
+    --background: 220.000 5.882% 10.000%;
+    --foreground: 220.000 6.977% 91.569%;
 
-    --popover: 30 5% 16.5%;
-    --popover-foreground: 45 12% 95%;
+    --card: 225.000 5.556% 14.118%;
+    --card-foreground: 220.000 6.977% 91.569%;
 
-    --primary: 15 54% 46%;
-    --primary-foreground: 0 0% 100%;
-    --primary-ink: 15 62% 66%;
+    --popover: 225.000 4.878% 16.078%;
+    --popover-foreground: 220.000 6.977% 91.569%;
 
-    --secondary: 30 5% 18%;
+    --primary: 228.608 61.240% 74.706%;
+    --primary-foreground: 220.000 5.882% 10.000%;
+    --primary-ink: 228.608 61.240% 74.706%;
+
+    --secondary: 225.000 4.255% 18.431%;
     /* See --knob above: light in this theme too, deliberately. */
     --knob: 45 10% 94%;
-    --secondary-foreground: 45 10% 92%;
+    --secondary-foreground: 220.000 6.977% 91.569%;
 
-    --muted: 30 5% 18%;
+    --muted: 225.000 6.061% 12.941%;
     /* 66%: 7.7:1 on the page, 5.8:1 on the `--accent` hover fill. */
-    --muted-foreground: 40 6% 66%;
+    --muted-foreground: 222.857 3.415% 59.804%;
 
-    --accent: 30 5% 21%;
-    --accent-foreground: 45 12% 96%;
+    --accent: 225.000 4.255% 18.431%;
+    --accent-foreground: 220.000 6.977% 91.569%;
 
     /* The on tone, the other way up: on charcoal a state rises toward the
        light, so selected is LIGHTER than the 21% hover. It was `--secondary`
        at 18%, three points under hover and so again the weaker of the two.
        24% is the same three-point step `--secondary` → `--accent` takes, and
        it keeps `--muted-foreground` at 4.64:1 and foreground ink at 9.7:1. */
-    --selected: 30 5% 24%;
+    --selected: 228.000 4.348% 22.549%;
 
-    --destructive: 11 51% 49.5%;
-    --destructive-foreground: 0 0% 100%;
-    --destructive-ink: 11 51% 66%;
+    --destructive: 4.706 77.273% 74.118%;
+    --destructive-foreground: 220.000 5.882% 10.000%;
+    --destructive-ink: 4.706 77.273% 74.118%;
 
-    --success: 140 33% 53%;
+    --success: 136.098 41.837% 61.569%;
     /* Text ON the success fill. The 53% green is mid-tone, so the ink on it is
        the ground itself — 6.7:1 — rather than white (which measures ~2.6:1).
        This used to be the retired charcoal's exact ground value, left behind
        when the page moved; it tracks --background again. */
-    --success-foreground: 30 7% 9%;
-    --success-ink: 140 33% 53%;
+    --success-foreground: 220.000 5.882% 10.000%;
+    --success-ink: 136.098 41.837% 61.569%;
 
-    --warning: 40 60% 58%;
+    --warning: 35.575 57.949% 61.765%;
     /* The AA text ramp for warning copy, which `text-warning` resolves to
        (tailwind.config.ts textColor). It was set equal to the FILL — the same
        58% amber a chip is painted with — so a warning sentence on a warning
        chip vanished, and on the page it measured under 4.5:1 against the old
        card. 72% is 11:1 on the page and 10:1 on a card, and it is a step
        lighter than the fill so the two never coincide. */
-    --warning-foreground: 40 70% 72%;
+    --warning-foreground: 35.575 57.949% 61.765%;
     --source: 187 58% 49%;
     /* A notch quieter than light, so a roster of faces does not glow on the
        charcoal; the ink stays the same near-black, which is what keeps the eyes
@@ -594,19 +606,19 @@
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    --border: 30 5% 22.5%;
-    --input: 30 5% 27%;
-    --ring: 45 6% 80%;
+    --border: 225.000 3.571% 21.961%;
+    --input: 220.000 2.609% 45.098%;
+    --ring: 220.000 6.977% 91.569%;
 
     /* One point below the page: the sidebar is a well cut into the ground,
        which on dark reads as the deepest thing on screen. */
-    --sidebar: 30 5% 8.8%;
-    --sidebar-foreground: 40 6% 70%;
+    --sidebar: 210.000 5.556% 7.059%;
+    --sidebar-foreground: 220.000 4.167% 71.765%;
     /* Same argument as light, measured the other way up: 18% on a 9.5% panel
        was 8.5 points of separation where the page's own `--border` gets 11,
        so the seam was again the weakest line in the product. */
-    --sidebar-border: 30 5% 21%;
-    --sidebar-accent: 30 5% 17%;
+    --sidebar-border: 225.000 4.000% 19.608%;
+    --sidebar-accent: 225.000 4.255% 18.431%;
     /* The same shape, measured the other way up (see the light block):
 
          panel         8.8%
@@ -620,9 +632,9 @@
        muted caption on an open account row still measures 5.6:1 on it. The
        RELATIONSHIP is what is held constant across the two themes, not the
        numbers: a hover you can just feel, and a selection you can find. */
-    --sidebar-hover: 30 5% 13.5%;
-    --sidebar-selected: 32 6% 19%;
-    --sidebar-selected-border: 32 7% 26%;
+    --sidebar-hover: 210.000 3.333% 11.765%;
+    --sidebar-selected: 220.000 4.225% 13.922%;
+    --sidebar-selected-border: 228.000 4.348% 22.549%;
 
     /*
      * Depth kit (dark). The highlight is a near-white at 6%: enough that the
@@ -675,8 +687,8 @@
    *   Dark mode:  ≥ 4.5:1 against --background (30 7% 9%) for body text,
    *               ≥ 3.0:1 for large text/icons.
    */
-  :root[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 48 6% 35%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 54% 44%; }
-  .dark[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 45 10% 80%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 62% 66%; }
+  :root[data-accent="coral"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
+  .dark[data-accent="coral"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
 
   :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
   .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 45 10% 80%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
@@ -1123,7 +1135,9 @@
     box-shadow: none;
   }
   .surface-float {
-    background-color: hsl(var(--popover));
+    background-color: hsl(var(--popover) / var(--material-opacity));
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    backdrop-filter: blur(18px) saturate(1.3);
     color: hsl(var(--popover-foreground));
     border: 1px solid hsl(var(--border) / .9);
     box-shadow: var(--shadow-float);
@@ -1561,17 +1575,9 @@
 
   .composer-surface {
     background-color: hsl(var(--card));
-    /* `--input`, not `--border`: the field boundary is the one hairline on
-       the page that has to be found by someone looking for where to type,
-       and at --border it measured 1.27:1 against the paper — present in the
-       source, invisible on a laptop in daylight. */
-    border: 1px solid hsl(var(--input));
-    box-shadow:
-      0 1px 2px hsl(var(--shadow-ink) / .04),
-      0 10px 30px -12px hsl(var(--shadow-ink) / .14);
-    transition:
-      border-color var(--dur-fast) var(--ease-out-soft),
-      box-shadow   var(--dur-fast) var(--ease-out-soft);
+    border: 1px solid hsl(var(--border));
+    box-shadow: none;
+    transition: border-color var(--dur-fast) var(--ease-out-soft);
   }
   /* Text and controls inside a Voice glow host sit above the glow's layers
      (the package stacks them at z-index 1-4). */
@@ -1602,9 +1608,7 @@
   }
   .composer-surface:focus-within {
     border-color: hsl(var(--foreground) / .3);
-    box-shadow:
-      0 1px 2px hsl(var(--shadow-ink) / .05),
-      0 14px 36px -12px hsl(var(--shadow-ink) / .18);
+    box-shadow: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .composer-surface { transition: none; }
@@ -3746,7 +3750,7 @@
      in-flow surface had already been retuned to fill + hairline. */
   .app-sidebar-frame {
     background-color: hsl(var(--sidebar));
-    box-shadow: inset -1px 0 0 hsl(var(--sidebar-border));
+    box-shadow: none;
   }
   /* At md–lg the expanded panel floats over the content (app-shell.tsx):
      it takes the floating rung's throw so it reads as lifted, not as a wider
@@ -4078,4 +4082,23 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .marquee-track { animation: none; }
+}
+
+/* Refoundation: the content panel owns its scroll and clips at its corners. */
+@layer components {
+  .juno-frame { background: hsl(var(--sidebar)); }
+  .juno-content-panel { background: hsl(var(--background)); }
+  @media (min-width: 768px) {
+    .juno-content-panel { margin: 8px 8px 8px 0; border-radius: 14px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .07); isolation: isolate; }
+  }
+  .context-token { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; margin: 0 1px; border-radius: 7px; background: hsl(var(--secondary)); color: hsl(var(--foreground)); white-space: nowrap; vertical-align: baseline; }
+  .context-token[data-selected] { outline: 1px solid hsl(var(--foreground)); outline-offset: 1px; }
+  .context-token-mark { display: inline-grid; width: 16px; height: 16px; place-items: center; vertical-align: middle; color: hsl(var(--muted-foreground)); }
+  .context-composer-field:empty::before { content: attr(data-placeholder); color: hsl(var(--muted-foreground)); pointer-events: none; }
+  @media (prefers-reduced-transparency: reduce) {
+    .surface-float { background-color: hsl(var(--popover)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .surface-float { background-color: hsl(var(--popover)); }
+  }
 }

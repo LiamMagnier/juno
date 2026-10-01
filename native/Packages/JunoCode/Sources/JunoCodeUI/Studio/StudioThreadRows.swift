@@ -113,7 +113,7 @@ struct StudioDisclosureRow<Title: View, Trailing: View, Detail: View>: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .accessibilityAddTraits(canExpand ? .isButton : [])
-            .accessibilityValue(canExpand ? (isExpanded ? "Expanded" : "Collapsed") : "")
+            .accessibilityValue(canExpand ? (isExpanded ? "Expanded" : "Collapsed") : "").frame(minWidth: 44, minHeight: 44)
 
             if isExpanded {
                 detail()
@@ -229,7 +229,7 @@ struct StudioToolLine: View {
                 if hasOutput {
                     Button(showsOutput ? "Hide output" : "Output") { showsOutput.toggle() }
                         .buttonStyle(StudioQuietButtonStyle())
-                        .font(Studio.Font.meta)
+                        .font(Studio.Font.meta).contentShape(.rect)
                 }
                 if let duration = record.durationSeconds, duration >= 1 {
                     Text(StudioFormat.duration(duration))
@@ -272,7 +272,7 @@ struct StudioToolLine: View {
             Button { openFile(parts.object) } label: { label }
                 .buttonStyle(.plain)
                 .pointerStyle(.link)
-                .help("Review this change")
+                .help("Review this change").contentShape(.rect)
         } else {
             label
         }
@@ -608,7 +608,7 @@ struct StudioErrorRow: View {
             Spacer(minLength: JunoSpace.snug)
             if let retry {
                 Button("Retry", action: retry)
-                    .buttonStyle(StudioSecondaryButtonStyle())
+                    .buttonStyle(StudioSecondaryButtonStyle()).contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)
@@ -662,7 +662,7 @@ struct StudioCompactionDivider: View {
             .help(isExpanded ? "Hide the summary" : "Show what Juno kept of the earlier conversation")
             .accessibilityLabel("Context compacted")
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-            .accessibilityIdentifier("juno.code.transcript.compaction")
+            .accessibilityIdentifier("juno.code.transcript.compaction").frame(minWidth: 44, minHeight: 44)
 
             if isExpanded {
                 detail
@@ -756,7 +756,7 @@ struct StudioRunSummary: View {
                     Button("Keep going", action: keepGoing)
                         .buttonStyle(StudioSecondaryButtonStyle())
                         .help("Give the run another block of steps and budget, with no new message")
-                        .accessibilityIdentifier("juno.code.transcript.keep-going")
+                        .accessibilityIdentifier("juno.code.transcript.keep-going").contentShape(.rect)
                     Spacer()
                 }
             }
@@ -837,7 +837,7 @@ struct StudioChangesCard: View {
                 Button("Review", action: openReview)
                     .buttonStyle(StudioSecondaryButtonStyle())
                     .help("Open the changes beside the thread (⌥⌘R)")
-                    .accessibilityIdentifier("juno.code.transcript.review")
+                    .accessibilityIdentifier("juno.code.transcript.review").contentShape(.rect)
             }
             .padding(.leading, JunoSpace.cozy)
             .padding(.trailing, JunoSpace.snug)
@@ -858,7 +858,7 @@ struct StudioChangesCard: View {
                                 .frame(height: 30)
                                 .contentShape(.rect)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
                     }
                 }
                 .studioHairline(.top)
@@ -919,7 +919,7 @@ struct StudioChangeLine: View {
         .onHover { hovering = $0 }
         .animation(JunoMotion.fast, value: hovering)
         .help("Review \(change.path)")
-        .accessibilityLabel("\(StudioChangeKindBadge.word(change.kind)) \(change.path), \(change.linesAdded) added, \(change.linesRemoved) removed")
+        .accessibilityLabel("\(StudioChangeKindBadge.word(change.kind)) \(change.path), \(change.linesAdded) added, \(change.linesRemoved) removed").frame(minWidth: 44, minHeight: 44)
     }
 }
 
@@ -989,12 +989,12 @@ struct StudioSubagentControls: View {
                         guard let childID else { return }
                         Task { await controller.denySubagent(childID, approvalID: request.id); await refresh() }
                     }
-                    .buttonStyle(StudioQuietButtonStyle())
+                    .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                     Button("Allow") {
                         guard let childID else { return }
                         Task { await controller.approveSubagent(childID, approvalID: request.id); await refresh() }
                     }
-                    .buttonStyle(StudioPrimaryButtonStyle())
+                    .buttonStyle(StudioPrimaryButtonStyle()).contentShape(.rect)
                 }
                 .padding(JunoSpace.snug)
                 .background(
@@ -1007,7 +1007,7 @@ struct StudioSubagentControls: View {
                     guard let childID else { return }
                     Task { await controller.stopSubagent(childID) }
                 }
-                .buttonStyle(StudioQuietButtonStyle())
+                .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
             }
             if hasReview, update.status == .completed, update.executionMode == .workspaceWrite, outcome == nil {
                 HStack(spacing: JunoSpace.snug) {
@@ -1022,7 +1022,7 @@ struct StudioSubagentControls: View {
                                 ? "Discarded." : (controller.transientError ?? "Could not discard.")
                         }
                     }
-                    .buttonStyle(StudioQuietButtonStyle())
+                    .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                     Button(isApplying ? "Applying…" : "Apply changes") {
                         guard let childID else { return }
                         isApplying = true
@@ -1033,7 +1033,7 @@ struct StudioSubagentControls: View {
                         }
                     }
                     .buttonStyle(StudioPrimaryButtonStyle())
-                    .disabled(isApplying)
+                    .disabled(isApplying).contentShape(.rect)
                 }
             }
             if let outcome {

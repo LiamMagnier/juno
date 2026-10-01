@@ -135,33 +135,11 @@ export function connectAgentBrowser(
   let elements: BrowserElement[] = [];
   let takesPayment = false;
 
-  async function resolveWsEndpoint(baseCdpUrl: string): Promise<string> {
-    if (!provider) return baseCdpUrl;
-    const deadline = Date.now() + 12_000;
-    while (Date.now() < deadline) {
-      try {
-        const versionRes = await provider.exec(
-          handle,
-          "curl -sf http://127.0.0.1:9223/json/version",
-          { timeoutSeconds: 5 }
-        );
-        if (versionRes.exitCode === 0 && versionRes.stdout.trim()) {
-          const parsed = JSON.parse(versionRes.stdout) as {
-            webSocketDebuggerUrl?: string;
-          };
-          if (parsed.webSocketDebuggerUrl) {
-            const u = new URL(parsed.webSocketDebuggerUrl);
-            const base = new URL(baseCdpUrl);
-            base.pathname = u.pathname;
-            return base.toString();
-          }
-        }
-      } catch {
-        // Retry until deadline
-      }
-      await new Promise((r) => setTimeout(r, 250));
-    }
-    return baseCdpUrl;
+  function resolveWsEndpoint(baseCdpUrl: string): string {
+    const endpoint = new URL(baseCdpUrl);
+    endpoint.protocol = ["https:", "wss:"].includes(endpoint.protocol) ? "wss:" : "ws:";
+    endpoint.pathname = "/devtools/browser";
+    return endpoint.toString();
   }
 
   async function ensurePage(): Promise<Page | string> {

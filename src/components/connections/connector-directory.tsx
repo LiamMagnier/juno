@@ -5,7 +5,7 @@ import { Link2, Link2Off, Loader2, Plug, Search } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
@@ -16,7 +16,7 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
-import { staggerDelay } from "@/lib/motion";
+
 
 /**
  * ONE directory for every tool Juno can connect to.
@@ -88,6 +88,8 @@ export interface DirectoryItem {
   lastError?: string | null;
   toolCount?: number;
   tools?: string[];
+  providerScopes?: string[];
+  capability?: string;
   /** user_mcp: raw endpoint, shown as the one-line description. */
   url?: string;
 }
@@ -195,7 +197,7 @@ function ConnectorTile({
   onConnect,
   onDisconnect,
   onTest,
-  index,
+  permissionsReady = true,
 }: {
   item: DirectoryItem;
   busy: boolean;
@@ -204,8 +206,9 @@ function ConnectorTile({
   onConnect: () => void;
   onDisconnect: () => void;
   onTest?: () => void;
-  index: number;
+  permissionsReady?: boolean;
 }) {
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
   const unavailable = !item.configured;
   // Composio hosts no OAuth app for this toolkit (verified live: e.g. twitter),
   // so authorize() 400s with "Composio does not manage auth for toolkit …".
@@ -247,28 +250,26 @@ function ConnectorTile({
               : item.description;
 
   return (
-    <Card
-      variant="default"
+    <article
       className={cn(
         // No hover state: the tile is not itself a target (its switch and its
         // button are), and a card that shades or lifts under the pointer
         // promises a click that goes nowhere.
-        "group flex flex-col gap-3 p-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "group flex flex-wrap items-center gap-4 border-b border-border py-5",
         unavailable && "text-muted-foreground"
       )}
-      style={staggerDelay(index, "tight")}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex min-w-52 flex-1 items-start gap-3">
         <AppLogo item={item} />
         {/* Name over account (or the one-line description), both at the
             body rung: the tile is a row in a grid, not a page header. */}
         <div className="min-w-0 flex-1 self-center">
-          <h3 className="truncate text-ui font-medium leading-5 text-foreground">{item.label}</h3>
+          <h3 className="truncate text-ui font-medium leading-5 text-foreground"><button type="button" onClick={() => setDetailsOpen(true)} className="text-left hover:underline underline-offset-4" aria-haspopup="dialog">{item.label}</button></h3>
           <p className="line-clamp-2 text-caption leading-4 text-muted-foreground">{description}</p>
         </div>
       </div>
 
-      <div className="mt-auto flex min-h-8 items-center justify-between gap-2 border-t border-border/60 pt-2.5">
+      <div className="flex min-h-8 w-full items-center justify-between gap-4 sm:w-auto sm:min-w-64">
         <TileStatus state={state} />
 
         {isUserMcp ? (
@@ -312,8 +313,8 @@ function ConnectorTile({
                 a plain label — the toggle is a setting, not a hero. It leads
                 the footer now that the status word it followed is gone. */}
             <label className="flex cursor-pointer items-center gap-2 pr-1">
-              <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Use ${item.label} in chats`} />
-              <span className="whitespace-nowrap text-caption text-muted-foreground">Use in chats</span>
+              <Switch checked={enabled} disabled={!permissionsReady || busy} onCheckedChange={onEnabledChange} aria-label={`Allow Juno to use ${item.label}`} />
+              <span className="whitespace-nowrap text-caption text-muted-foreground">Allow Juno to use</span>
             </label>
             <Button
               variant="ghost"
@@ -353,7 +354,21 @@ function ConnectorTile({
           </Button>
         )}
       </div>
-    </Card>
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{item.label}</DialogTitle><DialogDescription>{item.capability || item.description}</DialogDescription></DialogHeader>
+          <div className="space-y-5 text-ui">
+            <section><h4 className="font-medium">Connection</h4><p className="mt-1 text-muted-foreground">{item.connected ? (item.accountLabel || "Connected") : "Not connected"}</p></section>
+            <section><h4 className="font-medium">Provider permissions</h4>
+              {item.providerScopes?.length ? <ul className="mt-2 space-y-1">{item.providerScopes.map((scope) => <li key={scope} className="break-all font-mono text-caption">{scope}</li>)}</ul> : <p className="mt-1 text-muted-foreground">This provider has not reported its exact permissions to Juno. Review access in the provider’s account settings.</p>}
+            </section>
+            {item.tools?.length ? <section><h4 className="font-medium">Tools from the last successful test</h4><ul className="mt-2 max-h-48 overflow-y-auto space-y-1">{item.tools.map((tool) => <li key={tool} className="break-all text-caption">{tool}</li>)}</ul></section> : null}
+            <p className="text-caption text-muted-foreground">Juno checks your app switch and action approval policy before running a tool. Disconnecting removes Juno’s stored connection; revoke provider access in the provider’s account settings too.</p>
+            <Button variant="secondary" asChild><a href="/settings?section=connectors">Action approval policy</a></Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </article>
   );
 }
 
@@ -366,6 +381,7 @@ function TileGrid({
   onDisconnect,
   onTest,
   trailing,
+  permissionsReady,
 }: {
   items: DirectoryItem[];
   busySlug: string | null;
@@ -375,13 +391,14 @@ function TileGrid({
   onDisconnect: (item: DirectoryItem) => void;
   onTest?: (item: DirectoryItem) => void;
   trailing?: React.ReactNode;
+  permissionsReady?: boolean;
 }) {
   return (
-    <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
-      {items.map((item, i) => (
+    <div className="divide-y-0">
+      {items.map((item) => (
         <ConnectorTile
           key={item.key}
-          index={i}
+          permissionsReady={permissionsReady}
           item={item}
           busy={busySlug === item.slug || item.connecting}
           enabled={enabled[item.id] ?? true}
@@ -400,6 +417,7 @@ export function ConnectorDirectory({
   connectors,
   composioConfigured,
   enabled,
+  permissionsReady,
   onEnabledChange,
   onConnectNative,
   onDisconnect,
@@ -416,6 +434,7 @@ export function ConnectorDirectory({
    */
   canConfigureServer?: boolean;
   enabled: Record<string, boolean>;
+  permissionsReady?: boolean;
   onEnabledChange: (id: string, v: boolean) => void;
   onConnectNative: (c: ConnectorStatus) => void;
   onDisconnect: (item: DirectoryItem) => void;
@@ -452,6 +471,8 @@ export function ConnectorDirectory({
           connecting: connectingId === c.id,
           configured: true,
           accountLabel: c.accountLabel,
+          providerScopes: c.providerScopes,
+          capability: c.capability,
           enabled: c.enabled ?? c.connected,
           status: c.status,
           lastError: c.lastError,
@@ -476,6 +497,8 @@ export function ConnectorDirectory({
           connecting: connectingId === c.id,
           configured: c.configured,
           accountLabel: c.accountLabel,
+          providerScopes: c.providerScopes,
+          capability: c.capability,
         })),
     [connectors, connectingId]
   );
@@ -613,6 +636,7 @@ export function ConnectorDirectory({
   const categoryLabel = categories.find((c) => c.id === activeCategory)?.label.toLowerCase();
 
   const gridProps = {
+    permissionsReady,
     busySlug,
     enabled,
     onEnabledChange,

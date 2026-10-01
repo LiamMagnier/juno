@@ -1,3 +1,4 @@
+import { Icon as RefoundationIcon } from "@/components/ui/juno-icons";
 /**
  * Juno's icon set. The ONLY module in the web app that may import a glyph
  * library — every component, page, menu and dialog draws its icons from here.
@@ -361,6 +362,61 @@ function opticalWeight({
  *  or one of Juno's own drawings in `juno-glyphs.tsx`. */
 type GlyphBase = ComponentType<PhosphorIconProps>;
 
+const HOUSE_ICON_NAMES: Record<string, string> = {
+  "chat": "chat",
+  "juno-chat": "chat",
+  "juno-code": "code",
+  "juno-library": "library",
+  "juno-agents": "crew",
+  "juno-design": "design",
+  "send": "send",
+  "search": "search",
+  "settings": "settings",
+  "plus": "plus",
+  "bell": "bell",
+  "mic": "mic",
+  "mic-off": "mic-off",
+  "copy": "copy",
+  "check": "check",
+  "x": "close",
+  "trash": "trash",
+  "download": "download",
+  "upload": "upload",
+  "folder": "folder",
+  "folder-open": "folder-open",
+  "paperclip": "attach",
+  "chevron-down": "chevron-down",
+  "chevron-up": "chevron-up",
+  "chevron-left": "chevron-left",
+  "chevron-right": "chevron-right",
+  "arrow-up": "arrow-up",
+  "arrow-down": "arrow-down",
+  "arrow-left": "arrow-left",
+  "arrow-right": "arrow-right",
+  "panel-left": "sidebar",
+  "panel-left-close": "sidebar",
+  "sparkles": "skill",
+  "square": "stop",
+  "audio-lines": "voice",
+  "ellipsis": "more",
+  "more-horizontal": "more",
+  "globe": "globe",
+  "external-link": "external",
+  "file": "document",
+  "file-text": "document",
+  "image": "image",
+  "link": "link",
+  "history": "history",
+  "pin": "pin",
+  "star": "star",
+  "users": "crew",
+  "shield": "shield",
+  "git-branch": "branch",
+  "git-pull-request": "pull-request",
+  "code": "code",
+  "code-2": "code"
+};
+
 function glyph(
   Base: GlyphBase,
   name: string,
@@ -379,6 +435,10 @@ function glyph(
   }: IconProps) {
     const labelled = rest["aria-label"] != null || rest["aria-labelledby"] != null || rest.alt != null;
     const articulation = motion === "none" ? undefined : (motion ?? defaults.motion);
+    const houseName = HOUSE_ICON_NAMES[name];
+    if (houseName) {
+      return <RefoundationIcon name={houseName} size={typeof size === "number" ? size : 24} className={cn("icon", className)} aria-hidden={labelled ? undefined : true} aria-label={rest["aria-label"]} aria-labelledby={rest["aria-labelledby"]} role={labelled ? "img" : undefined} />;
+    }
     return (
       <Base
         size={size}

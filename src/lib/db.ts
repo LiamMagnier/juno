@@ -8,8 +8,7 @@ import { PrismaClient } from "@prisma/client";
  * `where` clause of read/mutate operations on those models and flags any call
  * that reaches the database without a `userId` filter (top-level, inside a
  * compound unique like `userId_period`, or via a relation filter). In
- * development the call throws so the bug is caught immediately; in production
- * it logs a loud error with a stack trace and lets the query proceed.
+ * every environment the call throws before it reaches the database.
  *
  * Legitimate global queries (owner/admin surfaces, webhook lookups keyed by an
  * external id) must use `prismaUnguarded` — the raw client — so the intent is
@@ -33,12 +32,6 @@ import { PrismaClient } from "@prisma/client";
  * model carrying an ownership column is in neither list — so this stops being a
  * thing anyone has to remember.
  *
- * Known gap: GUARDED_OPERATIONS covers reads, updates and deletes but not
- * `upsert`, `count`, `aggregate` or `groupBy`, all of which take a `where`.
- * Closing it is its own audit rather than a one-line addition — the sync PUT in
- * api/code/devices/[deviceId]/sessions/route.ts upserts by the
- * `deviceId_sessionId` key with no userId in the where, and would start
- * throwing in development the moment `upsert` joins the set.
  */
 
 /**
@@ -249,19 +242,39 @@ const GUARDED_OPERATIONS = new Set([
   "updateMany",
   "delete",
   "deleteMany",
+  "upsert",
+  "count",
+  "aggregate",
+  "groupBy",
 ]);
 
-/** True when the where clause constrains the given ownership column somewhere
- *  (top-level, nested compound unique, relation filter, or inside AND/OR/NOT
- *  arrays). The column is per-model — see OWNER_COLUMN. */
-function whereHasOwner(where: unknown, column: "userId" | "accountId", depth = 0): boolean {
-  if (depth > 6 || where === null || typeof where !== "object") return false;
-  if (Array.isArray(where)) return where.some((w) => whereHasOwner(w, column, depth + 1));
-  for (const [key, value] of Object.entries(where as Record<string, unknown>)) {
-    if (key === column && value !== undefined) return true;
-    if (whereHasOwner(value, column, depth + 1)) return true;
+/** Require a positive, bounded ownership constraint in every OR branch.
+ * A NOT, `notIn`, undefined value or empty filter never supplies ownership.
+ * AND needs one scoped branch; OR needs all branches scoped. */
+export function whereHasOwner(where: unknown, column: "userId" | "accountId", depth = 0): boolean {
+  if (depth > 12 || !where || typeof where !== "object" || Array.isArray(where)) return false;
+  const clauses = where as Record<string, unknown>;
+  for (const [key, value] of Object.entries(clauses)) {
+    if (key === "NOT" || key === "none" || key === "every" || key === "isNot") continue;
+    if (key === column && positiveOwner(value)) return true;
+    if (key === "AND") {
+      const parts = Array.isArray(value) ? value : [value];
+      if (parts.some((part) => whereHasOwner(part, column, depth + 1))) return true;
+    } else if (key === "OR") {
+      if (Array.isArray(value) && value.length > 0 && value.every((part) => whereHasOwner(part, column, depth + 1))) return true;
+    } else if (key !== column && whereHasOwner(value, column, depth + 1)) {
+      return true;
+    }
   }
   return false;
+}
+
+function positiveOwner(value: unknown): boolean {
+  if (typeof value === "string") return value.length > 0;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const filter = value as Record<string, unknown>;
+  return (typeof filter.equals === "string" && filter.equals.length > 0) ||
+    (Array.isArray(filter.in) && filter.in.length > 0 && filter.in.every((id) => typeof id === "string" && id.length > 0));
 }
 
 // Reuse a single PrismaClient across hot reloads / serverless invocations.
@@ -292,8 +305,7 @@ export const prisma = prismaUnguarded.$extends({
               `[ownership-guard] ${model}.${operation} executed without a ${ownerColumn} filter — ` +
                 `scope the query to the requesting user or use prismaUnguarded for intentional global access.`
             );
-            if (process.env.NODE_ENV === "development") throw err;
-            console.error(err.stack ?? err.message);
+            throw err;
           }
         }
         return query(args);

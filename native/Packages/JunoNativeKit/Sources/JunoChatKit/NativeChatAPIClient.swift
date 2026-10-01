@@ -729,6 +729,7 @@ public struct NativeMediaGenerationRequest: Equatable, Sendable {
 }
 
 public struct NativeChatGenerationRequest: Equatable, Sendable {
+    public let context: [NativeContextToken]
     public let conversationID: String
     public let modelID: String
     public let reasoningEffort: NativeReasoningEffort?
@@ -804,8 +805,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         proMode: Bool = false,
         regenerateInstruction: String? = nil,
         workHandoff: Bool = false,
-        skillSlug: String? = nil
+        skillSlug: String? = nil,
+        context: [NativeContextToken] = []
     ) {
+        self.context = Array(context.prefix(16))
         self.workHandoff = workHandoff
         self.skillSlug = skillSlug
         self.conversationID = conversationID
@@ -1234,6 +1237,16 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
 
+    public func mentions(query: String, conversationID: String?, for accountID: AccountID) async throws -> [NativeMentionItem] {
+        var components = URLComponents()
+        components.path = "/api/mentions"
+        components.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(200))), URLQueryItem(name: "limit", value: "6")]
+        if let conversationID { components.queryItems?.append(URLQueryItem(name: "conversationId", value: conversationID)) }
+        let response = try await sender.send(try NativeBearerRequest(path: components.string ?? "/api/mentions", method: .get), for: accountID)
+        guard response.statusCode == 200 else { throw NativeChatAPIError.malformedResponse }
+        return try JSONDecoder().decode(NativeMentionResults.self, from: response.body).items
+    }
+
     public func generationEvents(
         _ request: NativeChatGenerationRequest,
         for accountID: AccountID
@@ -1257,6 +1270,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             regenerateInstruction: request.regenerateInstruction,
             workHandoff: request.workHandoff ? true : nil,
             skillSlug: request.skillSlug,
+            context: request.context.isEmpty ? nil : request.context,
             clientFeatures: NativeChatClientFeatures.declared,
             timeZone: NativeChatClientFeatures.timeZone,
             locale: NativeChatClientFeatures.locale
@@ -2015,6 +2029,7 @@ private struct GenerationRequestWire: Encodable {
     let workHandoff: Bool?
     /// The armed skill's slash name, or absent.
     let skillSlug: String?
+    let context: [NativeContextToken]?
     /// The grammar this client renders (the rework's `clientFeatures`), with
     /// the zone and locale `current_time` and research read. Always sent: the
     /// route's schema is NOT strict (`chatBodySchema` is a plain `z.object`,

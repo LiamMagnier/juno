@@ -29,6 +29,7 @@ import {
   type SkillResource,
 } from "@/lib/work/skills";
 import { sourceLabel, type ClientSkillSource } from "@/lib/skills/library-contract";
+import { skillExportHref } from "@/components/skills/skills-transport";
 import { serializeSkillMd, SKILL_MD_FILENAME } from "@/lib/skills/skill-md";
 import { cn } from "@/lib/utils";
 import { SkillEditor, type SkillDraft } from "@/components/skills/skill-editor";
@@ -237,6 +238,13 @@ export function SkillDetailView({
       />
 
       <SkillMeta skill={skill} source={source} repoUrl={repoUrl} />
+      {version?.contract.provenance["source.kind"] && !source ? (
+        <p className="mt-3 text-caption text-muted-foreground">Imported from {version.contract.provenance["source.file"] || version.contract.provenance["source.url"] || "pasted SKILL.md"}. External instructions are scanned and retain their trust setting.</p>
+      ) : null}
+      <p className="mt-3 flex flex-wrap gap-4 text-caption">
+        <a href={skillExportHref(skill.id)} download className="text-muted-foreground hover:text-foreground underline underline-offset-4">Download SKILL.md</a>
+        <a href={skillExportHref(skill.id, "zip")} download className="text-muted-foreground hover:text-foreground underline underline-offset-4">Download .zip</a>
+      </p>
 
       {editing ? (
         <SkillEditor
@@ -334,9 +342,9 @@ function SkillMeta({
           href={repoUrl}
           target="_blank"
           rel="noreferrer noopener"
-          className="group/chip inline-flex h-7 items-center gap-1.5 rounded-full border border-border pl-1 pr-2.5 text-caption text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent"
+          className="group/chip inline-flex h-7 items-center gap-1.5 rounded-control pl-0 pr-2.5 text-caption text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent"
         >
-          <SkillSourceAvatar owner={source.owner} size="sm" className="rounded-full" />
+          <SkillSourceAvatar owner={source.owner} size="sm" className="rounded-sm" />
           <span translate="no" className="font-medium">
             {source.owner}/{source.repo}
           </span>

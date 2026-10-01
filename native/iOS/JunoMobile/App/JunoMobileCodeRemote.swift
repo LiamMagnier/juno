@@ -808,10 +808,6 @@ struct JunoMobileCodeRemoteThreadView: View {
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
         .junoGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        // Chat's border beam, for the same reason: the agent is working.
-        .overlay {
-          JunoMobileComposerBeam(active: isRunning, cornerRadius: 26)
-        }
       }
 
       if isRunning {

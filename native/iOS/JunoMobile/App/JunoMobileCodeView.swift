@@ -1861,8 +1861,30 @@ private struct JunoMobileCodeSessionView: View {
   /// The approval half sits on top because the agent is *blocked* on it — an
   /// answer buried in the scrollback leaves a run stalled with no visible
   /// reason — and the composer under it, where the keyboard expects it.
+  @State private var questionAnswer = ""
+
   private var footer: some View {
     VStack(alignment: .leading, spacing: 12) {
+      if let question = model.pendingQuestion {
+        Text("Juno needs your answer").font(.headline)
+        Text(question.text).textSelection(.enabled)
+        TextField("Your answer", text: $questionAnswer, axis: .vertical)
+          .lineLimit(1...6)
+          .accessibilityIdentifier("juno.code.question-answer")
+        Button("Send answer") {
+          Task { await model.answerQuestion(questionAnswer) }
+        }.disabled(model.isMutating || questionAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).contentShape(.rect)
+        Divider()
+      }
+      if let plan = model.pendingPlan {
+        Text("Review the plan").font(.headline)
+        ScrollView { Text(plan.text).textSelection(.enabled) }.frame(maxHeight: 180)
+        HStack {
+          Button("Keep planning") { Task { await model.decidePlan(approve: false) } }.contentShape(.rect)
+          Button("Approve plan") { Task { await model.decidePlan(approve: true) } }.contentShape(.rect)
+        }.disabled(model.isMutating)
+        Divider()
+      }
       if let approval = model.pendingApproval {
         approvalPanel(approval)
         Divider()
@@ -2119,6 +2141,7 @@ private struct JunoMobileCodeEventRow: View {
     switch event.kind {
     case .tool: .tools
     case .fileChange: .file
+    case .protocolEvent: .tasks
     case .approvalRequest: .permission
     case .approvalResponse: .check
     case .agent: .user

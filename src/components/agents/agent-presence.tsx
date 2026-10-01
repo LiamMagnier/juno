@@ -50,8 +50,6 @@ export function AgentPresence({
         } as React.CSSProperties
       }
     >
-      <span aria-hidden="true" className="agent-presence__halo" />
-      <span aria-hidden="true" className="agent-presence__sheen" />
       <AgentFace avatar={avatar} state={state} size={size} name={name} />
     </span>
   );

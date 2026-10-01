@@ -739,7 +739,24 @@ public struct HookActivityEvent: Hashable, Codable, Sendable {
     }
 }
 
+/// Provider counts for this run only, including delegated children. Input
+/// includes the cache split; the protocol projects uncached input separately.
+public struct RunTokenUsage: Hashable, Codable, Sendable {
+    public let inputTokens: Int
+    public let outputTokens: Int
+    public let cacheReadTokens: Int
+    public let cacheWriteTokens: Int
+
+    public init(inputTokens: Int, outputTokens: Int, cacheReadTokens: Int = 0, cacheWriteTokens: Int = 0) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.cacheWriteTokens = cacheWriteTokens
+    }
+}
+
 public struct RunCompletedEvent: Hashable, Codable, Sendable {
+    public let usage: RunTokenUsage?
     public let summary: String
     public let filesChanged: Int
     public let testsPassed: Bool?
@@ -757,8 +774,10 @@ public struct RunCompletedEvent: Hashable, Codable, Sendable {
         testsPassed: Bool?,
         durationSeconds: Double,
         endReason: RunEndReason? = nil,
-        endDetail: String? = nil
+        endDetail: String? = nil,
+        usage: RunTokenUsage? = nil
     ) {
+        self.usage = usage
         self.summary = summary
         self.filesChanged = filesChanged
         self.testsPassed = testsPassed

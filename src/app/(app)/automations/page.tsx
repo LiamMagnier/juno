@@ -1,5 +1,6 @@
 "use client";
 
+import { CustomizeNav } from "@/components/customize/customize-nav";
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "@/components/ui/icons";
@@ -72,8 +73,9 @@ export default function AutomationsPage() {
 
   return (
     <AppPage measure="wide">
+      <CustomizeNav current="routines" />
       <AppPageHeader
-        heading="Automations"
+        heading="Routines"
         lede="Tasks that start themselves, on a schedule or when something changes."
         actions={action}
       />

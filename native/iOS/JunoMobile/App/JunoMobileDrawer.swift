@@ -721,9 +721,9 @@ extension JunoMobileSidebarDrawer {
   /// two products that run work, then where content lives. Tasks and
   /// Connections sit behind More, as they do on the Mac.
   fileprivate static let sidebarDestinations: [JunoMobileSection] = [
-    .code, .work, .library, .projects, .artifacts, .agents,
+    .chat, .agents, .code, .library, .projects, .connections, .settings,
   ]
-  fileprivate static let sidebarOverflow: [JunoMobileSection] = [.tasks, .connections]
+  fileprivate static let sidebarOverflow: [JunoMobileSection] = []
 
   /// The iPad column: the Mac's sidebar, row for row.
   ///

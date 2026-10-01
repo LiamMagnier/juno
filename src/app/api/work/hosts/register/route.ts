@@ -186,7 +186,7 @@ export async function POST(req: Request) {
   // insert, and the second would fail on the unique index — an error the host
   // would report as an outage on the one request that establishes it exists.
   const host = await prisma.workHost.upsert({
-    where: { deviceId: device.id },
+    where: { deviceId: device.id, userId: user.id },
     create: { userId: user.id, deviceId: device.id, ...advertisement },
     update: advertisement,
   });

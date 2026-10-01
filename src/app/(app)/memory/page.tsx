@@ -1,3 +1,4 @@
+import { CustomizeNav } from "@/components/customize/customize-nav";
 import { AppPage } from "@/components/app/app-page";
 import { MemoryManager } from "@/components/memory/memory-manager";
 
@@ -10,6 +11,7 @@ import { MemoryManager } from "@/components/memory/memory-manager";
 export default function MemoryPage() {
   return (
     <AppPage measure="reading">
+      <CustomizeNav current="memory" />
       <MemoryManager />
     </AppPage>
   );

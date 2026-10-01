@@ -83,26 +83,26 @@ struct PreviewPaneView: View {
                     .buttonStyle(StudioIconButtonStyle(isOn: lease.isAnnotating))
                     .disabled(!lease.canAnnotate)
                     .help(lease.isAnnotating ? "Stop annotating" : "Annotate: point at an element and send a note to the message")
-                    .accessibilityLabel("Annotate")
+                    .accessibilityLabel("Annotate").contentShape(.rect)
                 deviceMenu
                 appearanceMenu
                 Button { isLogVisible.toggle() } label: { JunoIconView(.writing, size: 15) }
                     .buttonStyle(StudioIconButtonStyle(isOn: isLogVisible))
                     .help(isLogVisible ? "Hide the server log" : "Show the server log")
-                    .accessibilityLabel("Server log")
+                    .accessibilityLabel("Server log").contentShape(.rect)
                 moreMenu
                 if let openInWindow {
                     Button(action: openInWindow) { JunoIconView(.appWindow, size: 15) }
                         .buttonStyle(StudioIconButtonStyle())
                         .help("Open the Preview in its own window")
-                        .accessibilityLabel("Open in window")
+                        .accessibilityLabel("Open in window").contentShape(.rect)
                 }
                 if let close {
                     Button(action: close) { JunoIconView(.close, size: 15) }
                         .buttonStyle(StudioIconButtonStyle())
                         .help("Close the Preview pane; the server keeps running")
                         .accessibilityLabel("Close preview pane")
-                        .accessibilityIdentifier("juno.code.preview.close")
+                        .accessibilityIdentifier("juno.code.preview.close").contentShape(.rect)
                 }
             }
             HStack(spacing: JunoSpace.tight) {
@@ -110,18 +110,18 @@ struct PreviewPaneView: View {
                     .buttonStyle(StudioIconButtonStyle())
                     .disabled(!(lease.page?.canGoBack ?? false))
                     .help("Back")
-                    .accessibilityLabel("Back")
+                    .accessibilityLabel("Back").contentShape(.rect)
                 Button { lease.page?.goForward() } label: { JunoIconView(.chevronRight, size: 15) }
                     .buttonStyle(StudioIconButtonStyle())
                     .disabled(!(lease.page?.canGoForward ?? false))
                     .help("Forward")
-                    .accessibilityLabel("Forward")
+                    .accessibilityLabel("Forward").contentShape(.rect)
                 Button { lease.page?.reload() } label: { JunoIconView(.refresh, size: 15) }
                     .buttonStyle(StudioIconButtonStyle())
                     .disabled(lease.page == nil)
                     .keyboardShortcut("r", modifiers: .command)
                     .help("Reload this page (⌘R)")
-                    .accessibilityLabel("Reload")
+                    .accessibilityLabel("Reload").contentShape(.rect)
                 TextField("/", text: $addressText)
                     .textFieldStyle(.roundedBorder)
                     .font(Studio.Font.mono)
@@ -184,11 +184,12 @@ struct PreviewPaneView: View {
         } label: {
             StudioChipLabel(title: lease.selectedName ?? "No server")
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .fixedSize()
         .help("Preview servers")
         .accessibilityLabel("Preview server")
-        .accessibilityIdentifier("juno.code.preview.servers")
+        .accessibilityIdentifier("juno.code.preview.servers").contentShape(.rect)
     }
 
     @ViewBuilder
@@ -223,7 +224,8 @@ struct PreviewPaneView: View {
         } label: {
             JunoIconView(deviceIcon, size: 15)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(lease.page == nil)
@@ -258,7 +260,8 @@ struct PreviewPaneView: View {
         } label: {
             JunoIconView(lease.page?.viewport.colorScheme == .dark ? .moon : .sun, size: 15)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(lease.page == nil)
@@ -286,7 +289,8 @@ struct PreviewPaneView: View {
         } label: {
             JunoIconView(.more, size: 15)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("More")
@@ -537,7 +541,7 @@ struct PreviewConfigApprovalCard: View {
                 Spacer()
                 Button("Cancel", action: cancel)
                     .buttonStyle(StudioQuietButtonStyle())
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(.cancelAction).contentShape(.rect)
                 Button("Start once", action: startOnce)
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
                 Button("Always for this configuration", action: always)
@@ -592,7 +596,7 @@ struct PreviewLogDrawer: View {
                 } label: { JunoIconView(.copy, size: 14) }
                     .buttonStyle(StudioIconButtonStyle())
                     .disabled(entries.isEmpty)
-                    .help("Copy the log")
+                    .help("Copy the log").contentShape(.rect)
                 Button(action: close) { JunoIconView(.chevronDown, size: 14) }
                     .buttonStyle(StudioIconButtonStyle())
                     .help("Hide the log")
@@ -724,7 +728,7 @@ struct PreviewSecretsSheet: View {
                     .textFieldStyle(.roundedBorder)
                 Button("Add") { add() }
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || newValue.isEmpty)
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || newValue.isEmpty).contentShape(.rect)
             }
             HStack {
                 Spacer()

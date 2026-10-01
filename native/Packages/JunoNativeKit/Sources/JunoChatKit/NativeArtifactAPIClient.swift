@@ -219,6 +219,16 @@ public struct NativeArtifactAPIClient: Sendable {
         return try decodeArtifact(response.body, expectedID: id)
     }
 
+    /// Reads an existing publication. Opening a native artifact never publishes it.
+    public func publicationURL(id: String, for accountID: AccountID) async throws -> URL? {
+        try requireIdentifier(id)
+        let response = try await sender.send(try NativeBearerRequest(path: "/api/artifacts/\(id)/publication"), for: accountID)
+        try requireSuccess(response)
+        let wire = try JSONDecoder().decode(PublicationWire.self, from: response.body)
+        guard wire.publication?.state == "live", let raw = wire.publication?.url, let url = URL(string: raw), url.scheme == "https" else { return nil }
+        return url
+    }
+
     public func save(
         id: String,
         content: String,
@@ -468,4 +478,9 @@ private struct ArtifactResponseWire: Decodable {
     }
 
     let artifact: Artifact
+}
+
+private struct PublicationWire: Decodable {
+    struct Publication: Decodable { let url: String; let state: String }
+    let publication: Publication?
 }

@@ -151,7 +151,9 @@ public enum ComputerUseToolName {
     /// Tools whose cards may be allowed only at the Mac, where the card shows
     /// the frame with the target marked and Esc is within reach (CU-07). A
     /// phone sees the sentence, not the screen, and nobody may be at the Mac
-    /// to stop what it allowed. Declining from anywhere stays open.
+    /// to stop what it allowed. On the Mac too, only from the card itself: a
+    /// notification banner or a Runs row shows the same sentence a phone
+    /// does. Declining from anywhere stays open.
     public static let allowedOnlyAtTheMac: Set<String> = Set([computer, batch, apps, menu, display])
         .union(legacy.subtracting(["computer_screenshot"]))
 

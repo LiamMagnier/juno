@@ -98,14 +98,11 @@ jobs:
       # both exit 134 at ~57s). The script carries the heap size so CI, the
       # pre-push routine in CONTRIBUTING.md and anyone running it locally are
       # all measuring the same thing.
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Install relay dependencies for shared local gates
+        run: npm ci --prefix relay
 
-      - name: Test
-        run: npm test
-
-      - name: Lint
-        run: npm run lint
+      - name: Shared local gates (same command as Mac deploy and release)
+        run: bash scripts/local-gates.sh
 
       # Both halves of the capability manifest are generated from one JSON
       # file, so they cannot disagree — but only if the checked-in Swift is

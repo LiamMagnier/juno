@@ -58,13 +58,13 @@ struct StudioGoalStartCard: View {
                             Spacer(minLength: 0)
                             if draft.criteria.count > 1 {
                                 Button("Remove") { remove(criterion.id) }
-                                    .buttonStyle(StudioGoalActionStyle())
+                                    .buttonStyle(StudioGoalActionStyle()).contentShape(.rect)
                             }
                         }
                     }
                     if draft.criteria.count < GoalRun.maximumCriteria {
                         Button("Add a criterion", action: addCriterion)
-                            .buttonStyle(StudioGoalActionStyle())
+                            .buttonStyle(StudioGoalActionStyle()).contentShape(.rect)
                     }
                 }
             }
@@ -111,12 +111,12 @@ struct StudioGoalStartCard: View {
                 Spacer()
                 Button(isEditing ? "Cancel" : "Not now", action: cancel)
                     .buttonStyle(StudioSecondaryButtonStyle())
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(.cancelAction).contentShape(.rect)
                 Button(isEditing ? "Save" : (replacesCurrent ? "Replace and start" : "Start"), action: start)
                     .buttonStyle(StudioPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(draft.objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("juno.code.goal.start")
+                    .accessibilityIdentifier("juno.code.goal.start").contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)

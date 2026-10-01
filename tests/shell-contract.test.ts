@@ -38,6 +38,7 @@ const PRODUCT_IDS: ProductID[] = ["chat", "code"];
 type IconItem = { icon: string; nativeIcon?: string | null };
 type KindItem = IconItem & { kind: string };
 type Contract = {
+  legacyDestinations: string[];
   version: number;
   plans: string[];
   products: (KindItem & { id: ProductID; label: string; href: string; webChord: string; minPlan: string })[];
@@ -233,7 +234,6 @@ function rowsByProduct(root: ts.Node): Record<ProductID, ts.ObjectLiteralExpress
     const bare = unwrap(node);
     return (
       ts.isArrayLiteralExpression(bare)
-      && bare.elements.length > 0
       && bare.elements.every((element) => ts.isObjectLiteralExpression(element) && property(element, "href"))
     );
   };
@@ -305,7 +305,7 @@ test("the products are the switch's, in its order, with its plan gate", () => {
 const APP_SIDEBAR = functionNamed(SIDEBAR, "AppSidebar");
 const MORE_FLYOUT = functionNamed(SIDEBAR, "MoreFlyout");
 
-test("the action rows are New chat, Search and Notifications, in order, in both products", () => {
+test("the action rows are New chat and Search, in order, in both products", () => {
   const rows = elements(APP_SIDEBAR, "NavRow")
     .filter((row) => {
       const label = attribute(row, "label");
@@ -442,7 +442,7 @@ test("the empty list says the contract's two lines", () => {
   }
 });
 
-test("every destination is somewhere in a sidebar", () => {
+test("every destination is navigable or explicitly retained for compatibility", () => {
   const placed = new Set(
     PRODUCT_IDS.flatMap((product) => [
       ...CONTRACT.sidebar[product].destinations,
@@ -450,7 +450,7 @@ test("every destination is somewhere in a sidebar", () => {
     ]),
   );
   for (const destination of CONTRACT.destinations) {
-    assert.ok(placed.has(destination.id), `${destination.id} is a row or a More item`);
+    assert.ok(placed.has(destination.id) || CONTRACT.legacyDestinations.includes(destination.id), `${destination.id} is navigable or retained for compatibility`);
     assertKindWearsIcon(destination, `destinations.${destination.id}`);
   }
 });

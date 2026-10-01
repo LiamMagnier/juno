@@ -27,6 +27,8 @@ import { prismaUnguarded } from "@/lib/db";
  */
 const CONTROL_KINDS = [
   "approval_response",
+  "question_answer",
+  "plan_response",
   "cancel_request",
   "accept_change",
   "reject_change",

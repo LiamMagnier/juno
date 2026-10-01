@@ -1,6 +1,6 @@
 {
-  "$comment": "The shell contract: the web's information architecture, as data. Derived from today's web (the files in `sources`), held to it by tests/shell-contract.test.ts, and projected into Swift for the Mac by scripts/generate-shell-contract.mjs (native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift; `npm run shell:contract:check` fails on a stale projection). A change to the sidebar, the composer's + menu, its primary action or the Settings rail on the web fails the test until this file says the same thing, and the regenerated Swift then fails the Mac build until the Mac maps it. `icon` is the web's own expression for the drawing (a registry key in src/lib/app-icons.ts, or a bare export of src/components/ui/icons.tsx); `nativeIcon` is the JunoIcon case, stated only where it is not the registry key (or the export in lowerCamelCase), and null where the system draws the mark. `kind` is the SidebarMotionIcon kind a sidebar row draws through. Labels are the web's copy verbatim, in sentence case; the Mac's Title Case menu titles are derived by the generator. Mac-only additions are not listed here: they belong to the register of deliberate differences in docs/native/MACOS_LIQUID_GLASS_REDESIGN.md.",
-  "version": 1,
+  "$comment": "Shared refoundation shell contract v2: web, Mac, iPhone and iPad. Legacy destination cases remain for compatibility; navigation lists contain current product IA. Generated projections and structural tests prevent drift.",
+  "version": 2,
   "sources": [
     "src/components/app/app-sidebar.tsx",
     "src/components/app/product-switch.tsx",
@@ -11,126 +11,410 @@
     "src/components/settings/settings-sections.ts",
     "src/lib/plans.ts"
   ],
-  "plans": ["FREE", "PRO", "MAX", "MAX20", "OWNER"],
+  "plans": [
+    "FREE",
+    "PRO",
+    "MAX",
+    "MAX20",
+    "OWNER"
+  ],
   "products": [
-    { "id": "chat", "label": "Chat", "href": "/chat", "kind": "home", "icon": "AppIcons.home", "webChord": "⌘⇧1", "minPlan": "FREE" },
-    { "id": "code", "label": "Code", "href": "/code", "kind": "code", "icon": "AppIcons.code", "webChord": "⌘⇧2", "minPlan": "FREE" }
+    {
+      "id": "chat",
+      "label": "Chat",
+      "href": "/chat",
+      "kind": "home",
+      "icon": "AppIcons.home",
+      "webChord": "\u2318\u21e71",
+      "minPlan": "FREE"
+    },
+    {
+      "id": "code",
+      "label": "Code",
+      "href": "/code",
+      "kind": "code",
+      "icon": "AppIcons.code",
+      "webChord": "\u2318\u21e72",
+      "minPlan": "FREE"
+    }
   ],
   "destinations": [
-    { "id": "library", "label": "Library", "href": "/library", "kind": "library", "icon": "AppIcons.library" },
-    { "id": "projects", "label": "Projects", "href": "/projects", "kind": "projects", "icon": "AppIcons.projects" },
-    { "id": "artifacts", "label": "Artifacts", "href": "/artifacts", "kind": "artifacts", "icon": "AppIcons.artifacts" },
-    { "id": "agents", "label": "Agents", "href": "/agents", "kind": "agents", "icon": "AppIcons.agents" },
-    { "id": "customize", "label": "Customize", "href": "/code/customize", "kind": "settings", "icon": "AppIcons.settings" },
-    { "id": "pulls", "label": "Pull requests", "href": "/code/pulls", "kind": "pulls", "icon": "AppIcons.pulls" },
-    { "id": "assistants", "label": "Assistants", "href": "/assistants", "kind": "assistants", "icon": "AppIcons.assistants" },
-    { "id": "skills", "label": "Skills", "href": "/skills", "kind": "skills", "icon": "AppIcons.skills" },
-    { "id": "automations", "label": "Automations", "href": "/automations", "kind": "automations", "icon": "AppIcons.automations" },
-    { "id": "connections", "label": "Connections", "href": "/connections", "kind": "connections", "icon": "AppIcons.connections" }
+    {
+      "id": "library",
+      "label": "Library",
+      "href": "/library",
+      "kind": "library",
+      "icon": "AppIcons.library"
+    },
+    {
+      "id": "projects",
+      "label": "Projects",
+      "href": "/projects",
+      "kind": "projects",
+      "icon": "AppIcons.projects"
+    },
+    {
+      "id": "artifacts",
+      "label": "Artifacts",
+      "href": "/artifacts",
+      "kind": "artifacts",
+      "icon": "AppIcons.artifacts"
+    },
+    {
+      "id": "agents",
+      "label": "Agents",
+      "href": "/agents",
+      "kind": "agents",
+      "icon": "AppIcons.agents"
+    },
+    {
+      "id": "customize",
+      "label": "Customize",
+      "href": "/code/customize",
+      "kind": "settings",
+      "icon": "AppIcons.settings"
+    },
+    {
+      "id": "pulls",
+      "label": "Pull requests",
+      "href": "/code/pulls",
+      "kind": "pulls",
+      "icon": "AppIcons.pulls"
+    },
+    {
+      "id": "assistants",
+      "label": "Assistants",
+      "href": "/assistants",
+      "kind": "assistants",
+      "icon": "AppIcons.assistants"
+    },
+    {
+      "id": "skills",
+      "label": "Skills",
+      "href": "/skills",
+      "kind": "skills",
+      "icon": "AppIcons.skills"
+    },
+    {
+      "id": "automations",
+      "label": "Automations",
+      "href": "/automations",
+      "kind": "automations",
+      "icon": "AppIcons.automations"
+    },
+    {
+      "id": "connections",
+      "label": "Connections",
+      "href": "/connections",
+      "kind": "connections",
+      "icon": "AppIcons.connections"
+    },
+    {
+      "id": "accountCustomize",
+      "label": "Customize",
+      "href": "/customize",
+      "kind": "settings",
+      "icon": "AppIcons.settings",
+      "nativeIcon": "settings"
+    }
   ],
   "sidebar": {
     "chat": {
       "actions": [
-        { "id": "new", "label": "New chat", "kind": "new", "icon": "AppIcons.new" },
-        { "id": "search", "label": "Search", "kind": "search", "icon": "AppIcons.search" },
-        { "id": "notifications", "label": "Notifications", "kind": "notifications", "icon": "AppIcons.notifications" }
+        {
+          "id": "new",
+          "label": "New chat",
+          "kind": "new",
+          "icon": "AppIcons.new"
+        },
+        {
+          "id": "search",
+          "label": "Search",
+          "kind": "search",
+          "icon": "AppIcons.search"
+        }
       ],
-      "destinations": ["library", "projects", "artifacts", "agents"],
+      "destinations": [
+        "projects",
+        "library",
+        "accountCustomize"
+      ],
       "more": {
-        "label": "More",
+        "label": "Archived",
         "kind": "more",
         "icon": "ActionIcons.more",
-        "items": [
-          { "destination": "assistants", "minPlan": "FREE" },
-          { "destination": "skills", "minPlan": "FREE" },
-          { "destination": "automations", "minPlan": "FREE" }
-        ],
-        "archived": { "label": "Archived chats", "icon": "Archive" }
+        "items": [],
+        "archived": {
+          "label": "Archived chats",
+          "icon": "Archive"
+        }
       },
       "sections": [
-        { "id": "needsYou", "label": "Needs you" },
-        { "id": "agents", "label": "Agents" },
-        { "id": "pinnedProjects", "label": "Pinned projects" },
-        { "id": "pinned", "label": "Pinned chats" },
-        { "id": "recent", "label": "Recent" }
+        {
+          "id": "needsYou",
+          "label": "Needs you"
+        },
+        {
+          "id": "agents",
+          "label": "Crew"
+        },
+        {
+          "id": "pinnedProjects",
+          "label": "Pinned projects"
+        },
+        {
+          "id": "pinned",
+          "label": "Pinned chats"
+        },
+        {
+          "id": "recent",
+          "label": "Recent"
+        }
       ],
-      "empty": ["No conversations yet.", "Start one above."]
+      "empty": [
+        "No conversations yet.",
+        "Start one above."
+      ]
     },
     "code": {
       "actions": [
-        { "id": "new", "label": "New session", "kind": "new", "icon": "AppIcons.new" },
-        { "id": "search", "label": "Search", "kind": "search", "icon": "AppIcons.search" },
-        { "id": "notifications", "label": "Notifications", "kind": "notifications", "icon": "AppIcons.notifications" }
+        {
+          "id": "new",
+          "label": "New session",
+          "kind": "new",
+          "icon": "AppIcons.new"
+        },
+        {
+          "id": "search",
+          "label": "Search",
+          "kind": "search",
+          "icon": "AppIcons.search"
+        }
       ],
-      "destinations": ["artifacts", "customize", "pulls"],
+      "destinations": [
+        "customize"
+      ],
       "more": {
-        "label": "More",
+        "label": "Archived",
         "kind": "more",
         "icon": "ActionIcons.more",
-        "items": [
-          { "destination": "connections", "minPlan": "FREE" }
-        ],
-        "archived": { "label": "Archived sessions", "icon": "Archive" }
+        "items": [],
+        "archived": {
+          "label": "Archived sessions",
+          "icon": "Archive"
+        }
       },
       "sections": [
-        { "id": "needsYou", "label": "Needs you" },
-        { "id": "pinned", "label": "Pinned sessions" },
-        { "id": "recent", "label": "Recent" }
+        {
+          "id": "needsYou",
+          "label": "Needs you"
+        },
+        {
+          "id": "pinned",
+          "label": "Pinned sessions"
+        },
+        {
+          "id": "recent",
+          "label": "Recent"
+        }
       ],
-      "empty": ["No sessions yet.", "Start one above."]
+      "empty": [
+        "No sessions yet.",
+        "Start one above."
+      ]
     }
   },
   "composer": {
     "plusMenu": {
       "label": "Add",
-      "rowKinds": ["action", "toggle", "sub"],
+      "rowKinds": [
+        "action",
+        "toggle",
+        "sub"
+      ],
       "rows": [
-        { "id": "files", "label": "Add files or photos", "kind": "action", "icon": "ComposerIcons.attach" },
-        { "id": "voice-files", "label": "Add files", "kind": "action", "icon": "ComposerIcons.attach", "variantOf": "files" },
-        { "id": "screenshot", "label": "Take a screenshot", "kind": "action", "icon": "Scan", "optional": true },
-        { "id": "library", "label": "Add from library", "kind": "action", "icon": "AppIcons.library" },
-        { "id": "project", "label": "Add to project", "kind": "sub", "icon": "AppIcons.projects", "optional": true },
-        { "id": "connectors", "label": "Connectors", "kind": "sub", "icon": "AppIcons.connections", "optional": true },
-        { "id": "skill", "label": "Use a skill", "kind": "sub", "icon": "AppIcons.skills", "optional": true },
-        { "id": "research", "label": "Research", "kind": "toggle", "icon": "ComposerIcons.research", "optional": true },
-        { "id": "search", "label": "Web search", "kind": "toggle", "icon": "ComposerIcons.web" },
-        { "id": "memory", "label": "Memory", "kind": "toggle", "icon": "ComposerIcons.memory" }
+        {
+          "id": "files",
+          "label": "Add files or photos",
+          "kind": "action",
+          "icon": "ComposerIcons.attach"
+        },
+        {
+          "id": "voice-files",
+          "label": "Add files",
+          "kind": "action",
+          "icon": "ComposerIcons.attach",
+          "variantOf": "files"
+        },
+        {
+          "id": "screenshot",
+          "label": "Take a screenshot",
+          "kind": "action",
+          "icon": "Scan",
+          "optional": true
+        },
+        {
+          "id": "library",
+          "label": "Add from library",
+          "kind": "action",
+          "icon": "AppIcons.library"
+        },
+        {
+          "id": "project",
+          "label": "Add to project",
+          "kind": "sub",
+          "icon": "AppIcons.projects",
+          "optional": true
+        },
+        {
+          "id": "connectors",
+          "label": "Connectors",
+          "kind": "sub",
+          "icon": "AppIcons.connections",
+          "optional": true
+        },
+        {
+          "id": "skill",
+          "label": "Use a skill",
+          "kind": "sub",
+          "icon": "AppIcons.skills",
+          "optional": true
+        },
+        {
+          "id": "research",
+          "label": "Research",
+          "kind": "toggle",
+          "icon": "ComposerIcons.research",
+          "optional": true
+        },
+        {
+          "id": "search",
+          "label": "Web search",
+          "kind": "toggle",
+          "icon": "ComposerIcons.web"
+        },
+        {
+          "id": "memory",
+          "label": "Memory",
+          "kind": "toggle",
+          "icon": "ComposerIcons.memory"
+        }
       ],
       "groups": {
         "chat": [
-          ["files", "screenshot", "library"],
-          ["project", "connectors"],
-          ["skill", "research", "search", "memory"]
+          [
+            "files",
+            "screenshot",
+            "library"
+          ],
+          [
+            "project",
+            "connectors"
+          ],
+          [
+            "skill",
+            "research",
+            "search",
+            "memory"
+          ]
         ],
         "voice": [
-          ["files", "library"],
-          ["research"]
+          [
+            "files",
+            "library"
+          ],
+          [
+            "research"
+          ]
         ]
       }
     },
     "primaryAction": {
       "faces": [
-        { "id": "send", "fill": "accent", "icon": "Send" },
-        { "id": "stop", "fill": "accent", "icon": "Square", "nativeIcon": "stop" },
-        { "id": "voice", "fill": "quiet", "icon": "AudioLines" },
-        { "id": "busy", "fill": "accent", "icon": "Loader2", "nativeIcon": null }
+        {
+          "id": "send",
+          "fill": "accent",
+          "icon": "Send"
+        },
+        {
+          "id": "stop",
+          "fill": "accent",
+          "icon": "Square",
+          "nativeIcon": "stop"
+        },
+        {
+          "id": "voice",
+          "fill": "quiet",
+          "icon": "AudioLines"
+        },
+        {
+          "id": "busy",
+          "fill": "accent",
+          "icon": "Loader2",
+          "nativeIcon": null
+        }
       ],
-      "states": { "checking": "busy", "stop": "stop", "send": "send", "voice": "voice" }
+      "states": {
+        "checking": "busy",
+        "stop": "stop",
+        "send": "send",
+        "voice": "voice"
+      }
     }
   },
   "settings": {
     "default": "general",
     "sections": [
-      { "id": "general", "label": "General", "icon": "SettingsIcons.general" },
-      { "id": "personalization", "label": "Personalization", "icon": "SettingsIcons.personalization" },
-      { "id": "memory", "label": "Memory", "icon": "SettingsIcons.memory" },
-      { "id": "models", "label": "Models", "icon": "SettingsIcons.models" },
-      { "id": "connectors", "label": "Connectors", "icon": "SettingsIcons.connectors" },
-      { "id": "devices", "label": "Devices", "icon": "CodeIcons.device" },
-      { "id": "voice", "label": "Voice", "icon": "SettingsIcons.voice" },
-      { "id": "data", "label": "Data & privacy", "icon": "SettingsIcons.data" },
-      { "id": "account", "label": "Account", "icon": "SettingsIcons.account" },
-      { "id": "billing", "label": "Plan & usage", "icon": "SettingsIcons.billing" }
+      {
+        "id": "general",
+        "label": "General",
+        "icon": "SettingsIcons.general"
+      },
+      {
+        "id": "personalization",
+        "label": "Personalization",
+        "icon": "SettingsIcons.personalization"
+      },
+      {
+        "id": "memory",
+        "label": "Memory",
+        "icon": "SettingsIcons.memory"
+      },
+      {
+        "id": "models",
+        "label": "Models",
+        "icon": "SettingsIcons.models"
+      },
+      {
+        "id": "connectors",
+        "label": "Connectors",
+        "icon": "SettingsIcons.connectors"
+      },
+      {
+        "id": "devices",
+        "label": "Devices",
+        "icon": "CodeIcons.device"
+      },
+      {
+        "id": "voice",
+        "label": "Voice",
+        "icon": "SettingsIcons.voice"
+      },
+      {
+        "id": "data",
+        "label": "Data & privacy",
+        "icon": "SettingsIcons.data"
+      },
+      {
+        "id": "account",
+        "label": "Account",
+        "icon": "SettingsIcons.account"
+      },
+      {
+        "id": "billing",
+        "label": "Plan & usage",
+        "icon": "SettingsIcons.billing"
+      }
     ],
     "aliases": {
       "profile": "account",
@@ -152,5 +436,65 @@
       "danger": "account",
       "privacy": "data"
     }
-  }
+  },
+  "headerActions": [
+    {
+      "id": "notifications",
+      "label": "Notifications",
+      "icon": "AppIcons.notifications"
+    }
+  ],
+  "mobile": {
+    "tabs": [
+      {
+        "id": "chat",
+        "label": "Chat",
+        "href": "/chat"
+      },
+      {
+        "id": "crew",
+        "label": "Crew",
+        "href": "/crew"
+      },
+      {
+        "id": "code",
+        "label": "Code",
+        "href": "/code"
+      },
+      {
+        "id": "search",
+        "label": "Search",
+        "href": "/search",
+        "role": "search"
+      }
+    ],
+    "chatMenu": [
+      "projects",
+      "library",
+      "accountCustomize"
+    ]
+  },
+  "tablet": {
+    "sidebar": "shared",
+    "columns": 3
+  },
+  "platformDifferences": [
+    {
+      "platform": "iPhone",
+      "reason": "Chat, Crew and Code use native tabs; search uses the system search tab. Library, Projects and Customize are in Chat navigation."
+    },
+    {
+      "platform": "Mac",
+      "reason": "Local Code sessions and repository configuration use native destinations; account Customize preserves the same Apps, Skills and Routines contents."
+    }
+  ],
+  "legacyDestinations": [
+    "artifacts",
+    "agents",
+    "pulls",
+    "assistants",
+    "skills",
+    "automations",
+    "connections"
+  ]
 }

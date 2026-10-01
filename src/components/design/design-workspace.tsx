@@ -16,22 +16,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, MessagesSquare } from "@/components/ui/icons";
-import { ActionIcons } from "@/lib/app-icons";
+import { ArtifactLifecycleActions } from "@/components/artifacts/artifact-lifecycle-actions";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MENU_W } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AskJunoBar, type AskJunoBarHandle } from "@/components/design/ask-juno-bar";
 import { DesignAdjustments } from "@/components/design/design-adjustments";
@@ -55,7 +43,6 @@ interface Props {
 }
 
 export function DesignWorkspace({ artifactId, title, version, content, conversationId }: Props) {
-  const router = useRouter();
   const editorRef = React.useRef<DesignEditorHandle | null>(null);
   const barRef = React.useRef<AskJunoBarHandle | null>(null);
   const viewportRef = React.useRef<DesignViewportHandle | null>(null);
@@ -69,8 +56,6 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
   const [armed, setArmed] = React.useState<DesignAdjustment[]>([]);
   const [adjustments, setAdjustments] = React.useState<DesignAdjustment[]>([]);
   const [reviewing, setReviewing] = React.useState(false);
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [deleting, setDeleting] = React.useState(false);
 
   const onSelectionChange = React.useCallback((_revision: number, ids: NodeId[]) => {
     const names = editorRef.current?.selectionNames() ?? [];
@@ -146,23 +131,6 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
     [artifactId, name]
   );
 
-  const deleteDesign = React.useCallback(async () => {
-    if (deleting) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/artifacts/${artifactId}`, { method: "DELETE" });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Couldn’t delete this design.");
-      toast.success("Moved to Recently deleted.");
-      // Back to where designs are listed now: Artifacts, filtered to designs.
-      // `/design` would get there too, through one redirect more.
-      router.replace(DESIGNS_HOME);
-    } catch (error) {
-      setDeleting(false);
-      toast.error(error instanceof Error ? error.message : "Couldn’t delete this design.");
-    }
-  }, [artifactId, deleting, router]);
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
@@ -182,6 +150,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
         <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">v{currentVersion}</span>
 
         <div className="flex-1" />
+        <ArtifactLifecycleActions id={artifactId} title={name} version={currentVersion} latest={currentVersion} />
 
         {conversationId && (
           <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
@@ -192,24 +161,6 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
           </Button>
         )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Design actions"
-              className="shrink-0 text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
-            >
-              <ActionIcons.more className="size-4" aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className={MENU_W}>
-            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
-              <ActionIcons.delete className="size-4" aria-hidden />
-              Delete design
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </header>
 
       <div className="min-h-0 flex-1">
@@ -243,29 +194,6 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
         />
       </div>
 
-      <Dialog open={deleteOpen} onOpenChange={(open) => !open && !deleting && setDeleteOpen(false)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete {name}?</DialogTitle>
-            <DialogDescription>
-              It moves to Recently deleted for 30 days with every version, and any public link to it stops
-              working until it is restored.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            {/* Ghost, not outline. Cancel is the way out of a dialog, not a
-                second thing being offered, and every other confirm dialog in
-                the product spells that as ghost. An outlined cancel drew a box
-                that competed with the destructive button beside it. */}
-            <DialogClose asChild>
-              <Button variant="ghost" disabled={deleting}>Cancel</Button>
-            </DialogClose>
-            <Button variant="destructive" onClick={() => void deleteDesign()} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete design"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

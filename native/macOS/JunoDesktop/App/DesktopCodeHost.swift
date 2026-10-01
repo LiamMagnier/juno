@@ -133,6 +133,30 @@ private final class DesktopQueuedCodeExecutor {
         }
     }
 
+    func answerQuestion(sessionID: String, requestID: String, answer: String) async throws {
+        guard let controller = await workbench.controller(for: CodeSessionID(value: sessionID))
+        else { throw DesktopQueuedCodeError.sessionUnavailable }
+        guard let request = controller.pendingQuestions.first(where: { $0.id == requestID }) else { return }
+        // Multi-question requests are answered in writing with each prompt as
+        // context, exactly as the remote card displayed the request.
+        await controller.answerQuestion(requestID, answers: request.questions.map {
+            QuestionAnswer(questionID: $0.id, text: answer)
+        })
+    }
+
+    func decidePlan(sessionID: String, requestID: String, approve: Bool, feedback: String?) async throws {
+        guard let controller = await workbench.controller(for: CodeSessionID(value: sessionID))
+        else { throw DesktopQueuedCodeError.sessionUnavailable }
+        guard controller.pendingPlans.contains(where: { $0.id == requestID }) else { return }
+        if approve {
+            // A remote plan decision never raises the host's grant. Plan mode
+            // hands off at the safest writable level and each mutation asks.
+            await controller.approvePlan(requestID, mode: .askBeforeChanges)
+        } else {
+            await controller.keepPlanning(requestID, feedback: feedback)
+        }
+    }
+
     func stop(sessionID: String) async {
         await workbench.controller(for: CodeSessionID(value: sessionID))?.stop()
     }
@@ -313,6 +337,15 @@ private actor DesktopQueuedCodeHost {
                 requestID: requestID,
                 approve: control.payload["approve"]?.boolValue ?? false
             )
+        case "question_answer":
+            guard let requestID = control.payload["requestId"]?.stringValue,
+                  let answer = control.payload["answer"]?.stringValue else { return }
+            try await executor.answerQuestion(sessionID: sessionID, requestID: requestID, answer: answer)
+        case "plan_response":
+            guard let requestID = control.payload["requestId"]?.stringValue else { return }
+            try await executor.decidePlan(sessionID: sessionID, requestID: requestID,
+                approve: control.payload["approve"]?.boolValue ?? false,
+                feedback: control.payload["feedback"]?.stringValue)
         case "cancel_request":
             await executor.stop(sessionID: sessionID)
         default:

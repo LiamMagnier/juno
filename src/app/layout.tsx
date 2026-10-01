@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
+import { Inter, JetBrains_Mono, Literata, Newsreader } from "next/font/google";
 import "./globals.css";
+import "@/components/ui/juno-icons/icons.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";
@@ -44,6 +45,13 @@ const serif = Newsreader({
   style: ["normal", "italic"],
   variable: "--font-serif",
   display: "swap",
+});
+const serifCyrillic = Literata({
+  subsets: ["cyrillic"],
+  weight: ["400", "500", "600"],
+  variable: "--font-serif-cyr",
+  display: "swap",
+  preload: false,
 });
 const mono = JetBrains_Mono({
   subsets: ["latin"],
@@ -119,7 +127,7 @@ export default async function RootLayout({
       dir={directionOf(locale)}
       data-accent={accent}
       suppressHydrationWarning
-      className={`${sans.variable} ${serif.variable} ${mono.variable}`}
+      className={`${sans.variable} ${serif.variable} ${serifCyrillic.variable} ${mono.variable}`}
     >
       <head>
         {/* The reader's text size is per device (localStorage), so the server

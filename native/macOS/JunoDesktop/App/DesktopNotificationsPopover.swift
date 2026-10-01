@@ -20,7 +20,7 @@ import SwiftUI
 /// value and the help, where a dot cannot say it.
 struct DesktopNotificationsRow: View {
     /// The row's name: the web's action row (the shell contract).
-    private static let label = JunoShellChatSidebar.Action.notifications.label
+    private static let label = "Notifications"
 
     let model: NativeNotificationsModel
     /// Where a row's link goes: main's route, handed to this window.

@@ -236,3 +236,18 @@ test("an automatic allow persisted before the fold still reads as a success", ()
   assert.equal(codeToolStatus(persisted), "ok");
   assert.equal(legacyToolStatus({ summary: "Auto-allowed in sandbox: $ npm ci" }), "ok");
 });
+
+test("pending reader inputs clear only on the host resolution", () => {
+  seq = 0;
+  const transcript = new CodeTaskTranscript("task-input");
+  transcript.apply(protocolRow("question.asked", { questionId: "q1", prompt: "Which environment?" }));
+  transcript.apply(protocolRow("plan.proposed", { planId: "p1", text: "Run the migration in staging." }));
+  assert.equal(transcript.pendingQuestion?.questionId, "q1");
+  assert.equal(transcript.pendingPlan?.planId, "p1");
+  transcript.apply(row("question_answer", { requestId: "q1", answer: "Staging" }));
+  assert.equal(transcript.pendingQuestion?.questionId, "q1", "delivery is not host acknowledgement");
+  transcript.apply(protocolRow("question.answered", { questionId: "q1", answer: "Staging" }));
+  transcript.apply(protocolRow("plan.resolved", { planId: "p1", decision: "approved" }));
+  assert.equal(transcript.pendingQuestion, undefined);
+  assert.equal(transcript.pendingPlan, undefined);
+});

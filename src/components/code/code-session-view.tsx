@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { CodeInputRequest } from "./code-input-request";
 import nextDynamic from "next/dynamic";
 
 import { MessageList } from "@/components/chat/message-list";
@@ -994,6 +995,13 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           {reviewNotes && (
             <ReviewTray notes={reviewNotes} onDiscard={() => setReviewNotes(null)} onOpenDiff={toggleReview} />
           )}
+          <CodeInputRequest
+            question={session.pendingQuestion}
+            plan={session.pendingPlan}
+            busy={session.responding}
+            answer={(requestId, answer) => session.respondToInput({ type: "question.answer", requestId, answer })}
+            decide={(requestId, decision) => session.respondToInput({ type: "plan.decide", requestId, decision })}
+          />
           <CodeRunStack
             files={fileChanges}
             agents={session.agents}

@@ -180,7 +180,7 @@ function Shading({ id }: { id: string }) {
   );
 }
 
-export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = true, className }: AgentFaceProps) {
+export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = false, className }: AgentFaceProps) {
   const px = typeof size === "number" ? size : PX[size];
   const spec = SHAPES[avatar.shape];
   const cut = EYES[avatar.eyes];

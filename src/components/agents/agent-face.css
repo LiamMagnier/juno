@@ -65,55 +65,6 @@
 .agent-face__rig { transition: transform 420ms var(--face-spring); }
 .agent-face__eyes { transition: transform 260ms var(--face-spring); }
 
-@media (prefers-reduced-motion: no-preference) {
-  :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible) .agent-face:not([data-state="sleeping"]) .agent-face__rig,
-  .agent-face:not([data-state="sleeping"]):hover .agent-face__rig {
-    transform: translateY(-1.8px);
-  }
-  :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible) .agent-face:is([data-state="idle"], [data-state="waiting"], [data-state="done"]) .agent-face__eyes,
-  .agent-face:is([data-state="idle"], [data-state="waiting"]):hover .agent-face__eyes {
-    transform: scale(1.1);
-  }
-  :is(a, button, [role="link"], [role="button"], [data-face-trigger]):active .agent-face .agent-face__rig,
-  .agent-face:active .agent-face__rig {
-    transform: translateY(0.5px) scale(1.06, 0.92);
-    transition-duration: 90ms;
-  }
-
-  /* ---------- State loops ---------- */
-  .agent-face[data-state="idle"] .agent-face__all { animation: agent-face-breathe 5.6s var(--ease-breathe) infinite; }
-  .agent-face[data-state="sleeping"] .agent-face__all { animation: agent-face-sleep 6.4s var(--ease-breathe) infinite; }
-
-  .agent-face[data-state="thinking"] .agent-face__all { animation: agent-face-sway 4.4s var(--ease-breathe) infinite; }
-  .agent-face[data-state="thinking"] .agent-face__eyes { animation: agent-face-ponder 3.6s var(--ease-breathe) infinite; }
-  .agent-face[data-state="thinking"] .agent-face__thought circle { animation: agent-face-thought 2.1s var(--ease-out-soft) infinite; }
-  .agent-face[data-state="thinking"] .agent-face__thought circle:nth-child(2) { animation-delay: 0.22s; }
-  .agent-face[data-state="thinking"] .agent-face__thought circle:nth-child(3) { animation-delay: 0.44s; }
-
-  .agent-face[data-state="working"] .agent-face__all { animation: agent-face-bob 1.35s var(--ease-in-out) infinite; }
-  .agent-face[data-state="working"] .agent-face__ground { animation: agent-face-ground 1.35s var(--ease-in-out) infinite; }
-  .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-read 2.7s var(--ease-in-out) infinite; }
-  .agent-face[data-state="working"] .agent-face__workbars rect { animation: agent-face-bar 1.35s var(--ease-in-out) infinite; }
-  .agent-face[data-state="working"] .agent-face__workbars rect:nth-child(2) { animation-delay: 0.16s; }
-  .agent-face[data-state="working"] .agent-face__workbars rect:nth-child(3) { animation-delay: 0.32s; }
-
-  .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-call 3.4s var(--ease-in-out) infinite; }
-
-  /* `listening` follows the caller's voice, not a timer: an open call writes
-     `--level` (0..1) on an ancestor (agent-thread-header.tsx). */
-  .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
-
-  .agent-face[data-state="done"] .agent-face__rig { animation: agent-face-hop 760ms var(--ease-out-soft) 1 both; }
-  .agent-face[data-state="done"] .agent-face__ground { animation: agent-face-hop-ground 760ms var(--ease-out-soft) 1 both; }
-
-  /* Any other change of state: a small settle, so the change is seen. */
-  .agent-face[data-react]:not([data-state="done"]) .agent-face__rig { animation: agent-face-react 520ms var(--ease-out-soft) 1 both; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agent-face :is(.agent-face__gaze, .agent-face__lids, .agent-face__eye, .agent-face__rig, .agent-face__eyes, .agent-face__happy) { transition: none; }
-}
-
 @keyframes agent-face-breathe {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.014, 1.022); }
@@ -183,72 +134,7 @@
   100% { transform: none; }
 }
 
-/* ---------- Presence: the face on its halo ---------- */
-/*
- * Colour and light carry the state around the face, the way the voice glow
- * does in Chat: the halo is the agent's tone, quiet when it is idle, breathing
- * while it works, turning a slow light while it thinks, and fuller while it
- * waits on you. No ring, no dot, no badge.
- */
-.agent-presence { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; }
-.agent-presence__halo {
-  position: absolute;
-  inset: calc(var(--halo-spread, 0.45) * -100%);
-  border-radius: 9999px;
-  pointer-events: none;
-  background: radial-gradient(closest-side, hsl(var(--presence-tone) / 0.26), hsl(var(--presence-tone) / 0.1) 58%, transparent);
-  opacity: 0.55;
-  transition: opacity 600ms var(--ease-out-soft), transform 600ms var(--ease-out-soft);
-}
-.agent-presence__sheen {
-  position: absolute;
-  inset: calc(var(--halo-spread, 0.45) * -80%);
-  border-radius: 9999px;
-  pointer-events: none;
-  opacity: 0;
-  background: conic-gradient(from 0deg, transparent 0deg, hsl(var(--presence-tone) / 0.34) 70deg, transparent 150deg, transparent 360deg);
-  mask: radial-gradient(closest-side, transparent 52%, black 70%, transparent);
-  -webkit-mask: radial-gradient(closest-side, transparent 52%, black 70%, transparent);
-  transition: opacity 600ms var(--ease-out-soft);
-}
-.agent-presence > .agent-face { position: relative; }
-.agent-presence[data-state="working"] .agent-presence__halo,
-.agent-presence[data-state="waiting"] .agent-presence__halo { opacity: 1; }
-.agent-presence[data-state="thinking"] .agent-presence__halo { opacity: 0.8; }
-.agent-presence[data-state="thinking"] .agent-presence__sheen { opacity: 1; }
-.agent-presence[data-state="sleeping"] .agent-presence__halo { opacity: 0.25; }
-:is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible) .agent-presence__halo { opacity: 1; transform: scale(1.06); }
-
-@media (prefers-reduced-motion: no-preference) {
-  .agent-presence[data-state="working"] .agent-presence__halo { animation: agent-halo-breathe 2.7s var(--ease-breathe) infinite; }
-  .agent-presence[data-state="thinking"] .agent-presence__sheen { animation: agent-halo-turn 3.6s linear infinite; }
-}
-@keyframes agent-halo-breathe {
-  0%, 100% { opacity: 0.7; transform: scale(0.96); }
-  50% { opacity: 1; transform: scale(1.06); }
-}
-@keyframes agent-halo-turn { to { transform: rotate(1turn); } }
-
-/* ---------- The live sentence ---------- */
-/* A new sentence rises into place; an in-progress one carries a slow light. */
-.agent-status-line { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-status-line > span { display: block; overflow: hidden; text-overflow: ellipsis; }
-@media (prefers-reduced-motion: no-preference) {
-  .agent-status-line > span { animation: agent-line-in 360ms var(--ease-out-soft) both; }
-  .agent-status-line[data-live] > span {
-    background: linear-gradient(90deg, currentColor 0%, currentColor 38%, hsl(var(--foreground)) 50%, currentColor 62%, currentColor 100%);
-    background-size: 250% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: agent-line-in 360ms var(--ease-out-soft) both, agent-line-shine 2.8s linear infinite;
-  }
-}
-@keyframes agent-line-in {
-  from { opacity: 0; transform: translateY(0.45em); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
-}
-@keyframes agent-line-shine {
-  from { background-position: 100% 0; }
-  to { background-position: -150% 0; }
-}
+/* Presence inherits the shipped face; status is a real sentence, at rest. */
+.agent-presence { position: relative; display: inline-grid; place-items: center; }
+.agent-status-line { display: inline; }
+.agent-status-line[data-live] { color: hsl(var(--primary)); }

@@ -416,18 +416,18 @@ struct StudioMCPSheet: View {
                 switch server.scope {
                 case .project:
                     let allowed = controller.context?.mcpPolicyStore.allows(server) ?? false
-                    Button(allowed ? "Revoke" : "Allow") { Task { await setConsent(server, allowed: !allowed) } }
+                    Button(allowed ? "Revoke" : "Allow") { Task { await setConsent(server, allowed: !allowed) } }.contentShape(.rect)
                 case .claudeImport:
                     let on = controller.context?.userExtensionPolicy?.isEnabled(kind: "mcp", name: server.name) ?? false
                     Button(on ? "Turn off" : "Turn on") {
                         try? controller.context?.userExtensionPolicy?.setEnabled(!on, kind: "mcp", name: server.name)
                         Task { await load() }
-                    }
+                    }.contentShape(.rect)
                 case .user:
                     EmptyView()
                 }
                 Button("Reconnect") { Task { await reconnect(server) } }
-                    .disabled(!enabled)
+                    .disabled(!enabled).contentShape(.rect)
                 Spacer()
             }
         }

@@ -56,7 +56,7 @@ export const env = {
     return process.env.JUNO_RELEASES_GITHUB_TOKEN?.trim() || undefined;
   },
 
-  // Secret-at-rest encryption key rotation (optional). Without these, every
+  // Secret-at-rest encryption key rotation (required in production). Without these, every
   // secret is sealed under a key derived from AUTH_SECRET (key id "auth"). To
   // rotate — including to decouple from AUTH_SECRET so it can itself be rotated
   // — supply explicit 32-byte keys and name the primary, then run

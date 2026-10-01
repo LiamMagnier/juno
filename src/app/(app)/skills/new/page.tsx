@@ -57,6 +57,19 @@ export default function NewSkillPage() {
     }
   };
 
+  const onPaste = (event: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const text = event.clipboardData.getData("text/plain");
+    const result = parseSkillMd(text);
+    if (!result.ok) return;
+    event.preventDefault();
+    // Pasted external instructions retain the same trust as a file import.
+    setImported(result.skill);
+    setName(result.skill.name);
+    setDescription(result.skill.description);
+    setInstructions(result.skill.instructions);
+    setRefusal(null);
+  };
+
   const slug = skillSlugFromName(name);
   const canSave = name.trim().length > 0 && instructions.trim().length > 0 && slug !== null && !saving && !reading;
 
@@ -128,6 +141,7 @@ export default function NewSkillPage() {
           <Label htmlFor="skill-name">Name</Label>
           <Input
             id="skill-name"
+            onPaste={onPaste}
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="File the invoices"
@@ -154,6 +168,7 @@ export default function NewSkillPage() {
           <Label htmlFor="skill-description">Description</Label>
           <Input
             id="skill-description"
+            onPaste={onPaste}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder="Sorts incoming invoices into the right folder and renames them."
@@ -169,6 +184,7 @@ export default function NewSkillPage() {
           <Label htmlFor="skill-instructions">Instructions</Label>
           <Textarea
             id="skill-instructions"
+            onPaste={onPaste}
             value={instructions}
             onChange={(event) => setInstructions(event.target.value)}
             placeholder="Write it the way you would brief a person doing it for the first time: the steps, the edge cases, and what to do when something doesn’t fit."

@@ -280,18 +280,11 @@ struct JunoMobileVoiceSelfView: View {
     /// Says what is happening in words as well as in pixels — a preview alone
     /// reads as "the app is using the camera", not as "this is being sent".
     private var seeingBadge: some View {
-        HStack(spacing: JunoSpace.hairline) {
-            Circle()
-                .fill(Color.junoAccent)
-                .frame(width: 5, height: 5)
-            Text("voice.camera.live")
-                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-        }
-        .padding(.horizontal, JunoSpace.tight)
-        .padding(.vertical, JunoSpace.hairline)
-        .background(.ultraThinMaterial, in: Capsule())
-        .padding(.top, JunoSpace.hairline)
-        .accessibilityHidden(true)
+        Text("voice.camera.live")
+            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+            .foregroundStyle(Color.junoAccent)
+            .padding(.top, JunoSpace.hairline)
+            .accessibilityHidden(true)
     }
 
     private var controls: some View {

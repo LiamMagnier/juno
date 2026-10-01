@@ -11,9 +11,9 @@ import JunoDesignSystem
 /// Which shell contract this build was generated from.
 enum JunoShellContract {
     /// Bumped when the contract's shape changes.
-    static let version = 1
+    static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "a88796240a5407a5dc2912a765f5b2df839b527ba4c386b8169e2c3cd353f8e0"
+    static let digest = "aca057083d19ddb46022c7234af1fe9e9fd574546cf91d56daec2bafab59dfcd"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -101,6 +101,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
     case skills
     case automations
     case connections
+    case accountCustomize
 
     /// The web's words.
     var label: String {
@@ -115,6 +116,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         case .skills: "Skills"
         case .automations: "Automations"
         case .connections: "Connections"
+        case .accountCustomize: "Customize"
         }
     }
 
@@ -131,6 +133,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         case .skills: "Skills"
         case .automations: "Automations"
         case .connections: "Connections"
+        case .accountCustomize: "Customize"
         }
     }
 
@@ -146,6 +149,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         case .skills: "/skills"
         case .automations: "/automations"
         case .connections: "/connections"
+        case .accountCustomize: "/customize"
         }
     }
 
@@ -161,6 +165,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
         case .skills: .skills
         case .automations: .automations
         case .connections: .connections
+        case .accountCustomize: .settings
         }
     }
 }
@@ -182,14 +187,12 @@ enum JunoShellChatSidebar {
     enum Action: String, CaseIterable, Sendable {
         case new
         case search
-        case notifications
 
         /// The web's words.
         var label: String {
             switch self {
             case .new: "New chat"
             case .search: "Search"
-            case .notifications: "Notifications"
             }
         }
 
@@ -198,7 +201,6 @@ enum JunoShellChatSidebar {
             switch self {
             case .new: "New Chat"
             case .search: "Search"
-            case .notifications: "Notifications"
             }
         }
 
@@ -206,23 +208,20 @@ enum JunoShellChatSidebar {
             switch self {
             case .new: .new
             case .search: .search
-            case .notifications: .notifications
             }
         }
     }
 
     /// The destination rows, in order.
-    static let destinations: [JunoShellDestination] = [.library, .projects, .artifacts, .agents]
+    static let destinations: [JunoShellDestination] = [.projects, .library, .accountCustomize]
 
     /// The More menu: its items, then a separator and the archive, which opens
     /// a dialog rather than a page.
     enum More {
-        static let label = "More"
+        static let label = "Archived"
         static let icon: JunoIcon = .more
         static let items: [JunoShellMoreItem] = [
-            JunoShellMoreItem(destination: .assistants, minPlan: .free),
-            JunoShellMoreItem(destination: .skills, minPlan: .free),
-            JunoShellMoreItem(destination: .automations, minPlan: .free),
+
         ]
         static let archivedLabel = "Archived chats"
         static let archivedTitle = "Archived Chats"
@@ -241,7 +240,7 @@ enum JunoShellChatSidebar {
         var label: String {
             switch self {
             case .needsYou: "Needs you"
-            case .agents: "Agents"
+            case .agents: "Crew"
             case .pinnedProjects: "Pinned projects"
             case .pinned: "Pinned chats"
             case .recent: "Recent"
@@ -259,14 +258,12 @@ enum JunoShellCodeSidebar {
     enum Action: String, CaseIterable, Sendable {
         case new
         case search
-        case notifications
 
         /// The web's words.
         var label: String {
             switch self {
             case .new: "New session"
             case .search: "Search"
-            case .notifications: "Notifications"
             }
         }
 
@@ -275,7 +272,6 @@ enum JunoShellCodeSidebar {
             switch self {
             case .new: "New Session"
             case .search: "Search"
-            case .notifications: "Notifications"
             }
         }
 
@@ -283,21 +279,20 @@ enum JunoShellCodeSidebar {
             switch self {
             case .new: .new
             case .search: .search
-            case .notifications: .notifications
             }
         }
     }
 
     /// The destination rows, in order.
-    static let destinations: [JunoShellDestination] = [.artifacts, .customize, .pulls]
+    static let destinations: [JunoShellDestination] = [.customize]
 
     /// The More menu: its items, then a separator and the archive, which opens
     /// a dialog rather than a page.
     enum More {
-        static let label = "More"
+        static let label = "Archived"
         static let icon: JunoIcon = .more
         static let items: [JunoShellMoreItem] = [
-            JunoShellMoreItem(destination: .connections, minPlan: .free),
+
         ]
         static let archivedLabel = "Archived sessions"
         static let archivedTitle = "Archived Sessions"

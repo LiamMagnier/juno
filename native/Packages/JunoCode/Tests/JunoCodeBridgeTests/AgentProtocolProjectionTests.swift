@@ -228,12 +228,12 @@ final class AgentProtocolProjectionTests: XCTestCase {
 
         let question = wire.rows(for: event(2, payloads[1]))
         XCTAssertEqual(question.map(\.kind), ["protocol", "status"])
-        XCTAssertEqual(question[1].payload["status"], .string("Waiting for an answer on the Mac"))
+        XCTAssertEqual(question[1].payload["status"], .string("Waiting for your answer"))
         XCTAssertEqual(question[1].payload["detail"], .string("Tabs or spaces?"))
 
         XCTAssertEqual(wire.rows(for: event(3, payloads[2])).map(\.kind), ["protocol"], "an answer has no status line")
         let plan = wire.rows(for: event(4, payloads[3]))
-        XCTAssertEqual(plan.last?.payload["status"], .string("Plan ready for review on the Mac"))
+        XCTAssertEqual(plan.last?.payload["status"], .string("Plan ready for review"))
 
         // The goal's snapshot still says its objective.
         let goal = wire.rows(for: event(5, .goalUpdated(GoalUpdatedEvent(kind: .created, goal: SessionGoal(
@@ -259,6 +259,25 @@ final class AgentProtocolProjectionTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    func testAFailedRunTransportsUsageAndFailureWithoutCompletion() {
+        let projected = AgentProtocolProjection.events(for: event(42, .runCompleted(RunCompletedEvent(
+            summary: "The provider failed", filesChanged: 0, testsPassed: nil, durationSeconds: 1,
+            endReason: .error, usage: RunTokenUsage(inputTokens: 1000, outputTokens: 20, cacheReadTokens: 700, cacheWriteTokens: 100)
+        ))))
+        XCTAssertEqual(projected.map(\.type), ["usage.updated", "turn.failed"])
+        guard case .usageUpdated(let usage) = projected[0].payload else { return XCTFail("missing usage") }
+        XCTAssertEqual(usage.usage.inputTokens, 200)
+        XCTAssertEqual(usage.usage.cacheReadTokens, 700)
+        XCTAssertEqual(usage.usage.outputTokens, 20)
+    }
+
+    func testAStoppedRunIsInterruptedRatherThanCompleted() {
+        let projected = AgentProtocolProjection.events(for: event(43, .runCompleted(RunCompletedEvent(
+            summary: "Stopped", filesChanged: 0, testsPassed: nil, durationSeconds: 1, endReason: .stopped
+        ))))
+        XCTAssertEqual(projected.map(\.type), ["turn.interrupted"])
+    }
 
     private func event(_ sequence: Int, _ payload: SessionEventPayload) -> SessionEvent {
         SessionEvent(

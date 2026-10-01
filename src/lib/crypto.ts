@@ -76,10 +76,18 @@ function keyRegistry(): { primaryId: string; keys: Map<string, Buffer> } {
     keys.set(id, key);
   }
   const primaryId = env.tokenEncryptionPrimary?.trim() || AUTH_KEY_ID;
+  if (process.env.NODE_ENV === "production" && primaryId === AUTH_KEY_ID) {
+    throw new Error("Production requires TOKEN_ENCRYPTION_PRIMARY naming an independent key in TOKEN_ENCRYPTION_KEYS; AUTH_SECRET-derived connector encryption is refused. Configure a key and run npm run crypto:rotate before retiring AUTH_SECRET.");
+  }
   if (!keys.has(primaryId)) {
     throw new Error(`TOKEN_ENCRYPTION_PRIMARY="${primaryId}" is not a known key id (known: ${[...keys.keys()].join(", ")}).`);
   }
   return { primaryId, keys };
+}
+
+/** Fail startup before production accepts requests with an unsafe key policy. */
+export function assertConnectorEncryptionConfigured(): void {
+  keyRegistry();
 }
 
 /** The key id that sealed a given payload ("auth" for legacy). */

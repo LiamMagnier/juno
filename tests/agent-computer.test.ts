@@ -313,6 +313,8 @@ describe("agent-computer provider and lifecycle", () => {
       "/var/tmp:rw,nosuid,nodev,size=256m",
       "--mount",
       "type=volume,source=juno-agent-ag_123,target=/home/agent",
+      "--mount",
+      "type=volume,source=juno-agent-ag_123-browser,target=/home/browser",
       "--label",
       "app=juno",
       "--label",
