@@ -154,6 +154,17 @@ public final class PreviewLeaseModel {
         return (host, configuration)
     }
 
+    /// Whether to ask about a taken port now: the selected configuration's
+    /// port was in use, its file leaves `autoPort` unset, and the reader has
+    /// not answered (PV-15).
+    public var portQuestion: (conflict: PreviewPortConflict, configuration: ResolvedPreviewConfiguration)? {
+        guard let workspaceRoot, let snapshot = selectedSnapshot, let conflict = snapshot.portConflict,
+              let configuration = snapshot.configuration ?? selectedConfiguration,
+              settings.shouldAskAboutPort(for: configuration, in: workspaceRoot)
+        else { return nil }
+        return (conflict, configuration)
+    }
+
     public var keepsSignIn: Bool {
         workspaceRoot.map { settings.project($0).persistSignIn } ?? false
     }
@@ -233,6 +244,15 @@ public final class PreviewLeaseModel {
         guard let question = internetQuestion, let workspaceRoot else { return }
         settings.setInternet(allow, for: question.configuration, in: workspaceRoot)
         if allow { restart() } else { Task { await refreshSnapshots() } }
+    }
+
+    /// The reader's answer to "its port is taken: use a free one?", kept on
+    /// this Mac for the configuration. A yes starts it again on a free port.
+    public func answerPort(useFreePort: Bool) {
+        guard let question = portQuestion, let workspaceRoot else { return }
+        settings.setAutoPort(useFreePort, for: question.configuration, in: workspaceRoot)
+        notice = nil
+        if useFreePort { restart() } else { Task { await refreshSnapshots() } }
     }
 
     public func setKeepSignIn(_ keep: Bool) {

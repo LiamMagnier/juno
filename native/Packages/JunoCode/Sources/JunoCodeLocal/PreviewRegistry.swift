@@ -73,6 +73,9 @@ public struct PreviewServerSnapshot: Equatable, Sendable, Identifiable {
     public var blockedOutboundHost: String?
     /// The durable shell this preview was attached from.
     public var shellID: String?
+    /// The configuration's port was taken and its file leaves `autoPort`
+    /// unset: the pane asks once whether to use a free port (PV-15).
+    public var portConflict: PreviewPortConflict?
 
     public var id: PreviewKey { key }
 
@@ -109,6 +112,13 @@ public struct PreviewServerSnapshot: Equatable, Sendable, Identifiable {
             return "\(displayCommand) stopped on its own (exit code \(code))"
         }
     }
+}
+
+/// A taken port the reader has not said what to do about.
+public struct PreviewPortConflict: Equatable, Sendable {
+    public var port: Int
+    /// "node (pid 4211)", when Juno can see who holds it.
+    public var owner: String?
 }
 
 /// How a start went, for the tool result and the pane.
@@ -236,6 +246,7 @@ public actor PreviewRegistry {
         var ledgerGroup: Int32?
         var blockedOutboundHost: String?
         var shellID: String?
+        var portConflict: PreviewPortConflict?
         /// Server secret values, scrubbed from every log line.
         var secretValues: [String] = []
 
@@ -378,7 +389,8 @@ public actor PreviewRegistry {
             lastLogID: entry.log.lastID,
             logLineCount: entry.log.entries.count,
             blockedOutboundHost: entry.blockedOutboundHost,
-            shellID: entry.shellID
+            shellID: entry.shellID,
+            portConflict: entry.portConflict
         )
     }
 
@@ -495,6 +507,7 @@ public actor PreviewRegistry {
         entry.workingDirectoryDisplay = configuration.workingDirectoryDisplay
         entry.blockedOutboundHost = nil
         entry.shellID = nil
+        entry.portConflict = nil
         entry.generation += 1
         let generation = entry.generation
 
@@ -515,8 +528,10 @@ public actor PreviewRegistry {
                 if case let .command(argv) = configuration.kind { return argv.contains { $0.contains("${port}") } }
                 return false
             }()
+        // The file's `autoPort`, else the reader's saved answer (PV-15).
+        let autoPort = settings?.effectiveAutoPort(for: configuration, in: checkoutRoot) ?? configuration.autoPort
         if !configuration.isStatic {
-            if configuration.autoPort == true {
+            if autoPort == true {
                 guard let port = PreviewPorts.freePort(preferring: configuration.port) else {
                     return fail(entry, "No free port was found on this Mac.")
                 }
@@ -525,10 +540,16 @@ public actor PreviewRegistry {
                 expectedPort = (configuration.port != nil || argvUsesPort) ? port : nil
             } else if let port = configuration.port {
                 guard PreviewPorts.isFree(port) else {
-                    let owner = ListeningSocketOwnership.owner(ofPort: port).map { "by \($0.sentence)" } ?? "by another process"
+                    let holder = ListeningSocketOwnership.owner(ofPort: port)?.sentence
+                    let owner = holder.map { "by \($0)" } ?? "by another process"
+                    let unanswered = autoPort == nil
+                        && (settings?.shouldAskAboutPort(for: configuration, in: checkoutRoot) ?? true)
+                    if unanswered { entry.portConflict = PreviewPortConflict(port: port, owner: holder) }
                     return fail(
                         entry,
-                        "Port \(port) is already in use \(owner). Stop it, or set \"autoPort\": true in .juno/launch.json so Juno picks a free port."
+                        unanswered
+                            ? "Port \(port) is already in use \(owner). The Preview pane asks the reader whether to use a free port for \(configuration.name) from now on; or stop that process, or set \"autoPort\" in .juno/launch.json."
+                            : "Port \(port) is already in use \(owner). Stop it, or set \"autoPort\": true in .juno/launch.json so Juno picks a free port."
                     )
                 }
                 environment["PORT"] = String(port)

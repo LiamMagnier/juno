@@ -277,6 +277,52 @@ final class PreviewRegistryTests: XCTestCase {
         XCTAssertEqual(launch.port, chosen, "a configured port is probed directly")
     }
 
+    /// PV-15: with `autoPort` unset, a taken port fails once with a question
+    /// for the reader; their answer is kept and used from then on.
+    func testAnUnsetAutoPortAsksOnceAndKeepsTheAnswer() async throws {
+        let squatter = try StaticPreviewServer(staticRootURL: root)
+        defer { squatter.stop() }
+        let taken = Int(squatter.port)
+        let launcher = FakeLauncher()
+        let settings = self.settings()
+        let registry = PreviewRegistry(launcher: launcher, settings: settings)
+        let unset = try configuration(port: taken)
+
+        let first = await registry.start(unset, checkoutRoot: root, session: nil)
+        guard case let .failed(reason) = first.result else { return XCTFail("\(first.result)") }
+        XCTAssertTrue(reason.contains("asks the reader"), reason)
+        XCTAssertEqual(first.snapshot.portConflict?.port, taken)
+        XCTAssertTrue(first.snapshot.portConflict?.owner?.contains("pid \(getpid())") == true)
+        XCTAssertTrue(launcher.processes.isEmpty)
+
+        settings.setAutoPort(true, for: unset, in: root)
+        XCTAssertFalse(settings.shouldAskAboutPort(for: unset, in: root), "asked once")
+        let second = await registry.restart(unset, checkoutRoot: root, session: nil)
+        XCTAssertNil(second.snapshot.portConflict)
+        let launch = try XCTUnwrap(launcher.processes.last?.launches.first)
+        XCTAssertNotEqual(launch.environment["PORT"].flatMap(Int.init), taken)
+
+        // "Keep this port" is kept too: the next taken port fails plainly.
+        settings.setAutoPort(false, for: unset, in: root)
+        let third = await registry.restart(unset, checkoutRoot: root, session: nil)
+        guard case let .failed(plain) = third.result else { return XCTFail("\(third.result)") }
+        XCTAssertFalse(plain.contains("asks the reader"), plain)
+        XCTAssertNil(third.snapshot.portConflict)
+    }
+
+    /// Settings from an older build (missing fields) still read: no answer
+    /// is lost to a decoding failure.
+    func testSettingsFromAnOlderBuildStillRead() throws {
+        let url = root.deletingLastPathComponent().appendingPathComponent("old-settings-\(UUID().uuidString).json")
+        let key = root.resolvingSymlinksInPath().standardizedFileURL.path
+        try #"{ "projects": { "\#(key)": { "approvedConfigurations": ["web#abc"], "allowEval": true } } }"#
+            .write(to: url, atomically: true, encoding: .utf8)
+        let project = PreviewLocalSettings(fileURL: url).project(root)
+        XCTAssertEqual(project.approvedConfigurations, ["web#abc"])
+        XCTAssertTrue(project.allowEval)
+        XCTAssertEqual(project.portAnswers, [:])
+    }
+
     /// `${port}` in the argv is expanded with the port Juno picked.
     func testPortPlaceholderIsExpanded() async throws {
         let launcher = FakeLauncher()

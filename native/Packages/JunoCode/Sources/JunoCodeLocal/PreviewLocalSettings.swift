@@ -7,7 +7,9 @@ import Foundation
 ///   content hash, so a changed configuration is asked about again;
 /// - configurations allowed to use the internet, the same way;
 /// - whether `preview_browser eval` is enabled (off by default);
-/// - whether the page keeps its sign-in between opens (off by default).
+/// - whether the page keeps its sign-in between opens (off by default);
+/// - for a configuration with no `autoPort`, the reader's answer to "its port
+///   is taken: use a free one?" (PV-15), asked once and kept.
 public final class PreviewLocalSettings: @unchecked Sendable {
     public struct Project: Codable, Hashable, Sendable {
         public var approvedConfigurations: Set<String> = []
@@ -16,8 +18,27 @@ public final class PreviewLocalSettings: @unchecked Sendable {
         public var offlineConfigurations: Set<String> = []
         public var allowEval = false
         public var persistSignIn = false
+        /// Configuration name → whether to pick a free port when its own is
+        /// taken, for configurations whose file leaves `autoPort` unset.
+        public var portAnswers: [String: Bool] = [:]
 
         public init() {}
+
+        private enum CodingKeys: String, CodingKey {
+            case approvedConfigurations, internetConfigurations, offlineConfigurations, allowEval, persistSignIn, portAnswers
+        }
+
+        /// Every field may be missing, so a file written by an older build
+        /// (or a newer one) never fails to read and wipes every answer.
+        public init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            approvedConfigurations = try values.decodeIfPresent(Set<String>.self, forKey: .approvedConfigurations) ?? []
+            internetConfigurations = try values.decodeIfPresent(Set<String>.self, forKey: .internetConfigurations) ?? []
+            offlineConfigurations = try values.decodeIfPresent(Set<String>.self, forKey: .offlineConfigurations) ?? []
+            allowEval = try values.decodeIfPresent(Bool.self, forKey: .allowEval) ?? false
+            persistSignIn = try values.decodeIfPresent(Bool.self, forKey: .persistSignIn) ?? false
+            portAnswers = try values.decodeIfPresent([String: Bool].self, forKey: .portAnswers) ?? [:]
+        }
     }
 
     private struct File: Codable {
@@ -97,6 +118,22 @@ public final class PreviewLocalSettings: @unchecked Sendable {
         return configuration.network == .loopback
             && !project.internetConfigurations.contains(configuration.approvalKey)
             && !project.offlineConfigurations.contains(configuration.approvalKey)
+    }
+
+    /// `autoPort` as the start uses it: the file's, else the reader's saved
+    /// answer, else unset (a taken port fails and the pane asks).
+    public func effectiveAutoPort(for configuration: ResolvedPreviewConfiguration, in checkoutRoot: URL) -> Bool? {
+        configuration.autoPort ?? project(checkoutRoot).portAnswers[configuration.name]
+    }
+
+    /// Whether to ask about a taken port: the file leaves `autoPort` unset
+    /// and the reader has not answered.
+    public func shouldAskAboutPort(for configuration: ResolvedPreviewConfiguration, in checkoutRoot: URL) -> Bool {
+        configuration.autoPort == nil && project(checkoutRoot).portAnswers[configuration.name] == nil
+    }
+
+    public func setAutoPort(_ auto: Bool, for configuration: ResolvedPreviewConfiguration, in checkoutRoot: URL) {
+        update(checkoutRoot) { $0.portAnswers[configuration.name] = auto }
     }
 
     static func key(_ checkoutRoot: URL) -> String {

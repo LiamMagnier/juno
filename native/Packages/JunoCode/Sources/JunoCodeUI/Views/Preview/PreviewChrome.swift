@@ -329,7 +329,12 @@ struct PreviewPaneView: View {
                 actions: [("Keep offline", { lease.answerInternet(false) }), ("Allow", { lease.answerInternet(true) })]
             )
         }
-        if let notice = lease.notice {
+        if let question = lease.portQuestion {
+            PreviewBannerRow(
+                text: "Port \(question.conflict.port) is in use\(question.conflict.owner.map { " by \($0)" } ?? ""). When it is, start \(question.configuration.name) on a free port instead?",
+                actions: [("Keep this port", { lease.answerPort(useFreePort: false) }), ("Use a free port", { lease.answerPort(useFreePort: true) })]
+            )
+        } else if let notice = lease.notice {
             PreviewBannerRow(text: notice, tint: Studio.Ink.danger, actions: [])
         }
     }
