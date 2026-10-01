@@ -19,5 +19,8 @@ for S in $SHEETS; do
   if [ -z "${LINEUP_ONLY:-}" ]; then
     RES=${RES:-900} SPP=${SPP:-160} Q=${Q:-1} $BL --background --factory-startup --python flock_render.py -- variants "$OUT/$S" $S 2>&1 | grep --line-buffered -E "WROTE|Error|rror:|line [0-9]"
   fi
+  if [ -n "${STATES:-}" ]; then
+    RES=${SRES:-640} SPP=${SPP:-160} Q=${Q:-1} $BL --background --factory-startup --python flock_render.py -- states "$OUT/$S" $S 2>&1 | grep --line-buffered -E "WROTE|Error|rror:|line [0-9]"
+  fi
 done
 echo PASS_DONE

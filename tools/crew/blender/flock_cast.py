@@ -34,7 +34,7 @@ import flock_sdf as S
 from flock_sdf import smin, smax
 
 INK = "#17171c"
-EYE_SCALE = float(os.environ.get("EYE_SCALE", 1.65))
+EYE_SCALE = float(os.environ.get("EYE_SCALE", 1.8))
 WHITE = "#fbfaf6"
 
 # ---------------------------------------------------------------- palette
@@ -406,12 +406,12 @@ class Ctx:
 
 # Line-like eyes (closed arcs) read heavier than filled ovals at the same
 # scale and merge into a brow or a moustache when big: they scale less.
-STYLE_SCALE = {"arc": 0.84, "sleep": 0.84, "smile": 0.9, "sleepy": 0.9, "dash": 0.85, "sticker": 0.94}
+STYLE_SCALE = {"arc": 0.77, "sleep": 0.77, "smile": 0.83, "sleepy": 0.83, "dash": 0.78, "sticker": 0.88}
 
 
 def eye_frame(c, eyes):
     fc = c.face
-    z = eyes.get("z", fc["z"])
+    z = eyes.get("z", fc["z"]) + eyes.get("dz", 0.0)
     gap = fc["gap"] * eyes.get("gap", 1.0)
     k = eyes.get("size", 1.0) * EYE_SCALE * STYLE_SCALE.get(eyes.get("style", "dot"), 1.0)
     w = fc["w"] * k
@@ -794,10 +794,10 @@ CAST = {
     ],
     # C — soft symbols: round button eyes, happy half-moons, sleepy arcs, one-piece shades
     "C": [
-        dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="round", gap=1.3, z=0.47), acc=[dict(id="visor", color=INK)]),
+        dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="smile", gap=1.15, z=0.47), acc=[]),
         dict(id="luna", name="Luna", shape="moon", color=PAL["cobalt"], eyes=dict(style="sleep"), acc=[dict(id="nightcap", color=PAL["sky"], pom=WHITE)]),
         dict(id="zap", name="Zip", shape="sparkle", color=PAL["aqua"], eyes=dict(style="round"), acc=[]),
-        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8), acc=[], lift=0.14),
+        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8, gap=1.2), acc=[dict(id="visor", color=INK)], lift=0.14),
         dict(id="drip", name="Drip", shape="drop", color=PAL["emerald"], eyes=dict(style="sleep"), acc=[]),
         dict(id="daisy", name="Daisy", shape="flower", color=PAL["bubblegum"], center=PAL["butter"], eyes=dict(style="round", gap=1.15), acc=[]),
     ],
@@ -858,3 +858,33 @@ VARIANTS = {
         ],
     ),
 }
+
+
+# ---------------------------------------------------------------- states
+# Alevr Orbit's truthful agent states, told by a brief eye/pose change on the
+# same character (the words always sit beside it; no state by colour alone).
+
+STATE_LABELS = ["Ready", "Thinking", "Working", "Needs your answer", "Blocked", "Finished"]
+STATES = {"A": "pip", "B": "jelly", "C": "zap"}
+
+
+def state_overrides(base):
+    e = dict(base.get("eyes", {}))
+    st = e.get("style", "dot")
+
+    def w(**kw):
+        d = dict(e)
+        d.update(kw)
+        return d
+
+    sticker = st == "sticker"
+    thinking = w(look=(0.5, 0.55)) if sticker else w(dz=0.035, dx=e.get("dx", 0.0) + 0.03, size=e.get("size", 1.0) * 0.92)
+    needs = w(look=(0.0, 0.0), white=1.14, pupil=0.56) if sticker else w(size=e.get("size", 1.0) * 1.2)
+    return [
+        dict(),
+        dict(eyes=thinking),
+        dict(eyes=w(style="sleepy")),
+        dict(eyes=needs, lean=-8),
+        dict(eyes=w(style="dash")),
+        dict(eyes=w(style="arc")),
+    ]

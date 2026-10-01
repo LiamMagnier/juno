@@ -7,6 +7,7 @@ Cycles stills of the flocked crew (pass renders).
   portraits  every character of the sheet: <id>_front.png, <id>_34.png (transparent, contact shadow)
   lineup     the sheet peeking from the bottom edge (transparent): lineup_<sheet>.png
   variants   customization variants of one character: var_<sheet>_<k>.png
+  states     the six agent states on one character: state_<id>_<k>.png
 
 Env: RES, SPP, Q (fuzz quality 0.2..1), NOFUZZ=1.
 """
@@ -228,6 +229,17 @@ elif mode == "lineup":
         out.file_format = "PNG"
         out.save()
         print("WROTE", out.filepath_raw, flush=True)
+
+elif mode == "states":
+    base = find(only[0]) if only else find(C.STATES[sheet])
+    for k, over in enumerate(C.state_overrides(base)):
+        m = copy.deepcopy(base)
+        m.update(over)
+        m["id"] = f"{base['id']}_s{k}"
+        sc = scene(RES, RES)
+        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ)
+        portrait_cam(sc, objs, float(os.environ.get("YAW", 14)))
+        render(sc, os.path.join(out_dir, f"state_{base['id']}_{k}.png"))
 
 elif mode == "variants":
     if os.environ.get("VARIANTS"):

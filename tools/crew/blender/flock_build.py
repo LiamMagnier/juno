@@ -88,7 +88,7 @@ def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=
     root = bpy.data.objects.new(f"{sid}_root", None)
     coll.objects.link(root)
     root.location = loc
-    root.rotation_euler = (0, 0, math.radians(yaw))
+    root.rotation_euler = (0, math.radians(spec.get("lean", 0.0)), math.radians(yaw))
     objs = []
     for part, V, Q in meshes:
         if len(Q) == 0:

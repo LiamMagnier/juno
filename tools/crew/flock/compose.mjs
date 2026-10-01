@@ -24,7 +24,7 @@ const THEMES = {
 const SHEET_TITLE = {
   A: ["A", "Soft solids", "Toy-block geometry, big matte dot and pill eyes, bold felt hats"],
   B: ["B", "Snack bar", "Food icons, flat white sticker eyes and closed arcs, food-part accessories"],
-  C: ["C", "Soft symbols", "Glyph shapes, round button eyes, happy half-moons, sleepy arcs, one-piece shades"],
+  C: ["C", "Soft symbols", "Glyph shapes (soft star, crescent, sparkle, bolt, droplet, flower), round button eyes, happy half-moons, sleepy arcs, one-piece shades"],
 };
 const PASS = process.env.PASS_LABEL || "Alevr Orbit · agent characters · pass 1";
 const HERE_REPO = path.resolve(here, "../../..");
@@ -119,6 +119,15 @@ function variantsPage(S, theme) {
   return page(theme, 2000, header(S, `customization: ${v.name}, base and two variants`) + `<div style="display:flex;gap:44px;padding:10px 56px 56px">${items}</div>`);
 }
 
+function statesPage(S, theme) {
+  // Alevr Orbit's agent states on one character: a brief eye/pose change, the
+  // truthful words always beside it (never a state by colour alone).
+  const v = cast[`${S}_states`];
+  const cell = Math.floor((2000 - 112) / v.items.length);
+  const items = v.items.map((it) => `<div style="width:${cell}px"><img class="soft" src="${f(path.join(passDir, S, it.file))}" style="width:${cell}px;height:${cell}px;display:block"><div class="lbl">${it.title}</div></div>`).join("");
+  return page(theme, 2000, header(S, `agent states on ${v.name}: Ready, Thinking, Working, Needs your answer, Blocked, Finished`) + `<div style="display:flex;padding:10px 56px 56px">${items}</div>`);
+}
+
 function comparePage(list) {
   // dots reference left, ours right (dark lineups), one row per sheet
   const rows = list.map((S) => `<div style="display:flex;gap:0">
@@ -169,6 +178,7 @@ for (const S of sheets) {
     if (theme === "light") await small(path.join(outDir, `portraits_${S}_${theme}.png`));
     await shoot(iconsPage(S, theme), path.join(outDir, `icons_${S}_${theme}.png`), 2000);
     if (cast[`${S}_variants`]) await shoot(variantsPage(S, theme), path.join(outDir, `variants_${S}_${theme}.png`), 2000);
+    if (cast[`${S}_states`] && fs.existsSync(path.join(passDir, S, cast[`${S}_states`].items[0].file))) await shoot(statesPage(S, theme), path.join(outDir, `states_${S}_${theme}.png`), 2000);
   }
   if (dotsRef) await shoot(comparePage([S]), path.join(outDir, `compare_${S}.png`), 2000, 562);
 }
