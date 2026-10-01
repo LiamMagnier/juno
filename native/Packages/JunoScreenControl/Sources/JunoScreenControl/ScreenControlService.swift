@@ -1038,6 +1038,7 @@ public actor ScreenControlService: ScreenControlling {
             category: floorApp.category,
             targetTexts: targetTexts,
             typedSinceLastCommit: sessions[sessionID]?.typedSinceCommit.contains(floorApp.bundleID.lowercased()) ?? false,
+            bundleID: floorApp.bundleID,
             looksLikeCredential: deps.looksLikeCredential
         )
         let frameForCard = freshFrame ?? sessions[sessionID]?.frame
@@ -1520,6 +1521,7 @@ public actor ScreenControlService: ScreenControlling {
                    category: keyCategory,
                    targetTexts: focus?.floorTexts ?? [],
                    typedSinceLastCommit: sessions[sessionID]?.typedSinceCommit.contains(keyBundle.lowercased()) ?? false,
+                   bundleID: keyBundle,
                    looksLikeCredential: deps.looksLikeCredential
                ) != nil
             {
@@ -1710,9 +1712,13 @@ public actor ScreenControlService: ScreenControlling {
         }
         // Every level counts: Share › AirDrop sends though "AirDrop" alone
         // says nothing.
-        let floor: FloorReason? = target.category == .finance
-            ? .financeApp
-            : ConsequentialActionFloor.matchingWord(in: path.reversed()).map(FloorReason.consequentialControl)
+        let floor: FloorReason? = if target.category == .finance {
+            .financeApp
+        } else if AppCategories.isSystemSettings(target.bundleID) {
+            .systemSettings
+        } else {
+            ConsequentialActionFloor.matchingWord(in: path.reversed()).map(FloorReason.consequentialControl)
+        }
         let frame = sessions[sessionID]?.frame
         return PreparedScreenAction(
             sessionID: sessionID,

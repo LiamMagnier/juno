@@ -204,8 +204,15 @@ public enum AppCategories {
     public static func reachWarning(bundleID: String) -> String? {
         switch bundleID.lowercased() {
         case "com.apple.finder": "Can read or write any file."
-        case "com.apple.systempreferences", "com.apple.settings": "Can change system settings."
+        case "com.apple.systempreferences", "com.apple.settings": "Can change system settings. Every change asks first."
         default: nil
         }
+    }
+
+    /// System Settings, whose every change is a change to what the Mac or
+    /// an app is allowed to do: privacy switches, login items, sharing.
+    public static func isSystemSettings(_ bundleID: String) -> Bool {
+        let id = bundleID.lowercased()
+        return id == "com.apple.systempreferences" || id == "com.apple.settings" || id.hasPrefix("com.apple.settings.")
     }
 }

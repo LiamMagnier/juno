@@ -21,7 +21,7 @@ final class AppGrantPolicyTests: XCTestCase {
         XCTAssertEqual(offer("com.apple.finder").offeredTier, .full)
         XCTAssertEqual(offer("com.apple.systempreferences").offeredTier, .full)
         XCTAssertTrue(offer("com.apple.finder").warnings.contains("Can read or write any file."))
-        XCTAssertTrue(offer("com.apple.systempreferences").warnings.contains("Can change system settings."))
+        XCTAssertTrue(offer("com.apple.systempreferences").warnings.contains("Can change system settings. Every change asks first."))
         XCTAssertTrue(offer("com.apple.Terminal").line.hasPrefix("com.apple.Terminal: clicks only — Juno uses its own shell"))
     }
 
@@ -170,6 +170,31 @@ final class AppGrantPolicyTests: XCTestCase {
             .credentialText
         )
         XCTAssertNil(ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: "Cuisine asiatique et akira"), category: .other, targetTexts: [], typedSinceLastCommit: false))
+    }
+
+    func testEveryChangeInSystemSettingsAsks() {
+        for action in [
+            ScreenAction(kind: .leftClick, coordinate: [1, 1]),
+            ScreenAction(kind: .type, text: "a"),
+            ScreenAction(kind: .key, text: "space"),
+            ScreenAction(kind: .leftClickDrag, coordinate: [2, 2], startCoordinate: [1, 1]),
+        ] {
+            XCTAssertEqual(
+                ConsequentialActionFloor.evaluate(action: action, category: .systemReach, targetTexts: ["Terminal"], typedSinceLastCommit: false, bundleID: "com.apple.systempreferences"),
+                .systemSettings,
+                "\(action.kind)"
+            )
+        }
+        for action in [ScreenAction(kind: .scroll, coordinate: [1, 1], scrollDirection: .down), ScreenAction(kind: .screenshot)] {
+            XCTAssertNil(
+                ConsequentialActionFloor.evaluate(action: action, category: .systemReach, targetTexts: [], typedSinceLastCommit: false, bundleID: "com.apple.systempreferences"),
+                "\(action.kind) changes nothing"
+            )
+        }
+        XCTAssertNil(
+            ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .leftClick, coordinate: [1, 1]), category: .systemReach, targetTexts: ["Documents"], typedSinceLastCommit: false, bundleID: "com.apple.finder"),
+            "Finder clicks follow the ordinary rules"
+        )
     }
 
     func testClipboardControlsAreRecognisedInTheOwnersLanguages() {

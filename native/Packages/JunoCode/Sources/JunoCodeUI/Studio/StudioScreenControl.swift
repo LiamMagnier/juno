@@ -490,7 +490,7 @@ struct StudioScreenControlSettings: View {
 
     var body: some View {
         Section {
-            Text("Lets Juno use the Mac apps you grant, one session at a time, when you choose Let Juno Use Apps from the More menu. Each app is granted for the session only: terminals and editors for clicks, browsers for looking, and never Juno itself, password managers or system prompts. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting and signing in always ask. Press Esc anywhere to stop.")
+            Text("Lets Juno use the Mac apps you grant, one session at a time, when you choose Let Juno Use Apps from the More menu. Each app is granted for the session only: terminals and editors for clicks, browsers for looking, and never Juno itself, password managers or system prompts. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. Press Esc anywhere to stop.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .fixedSize(horizontal: false, vertical: true)

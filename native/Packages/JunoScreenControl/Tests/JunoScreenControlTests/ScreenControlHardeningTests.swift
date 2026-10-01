@@ -260,6 +260,17 @@ final class ScreenControlHardeningTests: XCTestCase {
         XCTAssertEqual(prepared.floor, .consequentialControl("share"))
     }
 
+    func testSystemSettingsChangesAlwaysAsk() async throws {
+        let fixture = ScreenFixture()
+        let settings = RunningApp(pid: 105, bundleID: "com.apple.systempreferences", name: "System Settings")
+        fixture.environment.apps.append(settings)
+        try await fixture.start(grant: ["com.apple.systempreferences"])
+        let menu = try await fixture.service.prepareMenu(sessionID: "s1", app: nil, path: ["View", "Privacy & Security"])
+        XCTAssertEqual(menu.floor, .systemSettings)
+        let key = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .key, text: "space"))
+        XCTAssertEqual(key.floor, .systemSettings, "a space on a privacy switch flips it")
+    }
+
     func testAMenuChoiceMustBeTheOneOnTheCard() async throws {
         let fixture = ScreenFixture()
         try await fixture.start()

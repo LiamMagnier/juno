@@ -10,6 +10,9 @@ public enum FloorReason: Hashable, Codable, Sendable {
     case financeApp
     /// The text looks like a password, key or token.
     case credentialText
+    /// A change in System Settings: privacy switches, login items, sharing
+    /// — what the Mac and its apps are allowed to do.
+    case systemSettings
 
     /// The sentence on the approval card.
     public var explanation: String {
@@ -22,6 +25,8 @@ public enum FloorReason: Hashable, Codable, Sendable {
             "This is a finance app, so Juno always asks."
         case .credentialText:
             "This text looks like a password or key. Juno asks before typing it anywhere."
+        case .systemSettings:
+            "System Settings decides what your Mac and its apps may do, so Juno always asks before changing anything there, even in Full access."
         }
     }
 }
@@ -96,15 +101,29 @@ public enum ConsequentialActionFloor {
     ///   - typedSinceLastCommit: whether this session typed into this app
     ///     since its last Return.
     ///   - looksLikeCredential: the credential test for typed text.
+    ///   - bundleID: the app acted in, for the apps whose every change asks.
     public static func evaluate(
         action: ScreenAction,
         category: AppCategory,
         targetTexts: [String],
         typedSinceLastCommit: Bool,
+        bundleID: String? = nil,
         looksLikeCredential: (String) -> Bool = CredentialHeuristics.looksLikeCredential
     ) -> FloorReason? {
         if category == .finance, action.actionClass != .view {
             return .financeApp
+        }
+        // "Change permissions" is on the floor: in System Settings every
+        // press, keystroke and drag may flip a privacy switch or a login
+        // item. Looking, pointing and scrolling change nothing.
+        if let bundleID, AppCategories.isSystemSettings(bundleID) {
+            switch action.kind {
+            case .leftClick, .doubleClick, .tripleClick, .middleClick, .leftMouseUp, .leftClickDrag,
+                 .type, .key, .holdKey:
+                return .systemSettings
+            default:
+                break
+            }
         }
         switch action.kind {
         case .type:

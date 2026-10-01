@@ -385,7 +385,7 @@ public struct ComputerTool: CodeTool {
 
     public let name = ComputerUseToolName.computer
     public var description: String {
-        "Operate one Mac app the reader granted. Coordinates are in the frame of the latest screenshot of that app; prefer element ids from computer_ax over coordinates. Every action returns the screen after it settles. Clicks, typing and keys ask the reader unless the session has Full access; sending, buying, deleting and signing in always ask. "
+        "Operate one Mac app the reader granted. Coordinates are in the frame of the latest screenshot of that app; prefer element ids from computer_ax over coordinates. Every action returns the screen after it settles. Clicks, typing and keys ask the reader unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. "
             + screenControlRules
     }
 
