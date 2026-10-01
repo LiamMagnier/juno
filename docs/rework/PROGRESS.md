@@ -298,3 +298,37 @@ For integration: `SessionController.reviewComments` / `submitReviewComments`
 are superseded by the review queue and unused; the phone still reads an
 approval's `expiresAt` as a deadline; `RunTracker` derives a run's ending
 from its status until Lane A records `run.outcome`.
+
+#### Lane E adversarial review (2026-10-01)
+
+Six fix commits on `rf/code-ship`, `bf8d6bc3`..`2387b10e`, not pushed.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| Keep (stage one hunk) built the blob from the command executor's output, which is redacted, capped at 2 MB and decoded per chunk: a `TOKEN_TTL = 3600` line elsewhere in the file was staged as `[redacted]`; large files staged truncated | High (silent corruption of what gets committed) | Both sides read byte-faithfully (disk, and `git checkout-index --prefix` for the index), strict UTF-8, `hash-object --path`; conflicts, symlinks, submodules refused. Also fixed: a CRLF file lost its last line ending (`hasSuffix("\n")` is false for `"\r\n"`) |
+| A Runs row's Allow once read whatever approval was pending at click time, not the one the row showed | High (digest binding) | `WorkbenchModel.answer(_:shown:)` answers with the row's own approval and digest |
+| Notification Allow once/Decline accepted any approval id + digest, including from a remote push or a banner from an earlier launch; stale Keep going / Retry started runs | Medium | Only approvals this monitor announced in this launch and still waiting; pushes only open; Keep going / Retry only while the row offers them |
+| Fix it put the CI log inside the `<juno_runtime>` fence (the model's "Juno said" channel); check names unsanitised | Medium (prompt injection) | Logs read with `ci_logs` (tool output); names cleaned to one short line |
+| CI watch polled forever with no checks, a failing `gh`, or a stuck check, and restarted at every launch | Medium | Stops, in words, after 10 empty polls, 10 failed reads, or 300 polls |
+| Worktree setup (approved by its bytes) drawn as Markdown; Bring back showed `commit -am` but ran `add -A` + `commit -m` | Medium (approval shows something else) | Setup drawn verbatim (snapshot `worktree-setup`); each step shows its exact command |
+| Fork into a worktree from a worktree session started at the project's HEAD | Medium | Starts from the source checkout's commit |
+| Archived sessions were reachable from nowhere | Medium | Sidebar "Archived (n)", search reaches them, Unarchive |
+| Quit guard's modal cancelled logout/restart; ⌥⌘⎋ (Force Quit) on Stop Screen Control; resume-on-launch resumed every interrupted session ever; `RunTracker.proposed` grew without bound | Low | Power-off quits without asking; shortcut removed; 24 h window; per-session map |
+
+Completed from PARTIAL: §5.17 archive after the pull request merges or
+closes (a sweep 15 s after launch, then every 30 min, at most 20 sessions;
+working, open or dirty-worktree sessions stay). Still PARTIAL: §5.3 Fix it
+is not bound to Lane A's goal runtime (it records `goalSet` and resumes
+with a note); §5.6 (d) "Summarize from here" needs a suffix fold in
+`ConversationCompactor`/`AgentOrchestrator` (Lane A's files).
+
+Tests added: `ReviewCommentQueueTests.testKeepStagesTheFileAsItIsOnDisk…`,
+`StudioRunMonitorTests.testOnlyABannerThisMonitorPostedCanAnswerAnApproval`,
+`CIWatchServiceTests.testACheckNameCannotWriteIntoJunosWords` and
+`testTheWatchNeverPollsForever`, `SessionForkTests.testAForkOfAWorktreeSession…`,
+`WorktreeSessionTests.testASessionWhosePullRequestMergedOrClosed…` and
+`testOnlyAGitHubPullRequestLinkIsLookedUp`, `QuitGuardTests.testARestartOrShutdownIsNotAskedAbout`,
+`ShipSnapshotTests.testRenderWorktreeSetupLine`, the desktop
+`QuitAndLifecycleTests.aRestartWithRunsWorkingQuitsWithoutAsking`; extended
+`RunIndexTests` (row binding, stale Keep going / Retry) and the existing
+Keep, bring-back and notification-answer tests.
