@@ -1,5 +1,37 @@
 # Juno Refoundation — handoff (paused again 2026-10-01, afternoon)
 
+## Third pause (2026-10-01, evening) — read this first
+
+- **The website is live on `f5925044`** (GitHub Actions run 36858943058; `/api/health`
+  ok, db ok, 10 PM2 apps). `main` = trunk `rework/refoundation` = `f5925044`.
+  The Mac release was NOT made (still 1.9.3 build 94); the owner deferred it for
+  usage limits.
+- **What shipped is the foundations, not the redesign.** The round-3 design lives
+  only in the dev galleries (`src/app/dev/design/juno/**`, `page.dev.tsx`, excluded
+  from production builds by `pageExtensions`). The owner saw the old design in
+  production and asked to "fix everything up"; Phase 3 (port the design into the
+  real web app) was launched and then **stopped by the owner before any change was
+  made** (the empty `rf/p3-foundation` worktree was removed).
+- **Resume Phase 3** with the script
+  `~/.claude/projects/-Users-liammagnier-Developer-project-juno/9a242067-f03a-4200-acec-6b9eafa8d677/workflows/scripts/refoundation-phase3-web-wf_7c289f9f-277.js`
+  as a NEW run (nothing is cached). Order: foundation lane (tokens, fonts, framed
+  shell, sidebar IA, material, icon set) → composer+home, thread, pages lanes in
+  parallel, each reviewed → integration with full gates and a production build →
+  merge to trunk. It keeps the shipped agent faces (crew characters are still being
+  chosen) and today's voice behaviour. The owner wants to resume this together with
+  every other paused track (design round 3 revisions + crew loop, voice/dictation
+  design, verifying `1f119cbf`, Phases 4–15).
+- **Deploy learnings** (apply before the next deploy):
+  - GitHub Actions "Deploy to VM" runs on every push to `main` (billing works
+    again), so pushing to main deploys; the Mac script and Actions share the VM lock.
+  - The Supabase session pooler has 15 client slots; each PM2 app has a Prisma
+    `connection_limit` budget in `deploy/ecosystem.config.js` (total 14).
+  - The VM (887 MB, 2 vCPU) is at capacity: 10 processes max; an 11th made the
+    voice-relay check time out and the deploy rolled back. A larger VM is
+    recommended. Artifact maintenance (idle draft sealing; purge unarmed) still has to be
+    folded into an existing worker.
+  - A stale VM deploy lock (dead pid) can be removed safely after checking the pid.
+
 The owner paused all work a second time on 2026-10-01 and will resume later.
 Nothing is lost: every change is committed on its branch, every render, page
 and reference is copied to the git-ignored
