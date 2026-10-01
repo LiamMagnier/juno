@@ -33,6 +33,43 @@ import { createHash, randomBytes } from "crypto";
 export type McpFetch = (url: string, init?: RequestInit) => Promise<Response>;
 const defaultFetch: McpFetch = (url, init) => fetch(url, init);
 
+/*
+ * Every answer in this handshake is a few hundred bytes of JSON, from a server
+ * a stranger may control. The SSRF-safe fetcher caps a response at 32 MB for
+ * MCP tool streams, and `res.json()` would buffer and parse all of it on the
+ * 887 MB production VM, with no time limit while a slow server trickles it.
+ * So each read here is capped far lower and each hop has a deadline.
+ */
+export const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
+export const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
+
+function withDeadline(init: RequestInit = {}): RequestInit {
+  return { ...init, signal: AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS) };
+}
+
+/** The body as text, refusing (and cancelling) one over the cap. */
+export async function readCappedText(res: Response, max = MAX_OAUTH_RESPONSE_BYTES): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("The authorization server's response was too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readCappedJson<T>(res: Response): Promise<T> {
+  return JSON.parse(await readCappedText(res)) as T;
+}
+
 export interface McpOAuthClient {
   clientId: string;
   clientSecret?: string;
@@ -108,8 +145,9 @@ async function fetchMetadata<T>(base: string, name: string, what: string, fetche
   let lastError: unknown;
   for (const url of wellKnownCandidates(base, name)) {
     try {
-      const res = await fetcher(url.href, { headers: { Accept: "application/json" } });
-      if (res.ok) return (await res.json()) as T;
+      const res = await fetcher(url.href, withDeadline({ headers: { Accept: "application/json" } }));
+      if (res.ok) return await readCappedJson<T>(res);
+      await res.body?.cancel().catch(() => undefined);
       lastError = new Error(`${what} at ${url.href} returned ${res.status}`);
     } catch (err) {
       lastError = err;
@@ -160,7 +198,7 @@ export async function registerClient(
   if (!endpoints.registrationEndpoint) {
     throw new Error("MCP authorization server does not support Dynamic Client Registration");
   }
-  const res = await fetcher(endpoints.registrationEndpoint, {
+  const res = await fetcher(endpoints.registrationEndpoint, withDeadline({
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -171,12 +209,12 @@ export async function registerClient(
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     }),
-  });
+  }));
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
+    const detail = await readCappedText(res).catch(() => "");
     throw new Error(`MCP client registration failed (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}`);
   }
-  const data = (await res.json()) as { client_id?: string; client_secret?: string };
+  const data = await readCappedJson<{ client_id?: string; client_secret?: string }>(res);
   if (!data.client_id) throw new Error("MCP client registration returned no client_id");
   return { clientId: data.client_id, clientSecret: data.client_secret };
 }
@@ -212,7 +250,7 @@ function parseTokens(data: TokenResponse): McpTokens {
 }
 
 async function postToken(tokenEndpoint: string, body: URLSearchParams, what: string, fetcher: McpFetch): Promise<McpTokens> {
-  const res = await fetcher(tokenEndpoint, {
+  const res = await fetcher(tokenEndpoint, withDeadline({
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -220,12 +258,12 @@ async function postToken(tokenEndpoint: string, body: URLSearchParams, what: str
       "User-Agent": "Juno-MCP-Client/1.0",
     },
     body,
-  });
+  }));
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
+    const detail = await readCappedText(res).catch(() => "");
     throw new Error(`MCP ${what} failed (${res.status})${detail ? `: ${detail.slice(0, 300)}` : ""}`);
   }
-  return parseTokens((await res.json()) as TokenResponse);
+  return parseTokens(await readCappedJson<TokenResponse>(res));
 }
 
 /** Exchange an authorization code for tokens (auth-code + PKCE). */
