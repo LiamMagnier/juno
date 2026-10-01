@@ -94,6 +94,10 @@ public actor AgentOrchestrator {
         /// A number in 0..<1 that spreads out the retries of sessions that
         /// hit the same limit together.
         public var retryJitter: @Sendable () -> Double
+        /// The autonomous loop's settings, ledger, goal runtime and runners
+        /// (CODE_AGENT_SPEC §1). Nil keeps none of it: the stop check alone
+        /// decides, and the step limit (`maximumIterations`) is still soft.
+        public var autonomy: AutonomyConfiguration?
 
         public init(
             maximumIterations: Int = 200,
@@ -110,7 +114,8 @@ public actor AgentOrchestrator {
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
             retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-            retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
+            retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
+            autonomy: AutonomyConfiguration? = nil
         ) {
             self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
@@ -130,6 +135,12 @@ public actor AgentOrchestrator {
             self.retryPolicy = retryPolicy
             self.retrySleep = retrySleep
             self.retryJitter = retryJitter
+            self.autonomy = autonomy
+        }
+
+        /// Model steps before the tools-off wrap-up turn.
+        var stepLimit: Int {
+            autonomy?.settings.stepLimit ?? maximumIterations
         }
     }
 
@@ -158,6 +169,16 @@ public actor AgentOrchestrator {
     /// Decides whether a run the model means to end may end. See
     /// ``CompletionGating``; the default reports and never enforces.
     private let completionGate: any CompletionGating
+    /// The run ledger the stop check reads, shared with the recorders.
+    private let ledger: RunLedgerRecorder
+    /// Sections of `<session_state>` sent whole at the next request whatever
+    /// their fingerprints say: the goal and the checks, after a compaction
+    /// rewrote the history they were in.
+    private var forcedStateSections: Set<String> = []
+    /// What this run has spent, for its budget: every call's tokens and,
+    /// where the model is priced, cost.
+    private var runTokens = 0
+    private var runCost: Double?
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
@@ -299,6 +320,12 @@ public actor AgentOrchestrator {
         self.turnCheckpoints = turnCheckpoints
         self.verificationEngine = VerificationEngine(store: store)
         self.completionGate = completionGate
+        self.ledger = configuration.autonomy?.ledger ?? RunLedgerRecorder(sessionID: sessionID, store: store)
+    }
+
+    /// The run ledger, for the stop check's readers and tests.
+    public func ledgerSnapshot() async -> RunLedger {
+        await ledger.snapshot()
     }
 
     private func computeFallbackModel(for current: String) async -> String? {
@@ -379,6 +406,14 @@ public actor AgentOrchestrator {
         usageLedger.record(usage)
         unsavedUsage.record(usage)
         callUsageObserver?(usage)
+        runTokens += (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
+        if let modelID = usage.modelID, let pricing = configuration.autonomy?.pricing(modelID) {
+            var single = SessionUsageLedger()
+            single.record(usage)
+            if let cost = single.estimatedCost(pricing: { _ in pricing }) {
+                runCost = (runCost ?? 0) + cost
+            }
+        }
     }
 
     /// Adds the calls made since the last save to the session's ledger in
@@ -500,6 +535,11 @@ public actor AgentOrchestrator {
             openedAt: promptEvent.timestamp
         )
         try await store.setStatus(id: sessionID, status: .running)
+        // A message from the reader is a new task: a new ledger.
+        await ledger.begin(stepAllowance: configuration.stepLimit, at: autonomyNow)
+        runTokens = 0
+        runCost = nil
+        await noteGoalTurn()
         let task = Task { [weak self] in
             guard let self else { return }
             await self.runLoop()
@@ -589,6 +629,31 @@ public actor AgentOrchestrator {
         guard !conversation.isEmpty else {
             throw OrchestratorError.nothingToResume
         }
+        // The same task carries on: the ledger with it, read back from the
+        // journal after a relaunch. Keep going grants another block of steps
+        // and budget, and clears the run's count of turns without progress.
+        await ledger.resumeRun(stepAllowance: configuration.stepLimit, at: autonomyNow)
+        // The run's spend so far, as the ledger kept it: this orchestrator may
+        // be new (a relaunch, a model switch), and its own counters start at
+        // zero.
+        let carried = await ledger.snapshot().usage
+        runTokens = carried.tokens ?? 0
+        runCost = carried.costUSD
+        if note.reason == .keepGoing {
+            let block = configuration.stepLimit
+            await ledger.update { ledger in
+                ledger.stepAllowance = max(ledger.stepAllowance, ledger.steps) + block
+                ledger.budgetGrants += 1
+                ledger.turnsSinceToolCall = 0
+            }
+        } else if origin == .user {
+            // The reader carried the run on — Resume, Retry. Turns without a
+            // tool call before that are not "two tries in a row" any more: a
+            // goal they resumed after a stall must not stall again on the
+            // first reply.
+            await ledger.update { $0.turnsSinceToolCall = 0 }
+        }
+        await noteGoalTurn()
         conversation.append(.user(note.rendered))
         try await store.saveConversation(sessionID: sessionID, messages: conversation)
         _ = try await store.appendEvent(
@@ -808,6 +873,7 @@ public actor AgentOrchestrator {
             // observer must not capture the actor.
             let permissions = self.permissions
             let hooks = self.lifecycleHooks
+            let goals = configuration.autonomy?.goals
             // One writer, in the order the coordinator announced them. A task
             // per update raced its neighbours: a resolution could be written
             // before its request, and the waiting flag set after it was
@@ -824,7 +890,8 @@ public actor AgentOrchestrator {
                         sessionID: sessionID,
                         store: store,
                         permissions: permissions,
-                        hooks: hooks
+                        hooks: hooks,
+                        goals: goals
                     )
                 }
             }
@@ -837,9 +904,21 @@ public actor AgentOrchestrator {
         sessionID: CodeSessionID,
         store: CodeSessionStore,
         permissions: PermissionCoordinator,
-        hooks: (any AgentLifecycleHooks)?
+        hooks: (any AgentLifecycleHooks)?,
+        goals: GoalRuntime?
     ) async {
         switch update {
+        case let .parked(request, reminder):
+            // Nobody has answered. The call stays pending, bound to its
+            // digest; the reader is reminded, never answered for.
+            guard request.toolName != "hook", let hooks else { return }
+            let waited = reminder <= 1 ? "15 minutes" : reminder == 2 ? "an hour" : "4 hours"
+            let response = await hooks.notify(
+                sessionID: sessionID,
+                kind: .permissionPrompt,
+                message: "Juno has waited \(waited) for your permission: \(request.summary)"
+            )
+            await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
         case let .requested(request):
             _ = try? await store.appendEvent(
                 sessionID: sessionID,
@@ -848,6 +927,11 @@ public actor AgentOrchestrator {
             _ = try? await store.updateSession(id: sessionID) { session in
                 session.hasPendingApproval = true
                 session.status = .waitingForApproval
+            }
+            // A goal waits on the reader while they decide (§2.2), and says
+            // what for.
+            if request.toolName != "hook" {
+                await goals?.markWaitingOnApproval(request.summary)
             }
             // A `Notification` hook is how a reader who has walked away hears
             // that the run is waiting on them. A hook's own approval is left
@@ -886,6 +970,9 @@ public actor AgentOrchestrator {
                     session.status = .running
                 }
             }
+            if !stillPending {
+                await goals?.clearNeedsYou(ifReasonHasPrefix: GoalRuntime.approvalWaitPrefix)
+            }
         }
     }
 
@@ -897,14 +984,18 @@ public actor AgentOrchestrator {
         var lastAssistantText = ""
         var testsPassed: Bool?
         var stopHookContinuations = 0
-        // The stop check's continuations this run, in order, and how many of
-        // the turns they started in a row ended without a tool call.
-        var gateContinuations: [GateReason] = []
-        var turnsSinceToolCall = 0
+        // Whether the turn now running was started by a stop-check
+        // continuation, so a reply without a tool call counts against it.
         var awaitingContinuationTurn = false
         // Whether this step already folded the history after the window
         // overflowed; a second overflow in a row is a failure.
         var overflowRecoveryUsed = false
+        // Whether the last reply was cut off and resumed once already: a
+        // second cut in a row surfaces the error.
+        var outputLimitResumed = false
+        // Set when the run has reached its step limit or a budget: the next
+        // turn is the tools-off wrap-up, and the run ends after it.
+        var wrapUp: WrapUp?
         hookHaltReason = nil
         toolEndedRun = false
 
@@ -912,31 +1003,24 @@ public actor AgentOrchestrator {
             runTask = nil
         }
 
-        var iteration = 0
         while true {
-            iteration += 1
             // The last step's calls, and any summary since, reach the store's
             // ledger before the next step begins.
             await saveUsage()
-            if iteration > configuration.maximumIterations {
+            if Task.isCancelled {
                 await finish(
-                    status: .failed,
-                    summary: "Stopped after \(configuration.maximumIterations) iterations.",
-                    filesChanged: filesChanged.count,
+                    endReason: .stopped,
+                    summary: "Stopped by the user.",
                     testsPassed: testsPassed,
                     startedAt: startedAt
                 )
                 return
             }
-            if Task.isCancelled {
-                await finish(
-                    status: .cancelled,
-                    summary: "Stopped by the user.",
-                    filesChanged: filesChanged.count,
-                    testsPassed: testsPassed,
-                    startedAt: startedAt
-                )
-                return
+            // Soft limits: the step limit and the budgets end in a wrap-up
+            // turn and a Keep going, never in a failed run (§1.6).
+            if wrapUp == nil, let reached = await limitReached() {
+                wrapUp = reached
+                await announceWrapUp(reached)
             }
 
             // A correction accepted before the first provider request belongs
@@ -1007,6 +1091,12 @@ public actor AgentOrchestrator {
                     sessionID: sessionID,
                     systemPrompt: configuration.systemPrompt,
                     messages: conversation,
+                    // The wrap-up turn keeps the tools declared: a history
+                    // holding tool calls is refused without their definitions
+                    // (Anthropic answers 400), and the declarations are part
+                    // of the cached prefix. Its tools are off all the same:
+                    // the note says so, and any call it makes is dropped
+                    // below without running.
                     tools: toolDescriptors,
                     modelID: activeModelID,
                     reasoningEffort: activeReasoningEffort
@@ -1117,9 +1207,8 @@ public actor AgentOrchestrator {
                         )
                         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                         await finish(
-                            status: .failed,
+                            endReason: .error,
                             summary: message,
-                            filesChanged: filesChanged.count,
                             testsPassed: testsPassed,
                             startedAt: startedAt
                         )
@@ -1208,9 +1297,8 @@ public actor AgentOrchestrator {
                     )
                     try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                     await finish(
-                        status: .failed,
+                        endReason: .error,
                         summary: failure.sentence,
-                        filesChanged: filesChanged.count,
                         testsPassed: testsPassed,
                         startedAt: startedAt
                     )
@@ -1224,6 +1312,7 @@ public actor AgentOrchestrator {
             if Task.isCancelled { continue }
             consumeText(thinkingFilter.finish())
             modelTurnsSinceCompaction += 1
+            await ledger.update { $0.steps += 1 }
             // Images the model has now seen stay exactly as they were sent:
             // rewriting them here would change the prefix of every later
             // request. They become text at compaction, or past the image
@@ -1276,9 +1365,8 @@ public actor AgentOrchestrator {
                     )
                 )
                 await finish(
-                    status: .failed,
+                    endReason: .error,
                     summary: "The conversation no longer fits the model's context window. Compact it or start a new session.",
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
                     startedAt: startedAt
                 )
@@ -1302,11 +1390,25 @@ public actor AgentOrchestrator {
                     )
                 )
                 await finish(
-                    status: .failed,
+                    endReason: .error,
                     summary: "The model declined to continue. Rephrase the request, or rewind to before it.",
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
                     startedAt: startedAt
+                )
+                return
+            }
+
+            // The wrap-up turn was the last: whatever it said is the report.
+            // Any call it tried is dropped unrun — it never joined the
+            // history, which keeps only the narrative — and the run ends.
+            if let ending = wrapUp {
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                await finish(
+                    endReason: ending.reason,
+                    summary: lastAssistantText.isEmpty ? ending.words : lastAssistantText,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt,
+                    wrapUp: ending
                 )
                 return
             }
@@ -1322,6 +1424,21 @@ public actor AgentOrchestrator {
                 stopReason = .toolUse
             }
 
+            // Cut off at the output limit, or a stream that ended with no
+            // reason: resumed once on its own. A call it was making is
+            // dropped, never run half-written, and the note says so.
+            if stopReason == .maxTokens || stopReason == nil, !outputLimitResumed {
+                outputLimitResumed = true
+                await continueRun(
+                    with: RuntimeContinuation.outputLimit(droppedToolCall: !toolCalls.isEmpty),
+                    origin: .gate,
+                    caption: stopReason == .maxTokens
+                        ? "the reply reached the output limit"
+                        : "the reply stopped without finishing"
+                )
+                continue
+            }
+
             if stopReason == .maxTokens {
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 _ = try? await store.appendEvent(
@@ -1334,9 +1451,8 @@ public actor AgentOrchestrator {
                     )
                 )
                 await finish(
-                    status: .failed,
+                    endReason: .error,
                     summary: "The model reached its output limit before finishing. Continue to resume.",
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
                     startedAt: startedAt
                 )
@@ -1358,9 +1474,8 @@ public actor AgentOrchestrator {
                     )
                 )
                 await finish(
-                    status: .failed,
+                    endReason: .error,
                     summary: "The model stream ended unexpectedly. Continue to retry.",
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
                     startedAt: startedAt
                 )
@@ -1380,9 +1495,8 @@ public actor AgentOrchestrator {
                     )
                 )
                 await finish(
-                    status: .failed,
+                    endReason: .error,
                     summary: "The model returned an incomplete tool request. Continue to retry.",
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
                     startedAt: startedAt
                 )
@@ -1446,40 +1560,37 @@ public actor AgentOrchestrator {
                 // and the gate can only keep the agent working inside what is
                 // already allowed.
                 if awaitingContinuationTurn {
-                    turnsSinceToolCall += 1
+                    await ledger.update { $0.turnsSinceToolCall += 1 }
                 }
-                if case let .continueWith(reason, detail) = await completionGate.evaluate(
-                    CompletionGateContext(
-                        sessionID: sessionID,
-                        steps: iteration,
-                        filesChanged: filesChanged,
-                        testsPassed: testsPassed,
-                        lastAssistantText: lastAssistantText,
-                        continuations: gateContinuations,
-                        turnsSinceToolCall: turnsSinceToolCall
-                    )
-                ), !Task.isCancelled, gateContinuations.count < Self.maximumGateContinuations {
-                    gateContinuations.append(reason)
+                outputLimitResumed = false
+                let ending: (reason: RunEndReason, detail: String?)
+                switch await endOfTurn(
+                    lastAssistantText: lastAssistantText,
+                    testsPassed: testsPassed,
+                    filesChanged: filesChanged
+                ) {
+                case .keepWorking:
                     awaitingContinuationTurn = true
-                    await continueRun(
-                        with: RuntimeNote(reason: .gate(reason), text: detail),
-                        origin: .gate
-                    )
                     continue
+                case let .wrapUp(reached):
+                    wrapUp = reached
+                    await announceWrapUp(reached)
+                    continue
+                case let .finish(reason, detail):
+                    ending = (reason, detail)
                 }
-                // Finishing. `runCheck`, `runReview` and `wait` need the
-                // runners Lanes A and B add; until they do, the run ends as the
-                // default gate would end it.
-                //
-                // A stop hook may send it back with a
+                // Finishing. A stop hook may still send it back with a
                 // reason, which reaches the model the way Claude Code phrases
                 // it, as the next thing to act on. It is a user-role turn the
                 // reader did not write, and marked as one: compaction must
-                // never quote it as the reader's latest message.
-                if let reason = await stopHookFeedback(
-                    lastMessage: lastAssistantText,
-                    continuations: stopHookContinuations
-                ) {
+                // never quote it as the reader's latest message. Its
+                // continuations are counted apart from the stop check's.
+                if ending.reason != .stopped, ending.reason != .needsYou,
+                   let reason = await stopHookFeedback(
+                       lastMessage: lastAssistantText,
+                       continuations: stopHookContinuations
+                   )
+                {
                     stopHookContinuations += 1
                     conversation.append(.user(AgentHookContext.stopFeedback(reason)))
                     try? await store.saveConversation(sessionID: sessionID, messages: conversation)
@@ -1487,11 +1598,11 @@ public actor AgentOrchestrator {
                 }
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 await finish(
-                    status: .completed,
+                    endReason: ending.reason,
                     summary: lastAssistantText.isEmpty ? "Run completed." : lastAssistantText,
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
-                    startedAt: startedAt
+                    startedAt: startedAt,
+                    detail: ending.detail
                 )
                 return
             }
@@ -1553,6 +1664,12 @@ public actor AgentOrchestrator {
             )
 
             for execution in executionResults {
+                // The ledger takes in what the call did, in call order, so
+                // evidence is stamped against the edits made before it.
+                await ledger.absorb(execution.sideEffects)
+                let toolName = execution.toolName
+                let succeeded = !execution.isError
+                await ledger.update { $0.recordToolCall(named: toolName, succeeded: succeeded) }
                 for sideEffect in execution.sideEffects {
                     if case let .fileChanged(change) = sideEffect {
                         filesChanged.insert(change.path.value)
@@ -1610,8 +1727,11 @@ public actor AgentOrchestrator {
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
             // The turn made a tool call: whatever continuation started it made
             // progress.
-            turnsSinceToolCall = 0
+            await ledger.update { $0.turnsSinceToolCall = 0 }
             awaitingContinuationTurn = false
+            outputLimitResumed = false
+            await syncRunUsage()
+            await ledger.persist()
             await toolBatchFinished(
                 calls: scheduledCalls.map { (id: $0.id, name: $0.name) },
                 results: executionResults
@@ -1620,11 +1740,27 @@ public actor AgentOrchestrator {
             // call has its answer. The hook's own row already says why.
             if let halt = hookHaltReason {
                 await finish(
-                    status: .completed,
+                    endReason: .stopped,
                     summary: "Stopped by a hook: \(halt)",
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
-                    startedAt: startedAt
+                    startedAt: startedAt,
+                    detail: "Stopped by a hook",
+                    status: .completed
+                )
+                return
+            }
+            // The agent said the goal is blocked (`update_goal`): the run ends
+            // blocked, with its reason, and the reader is told.
+            if let blocked = executionResults.lazy.flatMap(\.sideEffects).compactMap({ effect -> GoalStatusEvent? in
+                if case let .goalStatus(event) = effect, event.status == .needsYou { return event }
+                return nil
+            }).first {
+                await finish(
+                    endReason: .blocked,
+                    summary: blocked.reason ?? "The goal is blocked.",
+                    testsPassed: testsPassed,
+                    startedAt: startedAt,
+                    detail: blocked.reason.map { RunEndWords.firstLine($0, limit: 140) }
                 )
                 return
             }
@@ -1632,34 +1768,40 @@ public actor AgentOrchestrator {
             // and saved, and the next step belongs to a new turn.
             if let ending = executionResults.lazy.compactMap(\.endsRun).first {
                 await finish(
-                    status: .completed,
+                    endReason: .doneUnchecked,
                     summary: ending,
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
-                    startedAt: startedAt
+                    startedAt: startedAt,
+                    detail: nil
                 )
                 return
             }
+            // The step-based goal an earlier build kept: its pause or block is
+            // an execution boundary. A blocked goal no longer ends as
+            // "cancelled", which read as idle and told nobody.
             if let terminalGoalLifecycle {
-                let status: SessionStatus =
-                    terminalGoalLifecycle == .completed ? .completed : .cancelled
+                let reason: RunEndReason
                 let summary: String
                 switch terminalGoalLifecycle {
                 case .active:
+                    reason = .doneUnchecked
                     summary = "Run completed."
                 case .paused:
+                    reason = .stopped
                     summary = "Goal paused."
                 case .blocked:
+                    reason = .blocked
                     summary = "Goal blocked."
                 case .completed:
+                    reason = .doneChecked
                     summary = "Goal completed."
                 }
                 await finish(
-                    status: status,
+                    endReason: reason,
                     summary: summary,
-                    filesChanged: filesChanged.count,
                     testsPassed: testsPassed,
-                    startedAt: startedAt
+                    startedAt: startedAt,
+                    detail: reason == .stopped ? "Goal paused" : nil
                 )
                 return
             }
@@ -1733,7 +1875,13 @@ public actor AgentOrchestrator {
               let last = conversation.last,
               !last.isAssistantSide
         else { return }
-        let changed = SessionState.changedSections(await provider(), since: conversation)
+        let current = await provider()
+        var changed = SessionState.changedSections(current, since: conversation)
+        if !forcedStateSections.isEmpty {
+            let named = Set(changed.map(\.name))
+            changed += current.filter { forcedStateSections.contains($0.name) && !named.contains($0.name) }
+            forcedStateSections = []
+        }
         guard let block = SessionState.render(changed) else { return }
         conversation.append(.user(block))
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
@@ -2127,6 +2275,10 @@ public actor AgentOrchestrator {
         // the model has already answered become text. Any it has not seen
         // yet stay for the request that follows.
         conversation = ImageRetention.redactingAnswered(outcome.result.messages)
+        // Compaction rewrote the history the goal and the checks were told
+        // in: both go again, whole, with the next request (the Codex #19910
+        // regression, where a goal was lost after a mid-turn compaction).
+        forcedStateSections = ["goal", "verify"]
         modelTurnsSinceCompaction = 0
         // The next request will report a new prompt size. Keeping the old
         // number visible would make the UI claim the compacted request is still
@@ -2185,7 +2337,10 @@ public actor AgentOrchestrator {
     /// Sends the model back to work inside the current run: the note joins
     /// the history as runtime text and a `runContinued` event records why, so
     /// the thread can say it quietly ("Kept going: 2 todos were open").
-    private func continueRun(with note: RuntimeNote, origin: TurnOrigin) async {
+    ///
+    /// - Parameter caption: the fact for the thread's caption; the note's
+    ///   first line when nil.
+    private func continueRun(with note: RuntimeNote, origin: TurnOrigin, caption: String? = nil) async {
         conversation.append(.user(note.rendered))
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
         _ = try? await store.appendEvent(
@@ -2193,12 +2348,262 @@ public actor AgentOrchestrator {
             payload: .runContinued(
                 RunContinuedEvent(
                     reason: note.reason,
-                    detail: firstLine(of: note.text),
+                    detail: caption.map { firstLine(of: $0) } ?? firstLine(of: note.text),
                     revision: note.revision,
                     origin: origin
                 )
             )
         )
+    }
+
+    // MARK: - The autonomous loop
+
+    /// A run that reached its step limit or a budget: one tools-off wrap-up
+    /// turn, then it ends with `reason`.
+    struct WrapUp: Sendable {
+        let reason: RunEndReason
+        /// "the step limit (200 steps)", "the 60-minute budget".
+        let words: String
+        let limit: BudgetLimit?
+        let budget: Budget?
+        let scope: BudgetScope?
+    }
+
+    /// What the end of a turn came to.
+    private enum EndOfTurn {
+        /// The stop check sent the agent back; the note is in the history.
+        case keepWorking
+        /// A budget ran out before the continuation could start.
+        case wrapUp(WrapUp)
+        case finish(RunEndReason, detail: String?)
+    }
+
+    /// What time the loop's budgets read: the injected clock when there is
+    /// one.
+    private var autonomyNow: Date {
+        configuration.autonomy?.clock() ?? Date()
+    }
+
+    /// The step limit or a budget this run has reached, or nil.
+    private func limitReached() async -> WrapUp? {
+        let snapshot = await ledger.snapshot()
+        if snapshot.steps >= max(1, snapshot.stepAllowance - 1) {
+            return WrapUp(
+                reason: .stepLimit,
+                words: "the step limit (\(snapshot.stepAllowance) steps)",
+                limit: nil,
+                budget: nil,
+                scope: nil
+            )
+        }
+        return await budgetReached()
+    }
+
+    /// A goal's budget while one is active, the run's otherwise.
+    private func budgetReached() async -> WrapUp? {
+        guard let autonomy = configuration.autonomy else { return nil }
+        if let goals = autonomy.goals, let goal = await goals.currentGoal(), goal.isActive {
+            guard let reached = await goals.budgetReached() else { return nil }
+            return WrapUp(
+                reason: .budget,
+                words: "the goal's \(RunEndWords.budgetWords(reached.limit, reached.budget)) budget",
+                limit: reached.limit,
+                budget: reached.budget,
+                scope: .goal
+            )
+        }
+        await syncRunUsage()
+        let snapshot = await ledger.snapshot()
+        let budget = autonomy.settings.runBudget
+        guard let limit = snapshot.budgetReached(budget, at: autonomy.clock()) else { return nil }
+        return WrapUp(
+            reason: .budget,
+            words: "the run's \(RunEndWords.budgetWords(limit, budget)) budget",
+            limit: limit,
+            budget: budget,
+            scope: .run
+        )
+    }
+
+    /// Brings the ledger's spend up to the calls recorded so far.
+    private func syncRunUsage() async {
+        let tokens = runTokens
+        let cost = runCost
+        await ledger.update { ledger in
+            ledger.usage.tokens = tokens
+            ledger.usage.costUSD = cost
+            ledger.usage.turns = ledger.steps
+        }
+    }
+
+    /// Tells the model this is its last turn, and the transcript why.
+    private func announceWrapUp(_ wrapUp: WrapUp) async {
+        if wrapUp.reason == .budget, let limit = wrapUp.limit, let budget = wrapUp.budget {
+            let snapshot = await ledger.snapshot()
+            var goalID: String?
+            var usage = snapshot.usage
+            usage.minutes = snapshot.minutes(at: configuration.autonomy?.clock() ?? Date())
+            if wrapUp.scope == .goal, let goal = await configuration.autonomy?.goals?.currentGoal() {
+                goalID = goal.id
+                usage = goal.usage
+            }
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .budgetReached(
+                    BudgetReachedEvent(scope: wrapUp.scope ?? .run, limit: limit, budget: budget, usage: usage, goalID: goalID)
+                )
+            )
+        }
+        await continueRun(
+            with: RuntimeContinuation.wrapUp(wrapUp.reason, limitWords: wrapUp.words),
+            origin: .gate,
+            caption: "Wrapping up: reached \(wrapUp.words)"
+        )
+    }
+
+    /// One more turn toward an active goal.
+    private func noteGoalTurn() async {
+        guard let goals = configuration.autonomy?.goals,
+              let goal = await goals.currentGoal(), goal.isActive
+        else { return }
+        await goals.noteTurn()
+    }
+
+    /// What is around the end of this turn that bears on the stop check.
+    private func gateSituation() async -> GateSituation {
+        let autonomy = configuration.autonomy
+        var background: [String] = []
+        if let autonomy {
+            background = await autonomy.backgroundWork()
+        }
+        return GateSituation(
+            behavior: autonomy?.behavior ?? .code,
+            pendingApproval: !(await permissions.pendingApprovals.isEmpty),
+            pendingQuestion: false,
+            pendingSteer: hasPendingSteer,
+            stoppedByReader: Task.isCancelled,
+            planLimitReached: false,
+            backgroundWork: background,
+            reviewerAvailable: autonomy?.reviewRunner != nil,
+            checkRunnerAvailable: autonomy?.checkRunner != nil,
+            diffReadable: registry.tool(named: "git_diff") != nil && (autonomy?.diffAvailable ?? true)
+        )
+    }
+
+    /// The most stop-check continuations one run may have: twelve, or with an
+    /// active goal its turn budget, which governs instead.
+    private func continuationBackstop() async -> Int {
+        guard let goal = await configuration.autonomy?.goals?.currentGoal(), goal.isActive else {
+            return Self.maximumGateContinuations
+        }
+        return min(max(Self.maximumGateContinuations, goal.budget.turns ?? 200), 500)
+    }
+
+    /// Asks the stop check what the end of this turn means, runs any checks
+    /// or review it asks the runtime to run, and asks again — a few times at
+    /// most — until it says finish, wait or keep working.
+    private func endOfTurn(
+        lastAssistantText: String,
+        testsPassed: Bool?,
+        filesChanged: Set<String>
+    ) async -> EndOfTurn {
+        for _ in 0..<6 {
+            let snapshot = await ledger.snapshot()
+            let situation = await gateSituation()
+            let decision = await completionGate.evaluate(
+                CompletionGateContext(
+                    sessionID: sessionID,
+                    steps: snapshot.steps,
+                    filesChanged: snapshot.filesChanged.union(filesChanged),
+                    testsPassed: testsPassed,
+                    lastAssistantText: lastAssistantText,
+                    continuations: snapshot.continuations.map(\.reason),
+                    turnsSinceToolCall: snapshot.turnsSinceToolCall,
+                    ledger: snapshot,
+                    situation: situation,
+                    recentMessages: Array(conversation.suffix(60))
+                )
+            )
+            if Task.isCancelled { return .finish(.stopped, detail: nil) }
+            switch decision {
+            case let .finish(reason):
+                return .finish(reason, detail: nil)
+            case .wait:
+                let running = situation.backgroundWork
+                return .finish(.waitingOnBackground, detail: running.first.map { "Waiting for `\($0)` to finish" })
+            case let .continueWith(reason, detail):
+                guard snapshot.continuations.count < (await continuationBackstop()) else {
+                    return .finish(snapshot.verdict, detail: nil)
+                }
+                if let reached = await budgetReached() {
+                    return .wrapUp(reached)
+                }
+                let note: RuntimeNote
+                if reason == .goalNotMet, let goal = await configuration.autonomy?.goals?.currentGoal() {
+                    note = RuntimeContinuation.goalContinuation(
+                        goal: goal,
+                        reason: detail,
+                        turn: goal.usage.turns + 1,
+                        revision: snapshot.workspaceRevision
+                    )
+                } else {
+                    note = RuntimeContinuation.note(for: reason, detail: detail, revision: snapshot.workspaceRevision)
+                }
+                let signature = reason == .checksFailing
+                    ? snapshot.latestFreshPerCheck.last(where: { !$0.passed }).map(CompletionGate.signature(of:))
+                    : nil
+                let record = ContinuationRecord(
+                    reason: reason,
+                    detail: detail,
+                    revision: snapshot.workspaceRevision,
+                    turnIndex: snapshot.steps,
+                    signature: signature
+                )
+                await ledger.update { $0.continuations.append(record) }
+                await noteGoalTurn()
+                await continueRun(with: note, origin: reason == .goalNotMet ? .goal : .gate, caption: detail)
+                await ledger.persist()
+                return .keepWorking
+            case let .runCheck(ids):
+                // Never twice for the same state: a check that was refused or
+                // recorded nothing leaves the gate to ask the model instead.
+                let revision = snapshot.workspaceRevision
+                await ledger.update { $0.autoCheckRevisions.append(revision) }
+                if let runner = configuration.autonomy?.checkRunner {
+                    for record in await runner.runChecks(ids: ids, sessionID: sessionID) {
+                        await ledger.recordVerification(record)
+                    }
+                }
+                continue
+            case .runReview:
+                if let reviewer = configuration.autonomy?.reviewRunner {
+                    let goal = await configuration.autonomy?.goals?.currentGoal()
+                    if let record = await reviewer.review(sessionID: sessionID, ledger: snapshot, goal: goal) {
+                        await ledger.recordReview(record)
+                        if goal?.isActive == true {
+                            await configuration.autonomy?.goals?.noteReviewed(atRevision: snapshot.workspaceRevision)
+                        }
+                    } else {
+                        await ledger.update { $0.reviewRounds += 1 }
+                    }
+                }
+                continue
+            }
+        }
+        return .finish(await ledger.snapshot().verdict, detail: nil)
+    }
+
+    /// The status a run's end leaves the session in.
+    static func status(for reason: RunEndReason) -> SessionStatus {
+        switch reason {
+        case .doneChecked, .doneUnchecked, .checksFailing, .blocked, .needsYou,
+             .stepLimit, .budget, .stalled, .waitingOnBackground:
+            .completed
+        case .stopped:
+            .cancelled
+        case .interrupted, .error:
+            .failed
+        }
     }
 
     /// Tells `PostToolBatch` hooks the batch is answered. A hook's
@@ -2256,12 +2661,21 @@ public actor AgentOrchestrator {
         return response.blockReason
     }
 
+    /// Ends the run with exactly one reason (§1.3): the report and the
+    /// divider's words from the ledger, the journal closed, the goal told.
+    ///
+    /// - Parameters:
+    ///   - detail: the divider's words when the caller knows them better
+    ///     than the ledger does: a blocked reason, a hook's stop.
+    ///   - status: overrides the status the reason implies.
     private func finish(
-        status: SessionStatus,
+        endReason: RunEndReason,
         summary: String,
-        filesChanged: Int,
         testsPassed: Bool?,
-        startedAt: Date
+        startedAt: Date,
+        detail: String? = nil,
+        wrapUp: WrapUp? = nil,
+        status: SessionStatus? = nil
     ) async {
         // Images stay in the in-memory history across runs, as sent, so the
         // next prompt in this session reads the same prefix from the cache;
@@ -2270,17 +2684,62 @@ public actor AgentOrchestrator {
         await saveUsage()
         emitLiveText("", force: true)
         emitLiveReasoning("", force: true)
+        await syncRunUsage()
+        let snapshot = await ledger.snapshot()
+        let autonomy = configuration.autonomy
+        let recipe = await autonomy?.recipe()
+        let duration = Date().timeIntervalSince(startedAt)
+        let waitingOn: [String]
+        if let autonomy, endReason == .waitingOnBackground {
+            waitingOn = await autonomy.backgroundWork()
+        } else {
+            waitingOn = []
+        }
+        let endDetail = detail ?? RunEndWords.detail(
+            for: endReason,
+            ledger: snapshot,
+            recipe: recipe,
+            stepLimit: snapshot.stepAllowance,
+            budget: wrapUp.flatMap { wrapUp in
+                guard let limit = wrapUp.limit, let budget = wrapUp.budget else { return nil }
+                return (limit, budget)
+            },
+            waitingOn: waitingOn,
+            errorSummary: endReason == .error ? summary : nil
+        )
+        await ledger.end(endReason, at: autonomyNow)
+        if wrapUp?.scope == .goal, let limit = wrapUp?.limit {
+            await autonomy?.goals?.markBudgetReached(limit: limit)
+        }
+        await autonomy?.goals?.runEnded(endReason, detail: endDetail)
+        // The report is the run's record for every surface. Kept to runs with
+        // the autonomous loop: a sub-agent's or an Ask turn's would only
+        // repeat its reply.
+        if let autonomy {
+            let report = await autonomy.reportBuilder.report(
+                endReason: endReason,
+                ledger: snapshot,
+                recipe: recipe,
+                summary: summary,
+                endDetail: endDetail,
+                durationSeconds: duration
+            )
+            _ = try? await store.appendEvent(sessionID: sessionID, payload: .runOutcome(report))
+        }
         _ = try? await store.appendEvent(
             sessionID: sessionID,
             payload: .runCompleted(
                 RunCompletedEvent(
                     summary: firstLine(of: summary, maximumCharacters: 500),
-                    filesChanged: filesChanged,
+                    filesChanged: max(snapshot.filesChanged.count, 0),
                     testsPassed: testsPassed,
-                    durationSeconds: Date().timeIntervalSince(startedAt)
+                    durationSeconds: duration,
+                    endReason: endReason,
+                    endDetail: endDetail
                 )
             )
         )
+        let status = status ?? Self.status(for: endReason)
         try? await store.setStatus(id: sessionID, status: status)
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
         await lifecycleHooks?.sessionStopped(sessionID: sessionID, status: status)

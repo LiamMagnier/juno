@@ -43,6 +43,14 @@ public struct CompletionGateContext: Sendable {
     /// Gate continuations in a row, ending with the one that just finished,
     /// that made no tool call.
     public var turnsSinceToolCall: Int
+    /// The run ledger: every edit, check, UI check, review and todo the run's
+    /// tools recorded. Nil only for a caller that keeps none.
+    public var ledger: RunLedger?
+    /// What is waiting on the reader, the mode, background work and which
+    /// runners exist.
+    public var situation: GateSituation
+    /// The end of the conversation, for a goal judge.
+    public var recentMessages: [ModelMessage]
 
     public init(
         sessionID: CodeSessionID,
@@ -51,7 +59,10 @@ public struct CompletionGateContext: Sendable {
         testsPassed: Bool?,
         lastAssistantText: String,
         continuations: [GateReason],
-        turnsSinceToolCall: Int
+        turnsSinceToolCall: Int,
+        ledger: RunLedger? = nil,
+        situation: GateSituation = GateSituation(),
+        recentMessages: [ModelMessage] = []
     ) {
         self.sessionID = sessionID
         self.steps = steps
@@ -60,15 +71,19 @@ public struct CompletionGateContext: Sendable {
         self.lastAssistantText = lastAssistantText
         self.continuations = continuations
         self.turnsSinceToolCall = turnsSinceToolCall
+        self.ledger = ledger
+        self.situation = situation
+        self.recentMessages = recentMessages
     }
 
     /// The verdict from what this context knows, with nothing enforced: what
     /// a run that is allowed to end ends as.
     public var reportedVerdict: RunEndReason {
+        if let ledger { return ledger.verdict }
         switch testsPassed {
-        case true?: .doneChecked
-        case false?: .checksFailing
-        case nil: .doneUnchecked
+        case true?: return .doneChecked
+        case false?: return .checksFailing
+        case nil: return .doneUnchecked
         }
     }
 }
@@ -89,5 +104,78 @@ public struct ReportOnlyCompletionGate: CompletionGating {
 
     public func evaluate(_ context: CompletionGateContext) async -> GateDecision {
         .finish(context.reportedVerdict)
+    }
+}
+
+// MARK: - Runners the stop check can call on
+
+/// Runs the project's checks for the stop check (`runCheck`). Lane B's
+/// `run_checks` provides the real one. It must authorize every command through
+/// `PermissionCoordinator` like any other: a gate that wants a check run never
+/// gets to skip an approval.
+public protocol GateCheckRunning: Sendable {
+    /// Runs the recipe checks with these ids and returns what ran, pass or
+    /// fail. A check that was refused or could not start returns nothing.
+    func runChecks(ids: [String], sessionID: CodeSessionID) async -> [VerificationRecord]
+}
+
+/// Runs the read-only reviewer sub-agent over the diff for the stop check
+/// (`runReview`, §1.9). Lane B provides the real one.
+public protocol GateReviewRunning: Sendable {
+    func review(sessionID: CodeSessionID, ledger: RunLedger, goal: GoalRun?) async -> ReviewRecord?
+}
+
+/// Everything the loop needs to run autonomously: the settings, the ledger
+/// shared with the recorders, the goal runtime and the runners. Nil in an
+/// orchestrator's configuration means none of it: the stop check alone
+/// decides, the step limit is still soft, and nothing is budgeted.
+public struct AutonomyConfiguration: Sendable {
+    public var settings: AutonomySettings
+    /// The session's behaviour. Only Code continues; Plan, Ask and Survey
+    /// promise that nothing runs, so the stop check only reports for them.
+    public var behavior: AgentBehavior
+    /// The session's ledger, which recorders write through too. Nil makes the
+    /// orchestrator keep its own.
+    public var ledger: RunLedgerRecorder?
+    public var goals: GoalRuntime?
+    public var recipe: @Sendable () async -> GateRecipe?
+    public var checkRunner: (any GateCheckRunning)?
+    public var reviewRunner: (any GateReviewRunning)?
+    public var reportBuilder: any RunReportBuilding
+    /// Background shells and sub-agents the run should wait on, in words.
+    public var backgroundWork: @Sendable () async -> [String]
+    /// A model's rates, for the run's cost.
+    public var pricing: @Sendable (String) -> CodeUsagePricing?
+    /// Whether the workspace is a Git repository, so the agent can read its
+    /// diff. The stop check asks for a diff read only where one is possible.
+    public var diffAvailable: Bool
+    public var clock: @Sendable () -> Date
+
+    public init(
+        settings: AutonomySettings = .standard,
+        behavior: AgentBehavior = .code,
+        ledger: RunLedgerRecorder? = nil,
+        goals: GoalRuntime? = nil,
+        recipe: @escaping @Sendable () async -> GateRecipe? = { nil },
+        checkRunner: (any GateCheckRunning)? = nil,
+        reviewRunner: (any GateReviewRunning)? = nil,
+        reportBuilder: any RunReportBuilding = LedgerRunReportBuilder(),
+        backgroundWork: @escaping @Sendable () async -> [String] = { [] },
+        pricing: @escaping @Sendable (String) -> CodeUsagePricing? = { _ in nil },
+        diffAvailable: Bool = true,
+        clock: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.settings = settings
+        self.behavior = behavior
+        self.ledger = ledger
+        self.goals = goals
+        self.recipe = recipe
+        self.checkRunner = checkRunner
+        self.reviewRunner = reviewRunner
+        self.reportBuilder = reportBuilder
+        self.backgroundWork = backgroundWork
+        self.pricing = pricing
+        self.diffAvailable = diffAvailable
+        self.clock = clock
     }
 }

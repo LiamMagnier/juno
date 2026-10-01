@@ -137,6 +137,11 @@ public final class SessionProjection {
     public private(set) var lastError: CodeExecutionError?
     /// The most recent verification verdict the transcript reported.
     public private(set) var verificationOutcome: VerificationOutcome?
+    /// Why the most recent run ended (CODE_AGENT_SPEC §1.3), nil before the
+    /// first run or for a run recorded before end reasons existed.
+    public private(set) var lastRunEndReason: RunEndReason?
+    /// The stop check's continuations in the run now going, in order.
+    public private(set) var continuationsThisRun: [RuntimeNote.Reason] = []
 
     /// Files changed since the last user instruction — input to the honest
     /// completion evaluation.
@@ -162,6 +167,8 @@ public final class SessionProjection {
         narrativeGroups = []
         lastError = nil
         verificationOutcome = nil
+        lastRunEndReason = nil
+        continuationsThisRun = []
         filesChangedPaths = []
         lastTestRun = nil
         lastProposedToolName = ""
@@ -351,8 +358,10 @@ public final class SessionProjection {
             closeActiveGroup(status: .interrupted)
             executionState = .failed(error: lastError!)
 
-        case .runCompleted:
+        case let .runCompleted(run):
             closeActiveGroup(status: .completed)
+            lastRunEndReason = run.endReason
+            continuationsThisRun = []
             let evaluated = VerificationEngine.evaluateTaskOutcome(
                 goal: nil,
                 lastTestRun: lastTestRun,
@@ -364,10 +373,15 @@ public final class SessionProjection {
                 verificationOutcome = evaluated
             }
 
-        // The autonomous loop's records have rows of their own in the thread
-        // and change nothing here yet; Lane A folds them into the execution
-        // state when it lands (CODE_AGENT_SPEC §6.1).
-        case .runContinued, .runOutcome, .verificationRecorded, .uiVerificationRecorded,
+        case let .runContinued(continued):
+            continuationsThisRun.append(continued.reason)
+
+        case let .runOutcome(outcome):
+            lastRunEndReason = outcome.endReason
+
+        // The rest have rows of their own in the thread, or show in the goal
+        // row, and change nothing about the execution state.
+        case .verificationRecorded, .uiVerificationRecorded,
              .reviewCompleted, .goalSet, .goalEdited, .goalVerdict, .goalStatus, .checkInDue,
              .ciStatus, .budgetReached:
             break

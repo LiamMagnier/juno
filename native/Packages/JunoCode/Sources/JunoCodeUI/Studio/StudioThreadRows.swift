@@ -723,7 +723,7 @@ struct StudioDividerCaption: View {
     var body: some View {
         HStack(spacing: JunoSpace.cozy) {
             Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
-            Text(text)
+            Text(studioInline: text)
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.tertiary)
                 .fixedSize()
@@ -733,7 +733,8 @@ struct StudioDividerCaption: View {
     }
 }
 
-/// How a run ended: "Worked for 2m 14s · 3 files", and the way into review.
+/// How a run ended: "Worked for 2m 14s · Checked with `swift test`", the
+/// way into review, and Keep going when the run stopped at a soft limit.
 struct StudioRunSummary: View {
     let run: RunCompletedEvent
     let turn: StudioThreadItem.TurnTotals
@@ -742,10 +743,23 @@ struct StudioRunSummary: View {
     var changes: [TrackedChange] = []
     let openReview: () -> Void
     var openFile: (String) -> Void = { _ in }
+    /// Offered on the newest run that stopped at its step limit, a budget or
+    /// a stall: another block, with no new message.
+    var keepGoing: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             workedDivider
+            if let keepGoing, run.endReason?.offersKeepGoing == true {
+                HStack {
+                    Spacer()
+                    Button("Keep going", action: keepGoing)
+                        .buttonStyle(StudioSecondaryButtonStyle())
+                        .help("Give the run another block of steps and budget, with no new message")
+                        .accessibilityIdentifier("juno.code.transcript.keep-going")
+                    Spacer()
+                }
+            }
             if !turn.files.isEmpty {
                 StudioChangesCard(
                     fileCount: turn.files.count,
@@ -767,9 +781,21 @@ struct StudioRunSummary: View {
             HStack(spacing: JunoSpace.tight) {
                 Text("Worked for \(StudioFormat.duration(run.durationSeconds))")
                     .foregroundStyle(Studio.Ink.tertiary)
-                // Only a failure is worth restating here: a passing run
-                // already has its own row just above.
-                if run.testsPassed == false {
+                if let words = StudioRunEnd.words(for: run) {
+                    // Why the run ended, in words (§1.3): the ink says
+                    // whether it needs the reader, never a mark.
+                    Text("·").foregroundStyle(Studio.Ink.tertiary)
+                    Text(studioInline: words)
+                        .foregroundStyle(
+                            StudioRunEnd.tone(for: run.endReason) == .attention
+                                ? Studio.Ink.secondary
+                                : Studio.Ink.tertiary
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else if run.endReason == nil, run.testsPassed == false {
+                    // Before end reasons: only a failure is worth restating
+                    // here, since a passing run has its own row just above.
                     Text("·").foregroundStyle(Studio.Ink.tertiary)
                     Text("tests failed").foregroundStyle(Studio.Ink.danger)
                 }

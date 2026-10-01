@@ -27,10 +27,17 @@ struct StudioTodoCard: View {
                         mark(item.status)
                             .frame(width: 12, height: 12)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                        Text(item.status == .inProgress ? (item.activeForm ?? item.content) : item.content)
-                            .font(Studio.Font.label)
-                            .foregroundStyle(item.status == .completed ? Studio.Ink.tertiary : Studio.Ink.primary)
-                            .strikethrough(item.status == .completed, color: Studio.Ink.tertiary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.status == .inProgress ? (item.activeForm ?? item.content) : item.content)
+                                .font(Studio.Font.label)
+                                .foregroundStyle(Self.isDone(item.status) ? Studio.Ink.tertiary : Studio.Ink.primary)
+                                .strikethrough(Self.isDone(item.status), color: Studio.Ink.tertiary)
+                            if item.status == .blocked, let reason = item.reason, !reason.isEmpty {
+                                Text("Blocked: \(reason)")
+                                    .font(Studio.Font.meta)
+                                    .foregroundStyle(Studio.Ink.secondary)
+                            }
+                        }
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityValue(Self.accessibilityStatus(item.status))
@@ -53,7 +60,15 @@ struct StudioTodoCard: View {
             StudioSpinner(color: Studio.Ink.accent, lineWidth: 1.25).frame(width: 10, height: 10)
         case .pending:
             JunoIconView(.square, size: 12).foregroundStyle(Studio.Ink.tertiary)
+        case .blocked:
+            JunoIconView(.circleSlash, size: 12).foregroundStyle(Studio.Ink.secondary)
+        case .cancelled:
+            JunoIconView(.square, size: 12).foregroundStyle(Studio.Ink.tertiary)
         }
+    }
+
+    private static func isDone(_ status: TodoStatus) -> Bool {
+        status == .completed || status == .cancelled
     }
 
     private static func accessibilityStatus(_ status: TodoStatus) -> String {
@@ -61,6 +76,8 @@ struct StudioTodoCard: View {
         case .completed: "Done"
         case .inProgress: "In progress"
         case .pending: "To do"
+        case .blocked: "Blocked"
+        case .cancelled: "Cancelled"
         }
     }
 }

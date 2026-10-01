@@ -181,7 +181,8 @@ public struct StudioThreadView: View {
                 turn: turn,
                 changes: controller.changes.filter { turn.files.contains($0.path) },
                 openReview: { openReview(nil) },
-                openFile: { openReview($0) }
+                openFile: { openReview($0) },
+                keepGoing: isLastSummary(item) ? { Task { await controller.keepGoing() } } : nil
             )
         // The autonomous loop's rows; each view lives in its owning lane's file.
         case let .continued(_, event):
@@ -201,6 +202,13 @@ public struct StudioThreadView: View {
         case let .runReport(_, event):
             StudioRunReportRow(event: event)
         }
+    }
+
+    /// Keep going is offered on the newest run's divider only, and only
+    /// while nothing runs.
+    private func isLastSummary(_ item: StudioThreadItem) -> Bool {
+        guard !controller.session.status.isActive else { return false }
+        return items.last { if case .summary = $0 { return true } else { return false } }?.id == item.id
     }
 
     /// Retry is offered on the most recent failure only, and only while the

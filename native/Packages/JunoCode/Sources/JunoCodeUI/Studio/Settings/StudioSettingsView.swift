@@ -736,8 +736,10 @@ struct StudioAgentSettings: View {
         } header: {
             Text("Runs")
         } footer: {
-            Text("A step is one model turn and the tools it calls. Long refactors need a few hundred.")
+            Text("A step is one model turn and the tools it calls. Long refactors need a few hundred. At the limit Juno writes where it got to and offers Keep going.")
         }
+
+        StudioAutonomySettings(scope: scope, settings: settings)
 
         Section {
             StudioScopedToggle(

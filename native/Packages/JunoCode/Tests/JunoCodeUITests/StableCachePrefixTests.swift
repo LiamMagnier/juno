@@ -20,12 +20,30 @@ private final class PrefixRecordingModel: AgentModelClient, @unchecked Sendable 
         return received
     }
 
+    /// The goal judge's calls, which go to their own small model.
+    var judgeRequests: [ModelTurnRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return judged
+    }
+
+    private var judged: [ModelTurnRequest] = []
+
     func streamTurn(_ request: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
         lock.lock()
-        received.append(request)
-        let events = steps.isEmpty
-            ? [.textDelta("Done."), .turnCompleted(.endTurn)]
-            : steps.removeFirst()
+        let events: [ModelStreamEvent]
+        if request.modelID == "haiku" {
+            judged.append(request)
+            events = [
+                .textDelta("{\"verdict\": \"met\", \"reason\": \"The importer is planned.\", \"unmet_criteria\": []}"),
+                .turnCompleted(.endTurn),
+            ]
+        } else {
+            received.append(request)
+            events = steps.isEmpty
+                ? [.textDelta("Done."), .turnCompleted(.endTurn)]
+                : steps.removeFirst()
+        }
         lock.unlock()
         return AsyncThrowingStream { continuation in
             events.forEach { continuation.yield($0) }
@@ -68,25 +86,13 @@ final class StableCachePrefixTests: XCTestCase {
         store = CodeSessionStore(directoryURL: base.appendingPathComponent("sessions"))
     }
 
-    func testGoalUpdatesBetweenTurnsLeaveTheSystemPromptAndToolsByteIdentical() async throws {
+    /// Goal creation, a verdict and a budget change between turns: the system
+    /// prompt and the tool list stay byte for byte the same, and only the
+    /// `<goal>` section of `<session_state>` moves (CODE_AGENT_SPEC §1.7).
+    func testGoalCreationVerdictsAndBudgetChangesLeaveTheSystemPromptAndToolsByteIdentical() async throws {
         let model = PrefixRecordingModel([
-            [
-                .toolCallRequested(id: "goal-1", name: "update_goal", input: [
-                    "action": "create",
-                    "objective": "Ship the importer",
-                    "steps": ["Parse", "Verify"],
-                ]),
-                .turnCompleted(.toolUse),
-            ],
-            [.textDelta("Goal recorded."), .turnCompleted(.endTurn)],
-            [
-                .toolCallRequested(id: "goal-2", name: "update_goal", input: [
-                    "action": "add_step",
-                    "step_title": "Document",
-                ]),
-                .turnCompleted(.toolUse),
-            ],
-            [.textDelta("Step added."), .turnCompleted(.endTurn)],
+            [.textDelta("Planned the importer."), .turnCompleted(.endTurn)],
+            [.textDelta("Documented it."), .turnCompleted(.endTurn)],
         ])
         let session = try await store.createSession(
             workspaceID: context.record.id,
@@ -107,13 +113,21 @@ final class StableCachePrefixTests: XCTestCase {
         )
         await controller.attach()
 
+        // The first turn has no goal; one is created before the second.
+        try await send("Look at the importer", on: controller)
+        try await store.setGoal(GoalRun(objective: "Ship the importer", budget: Budget(minutes: 240, turns: 60)), for: session.id)
         try await send("Plan the importer", on: controller)
-        XCTAssertEqual(controller.session.goal?.objective, "Ship the importer")
-        try await send("Add documentation to the plan", on: controller)
-        XCTAssertEqual(controller.session.goal?.steps.count, 3)
+        let achieved = await store.currentGoalRun(for: session.id)
+        XCTAssertEqual(achieved?.status, .achieved, "the judge's verdict landed between turns")
+        // A budget change before the third.
+        try await store.updateCurrentGoal(for: session.id, record: .edited) { goal in
+            goal.budget = Budget(minutes: 480, turns: 120)
+        }
+        try await send("Add documentation", on: controller)
 
         let requests = model.requests
-        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(model.judgeRequests.count, 1)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let system = Data(requests[0].systemPrompt.utf8)
@@ -125,22 +139,28 @@ final class StableCachePrefixTests: XCTestCase {
         XCTAssertFalse(requests[0].systemPrompt.contains("Objective:"))
         XCTAssertFalse(requests[0].systemPrompt.contains("Date:"))
         XCTAssertTrue(requests[0].systemPrompt.contains("<session_state>"), "it says what the blocks are")
+        XCTAssertTrue(requests[0].systemPrompt.contains("How you work"), "the loop's workflow text is static")
+        XCTAssertTrue(requests[0].tools.contains { $0.name == "update_goal" })
         for (earlier, later) in zip(requests, requests.dropFirst()) {
             XCTAssertEqual(Array(later.messages.prefix(earlier.messages.count)), earlier.messages)
         }
 
-        let blocks = requests[3].messages.compactMap { message -> String? in
+        let blocks = requests[2].messages.compactMap { message -> String? in
             guard case let .user(text) = message, text.hasPrefix("<session_state") else { return nil }
             return text
         }
         XCTAssertEqual(blocks.count, 3)
         XCTAssertTrue(blocks[0].contains("<environment>\nDate: "))
         XCTAssertTrue(blocks[0].contains("No goal is set."))
+        XCTAssertTrue(blocks[0].contains("<verify>"))
+        XCTAssertTrue(blocks[0].contains("<autonomy>"))
         XCTAssertTrue(blocks[0].contains("No skills are enabled."))
         // Later blocks carry only the section that changed.
         XCTAssertTrue(blocks[1].contains("Objective: Ship the importer"))
         XCTAssertFalse(blocks[1].contains("<environment>"))
-        XCTAssertTrue(blocks[2].contains("Document"))
+        XCTAssertFalse(blocks[1].contains("<autonomy>"))
+        XCTAssertTrue(blocks[2].contains("Last check: met"))
+        XCTAssertTrue(blocks[2].contains("of 480 minutes"))
     }
 
     private func send(_ text: String, on controller: SessionController) async throws {
@@ -151,10 +171,7 @@ final class StableCachePrefixTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
         XCTAssertFalse(controller.isRunning, "the run should have finished")
-        // The goal reaches the controller through the store's observer.
-        for _ in 0..<200 {
-            if (try? await store.goal(for: controller.sessionID)) == controller.session.goal { break }
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        // The goal model follows the store through its events.
+        await controller.goal.refresh()
     }
 }

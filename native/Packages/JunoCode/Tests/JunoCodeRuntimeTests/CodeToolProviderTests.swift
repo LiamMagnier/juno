@@ -78,10 +78,22 @@ final class CodeToolProviderTests: XCTestCase {
 
     func testTheLaneProvidersStartEmpty() async throws {
         let lanes: [any CodeToolProvider] = [
-            GoalToolProvider(), VerificationToolProvider(), ScreenToolProvider(),
+            VerificationToolProvider(), ScreenToolProvider(),
             ShipToolProvider(), ExtensionToolProvider(),
         ]
         let tools = await ToolRegistry.providedTools(by: lanes, for: try context(.code))
         XCTAssertTrue(tools.isEmpty, "the seams commit adds no tool, so the tool list is unchanged")
+    }
+
+    /// Lane A's goal tools: read-only to the permission system, because they
+    /// change session state and never the workspace.
+    func testTheGoalProviderOffersTheThreeGoalTools() async throws {
+        let tools = await ToolRegistry.providedTools(by: [GoalToolProvider()], for: try context(.code))
+        XCTAssertEqual(tools.map(\.name), ["get_goal", "propose_goal", "update_goal"])
+        for tool in tools {
+            XCTAssertEqual(tool.assessRisk(input: ["action": "blocked"]), .read, tool.name)
+        }
+        let readOnly = await ToolRegistry.providedTools(by: [GoalToolProvider()], for: try context(.plan))
+        XCTAssertTrue(readOnly.isEmpty)
     }
 }

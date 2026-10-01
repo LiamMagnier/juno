@@ -404,6 +404,7 @@ public final class SessionController {
             String(settings.autoCompact),
             String(settings.compactThreshold),
             String(settings.modelFallback),
+            String(describing: settings.autonomy),
             Digests.sha256Hex(standingInstructions.joined(separator: "\u{1F}")),
             Digests.sha256Hex(settings.repositoryInstructions.joined(separator: "\u{1F}")),
         ].joined(separator: "|")
@@ -481,7 +482,7 @@ public final class SessionController {
     /// What this session's hooks remember across orchestrators: whether it
     /// has started, whether it has ended, whether anything has happened since.
     private let hookLedger = HookSessionLedger()
-    public private(set) var runStartedAt: Date?
+    public internal(set) var runStartedAt: Date?
     /// The assistant text accumulating in the turn that is streaming right now,
     /// and empty whenever nothing is streaming. Never persisted: the
     /// `assistantMessage` event is the record, and this is replaced by it.
@@ -510,7 +511,7 @@ public final class SessionController {
     /// contained workspace service; stale selections are ignored unless their
     /// literal reference is still present in the prompt.
     public private(set) var composerFileReferences: [WorkspacePath] = []
-    public private(set) var transientError: String?
+    public internal(set) var transientError: String?
 
     /// Images the reader has attached to the message they are composing.
     ///
@@ -597,6 +598,9 @@ public final class SessionController {
     public let reviewQueue = ReviewQueueModel()
     /// Slash commands and the sheets they open. Lane F.
     public let commands = CommandCenterModel()
+    /// The run ledger and goal runtime Code orchestrators are built with,
+    /// which outlive any one orchestrator. Lane A.
+    let autonomyState = SessionAutonomyState()
 
     private var storeObserver: UUID?
     /// The `attach()` under way, which a second caller waits for rather than
@@ -755,7 +759,7 @@ public final class SessionController {
     /// the model and effort are sent with every turn — so changing one has to
     /// replace the orchestrator. Conversation continuity survives it because the
     /// store holds the model context, which the replacement reloads.
-    private func currentOrchestrator(_ live: Live) async -> AgentOrchestrator {
+    func currentOrchestrator(_ live: Live) async -> AgentOrchestrator {
         await applySettings(live)
         let contract = TurnContract(
             behavior: session.configuration.behavior,
@@ -821,10 +825,16 @@ public final class SessionController {
             return await makeProjectlessOrchestrator(contract, live: live)
         }
         let systemPrompt = await stableSystemPrompt(context: context, contract: contract)
+        // Code runs autonomously: the stop check, soft limits, budgets and
+        // goals (CODE_AGENT_SPEC §1, §2). Plan, Ask and Survey only report.
+        let autonomy = contract.behavior == .code
+            ? await autonomyConfiguration(contractModelID: contract.modelID, live: live, context: context)
+            : nil
         let sessionState = sessionStateProvider(
             context: context,
             store: live.store,
-            includeGoal: contract.behavior == .code
+            includeGoal: contract.behavior == .code,
+            autonomy: autonomy
         )
         // A sub-agent reads the date, branch and skills as its parent does,
         // but not the parent's goal: it cannot update that goal, and the
@@ -859,7 +869,8 @@ public final class SessionController {
                 files: context.files,
                 executor: context.executor,
                 git: context.git,
-                tests: context.tests
+                tests: context.tests,
+                runLedger: autonomy?.ledger
             )
         )
         if !contract.supportsVision || !contract.computerUseActive {
@@ -895,7 +906,8 @@ public final class SessionController {
                     excludingServers: CodeDefaults.shared.disabledMCPServers
                 )
             )
-            tools.append(UpdateGoalTool(store: live.store))
+            // The goal tools come from `GoalToolProvider` above; the
+            // step-based `UpdateGoalTool` is no longer offered.
             tools.append(
             DelegateTaskTool(
                 model: live.modelClient,
@@ -1016,7 +1028,8 @@ public final class SessionController {
                 contract: contract,
                 live: live,
                 systemPrompt: systemPrompt,
-                sessionState: sessionState
+                sessionState: sessionState,
+                autonomy: autonomy
             ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
@@ -1026,7 +1039,8 @@ public final class SessionController {
             fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
             // In every mode, not only Code: an Ask turn changes no files, but
             // it is still a turn a later rewind has to count past.
-            turnCheckpoints: context.turnCheckpoints
+            turnCheckpoints: context.turnCheckpoints,
+            completionGate: autonomy.map { autonomyGate($0) } ?? ReportOnlyCompletionGate()
         )
     }
 
@@ -1084,7 +1098,8 @@ public final class SessionController {
         contract: TurnContract,
         live: Live,
         systemPrompt: String,
-        sessionState: (@Sendable () async -> [SessionStateSection])? = nil
+        sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
+        autonomy: AutonomyConfiguration? = nil
     ) -> AgentOrchestrator.Configuration {
         AgentOrchestrator.Configuration(
             maximumIterations: settings.maxTurns,
@@ -1095,7 +1110,8 @@ public final class SessionController {
                 : nil,
             contextCompactionTriggerFraction: settings.compactThreshold,
             systemPrompt: systemPrompt,
-            sessionState: sessionState
+            sessionState: sessionState,
+            autonomy: autonomy
         )
     }
 
@@ -1137,13 +1153,20 @@ public final class SessionController {
     private func sessionStateProvider(
         context: WorkspaceContext,
         store: CodeSessionStore,
-        includeGoal: Bool
+        includeGoal: Bool,
+        autonomy: AutonomyConfiguration? = nil
     ) -> @Sendable () async -> [SessionStateSection] {
         let sessionID = self.sessionID
         return { [weak self] in
             var sections = [context.sessionStateEnvironment()]
             if includeGoal {
-                sections.append(Self.goalStateSection(try? await store.goal(for: sessionID)))
+                // The goal, the project's checks and the run's bounds.
+                sections += Self.autonomySections(
+                    goal: await store.currentGoalRun(for: sessionID),
+                    recipe: await autonomy?.recipe(),
+                    ledger: await autonomy?.ledger?.snapshot(),
+                    settings: autonomy?.settings ?? .standard
+                )
             }
             if let skills = await self?.skillsStateSection() {
                 sections.append(skills)
@@ -1402,6 +1425,7 @@ public final class SessionController {
         pendingApprovals = await live.permissions.pendingApprovals
         pendingQuestions = await live.questions.pendingQuestions
         pendingPlans = await live.questions.pendingPlans
+        await restoreAutonomy(live)
         await refreshWorkspacePanels()
         await refreshComputerUse()
         // Cleared here rather than by the caller once it resumes, so a detach
@@ -1550,7 +1574,7 @@ public final class SessionController {
     }
 
     /// Starts a turn: the turn's contract, then the prompt.
-    private func startTurn(
+    func startTurn(
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
@@ -1779,6 +1803,10 @@ public final class SessionController {
     /// goal state, turn contracts, approvals, checkpoints and transcript
     /// durability remain identical to a manually retried message.
     public func retryLastTurn() async {
+        // The failed turn carries on from where it stopped, with no second
+        // copy of the message (CODE_AGENT_SPEC §1.6). Sending the prompt
+        // again is the fallback for a session with nothing to resume.
+        if await retryByResuming() { return }
         guard let lastPrompt = events.reversed().compactMap({ event -> String? in
             if case let .userPrompt(prompt) = event.payload { return prompt.text }
             return nil
@@ -4065,6 +4093,7 @@ public final class SessionController {
 
     private func integrate(_ event: SessionEvent) {
         projection.apply(event: event)
+        integrateAutonomy(event)
         switch event.payload {
         case let .approvalRequested(request):
             pendingApprovals.append(request)
