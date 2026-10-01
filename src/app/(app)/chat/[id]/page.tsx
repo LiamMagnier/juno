@@ -29,11 +29,11 @@ export default async function ConversationPage({
   params: Promise<{ id: string }>;
   // `m` is global search landing on the message it matched (see
   // src/lib/search/engine.ts); `artifact` is the library's canvas deep link.
-  searchParams: Promise<{ artifact?: string; m?: string; researchRun?: string }>;
+  searchParams: Promise<{ artifact?: string; m?: string; researchRun?: string; q?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const { artifact, m, researchRun } = await searchParams;
+  const { artifact, m, researchRun, q } = await searchParams;
   const thread = await getConversationThread(user.id, id);
   if (!thread) notFound();
 
@@ -66,12 +66,16 @@ export default async function ConversationPage({
   // transcript. Null for every other chat, and for a retired agent's thread,
   // which reads as the ordinary chat it now is.
   const agent = await agentForThread(user.id, thread.conversation.id);
+  // Agents home opens a new agent's empty thread with the job as `?q=`; it is sent
+  // as the thread's first message, once. Any other thread ignores it.
+  const firstMessage =
+    agent && thread.messages.length === 0 && typeof q === "string" && q.trim() ? q.trim().slice(0, 4000) : undefined;
 
   const chat = (
     <ChatView
       conversationId={thread.conversation.id}
       agent={agent ?? undefined}
-      initialPrompt={agent ? await pendingAgentStarter(user.id, agent.id) ?? undefined : undefined}
+      initialPrompt={firstMessage ?? (agent ? await pendingAgentStarter(user.id, agent.id) ?? undefined : undefined)}
       initialMessages={thread.messages}
       initialArtifacts={thread.artifacts}
       initialModel={thread.conversation.model}

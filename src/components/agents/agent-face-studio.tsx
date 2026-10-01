@@ -120,7 +120,7 @@ export function AgentFaceStudio({
             }}
           >
             <div key={`${avatar.shape}-${avatar.tone}-${avatar.eyes}-${avatar.mark}`} className="motion-safe:animate-studio-swap">
-              <AgentPresence avatar={avatar} state={preview} size={128} name={name || "Your agent"} />
+              <AgentPresence avatar={avatar} state={preview} size={128} haloScale={2} gaze name={name || "Your agent"} />
             </div>
             <div className="text-center">
               <p className="font-serif text-title italic leading-tight text-foreground">{name.trim() || "Your agent"}</p>

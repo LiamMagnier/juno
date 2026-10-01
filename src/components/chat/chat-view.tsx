@@ -958,8 +958,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     if (initialPrompt && !autoSentRef.current) {
       autoSentRef.current = true;
       chat.send(initialPrompt, [], initialPromptResearch ? { deepResearch: true } : undefined);
-      // Clear ?q= so a refresh doesn't resend.
-      if (!conversationId) {
+      // Clear ?q= so a refresh doesn't resend. An agent's brand new thread keeps
+      // its own path: the sentence from Agents home is that thread's first message.
+      if (conversationId) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("q");
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      } else {
         window.history.replaceState({}, "", "/chat");
         window.__junoSoftRoutePath = null;
       }

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,6 +22,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Hand, Monitor, MoreHorizontal, PanelRight } from "@/components/ui/icons";
 import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
+import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { localStateSentence } from "@/components/agents/agent-bits";
 import type { AgentPanelTab } from "@/components/agents/agent-panel";
 import {
@@ -62,6 +62,7 @@ export function AgentThreadHeader({
   const faceRef = React.useRef<HTMLButtonElement | null>(null);
   const listening = state === "listening" && !!levelRef;
   const [confirmRetire, setConfirmRetire] = React.useState(false);
+  const [studio, setStudio] = React.useState(false);
 
   React.useEffect(() => {
     const face = faceRef.current;
@@ -79,60 +80,50 @@ export function AgentThreadHeader({
     };
   }, [listening, levelRef]);
 
+  const usingComputer = agent.computer?.status === "awake" && (state === "working" || state === "waiting");
   const sentence =
     state === "thinking"
       ? "Thinking"
-      : localStateSentence(
-          taskTitle ? { ...agent, task: agent.task ? { ...agent.task, title: taskTitle } : agent.task } : agent,
-          state
-        );
-
+      : usingComputer && state === "working"
+        ? "Using its computer"
+        : localStateSentence(
+            taskTitle ? { ...agent, task: agent.task ? { ...agent.task, title: taskTitle } : agent.task } : agent,
+            state
+          );
   const computerFeatureOn = agent.computer != null;
+
+  const run = async (label: string, action: () => Promise<{ kind: string; message?: string }>) => {
+    const res = await action();
+    if (res.kind === "failed") {
+      toast.error(res.message ?? `Couldn’t ${label.toLowerCase()}.`);
+      return false;
+    }
+    announceAgentsChanged();
+    return true;
+  };
 
   const handlePauseResume = async () => {
     const nextStatus = agent.status === "paused" ? "active" : "paused";
-    const res = await updateAgent(agent.id, { status: nextStatus });
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
+    if (await run(nextStatus === "paused" ? "Pause" : "Resume", () => updateAgent(agent.id, { status: nextStatus }))) {
+      toast.success(nextStatus === "paused" ? `${agent.name} is paused.` : `${agent.name} is back.`);
     }
-    toast.success(nextStatus === "paused" ? `Paused ${agent.name}.` : `Resumed ${agent.name}.`);
-    announceAgentsChanged();
-  };
-
-  const handleTogglePin = async () => {
-    const isPinned = Boolean(agent.pinnedAt);
-    const res = await updateAgent(agent.id, { pinned: !isPinned });
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
-    }
-    toast.success(!isPinned ? `Pinned ${agent.name}.` : `Unpinned ${agent.name}.`);
-    announceAgentsChanged();
   };
 
   const handleDuplicate = async () => {
     const res = await duplicateAgent(agent.id);
     if (res.kind !== "ok") {
-      toast.error(res.message);
+      toast.error(res.kind === "failed" ? res.message : "Couldn’t duplicate.");
       return;
     }
-    toast.success(`Duplicated as ${res.value.name}.`);
     announceAgentsChanged();
-    if (res.value.conversationId) {
-      router.push(`/chat/${res.value.conversationId}`);
-    }
+    if (res.value.conversationId) router.push(`/chat/${encodeURIComponent(res.value.conversationId)}`);
   };
 
   const handleRetire = async () => {
-    const res = await retireAgent(agent.id);
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
+    if (await run("Retire", () => retireAgent(agent.id))) {
+      toast.success(`${agent.name} is retired.`);
+      router.push("/agents");
     }
-    toast.success(`Retired ${agent.name}.`);
-    announceAgentsChanged();
-    router.push("/agents");
   };
 
   const attention = state === "waiting" || state === "blocked" || agent.needsYou > 0;
@@ -140,9 +131,17 @@ export function AgentThreadHeader({
 
   return (
     <div
-      className="agent-thread-bar flex shrink-0 justify-center px-4 py-2.5"
+      className="agent-thread-bar relative isolate flex shrink-0 justify-center px-4 py-2.5"
       style={{ "--bar-tone": `var(--agent-${agent.avatar.tone})` } as React.CSSProperties}
     >
+      {/* The thread carries the agent's colour: a faint wash of its tone behind the header. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background: `radial-gradient(70% 140% at 50% -40%, hsl(var(--agent-${agent.avatar.tone}) / 0.13), transparent 70%)`,
+        }}
+      />
       <div className="flex w-full max-w-3xl items-center gap-3">
         <button
           ref={faceRef}
@@ -153,7 +152,7 @@ export function AgentThreadHeader({
           aria-label={`${agent.name}. ${sentence}. Open profile`}
           aria-expanded={profileOpen}
         >
-          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} />
+          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-ui font-medium text-foreground">{agent.name}</span>
             {attention ? (
@@ -209,17 +208,22 @@ export function AgentThreadHeader({
                 type="button"
                 size="icon-sm"
                 variant="ghost"
-                aria-label={`${agent.name} actions`}
+                aria-label={`More for ${agent.name}`}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <MoreHorizontal className="size-4" aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuItem onSelect={() => setStudio(true)}>Customize</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void handlePauseResume()}>
                 {agent.status === "paused" ? "Resume" : "Pause"}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void handleTogglePin()}>
+              <DropdownMenuItem
+                onSelect={() =>
+                  void run("Pin", () => updateAgent(agent.id, { pinned: !agent.pinnedAt }))
+                }
+              >
                 {agent.pinnedAt ? "Unpin" : "Pin"}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void handleDuplicate()}>Duplicate</DropdownMenuItem>
@@ -234,6 +238,8 @@ export function AgentThreadHeader({
           </DropdownMenu>
         </div>
       </div>
+
+      <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} />
 
       <Dialog open={confirmRetire} onOpenChange={setConfirmRetire}>
         <DialogContent>
@@ -255,7 +261,7 @@ export function AgentThreadHeader({
                 void handleRetire();
               }}
             >
-              Retire {agent.name}
+              Retire
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -270,6 +276,7 @@ export function AgentThreadHeader({
  */
 export function AgentGreeting({
   agent,
+  onSelectSuggestion: _onSelectSuggestion,
 }: {
   agent: ClientAgent;
   onSelectSuggestion?: (text: string) => void;
@@ -277,7 +284,9 @@ export function AgentGreeting({
   const paused = agent.status === "paused";
   return (
     <div className="flex flex-col items-center text-center motion-safe:animate-rise-in" data-face-trigger>
-      <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} spread={0.6} name={agent.name} />
+      <span className="motion-safe:animate-agent-arrive">
+        <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} spread={0.6} name={agent.name} gaze />
+      </span>
       <h1 className="mt-8 text-balance font-serif text-display font-normal text-foreground">
         Hi, I’m <span className="italic">{agent.name}</span>.
       </h1>

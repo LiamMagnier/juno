@@ -1128,6 +1128,13 @@ export function Composer({
     return () => window.removeEventListener("juno:composer-seed", seed);
   }, []);
 
+  // "Message" on an agent's profile: the one invitation there is to talk.
+  React.useEffect(() => {
+    const focus = () => requestAnimationFrame(() => textareaRef.current?.focus());
+    window.addEventListener("juno:composer-focus", focus);
+    return () => window.removeEventListener("juno:composer-focus", focus);
+  }, []);
+
   // Files handed over by another surface — the document viewer's "ask about
   // this area" crop. Through the same door a drop or a paste uses, so the
   // private-mode, voice and storage rules apply to it unchanged.
@@ -1889,8 +1896,7 @@ export function Composer({
       }
       return null;
     }
-    return null;
-  }, [text, models, commands, mentions, mentionAt]);
+  }, [text, models, commands]);
 
   /*
    * The first "/" is what asks for the skill library.

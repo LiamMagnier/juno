@@ -168,8 +168,9 @@ export function AgentProfile({
           <AgentPresence
             avatar={agent.avatar}
             state={agent.state}
-            size={88}
-            spread={0.55}
+            size={96}
+            haloScale={2.1}
+            gaze
             className="transition-transform duration-base ease-spring group-hover:scale-[1.04] group-active:scale-[0.98] motion-reduce:transform-none"
           />
           <span className="mt-3 text-caption text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100">

@@ -136,7 +136,7 @@ function AgentCard({ agent, onChanged }: { agent: ClientAgent; onChanged: () => 
         className="agent-card__link flex items-center gap-4 @[40rem]/page:block"
         aria-label={`${agent.name}. ${attention ? "Needs you. " : ""}${sentence}`}
       >
-        <AgentPresence avatar={agent.avatar} state={agent.state} size={52} />
+        <AgentPresence avatar={agent.avatar} state={agent.state} size={52} gaze />
         <span className="block min-w-0 flex-1 @[40rem]/page:mt-5">
           <span className="flex items-baseline gap-2">
             <span className="truncate text-body-lg font-medium text-foreground">{agent.name}</span>
@@ -260,7 +260,7 @@ function JobComposer({
     <div className={cn("w-full", hero && "flex flex-col items-center")}>
       {hero ? (
         <div className="mb-7 motion-safe:animate-rise-in">
-          <AgentPresence avatar={face} state={state} size={84} spread={0.6} name={name} />
+          <AgentPresence avatar={face} state={state} size={84} spread={0.6} name={name} gaze />
         </div>
       ) : null}
       {heading}
@@ -276,7 +276,7 @@ function JobComposer({
             <div className="flex items-start">
               {!hero ? (
                 <span className="ml-3.5 mt-3 shrink-0" aria-hidden="true">
-                  <AgentPresence avatar={face} state={state} size={28} spread={0.35} />
+                  <AgentPresence avatar={face} state={state} size={28} spread={0.35} gaze />
                 </span>
               ) : null}
               <textarea

@@ -146,7 +146,7 @@ export function AgentComputerOverlay({
       className="fixed inset-0 z-modal flex flex-col bg-background/85 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in duration-base"
     >
       <div className="flex shrink-0 items-center gap-3 px-5 py-4">
-        <AgentPresence avatar={agent.avatar} state={agent.state} size={28} />
+        <AgentPresence avatar={agent.avatar} state={agent.state} size={28} haloScale={1.8} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-ui font-medium text-foreground">{agent.name}’s computer</p>
         </div>
@@ -270,7 +270,6 @@ export function AgentComputerOverlay({
           )}
         </DialogContent>
       </Dialog>
-
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
         <DialogContent>
           <DialogHeader>
@@ -320,7 +319,7 @@ function Poster({
         />
       ) : null}
       <div className="absolute inset-0 grid place-items-center">
-        <AgentPresence avatar={agent.avatar} state={status === "error" ? "blocked" : "sleeping"} size={64} />
+        <AgentPresence avatar={agent.avatar} state={status === "error" ? "blocked" : "sleeping"} size={64} haloScale={2.4} />
       </div>
     </div>
   );
