@@ -2,6 +2,7 @@ import * as React from "react";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import type { Provider } from "@/lib/providers";
 import { CrewFace } from "./crew/face";
+import { crewMember } from "./crew-bridge";
 import { crew, TOKENS, type TokenRef } from "./fixtures";
 import { Icon } from "./icons";
 
@@ -205,7 +206,7 @@ export function ModelMark({ provider, className }: { provider: Provider; classNa
 export function TokenMark({ token, size = 16 }: { token: TokenRef; size?: number }) {
   if (token.kind === "crew") {
     const m = crew(token.id);
-    return <CrewFace member={{ id: m.id, name: m.name, role: m.role, seed: m.seed }} state="available" size={size} live={false} />;
+    return <CrewFace member={crewMember(m)} state="available" size={size} live={false} />;
   }
   if (token.kind === "file") return <FileMark name={token.label} size={size} className="jn-mark" />;
   if (token.kind === "app") return <AppMark id={token.id} size={size} className="jn-mark" />;

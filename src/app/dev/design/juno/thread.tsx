@@ -212,8 +212,10 @@ export function Trace({ open: initialOpen = false, label = TRACE_SUMMARY, items 
                 <span className="jn-step__mark">
                   <StepMark mark={r.mark} />
                 </span>
-                <span className="jn-step__verb">{r.verb}</span> <span className="jn-step__obj">{r.object}</span>
-                {r.where ? <span className="jn-step__where"> {r.where}</span> : null}
+                <span className="jn-step__text">
+                  <span className="jn-step__verb">{r.verb}</span> <span className="jn-step__obj">{r.object}</span>
+                  {r.where ? <span className="jn-step__where"> {r.where}</span> : null}
+                </span>
               </li>
             ))}
           </motion.ul>
@@ -515,13 +517,16 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                           type="button"
                           role="menuitemradio"
                           aria-checked="true"
-                          className="jn-pop__row"
+                          className="jn-pop__row jn-pop__row--tall"
                           onClick={() => {
                             setMenu(false);
                             setOutcome("posted");
                           }}
                         >
-                          <span className="jn-pop__text">Post once</span>
+                          <span className="jn-pop__stack">
+                            <span>Post once</span>
+                            <span className="jn-pop__line">Juno asks again next time</span>
+                          </span>
                           <span className="jn-pop__check">
                             <Icon name="check" size={16} />
                           </span>
@@ -530,13 +535,16 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                           type="button"
                           role="menuitemradio"
                           aria-checked="false"
-                          className="jn-pop__row"
+                          className="jn-pop__row jn-pop__row--tall"
                           onClick={() => {
                             setMenu(false);
                             setOutcome("always");
                           }}
                         >
-                          <span className="jn-pop__text">Always allow Juno to post to #design</span>
+                          <span className="jn-pop__stack">
+                            <span>Always allow in #design</span>
+                            <span className="jn-pop__line">Posts there without asking. Change it in Customize</span>
+                          </span>
                         </button>
                       </motion.div>
                     ) : null}
@@ -550,7 +558,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                     onInstead?.();
                   }}
                 >
-                  Tell Juno what to do
+                  Tell Juno what to do instead
                 </button>
               </div>
             )}

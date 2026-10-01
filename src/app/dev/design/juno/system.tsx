@@ -289,7 +289,7 @@ export function SystemScene() {
           </Cell>
           <Cell label="Link">
             <button type="button" className="jb jb--link">
-              Tell Juno what to do
+              Tell Juno what to do instead
             </button>
           </Cell>
         </div>
@@ -451,7 +451,7 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="crew" title="Crew faces" note="A face is an instrument of state, and always has words beside it. Sizes: 16 inline, 20 rows and tokens, 32 thread header, 64 profile, 96 roster.">
+      <Section id="crew" title="Crew faces" note="Each member is a character its person made. State is pose and expression, and always also words beside it. Sizes: 16 inline, 20 rows and tokens, 32 card headers, 64 profile, 72 over its own thread, 96 to 112 roster.">
         <div className="jn-sys__faces">
           <span />
           {STATES.map((s) => (

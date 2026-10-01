@@ -5,11 +5,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CrewFace, type CrewMember } from "./crew/face";
 import { CREW, crew, type CrewRow, type Segment } from "./fixtures";
 import { Composer } from "./composer";
-import { LOOK, lookOf, MemberPeek, Reaction, threadColour, useMemberTheme, type Look } from "./crew-bridge";
+import { LOOK, lookOf, MemberPeek, Reaction, threadColour, useMemberTheme, type Look, type PeekHandle } from "./crew-bridge";
 import { Icon } from "./icons";
 import { FileMark } from "./marks";
 import { R, SPRING, T, useReduced } from "./motion";
-import { AppFrame, ChatSidebar, face, MobileBar, TopBar } from "./shell";
+import { AppFrame, ChatSidebar, face, MobileBar } from "./shell";
 
 /*
  * Crew (D-032). Crew members are characters: each has a body, a material, a
@@ -412,6 +412,15 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
   const reduced = useReduced();
   const [answered, setAnswered] = React.useState(true);
   const [sheet, setSheet] = React.useState<Sheet>(null);
+  const peek = React.useRef<PeekHandle | null>(null);
+  const lastBlink = React.useRef(0);
+  // P4: the character blinks when the person starts typing to it, at most once every 4 s.
+  const onType = React.useCallback(() => {
+    const now = performance.now();
+    if (now - lastBlink.current < 4000) return;
+    lastBlink.current = now;
+    peek.current?.blink();
+  }, []);
 
   React.useEffect(() => {
     if (top) return;
@@ -424,23 +433,28 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
   return (
     <AppFrame sidebar={<ChatSidebar current="crew" crewCurrent={m.id} />}>
       <div className="jn-chat jn-mthread" style={theme.style} data-member-theme={theme.family}>
-        <MobileBar title={m.name} back />
-        <TopBar>
-          <button type="button" className="jb jb--ghost jb--sm jicon-trigger" onClick={() => setSheet({ kind: "customize", id: m.id })}>
-            <Icon name="customize" size={16} />
-            Customize
-          </button>
-          <button type="button" className="jib jicon-trigger" aria-label={`Pause ${m.name}`}>
-            <Icon name="pause" size={20} />
-          </button>
-          <button type="button" className="jib jicon-trigger" aria-label="More">
-            <Icon name="more" size={20} />
-          </button>
-        </TopBar>
-
-        <div className="jn-mthread__peek">
-          <MemberPeek member={member} state={answered ? "thinking" : "waiting"} arrive />
-        </div>
+        <header className="jn-mhead">
+          <div className="jn-mhead__bar">
+            <button type="button" className="jib jicon-trigger jn-mhead__back" aria-label="Back">
+              <Icon name="chevron-left" size={20} />
+            </button>
+            <span className="jn-mhead__actions">
+              <button type="button" className="jb jb--ghost jb--sm jicon-trigger jn-mhead__customize" onClick={() => setSheet({ kind: "customize", id: m.id })}>
+                <Icon name="customize" size={16} />
+                <span>Customize</span>
+              </button>
+              <button type="button" className="jib jicon-trigger" aria-label={`Pause ${m.name}`}>
+                <Icon name="pause" size={20} />
+              </button>
+              <button type="button" className="jib jicon-trigger" aria-label="More">
+                <Icon name="more" size={20} />
+              </button>
+            </span>
+          </div>
+          <div className="jn-mhead__peek">
+            <MemberPeek member={member} state={answered ? "working" : "waiting"} words={answered ? "Reading seat usage…" : undefined} arrive handleRef={peek} />
+          </div>
+        </header>
 
         <div className="jn-thread jn-member" role="log" aria-label={`${m.name}’s thread`}>
           <p className="jn-member__intro">
@@ -500,7 +514,7 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
           ) : null}
         </div>
         <div className="jn-dock">
-          <Composer variant="dock" initial={MEMBER_DRAFT} placeholder={`Message ${m.name}…`} label={`Message ${m.name}`} />
+          <Composer variant="dock" initial={MEMBER_DRAFT} placeholder={`Message ${m.name}…`} label={`Message ${m.name}`} onType={onType} />
         </div>
       </div>
       <AnimatePresence>{sheet ? <CrewSheet key="customize" sheet={sheet} onClose={() => setSheet(null)} /> : null}</AnimatePresence>

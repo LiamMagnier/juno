@@ -43,68 +43,89 @@
 
 /* ———————————————————————————— The member's thread ———————————————————————————— */
 
-/* The peek: the character sits on the top edge of the conversation, the
-   transcript scrolling away beneath it. The band's lower edge fades into the
-   ground over 28 px: the scroll-edge treatment the dock already uses, so text
-   never slides under the character at full strength. Not a decoration. */
-.jn .jn-mthread__peek {
+/* The member's head: the character sits at the top of its conversation,
+   whole, with the name tag tucked against its lower edge; the transcript
+   scrolls away beneath it. The band's lower edge fades into the ground over
+   24 px, the scroll-edge treatment the dock already uses, so text never slides
+   under the character at full strength. Not a decoration. */
+.jn .jn-mhead {
   position: sticky;
-  top: 52px;
-  z-index: 4;
-  display: flex;
-  justify-content: center;
-  height: 118px;
-  margin-top: -52px;
-  margin-bottom: -26px;
-  pointer-events: none;
-  background: linear-gradient(to bottom, var(--ground) 76%, color-mix(in srgb, var(--ground) 0%, transparent));
-}
-.jn .jn-mthread .jn-top {
+  top: 0;
   z-index: 5;
-  background: transparent;
+  height: 122px;
+  margin-bottom: -18px;
+  pointer-events: none;
 }
-.jn .jn-mthread .jn-top::before {
+.jn .jn-mhead::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--ground);
+  background: linear-gradient(to bottom, var(--ground) calc(100% - 24px), color-mix(in srgb, var(--ground) 0%, transparent));
+}
+.jn .jn-mhead__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 16px;
+}
+.jn .jn-mhead__bar > *,
+.jn .jn-mhead__peek {
+  pointer-events: auto;
+}
+.jn .jn-mhead__back {
+  visibility: hidden;
+}
+.jn .jn-mhead__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.jn .jn-mhead__peek {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 .jn .jn-peek {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: -42px;
-  pointer-events: auto;
 }
 .jn .jn-peek__char {
   display: block;
   line-height: 0;
 }
 /* The name tag: the member's name and what it is doing, in words (P1: the
-   words are always present). It overlaps the character's lower edge a little,
+   words are always present). It tucks against the character's lower edge,
    the way a name card sits against its owner. */
 .jn .jn-peek__tag {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: -12px;
-  padding: 5px 12px 6px;
+  min-width: 84px;
+  margin-top: -14px;
+  padding: 5px 14px 6px;
   border-radius: 12px;
   background: var(--raised);
   box-shadow:
     0 0 0 1px var(--line-2),
-    0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.2));
+    0 1px 2px light-dark(rgb(25 27 30 / 0.05), rgb(0 0 0 / 0.24));
   transition:
-    background-color var(--d-fast) var(--e-out),
-    box-shadow var(--d-fast) var(--e-out);
+    background-color var(--d-fast) var(--e-out);
 }
 @media (hover: hover) and (pointer: fine) {
   .jn .jn-peek__tag:hover {
     box-shadow:
       0 0 0 1px var(--line-3),
-      0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.2));
+      0 1px 2px light-dark(rgb(25 27 30 / 0.05), rgb(0 0 0 / 0.24));
   }
 }
 .jn .jn-peek__tag:active {
@@ -120,13 +141,14 @@
   font-size: 12px;
   line-height: 15px;
   color: var(--ink-3);
+  white-space: nowrap;
 }
 .jn .jn-peek[data-state="waiting"] .jn-peek__state {
   color: var(--attn);
 }
 
 .jn .jn-member {
-  padding-top: 84px;
+  padding-top: 20px;
 }
 .jn .jn-member__intro {
   max-width: 46ch;
@@ -187,33 +209,37 @@
 
 /* ———————————————————————————— Reactions ———————————————————————————— */
 
-/* The member's face on the message's leading top corner, on a plate of the
-   ground so it reads on any bubble colour, with a small heart in the thread
-   colour. It lands once (Reaction in crew-bridge.tsx) and then sits still. */
+/* The member's face on a small plate at the message's leading top corner,
+   outside the text (the bubble's corner radius leaves it clear), with a heart
+   in the thread colour below-left of it. It lands once (Reaction in
+   crew-bridge.tsx) and then sits still. */
 .jn .jn-umsg__bubble {
   position: relative;
 }
+.jn .jn-umsg:has(.jn-react) {
+  margin-top: 18px;
+}
 .jn .jn-react {
   position: absolute;
-  top: -12px;
-  left: -14px;
+  top: -17px;
+  left: -19px;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   background: var(--ground);
-  box-shadow: 0 0 0 1px var(--line);
+  box-shadow: 0 0 0 1px var(--line-2);
 }
 .jn .jn-react__heart {
   position: absolute;
-  right: -3px;
-  bottom: -2px;
-  width: 13px;
-  height: 13px;
+  left: -5px;
+  bottom: -3px;
+  width: 14px;
+  height: 14px;
   fill: var(--m-disc, var(--ink));
   stroke: var(--ground);
-  stroke-width: 1.6px;
+  stroke-width: 1.8px;
   paint-order: stroke;
 }
 
@@ -373,7 +399,6 @@
   transition:
     background-color var(--d-fast) var(--e-out),
     color var(--d-fast) var(--e-out),
-    box-shadow var(--d-fast) var(--e-out),
     transform var(--d-press) var(--e-out);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -469,19 +494,23 @@
 /* ———————————————————————————— Phone ———————————————————————————— */
 
 @media (max-width: 760px) {
-  .jn .jn-mthread__peek {
-    top: 52px;
-    margin-top: 0;
-    height: 104px;
+  .jn .jn-mhead {
+    height: 112px;
   }
-  .jn .jn-mthread .jn-top {
+  .jn .jn-mhead__bar {
+    padding: 0 6px;
+  }
+  .jn .jn-mhead__back {
+    visibility: visible;
+  }
+  .jn .jn-mhead__customize > span {
     display: none;
   }
-  .jn .jn-peek {
-    margin-top: -34px;
+  .jn .jn-mhead__peek {
+    top: 4px;
   }
   .jn .jn-member {
-    padding-top: 12px;
+    padding-top: 16px;
   }
   .jn .jn-portrait__face > .jcf {
     transform: scale(0.8);

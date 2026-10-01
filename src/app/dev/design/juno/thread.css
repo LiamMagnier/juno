@@ -308,14 +308,18 @@
   margin-right: 10px;
   flex: none;
 }
+.jn .jn-step__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .jn .jn-step__verb {
   color: var(--ink-2);
 }
 .jn .jn-step__obj,
 .jn .jn-step__where {
   color: var(--ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .jn .jn-actions {
@@ -433,7 +437,7 @@
   border-radius: 999px;
   box-shadow: inset 0 0 0 1.5px var(--line-ui);
   flex: none;
-  transition: box-shadow var(--d-fast) var(--e-out);
+  /* box-shadow never animates (spec §1.8.3): edges change in the same frame. */
 }
 .jn .jn-q__radio::after {
   content: "";

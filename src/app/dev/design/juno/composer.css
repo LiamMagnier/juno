@@ -16,7 +16,7 @@
   background: var(--surface);
   border-radius: var(--r-composer);
   box-shadow: 0 0 0 1px var(--line-2);
-  transition: box-shadow var(--d-fast) var(--e-out);
+  /* box-shadow never animates (spec §1.8.3): edges change in the same frame. */
   cursor: text;
 }
 .jn .jn-composer::after {
@@ -272,7 +272,6 @@
   cursor: default;
   transition:
     background-color var(--d-fast) var(--e-out),
-    box-shadow var(--d-fast) var(--e-out),
     border-color var(--d-fast) var(--e-out);
 }
 .jn .jn-token__mark {

@@ -247,7 +247,7 @@ export interface ModelRow {
 }
 
 export const MODELS: ModelRow[] = [
-  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "anthropic", line: "Best for long, careful work, uses more of your limit" },
+  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "anthropic", line: "Long, careful work. Uses more of your limit" },
   { id: "gpt-6-sol", name: "GPT-6 Sol", provider: "openai", line: "Everyday work, writing and code review" },
   { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", provider: "google", line: "Fastest, good with long files and video" },
   { id: "grok-4.7", name: "Grok 4.7", provider: "xai", line: "Live web results and current events" },
@@ -255,7 +255,7 @@ export const MODELS: ModelRow[] = [
 
 export const EFFORT = ["Light", "Standard", "Deep"] as const;
 export type Effort = (typeof EFFORT)[number];
-export const EFFORT_LINE: Record<Effort, string> = { Light: "Fastest", Standard: "Balanced", Deep: "Slower, more thorough" };
+export const EFFORT_LINE: Record<Effort, string> = { Light: "Answers right away", Standard: "Thinks when it helps", Deep: "Thinks longer before answering" };
 
 /* ———————————————————————— Code ———————————————————————— */
 

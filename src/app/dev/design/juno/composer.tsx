@@ -263,6 +263,7 @@ export function Composer({
   busy = false,
   modelLabel = "Auto",
   effortLabel,
+  onType,
 }: {
   initial?: Segment[];
   placeholder?: string;
@@ -282,6 +283,8 @@ export function Composer({
   busy?: boolean;
   modelLabel?: string;
   effortLabel?: string;
+  /** The person typed a character (a member's thread blinks its character, P4). */
+  onType?: () => void;
 }) {
   const reduced = useReduced();
   const [s, dispatch] = React.useReducer(reducer, undefined, () => ({
@@ -350,9 +353,10 @@ export function Composer({
       if (key.length === 1) {
         prevent?.();
         dispatch({ type: "char", c: key });
+        onType?.();
       }
     },
-    [paletteOpen, flat, s.active, choose, send],
+    [paletteOpen, flat, s.active, choose, send, onType],
   );
 
   // Scripted control: the motion page drives the real composer through this.
@@ -476,7 +480,6 @@ export function Composer({
           role="textbox"
           aria-multiline="true"
           aria-label={label}
-          aria-expanded={paletteOpen}
           aria-controls={paletteOpen ? "jn-palette" : undefined}
           aria-autocomplete="list"
           aria-activedescendant={paletteOpen ? `jn-opt-${flat[Math.min(s.active, flat.length - 1)]?.token.id}` : undefined}

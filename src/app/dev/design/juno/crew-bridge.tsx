@@ -39,6 +39,7 @@ import {
 } from "./crew/avatar";
 import { CREW_BY_ID } from "./crew/fixtures";
 import { CrewFace, useAvatar, type CrewMember, type CrewState } from "./crew/face";
+import { colorHex, contrast, hexToOklch, isColorValue, oklchToHex } from "./crew/palette";
 import type { CrewRow } from "./fixtures";
 import { SPRING, useReduced } from "./motion";
 
@@ -182,9 +183,76 @@ const THREAD: Record<string, ThreadColour> = {
 
 const ld = ([l, d]: [string, string]) => `light-dark(${l}, ${d})`;
 
-/** The thread tokens for one colour family (unknown families fall back to graphite). */
-export function threadColour(family: string): React.CSSProperties {
-  const t = THREAD[family] ?? THREAD.graphite;
+const WHITE = "#ffffff";
+const DARK_TEXT = "#f2f3f4";
+
+/** Walk lightness down until the text colour clears `min` against the fill (keeps hue and chroma). */
+function fillFor(l: number, c: number, h: number, text: string, min: number): string {
+  let fill = oklchToHex({ l, c, h });
+  for (let i = 0; i < 20 && contrast(fill, text) < min; i++) {
+    l -= 0.015;
+    fill = oklchToHex({ l, c, h });
+  }
+  return fill;
+}
+
+/**
+ * A thread colour derived from any body colour (the character palette's
+ * sixteen, or a custom hex), with the same rules as the tuned families above:
+ * light bubbles carry white text at 4.8:1 or better, except warm light hues
+ * (marigold, oat), which stay light and carry dark text, their honest form;
+ * dark bubbles are deeper and quieter so a thread never glows, and the dark
+ * send disc is lifted to carry a dark glyph, the way the ink disc turns light.
+ */
+function deriveThread(bodyHex: string): ThreadColour {
+  const { l: bl, c: bc, h } = hexToOklch(bodyHex);
+  const neutral = bc < 0.03;
+  const c = neutral ? Math.min(bc, 0.012) : Math.min(Math.max(bc, 0.05), 0.13);
+  const warmLight = !neutral && h > 60 && h < 115 && bl > 0.7;
+  const rgba = (hex: string, a: number) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255} / ${a})`;
+  };
+  if (warmLight) {
+    const on = oklchToHex({ l: 0.27, c: 0.05, h });
+    const bubbleL = oklchToHex({ l: 0.85, c: Math.min(c, 0.12), h });
+    const discL = oklchToHex({ l: 0.8, c: Math.min(c, 0.13), h });
+    const bubbleD = fillFor(0.42, c * 0.75, h, DARK_TEXT, 4.6);
+    const discD = oklchToHex({ l: 0.8, c: c * 0.8, h });
+    return {
+      bubble: [bubbleL, bubbleD],
+      onBubble: [on, DARK_TEXT],
+      disc: [discL, discD],
+      onDisc: [on, oklchToHex({ l: 0.22, c: 0.04, h })],
+      discHover: [oklchToHex({ l: 0.77, c: Math.min(c, 0.13), h }), oklchToHex({ l: 0.84, c: c * 0.8, h })],
+      discPress: [oklchToHex({ l: 0.74, c: Math.min(c, 0.13), h }), oklchToHex({ l: 0.76, c: c * 0.8, h })],
+      soft: [rgba(discL, 0.22), rgba(discD, 0.2)],
+    };
+  }
+  const bubbleL = fillFor(0.54, c, h, WHITE, 4.8);
+  const bl2 = hexToOklch(bubbleL).l;
+  const bubbleD = fillFor(0.42, c * 0.8, h, DARK_TEXT, 4.6);
+  const discD = oklchToHex({ l: 0.78, c: c * 0.75, h });
+  return {
+    bubble: [bubbleL, bubbleD],
+    onBubble: [WHITE, DARK_TEXT],
+    disc: [bubbleL, discD],
+    onDisc: [WHITE, oklchToHex({ l: 0.2, c: 0.03, h })],
+    discHover: [oklchToHex({ l: bl2 - 0.04, c, h }), oklchToHex({ l: 0.83, c: c * 0.75, h })],
+    discPress: [oklchToHex({ l: bl2 - 0.07, c, h }), oklchToHex({ l: 0.74, c: c * 0.75, h })],
+    soft: [rgba(bubbleL, 0.13), rgba(discD, 0.2)],
+  };
+}
+
+function resolveThread(color: string): ThreadColour {
+  if (THREAD[color]) return THREAD[color];
+  if (isColorValue(color)) return deriveThread(colorHex(color));
+  return THREAD.graphite;
+}
+
+/** The thread tokens for one colour: a tuned family, a character palette id, or a custom hex. */
+export function threadColour(color: string): React.CSSProperties {
+  const t = resolveThread(color);
   return {
     "--m-bubble": ld(t.bubble),
     "--m-on-bubble": ld(t.onBubble),
@@ -201,7 +269,8 @@ export const THREAD_FAMILIES = Object.keys(THREAD);
 /** A member's thread colour, from its look. */
 export function useMemberTheme(member: CrewMember): { family: string; style: React.CSSProperties } {
   const cfg = useAvatar(member);
-  return { family: cfg.color, style: threadColour(cfg.color) };
+  const color = String(cfg.color);
+  return { family: color, style: threadColour(color) };
 }
 
 /* ———————————————————————————— The peek ———————————————————————————— */
@@ -209,25 +278,34 @@ export function useMemberTheme(member: CrewMember): { family: string; style: Rea
 const PEEK_WORDS: Record<CrewState, string> = {
   available: "Here",
   thinking: "Thinking…",
-  working: "Working",
+  working: "Working…",
   waiting: "Needs your answer",
   paused: "Paused",
   offline: "Offline",
 };
 
+/** What a peek can be asked to do from outside: a blink when the person starts typing to the member (P4). */
+export interface PeekHandle {
+  blink: () => void;
+}
+
 /**
- * The member over its own thread (D-032): the character sits on the top edge
- * of the conversation, big enough for its look and its state to read, with a
- * name tag under it that says the state in words. The character is the one
- * face in the product allowed a subtle idle (focused, on screen, motion
- * allowed); a state change moves it once. Pressing the tag opens the profile.
+ * The member over its own thread (D-032): the character sits at the top of
+ * the conversation, fully visible and big enough for its look and its state to
+ * read, with a name tag tucked against its lower edge that says the state in
+ * words (P1). The transcript scrolls away beneath it. The character is the one
+ * face allowed a subtle idle (focused, on screen, motion allowed); it arrives
+ * once with the character spring, turns toward the person when it needs them
+ * (P3, in CrewFace), and blinks when the person starts typing to it (P4).
+ * Pressing the tag opens the profile.
  */
 export function MemberPeek({
   member,
   state,
   words,
-  size = 76,
+  size = 72,
   arrive,
+  handleRef,
 }: {
   member: CrewMember;
   state: CrewState;
@@ -235,24 +313,33 @@ export function MemberPeek({
   words?: string;
   size?: number;
   arrive?: boolean;
+  handleRef?: React.MutableRefObject<PeekHandle | null>;
 }) {
   const reduced = useReduced();
   const said = words ?? PEEK_WORDS[state];
+  const onHandle = React.useCallback(
+    (h: { blink: () => void } | null) => {
+      if (handleRef) handleRef.current = h ? { blink: () => h.blink() } : null;
+    },
+    [handleRef],
+  );
   return (
     <div className="jn-peek" data-state={state}>
       <motion.span
         className="jn-peek__char"
-        initial={arrive && !reduced ? { y: 18, opacity: 0, scale: 0.94 } : false}
+        initial={arrive && !reduced ? { y: 22, opacity: 0, scale: 0.92 } : false}
         animate={{ y: 0, opacity: 1, scale: 1 }}
-        transition={reduced ? { duration: 0.16 } : SPRING.character}
+        transition={reduced ? { duration: 0.16 } : { ...SPRING.character, delay: 0.08 }}
       >
-        <CrewFace member={member} state={state} size={size} facing="front" focused />
+        <CrewFace member={member} state={state} size={size} facing="front" focused onHandle={onHandle} />
       </motion.span>
       <button type="button" className="jn-peek__tag" aria-label={`${member.name}, ${said}. Open profile`}>
         <span className="jn-peek__name">{member.name}</span>
-        <motion.span key={said} className="jn-peek__state" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.12 }}>
-          {said}
-        </motion.span>
+        <span className="jn-peek__state" aria-live="polite">
+          <motion.span key={said} initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.12 }}>
+            {said}
+          </motion.span>
+        </span>
       </button>
     </div>
   );
@@ -261,10 +348,11 @@ export function MemberPeek({
 /* ———————————————————————————— Reactions ———————————————————————————— */
 
 /**
- * A member answering a thank-you: its own face, happy, pinned to the corner of
- * the message it reacts to. It arrives once with a small bounce (the one
- * celebratory move a character makes, INTERACTION_SPEC §2.9 as amended by
- * D-032) and then sits still. The words are in the label.
+ * A member answering a thank-you: its own face on a small plate at the
+ * message's leading top corner, outside the text, with a heart in the thread
+ * colour. It lands once with the character spring (the one celebratory move a
+ * character makes, INTERACTION_SPEC §2.9 as amended by D-032) and then sits
+ * still. The words are in the label.
  */
 export function Reaction({ member, label, play = true }: { member: CrewMember; label?: string; play?: boolean }) {
   const reduced = useReduced();
@@ -273,12 +361,12 @@ export function Reaction({ member, label, play = true }: { member: CrewMember; l
     <motion.span
       className="jn-react"
       role="img"
-      aria-label={label ?? `${member.name} reacted, glad it helped`}
-      initial={bounce ? { scale: 0.4, opacity: 0, y: 6 } : false}
-      animate={bounce ? { scale: [0.4, 1.12, 1], opacity: 1, y: [6, -3, 0] } : { scale: 1, opacity: 1, y: 0 }}
-      transition={bounce ? { duration: 0.52, times: [0, 0.55, 1], ease: [0.16, 1, 0.3, 1], delay: 0.35 } : { duration: 0.16 }}
+      aria-label={label ?? `${member.name} reacted with a heart`}
+      initial={bounce ? { scale: 0.5, opacity: 0, y: 6 } : false}
+      animate={{ scale: 1, opacity: 1, y: 0 }}
+      transition={bounce ? { ...SPRING.character, delay: 0.4 } : { duration: 0.16 }}
     >
-      <CrewFace member={member} state="available" size={22} facing="front" live={false} />
+      <CrewFace member={member} state="available" size={24} facing="front" live={false} />
       <svg className="jn-react__heart" viewBox="0 0 12 12" aria-hidden="true">
         <path d="M6 10.4 1.9 6.5a2.5 2.5 0 0 1 3.6-3.5l.5.5.5-.5a2.5 2.5 0 0 1 3.6 3.5Z" />
       </svg>

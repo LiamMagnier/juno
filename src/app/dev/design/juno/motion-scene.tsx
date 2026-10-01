@@ -10,6 +10,7 @@ import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { R, SPRING, T, useReduced } from "./motion";
 import { face } from "./shell";
+import { MemberPeek, Reaction, useMemberTheme, type PeekHandle } from "./crew-bridge";
 import { Approval, HANDOFF_ID, TaskCard } from "./thread";
 
 /*
@@ -226,7 +227,82 @@ function CrewMoment() {
   );
 }
 
-/* ———————————————————————— 10 · Icons ———————————————————————— */
+/* ———————————————————————— 10 · A member's own thread (D-032) ———————————————————————— */
+
+const MEMBER_SEQ: { at: number; state: CrewState; words?: string }[] = [
+  { at: 0, state: "thinking" },
+  { at: 1700, state: "working", words: "Reading seat usage…" },
+  { at: 5200, state: "available", words: "Here" },
+];
+
+function MemberMoment({ tall }: { tall?: boolean }) {
+  const reduced = useReduced();
+  const member = face(MIRA);
+  const theme = useMemberTheme(member);
+  const peek = React.useRef<PeekHandle | null>(null);
+  const [k, setK] = React.useState(0);
+  const [thanked, setThanked] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+  useTimeline(() => [
+    ...MEMBER_SEQ.map((s, i): Step => [600 + s.at, () => setK(i)]),
+    [3000, () => peek.current?.blink()],
+    ...Array.from("Thanks Mira, that saves me a morning.").map((_, i, all): Step => [3000 + i * 28, () => setDraft(all.slice(0, i + 1).join(""))]),
+    [4200, () => {
+      setDraft("");
+      setThanked(true);
+    }],
+  ]);
+  const now = MEMBER_SEQ[k];
+  return (
+    <div className={tall ? "jn-mframe jn-mframe--tall jn-mframe--member" : "jn-mframe jn-mframe--member"} style={theme.style} data-member-theme={theme.family}>
+      <div className="jn-mthread jn-mthread--moment">
+        <header className="jn-mhead">
+          <div className="jn-mhead__peek">
+            <MemberPeek member={member} state={now.state} words={now.words} arrive handleRef={peek} />
+          </div>
+        </header>
+        <div className="jn-thread jn-member">
+          <div className="jn-cmsg">
+            <p className="jn-cmsg__who">
+              <CrewFace member={member} state="available" size={20} live={false} facing="front" />
+              <b>Mira</b> <span className="ink-3 num">13:52</span>
+            </p>
+            <div className="jn-cmsg__body">
+              <p>Brightline and Oakridge look fine. Halvorsen AS holds the annual plan, so that is the one call worth making this week.</p>
+            </div>
+          </div>
+          <AnimatePresence initial={false}>
+            {thanked ? (
+              <motion.div key="t" className="jn-umsg" initial={false} animate={{ opacity: 1 }} transition={reduced ? R : T.instant}>
+                <div className="jn-umsg__bubble">
+                  <Reaction member={member} />
+                  <span className="jn-sentence">Thanks Mira, that saves me a morning.</span>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+        <div className="jn-dock">
+          <div className="jn-composer" data-variant="dock">
+            <div className="jn-field">
+              {draft ? <div className="jn-sentence">{draft}</div> : <div className="jn-field__placeholder"><span>Message Mira…</span></div>}
+            </div>
+            <div className="jn-crow">
+              <span className="jib"><Icon name="plus" size={20} /></span>
+              <span className="jn-crow__spacer" />
+              <span className="jn-disc" data-mode={draft ? "send" : "voice"} aria-hidden="true">
+                <span className="jn-disc__glyph"><Icon name={draft ? "send" : "voice"} size={20} /></span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <p className="jn-mstage__cap jn-mstage__cap--frame">Mira arrives over her thread on the character spring, says what she is doing in words, and blinks when you start typing to her. Your message and the send disc wear her colour; her thanks lands once and sits still.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ———————————————————————— 11 · Icons ———————————————————————— */
 
 function IconsMoment() {
   const names = ICON_USAGE.flatMap((g) => g.names).slice(0, 36);
@@ -258,6 +334,7 @@ const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType
   { id: "approval", title: "Approval: arrive, arm, land", spec: "arrive 220 ms, 6 px rise · arm 500 ms · receipt on the reward spring", C: ApprovalMoment },
   { id: "menu", title: "A menu opens and closes", spec: "open 220 ms from the trigger · close 160 ms ease-in · keyboard instant", C: MenuMoment },
   { id: "crew", title: "Crew presence", spec: "pose on the standard spring · words cross-fade 120 ms · attention turn once", C: CrewMoment },
+  { id: "member", title: "A member’s own thread", spec: "arrival on the character spring, 0.5 s, bounce 0.24 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
   { id: "icons", title: "Icons on hover and state", spec: "each icon’s own motion, 120 to 240 ms, reduced to a cross-fade", C: IconsMoment },
 ];
 
@@ -298,7 +375,7 @@ export function MotionScene({ only }: { only?: string }) {
     <main className="jn-motion">
       <header className="jn-sys__head">
         <h1 className="t-title">Motion</h1>
-        <p className="jn-page__lede">Causality and continuity only. Chrome answers in 120 to 220 ms; the one spatial move, the first send, takes 360 ms on a spring with no bounce. Anything started from the keyboard does not move. Nothing idles.</p>
+        <p className="jn-page__lede">Causality and continuity only. Chrome answers in 120 to 220 ms; the one spatial move, the first send, takes 360 ms on a spring with no bounce. Anything started from the keyboard does not move. The only thing allowed to idle is a crew member over its own thread, and only while you can see it.</p>
       </header>
       <div className="jn-motion__grid">
         {MOMENTS.map((m) => (
