@@ -100,13 +100,26 @@ struct StudioPermissionsSheet: View {
         }
     }
 
-    private enum Change {
+    enum Change {
         case add(String, CodeSettingsModel.RuleList)
         case remove(PermissionRule, CodeSettingsModel.RuleList)
+
+        /// Whether the change takes a permission away: a new deny or ask
+        /// rule, or an allow rule removed. Such a change always goes
+        /// through. A `ConfigChange` hook is very often the project's, and a
+        /// project's automation keeping an allow rule the reader is removing
+        /// would hold Juno's permissions wider than the reader wants them.
+        var isNarrowing: Bool {
+            switch self {
+            case let .add(_, list): list != .allow
+            case let .remove(_, list): list == .allow
+            }
+        }
     }
 
-    /// A rule change meets the project's `ConfigChange` hooks first; a hook
-    /// that blocks keeps the file as it was.
+    /// A rule change meets the project's `ConfigChange` hooks first. A hook
+    /// that blocks keeps the file as it was when the change would widen what
+    /// Juno may do; one that takes a permission away is only told.
     private func change(_ change: Change) async {
         problem = nil
         var blocked: String?
@@ -119,7 +132,7 @@ struct StudioPermissionsSheet: View {
             blocked = answer.blockReason
             return answer
         }
-        if let blocked {
+        if let blocked, !change.isNarrowing {
             problem = "A hook kept the rules as they were: \(blocked)"
             return
         }
@@ -246,10 +259,14 @@ struct StudioAgentsSheet: View {
         if let model = agent.model { traits.append(model) }
         if let tools = agent.tools { traits.append("tools: " + tools.joined(separator: ", ")) }
         if let steps = agent.maxSteps { traits.append("at most \(steps) steps") }
+        var lines = [agent.description].filter { !$0.isEmpty } + [traits.joined(separator: " · "), agent.path]
+        if agent.isShadowedByBuiltIn {
+            lines.append("Not used: Juno's built-in \(agent.targetName) keeps this name. Rename the file, or put it in ~/.juno/agents to replace the built-in.")
+        }
         return StudioSheetRow(
             label: agent.name,
-            value: agent.targetName,
-            note: ([agent.description].filter { !$0.isEmpty } + [traits.joined(separator: " · "), agent.path]).joined(separator: "\n")
+            value: agent.isShadowedByBuiltIn ? "not used" : agent.targetName,
+            note: lines.joined(separator: "\n")
         )
     }
 
