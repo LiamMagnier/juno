@@ -100,6 +100,17 @@ public struct ToolRegistry: Sendable {
         tools[name]
     }
 
+    /// This registry with only the tools named in `names`, everything else
+    /// about it kept — the nested-instructions context its results carry
+    /// included. How a custom agent's `tools:` list narrows a sub-agent.
+    public func restricted(to names: some Sequence<String>) -> ToolRegistry {
+        let allowed = Set(names)
+        return ToolRegistry(
+            tools: allTools.filter { allowed.contains($0.name) },
+            contextProvider: contextProvider
+        )
+    }
+
     public func inspectionOnly() -> ToolRegistry {
         ToolRegistry(
             tools: allTools.filter { Self.inspectionToolNames.contains($0.name) },

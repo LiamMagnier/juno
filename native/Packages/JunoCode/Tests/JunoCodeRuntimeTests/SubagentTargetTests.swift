@@ -178,6 +178,77 @@ final class SubagentTargetTests: XCTestCase {
         XCTAssertFalse(running)
     }
 
+    /// A model that kept delegating in the background could otherwise start
+    /// children without end, each a model loop with its own spend.
+    func testBackgroundChildrenAreBoundedAtOnceAndPerSession() async throws {
+        let registry = BackgroundSubagentRegistry()
+        let delegate = tool(model: GatedModel(gate: ReleaseGate()), agents: [], background: registry)
+        let session = try await parent()
+        let four: JSONValue = ["tasks": .array((0..<4).map { .object(["task": .string("Survey \($0)"), "background": true]) })]
+        let first = try await delegate.execute(input: four, context: context(session, id: "a"))
+        XCTAssertFalse(first.isError, first.content)
+        XCTAssertTrue(first.content.contains("Started 4 background sub-agents"))
+
+        let fifth = try await delegate.execute(input: ["task": "One more", "background": true], context: context(session, id: "b"))
+        XCTAssertTrue(fifth.isError)
+        XCTAssertTrue(fifth.content.contains("At most \(BackgroundSubagentRegistry.maximumRunning)"), fifth.content)
+        var entries = await registry.all()
+        XCTAssertEqual(entries.count, 4, "a refused call starts nothing")
+
+        // Stopping them frees the places, up to the session's own ceiling.
+        var call = 0
+        while true {
+            await registry.cancelAll()
+            call += 1
+            let more = try await delegate.execute(input: four, context: context(session, id: "c\(call)"))
+            if more.isError {
+                XCTAssertTrue(more.content.contains("may start at most \(BackgroundSubagentRegistry.maximumPerSession)"), more.content)
+                break
+            }
+            XCTAssertLessThan(call, 10, "the per-session ceiling never answered")
+        }
+        entries = await registry.all()
+        XCTAssertEqual(entries.count, BackgroundSubagentRegistry.maximumPerSession)
+        await registry.cancelAll()
+    }
+
+    /// Two reservations racing on the actor cannot both take the last places.
+    func testReservationsAreAllOrNothing() async {
+        let registry = BackgroundSubagentRegistry()
+        let three = (0..<3).map { BackgroundSubagentRegistry.Reservation(id: "x\($0)", title: "x", agent: nil) }
+        let two = (0..<2).map { BackgroundSubagentRegistry.Reservation(id: "y\($0)", title: "y", agent: nil) }
+        let refusedThree = await registry.reserve(three)
+        let refusedTwo = await registry.reserve(two)
+        XCTAssertNil(refusedThree)
+        XCTAssertNotNil(refusedTwo, "three running plus two is over four")
+        let ids = await registry.all().map(\.id)
+        XCTAssertEqual(ids, ["x0", "x1", "x2"])
+        // A reserved child cancelled before it started never starts.
+        await registry.cancel("x0")
+        await registry.start(id: "x0") { (.completed, "should not run") }
+        let entry = await registry.entry("x0")
+        XCTAssertEqual(entry?.status, .cancelled)
+        XCTAssertNil(entry?.answer)
+        await registry.cancelAll()
+    }
+
+    /// An agent's `tools:` list narrows the child's registry without losing
+    /// the nested `AGENTS.md` context the registry's results carry.
+    func testAnAgentsToolListKeepsTheNestedInstructions() async throws {
+        let registry = ToolRegistry(
+            tools: [NamedTool(name: "read_file"), NamedTool(name: "grep")],
+            contextProvider: FixedContext()
+        )
+        let narrowed = registry.restricted(to: ["read_file"])
+        XCTAssertEqual(narrowed.allTools.map(\.name), ["read_file"])
+        let result = try await narrowed.executeAuthorized(
+            toolName: "read_file",
+            input: ["path": "src/a.swift"],
+            context: ToolContext(sessionID: CodeSessionID(), toolCallID: "t", emitOutput: { _, _ in })
+        )
+        XCTAssertEqual(result.appendedContext, "Nested AGENTS.md says hello.")
+    }
+
     func testBackgroundIsRefusedWhereNoRegistryRuns() throws {
         let delegate = tool(model: RequestRecorder(), agents: [])
         let refusal = delegate.precheck(input: ["task": "x", "background": true])
@@ -276,6 +347,12 @@ private struct NamedTool: CodeTool {
     func assessRisk(input _: JSONValue) -> ActionRisk { risk }
     func summary(input _: JSONValue) -> String { name }
     func execute(input _: JSONValue, context _: ToolContext) async throws -> ToolResult { ToolResult(content: "ok") }
+}
+
+private struct FixedContext: ToolResultContextProviding {
+    func context(forTouchedPaths _: [WorkspacePath], sessionID _: CodeSessionID) async -> String? {
+        "Nested AGENTS.md says hello."
+    }
 }
 
 private actor StartHooks: AgentLifecycleHooks {

@@ -41,31 +41,94 @@ public actor BackgroundSubagentRegistry {
     /// session's stop check forever.
     public static let budget: Duration = .seconds(30 * 60)
 
+    /// At most this many children work at once. Each is a model loop with
+    /// its own spend, and a write-capable one a Git worktree on disk; without
+    /// a ceiling a model that kept delegating in the background could start
+    /// them without end. One call can start this many.
+    public static let maximumRunning = 4
+    /// At most this many in one session, finished ones included: the ids,
+    /// answers and child transcripts all stay for the session's life.
+    public static let maximumPerSession = 16
+
     private var entries: [String: Entry] = [:]
     private var order: [String] = []
     private var tasks: [String: Task<Void, Never>] = [:]
 
     public init() {}
 
-    /// Registers a child and starts `work`, which reports its outcome.
+    /// One child to reserve a place for.
+    public struct Reservation: Sendable {
+        public let id: String
+        public let title: String
+        public let agent: String?
+
+        public init(id: String, title: String, agent: String?) {
+            self.id = id
+            self.title = title
+            self.agent = agent
+        }
+    }
+
+    /// Reserves places for every child in `children`, all or none, and
+    /// returns nil; or returns why there is no room, in words for the model.
+    /// Reserved children are listed as queued until ``start(id:work:)``.
+    ///
+    /// One step on the actor, so two delegations racing in one tool batch
+    /// cannot both see the same free places.
+    public func reserve(_ children: [Reservation]) -> String? {
+        let running = entries.values.filter { !$0.isFinished }.count
+        if let duplicate = children.first(where: { entries[$0.id] != nil }) {
+            return "A background sub-agent already has the id \(duplicate.id)."
+        }
+        if running + children.count > Self.maximumRunning {
+            return "At most \(Self.maximumRunning) background sub-agents run at once and \(running) "
+                + "\(running == 1 ? "is" : "are") running. Wait for them with await_subagents, "
+                + "or stop one with cancel_subagent, before starting more."
+        }
+        if order.count + children.count > Self.maximumPerSession {
+            return "This session has started \(order.count) background sub-agents, and it may start at most "
+                + "\(Self.maximumPerSession). Do the rest yourself or in the foreground."
+        }
+        for child in children {
+            entries[child.id] = Entry(
+                id: child.id,
+                title: child.title,
+                agent: child.agent,
+                status: .queued,
+                startedAt: Date()
+            )
+            order.append(child.id)
+        }
+        return nil
+    }
+
+    /// Starts a reserved child's `work`, which reports its outcome. Nothing
+    /// starts for an id that was never reserved or was already cancelled.
+    public func start(
+        id: String,
+        work: @escaping @Sendable () async -> (status: SubagentStatus, answer: String)
+    ) {
+        guard let entry = entries[id], !entry.isFinished, tasks[id] == nil else { return }
+        tasks[id] = Task { [weak self] in
+            let outcome = await work()
+            await self?.finish(id: id, status: outcome.status, answer: outcome.answer)
+        }
+    }
+
+    /// Reserves and starts one child: ``reserve(_:)`` then ``start(id:work:)``.
+    /// Returns why it could not start, or nil.
+    @discardableResult
     public func launch(
         id: String,
         title: String,
         agent: String?,
         work: @escaping @Sendable () async -> (status: SubagentStatus, answer: String)
-    ) {
-        entries[id] = Entry(
-            id: id,
-            title: title,
-            agent: agent,
-            status: .queued,
-            startedAt: Date()
-        )
-        order.append(id)
-        tasks[id] = Task { [weak self] in
-            let outcome = await work()
-            await self?.finish(id: id, status: outcome.status, answer: outcome.answer)
+    ) -> String? {
+        if let problem = reserve([Reservation(id: id, title: title, agent: agent)]) {
+            return problem
         }
+        start(id: id, work: work)
+        return nil
     }
 
     /// Records progress a running child reports.

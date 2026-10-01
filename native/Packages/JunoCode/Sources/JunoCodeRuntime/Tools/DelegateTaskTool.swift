@@ -354,10 +354,20 @@ public struct DelegateTaskTool: CodeTool {
         // here, as before, and the call returns when they finish.
         var launched: [Spec] = []
         if let background {
-            for spec in all where spec.background {
+            let wanted = all.filter(\.background)
+            // All of them or none, before anything starts: a session runs a
+            // bounded number of background children (see
+            // `BackgroundSubagentRegistry.maximumRunning`), and a call that
+            // would pass the bound is refused whole so the model can wait.
+            if !wanted.isEmpty, let problem = await background.reserve(wanted.map {
+                BackgroundSubagentRegistry.Reservation(id: $0.agentID, title: $0.title, agent: $0.agent?.name)
+            }) {
+                return ToolResult(content: problem, isError: true)
+            }
+            for spec in wanted {
                 await publish(spec, toolCallID: context.toolCallID, parentSessionID: parentSessionID, status: .queued)
                 let toolCallID = context.toolCallID
-                await background.launch(id: spec.agentID, title: spec.title, agent: spec.agent?.name) {
+                await background.start(id: spec.agentID) {
                     let outcome = await self.run(
                         spec,
                         index: 0,
@@ -577,8 +587,8 @@ public struct DelegateTaskTool: CodeTool {
         }
         // An agent's tool list can only take tools away from what its mode
         // allows.
-        let childRegistry = spec.agent.map {
-            ToolRegistry(tools: $0.allowedTools(from: environment.registry.allTools))
+        let childRegistry = spec.agent.map { agent in
+            environment.registry.restricted(to: agent.allowedTools(from: environment.registry.allTools).map(\.name))
         } ?? environment.registry
 
         let permissions = PermissionCoordinator(
