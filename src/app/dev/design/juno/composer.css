@@ -109,6 +109,11 @@
 .jn .jn-crow__add {
   color: var(--ink-2);
 }
+/* Dictating: the mic carries the presence colour and draws the live level; a quiet presence wash marks it on. */
+.jn .jn-crow__mic[data-on] {
+  color: var(--presence);
+  background: var(--presence-wash);
+}
 
 .jn .jn-model {
   display: inline-flex;

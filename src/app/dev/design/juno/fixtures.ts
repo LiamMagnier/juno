@@ -131,7 +131,7 @@ export const PALETTE_GROUPS: { kind: TokenKind; label: string; ids: string[] }[]
   { kind: "chat", label: "Chats", ids: ["chat1"] },
 ];
 
-export type Segment = { t: "text"; v: string } | { t: "token"; id: string };
+export type Segment = { t: "text"; v: string } | { t: "token"; id: string; leaving?: boolean };
 
 /** "Compare [Q3 Forecast.xlsx] with [Stripe] and ask [Mira] to flag renewal risk" */
 export const DRAFT: Segment[] = [

@@ -17,7 +17,7 @@ import {
 import { Icon } from "./icons";
 import { fromKeyboard, usePopoverKeys } from "./layers";
 import { AppMark, ModelMark, TokenMark } from "./marks";
-import { POP_IN, R, SPRING, T, useReduced } from "./motion";
+import { D, EASE_IN, POP_IN, R, SPRING, T, useReduced } from "./motion";
 
 /*
  * The composer (PRODUCT_REFOUNDATION §5): one field and four objects on one
@@ -39,6 +39,14 @@ import { POP_IN, R, SPRING, T, useReduced } from "./motion";
 
 /* ———————————————————————————— Tokens ———————————————————————————— */
 
+/**
+ * A token leaving by pointer (its panel's "Remove from message") yields in
+ * place: it fades on exit timing while its room in the sentence closes, then
+ * it is gone. Removed from the keyboard (Backspace, twice) it goes in the
+ * same frame: keyboard work never waits for an animation.
+ */
+const TOKEN_LEAVE = { opacity: 0, width: 0, paddingLeft: 0, paddingRight: 0, marginLeft: 0, marginRight: 0 };
+
 export function TokenChip({
   id,
   settle,
@@ -46,6 +54,7 @@ export function TokenChip({
   onPress,
   register,
   still,
+  leaving,
 }: {
   id: string;
   /** Set only on the token that was just chosen: its fill relaxes from the palette's highlight tone (C8). */
@@ -54,13 +63,19 @@ export function TokenChip({
   onPress?: (id: string) => void;
   register?: (id: string, el: HTMLSpanElement | null) => void;
   still?: boolean;
+  /** Removed by pointer: yielding its place. */
+  leaving?: boolean;
 }) {
   const token = TOKENS[id];
   const needs = token.kind === "app" && token.connected === false;
   const kindWord = token.kind === "crew" ? "agent" : token.kind === "app" ? "app" : token.kind;
   return (
-    <span
-      ref={(el) => register?.(id, el)}
+    <motion.span
+      ref={(el: HTMLSpanElement | null) => register?.(id, el)}
+      initial={false}
+      animate={leaving ? TOKEN_LEAVE : undefined}
+      transition={{ duration: D.exit, ease: EASE_IN }}
+      data-leaving={leaving ? "" : undefined}
       role={still ? undefined : "button"}
       tabIndex={still ? undefined : -1}
       aria-label={needs ? `${token.label}, ${kindWord}, not connected` : `${token.label}, ${kindWord}`}
@@ -81,7 +96,7 @@ export function TokenChip({
         <TokenMark token={token} size={16} />
       </span>
       <span className="jn-token__label">{token.label}</span>
-    </span>
+    </motion.span>
   );
 }
 
@@ -105,20 +120,25 @@ export function Sentence({
 }) {
   const lastToken = lastTokenIndex(segments);
   // The sentence never flies (C12, C18): a sent turn is drawn in its final place in the same frame.
+  // Tokens keep their identity by occurrence (not position), so one leaving never remounts the others.
+  const seen = new Map<string, number>();
   return (
     <div className="jn-sentence">
       {segments.map((s, i) => {
-        if (s.t === "text") return <React.Fragment key={i}>{s.v}</React.Fragment>;
+        if (s.t === "text") return <React.Fragment key={`t${i}`}>{s.v}</React.Fragment>;
+        const n = (seen.get(s.id) ?? 0) + 1;
+        seen.set(s.id, n);
         const isFresh = !!fresh && fresh.id === s.id && i === lastToken;
         return (
           <TokenChip
-            key={isFresh ? `${s.id}-${i}-${fresh?.key}` : `${s.id}-${i}`}
+            key={isFresh ? `${s.id}#${n}-${fresh?.key}` : `${s.id}#${n}`}
             id={s.id}
             settle={isFresh}
             selected={selected === s.id}
             onPress={onToken}
             register={register}
             still={still}
+            leaving={s.leaving}
           />
         );
       })}
@@ -162,7 +182,27 @@ type Action =
   | { type: "model"; open: boolean; kbd?: boolean }
   | { type: "plus"; open: boolean; kbd?: boolean }
   | { type: "focus"; on: boolean; kbd?: boolean }
+  | { type: "remove"; id: string }
+  | { type: "purge" }
   | { type: "reset"; segs: Segment[] };
+
+/** Take a token out of the sentence and close the gap: one space goes with it, and the text either side joins. */
+function dropToken(segs: Segment[], index: number): Segment[] {
+  const out = segs.slice();
+  out.splice(index, 1);
+  const prev = out[index - 1];
+  const next = out[index];
+  if (next && next.t === "text" && (!prev || (prev.t === "text" && /\s$/.test(prev.v)))) {
+    out[index] = { t: "text", v: next.v.replace(/^\s/, "") };
+  }
+  const merged: Segment[] = [];
+  for (const seg of out) {
+    const last = merged[merged.length - 1];
+    if (seg.t === "text" && last && last.t === "text") merged[merged.length - 1] = { t: "text", v: last.v + seg.v };
+    else if (!(seg.t === "text" && seg.v === "")) merged.push(seg);
+  }
+  return merged;
+}
 
 function appendText(segs: Segment[], c: string): Segment[] {
   const last = segs[segs.length - 1];
@@ -182,7 +222,7 @@ function reducer(s: State, a: Action): State {
       if (!last) return s;
       if (last.t === "token") {
         // The first press selects the token (a token is never deleted by surprise); the second removes it whole.
-        if (s.selected === last.id) return { ...s, segs: s.segs.slice(0, -1), selected: null, panel: null };
+        if (s.selected === last.id) return { ...s, segs: dropToken(s.segs, s.segs.length - 1), selected: null, panel: null };
         return { ...s, selected: last.id };
       }
       const v = last.v.slice(0, -1);
@@ -207,6 +247,19 @@ function reducer(s: State, a: Action): State {
       return { ...s, plus: a.open, panel: null, model: false, kbdLayer: !!a.kbd };
     case "focus":
       return { ...s, focus: a.on, kbd: a.on ? (a.kbd ?? s.kbd) : false };
+    case "remove": {
+      // By pointer: the token yields in place (marked leaving; purged after exit timing).
+      const segs = s.segs.map((seg) => (seg.t === "token" && seg.id === a.id && !seg.leaving ? { ...seg, leaving: true } : seg));
+      return { ...s, segs, panel: null, selected: null };
+    }
+    case "purge": {
+      let segs = s.segs;
+      for (let i = segs.length - 1; i >= 0; i--) {
+        const seg = segs[i];
+        if (seg.t === "token" && seg.leaving) segs = dropToken(segs, i);
+      }
+      return { ...s, segs };
+    }
     case "reset":
       return { ...s, segs: a.segs, query: null, panel: null, model: false, plus: false, selected: null, fresh: null };
   }
@@ -243,6 +296,8 @@ export interface ComposerApi {
   openPlus: (open: boolean, kbd?: boolean) => void;
   send: () => void;
   reset: (segs: Segment[]) => void;
+  /** As the token panel's "Remove from message": the token yields in place. */
+  removeToken: (id: string) => void;
 }
 
 export interface ComposerStill {
@@ -275,6 +330,9 @@ export function Composer({
   effortLabel,
   onType,
   fieldId,
+  onStop,
+  dictation,
+  onDictate,
 }: {
   initial?: Segment[];
   placeholder?: string;
@@ -298,6 +356,11 @@ export function Composer({
   onType?: () => void;
   /** The field's id (the skip link's target). */
   fieldId?: string;
+  /** The disc is Stop while busy: pressing it stops at once (the parent owns `busy`). */
+  onStop?: () => void;
+  /** Dictating: the microphone's live input levels (five, 0..1), drawn by the mic itself. Null when off. */
+  dictation?: number[] | null;
+  onDictate?: () => void;
 }) {
   const reduced = useReduced();
   const [s, dispatch] = React.useReducer(reducer, undefined, () => ({
@@ -401,6 +464,7 @@ export function Composer({
       openPlus: (open, kbd) => dispatch({ type: "plus", open, kbd }),
       send: () => send(),
       reset: (segs) => dispatch({ type: "reset", segs }),
+      removeToken: (id) => dispatch({ type: "remove", id }),
     };
   }, [apiRef, send, handleKey]);
 
@@ -504,6 +568,15 @@ export function Composer({
   }, [paletteOpen, s.panel, s.model, s.plus, s.segs, s.query]);
 
   const closeLayer = React.useCallback(() => dispatch({ type: "escape" }), []);
+  const removeToken = React.useCallback((id: string) => dispatch({ type: "remove", id }), []);
+
+  // A token yielding its place is gone once its exit has played (or at once under reduced motion).
+  const leaving = s.segs.some((seg) => seg.t === "token" && seg.leaving);
+  React.useEffect(() => {
+    if (!leaving) return;
+    const t = window.setTimeout(() => dispatch({ type: "purge" }), reduced ? 0 : D.exit * 1000 + 20);
+    return () => window.clearTimeout(t);
+  }, [leaving, reduced]);
 
   const empty = s.segs.length === 0 && s.query === null;
   const mode: "voice" | "send" | "stop" = busy ? "stop" : s.segs.length ? "send" : "voice";
@@ -611,8 +684,18 @@ export function Composer({
             {effortLabel ? <span className="jn-model__effort">{effortLabel}</span> : null}
             <Icon name="chevron-down" size={16} state={s.model ? "active" : "rest"} />
           </button>
-          <button type="button" className="jib jicon-trigger jtip" aria-label="Dictate" data-tip="Dictate" data-tip-side={variant === "home" ? undefined : "top"}>
-            <Icon name="mic" size={20} />
+          {/* Dictating, the mic draws the live input level in its own place (real levels, no decorative loop). */}
+          <button
+            type="button"
+            className="jib jicon-trigger jtip jn-crow__mic"
+            aria-label={dictation ? "Stop dictating" : "Dictate"}
+            aria-pressed={dictation ? true : undefined}
+            data-on={dictation ? "" : undefined}
+            data-tip={dictation ? "Stop dictating" : "Dictate"}
+            data-tip-side={variant === "home" ? undefined : "top"}
+            onClick={onDictate}
+          >
+            {dictation ? <Icon name="voice" size={20} levels={dictation} state="active" /> : <Icon name="mic" size={20} />}
           </button>
           <button
             type="button"
@@ -623,7 +706,7 @@ export function Composer({
             data-tip-side={variant === "home" ? undefined : "top"}
             data-tip-align="end"
             aria-label={mode === "stop" ? "Stop response" : mode === "send" ? "Send message" : "Start a voice conversation"}
-            onClick={mode === "send" ? send : undefined}
+            onClick={mode === "send" ? send : mode === "stop" ? onStop : undefined}
           >
             {/* One disc, three faces (C12, C13, C16). The glyphs overlap and swap in place: opacity with scale 0.8 to 1 on fast. */}
             <AnimatePresence initial={false} mode="popLayout">
@@ -658,7 +741,7 @@ export function Composer({
       </AnimatePresence>
       <AnimatePresence>
         {s.panel ? (
-          <AppPanel key={`panel-${s.panel}`} id={s.panel} style={anchor.panel} origin={anchor.panelOrigin} below={anchor.panelBelow} kbd={s.kbdLayer} onClose={closeLayer} />
+          <AppPanel key={`panel-${s.panel}`} id={s.panel} style={anchor.panel} origin={anchor.panelOrigin} below={anchor.panelBelow} kbd={s.kbdLayer} onClose={closeLayer} onRemove={removeToken} />
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
@@ -778,6 +861,7 @@ export function AppPanel({
   below = true,
   kbd = false,
   onClose,
+  onRemove,
 }: {
   id: string;
   style?: React.CSSProperties;
@@ -785,6 +869,8 @@ export function AppPanel({
   below?: boolean;
   kbd?: boolean;
   onClose?: () => void;
+  /** "Remove from message": the token yields in place; the app stays connected. */
+  onRemove?: (id: string) => void;
 }) {
   const reduced = useReduced();
   const ref = React.useRef<HTMLDivElement | null>(null);
@@ -835,7 +921,7 @@ export function AppPanel({
           </ul>
           <div className="jn-appanel__foot">
             <span className="jn-appanel__verbs">
-              <button type="button" className="jb jb--ghost jb--sm">
+              <button type="button" className="jb jb--ghost jb--sm" onClick={() => onRemove?.(id)}>
                 Remove from message
               </button>
               <button type="button" className="jb jb--ghost jb--sm">

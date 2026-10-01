@@ -3,15 +3,19 @@
 import * as React from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { CrewFace, type CrewState } from "./crew/face";
-import { CREW, DRAFT, MIRA, THREAD_TITLE, type Segment } from "./fixtures";
+import { CODE_STEPS, CREW, DRAFT, MIRA, STATUS_FACE, THREAD_TITLE, type AgentStatus, type CrewRow, type Segment } from "./fixtures";
 import { ChatSurface } from "./chat";
 import { Composer, type ComposerApi } from "./composer";
 import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { R, SPRING, T, useReduced } from "./motion";
-import { face, TopBar } from "./shell";
+import { CrewRowItem, face, TopBar } from "./shell";
+import { ThinkingMark, type ThinkingState } from "./brand";
+import { Step } from "./code";
+import { FileMark } from "./marks";
+import { smoothed } from "./voice/signal";
 import { CrewMark, MemberPeek, Reaction, useMemberTheme } from "./crew-bridge";
-import { Answer, Approval, HANDOFF_FACE_ID, HANDOFF_ID, MessageActions, TaskCard, Trace, UserMessage } from "./thread";
+import { Answer, Approval, HANDOFF_FACE_ID, HANDOFF_ID, LiveLine, MessageActions, TaskCard, Trace, UserMessage } from "./thread";
 
 /*
  * Motion, one moment at a time. Each plays on its own and replays on demand;
@@ -201,37 +205,42 @@ function MenuMoment() {
   );
 }
 
-/* ———————————————————————— 9 · Crew presence ———————————————————————— */
+/* ———————————————————————— 9 · Orbit: an agent's attention and state ———————————————————————— */
 
-const PRESENCE_SEQ: { state: CrewState; words: string }[] = [
-  { state: "available", words: "Ready" },
-  { state: "thinking", words: "Mira is thinking" },
-  { state: "working", words: "Mira is matching Stripe customers" },
-  { state: "waiting", words: "Mira needs your answer" },
-  { state: "working", words: "Mira is carrying on" },
-  { state: "available", words: "Finished, a moment ago" },
+const ORBIT_SEQ: { status: AgentStatus; words: string }[] = [
+  { status: "ready", words: "Ready" },
+  { status: "thinking", words: "Mira is thinking" },
+  { status: "working", words: "Mira is matching Stripe customers" },
+  { status: "needs", words: "Mira needs your answer" },
+  { status: "working", words: "Mira is carrying on" },
+  { status: "finished", words: "Finished: 3 accounts checked" },
 ];
 
-function CrewMoment() {
+function OrbitMoment() {
   const [i, setI] = React.useState(0);
-  useTimeline(() => PRESENCE_SEQ.map((_, k): Step => [600 + k * 1500, () => setI(k)]));
-  const now = PRESENCE_SEQ[i];
+  const reduced = useReduced();
+  useTimeline(() => ORBIT_SEQ.map((_, k): Step => [600 + k * 1500, () => setI(k)]));
+  const now = ORBIT_SEQ[i];
+  const mira: CrewRow = { ...MIRA, status: now.status, state: STATUS_FACE[now.status] };
   return (
     <div className="jn-mstage jn-mstage--center">
-      <div className="jn-mcrew">
-        <CrewFace member={face(MIRA)} state={now.state} size={96} facing="front" />
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.p key={now.words} className="jn-mcrew__words" data-state={now.state} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={T.fast}>
-            {now.words}
-          </motion.p>
-        </AnimatePresence>
+      <div className="jn-morbit">
+        <div className="jn-mcrew">
+          <CrewFace member={face(MIRA)} state={STATUS_FACE[now.status]} size={96} facing="front" />
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.p key={now.words} className="jn-mcrew__words" data-status={now.status} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fast}>
+              {now.words}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+        <div className="jn-side jn-morbit__rows" aria-label="Orbit rows">
+          <CrewRowItem m={mira} />
+          {CREW.slice(1, 4).map((m) => (
+            <CrewRowItem key={m.id} m={m} />
+          ))}
+        </div>
       </div>
-      <div className="jn-mcrew__row">
-        {CREW.map((m) => (
-          <CrewFace key={m.id} member={face(m)} state={m.state} size={32} />
-        ))}
-      </div>
-      <p className="jn-mstage__cap">State changes morph on the standard spring and cross-fade their words; turning toward you when it needs you plays once. Nothing moves on a timer.</p>
+      <p className="jn-mstage__cap">The state is words, cross-fading in place (120 ms) in the row and under the face; only Needs your answer takes the amber. The pose follows on the standard spring. No motion stands for consent.</p>
     </div>
   );
 }
@@ -391,6 +400,276 @@ function MaterialMoment({ tall }: { tall?: boolean }) {
   );
 }
 
+
+/* ———————————————————————— 13 · Thinking: the Continuum beside the truthful phase ———————————————————————— */
+
+const THINK_SEQ: { at: number; words: string; state: ThinkingState }[] = [
+  { at: 0, words: "Thinking", state: "active" },
+  { at: 1300, words: "Reading Q3 Forecast.xlsx", state: "active" },
+  { at: 2200, words: "Searching Stripe subscriptions", state: "active" },
+  { at: 2500, words: "Searching Stripe subscriptions, 3 found", state: "active" },
+  { at: 4400, words: "Waiting for your answer", state: "waiting" },
+  { at: 6300, words: "Comparing renewals with the forecast", state: "active" },
+  { at: 8300, words: "Finished, read 3 sources", state: "done" },
+];
+
+function ThinkingMoment() {
+  const [k, setK] = React.useState(0);
+  useTimeline(() => THINK_SEQ.map((e, i): Step => [500 + e.at, () => setK(i)]));
+  const now = THINK_SEQ[k];
+  // Every real event while live asks for a pass; the mark coalesces them (at most one every 1.6 s).
+  const events = THINK_SEQ.slice(0, k + 1).filter((e) => e.state === "active").length;
+  return (
+    <div className="jn-mstage jn-mstage--top jn-mstage--thread">
+      <div className="jn-mthink">
+        <div className="jn-mthink__row">
+          <UserMessage segments={DRAFT} />
+          <LiveLine text={now.words} state={now.state} seconds={k >= 2 && now.state === "active" ? 3 + k : undefined} />
+        </div>
+        <div className="jn-mthink__big" aria-hidden="true">
+          <ThinkingMark size={150} state={now.state} pulse={events} />
+        </div>
+      </div>
+      <p className="jn-mstage__cap">The mark never moves: a tone passes through its paths once per real event (events inside 1.6 s share a pass), the last path holds it while live. Waiting is still; finishing settles once.</p>
+    </div>
+  );
+}
+
+/* ———————————————————————— 14 · A token leaving ———————————————————————— */
+
+function TokenRemoveMoment() {
+  const api = React.useRef<ComposerApi | null>(null);
+  useTimeline(() => [
+    [700, () => api.current?.focus(true)],
+    [1300, () => api.current?.key("Backspace")],
+    [2300, () => api.current?.key("Backspace")],
+    [3300, () => api.current?.openPanel("stripe")],
+    [4900, () => api.current?.removeToken("stripe")],
+  ]);
+  const segs: Segment[] = [
+    { t: "text", v: "Compare " },
+    { t: "token", id: "forecast" },
+    { t: "text", v: " with " },
+    { t: "token", id: "stripe" },
+    { t: "text", v: " and post it in " },
+    { t: "token", id: "slack" },
+  ];
+  return (
+    <div className="jn-mstage jn-mstage--top">
+      <Composer initial={segs} apiRef={api} />
+      <p className="jn-mstage__cap">Backspace selects a token, a second removes it in the same frame. From its panel, Remove from message lets it yield in place: 160 ms, ease-in, its room closing. The app stays connected.</p>
+    </div>
+  );
+}
+
+/* ———————————————————————— 15 · Stop ———————————————————————— */
+
+function StopMoment() {
+  const api = React.useRef<ComposerApi | null>(null);
+  const host = React.useRef<HTMLDivElement | null>(null);
+  const [busy, setBusy] = React.useState(true);
+  const [phase, setPhase] = React.useState(0);
+  useTimeline(() => [
+    [900, () => setPhase(1)],
+    [2300, () => (host.current?.querySelector('.jn-disc[data-mode="stop"]') as HTMLButtonElement | null)?.click()],
+    [3400, () => api.current?.focus(true)],
+    [3700, () => void api.current?.type("Only check Halvorsen", 50)],
+  ]);
+  return (
+    <div className="jn-mstage jn-mstage--bottom jn-mstage--thread" ref={host}>
+      <div className="jn-mstop">
+        <UserMessage segments={DRAFT} />
+        {busy ? (
+          <LiveLine text={phase ? "Searching Stripe subscriptions" : "Reading Q3 Forecast.xlsx"} seconds={phase ? 4 : undefined} />
+        ) : (
+          <p className="jn-stopped">
+            <span>Stopped. Nothing was posted.</span>
+            <button type="button" className="jb jb--link">
+              Continue
+            </button>
+          </p>
+        )}
+      </div>
+      <Composer variant="dock" busy={busy} apiRef={api} placeholder="Reply…" onStop={() => setBusy(false)} />
+      <p className="jn-mstage__cap">While Alevr works the disc is Stop. The work stops in the frame it is pressed; the disc turns back in 120 ms, and the row says what stopped and what did not happen.</p>
+    </div>
+  );
+}
+
+/* ———————————————————————— 16 · Dictation ———————————————————————— */
+
+/** Five input levels from the voice envelope at a time (the product reads the microphone's analyser). */
+function levelsAt(ms: number): number[] {
+  return [0, 70, 140, 210, 280].map((d, i) => Math.min(1, smoothed(ms - d, "you") * (0.8 + 0.1 * (i % 3))));
+}
+
+function DictateMoment() {
+  const api = React.useRef<ComposerApi | null>(null);
+  const [on, setOn] = React.useState(false);
+  const [levels, setLevels] = React.useState<number[] | null>(null);
+  const start = React.useRef(0);
+  React.useEffect(() => {
+    if (!on) {
+      setLevels(null);
+      return;
+    }
+    start.current = performance.now();
+    let raf = 0;
+    const tick = () => {
+      setLevels(levelsAt(performance.now() - start.current + 3000));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [on]);
+  useTimeline(() => [
+    [700, () => setOn(true)],
+    [1100, () => void api.current?.type("Draft the renewal email to Kari at Halvorsen", 62)],
+    [4600, () => setOn(false)],
+  ]);
+  return (
+    <div className="jn-mstage jn-mstage--center">
+      <Composer initial={[]} apiRef={api} dictation={levels} onDictate={() => setOn((o) => !o)} still={{ pointerFocused: true }} />
+      <p className="jn-mstage__cap">Dictating, the mic draws the input level in its own place and the words land as they are recognised; press again to stop. Here the level is a recorded envelope; the product reads the microphone.</p>
+    </div>
+  );
+}
+
+/* ———————————————————————— 17 · Copy and save ———————————————————————— */
+
+function SaveRow() {
+  const [saved, setSaved] = React.useState(false);
+  const reduced = useReduced();
+  return (
+    <div className="jn-msave">
+      <a href="#" className="jn-attach">
+        <FileMark name="Q3 renewal risk.md" size={20} />
+        <span className="jn-attach__text">
+          <span>Q3 renewal risk, summary</span>
+          <span className="ink-3">Document, 2 pages</span>
+        </span>
+      </a>
+      <button type="button" className="jb jb--secondary jb--sm jicon-trigger jn-msave__btn" data-saved={saved ? "" : undefined} aria-pressed={saved} onClick={() => setSaved(true)}>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span key={saved ? "s" : "u"} className="jn-msave__label" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fast}>
+            <Icon name={saved ? "check" : "library"} size={16} state={saved ? "active" : "rest"} />
+            {saved ? "Saved to Library" : "Save to Library"}
+          </motion.span>
+        </AnimatePresence>
+      </button>
+    </div>
+  );
+}
+
+function CopySaveMoment() {
+  const host = React.useRef<HTMLDivElement | null>(null);
+  useTimeline(() => [
+    [900, () => (host.current?.querySelector('.jn-actions [aria-label="Copy"]') as HTMLButtonElement | null)?.click()],
+    [3600, () => (host.current?.querySelector(".jn-msave__btn") as HTMLButtonElement | null)?.click()],
+  ]);
+  return (
+    <div className="jn-mstage jn-mstage--top jn-mstage--thread" ref={host}>
+      <p className="jn-mstage__prose">I’ve asked Mira to check usage on all three and flag the ones worth a call.</p>
+      <MessageActions />
+      <SaveRow />
+      <p className="jn-mstage__cap">Confirmation is local and true: Copy draws its check once and returns after 1.5 s; Save to Library becomes Saved to Library once stored, and stays. No toast for something you are watching.</p>
+    </div>
+  );
+}
+
+/* ———————————————————————— 18 · Code: a tool, the diff, verification ———————————————————————— */
+
+function VerifyMoment() {
+  const [n, setN] = React.useState(0);
+  const [tests, setTests] = React.useState<null | number>(null);
+  const [passed, setPassed] = React.useState(false);
+  const reduced = useReduced();
+  useTimeline(() => [
+    ...CODE_STEPS.slice(0, 4).map((_, i): Step => [500 + i * 700, () => setN(i + 1)]),
+    [3500, () => setTests(12)],
+    [4300, () => setTests(41)],
+    [5200, () => setTests(97)],
+    [6100, () => setTests(128)],
+    [6400, () => setPassed(true)],
+  ]);
+  return (
+    <div className="jn-mstage jn-mstage--top jn-mstage--thread jn-mverify">
+      <div className="jn-mverify__head">
+        <span className="jn-mverify__title">Sync worker drops cursors on retry</span>
+        <button type="button" className="jb jb--secondary jb--sm jicon-trigger" aria-disabled={!passed} data-ready={passed ? "true" : "false"}>
+          <Icon name="pull-request" size={16} />
+          Open pull request
+        </button>
+      </div>
+      <ol className="jn-steps">
+        {CODE_STEPS.slice(0, n).map((st) => (
+          <motion.div key={st.object + st.verb} initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={reduced ? R : T.fast}>
+            <Step {...st} />
+          </motion.div>
+        ))}
+        {passed ? (
+          <motion.div initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={reduced ? R : T.fast}>
+            <Step verb="Ran" object="npm test -- sync" extra="128 passed" state="done" />
+          </motion.div>
+        ) : null}
+      </ol>
+      {tests !== null && !passed ? <LiveLine className="jn-codelive" text={`Running the sync suite, ${tests} of 128 tests`} seconds={Math.round(tests / 3)} /> : null}
+      <p className="jn-mstage__cap">Each step lands when the tool reports it (120 ms, in place) and the count is the runner’s own. Open pull request becomes available only after the tests pass, on a tonal step. Nothing celebrates.</p>
+    </div>
+  );
+}
+
+/* ———————————————————————— 19 · Error, retry, blocked ———————————————————————— */
+
+function RecoverMoment() {
+  const [step, setStep] = React.useState<"error" | "retry" | "done">("error");
+  const [ines, setInes] = React.useState<"blocked" | "working">("blocked");
+  const host = React.useRef<HTMLDivElement | null>(null);
+  useTimeline(() => [
+    [1400, () => (host.current?.querySelector(".jn-mrecover__retry") as HTMLButtonElement | null)?.click()],
+    [3700, () => setStep("done")],
+    [4900, () => (host.current?.querySelector(".jn-mrecover__reconnect") as HTMLButtonElement | null)?.click()],
+  ]);
+  const inesRow = CREW.find((m) => m.id === "ines") ?? CREW[0];
+  const row: CrewRow = ines === "blocked" ? inesRow : { ...inesRow, status: "working", state: "working", long: "Working: reading 12 new applications" };
+  return (
+    <div className="jn-mstage jn-mstage--top jn-mstage--thread" ref={host}>
+      <div className="jn-mrecover">
+        {step === "error" ? (
+          <div className="jn-live" data-state="error" role="status">
+            <span className="jn-live__glyph" aria-hidden="true">
+              <ThinkingMark size={20} state="error" />
+            </span>
+            <span className="jn-live__text">Couldn’t reach Stripe. The request timed out after 30 s.</span>
+            <button type="button" className="jb jb--link jn-mrecover__retry" onClick={() => setStep("retry")}>
+              Try again
+            </button>
+          </div>
+        ) : (
+          <LiveLine text={step === "retry" ? "Searching Stripe subscriptions" : "Finished, read 3 sources"} state={step === "retry" ? "active" : "done"} />
+        )}
+        <div className="jn-crewstate">
+          <CrewMark member={face(row)} state={row.state} size={24} />
+          <span className="jn-crewstate__main">
+            <span className="jn-crewstate__name">{row.name}</span>
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span key={row.long} className="jn-crewstate__line" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={T.fast}>
+                {row.long}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+          {ines === "blocked" ? (
+            <button type="button" className="jb jb--secondary jb--sm jn-mrecover__reconnect" onClick={() => setInes("working")}>
+              Reconnect Greenhouse
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <p className="jn-mstage__cap">An error is still: the mark in the third ink, the words say what failed, one verb leads forward. Blocked is the same for an agent: the reason and Reconnect. Recovery changes the words.</p>
+    </div>
+  );
+}
+
 /* ———————————————————————— The page ———————————————————————— */
 
 const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType<{ tall?: boolean }>; tall?: boolean }[] = [
@@ -402,10 +681,17 @@ const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType
   { id: "handoff", title: "The hand-off", spec: "line to card title on the emphasized spring, position only · card revealed from its header, 360 ms", C: HandoffMoment },
   { id: "approval", title: "Approval: arrive, arm, land", spec: "arrive 220 ms, 6 px rise · arm 500 ms · height to the receipt 220 ms · receipt on the reward spring", C: ApprovalMoment },
   { id: "menu", title: "Menus open and close", spec: "pointer: 220 ms from the trigger, opacity in 80 ms · keyboard: same frame, focus inside · close 160 ms ease-in", C: MenuMoment },
-  { id: "crew", title: "Crew presence", spec: "pose on the standard spring · words cross-fade 120 ms · attention turn once", C: CrewMoment },
-  { id: "member", title: "A member’s own thread", spec: "arrival on the character spring, 0.5 s, bounce 0.24 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
+  { id: "orbit", title: "Orbit: an agent’s attention and state", spec: "words cross-fade 120 ms in its row and under its face · pose on the standard spring · turn toward you once", C: OrbitMoment },
+  { id: "member", title: "An agent’s own thread", spec: "arrival on the character spring, 0.5 s, bounce 0.24 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
   { id: "icons", title: "Icons on hover and state", spec: "each icon’s own motion, 120 to 240 ms, reduced to a cross-fade", C: IconsMoment },
   { id: "material", title: "Material and scroll edges", spec: "content blurs under the header and the dock · palette and menu on the material · the material itself never animates", C: MaterialMoment, tall: true },
+  { id: "thinking", title: "Thinking: the Continuum handoff", spec: "220 ms tone · 70 ms stagger · one pass per real event, coalesced to 1.6 s · still when waiting · settles once", C: ThinkingMoment },
+  { id: "token-remove", title: "A token leaving", spec: "keyboard: select, then gone in the same frame · pointer: yields in place, 160 ms ease-in", C: TokenRemoveMoment },
+  { id: "stop", title: "Stop", spec: "stops in the frame it is pressed · disc glyph 120 ms · the row says what stopped", C: StopMoment },
+  { id: "dictate", title: "Dictation", spec: "the mic draws the live input level · presence colour while on · words land as recognised", C: DictateMoment },
+  { id: "copy-save", title: "Copy and save", spec: "check drawn once, 1.5 s hold · Saved to Library stays · no toast for a watched action", C: CopySaveMoment },
+  { id: "verify", title: "Code: steps, tests, ready", spec: "steps fade in where they land, 120 ms · real counts · pull request available only after the pass", C: VerifyMoment },
+  { id: "recover", title: "Error, retry, blocked", spec: "still mark and words · one verb forward · recovery changes the words", C: RecoverMoment },
 ];
 
 function MomentCard({ m, large }: { m: (typeof MOMENTS)[number]; large?: boolean }) {
@@ -449,7 +735,7 @@ export function MotionScene({ only }: { only?: string }) {
     <main className="jn-motion">
       <header className="jn-sys__head">
         <h1 className="t-title">Motion</h1>
-        <p className="jn-page__lede">Causality and continuity only. Chrome answers in 120 to 220 ms; the one spatial move, the first send, takes 360 ms on a spring with no bounce. Anything started from the keyboard does not move. The only thing allowed to idle is an agent over its own thread, and only while you can see it.</p>
+        <p className="jn-page__lede">Causality and continuity only, on the V3 timings: press 70, fast 120, exit 160, base 220, slow 360, emphasis 560 ms. The one spatial move, the first send, takes 360 ms on a spring with no bounce. Anything started from the keyboard does not move. Thinking is the Continuum handing a tone through its paths beside true words. The only thing allowed to idle is an agent over its own thread, and only while you can see it. Every moment has its reduced form.</p>
       </header>
       <div className="jn-motion__grid">
         {MOMENTS.map((m) => (

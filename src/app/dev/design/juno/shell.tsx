@@ -202,9 +202,18 @@ function WorkspaceSwitch({ active }: { active: "chat" | "code" }) {
  * A destination row. Only the four places you go to (New chat, Projects, Library, Customize)
  * let their glyph articulate on hover (INTERACTION_SPEC I-7); every other row is quiet.
  */
-function NavRow({ icon, label, kbd, current, moves = false }: { icon: string; label: string; kbd?: string; current?: boolean; moves?: boolean }) {
+function NavRow({ icon, label, kbd, current, moves = false, onSelect }: { icon: string; label: string; kbd?: string; current?: boolean; moves?: boolean; onSelect?: () => void }) {
   return (
-    <a href="#" className={moves ? "jrow jicon-trigger jicon-hover jn-side__nav" : "jrow jicon-trigger jicon-quiet jn-side__nav"} aria-current={current ? "page" : undefined} aria-keyshortcuts={kbd ? kbd.replace("⌘", "Meta+") : undefined}>
+    <a
+      href="#"
+      className={moves ? "jrow jicon-trigger jicon-hover jn-side__nav" : "jrow jicon-trigger jicon-quiet jn-side__nav"}
+      aria-current={current ? "page" : undefined}
+      aria-keyshortcuts={kbd ? kbd.replace("⌘", "Meta+") : undefined}
+      onClick={(e) => {
+        e.preventDefault();
+        onSelect?.();
+      }}
+    >
       <span className="jn-side__lead">
         <Icon name={icon} size={16} />
       </span>
@@ -231,11 +240,16 @@ function Section({ label, action, children }: { label: string; action?: React.Re
  * right its state in words (as in the owner's frame). Ready is the rest state
  * and says nothing; "Needs your answer" is the one amber in the sidebar.
  */
-export function CrewRowItem({ m, current }: { m: CrewRow; current?: boolean }) {
+export function CrewRowItem({ m, current, onSelect }: { m: CrewRow; current?: boolean; onSelect?: () => void }) {
   const word = SIDE_STATE[m.status];
+  const reduced = useReduced();
   return (
     <a
       href="#"
+      onClick={(e) => {
+        e.preventDefault();
+        onSelect?.();
+      }}
       className="jrow jn-side__crew"
       data-state={m.state}
       data-status={m.status}
@@ -246,11 +260,22 @@ export function CrewRowItem({ m, current }: { m: CrewRow; current?: boolean }) {
         <CrewMark member={face(m)} state={m.state} size={20} />
       </span>
       <span className="jrow__text jn-side__crewname">{m.name}</span>
-      {word ? (
-        <span className={m.status === "needs" ? "jn-side__state jn-attn" : "jn-side__state"} aria-hidden="true">
-          {word}
-        </span>
-      ) : null}
+      {/* A state change cross-fades its words in place (fast); the words, not motion, carry it. */}
+      <AnimatePresence mode="popLayout" initial={false}>
+        {word ? (
+          <motion.span
+            key={word}
+            className={m.status === "needs" ? "jn-side__state jn-attn" : "jn-side__state"}
+            aria-hidden="true"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={reduced ? R : T.fast}
+          >
+            {word}
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
     </a>
   );
 }
@@ -259,10 +284,19 @@ export function CrewRowItem({ m, current }: { m: CrewRow; current?: boolean }) {
  * The Orbit section's head: a destination (the Orbit page, "Your agents") drawn
  * as a section label with the Orbit glyph, and Create agent on the right.
  */
-export function OrbitLabel({ current }: { current?: boolean }) {
+export function OrbitLabel({ current, onSelect }: { current?: boolean; onSelect?: () => void }) {
   return (
     <div className="jn-side__label jn-side__label--dest">
-      <a href="#" className="jn-side__labellink" aria-current={current ? "page" : undefined} aria-label="Orbit, your agents">
+      <a
+        href="#"
+        className="jn-side__labellink"
+        aria-current={current ? "page" : undefined}
+        aria-label="Orbit, your agents"
+        onClick={(e) => {
+          e.preventDefault();
+          onSelect?.();
+        }}
+      >
         <OrbitGlyph size={16} className="jn-side__labelglyph" />
         <span>Orbit</span>
       </a>
@@ -303,9 +337,18 @@ function useSidePop(initial?: SidePop) {
 }
 
 /** Rows that carry the attention word on the right, in amber (a thread with a pending approval). */
-function TextRow({ label, current, needs }: { label: string; current?: boolean; needs?: boolean }) {
+function TextRow({ label, current, needs, onSelect }: { label: string; current?: boolean; needs?: boolean; onSelect?: () => void }) {
   return (
-    <a href="#" className="jrow jrow--text" aria-current={current ? "page" : undefined} aria-label={needs ? `${label}, needs you` : undefined}>
+    <a
+      href="#"
+      className="jrow jrow--text"
+      aria-current={current ? "page" : undefined}
+      aria-label={needs ? `${label}, needs you` : undefined}
+      onClick={(e) => {
+        e.preventDefault();
+        onSelect?.();
+      }}
+    >
       <span className="jrow__text">{label}</span>
       {needs ? (
         <span className="jn-side__state jn-attn" aria-hidden="true">
@@ -329,33 +372,37 @@ export function ChatSidebar({
   threadNeeds?: boolean;
 }) {
   const { pop, kbd, setPop, close } = useSidePop(initialPop);
+  // Navigation selection is tonal and immediate on press (the fill steps in on fast); the glyph never moves for it.
+  const [here, setHere] = React.useState<string | undefined>(
+    crewCurrent ? `agent:${crewCurrent}` : current === "thread" ? "recent:0" : current === "crew" ? "orbit" : current,
+  );
   return (
     <nav className="jn-side" aria-label="Alevr">
       <SideHead pop={pop} setPop={setPop} />
       <Activity open={pop === "activity"} onClose={close} kbd={kbd} />
       <WorkspaceSwitch active="chat" />
       <div className="jn-side__nav-group">
-        <NavRow icon="new-chat" label="New chat" kbd="⌘N" moves />
+        <NavRow icon="new-chat" label="New chat" kbd="⌘N" moves onSelect={() => setHere("new")} current={here === "new"} />
         <NavRow icon="search" label="Search" kbd="⌘K" />
-        <NavRow icon="folder" label="Projects" moves />
-        <NavRow icon="library" label="Library" current={current === "library"} moves />
-        <NavRow icon="customize" label="Customize" current={current === "customize"} moves />
+        <NavRow icon="folder" label="Projects" moves current={here === "projects"} onSelect={() => setHere("projects")} />
+        <NavRow icon="library" label="Library" current={here === "library"} moves onSelect={() => setHere("library")} />
+        <NavRow icon="customize" label="Customize" current={here === "customize"} moves onSelect={() => setHere("customize")} />
       </div>
       <div className="jn-side__scroll">
         <section className="jn-side__section" aria-label="Orbit, your agents">
-          <OrbitLabel current={current === "crew" && !crewCurrent} />
+          <OrbitLabel current={here === "orbit"} onSelect={() => setHere("orbit")} />
           {CREW.slice(0, 4).map((m) => (
-            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id} />
+            <CrewRowItem key={m.id} m={m} current={here === `agent:${m.id}`} onSelect={() => setHere(`agent:${m.id}`)} />
           ))}
         </section>
         <Section label="Pinned">
-          {PINNED.map((p) => (
-            <TextRow key={p} label={p} />
+          {PINNED.map((p, i) => (
+            <TextRow key={p} label={p} current={here === `pinned:${i}`} onSelect={() => setHere(`pinned:${i}`)} />
           ))}
         </Section>
         <Section label="Recent">
           {RECENT.slice(0, 6).map((r, i) => (
-            <TextRow key={r} label={r} current={current === "thread" && i === 0} needs={threadNeeds && i === 0} />
+            <TextRow key={r} label={r} current={here === `recent:${i}`} needs={threadNeeds && i === 0} onSelect={() => setHere(`recent:${i}`)} />
           ))}
         </Section>
       </div>

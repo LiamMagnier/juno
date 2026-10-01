@@ -117,7 +117,7 @@ export function CodeStartScene() {
   );
 }
 
-function Step({ verb, object, extra, state }: { verb: string; object: string; extra?: string; state: "done" | "active" }) {
+export function Step({ verb, object, extra, state }: { verb: string; object: string; extra?: string; state: "done" | "active" }) {
   const [add, del] = extra?.startsWith("+") ? extra.split(" ") : [];
   return (
     <li className="jn-step" data-state={state}>
