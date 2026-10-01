@@ -48,6 +48,11 @@ Out of scope:
    `src/lib/db.ts` rejects unscoped reads, aggregates, updates, deletes and
    upserts on listed owned models in every environment. Explicit cross-account
    paths use `prismaUnguarded` and require a separate authorization check.
+   Because a rejection is an outage, `tests/ownership-guard-callsites.test.ts`
+   scans every guarded call site statically and fails the gate on an unscoped
+   one; a `where` it cannot see into must be listed there with its reason. It
+   cannot see an owner value that is `undefined` at runtime: that still fails
+   closed, in production.
 
 The standalone trust-boundary, enterprise SSO and DLP modules are prototypes.
 They are not wired into request dispatch and are not enforced product controls.
