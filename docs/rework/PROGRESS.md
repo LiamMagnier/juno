@@ -45,7 +45,7 @@ agent-core build and `npm run i18n:extract`.
 | 7 | Work, Research, Voice | | | |
 | 8 | Artifacts lifecycle | | | |
 | 9 | Juno Code runtime correctness and architecture | merged into `rework/refoundation` | lane merges `76e1accb` `90681ce7` `954fc35c` `84114901`; trunk merge `4c3e59f1` | see Phase 9 below |
-| 10 | Juno Code on Mac | | | |
+| 10 | Juno Code on Mac | 10a (autonomous agent) merged into `rework/refoundation` | lane merges `79583bfc` `bf974ae2` `3b2f3611` `06e62908` `9c72a11b` `e1646087`; wiring `73ef5510` `d619a573`; trunk merge `fff21f85` | see Phase 10a below |
 | 11 | Code on web and iOS: remote and cloud parity | | | |
 | 12 | Accessibility, motion, responsive polish | | | |
 | 13 | Security hardening | | | |
@@ -1047,3 +1047,130 @@ Open, for other lanes: the command sandbox does not deny writes to
 `writablePaths` could reach them, but `~/.juno/mcp.json` now starts servers
 without asking) — Lane B owns the profile; background children outlive the
 parent's turn until Lane A's stop check waits on `hasRunning`.
+
+## Phase 10a — autonomous agent
+
+The six lanes of `docs/rework/CODE_AGENT_SPEC.md` §6, each built and then
+adversarially reviewed on its own branch, merged with `--no-ff` in spec order
+onto `rf/code-agent-integration` (worktree `../juno-rf-code-agent-integ`,
+started from `rework/refoundation` @ `1b4fcb89`), wired together where the
+lanes had left seams for each other, and checked with the §6.7 cross-lane
+scenarios. Requested by the owner for Juno Code on macOS: a real agent that
+loops (thinks, builds, checks what it did, goes again), computer use,
+Preview, and the missing features.
+
+### Per lane
+
+| Lane | Branch tip | Merge | Conflicts and how they were resolved |
+|---|---|---|---|
+| A: loop, stop check, goal (§6.1) | `2f66dbb5` (7 commits) | `79583bfc` | clean |
+| B: verification, self-review, report (§6.2) | `9a9cb2e9` (15) | `bf974ae2` | session view (recipe card above the goal row), provider test, PROGRESS |
+| D: Preview and browser (§6.4) | `31e43239` (20) | `3b2f3611` | `CodeToolProviderContext` (run ledger + shells); the stop check: the Preview's rule 8 is asked inside Lane A's `AutonomyGate` (rule 8b, behind Off / Plan and Ask / pending approval / steer / continuation-cap guards, before the diff read and the judge) instead of wrapping the gate in `PreviewUIGate`, which would have continued after those guards said finish; `check-code-preview-wiring` requires the new wiring |
+| C: computer use and Simulator (§6.3) | `7069446d` (14) | `06e62908` | provider context (+ screen services); the workspace registry drops the computer tools (Lane C's provider, Code only) and keeps Lane B's evidence recorder; Simulator evidence now stamped with the transcript revision (Lane C's seam for Lane B) |
+| E: review, ship, sessions, away (§6.5) | `8017ec3e` (13) | `9c72a11b` | both lanes made approvals park: kept Lane A's `.parked` updates and wake timers and Lane E's injected clock, due-list sweep and decision-relative execution window, digest-bound; Keep going and Resume existed twice, now one implementation each (Lane A's goal handling with Lane E's busy guard and Bool answer); CI Fix it now starts a real goal in the goal runtime; `JunoDesktopApp` installs both the power-off observer and the screen presence; `ShipFixture` turns the stop check off (its scripted turns were consumed by `todos_open` / `diff_unreviewed` continuations) |
+| F: commands, hooks, MCP, agents, inputs (§6.6) | `980339e1` (14) | `e1646087` | §5.2 was built twice: kept Lane B's runtime (`DelegateTaskTool`, `BackgroundSubagents`, control tools, built-ins with the reviewer's JSON protocol), dropped Lane F's registry, definition type and duplicate tools, re-applied Lane F's SubagentStart context and agent-typed child hooks; Lane F's discovery now yields Lane B definitions (`CustomSubagentTargets`, Claude Code tool names mapped), built-in names always stay built-in; `/goal` routed to Lane A's goal model, `/fork` to Lane E's fork, `/verify` reads Lane B's accepted recipe; GoalSet / GoalVerdict hooks fire from the goal runtime's events |
+
+Each lane's own entry above lists what it delivered, its partial items and
+its review's fixes.
+
+### What the integration itself added (`73ef5510`, `d619a573`)
+
+- Lane B behind Lane A's stop check (`JunoCodeRuntime/VerificationGate.swift`):
+  the recipe comes from `.juno/verify.json` (accepted, or discovered), each
+  check marked `runsWithoutPrompt` from the reader's rules and mode at every
+  stop check; `runCheck` runs `CheckRunner` (asks again, authorizes each
+  command like `run_command`; a non-check recipe command such as `git push`
+  is never run by the gate, Full access included); `runReview` runs the
+  review pass through a read-only `delegate_task`; the report is Lane B's
+  builder over the run ledger. Runners that write their own evidence say so
+  (`recordsEvidence`), so nothing is recorded twice and the transcript keeps
+  the transcript's revision.
+- A goal's web UI criterion is matched by route the way the Preview matches
+  one (`/settings` is met by a check of `/settings.html`): it was an exact
+  string match, so a drafted route could never be met (scenario 2 fails
+  without it).
+- Rule 8's web targets defer to the Preview's advice when it is wired.
+- `d619a573`: rule 2 now waits on the session's running background
+  sub-agents (Lane B's `BackgroundSubagents`): such a run ends
+  `waitingOnBackground`, never as done.
+
+### Cross-lane acceptance (§6.7), `AutonomousAgentScenarioTests`
+
+| # | Scenario | Result |
+|---|---|---|
+| 1 | Temp SwiftPM package, failing test: todo list, wrong edit, `run_checks` fails, `checks_failing`, fix, pass, diff read, report | pass: one `checks_failing` continuation, event order fail → continued → pass → report → done, `doneChecked`, "Checked with `swift test`", records minted by `run_checks` from the recipe, only fenced runtime notes |
+| 2 | Goal with `.ui(web, /settings)`, real Preview tools over Juno's static server and an offscreen page | pass: the Preview's rule sends the agent to look before the judge is asked; the runtime mints the `/settings.html` record; the judge's `met` completes the goal |
+| 2b | Same with web checks off | pass: `gate_blocked` [c2] without asking the judge, then `met` |
+| 3 | Approval unanswered for 20 minutes (injected clock), answered from the notification | pass: parked, not denied; the run monitor's banner carries id and digest, reminders at 15/60/240; a forged digest answers nothing; Allow once through the workbench; the run finishes `doneUnchecked`; no denial recorded |
+| 4 | Quit mid-batch, relaunch from disk, Resume | pass: the Runs list offers Resume; the model is told the call's outcome is unknown; no reader message added |
+
+Plus `VerificationGateTests` (4): the gate runs an allowed check itself and
+records it once; a check that would ask goes to the model; a non-check recipe
+command never runs; the recipe maps onto the gate's.
+
+### Gates on `rf/code-agent-integration` (through `gate.sh`, on `73ef5510`; JunoCode and the Mac build again on `d619a573`)
+
+| Gate | Result | Notes |
+|---|---|---|
+| `npm run native:test JunoCode` (warnings as errors) | pass | 1,845 XCTests (45 skipped: the snapshot tests without `JUNO_SNAPSHOT_DIR`), 111 Swift Testing, 0 failures, on `d619a573` (the seams commit: 1,322 + 78) |
+| `npm run native:test JunoNativeKit` | pass | 1,673 XCTests, 58 Swift Testing, 0 failures |
+| `npm run native:test JunoWork` | pass | 303 XCTests |
+| `npm run native:test JunoScreenControl` | pass | 108 XCTests (Lane C's new package) |
+| `xcodebuild … -scheme JunoDesktop -configuration Debug CODE_SIGNING_ALLOWED=NO build` | BUILD SUCCEEDED | DerivedData `/private/tmp/juno-rf-dd-integ` |
+| same, `test -only-testing:JunoDesktopTests` | TEST SUCCEEDED | 442 Swift Testing tests in 70 suites (no UI tests run) |
+| `npm test --prefix runner/agent-core` | pass | 236 tests |
+| `npm run typecheck` | pass | 0 errors |
+| `npm test` | 2 failures, pre-existing | 4,485 tests: 4,416 pass, 67 skipped, 2 fail: `google:gemini-omni-flash-preview` passed its `retiresOn: 2026-09-30` (`model-catalog-fidelity`, `video-gen`), failing on the trunk too; no TypeScript changed in this phase |
+| `npm run lint` | pass | 0 errors, 7 warnings, all in `src/app/dev/design/*` |
+| `agent:protocol:check` | pass | v1.1, 43 events, 15 commands |
+| `code:runtime:check`, `code:remote:check`, `code:preview:check` | pass | the preview check now requires Lane D's advice inside Lane A's gate |
+| `npm run native:sync:check` | 14 of 15 | `native:parity:label` wants a PR label for `src/app/api/chat/route.ts`, `src/lib/chat/request.ts`, `app-sidebar.tsx` against `origin/main`; it fails the same way on the trunk, and this phase touches no web file |
+
+
+### Merged into the trunk (`fff21f85`)
+
+`rf/code-agent-integration` @ `d619a573` merged with `--no-ff` into
+`rework/refoundation` @ `584311cb` (after the design workflow's crew
+commits), clean: 292 files, none under `src/app/dev/design/`, `tools/crew/`
+or `public/crew/`, and the `native/` diff is byte-identical to the one the
+gates above ran on. After the merge: `npm run native:test JunoCode` 1,845
+XCTests (45 skipped) and 111 Swift Testing, 0 failures; `code:runtime:check`,
+`code:remote:check`, `code:preview:check`, `agent:protocol:check` pass.
+
+### Snapshots
+
+Rendered offscreen with `JUNO_SNAPSHOT_DIR` (44 snapshot tests, 126 PNGs,
+light and dark): read by eye the integrated pieces (session view and slash
+menu with `/goal`, run report, Runs list, `/agents` with Lane B's built-ins)
+and spot-checked the lanes' rows. Words only; no status pills.
+
+### Still open
+
+- Manual, before release (§6.7): the Next.js fixture in Auto-edit (at most 2
+  prompts, a verify round with UI evidence, a session switch that keeps the
+  server), TextEdit on the French layout with `cmd+a`, Esc stopping screen
+  control from another app, quitting asks. Nothing here has run against the
+  real screen (Lane C's drivers are compiled and wired, tested with fakes);
+  Lane D's 1-pt host throttling and Lane C's CU-11 TCC probe are unconfirmed.
+- `@preview:/route` mentions: Lane F's `PreviewMentionProviding` has no Lane D
+  provider yet, so the block says the Preview was not open. "Send to chat"
+  from Preview and screen-control thumbnails is not wired either.
+- `/review` still asks the model to delegate to the built-in reviewer rather
+  than running the review pass itself; `/verify` runs the recipe's root-level
+  checks through `run_tests` (checks with a `cwd` are left to `run_checks`).
+- Background work: the stop check now waits on running background
+  sub-agents and ends `waitingOnBackground`, but nothing resumes the run when
+  they finish (§2.7 check-ins), shells are not counted, and `/loop` still
+  paces itself at 10 minutes without `schedule_wakeup`.
+- `RunLedgerRecorder` stores run-relative revisions for evidence it records
+  itself; only runners that do not write their own (none in the app) and
+  `CodeToolProviderContext.runLedger` writers (none) reach that path.
+- Lane-reported partials stand: Lane C's outline glow and takeover hiding;
+  Lane D's servers as durable shells and "unset port asks once"; Lane E's
+  "Summarize from here"; Lane F's tinted mentions and ConfigChange for files
+  edited outside Juno; Lane B's learned checks.
+- The integration changed two lane behaviours on purpose: a reader's own
+  `~/.juno/agents` can no longer replace a built-in agent (the review pass
+  parses the built-in reviewer's JSON), and Lane E's test fixture runs with
+  the stop check off.
+
