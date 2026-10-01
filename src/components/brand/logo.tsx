@@ -36,7 +36,7 @@ export function JunoLogo({ className, showWordmark = true }: { className?: strin
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <JunoMark className="size-6" />
-      {showWordmark && <span className="text-heading">{`${PRODUCT_NAME}`}</span>}
+      {showWordmark && <span className="text-heading">{PRODUCT_NAME}</span>}
     </span>
   );
 }

@@ -108,7 +108,7 @@ test("budget: a lower cap narrows, a higher or removed cap widens", () => {
   // Above what the column holds: refused with a sentence, never quietly lowered.
   const tooMuch = planSetupChange("budget", { budgetUsd: 5_000 }, MIRA);
   assert.equal(tooMuch.ok, false);
-  if (!tooMuch.ok) assert.match(tooMuch.message, /^The largest weekly budget a crew member can have is \$2000\.00\./);
+  if (!tooMuch.ok) assert.match(tooMuch.message, /^The largest weekly budget an agent can have is \$2000\.00\./);
   assert.deepEqual(plan("budget", { budgetUsd: 2_000 }).after, { budgetMicroUsd: 2_000_000_000 });
 });
 

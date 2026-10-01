@@ -134,10 +134,10 @@ test("an unknown name is answered with the names that would work", () => {
   if (unknown.kind !== "refused") return;
   assert.equal(unknown.outcome.reason, "unknown_teammate");
   // Active teammates only, quoted so the model can pass one back exactly.
-  assert.match(unknown.outcome.message, /Your teammates are "Atlas" and "Bolt"\./);
+  assert.match(unknown.outcome.message, /Your other agents are "Atlas" and "Bolt"\./);
   assert.doesNotMatch(unknown.outcome.message, /Pip|Scout/);
   const alone = resolveTeammate("Zed", [SELF, ROSTER[3]], SELF.id);
-  assert.match(alone.kind === "refused" ? alone.outcome.message : "", /no active teammates/);
+  assert.match(alone.kind === "refused" ? alone.outcome.message : "", /no other active agents/);
 });
 
 // ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ test("a refusal from Work reaches the model in the route's own words", () => {
 });
 
 test("the activity row says what happened and to whom", () => {
-  assert.equal(handoffActivityTitle("call"), "Handing off to a teammate");
+  assert.equal(handoffActivityTitle("call"), "Handing off to another agent");
   assert.equal(handoffActivityTitle("result", true), "Handed off");
   assert.equal(handoffActivityTitle("result", false), "Not handed off");
   assert.equal(

@@ -54,7 +54,7 @@ test("a standing grant is never hidden behind \"changing anything will ask you f
   assert.doesNotMatch(granted.summary, /changing anything/);
   assert.equal(
     granted.summary,
-    "Sending, posting or deleting in Linear will ask you first, and so will changes, except the ones you've told Juno not to ask about again."
+    "Sending, posting or deleting in Linear will ask you first, and so will changes, except the ones you've told Alevr not to ask about again."
   );
   assert.ok(granted.summary.length <= 300);
   const ungranted = appApprovalPreview({ label: "Linear", policy: "allow_selected_low_risk", lockdown: false, blocked: false });
@@ -85,10 +85,10 @@ test("the summary names the rule that applies, in the person's words", () => {
   const say = (policy: (typeof ACTION_PERMISSION_POLICIES)[number], extra: { lockdown?: boolean; blocked?: boolean } = {}) =>
     appApprovalPreview({ label: "Slack", policy, lockdown: !!extra.lockdown, blocked: !!extra.blocked }).summary;
   assert.equal(say("ask_for_important_actions"), "Sending, posting or deleting in Slack will ask you first. Changes you can undo won't.");
-  assert.equal(say("always_ask"), "Juno will ask you before anything it does in Slack, even reading.");
-  assert.equal(say("block"), "Your approval settings stop Juno acting in apps, so it won't use Slack.");
-  assert.equal(say("ask_for_any_change", { blocked: true }), "Slack is turned off in Settings, so Juno won't use it.");
-  assert.equal(say("ask_for_any_change", { lockdown: true }), "Lockdown is on, so Juno won't use Slack.");
+  assert.equal(say("always_ask"), "Alevr will ask you before anything it does in Slack, even reading.");
+  assert.equal(say("block"), "Your approval settings stop Alevr acting in apps, so it won't use Slack.");
+  assert.equal(say("ask_for_any_change", { blocked: true }), "Slack is turned off in Settings, so Alevr won't use it.");
+  assert.equal(say("ask_for_any_change", { lockdown: true }), "Lockdown is on, so Alevr won't use Slack.");
 });
 
 test("a stored policy the broker does not know reads as the broker's default", () => {

@@ -37,7 +37,7 @@ export function AsciiWordmark({ className }: { className?: string }) {
     <span className={cn("inline-flex items-center justify-center", className)}>
       {/* A logotype, not a label — it keeps its wide tracking now that the
           rest of the mono voice has dropped all-caps. */}
-      <span className="font-mono text-ui font-semibold tracking-[0.12em]">{`${PRODUCT_NAME}`}</span>
+      <span className="font-mono text-ui font-semibold tracking-[0.12em]">{PRODUCT_NAME}</span>
     </span>
   );
 }

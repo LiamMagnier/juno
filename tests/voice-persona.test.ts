@@ -58,7 +58,7 @@ test("the chat's block arrives as plain spoken text, and names the person", () =
     block("## Voice\nWrite like **Liam**, see [the guide](https://x.test).\n* Short `sentences`."),
     "Liam"
   )!;
-  assert.match(text, /^Who you are in this conversation:\nYou are Quill, one of Liam's agents in Juno\./);
+  assert.match(text, /^Who you are in this conversation:\nYou are Quill, one of Liam's agents in Alevr\./);
   assert.match(text, /Your brief:\nVoice:\nWrite like Liam, see the guide\.\n- Short sentences\./);
   assert.match(text, /Goals you are working towards:\n- Ship the launch post/);
   // No Markdown a speaking model could pick up the habit of reading aloud.
@@ -151,7 +151,7 @@ test("a chat names its thread for its calls, kept across reconnects and retries,
   // confirms the call is it.
   assert.match(chat, /voiceCallParts\(\{ voice: realtimeVoice, onClose: closeVoice, speakerName: agent\?\.name \}\)/);
   const bar = src("src/components/voice/realtime-voice.tsx");
-  assert.match(bar, /return voice\.persona && speakerName \? speakerName : "Juno";/);
+  assert.match(bar, /return voice\.persona && speakerName \? speakerName : PRODUCT_NAME;/);
   assert.match(bar, /label=\{`Stop \$\{speaker\} speaking`\}/);
   assert.match(bar, /announcementFor\(phase, prevPhase\.current, speaker\)/);
   // Both copies of the protocol carry the flag.

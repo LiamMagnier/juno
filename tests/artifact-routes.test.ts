@@ -376,7 +376,7 @@ test("the tab reads Artifact on /a/{id}, and the prefix catches nothing else", (
   assert.equal(titleForPath("/a/ck123"), "Artifact");
   assert.equal(titleForPath("/artifacts"), "Artifacts");
   assert.equal(titleForPath("/admin"), "Admin");
-  assert.equal(titleForPath("/design"), "Juno", "a redirect draws no window to caption");
+  assert.equal(titleForPath("/design"), "Alevr", "a redirect draws no window to caption");
 });
 
 test("a search hit opens the artifact's own address at the version that matched", async () => {

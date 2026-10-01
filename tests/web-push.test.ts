@@ -152,7 +152,7 @@ test("a path that could leave the app is dropped to null", () => {
 
 test("an empty title and tag fall back, and a malformed notification id is dropped", () => {
   const message = JSON.parse(webPushMessage({ title: "  ", body: "", path: null, tag: "", notificationId: "../../x" }));
-  assert.equal(message.title, "Juno");
+  assert.equal(message.title, "Alevr");
   assert.equal(message.tag, "juno");
   assert.equal(message.notificationId, null);
 });

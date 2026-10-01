@@ -135,7 +135,7 @@ test("no task at all leaves the composer alone", () => {
 test("the placeholder names the destination, not the box", () => {
   assert.equal(
     delegatedComposerPlaceholder({ kind: "answer", questionId: "q1", question: "Which folder?" }),
-    "Answer Juno’s question…"
+    "Answer Alevr’s question…"
   );
   assert.equal(
     delegatedComposerPlaceholder({ kind: "steer" }),

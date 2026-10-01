@@ -3317,7 +3317,7 @@ export function Composer({
                     slash.kind === "model"
                       ? "Switch model"
                       : slash.kind === "mention"
-                        ? "Tools and connectors"
+                        ? "Apps and tools"
                         : "Commands"
                   }
                   // Measured, not `max-h-72`: the cap is whatever fits above the anchor.

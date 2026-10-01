@@ -1,5 +1,5 @@
 /*
- * Juno's service worker. Push only.
+ * The app's service worker. Push only.
  *
  * It has one job: show a notification when the server pushes one
  * (src/lib/notify/web-push.ts), and open the right page when it is clicked.
@@ -75,7 +75,8 @@ function readMessage(event) {
   }
   if (!data || typeof data !== "object") data = {};
   return {
-    title: text(data.title, 200) || "Juno",
+    // PRODUCT_NAME (src/lib/brand/names.ts); a service worker cannot import it.
+    title: text(data.title, 200) || "Alevr",
     body: text(data.body, 1000),
     tag: text(data.tag, 128) || "juno",
     path: safePath(data.path),

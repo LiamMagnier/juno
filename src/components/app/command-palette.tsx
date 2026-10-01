@@ -1439,7 +1439,7 @@ const shortcutGroups = (mod: string): { title: string; items: { keys: string[]; 
       { keys: ["⇧", "Esc"], label: "Focus the composer" },
       { keys: ["Esc"], label: "Stop generating · close a menu" },
       { keys: ["/"], label: "Commands" },
-      { keys: ["@"], label: "Tools and connectors" },
+      { keys: ["@"], label: "Apps and tools" },
     ],
   },
   {

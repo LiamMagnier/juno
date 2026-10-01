@@ -488,7 +488,7 @@ test("the probe never echoes what the upstream said", async () => {
   const secret = "root:x:0:0 internal-service-banner hunter2";
   for (const [status, expected] of [
     [500, "The server had a problem (HTTP 500). Try again later."],
-    [401, "The server turned down Juno's credentials. Check the Authorization header."],
+    [401, "The server turned down Alevr's credentials. Check the Authorization header."],
     [404, "Nothing at that address answered as an MCP server. Check the URL, which usually ends in /mcp."],
     [418, "The server refused the connection (HTTP 418)."],
   ] as const) {
@@ -503,10 +503,10 @@ test("the probe never echoes what the upstream said", async () => {
 
 test("probe failures map to fixed sentences, and only Juno's own refusals pass their text through", () => {
   const upstream = new Error("Error POSTing to endpoint: SECRET BODY");
-  assert.equal(describeProbeFailure(upstream, false), "Juno couldn't connect to that server.");
+  assert.equal(describeProbeFailure(upstream, false), "Alevr couldn't connect to that server.");
   assert.equal(
     describeProbeFailure(Object.assign(new Error("getaddrinfo ENOTFOUND x"), { code: "ENOTFOUND" }), false),
-    "Juno couldn't find that server. Check the address."
+    "Alevr couldn't find that server. Check the address."
   );
   assert.equal(
     describeProbeFailure(Object.assign(new Error("fetch failed"), { cause: { code: "CERT_HAS_EXPIRED" } }), false),
