@@ -1,16 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isGoogleOmniModel, parseGoogleOmniInteraction } from "../src/lib/video-gen-core";
-import { resolveModel } from "../src/lib/models";
+import { hasRetired, migrateModelId, resolveModel } from "../src/lib/models";
 
 test("Gemini Omni and Veo Lite are callable video catalog entries", () => {
-  const omni = resolveModel("google:gemini-omni-flash-preview");
   const veoLite = resolveModel("google:veo-3.1-lite-generate-preview");
-
-  assert.ok(omni);
   assert.ok(veoLite);
-  assert.equal(isGoogleOmniModel(omni), true);
   assert.equal(isGoogleOmniModel(veoLite), false);
+  // Omni retired on 30 Sep 2026: from then on it migrates to Veo 3.1 Fast,
+  // and the Omni code path is recognised by its provider model id alone.
+  assert.equal(isGoogleOmniModel({ provider: "google", providerModel: "gemini-omni-flash-preview" }), true);
+  if (hasRetired({ retiresOn: "2026-09-30" })) {
+    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:veo-3.1-fast-generate-preview");
+  } else {
+    const omni = resolveModel("google:gemini-omni-flash-preview");
+    assert.ok(omni);
+    assert.equal(isGoogleOmniModel(omni), true);
+  }
 });
 
 test("Gemini Omni parser handles a completed base64 video step", () => {

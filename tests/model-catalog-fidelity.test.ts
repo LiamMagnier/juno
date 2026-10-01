@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEFAULT_MODEL, MODEL_LIST, GEN_MODELS, resolveModel, RETIRED_MODELS } from "../src/lib/models";
+import { DEFAULT_MODEL, MODEL_LIST, GEN_MODELS, hasRetired, migrateModelId, resolveModel, RETIRED_MODELS } from "../src/lib/models";
 import { providerRequestModel } from "../src/lib/model-request";
 
 const ALL_MODELS = [...MODEL_LIST, ...GEN_MODELS];
@@ -117,12 +117,19 @@ test("the September 2026 models carry the ids their providers actually serve", (
   assert.equal(lite.contextWindow, 1_048_576);
   assert.equal(byId.get("google:gemini-3.1-flash-lite")?.status, "legacy");
 
-  // And the one retirement: Google deprecates this endpoint on 30 Sep 2026.
+  // And the one retirement: Google deprecated this endpoint on 30 Sep 2026.
+  // Before that date it is listed as deprecated; from 1 Oct it leaves the
+  // catalog and stored ids migrate to its replacement.
   const omni = byId.get("google:gemini-omni-flash-preview");
-  assert.ok(omni);
-  assert.equal(omni.status, "deprecated");
-  assert.equal(omni.retiresOn, "2026-09-30");
-  assert.ok(omni.replacedBy, "a retirement without a replacement is how a stored id becomes a 404");
+  if (hasRetired({ retiresOn: "2026-09-30" })) {
+    assert.equal(omni, undefined, "a retired model is no longer offered");
+    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:veo-3.1-fast-generate-preview");
+  } else {
+    assert.ok(omni);
+    assert.equal(omni.status, "deprecated");
+    assert.equal(omni.retiresOn, "2026-09-30");
+    assert.ok(omni.replacedBy, "a retirement without a replacement is how a stored id becomes a 404");
+  }
 });
 
 /*
