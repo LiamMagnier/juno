@@ -30,6 +30,7 @@ import {
   type HostCommand,
   type HostSession,
 } from "@/components/design/host/bridge";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 function HostedEditor({ session }: { session: HostSession }) {
   const [readOnly, setReadOnly] = React.useState(session.readOnly);
@@ -82,7 +83,7 @@ function Boot() {
     if (!isHosted()) {
       // Loaded outside the Mac host — say so rather than sitting on a spinner
       // that will never resolve.
-      setError("This editor runs inside the Juno app.");
+      setError(`This editor runs inside the ${PRODUCT_NAME} app.`);
       return;
     }
     awaitHostSession().then(setSession, (reason) => setError(String(reason)));

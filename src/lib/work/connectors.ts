@@ -72,6 +72,7 @@ import {
   type WorkSensitivity,
   type WorkToolTierId,
 } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Records this module produces
@@ -204,14 +205,14 @@ export function describeConnector(descriptor: WorkConnectorDescriptor): WorkConn
   const headline =
     descriptor.locality === "local"
       ? `${descriptor.label} runs on ${host}, so it works only while that Mac is awake and connected.`
-      : `${descriptor.label} runs in Juno's cloud, so it keeps working while your devices are asleep.`;
+      : `${descriptor.label} runs in ${PRODUCT_NAME}'s cloud, so it keeps working while your devices are asleep.`;
 
   const dataFlow = ((): string => {
     switch (descriptor.scope.egress) {
       case "stays_on_host":
         return `What it reads stays on ${host}.`;
       case "juno_cloud":
-        return "What it reads is sent to Juno's servers to be worked on.";
+        return `What it reads is sent to ${PRODUCT_NAME}'s servers to be worked on.`;
       case "third_party":
         return `What it reads is sent to ${descriptor.label}'s servers to be worked on.`;
     }
@@ -375,7 +376,7 @@ function explain(
     case "not_selected_for_task":
       return `${descriptor.label} was not switched on for this task, so it is not available to it.`;
     case "not_configured":
-      return `${descriptor.label} is not set up on this Juno deployment, so it cannot be connected.`;
+      return `${descriptor.label} is not set up on this ${PRODUCT_NAME} deployment, so it cannot be connected.`;
     case "not_linked":
       return `${descriptor.label} has not been connected to your account yet.`;
     case "credential_unusable":
@@ -906,7 +907,7 @@ export function admitConnectorResult(
   }
 
   const notice = verdict.detected
-    ? `The result from ${label} contains text that tries to give Juno instructions (${verdict.signals.join(", ")}). Juno will report what it says and will not act on it.`
+    ? `The result from ${label} contains text that tries to give ${PRODUCT_NAME} instructions (${verdict.signals.join(", ")}). ${PRODUCT_NAME} will report what it says and will not act on it.`
     : null;
 
   return {

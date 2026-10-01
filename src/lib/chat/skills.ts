@@ -44,6 +44,7 @@ import {
   type WorkSkillContract,
   type WorkSkillGrantLayer,
 } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The tool names a chat turn can grant.
@@ -144,16 +145,16 @@ export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
   // `enabled` is the pair, so the sentence names both switches.
   disabled: "That skill is switched off, or the source it came from is. Turn it back on in Skills to use it.",
   auto_select_disabled: "That skill is not set to be chosen automatically.",
-  untrusted: "That skill has not been vouched for, so Juno will not reach for it on its own.",
+  untrusted: `That skill has not been vouched for, so ${PRODUCT_NAME} will not reach for it on its own.`,
   other_project: "That skill is filed in a different project.",
-  low_confidence: "Juno was not confident enough that this skill fits.",
-  ambiguous: "Two skills fit equally well, so Juno did not guess.",
+  low_confidence: `${PRODUCT_NAME} was not confident enough that this skill fits.`,
+  ambiguous: `Two skills fit equally well, so ${PRODUCT_NAME} did not guess.`,
   no_candidate: "There was no skill to apply.",
   blocked:
-    "Juno's scanner refused this skill's current version, so it will not be applied to a message. Open the skill to see what it found.",
+    `${PRODUCT_NAME}'s scanner refused this skill's current version, so it will not be applied to a message. Open the skill to see what it found.`,
   consent_required:
     "This skill's current version asks for more than the one you approved. Open the skill and review what changed before using it.",
-  unscanned: "Juno could not confirm this skill's current version is safe to use, so it was not applied. Open the skill to check it.",
+  unscanned: `${PRODUCT_NAME} could not confirm this skill's current version is safe to use, so it was not applied. Open the skill to check it.`,
 };
 
 /** The version a chat turn pinned, with the two columns that can refuse it. */

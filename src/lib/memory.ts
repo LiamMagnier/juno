@@ -61,6 +61,7 @@ import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowled
 // against a reservation by the research engine.
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { recordSpend } from "@/lib/spend";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Incremental memory architecture
@@ -580,7 +581,7 @@ export async function forgetStatements(
       where: { userId, id: { in: [...retireIds] }, status: "active" },
       data: {
         status: "suppressed",
-        reason: "You asked Juno to forget this in a conversation.",
+        reason: `You asked ${PRODUCT_NAME} to forget this in a conversation.`,
         supersededById: null,
       },
     }),
@@ -874,7 +875,7 @@ export async function saveCandidates(
         where: { id: plan.entryId, userId },
         data: {
           lastVerifiedAt: now,
-          ...(plan.revive ? { status: "active", reason: "You mentioned this again, so Juno picked it back up." } : {}),
+          ...(plan.revive ? { status: "active", reason: `You mentioned this again, so ${PRODUCT_NAME} picked it back up.` } : {}),
           ...(plan.reinstate ? { status: "active", reason: plan.reinstate.reason, supersededById: null } : {}),
           ...(plan.expiresAt !== undefined ? { expiresAt: plan.expiresAt } : {}),
           ...(plan.observedAt ? { observedAt: plan.observedAt } : {}),

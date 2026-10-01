@@ -29,6 +29,7 @@ import type { ClientWorkGrant } from "@/lib/work/serializers";
 import type { WorkTriggerDraft } from "@/components/work/work-transport";
 import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * What starts a schedule, in a form.
@@ -1288,7 +1289,7 @@ function TriggerConfigFields({
         <div className="space-y-3">
           <Field
             label="Folder"
-            hint="Folders are granted on the Mac itself, in the Juno app. This list is what that Mac has given Juno access to."
+            hint={`Folders are granted on the Mac itself, in the ${PRODUCT_NAME} app. This list is what that Mac has given ${PRODUCT_NAME} access to.`}
           >
             {grants === null ? (
               <p className="text-ui leading-relaxed text-muted-foreground">
@@ -1296,8 +1297,7 @@ function TriggerConfigFields({
               </p>
             ) : grants.length === 0 ? (
               <p className="text-ui leading-relaxed text-warning-foreground">
-                That Mac has not given Juno access to any folder yet, so there is nothing for this
-                trigger to watch. Grant one in the Juno app on that Mac.
+                {`That Mac has not given ${PRODUCT_NAME} access to any folder yet, so there is nothing for this trigger to watch. Grant one in the ${PRODUCT_NAME} app on that Mac.`}
               </p>
             ) : (
               // Same shape as the interval select above, and for the same
@@ -1348,8 +1348,7 @@ function TriggerConfigFields({
       // this build understands and the scheduler does not.
       return (
         <p className="text-ui leading-relaxed text-muted-foreground">
-          This trigger was set up by a newer version of Juno. It is left untouched, and saving does
-          not change it.
+          {`This trigger was set up by a newer version of ${PRODUCT_NAME}. It is left untouched, and saving does not change it.`}
         </p>
       );
   }

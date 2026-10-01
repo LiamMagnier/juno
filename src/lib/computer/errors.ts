@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * What a failure on an agent's computer may say, and to whom.
  *
@@ -16,8 +18,8 @@
  */
 
 export const COMPUTER_NOT_RESPONDING = "The computer did not respond. Try again in a moment.";
-export const COMPUTER_UNREACHABLE = "Juno could not reach the agent's computer right now.";
-export const COMPUTER_BROWSER_UNREACHABLE = "Juno could not connect to the browser on the agent's computer.";
+export const COMPUTER_UNREACHABLE = `${PRODUCT_NAME} could not reach the agent's computer right now.`;
+export const COMPUTER_BROWSER_UNREACHABLE = `${PRODUCT_NAME} could not connect to the browser on the agent's computer.`;
 export const COMPUTER_PATH_REFUSED = "Paths must stay inside /home/agent.";
 
 export class ComputerError extends Error {

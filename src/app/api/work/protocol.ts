@@ -40,6 +40,7 @@ import { verifyApproval } from "@/lib/work/digests";
 import { MAX_SKILL_SLUG_CHARS } from "@/lib/work/skills";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -362,7 +363,7 @@ export const SKILL_NOT_EDITABLE: WorkContextFieldResult = {
   change: "refused",
   effect: "none",
   explanation:
-    "A task's skill comes from the slash command at the start of what you asked for, and Juno keeps that wording exactly as you wrote it because every attempt is checked back against it. Start a new task to run this under a different skill.",
+    `A task's skill comes from the slash command at the start of what you asked for, and ${PRODUCT_NAME} keeps that wording exactly as you wrote it because every attempt is checked back against it. Start a new task to run this under a different skill.`,
 };
 
 export interface GrantChangeInput {
@@ -452,8 +453,8 @@ export function describeGrantChange(input: GrantChangeInput): WorkContextFieldRe
       : `This task can no longer reach ${removed === 1 ? "that app" : `those ${removed} apps`}.`;
   const arrived =
     field === "files"
-      ? `Juno hands a task its files when an attempt starts, so ${added === 1 ? "the new file is" : `the ${added} new files are`} read from the next attempt.`
-      : `Juno connects a task's apps when an attempt starts, so ${added === 1 ? "the new app is" : `the ${added} new apps are`} reachable from the next attempt.`;
+      ? `${PRODUCT_NAME} hands a task its files when an attempt starts, so ${added === 1 ? "the new file is" : `the ${added} new files are`} read from the next attempt.`
+      : `${PRODUCT_NAME} connects a task's apps when an attempt starts, so ${added === 1 ? "the new app is" : `the ${added} new apps are`} reachable from the next attempt.`;
 
   if (added === 0) {
     return {
@@ -494,13 +495,13 @@ const SETTING_EXPLANATIONS: Record<
   "model" | "reasoningEffort" | "permissionPolicy" | "project",
   string
 > = {
-  model: "Juno picks up the model when an attempt starts, so this one runs from the next attempt.",
+  model: `${PRODUCT_NAME} picks up the model when an attempt starts, so this one runs from the next attempt.`,
   reasoningEffort:
-    "Juno sets the thinking depth when an attempt starts, so this applies from the next attempt.",
+    `${PRODUCT_NAME} sets the thinking depth when an attempt starts, so this applies from the next attempt.`,
   permissionPolicy:
     "Every approval an attempt asks for is signed against the mode it started under, so this applies from the next attempt.",
   project:
-    "Juno reads a project's instructions when an attempt starts, so this applies from the next attempt.",
+    `${PRODUCT_NAME} reads a project's instructions when an attempt starts, so this applies from the next attempt.`,
 };
 
 export interface SettingChangeInput {
@@ -1074,9 +1075,9 @@ export function admissionRefusal(
 
   const why =
     named.revokedAt !== null
-      ? `You revoked Juno's access to ${named.displayName}.`
+      ? `You revoked ${PRODUCT_NAME}'s access to ${named.displayName}.`
       : !named.enabled
-        ? `${named.displayName} is switched off for Juno Work.`
+        ? `${named.displayName} is switched off for ${PRODUCT_NAME} Work.`
         : refusal.missing.length > 0
           ? `${named.displayName} has not been granted ${refusal.missing.map(describeCapability).join(", ")}.`
           : refusal.message;

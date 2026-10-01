@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 interface AssistantStudioProps {
   initialAssistant?: JunoAssistantConfig | null;
@@ -116,7 +117,7 @@ export function AssistantStudio({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Juno could not save this assistant.");
+        throw new Error(data.error || `${PRODUCT_NAME} could not save this assistant.`);
       }
 
       const data = await res.json();
@@ -146,7 +147,7 @@ export function AssistantStudio({
             <div className="min-w-0">
               <DialogTitle>{initialAssistant ? "Edit assistant" : "Create assistant"}</DialogTitle>
               <DialogDescription className="mt-1">
-                Give Juno a reusable role, operating instructions, starter prompts and a preferred model.
+                {`Give ${PRODUCT_NAME} a reusable role, operating instructions, starter prompts and a preferred model.`}
               </DialogDescription>
             </div>
           </div>

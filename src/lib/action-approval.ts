@@ -18,6 +18,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "@/lib/work/canonical";
 import { toolNameTokens, type ToolAccessHints } from "@/lib/tool-access";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const ACTION_RISK_CLASSES = [
   "read_only",
@@ -470,7 +471,7 @@ export function actionPreview(input: {
   const verb = input.toolName.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   const suffix =
     input.riskClass === "unknown"
-      ? " Juno could not verify whether this only reads, so it is treated as a change."
+      ? ` ${PRODUCT_NAME} could not verify whether this only reads, so it is treated as a change.`
       : "";
   return `${input.connectorLabel} wants to ${verb}.${suffix}`;
 }

@@ -14,6 +14,7 @@ import {
 } from "@/lib/work/browser-page";
 import { computerProvider } from "./provider";
 import type { ComputerHandle, ComputerProvider, ComputerSecrets } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 25_000;
 const DEFAULT_ACTION_TIMEOUT_MS = 10_000;
@@ -172,7 +173,7 @@ export function connectAgentBrowser(
       page = existingPages[0] ?? (await context.newPage());
       return page;
     } catch (error) {
-      unavailable = `Juno could not connect to the agent computer's browser: ${describeBrowserError(error)}`;
+      unavailable = `${PRODUCT_NAME} could not connect to the agent computer's browser: ${describeBrowserError(error)}`;
       await close();
       return unavailable;
     }

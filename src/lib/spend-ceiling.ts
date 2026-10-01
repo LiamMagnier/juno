@@ -20,6 +20,7 @@
  */
 
 import type { Plan } from "@prisma/client";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The personal account's monthly ceiling in EUR when nothing else says
@@ -317,7 +318,7 @@ export function describeCapSource(source: BudgetCapSource): string {
     case "plan":
       return "Set by your plan";
     case "personal-default":
-      return "Juno's default for accounts without a plan budget";
+      return `${PRODUCT_NAME}'s default for accounts without a plan budget`;
     case "disabled":
       return "Enforcement is switched off";
   }

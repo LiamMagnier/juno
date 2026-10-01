@@ -5,6 +5,7 @@ import { prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { getStripe, planFromPriceId, resolveSubscriptionPlan } from "@/lib/stripe";
 import { alertOperator } from "@/lib/alerts";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,7 @@ async function syncSubscription(sub: Stripe.Subscription, fallbackUserId?: strin
     alertOperator({
       kind: "stripe_unknown_customer",
       key: customerId,
-      title: "Stripe webhook for a customer Juno cannot identify",
+      title: `Stripe webhook for a customer ${PRODUCT_NAME} cannot identify`,
       detail: {
         customerId,
         subscriptionId: sub.id,
@@ -81,7 +82,7 @@ async function syncSubscription(sub: Stripe.Subscription, fallbackUserId?: strin
     alertOperator({
       kind: "stripe_unknown_price",
       key: priceId ?? "missing",
-      title: "Stripe sent a price id Juno cannot map to a plan",
+      title: `Stripe sent a price id ${PRODUCT_NAME} cannot map to a plan`,
       detail: {
         priceId: priceId ?? null,
         customerId,

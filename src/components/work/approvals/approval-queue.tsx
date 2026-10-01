@@ -10,6 +10,7 @@ import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { workRowEnterClass } from "@/components/work/shell/work-section";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The pending decisions, and the one control that answers several at once.
@@ -77,8 +78,7 @@ export function ApprovalQueue({
   if (approvals.length === 0) {
     return (
       <p className="text-ui leading-relaxed text-muted-foreground">
-        Nothing has needed your approval. Juno always asks before anything it cannot undo — a
-        permanent delete, a message sent, a purchase, a security setting.
+        {`Nothing has needed your approval. ${PRODUCT_NAME} always asks before anything it cannot undo — a permanent delete, a message sent, a purchase, a security setting.`}
       </p>
     );
   }
@@ -173,8 +173,8 @@ export function ApprovalPrompt({ count }: { count: number }) {
   return (
     <WorkStateNote tone="blocked">
       {count === 1
-        ? "Juno is waiting for you to allow or refuse one action. Nothing else happens until you decide."
-        : `Juno is waiting on ${count} decisions. Nothing else happens until you answer them.`}
+        ? `${PRODUCT_NAME} is waiting for you to allow or refuse one action. Nothing else happens until you decide.`
+        : `${PRODUCT_NAME} is waiting on ${count} decisions. Nothing else happens until you answer them.`}
     </WorkStateNote>
   );
 }

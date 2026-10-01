@@ -1,5 +1,6 @@
 import { parseStoredDesignDocument } from "@/lib/design/migrations";
 import type { DesignDocument } from "@/lib/design/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * THE RE-EMIT GUARD (04-MERGE-PLAN §2.7, §8.3; audit X-05, X-06). Taken from
@@ -43,7 +44,7 @@ export interface ReemitInput {
 }
 
 /** The person's own words for rule 1, shown on the card and the bar. */
-export const EDITED_SUMMARY = "You edited this after Juno's last version";
+export const EDITED_SUMMARY = `You edited this after ${PRODUCT_NAME}'s last version`;
 
 /**
  * Whether a re-emit appends a version or waits as a suggestion.

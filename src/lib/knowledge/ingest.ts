@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { PARSER_VERSIONS, extractDocument, selectExtractor } from "./extract";
 import type { ExtractedBlock, ExtractionStatus } from "./extract/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* -------------------------------------------------------------------------- */
 /* Planning                                                                    */
@@ -169,7 +170,7 @@ export const MAX_INGEST_BYTES = 64 * 1024 * 1024;
 export async function runIngest(store: KnowledgeStore, input: IngestInput): Promise<IngestOutcome> {
   const extractor = selectExtractor(input.fileName, input.mimeType);
   if (!extractor) {
-    return { status: "skipped", reason: "Juno does not index this kind of file yet." };
+    return { status: "skipped", reason: `${PRODUCT_NAME} does not index this kind of file yet.` };
   }
   if (input.bytes.byteLength > MAX_INGEST_BYTES) {
     return { status: "skipped", reason: "This file is too large to index." };

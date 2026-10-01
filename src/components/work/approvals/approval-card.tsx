@@ -24,6 +24,7 @@ import {
   previewTarget,
 } from "@/components/work/approvals/action-verbs";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * One decision, asked the way a person would ask it.
@@ -80,10 +81,10 @@ import { cn } from "@/lib/utils";
  */
 const RISK_CONSEQUENCE: Record<WorkRiskLevel, string> = {
   safe: "Nothing here changes anything outside this task.",
-  edit: "This writes to a file. Juno can show you what changed afterwards.",
+  edit: `This writes to a file. ${PRODUCT_NAME} can show you what changed afterwards.`,
   command: "This runs a command on the machine this task is on.",
-  sensitive: "This touches something private. Juno asks every time, whatever you have allowed before.",
-  irreversible: "This cannot be undone — not by Juno, and not from this page afterwards.",
+  sensitive: `This touches something private. ${PRODUCT_NAME} asks every time, whatever you have allowed before.`,
+  irreversible: `This cannot be undone — not by ${PRODUCT_NAME}, and not from this page afterwards.`,
 };
 
 export function ApprovalCard({
@@ -231,8 +232,7 @@ export function ApprovalCard({
         // server would accept. Saying where it CAN be answered is the only
         // useful thing left; a greyed-out button would not say even that.
         <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground">
-          This request did not arrive with the signature Juno needs to accept an answer from the
-          web. Decide it in the Juno app on the Mac that raised it.
+          {`This request did not arrive with the signature ${PRODUCT_NAME} needs to accept an answer from the web. Decide it in the ${PRODUCT_NAME} app on the Mac that raised it.`}
         </p>
       ) : amending ? (
         // The two faces of the answer — the buttons and the instruction field —
@@ -260,8 +260,7 @@ export function ApprovalCard({
             name imply an edit in place.
           */}
           <p className="mt-1.5 text-ui leading-relaxed text-muted-foreground">
-            Juno will not do this one. It will be told what you want instead, and will carry on from
-            there.
+            {`${PRODUCT_NAME} will not do this one. It will be told what you want instead, and will carry on from there.`}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <Button
@@ -367,7 +366,7 @@ export function ApprovalCard({
           {approval.expiresAt !== null && (
             <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
               <Clock className="size-3" aria-hidden="true" />
-              Unanswered, this expires and Juno stops rather than acting on it.
+              {`Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`}
             </p>
           )}
         </>
@@ -447,12 +446,12 @@ export function describeDecision(approval: WorkApprovalCard, expired: boolean): 
     case "denied":
       return `Refused ${workTimeAgo(approval.decidedAt ?? approval.createdAt)}`;
     case "expired":
-      return "Expired unanswered — Juno stopped rather than acting on a stale approval";
+      return `Expired unanswered — ${PRODUCT_NAME} stopped rather than acting on a stale approval`;
     case "superseded":
       return "Replaced by a later request";
     case "pending":
       return expired
-        ? "Expired unanswered — Juno stopped rather than acting on a stale approval"
+        ? `Expired unanswered — ${PRODUCT_NAME} stopped rather than acting on a stale approval`
         : "Waiting";
   }
 }

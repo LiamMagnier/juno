@@ -63,6 +63,7 @@ import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { useFileDrop } from "@/components/library/library-drop-zone";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 /**
  * Split: it renders only while a clarification is pending, which is a state
  * most messages never enter, and its render site is already guarded on
@@ -846,7 +847,7 @@ export function Composer({
           ? "Describe an image to generate…"
           : modality === "video"
             ? "Describe a video to generate…"
-            : "Message Juno…"));
+            : `Message ${PRODUCT_NAME}…`));
   const [text, setText] = React.useState("");
 
   // Huge pastes stay in `text` for send, but we collapse the textarea DOM so
@@ -1673,7 +1674,7 @@ export function Composer({
         id: "search",
         key: "search",
         label: "/search",
-        hint: "Let Juno search the web",
+        hint: `Let ${PRODUCT_NAME} search the web`,
         group: "tools",
         icon: ComposerIcons.web,
         on: webSearchEnabled,
@@ -1792,7 +1793,7 @@ export function Composer({
         id: "tool:assistants",
         key: "assistants",
         label: "@assistants",
-        hint: "Browse & switch Juno Assistants",
+        hint: `Browse & switch ${PRODUCT_NAME} Assistants`,
         group: "navigate",
         icon: AppIcons.assistants,
         run: () => router.push("/assistants"),
@@ -3504,7 +3505,7 @@ export function Composer({
                   aria-label={
                     steerMode && steering
                       ? steering.placeholder
-                      : placeholder || "Ask Juno"
+                      : placeholder || `Ask ${PRODUCT_NAME}`
                   }
                   value={text}
                   onChange={(e) => {

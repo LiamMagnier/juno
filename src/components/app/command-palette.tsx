@@ -39,6 +39,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { staggerDelay } from "@/lib/motion";
 import { useAgents } from "@/components/agents/use-agents";
 import type { ClientConversation } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
@@ -964,7 +965,7 @@ function SearchPalette() {
     // surface can find was quieter than the placeholder in the field above it.
     <PaletteEmpty
       icon={AppIcons.search}
-      title="Search everything in Juno"
+      title={`Search everything in ${PRODUCT_NAME}`}
       hint="Chats and their messages, projects, files, artifacts, memories and tasks."
     />
   );

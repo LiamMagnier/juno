@@ -20,6 +20,7 @@ import { resolveModel } from "@/lib/models";
 import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import type { ReasoningEffort } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -493,7 +494,7 @@ const modelSchema = z
   .transform((id, ctx) => {
     const model = agentModelChoice(id);
     if (model) return model;
-    ctx.addIssue({ code: "custom", message: "That is not a chat model Juno offers." });
+    ctx.addIssue({ code: "custom", message: `That is not a chat model ${PRODUCT_NAME} offers.` });
     return z.NEVER;
   });
 const effortSchema = z.enum(REASONING_TIERS);

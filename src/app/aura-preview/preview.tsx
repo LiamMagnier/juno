@@ -29,6 +29,7 @@ import { AmbientAura } from "@/components/ambient/ambient-aura";
 import { Plus, Send } from "@/components/ui/icons";
 import { attachAuraLevel, setAuraState, type AuraState } from "@/lib/aura";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const STATES: readonly AuraState[] = [
   "idle",
@@ -160,7 +161,7 @@ export function AuraPreview() {
             the light against the marks it will actually sit behind rather than
             against two empty shapes. Inert: nothing here is a control. */}
         <div className="composer-surface flex flex-col gap-2 rounded-composer p-3">
-          <div className="text-ui text-muted-foreground">Message Juno…</div>
+          <div className="text-ui text-muted-foreground">{`Message ${PRODUCT_NAME}…`}</div>
           <div className="flex items-center justify-between">
             <div className="flex size-8 items-center justify-center rounded-control border border-border text-muted-foreground">
               <Plus className="size-4" aria-hidden />

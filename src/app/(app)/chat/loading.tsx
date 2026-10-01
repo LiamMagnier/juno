@@ -2,6 +2,7 @@ import { PrivateGreeting } from "@/components/chat/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { composerRestHeightClass } from "@/components/ui/composer-shell";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The new-chat page in its own frame: the header band, the greeting, the
@@ -41,7 +42,7 @@ export default function NewChatLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden" role="status" aria-label="Loading Juno">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden" role="status" aria-label={`Loading ${PRODUCT_NAME}`}>
       <div aria-hidden="true" className="hidden h-11 shrink-0 md:block" />
       <div className="page-gutter mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center py-6 md:py-8">
         <div className="mb-6 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-8">

@@ -28,6 +28,7 @@ import { UpdateSourceDialog } from "@/components/skills/update-source-dialog";
 import { useSkillLibrary } from "@/components/skills/use-skill-library";
 import { PENDING_SKILL_MARKDOWN_KEY, updateOutcomeMessage } from "@/components/skills/skill-library-model";
 import type { SkillImportOutcome, SkillImportPreview } from "@/components/skills/skills-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * /skills, and /skills/import (the same page with the importer open).
@@ -115,8 +116,8 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
     const notes = [
       outcome.blocked > 0
         ? outcome.blocked === 1
-          ? "One came in switched off because Juno’s safety check blocked it."
-          : `${outcome.blocked} came in switched off because Juno’s safety check blocked them.`
+          ? `One came in switched off because ${PRODUCT_NAME}’s safety check blocked it.`
+          : `${outcome.blocked} came in switched off because ${PRODUCT_NAME}’s safety check blocked them.`
         : null,
       outcome.skipped.length > 0 ? outcome.skipped[0].message : null,
       // An import can join a repository the reader switched off, and then its
@@ -235,10 +236,10 @@ export function RemoveSourceDialog({
           </DialogTitle>
           <DialogDescription>
             {count === 1 ? (
-              "Its skill is removed from Juno."
+              `Its skill is removed from ${PRODUCT_NAME}.`
             ) : (
               <>
-                Its <span className="tabular-nums">{count}</span> skills are removed from Juno.
+                Its <span className="tabular-nums">{count}</span>{` skills are removed from ${PRODUCT_NAME}.`}
               </>
             )}{" "}
             Chats that used them keep their history.

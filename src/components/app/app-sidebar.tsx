@@ -70,6 +70,7 @@ import { NotificationsPopover } from "@/components/notifications/notifications-p
 import { useNotifications } from "@/components/notifications/use-notifications";
 import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
 import { unreadDetail } from "@/components/notifications/inbox-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -934,7 +935,7 @@ export function AppSidebar({
             <Link
               href={isCode ? "/code" : "/chat"}
               onClick={() => setSidebarOpen(false)}
-              aria-label={isCode ? "Juno Code home" : "Juno home"}
+              aria-label={isCode ? `${PRODUCT_NAME} Code home` : `${PRODUCT_NAME} home`}
               className={cn(
                 "group/brand flex items-center rounded-control",
                 collapsed ? "size-11 justify-center" : "h-9 max-md:pl-1.5"
@@ -996,7 +997,7 @@ export function AppSidebar({
                   transition={transition.base}
                   className="truncate font-serif text-title text-foreground translate-y-[3px]"
                 >
-                  Juno
+                  {`${PRODUCT_NAME}`}
                 </motion.span>
               )}
             </Link>
@@ -2420,7 +2421,7 @@ function ConversationRow({
       title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
       description: isCodeSession
         ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : "This permanently removes the conversation and its messages. Anything Juno made in it stays in your Library. This can't be undone.",
+        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
       confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
@@ -2965,7 +2966,7 @@ function ArchivedChatsDialog({
       title: isCode ? "Delete this session?" : "Delete this conversation?",
       description: isCode
         ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : "This permanently removes the conversation and its messages. Anything Juno made in it stays in your Library. This can't be undone.",
+        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
       confirmLabel: isCode ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         setItems((prev) => prev?.filter((x) => x.id !== c.id) ?? prev);

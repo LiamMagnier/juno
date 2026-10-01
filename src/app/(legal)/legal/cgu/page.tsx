@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Conditions générales d'utilisation et de vente (CGU/CGV) — static French
@@ -13,20 +14,19 @@ export const dynamic = "force-static";
 export const metadata: Metadata = {
   title: "Conditions générales (CGU / CGV)",
   description:
-    "Conditions générales d'utilisation et de vente de Juno (chat.liams.dev) : description du service, plans et tarifs, paiement Stripe, résiliation, usage acceptable, disponibilité, responsabilité et droit applicable.",
+    `Conditions générales d'utilisation et de vente de ${PRODUCT_NAME} (chat.liams.dev) : description du service, plans et tarifs, paiement Stripe, résiliation, usage acceptable, disponibilité, responsabilité et droit applicable.`,
 };
 
 export default function CguPage() {
   return (
     <>
-      <p className="font-mono text-label text-muted-foreground">Juno · Conditions</p>
+      <p className="font-mono text-label text-muted-foreground">{`${PRODUCT_NAME} · Conditions`}</p>
       <h1 className="mt-3">Conditions générales d&apos;utilisation et de vente</h1>
       <p className="text-muted-foreground">Dernière mise à jour : 7 août 2026.</p>
 
       <h2>1. Objet</h2>
       <p>
-        Les présentes conditions générales (« CGU/CGV ») régissent l&apos;accès et l&apos;utilisation du
-        service Juno (le « Service »), accessible à l&apos;adresse <strong>chat.liams.dev</strong> et
+        {`Les présentes conditions générales (« CGU/CGV ») régissent l'accès et l'utilisation du service ${PRODUCT_NAME} (le « Service »), accessible à l'adresse `}<strong>chat.liams.dev</strong> et
         édité par <strong>[Nom / raison sociale]</strong> (voir les{" "}
         <a href="/legal/mentions-legales">mentions légales</a>). La création d&apos;un compte ou la
         souscription d&apos;un abonnement emporte acceptation pleine et entière des présentes.
@@ -34,11 +34,7 @@ export default function CguPage() {
 
       <h2>2. Description du Service</h2>
       <p>
-        Juno est un assistant conversationnel d&apos;intelligence artificielle donnant accès, depuis une
-        interface unique, à plusieurs modèles de langage de différents laboratoires (génération de
-        texte, de code, d&apos;images et autres fonctionnalités associées : projets, mémoire, artefacts,
-        mode vocal). Les modèles disponibles peuvent évoluer à tout moment en fonction des offres des
-        fournisseurs tiers.
+        {`${PRODUCT_NAME} est un assistant conversationnel d'intelligence artificielle donnant accès, depuis une interface unique, à plusieurs modèles de langage de différents laboratoires (génération de texte, de code, d'images et autres fonctionnalités associées : projets, mémoire, artefacts, mode vocal). Les modèles disponibles peuvent évoluer à tout moment en fonction des offres des fournisseurs tiers.`}
       </p>
 
       <h2>3. Compte</h2>

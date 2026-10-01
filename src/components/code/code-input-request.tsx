@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import type { AgentPlanProposalItem, AgentQuestionItem } from "@/lib/agent-protocol/fold";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Reader input stays visible until the host records its resolution. */
 export function CodeInputRequest({ question, plan, busy, answer, decide }: {
@@ -18,8 +19,8 @@ export function CodeInputRequest({ question, plan, busy, answer, decide }: {
   if (!question && !plan) return null;
   const waiting = sent === (question?.questionId ?? plan?.planId);
   return (
-    <section className="mb-3 border-t border-border pt-4" aria-label={question ? "Juno needs an answer" : "Review Juno’s plan"}>
-      <p className="mb-2 text-sm font-medium">{question ? "Juno needs your answer" : "Review the plan"}</p>
+    <section className="mb-3 border-t border-border pt-4" aria-label={question ? `${PRODUCT_NAME} needs an answer` : `Review ${PRODUCT_NAME}’s plan`}>
+      <p className="mb-2 text-sm font-medium">{question ? `${PRODUCT_NAME} needs your answer` : "Review the plan"}</p>
       <p className="whitespace-pre-wrap text-sm text-muted-foreground">{question?.prompt ?? plan?.text}</p>
       {question ? (
         <form className="mt-3 flex flex-col gap-2" onSubmit={async (event) => {

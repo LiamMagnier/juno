@@ -11,6 +11,7 @@ import {
   type WorkFireToken,
 } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Firing an automation from somewhere else.
@@ -112,7 +113,7 @@ export function ScheduleFireCard({ schedule }: { schedule: ClientWorkSchedule })
           ? issuedAt
             ? `A token was issued on ${new Date(issuedAt).toLocaleDateString()}. Issuing another stops it working.`
             : "This automation has a token. Issuing another stops it working."
-          : "No token yet, so nothing outside Juno can start this."}
+          : `No token yet, so nothing outside ${PRODUCT_NAME} can start this.`}
       </p>
       <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
         Text sent with a fire reaches the run as data from an untrusted source, after the

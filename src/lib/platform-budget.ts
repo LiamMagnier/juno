@@ -1,6 +1,7 @@
 import "server-only";
 import { prismaUnguarded } from "@/lib/prisma";
 import { alertOperator } from "@/lib/alerts";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * A ceiling on what the whole deployment can spend in a day.
@@ -113,7 +114,7 @@ export async function platformBudgetState(): Promise<PlatformBudgetState> {
           kind: "platform_budget_exceeded",
           key: day,
           severity: "critical",
-          title: "Juno has hit its daily platform spend ceiling",
+          title: `${PRODUCT_NAME} has hit its daily platform spend ceiling`,
           detail: {
             day,
             spentUsd: (spentMicroUsd / 1_000_000).toFixed(2),

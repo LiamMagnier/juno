@@ -28,6 +28,7 @@ import {
 } from "docx";
 import { Workbook } from "exceljs";
 import PptxGenJS from "pptxgenjs";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type OfficeFormat = "docx" | "xlsx" | "pptx";
 
@@ -705,7 +706,7 @@ export async function toXlsx(markdown: string, title: string): Promise<Buffer> {
     const tables = blocks.flatMap((b) => (b.kind === "table" ? [b.table] : []));
 
     const wb = new Workbook();
-    wb.creator = "Juno";
+    wb.creator = PRODUCT_NAME;
     const taken = new Set<string>();
 
     if (tables.length === 0) {

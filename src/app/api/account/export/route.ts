@@ -10,6 +10,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { isStorageAvailable } from "@/lib/env";
 import { getObjectBytes } from "@/lib/storage";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -582,7 +583,7 @@ export async function GET(req: Request) {
     })),
     attachments: {
       note: isJuno
-        ? "Juno packages include file bytes until the 100 MB archive cap; each omitted archivePath is an explicit unavailable object."
+        ? `${PRODUCT_NAME} packages include file bytes until the 100 MB archive cap; each omitted archivePath is an explicit unavailable object.`
         : "This JSON preserves file metadata and revision history. File bytes remain in the source Library and are not embedded in this JSON export.",
       items: attachmentItems,
     },

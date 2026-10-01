@@ -21,6 +21,7 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 import { createWorkSkill } from "@/components/work/work-transport";
 import type { PlanStep, PerformedActions } from "@/components/work/work-timeline";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Turning a task that worked into a skill you can run again.
@@ -215,8 +216,8 @@ function CaptureSkillDialog({
       result.kind === "blocked"
         ? result.explanation
         : result.kind === "failed" && result.cause === "rejected"
-          ? "Juno wouldn’t accept that. Check the name and try again — nothing was created."
-          : "Couldn’t reach Juno to save this. Nothing was created."
+          ? `${PRODUCT_NAME} wouldn’t accept that. Check the name and try again — nothing was created.`
+          : `Couldn’t reach ${PRODUCT_NAME} to save this. Nothing was created.`
     );
   };
 
@@ -232,8 +233,7 @@ function CaptureSkillDialog({
             reader reads the fields at all.
           */}
           <DialogDescription>
-            Juno has drafted this from the steps it actually took. Change anything you like — it is
-            saved exactly as it reads here, and nothing runs until you ask for it by name.
+            {`${PRODUCT_NAME} has drafted this from the steps it actually took. Change anything you like — it is saved exactly as it reads here, and nothing runs until you ask for it by name.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -262,8 +262,7 @@ function CaptureSkillDialog({
               className="mt-1.5"
             />
             <p className="mt-1.5 text-ui leading-relaxed text-muted-foreground">
-              One line. This is what Juno reads when deciding whether a future task is this job, so
-              describe the job rather than this particular run of it.
+              {`One line. This is what ${PRODUCT_NAME} reads when deciding whether a future task is this job, so describe the job rather than this particular run of it.`}
             </p>
           </div>
 

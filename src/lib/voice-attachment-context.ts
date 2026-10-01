@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * The bounded context contract for a composed voice turn.
  *
@@ -39,7 +41,7 @@ export function boundVoiceAttachmentContext(input: string): {
   if (normalized.length <= VOICE_CONTEXT_MAX_CHARS) {
     return { value: normalized, truncated: false };
   }
-  const suffix = "\n\n[Attachment context truncated by Juno's voice context limit.]";
+  const suffix = `\n\n[Attachment context truncated by ${PRODUCT_NAME}'s voice context limit.]`;
   const budget = Math.max(0, VOICE_CONTEXT_MAX_CHARS - suffix.length);
   return { value: `${normalized.slice(0, budget).trimEnd()}${suffix}`, truncated: true };
 }

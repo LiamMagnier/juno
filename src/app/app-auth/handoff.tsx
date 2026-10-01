@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 
 import { JunoMark } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The handoff card: the centred `surface-raised-lg` panel every
@@ -19,10 +20,10 @@ function HandoffCard({ deepLink }: { deepLink: string }) {
         className="surface-raised-lg w-full max-w-md rounded-panel p-6 text-center motion-safe:animate-rise-in sm:p-7"
       >
         <JunoMark className="mx-auto size-10" />
-        <h1 className="mt-6 text-balance font-serif text-title">Signing you in to Juno…</h1>
+        <h1 className="mt-6 text-balance font-serif text-title">{`Signing you in to ${PRODUCT_NAME}…`}</h1>
         <p className="mt-2 text-body text-muted-foreground">You can return to the app.</p>
         <Button asChild className="mt-6 w-full">
-          <a href={deepLink}>Open Juno</a>
+          <a href={deepLink}>{`Open ${PRODUCT_NAME}`}</a>
         </Button>
       </div>
     </main>

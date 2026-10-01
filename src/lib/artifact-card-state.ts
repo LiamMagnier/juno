@@ -1,4 +1,5 @@
 import type { ClientActivityEvent, ClientArtifact, ClientArtifactSuggestion } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What an artifact's card, the canvas and `/a/{id}` need to decide about the
@@ -288,7 +289,7 @@ export function comparisonNotice(
   if (proposal.baseVersion !== current.version) {
     return {
       kind: "behind",
-      message: `This changed after Juno suggested it (v${proposal.baseVersion} → v${current.version}). Applying replaces v${current.version}, which stays in history.`,
+      message: `This changed after ${PRODUCT_NAME} suggested it (v${proposal.baseVersion} → v${current.version}). Applying replaces v${current.version}, which stays in history.`,
     };
   }
   return null;

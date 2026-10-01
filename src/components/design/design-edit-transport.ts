@@ -19,6 +19,7 @@ import type { PendingProposal } from "@/components/design/use-design-document";
 import type { DesignAdjustment } from "@/lib/design/ai";
 import type { DesignOperation, DesignTransaction } from "@/lib/design/operations";
 import type { DesignDocument, NodeId } from "@/lib/design/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface DesignEditProposal {
   transaction: DesignTransaction;
@@ -74,7 +75,7 @@ export async function requestDesignEdit(request: DesignEditRequest): Promise<Des
 
   const data = (await res.json().catch(() => ({}))) as Partial<DesignEditProposal> & { error?: string; code?: string };
   if (!res.ok || !data.transaction || !data.preview) {
-    throw new DesignEditRequestError(data.error ?? "Juno could not change this design.", data.code ?? "unknown");
+    throw new DesignEditRequestError(data.error ?? `${PRODUCT_NAME} could not change this design.`, data.code ?? "unknown");
   }
 
   return {
@@ -87,7 +88,7 @@ export async function requestDesignEdit(request: DesignEditRequest): Promise<Des
     changes: data.changes ?? [],
     adjustments: data.adjustments ?? [],
     note: data.note ?? null,
-    model: data.model ?? "Juno",
+    model: data.model ?? PRODUCT_NAME,
   };
 }
 

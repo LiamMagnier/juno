@@ -6,10 +6,11 @@ import { AuthFormSkeleton } from "@/components/auth/auth-form-skeleton";
 import { getCurrentUser } from "@/lib/session";
 import { isGoogleConfigured } from "@/lib/env";
 import { isAppleConfigured, isEmailLinkConfigured } from "@/lib/auth";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to Juno: the best AI models in one calm workspace.",
+  description: `Sign in to ${PRODUCT_NAME}: the best AI models in one calm workspace.`,
 };
 
 export default async function SignInPage() {
@@ -19,7 +20,7 @@ export default async function SignInPage() {
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-balance font-serif text-display font-medium tracking-tight">Welcome back</h1>
-        <p className="text-body text-muted-foreground">Sign in to continue to Juno.</p>
+        <p className="text-body text-muted-foreground">{`Sign in to continue to ${PRODUCT_NAME}.`}</p>
       </div>
       {/* A real skeleton, not `null`: AuthForm reads useSearchParams, so it
           suspends on first render and the card used to be a heading over empty

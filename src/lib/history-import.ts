@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /*
  * Parsers for ChatGPT, Claude, Gemini and Juno data-export ZIPs. The providers
  * ship different shapes, while Juno's own export is a versioned superset that
@@ -511,7 +513,7 @@ export function parseHistoryExport(raw: string, formatHint: ImportFormat | null 
       : isRecord(data) && Array.isArray(data.chats)
         ? data.chats
         : null;
-  if (!items) throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, Gemini, or Juno export.");
+  if (!items) throw new HistoryImportError(`This file doesn't look like a ChatGPT, Claude, Gemini, or ${PRODUCT_NAME} export.`);
 
   const sample = items.find(isRecord);
   const sniffedFormat: ImportFormat | null = sample
@@ -530,7 +532,7 @@ export function parseHistoryExport(raw: string, formatHint: ImportFormat | null 
     );
   const format: ImportFormat | null = isJuno ? "juno" : sniffedFormat ?? formatHint;
   if (!format) {
-    throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, Gemini, or Juno export.");
+    throw new HistoryImportError(`This file doesn't look like a ChatGPT, Claude, Gemini, or ${PRODUCT_NAME} export.`);
   }
 
   const parse =

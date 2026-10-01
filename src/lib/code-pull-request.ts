@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /*
  * OPENING A PULL REQUEST FROM A CODE SESSION, AND THE THREE WAYS TO DO IT.
  *
@@ -134,7 +136,7 @@ export function pullRequestBody(input: {
 }): string {
   const asked = pullRequestTitle(input.prompt, "").slice(0, 500);
   return [
-    `Opened from Juno Code${input.mention ? ` for @${input.mention}` : ""}.`,
+    `Opened from ${PRODUCT_NAME} Code${input.mention ? ` for @${input.mention}` : ""}.`,
     "",
     ...(asked ? ["**Task prompt**", "", `> ${asked}`, ""] : []),
     `Branch \`${input.branch}\` targets \`${input.base}\`.${

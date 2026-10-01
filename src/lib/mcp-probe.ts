@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontex
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { McpRequestBlockedError, safeMcpFetch } from "@/lib/mcp-safe-fetch";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * One connection probe for ANY Streamable HTTP MCP endpoint.
@@ -36,7 +37,7 @@ export type McpProbeResult = McpProbeOk | McpProbeErr;
 const PROBE_TIMEOUT_MS = 15_000;
 
 const NOT_MCP = "That address answered, but not as an MCP server.";
-const UNREACHABLE = "Juno couldn't connect to that server.";
+const UNREACHABLE = `${PRODUCT_NAME} couldn't connect to that server.`;
 
 /** The `code` of a Node system error, looked for on the error and its causes. */
 function systemErrorCode(err: unknown): string | null {
@@ -67,12 +68,12 @@ export function describeProbeFailure(err: unknown, timedOut: boolean, timeoutMs 
   if (err instanceof StreamableHTTPError) {
     const status = err.code ?? -1;
     if (status === 401 || status === 403) {
-      return "The server turned down Juno's credentials. Check the Authorization header.";
+      return `The server turned down ${PRODUCT_NAME}'s credentials. Check the Authorization header.`;
     }
     if (status === 404 || status === 405) {
       return "Nothing at that address answered as an MCP server. Check the URL, which usually ends in /mcp.";
     }
-    if (status === 429) return "The server is limiting how often Juno can connect. Try again in a minute.";
+    if (status === 429) return `The server is limiting how often ${PRODUCT_NAME} can connect. Try again in a minute.`;
     if (status >= 500 && status <= 599) return `The server had a problem (HTTP ${status}). Try again later.`;
     if (status >= 400 && status <= 499) return `The server refused the connection (HTTP ${status}).`;
     return NOT_MCP;
@@ -80,11 +81,11 @@ export function describeProbeFailure(err: unknown, timedOut: boolean, timeoutMs 
   if (err instanceof McpError) {
     if (err.code === ErrorCode.RequestTimeout) return tooSlow;
     if (err.code === ErrorCode.ConnectionClosed) return UNREACHABLE;
-    return "The server refused Juno's MCP handshake.";
+    return `The server refused ${PRODUCT_NAME}'s MCP handshake.`;
   }
   const code = systemErrorCode(err);
   if (code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "EAI_NONAME") {
-    return "Juno couldn't find that server. Check the address.";
+    return `${PRODUCT_NAME} couldn't find that server. Check the address.`;
   }
   if (code && /CERT|^ERR_TLS|^ERR_SSL|^EPROTO$/.test(code)) {
     return "The server's security certificate couldn't be verified.";

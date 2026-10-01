@@ -25,6 +25,7 @@
 import { Workbook, type Worksheet } from "exceljs";
 import { z } from "zod";
 import { DeliverableError } from "@/lib/work/deliverables/validate";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -220,7 +221,7 @@ export async function buildSpreadsheet(spec: SpreadsheetSpec): Promise<Buffer> {
 
   try {
     const workbook = new Workbook();
-    workbook.creator = "Juno";
+    workbook.creator = PRODUCT_NAME;
     workbook.title = spec.title;
     workbook.created = new Date();
 

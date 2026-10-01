@@ -9,6 +9,7 @@ import { env } from "@/lib/env";
 import { buildMcpAuthorizeUrl, createPkce, discoverEndpoints, registerClient } from "@/lib/mcp-oauth";
 import { customMcpUrlProblem, safeMcpFetch } from "@/lib/mcp-safe-fetch";
 import { CUSTOM_NONCE_COOKIE, CUSTOM_SESSION_COOKIE, ownedConnector, type CustomOAuthSession } from "../../shared";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -40,7 +41,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const redirectUri = customRedirectUri();
     const client = await registerClient(
       endpoints,
-      { clientName: "Juno", clientUri: env.appUrl, redirectUri },
+      { clientName: PRODUCT_NAME, clientUri: env.appUrl, redirectUri },
       safeMcpFetch
     );
     const pkce = createPkce();

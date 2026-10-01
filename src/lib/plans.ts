@@ -1,5 +1,6 @@
 import type { Plan } from "@prisma/client";
 import { getModel, type ModelId } from "@/lib/models";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface PlanConfig {
   id: Plan;
@@ -40,7 +41,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     id: "FREE",
     name: "Free",
     price: 0,
-    tagline: "Try Juno with 15 messages a month.",
+    tagline: `Try ${PRODUCT_NAME} with 15 messages a month.`,
     // Trial allowance, not a free tier: enough to feel the product think
     // before paying, small enough to cost cents. The count is enforced by the
     // usual message quota; BUDGET_EUR.FREE in spend.ts is the matching hard
@@ -59,7 +60,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     // prices at minPlan FREE (Sonnet, Haiku, GPT Mini, Gemini Flash…) — the
     // set effectiveMinPlan below actually unlocks; flagships stay paid.
     features: [
-      "15 messages a month to try Juno, free",
+      `15 messages a month to try ${PRODUCT_NAME}, free`,
       "Everyday models (Claude Sonnet, GPT Mini, Gemini Flash…)",
       "Canvas, artifacts & file uploads",
       "Import your ChatGPT or Claude history",
@@ -95,7 +96,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     // 55 € against Pro's 11 €), and a true "×" rather than a letter x.
     name: "Max ×5",
     price: 100,
-    tagline: "For professionals who live in Juno.",
+    tagline: `For professionals who live in ${PRODUCT_NAME}.`,
     monthlyMessages: null,
     maxUploadMb: 50,
     // Effectively unlimited — clamped down to each model's own native max.

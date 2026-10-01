@@ -11,6 +11,7 @@ import { Popover, PopoverContent } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { AppIcons } from "@/lib/app-icons";
 import { enableWebPush, webPushStatus } from "@/lib/notify/web-push-client";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The notifications popover, opened from the sidebar's Notifications row.
@@ -84,9 +85,9 @@ export function NotificationsPopover({
     // shows its permission prompt while the gesture that asked is live.
     void enableWebPush(publicKey).then((result) => {
       if (result.ok) {
-        toast.success("Juno will notify you on this browser.");
+        toast.success(`${PRODUCT_NAME} will notify you on this browser.`);
       } else if (result.reason === "denied") {
-        toast("Notifications are off for Juno in this browser.", {
+        toast(`Notifications are off for ${PRODUCT_NAME} in this browser.`, {
           description: "You can allow them in the browser’s site settings.",
         });
       } else if (result.reason === "failed") {
@@ -165,7 +166,7 @@ export function NotificationsPopover({
               size="panel"
               icon={AppIcons.notifications}
               title="Nothing new"
-              description="Juno tells you here when a task finishes, needs you, or an agent has something to share."
+              description={`${PRODUCT_NAME} tells you here when a task finishes, needs you, or an agent has something to share.`}
               className="rounded-control"
             />
           </div>

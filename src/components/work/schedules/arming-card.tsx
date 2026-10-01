@@ -3,6 +3,7 @@
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import { describeTrigger } from "@/components/work/work-triggers";
 import type { WorkTriggerDraft } from "@/components/work/work-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * What you are about to arm, read back to you.
@@ -138,7 +139,7 @@ function describeTarget(
   hostId: string | null,
   hosts: readonly ClientWorkHost[] | null
 ): string {
-  if (target === "cloud") return "Juno's cloud. It cannot reach anything on your Macs.";
+  if (target === "cloud") return `${PRODUCT_NAME}'s cloud. It cannot reach anything on your Macs.`;
   const named = hostId === null ? null : (hosts ?? []).find((host) => host.id === hostId) ?? null;
   if (target === "local") {
     return named === null

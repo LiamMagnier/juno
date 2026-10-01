@@ -37,6 +37,7 @@ import {
   type WorkPermissionPolicy,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Protocol generations
@@ -269,7 +270,7 @@ export interface WorkRelayRefusal {
 const REVOKED: WorkRelayRefusal = {
   code: "work_host_revoked",
   status: 403,
-  message: "This Mac's access to Juno Work has been revoked.",
+  message: `This Mac's access to ${PRODUCT_NAME} Work has been revoked.`,
   // Non-retryable is the entire mechanism. `WorkRemoteHost.run` moves to
   // `.stopped` on a non-retryable error and keeps backing off on anything else,
   // so a retryable revocation is a decommissioned Mac that polls a relay which
@@ -285,7 +286,7 @@ const REVOKED: WorkRelayRefusal = {
 const NOT_ENABLED: WorkRelayRefusal = {
   code: "work_host_not_enabled",
   status: 403,
-  message: "Juno Work is switched off on this Mac.",
+  message: `${PRODUCT_NAME} Work is switched off on this Mac.`,
   retryable: false,
   audit: "command_refused",
   severity: "refusal",
@@ -294,7 +295,7 @@ const NOT_ENABLED: WorkRelayRefusal = {
 const UNKNOWN_COMMAND: WorkRelayRefusal = {
   code: "work_host_unknown_command",
   status: 409,
-  message: "This Mac's version of Juno cannot carry out that instruction.",
+  message: `This Mac's version of ${PRODUCT_NAME} cannot carry out that instruction.`,
   // Permanent for this pairing: the answer changes when the Mac is updated, not
   // when the request is repeated.
   retryable: false,

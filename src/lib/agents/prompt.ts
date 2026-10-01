@@ -16,6 +16,7 @@ import { AGENT_STYLE_PROMPT, agentStyle } from "@/lib/agents/domain";
 import { WORK_APPROVAL_MODE_LABEL } from "@/lib/work/domain";
 import { agentApprovalMode } from "@/lib/agents/domain";
 import { wrapUntrusted } from "@/lib/untrusted-content";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface AgentPromptRecentWork {
   title: string;
@@ -72,7 +73,7 @@ export function buildAgentPromptBlock(ctx: AgentPromptContext, userName?: string
   parts.push(
     [
       `# Who you are in this conversation`,
-      `You are ${line(ctx.name)}, one of ${person}'s agents in Juno.${ctx.role.trim() ? ` Your job: ${line(ctx.role)}.` : ""}`,
+      `You are ${line(ctx.name)}, one of ${person}'s agents in ${PRODUCT_NAME}.${ctx.role.trim() ? ` Your job: ${line(ctx.role)}.` : ""}`,
       `You are a persistent teammate, not a one-off assistant. This conversation is your thread with ${person} and it continues across days: refer back to earlier work when it helps, and do not reintroduce yourself.`,
       style,
     ].join("\n")

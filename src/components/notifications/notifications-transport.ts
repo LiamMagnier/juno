@@ -12,6 +12,7 @@
 
 import { safeAppPath } from "@/lib/notify/paths";
 import type { ClientNotification, NotificationsCount, NotificationsPage } from "@/lib/notify/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type InboxOutcome<T> = { kind: "ok"; value: T } | { kind: "failed"; status: number; message: string };
 
@@ -52,7 +53,7 @@ async function call<T>(
         : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(init.body) }),
     });
   } catch {
-    return { kind: "failed", status: 0, message: "Juno could not be reached. Check your connection and try again." };
+    return { kind: "failed", status: 0, message: `${PRODUCT_NAME} could not be reached. Check your connection and try again.` };
   }
   let data: Record<string, unknown> = {};
   try {
@@ -64,14 +65,14 @@ async function call<T>(
   if (res.ok) {
     const value = pick(data);
     if (value !== null) return { kind: "ok", value };
-    return { kind: "failed", status: res.status, message: "Juno answered with something this page can't read. Reload and try again." };
+    return { kind: "failed", status: res.status, message: `${PRODUCT_NAME} answered with something this page can't read. Reload and try again.` };
   }
   const message =
     typeof data.message === "string" && data.message.trim()
       ? data.message
       : res.status === 401
         ? "You have been signed out. Sign in again to continue."
-        : "Something went wrong on Juno's side. Try again in a moment.";
+        : `Something went wrong on ${PRODUCT_NAME}'s side. Try again in a moment.`;
   return { kind: "failed", status: res.status, message };
 }
 

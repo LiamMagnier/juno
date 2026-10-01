@@ -6,6 +6,7 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Plate } from "@/components/landing/plate";
 import { LABS } from "@/components/landing/lab-marquee";
 import { staggerDelay } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The three legal documents, labelled in English like the landing footer
@@ -54,7 +55,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <header className="flex items-center justify-between px-6 pt-5 sm:px-10 lg:pt-8">
           <Link
             href="/"
-            aria-label="Juno home"
+            aria-label={`${PRODUCT_NAME} home`}
             style={staggerDelay(0, "loose")}
             className="pressable inline-flex items-center gap-2.5 rounded-control motion-safe:animate-fade-in [animation-fill-mode:backwards] motion-reduce:transition-none motion-reduce:active:scale-100"
           >
@@ -66,7 +67,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             className="inline-flex items-center gap-1.5 rounded-xs text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
           >
             <ArrowLeft className="size-3.5" aria-hidden />
-            Back to Juno
+            {`Back to ${PRODUCT_NAME}`}
           </Link>
         </header>
 

@@ -24,6 +24,7 @@ import { AgentPresence, AgentStatusLine } from "./agent-presence";
 import { formatAgo, formatLocalWhen, localStateSentence } from "./agent-bits";
 import { announceAgentsChanged, hireAgent, updateAgent } from "./agents-transport";
 import { useAgents } from "./use-agents";
+import { BRAND } from "@/lib/brand/names";
 
 /**
  * Agents home (docs/design/agents-rework/DIRECTION.md, revised 2026-09-30).
@@ -60,7 +61,7 @@ export function AgentsHome({
   if (error && !agents) {
     return (
       <AppPage measure="wide">
-        <LoadError title="Couldn’t load your crew" description={error} onRetry={refresh} />
+        <LoadError title="Couldn’t load your agents" description={error} onRetry={refresh} />
       </AppPage>
     );
   }
@@ -70,7 +71,7 @@ export function AgentsHome({
   return (
     <AppPage measure="wide">
       <header className="flex flex-col gap-1 pb-8">
-        <h1 className="font-serif text-page-title text-foreground">Crew</h1>
+        <h1 className="font-serif text-page-title text-foreground">{BRAND.orbit.label}</h1>
         <p className="text-body text-muted-foreground">
           <TeamSentence agents={ordered} />
         </p>
@@ -78,7 +79,7 @@ export function AgentsHome({
 
       <JobComposer team={ordered} autoFocus={focusComposer} compact />
 
-      <ul className="mt-10 grid grid-cols-1 gap-3 pb-16 @[40rem]/page:grid-cols-2 @[66rem]/page:grid-cols-3" aria-label="Your crew">
+      <ul className="mt-10 grid grid-cols-1 gap-3 pb-16 @[40rem]/page:grid-cols-2 @[66rem]/page:grid-cols-3" aria-label={BRAND.orbit.description}>
         {ordered.map((agent, index) => (
           <li key={agent.id} style={staggerDelay(index, "tight")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
             <AgentCard agent={agent} onChanged={refresh} />

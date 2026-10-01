@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { CodeSessionStatus } from "@/hooks/use-code-session";
 import { PRESENCE_META, type Presence } from "@/components/code/code-session-meta";
 import type { AutoFixHandle } from "@/components/code/use-code-auto-fix";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * THE SESSION HEADER — the one place that answers "what is this, and what is it
@@ -543,9 +544,7 @@ function ChecksAndAutoFix({
           no next step reads as broken. */}
       {notInstalled && (
         <p className="px-2 py-1.5 text-caption text-muted-foreground">
-          Auto-fix needs the Juno GitHub App installed on this repository — GitHub sends a check
-          result or a review only to the repositories the app is installed on. Install it there and
-          the switch appears here.
+          {`Auto-fix needs the ${PRODUCT_NAME} GitHub App installed on this repository — GitHub sends a check result or a review only to the repositories the app is installed on. Install it there and the switch appears here.`}
         </p>
       )}
 
@@ -564,8 +563,8 @@ function ChecksAndAutoFix({
                   it is the sentence that changes — never the permission. */}
               <p className="mt-0.5 text-caption text-muted-foreground">
                 {planMode
-                  ? "Juno answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch."
-                  : "Juno answers a failing check or a review comment here by pushing a fix to this branch. When the ask is unclear or would change the design, it stops and asks you instead."}
+                  ? `${PRODUCT_NAME} answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch.`
+                  : `${PRODUCT_NAME} answers a failing check or a review comment here by pushing a fix to this branch. When the ask is unclear or would change the design, it stops and asks you instead.`}
               </p>
             </div>
             <Switch

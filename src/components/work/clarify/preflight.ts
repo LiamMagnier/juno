@@ -60,6 +60,7 @@ import {
   type PreflightClarificationAnswer,
 } from "@/lib/preflight-clarification";
 import type { WorkCapability } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** One answer the reader can pick. Exactly one option per question is the recommendation. */
 export interface WorkPreflightOption {
@@ -277,7 +278,7 @@ export function derivePreflightQuestions(input: WorkPreflightInput): WorkPreflig
   if (canReachSomeone && OUTWARD_ACT.test(text) && !/\bdrafts?\b/i.test(text)) {
     questions.push({
       id: "send_or_draft",
-      question: "Should Juno send this, or leave it for you to send?",
+      question: `Should ${PRODUCT_NAME} send this, or leave it for you to send?`,
       options: [
         { label: "Leave it as a draft for you to send", recommended: true },
         { label: "Send it once it is ready" },

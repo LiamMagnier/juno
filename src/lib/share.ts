@@ -8,6 +8,7 @@ import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
 import { artifactLineageTakenDown } from "@/lib/artifact-takedown";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -75,7 +76,7 @@ function generateToken(): string {
  */
 export class ShareTakenDownError extends Error {
   constructor() {
-    super("This was removed from public sharing for breaking Juno’s rules, so it can’t be shared again.");
+    super(`This was removed from public sharing for breaking ${PRODUCT_NAME}’s rules, so it can’t be shared again.`);
     this.name = "ShareTakenDownError";
   }
 }

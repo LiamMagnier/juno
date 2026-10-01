@@ -66,6 +66,7 @@ import {
 } from "@/lib/work/notifications";
 import { agentNotifyLevel } from "@/lib/agents/domain";
 import { workNotificationEmail } from "@/lib/work/notify/email";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * How long the record of a delivery is kept.
@@ -174,7 +175,7 @@ async function deliver(
       runId: run.id,
       status: run.status,
     });
-    return { delivered: false, reason: "This run is in a state Juno cannot describe." };
+    return { delivered: false, reason: `This run is in a state ${PRODUCT_NAME} cannot describe.` };
   }
 
   const terminalReason = asTerminalReason(run.terminalReason);

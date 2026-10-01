@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Mentions légales (LCEN, art. 6-III) — static French legal notice for Juno.
@@ -13,26 +14,24 @@ export const dynamic = "force-static";
 export const metadata: Metadata = {
   title: "Mentions légales",
   description:
-    "Mentions légales de Juno (chat.liams.dev) : éditeur, directeur de la publication, hébergeur et propriété intellectuelle, conformément à la loi pour la confiance dans l'économie numérique (LCEN).",
+    `Mentions légales de ${PRODUCT_NAME} (chat.liams.dev) : éditeur, directeur de la publication, hébergeur et propriété intellectuelle, conformément à la loi pour la confiance dans l'économie numérique (LCEN).`,
 };
 
 export default function MentionsLegalesPage() {
   return (
     <>
-      <p className="font-mono text-label text-muted-foreground">Juno · Informations légales</p>
+      <p className="font-mono text-label text-muted-foreground">{`${PRODUCT_NAME} · Informations légales`}</p>
       <h1 className="mt-3">Mentions légales</h1>
       <p className="text-muted-foreground">Dernière mise à jour : 5 juillet 2026.</p>
 
       <p>
-        Conformément aux dispositions des articles 6-III et 19 de la loi n° 2004-575 du 21 juin 2004
-        pour la confiance dans l&apos;économie numérique (LCEN), les présentes mentions légales sont
-        portées à la connaissance des utilisateurs du service Juno, accessible à l&apos;adresse{" "}
+        {`Conformément aux dispositions des articles 6-III et 19 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique (LCEN), les présentes mentions légales sont portées à la connaissance des utilisateurs du service ${PRODUCT_NAME}, accessible à l'adresse`}{" "}
         <strong>chat.liams.dev</strong>.
       </p>
 
       <h2>1. Éditeur du service</h2>
       <p>
-        Le service Juno est édité par <strong>[Nom et prénom, ou raison sociale]</strong>,{" "}
+        {`Le service ${PRODUCT_NAME} est édité par `}<strong>[Nom et prénom, ou raison sociale]</strong>,{" "}
         <strong>[forme juridique — ex. entrepreneur individuel / SAS au capital de X €]</strong>,
         immatriculé(e) sous le numéro SIREN <strong>[SIREN]</strong>, dont le siège est situé{" "}
         <strong>[Adresse complète]</strong>.
@@ -62,11 +61,7 @@ export default function MentionsLegalesPage() {
 
       <h2>4. Propriété intellectuelle</h2>
       <p>
-        L&apos;ensemble des éléments composant le service Juno (interface, textes, marques, logos,
-        éléments graphiques, code) est protégé par le droit de la propriété intellectuelle. Toute
-        reproduction, représentation ou exploitation, totale ou partielle, sans autorisation écrite
-        préalable de l&apos;éditeur est interdite. Les contenus que vous soumettez au service et les
-        réponses générées pour votre compte restent régis par les{" "}
+        {`L'ensemble des éléments composant le service ${PRODUCT_NAME} (interface, textes, marques, logos, éléments graphiques, code) est protégé par le droit de la propriété intellectuelle. Toute reproduction, représentation ou exploitation, totale ou partielle, sans autorisation écrite préalable de l'éditeur est interdite. Les contenus que vous soumettez au service et les réponses générées pour votre compte restent régis par les`}{" "}
         <a href="/legal/cgu">conditions générales d&apos;utilisation</a>.
       </p>
 

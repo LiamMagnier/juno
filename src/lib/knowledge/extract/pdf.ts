@@ -36,6 +36,7 @@
 
 import { inflateSync, inflateRawSync } from "node:zlib";
 import { BlockCollector, EXTRACT_LIMITS, type ExtractedBlock, type ExtractionResult } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const PDF_PARSER = "pdf";
 /*
@@ -639,7 +640,7 @@ export function extractPdf(input: { bytes: Uint8Array; fileName: string }): Extr
 
   const { pages, fromTree } = pagesInOrder(objects);
   if (!pages.length) {
-    return { ...base, status: "failed", blocks: [], reason: "This PDF has no pages that Juno could read." };
+    return { ...base, status: "failed", blocks: [], reason: `This PDF has no pages that ${PRODUCT_NAME} could read.` };
   }
 
   const collector = new BlockCollector();
@@ -724,7 +725,7 @@ export function extractPdf(input: { bytes: Uint8Array; fileName: string }): Extr
       pageCount: pages.length,
       reason:
         pagesUnreadable > 0
-          ? "This PDF has no text layer — it looks like a scan or an export of images. Juno cannot read text out of pictures yet, so nothing was indexed."
+          ? `This PDF has no text layer — it looks like a scan or an export of images. ${PRODUCT_NAME} cannot read text out of pictures yet, so nothing was indexed.`
           : "No text could be read from this PDF.",
     };
   }
@@ -739,7 +740,7 @@ export function extractPdf(input: { bytes: Uint8Array; fileName: string }): Extr
     reasons.push("This PDF's page tree could not be read, so page numbers follow the file's internal order and may not match the printed page numbers.");
   }
   if (pages.length > limited.length || collector.hitLimit) {
-    reasons.push("This PDF is longer than Juno's indexing limit, so only its first pages were indexed.");
+    reasons.push(`This PDF is longer than ${PRODUCT_NAME}'s indexing limit, so only its first pages were indexed.`);
   }
 
   return {

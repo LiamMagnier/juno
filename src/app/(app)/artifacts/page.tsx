@@ -74,6 +74,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ArtifactPreview, DesignPoster } from "@/components/artifacts/artifact-preview";
 import { IconSwap } from "@/components/ui/icon-swap";
 import ArtifactsLoading from "./loading";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -571,7 +572,7 @@ function ArtifactsHome() {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => router.push("/chat")}>
-              <MessagesSquare className="size-4" aria-hidden /> Ask Juno in a new chat
+              <MessagesSquare className="size-4" aria-hidden />{` Ask ${PRODUCT_NAME} in a new chat`}
             </DropdownMenuItem>
           </>
         )}
@@ -606,7 +607,7 @@ function ArtifactsHome() {
          * order of last change, not of making. So it names the kinds it holds,
          * Designs first, because this page is where designs live now.
          */
-        lede="Designs, sites, documents, diagrams and code made with Juno."
+        lede={`Designs, sites, documents, diagrams and code made with ${PRODUCT_NAME}.`}
         actions={
           <>
             {/* Not while the first-run empty state shows: it already offers
@@ -774,14 +775,14 @@ function ArtifactsHome() {
           size="panel"
           icon={AppIcons.design}
           title="No designs yet"
-          description="Pick a size above to start one, or ask Juno in any chat to design a screen."
+          description={`Pick a size above to start one, or ask ${PRODUCT_NAME} in any chat to design a screen.`}
         />
       ) : empty ? (
         <EmptyState
           className="mt-6 motion-safe:animate-rise-in"
           icon={AppIcons.artifacts}
           title="No artifacts yet"
-          description="Ask Juno to build a page, a document or a diagram, or start a design from a blank frame."
+          description={`Ask ${PRODUCT_NAME} to build a page, a document or a diagram, or start a design from a blank frame.`}
           action={
             <>
               <Button size="sm" onClick={() => router.push("/chat")}>

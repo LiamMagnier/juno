@@ -60,6 +60,7 @@ import {
 } from "@/lib/chat/task-tool";
 import { agentTaskKeys } from "@/lib/agents/domain";
 import { MAX_LIVE_TASKS_PER_CONVERSATION, memberAtCapMessage } from "@/lib/work/conversation-tasks";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const HAND_OFF_TOOL_ID = "hand_off_to_teammate";
@@ -259,7 +260,7 @@ export const HANDOFF_REFUSALS = {
   already_tried: "This message already tried to hand work off and it did not go through. Nothing new was handed off.",
   agent_paused: "This agent is paused. Resume it before handing work to a teammate. Nothing was handed off.",
   rate_limited: "There have been too many handoffs in the last hour, so nothing was handed off.",
-  internal_error: "Juno could not hand this off because of a problem on its side. Nothing was handed off.",
+  internal_error: `${PRODUCT_NAME} could not hand this off because of a problem on its side. Nothing was handed off.`,
 } as const;
 
 export type HandoffRefusalReason = keyof typeof HANDOFF_REFUSALS;

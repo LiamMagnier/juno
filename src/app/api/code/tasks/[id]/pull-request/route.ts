@@ -18,6 +18,7 @@ import {
   pullRequestCompareUrl,
   pullRequestTitle,
 } from "@/lib/code-pull-request";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -242,7 +243,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const draft = mode === "draft";
   const login =
     connection?.accountLabel && /^[A-Za-z0-9-]{1,39}$/.test(connection.accountLabel) ? connection.accountLabel : null;
-  const title = pullRequestTitle(task.prompt, task.title || `Juno Code ${branch}`);
+  const title = pullRequestTitle(task.prompt, task.title || `${PRODUCT_NAME} Code ${branch}`);
   const body = pullRequestBody({
     branch,
     base,

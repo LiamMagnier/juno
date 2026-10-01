@@ -20,6 +20,7 @@ import { MEMORY_IMPORT_PROMPT, type ImportCandidate } from "@/lib/memory-import"
 import { sensitiveTopicLabel } from "@/lib/memory-sensitive";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Import from another assistant, in three steps.
@@ -126,8 +127,8 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
       const created = data.created ?? 0;
       toast.success(
         created > 0
-          ? `Imported ${created} ${created === 1 ? "fact" : "facts"} into Juno’s memory.`
-          : "Nothing new to import. Juno already knew all of that."
+          ? `Imported ${created} ${created === 1 ? "fact" : "facts"} into ${PRODUCT_NAME}’s memory.`
+          : `Nothing new to import. ${PRODUCT_NAME} already knew all of that.`
       );
       onOpenChange(false);
     } catch (error) {
@@ -193,8 +194,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
           {step === "copy" && (
             <div className="space-y-4">
               <p className="text-ui text-muted-foreground">
-                Paste this into the assistant you’re coming from, in a new chat. It asks for everything it remembers,
-                written one fact per line so Juno can read it back.
+                {`Paste this into the assistant you’re coming from, in a new chat. It asks for everything it remembers, written one fact per line so ${PRODUCT_NAME} can read it back.`}
               </p>
               <pre className="surface-inset max-h-64 overflow-y-auto whitespace-pre-wrap rounded-field px-4 py-3 font-mono text-caption leading-relaxed text-foreground">
                 {MEMORY_IMPORT_PROMPT}
@@ -213,8 +213,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
           {step === "paste" && (
             <div className="space-y-3">
               <label htmlFor="memory-import-text" className="text-ui text-muted-foreground">
-                Paste the whole answer here, list and all. Juno picks out the facts. A Juno memory
-                export (.json) works too.
+                {`Paste the whole answer here, list and all. ${PRODUCT_NAME} picks out the facts. A ${PRODUCT_NAME} memory export (.json) works too.`}
               </label>
               <Textarea
                 id="memory-import-text"
@@ -244,7 +243,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
                   </span>
                 </label>
                 <p className="text-caption text-muted-foreground">
-                  Sensitive facts start unticked. Tick them only if you want Juno to keep them.
+                  {`Sensitive facts start unticked. Tick them only if you want ${PRODUCT_NAME} to keep them.`}
                 </p>
               </div>
               <ul className="divide-y divide-border/50 overflow-hidden rounded-card border border-border/60">
@@ -342,7 +341,7 @@ function ReviewRow({
             </Token>
           )}
           {candidate.status === "known" && <Token>Already remembered</Token>}
-          {candidate.status === "forgotten" && <Token>You asked Juno to forget this</Token>}
+          {candidate.status === "forgotten" && <Token>{`You asked ${PRODUCT_NAME} to forget this`}</Token>}
           {candidate.status === "secret" && (
             <Token className="bg-destructive/10 text-destructive">Looks like a password or key, so it’s never imported</Token>
           )}

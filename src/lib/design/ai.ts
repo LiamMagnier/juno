@@ -26,6 +26,7 @@ import {
 } from "@/lib/design/operations";
 import { buildDocumentSummary, type DesignSelectionContext } from "@/lib/design/selection-context";
 import type { DesignDocument, NodeId } from "@/lib/design/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const DESIGN_OPS_RE = /<juno:design-ops(?:\s[^>]*)?>([\s\S]*?)<\/juno:design-ops>/i;
 const MAX_OPERATIONS = 60;
@@ -93,20 +94,20 @@ export type DesignProposal = z.infer<typeof designProposalSchema>;
 /** Extract and validate the model's proposal block. */
 export function parseDesignProposal(raw: string): DesignProposal {
   const tagged = DESIGN_OPS_RE.exec(raw)?.[1]?.trim();
-  if (!tagged) throw new DesignAiError("Juno did not return any design operations.");
+  if (!tagged) throw new DesignAiError(`${PRODUCT_NAME} did not return any design operations.`);
   const body = tagged.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 
   let value: unknown;
   try {
     value = JSON.parse(body);
   } catch {
-    throw new DesignAiError("Juno returned design operations that are not valid JSON.");
+    throw new DesignAiError(`${PRODUCT_NAME} returned design operations that are not valid JSON.`);
   }
 
   const parsed = designProposalSchema.safeParse(value);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    throw new DesignAiError(`Juno returned an unusable design operation (${first.path.join(".") || "root"}: ${first.message}).`);
+    throw new DesignAiError(`${PRODUCT_NAME} returned an unusable design operation (${first.path.join(".") || "root"}: ${first.message}).`);
   }
   return parsed.data;
 }
@@ -138,7 +139,7 @@ export function previewProposal(
 ): PreviewedProposal {
   if (proposal.baseRevision !== doc.revision) {
     throw new DesignAiError(
-      `The document changed while Juno was working (it saw revision ${proposal.baseRevision}, the document is at ${doc.revision}). Ask again to work from the current version.`
+      `The document changed while ${PRODUCT_NAME} was working (it saw revision ${proposal.baseRevision}, the document is at ${doc.revision}). Ask again to work from the current version.`
     );
   }
 
@@ -165,7 +166,7 @@ export function previewProposal(
     if (!verdict.ok) {
       const names = verdict.strayIds.map((id) => doc.nodes[id]?.name ?? id).slice(0, 5);
       throw new DesignAiError(
-        `Juno's change would also have modified ${names.join(", ")}, which is outside your selection. It was not applied.`
+        `${PRODUCT_NAME}'s change would also have modified ${names.join(", ")}, which is outside your selection. It was not applied.`
       );
     }
   }
@@ -266,7 +267,7 @@ export const DESIGN_TOOLS = [
   { name: "bind_design_variable", kind: "write", describe: "createVariable / bindVariable / setVariableMode." },
   { name: "create_prototype_interaction", kind: "write", describe: "createInteraction." },
   { name: "create_motion_animation", kind: "write", describe: "createAnimation / setKeyframes." },
-  { name: "undo_design_transaction", kind: "control", describe: "The user's one-click revert of an applied Juno transaction." },
+  { name: "undo_design_transaction", kind: "control", describe: `The user's one-click revert of an applied ${PRODUCT_NAME} transaction.` },
 ] as const;
 
 const OPERATION_VOCABULARY = [
@@ -341,7 +342,7 @@ export function buildDesignEditPrompt(
     ? `SCOPE: this request comes from a selection. Change ONLY the selected nodes and their descendants (and, when the request genuinely requires it, an ancestor's layout). A transaction that touches anything else is rejected automatically and nothing is applied.`
     : `SCOPE: no selection was made, so you may work anywhere in the document — but still make the smallest change that satisfies the request.`;
 
-  return `# Juno Design — structured editing
+  return `# ${PRODUCT_NAME} Design — structured editing
 
 You are editing the design document "${target.title}" (${target.identifier}), revision ${doc.revision}. This is a scene graph, not code: you change it only by returning validated operations. You cannot write HTML, CSS or a component — those are not how this document is stored.
 

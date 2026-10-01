@@ -42,6 +42,7 @@ import {
 import { TriggerListEditor, newTrigger } from "@/components/work/work-triggers";
 import { ScheduleArmingCard } from "@/components/work/schedules/arming-card";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Writing a schedule.
@@ -110,7 +111,7 @@ const HOST_OFFLINE_OPTIONS: readonly PolicyOption<WorkHostOfflinePolicy>[] = [
 ];
 
 const MISSED_RUN_OPTIONS: readonly PolicyOption<WorkMissedRunPolicy>[] = [
-  { value: "skip", label: "Let them go", hint: "Fires missed while Juno was down are not caught up." },
+  { value: "skip", label: "Let them go", hint: `Fires missed while ${PRODUCT_NAME} was down are not caught up.` },
   { value: "run_once", label: "Catch up once", hint: "One run covers everything that was missed." },
   { value: "run_all", label: "Run every one", hint: "One run per missed fire. A weekend down is a Monday queue." },
 ];
@@ -515,7 +516,7 @@ export function WorkScheduleEditor({
     setRefusal(
       result.message ??
         (result.cause === "offline"
-          ? "Couldn’t reach Juno to save this. Nothing was changed."
+          ? `Couldn’t reach ${PRODUCT_NAME} to save this. Nothing was changed.`
           : "Couldn’t save this schedule. Nothing was changed.")
     );
   }, [canSave, draft, budget.costUsd, budget.tokens, budget.minutes, schedule, onSaved]);

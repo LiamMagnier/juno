@@ -13,6 +13,7 @@ import { skillSlugFromName } from "@/lib/work/skills";
 import { openSkillDraftingChat } from "@/components/skills/add-skill-menu";
 import { createSkill, skillsFailureMessage } from "@/components/skills/skills-transport";
 import { MAX_SKILL_MD_CHARS, parseSkillMd, SKILL_MD_REFUSAL_MESSAGES, type ParsedSkillMd } from "@/lib/skills/skill-md";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Writing a skill: a name, one line, and the instructions.
@@ -102,7 +103,7 @@ export default function NewSkillPage() {
     <AppPage measure="reading">
       <AppPageHeader
         heading="New skill"
-        lede="Instructions Juno follows when you call it by name."
+        lede={`Instructions ${PRODUCT_NAME} follows when you call it by name.`}
         backHref="/skills"
         backLabel="Back to skills"
         actions={
@@ -113,7 +114,7 @@ export default function NewSkillPage() {
             onClick={() => openSkillDraftingChat((href) => router.push(href))}
           >
             <AppIcons.conversation className="size-4" aria-hidden="true" />
-            Create with Juno
+            {`Create with ${PRODUCT_NAME}`}
           </Button>
         }
       />
@@ -134,7 +135,7 @@ export default function NewSkillPage() {
             {imported ? "File loaded. Review the instructions below before saving. Files referenced by the skill must be attached separately." : "Bring a skill from your computer, or write one below."}
           </p>
           {imported && [...imported.hostKeys, ...imported.ignoredKeys].length > 0 ? (
-            <p className="mt-2 text-caption text-muted-foreground">Settings that don’t apply in Juno: {[...imported.hostKeys, ...imported.ignoredKeys].join(", ")}.</p>
+            <p className="mt-2 text-caption text-muted-foreground">{`Settings that don’t apply in ${PRODUCT_NAME}: `}{[...imported.hostKeys, ...imported.ignoredKeys].join(", ")}.</p>
           ) : null}
         </div>
         <div>
@@ -176,7 +177,7 @@ export default function NewSkillPage() {
             className="mt-1.5"
           />
           <p className="mt-1.5 text-caption text-muted-foreground">
-            One line. Juno reads it to decide when the skill fits.
+            {`One line. ${PRODUCT_NAME} reads it to decide when the skill fits.`}
           </p>
         </div>
 

@@ -65,6 +65,7 @@ import type { ActionPermissionPolicy } from "@/lib/action-approval";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { wrapUntrusted } from "@/lib/untrusted-content";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -216,11 +217,11 @@ export function contextNoticeMessage(kind: ContextTokenKind, label: string, code
   const name = oneLine(label);
   switch (code) {
     case "not_found":
-      return `Juno couldn't find the ${KIND_NOUN[kind]} “${name}”.`;
+      return `${PRODUCT_NAME} couldn't find the ${KIND_NOUN[kind]} “${name}”.`;
     case "needs_connection":
       return `${name} isn't connected. Connect it to use it here.`;
     case "blocked":
-      return `${name} is turned off in your settings, so Juno didn't use it.`;
+      return `${name} is turned off in your settings, so ${PRODUCT_NAME} didn't use it.`;
     case "workspace_denied":
       return `This project's setup doesn't allow ${name} in its chats.`;
     case "connector_limit":
@@ -407,7 +408,7 @@ export class TurnContext {
         continue;
       }
       if (approvals.lockdown) {
-        this.drop(entry, "blocked", `Lockdown is on, so Juno didn't use ${oneLine(entry.label)}.`);
+        this.drop(entry, "blocked", `Lockdown is on, so ${PRODUCT_NAME} didn't use ${oneLine(entry.label)}.`);
         continue;
       }
       if (blocked) {

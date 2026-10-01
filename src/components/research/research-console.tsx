@@ -18,6 +18,7 @@ import { RollingNumber } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * A run being watched.
@@ -47,7 +48,7 @@ const CONSOLE_COPY = {
   hide: "Hide research details",
   noActivity: "Nothing yet — steps appear here as researchers search and read.",
   noEvidence: "Nothing yet — what each question rests on appears here as sources are read.",
-  noPlan: "The plan appears here once Juno has worked out what to look up.",
+  noPlan: `The plan appears here once ${PRODUCT_NAME} has worked out what to look up.`,
 };
 export function stageYields(run: ResearchRunView): StageYield {
   const read = run.sources.filter((source) => source.read).length;
@@ -128,7 +129,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
         {atGate
           // The gate labels earn their line: "Before Juno starts" says something
           // the question does not, and the gates print the question themselves.
-          ? <p className="text-ui font-medium">{awaitingClarify ? "Before Juno starts" : "Your research plan"}</p>
+          ? <p className="text-ui font-medium">{awaitingClarify ? `Before ${PRODUCT_NAME} starts` : "Your research plan"}</p>
           : <h3 className="line-clamp-2 text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground">{run.goal}</h3>}
         <p role="status" className="mt-1 text-caption text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>
       </div>

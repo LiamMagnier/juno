@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Drain state for a graceful stop, and the wait that goes with it.
  *
@@ -66,7 +68,7 @@ export const SHUTDOWN_TEARDOWN_MS = 30_000;
 /** What `POST /api/chat` answers while draining, and the header that goes with it. */
 export const DRAIN_RETRY_AFTER_SECONDS = 5;
 export const DRAINING_RESPONSE = {
-  error: "Juno is restarting. Please try again in a moment.",
+  error: `${PRODUCT_NAME} is restarting. Please try again in a moment.`,
   code: "SERVER_DRAINING",
   retryable: true,
 } as const;
@@ -77,7 +79,7 @@ export const DRAINING_RESPONSE = {
  * exists to keep.
  */
 export const SHUTDOWN_USER_MESSAGE =
-  "Juno restarted while answering, so this reply was cut short and the message was not counted. Please send it again.";
+  `${PRODUCT_NAME} restarted while answering, so this reply was cut short and the message was not counted. Please send it again.`;
 
 export interface WaitForInFlightOptions {
   /** Give up after this long, whatever `count()` says. */

@@ -93,10 +93,10 @@ export async function transferWorkSessionOwner(input: {
   const byId = new Map(members.map((member) => [member.id, member]));
   const target = input.toAgentId ? byId.get(input.toAgentId) : null;
   if (input.toAgentId && (!target || target.deletedAt)) {
-    return { ok: false, status: 404, code: "member_not_found", message: "That crew member no longer exists." };
+    return { ok: false, status: 404, code: "member_not_found", message: "That agent no longer exists." };
   }
   if (input.by.kind === "member" && !byId.get(input.by.agentId)) {
-    return { ok: false, status: 404, code: "member_not_found", message: "That crew member no longer exists." };
+    return { ok: false, status: 404, code: "member_not_found", message: "That agent no longer exists." };
   }
   const from = session.agentId ? byId.get(session.agentId) ?? null : null;
 

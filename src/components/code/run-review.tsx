@@ -36,6 +36,7 @@ import {
 import { pullRequestBlocker, type PullRequestMode, type PullRequestSubject } from "@/lib/code-pull-request";
 import { cn } from "@/lib/utils";
 import type { RunDetail, RunFile } from "@/components/code/use-code-runs";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * THE REVIEW PANE — A PANE, NEVER A MODAL, AND THE REASONS ARE BOTH PRACTICAL.
@@ -438,8 +439,7 @@ export function RunReviewPane({
           // Saying so is better than a disabled button with no explanation —
           // the reader would assume the feature is broken rather than absent.
           <p className="text-center text-caption text-muted-foreground">
-            This run was started outside Juno on the web, so there is no session here to reply into.
-            Open it on the machine that started it to respond.
+            {`This run was started outside ${PRODUCT_NAME} on the web, so there is no session here to reply into. Open it on the machine that started it to respond.`}
           </p>
         )}
       </footer>
@@ -915,7 +915,7 @@ function CreatePullRequest({
             : "Pull request opened.",
       );
     } catch {
-      toast.error("Could not reach Juno to open the pull request.");
+      toast.error(`Could not reach ${PRODUCT_NAME} to open the pull request.`);
     } finally {
       setBusy(null);
     }

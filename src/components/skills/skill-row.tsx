@@ -12,6 +12,7 @@ import {
   skillOriginBadge,
   type SkillRowData,
 } from "@/components/skills/skill-library-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The row recipe every line of the library shares: text on the page, a hairline
@@ -42,7 +43,7 @@ export const skillLibraryLeadClass = "grid size-7 shrink-0 place-items-center";
 export const skillLibraryTailClass = "grid size-4 shrink-0 place-items-center";
 
 const ATTENTION_COPY = {
-  blocked: "Blocked by Juno’s safety check",
+  blocked: `Blocked by ${PRODUCT_NAME}’s safety check`,
   consent: "Needs your approval before it can run",
 } as const;
 

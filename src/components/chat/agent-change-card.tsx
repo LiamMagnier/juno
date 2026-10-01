@@ -5,6 +5,7 @@ import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ClientAgentChange, ClientSetupChangeRef } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export function AgentChangeCard({
   change,
@@ -62,7 +63,7 @@ function AgentEventChangeCard({
         window.dispatchEvent(new CustomEvent("juno:agent-updated", { detail: { agentId: change.agentId } }));
       }
     } catch {
-      setError("Could not reach Juno to undo this change.");
+      setError(`Could not reach ${PRODUCT_NAME} to undo this change.`);
     } finally {
       setBusy(false);
     }
@@ -216,7 +217,7 @@ function SetupChangeCard({
         setState((current) => ({ ...current, ...data.change }) as ClientSetupChangeRef);
         window.dispatchEvent(new CustomEvent("juno:agent-updated", { detail: { agentId: change.agentId } }));
       } catch {
-        setError("Could not reach Juno. Nothing changed.");
+        setError(`Could not reach ${PRODUCT_NAME}. Nothing changed.`);
       } finally {
         setBusy(null);
       }

@@ -21,6 +21,7 @@ import type {
   CodeSteering,
 } from "@/hooks/use-code-session";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * THE RUN STACK — everything the reader has to know before they type the next
@@ -329,7 +330,7 @@ export function CodeRunStack({
           reports on, including the queue banner, which had the same shape. */}
       <p role="status" aria-live="polite" className="sr-only">
         {pendingApproval
-          ? `Juno Code needs your approval to: ${pendingApproval.summary}.${
+          ? `${PRODUCT_NAME} Code needs your approval to: ${pendingApproval.summary}.${
               pendingApproval.risk === "destructive"
                 ? " This is a destructive action."
                 : pendingApproval.risk === "outside"
@@ -1114,8 +1115,7 @@ function ChangedFilesCard({
              * is noise on every run nobody opens.
              */
             <p className="px-2 pb-2 pt-1 text-caption leading-relaxed text-muted-foreground">
-              Undo covers files Juno Code edited directly. Anything a shell command wrote or deleted
-              is outside it and has to be put back by hand.
+              {`Undo covers files ${PRODUCT_NAME} Code edited directly. Anything a shell command wrote or deleted is outside it and has to be put back by hand.`}
             </p>
           )}
         </div>
@@ -1194,7 +1194,7 @@ function AgentsCard({ agents }: { agents: CodeAgentState[] }) {
   return (
     <div className="mx-1 mb-2">
       <SubagentTree
-        mainAgentTitle="Juno Code"
+        mainAgentTitle={`${PRODUCT_NAME} Code`}
         subagents={mappedSubagents}
       />
     </div>
@@ -1226,7 +1226,7 @@ function ApprovalCard({
     // polite live announcement (in CodeRunStack) so the request isn't silent.
     <div
       role="group"
-      aria-label="Juno Code approval request"
+      aria-label={`${PRODUCT_NAME} Code approval request`}
       // `bg-warning/10` — the alpha globals.css names as the product's warning
       // chip. At /5 the highest-stakes surface in Juno Code was a ~1%-lightness
       // tint on the black ground, leaving `border-warning/40` to carry the whole
@@ -1237,7 +1237,7 @@ function ApprovalCard({
         <CodeIcons.permission className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <p className="text-foreground">
-            <span className="text-muted-foreground">Juno Code wants to: </span>
+            <span className="text-muted-foreground">{`${PRODUCT_NAME} Code wants to: `}</span>
             <span className="font-medium">{summary}</span>
           </p>
           {detail && (

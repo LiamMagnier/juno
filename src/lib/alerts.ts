@@ -1,6 +1,7 @@
 import "server-only";
 import { sendEmail } from "@/lib/email";
 import { logAsync } from "@/lib/logger";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Operator alerts — the "something is wrong with the deployment" channel, as
@@ -113,7 +114,7 @@ async function deliverMail(input: AlertInput, dedupeKey: string): Promise<void> 
     recipients.map((to) =>
       sendEmail({
         to,
-        subject: `[Juno ${severity}] ${input.title}`,
+        subject: `[${PRODUCT_NAME} ${severity}] ${input.title}`,
         html,
         text,
       })

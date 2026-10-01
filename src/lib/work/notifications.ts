@@ -28,6 +28,7 @@ import {
   type WorkStatus,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** What a schedule (or a session) asks for. Mirrors WorkSchedule.notifyPolicy. */
 export const WORK_NOTIFY_POLICIES = ["none", "on_finish", "on_attention", "all"] as const;
@@ -286,8 +287,8 @@ export function describeNotification(input: {
   approvalSummary?: string | null;
   actorName?: string | null;
 }): WorkNotifyMessage {
-  const title = input.title.trim() || "Your Juno task";
-  const actor = input.actorName?.trim() || "Juno";
+  const title = input.title.trim() || `Your ${PRODUCT_NAME} task`;
+  const actor = input.actorName?.trim() || PRODUCT_NAME;
 
   switch (input.status) {
     case "waiting_input":

@@ -27,6 +27,7 @@ import { groupMemoriesByTopic, isRetired, type Memory } from "@/components/memor
 import { DATE_BUCKETS, dateBucket } from "@/components/memory/memory-time";
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Everything Juno remembers, as one list.
@@ -58,12 +59,12 @@ const MIN_FOLDED = 3;
 // extractor reads it (a string inside a ternary prop is invisible to it).
 // Third person is the shape every stored fact takes; showing it in the
 // placeholder is cheaper than explaining it after the classifier has filed it.
-const ACCOUNT_ADD_PLACEHOLDER = "Something Juno should know, like “I prefer metric units”";
+const ACCOUNT_ADD_PLACEHOLDER = `Something ${PRODUCT_NAME} should know, like “I prefer metric units”`;
 const PROJECT_ADD_PLACEHOLDER = "Something true of this project, like “We cite in APA”";
 const ACCOUNT_EMPTY_TITLE = "No memories yet";
-const ACCOUNT_EMPTY_DESCRIPTION = "Juno fills this in as you chat. You can also add something yourself.";
+const ACCOUNT_EMPTY_DESCRIPTION = `${PRODUCT_NAME} fills this in as you chat. You can also add something yourself.`;
 const PROJECT_EMPTY_TITLE = "Nothing remembered in this project yet";
-const PROJECT_EMPTY_DESCRIPTION = "Juno keeps what it learns in this project’s chats here, apart from everything else.";
+const PROJECT_EMPTY_DESCRIPTION = `${PRODUCT_NAME} keeps what it learns in this project’s chats here, apart from everything else.`;
 
 interface MemoryListProps {
   /** Facts in scope, active and retired, with any pending removal already taken out. */
@@ -387,7 +388,7 @@ export function MemoryList({
               </button>
               <Collapse open={showRetired || (searching && retired.length > 0)}>
                 <p className="pb-1 pt-0.5 text-caption text-muted-foreground">
-                  Replaced by something newer, contradicted, expired, or forgotten at your request. Juno doesn’t use these.
+                  {`Replaced by something newer, contradicted, expired, or forgotten at your request. ${PRODUCT_NAME} doesn’t use these.`}
                 </p>
                 <ul id="memory-retired-list" className="-mx-3">
                   <AnimatePresence initial={false} custom={instant}>
@@ -570,6 +571,6 @@ function topicMetaFor(category: string | null): { id: string; label: string; des
   return {
     id: "uncategorised",
     label: "Uncategorised",
-    description: "Facts Juno kept before it started filing them by subject.",
+    description: `Facts ${PRODUCT_NAME} kept before it started filing them by subject.`,
   };
 }

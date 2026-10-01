@@ -71,6 +71,7 @@ import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/type
 import type { DesignOperation } from "@/lib/design/operations";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The alignment gestures that keep a seat on the toolbar.
@@ -693,7 +694,7 @@ export function DesignEditor({
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void exportAs("handoff")}>
-              Juno Code handoff bundle…
+              {`${PRODUCT_NAME} Code handoff bundle…`}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -709,7 +710,7 @@ export function DesignEditor({
             }}
             className={TEXT_KEY}
           >
-            Ask Juno
+            {`Ask ${PRODUCT_NAME}`}
           </Button>
         )}
         {/* Live state, so it may move: the one spinner, for as long as the save
@@ -1051,7 +1052,7 @@ function HistoryList({ state, onSelect }: { state: DesignEditorState; onSelect: 
             <span className={cn("truncate text-caption", entry.author === "juno" ? "text-primary" : "text-foreground")}>{entry.summary}</span>
           </span>
           <span className="block font-mono text-micro text-muted-foreground">
-            {entry.author === "juno" ? "Juno" : "You"} · {entry.touched.length} layer{entry.touched.length === 1 ? "" : "s"}
+            {entry.author === "juno" ? PRODUCT_NAME : "You"} · {entry.touched.length} layer{entry.touched.length === 1 ? "" : "s"}
           </span>
         </button>
       ))}

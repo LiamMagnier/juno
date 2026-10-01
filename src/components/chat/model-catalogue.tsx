@@ -71,6 +71,7 @@ import {
 } from "@/lib/model-metrics";
 import { isModelLocked, readRecent } from "@/lib/model-picker";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type Filter = "all" | "favorites" | Provider;
 
@@ -259,7 +260,7 @@ function DetailPanel({
           <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
         </div>
         <p className="mt-0.5 font-mono text-micro text-muted-foreground">
-          {auto ? "Juno" : model.providerModel}
+          {auto ? PRODUCT_NAME : model.providerModel}
         </p>
 
         {model.description && (
@@ -667,7 +668,7 @@ export function ModelCatalogue({
         aria-selected={active}
         // The row shows a name; the label carries what the panel shows, so a
         // screen reader is not made to travel to a second pane for the facts.
-        aria-label={`${m.name}, ${auto ? "Juno" : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price} per million tokens` : ""}${locked ? `, needs ${PLANS[effectiveMinPlan(m.minPlan)].name}` : ""}`}
+        aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price} per million tokens` : ""}${locked ? `, needs ${PLANS[effectiveMinPlan(m.minPlan)].name}` : ""}`}
         disabled={soon}
         onPointerMove={() => {
           if (pointerActive.current) setCursorKey(key);
@@ -914,7 +915,7 @@ export function ModelCatalogue({
                       {showAutoRow && (
                         // No label of its own; the first section's hairline is
                         // the separator.
-                        <div role="group" aria-label="Juno" className="pb-2">
+                        <div role="group" aria-label={PRODUCT_NAME} className="pb-2">
                           {renderRow(AUTO_MODEL_INFO, "")}
                         </div>
                       )}

@@ -868,7 +868,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         response: jsonExecution({
           status: "refused",
           reason: "computers_unavailable",
-          message: "Crew computers are not available on this server.",
+          message: "Agent computers are not available on this server.",
         }),
       };
     }
@@ -886,7 +886,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           reason: ctx.agent ? "use_propose_setup_change" : "budget_not_editable_here",
           message: ctx.agent
             ? "A budget is changed with propose_setup_change, so the person approves a higher one and can undo any. Nothing was changed."
-            : "A crew member's budget is changed in its own thread or in its setup. Nothing was changed.",
+            : "An agent's budget is changed in its own thread or in its setup. Nothing was changed.",
         }),
       };
     }

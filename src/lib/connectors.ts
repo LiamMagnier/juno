@@ -8,6 +8,7 @@ import {
   refreshMcpToken,
   registerClient,
 } from "@/lib/mcp-oauth";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Registry of external tool connectors the user can link. Three shapes exist:
@@ -244,7 +245,7 @@ export async function buildAuthorizeUrl(
     if (!def.cfg.mcpUrl) throw new Error(`${def.label} is missing an MCP URL`);
     const redirectUri = connectorRedirectUri(def.id);
     const endpoints = await discoverEndpoints(def.cfg.mcpUrl);
-    const client = await registerClient(endpoints, { clientName: "Juno", clientUri: env.appUrl, redirectUri });
+    const client = await registerClient(endpoints, { clientName: PRODUCT_NAME, clientUri: env.appUrl, redirectUri });
     const pkce = createPkce();
     const url = buildMcpAuthorizeUrl({ endpoints, client, redirectUri, state, codeChallenge: pkce.challenge });
     return {

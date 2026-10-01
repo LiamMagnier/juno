@@ -4,11 +4,12 @@ import { consumeComputerHandoff } from "@/lib/computer/handoff";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { getCurrentUser } from "@/lib/session";
 import { ComputerViewer } from "@/components/agents/computer-viewer";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Computer View · Juno",
+  title: `Computer View · ${PRODUCT_NAME}`,
   robots: {
     index: false,
     follow: false,

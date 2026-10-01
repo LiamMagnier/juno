@@ -10,6 +10,7 @@ import { formatMicroUsd } from "./run-format";
 import { staggerDelay } from "@/lib/motion";
 import type { ResearchClarification, ResearchEffort } from "@/lib/research/domain";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The plan gate — the one moment a person's hands have to reach into a run
@@ -24,8 +25,8 @@ import { cn } from "@/lib/utils";
  */
 
 const PLAN_COPY = {
-  lede: "Here's how Juno will research this. Adjust anything before it starts.",
-  ledeFallback: "Juno will run these searches. Edit any of them before it starts.",
+  lede: `Here's how ${PRODUCT_NAME} will research this. Adjust anything before it starts.`,
+  ledeFallback: `${PRODUCT_NAME} will run these searches. Edit any of them before it starts.`,
   start: "Start researching",
   discard: "Cancel research",
   showQueries: "Show the searches",
@@ -233,7 +234,7 @@ export function PlanOutline({
  * which is exactly the screen this replaced. Nothing regresses to blank.
  */
 const CLARIFY_COPY = {
-  lede: "A few details would sharpen this. Answer what you can — anything you skip, Juno decides for itself.",
+  lede: `A few details would sharpen this. Answer what you can — anything you skip, ${PRODUCT_NAME} decides for itself.`,
   start: "Start researching",
   skip: "Skip and research as written",
   optional: "Optional",

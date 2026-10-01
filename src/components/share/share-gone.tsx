@@ -28,6 +28,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Link2Off } from "@/components/ui/icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export function ShareGone() {
   return (
@@ -40,7 +41,7 @@ export function ShareGone() {
           action={
             <>
               <Button asChild size="sm">
-                <Link href="/">Open Juno</Link>
+                <Link href="/">{`Open ${PRODUCT_NAME}`}</Link>
               </Button>
               <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
                 <Link href="/sign-up">Create your own account</Link>

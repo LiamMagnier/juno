@@ -6,6 +6,7 @@ import { eurPerUsd } from "@/lib/spend";
 import { formatEur } from "@/components/landing/eur";
 import { Plate } from "@/components/landing/plate";
 import { ProductShot, hasProductShot } from "@/components/landing/product-shot";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The hero's picture: the product set on a painted plate, the way a gallery
@@ -51,7 +52,7 @@ export function HeroStage() {
           <div className="scroll-settle mx-auto max-w-[66rem]">
             <ProductShot
               name={SHOT}
-              alt="Juno for Mac: a conversation that turns launch notes into a two-week plan"
+              alt={`${PRODUCT_NAME} for Mac: a conversation that turns launch notes into a two-week plan`}
               width={3072}
               height={1992}
               priority

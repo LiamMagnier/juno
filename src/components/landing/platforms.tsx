@@ -5,6 +5,7 @@ import { Plate } from "@/components/landing/plate";
 import { ProductShot, hasProductShot } from "@/components/landing/product-shot";
 import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Where Juno runs, as three cells of different weight: the Mac app is the
@@ -34,10 +35,9 @@ export function Platforms() {
           <Plate name="valley" sizes="(min-width: 1024px) 800px, 100vw" imageClassName="object-[60%_40%]" />
           <div className="relative p-6 sm:p-8">
             <GlyphTile icon={Laptop} />
-            <h3 className="mt-4 text-title text-foreground">Juno for Mac</h3>
+            <h3 className="mt-4 text-title text-foreground">{`${PRODUCT_NAME} for Mac`}</h3>
             <p className="mt-2 max-w-md text-body text-foreground/80">
-              A native app with Juno Code built in. It reads your repository, runs your tests and asks before it
-              changes anything.
+              {`A native app with ${PRODUCT_NAME} Code built in. It reads your repository, runs your tests and asks before it changes anything.`}
             </p>
             <Button asChild variant="secondary" className="mt-5">
               <Link href="/download">
@@ -52,7 +52,7 @@ export function Platforms() {
             <div className="relative -mb-[4%] -mr-[8%] mt-auto pl-6 sm:pl-10">
               <ProductShot
                 name={MAC_SHOT}
-                alt="Juno Code on Mac: a session fixing a stale cart total, the diff beside the transcript"
+                alt={`${PRODUCT_NAME} Code on Mac: a session fixing a stale cart total, the diff beside the transcript`}
                 width={3072}
                 height={1992}
                 sizes="(min-width: 1024px) 820px, 110vw"
@@ -67,7 +67,7 @@ export function Platforms() {
           <Plate name="path" dim sizes="(min-width: 1024px) 400px, 100vw" imageClassName="object-[50%_70%]" />
           <div className="relative p-6 sm:p-8">
             <GlyphTile icon={Smartphone} />
-            <h3 className="mt-4 text-title text-foreground">Juno for iPhone</h3>
+            <h3 className="mt-4 text-title text-foreground">{`${PRODUCT_NAME} for iPhone`}</h3>
             <p className="mt-2 max-w-[15rem] text-body text-foreground/80">
               Voice, camera and your projects in your pocket. Coming to the App Store.
             </p>
@@ -77,7 +77,7 @@ export function Platforms() {
               <div className="stage-window overflow-hidden rounded-t-stage">
                 <ProductShot
                   name={PHONE_SHOT}
-                  alt="Juno for iPhone: a conversation with the composer at the bottom"
+                  alt={`${PRODUCT_NAME} for iPhone: a conversation with the composer at the bottom`}
                   width={1179}
                   height={2556}
                   sizes="240px"
@@ -102,7 +102,7 @@ export function Platforms() {
             </div>
           </div>
           <Button asChild className="shrink-0">
-            <Link href="/sign-up">Start with Juno</Link>
+            <Link href="/sign-up">{`Start with ${PRODUCT_NAME}`}</Link>
           </Button>
         </div>
       </Reveal>

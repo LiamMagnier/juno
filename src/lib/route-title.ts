@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Pathname prefix → tab title. Longest prefix wins, so "/code/pulls" beats
  * "/code". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
@@ -13,7 +15,7 @@
  * in both places, and the bar is the one a user reads to answer "where am I".
  */
 export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
-  ["/chat", "Juno"], // the new-chat screen has no subject yet
+  ["/chat", PRODUCT_NAME], // the new-chat screen has no subject yet
   /* The three that came out of Work, under their own names now. A title
      describes what is SERVED, which is why they moved in the same commit as
      the pages: /work/skills is a redirect and a redirect draws no window to
@@ -63,7 +65,7 @@ export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
  */
 export function titleForPath(pathname: string): string {
   let best = "";
-  let title = "Juno";
+  let title = PRODUCT_NAME;
   for (const [prefix, name] of ROUTE_TITLES) {
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
       if (prefix.length > best.length) {

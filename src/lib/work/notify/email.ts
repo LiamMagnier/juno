@@ -24,6 +24,7 @@
 import { env } from "@/lib/env";
 import type { EmailTemplate } from "@/lib/email-templates";
 import type { WorkNotifyMessage, WorkNotifyUrgency } from "@/lib/work/notifications";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // The app palette, matching src/lib/email-templates.ts exactly. Webfonts do not
 // load in most mail clients, so the display face is a system serif rather than
@@ -69,7 +70,7 @@ function escapeHtml(value: string): string {
  * eyebrow are the only two things a preview pane reliably shows.
  */
 function eyebrowFor(urgency: WorkNotifyUrgency): string {
-  return urgency === "blocking" ? "Waiting for you" : "Juno Work";
+  return urgency === "blocking" ? "Waiting for you" : `${PRODUCT_NAME} Work`;
 }
 
 export interface WorkNotificationEmailInput {
@@ -113,7 +114,7 @@ export function workNotificationEmail(input: WorkNotificationEmailInput): EmailT
         <tr>
           <td align="center" style="padding:20px 8px 0;">
             <p style="margin:0;font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">
-              Juno &middot; chat.liams.dev &middot; <a href="${appUrl("/automations")}" style="color:${MUTED};text-decoration:underline;">change when this task tells you</a>
+              ${PRODUCT_NAME} &middot; chat.liams.dev &middot; <a href="${appUrl("/automations")}" style="color:${MUTED};text-decoration:underline;">change when this task tells you</a>
             </p>
           </td>
         </tr>
@@ -129,7 +130,7 @@ export function workNotificationEmail(input: WorkNotificationEmailInput): EmailT
     "",
     `${cta.label}: ${cta.href}`,
     "",
-    `Juno · chat.liams.dev · change when this task tells you: ${appUrl("/automations")}`,
+    `${PRODUCT_NAME} · chat.liams.dev · change when this task tells you: ${appUrl("/automations")}`,
   ].join("\n");
 
   return { subject: message.subject, html, text };

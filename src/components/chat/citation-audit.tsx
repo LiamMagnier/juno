@@ -21,6 +21,7 @@ import {
 } from "@/lib/research/claim-analysis";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The citation audit under a research answer (program §8.3).
@@ -260,7 +261,7 @@ export const AUDIT_COPY = {
   aboveBar: "at or above the 70% bar for an unqualified citation",
   betweenBars: "on topic, but below the 70% bar for an unqualified citation",
   belowBars: "below the 40% floor: the passage is barely about this claim",
-  savedCopy: "of the copy Juno saved",
+  savedCopy: `of the copy ${PRODUCT_NAME} saved`,
   characters: "characters",
   capsSupportAt: "caps support at",
   /* Said aloud beside each finding's glyph, so severity is never icon-only. */
@@ -269,7 +270,7 @@ export const AUDIT_COPY = {
   findingNote: "Noted",
   previewOnly: "Judged against a search preview, not the page",
   previewOnlyDetail:
-    "Juno never held the full text of this source, so a figure or quotation missing from the passage below is not evidence the page lacks it.",
+    `${PRODUCT_NAME} never held the full text of this source, so a figure or quotation missing from the passage below is not evidence the page lacks it.`,
   /*
    * Answer-span navigation. The unavailable line says what Juno DID — it looked
    * and did not find this sentence — rather than where the sentence must
@@ -280,7 +281,7 @@ export const AUDIT_COPY = {
    */
   showInAnswer: "Show this sentence in the answer",
   markedInAnswer: "Marked in the answer above",
-  notInAnswer: "Juno could not find this sentence in the answer above, so there is nothing to point at.",
+  notInAnswer: `${PRODUCT_NAME} could not find this sentence in the answer above, so there is nothing to point at.`,
 } as const;
 
 /**

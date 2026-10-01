@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
@@ -146,7 +147,7 @@ export function voiceCallParts({
 }
 
 function speakerOf(voice: VoiceController, speakerName?: string) {
-  return voice.persona && speakerName ? speakerName : "Juno";
+  return voice.persona && speakerName ? speakerName : PRODUCT_NAME;
 }
 
 /**

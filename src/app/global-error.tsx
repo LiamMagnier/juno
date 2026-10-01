@@ -20,6 +20,7 @@
  */
 
 import { THEME_COLOR } from "@/components/ui/theme-color";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const STYLES = `
   .juno-fallback-body {
@@ -152,9 +153,9 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
         <main className="juno-fallback-card">
           {/* Plain <img>, not next/image: the optimizer is itself a server route. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/juno-mark.png" alt="Juno" width={512} height={512} className="juno-fallback-mark" />
+          <img src="/juno-mark.png" alt={PRODUCT_NAME} width={512} height={512} className="juno-fallback-mark" />
           <p className="juno-fallback-eyebrow">Temporarily unavailable</p>
-          <h1 className="juno-fallback-title">Juno can&rsquo;t reach its backend</h1>
+          <h1 className="juno-fallback-title">{`${PRODUCT_NAME} can’t reach its backend`}</h1>
           <p className="juno-fallback-copy">
             Your conversations are safe. The server can&rsquo;t read them right now, and the problem is on our side,
             not yours. Try again in a few minutes.
@@ -167,7 +168,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
                 server to render the root layout again from scratch. */}
             {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a href="/" className="juno-fallback-button">
-              Reload Juno
+              {`Reload ${PRODUCT_NAME}`}
             </a>
           </div>
           {error.digest && <p className="juno-fallback-digest">Reference: {error.digest}</p>}

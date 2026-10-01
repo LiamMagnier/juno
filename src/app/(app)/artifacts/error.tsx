@@ -18,6 +18,7 @@ import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export default function ArtifactsError({
   error,
@@ -36,7 +37,7 @@ export default function ArtifactsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t open your artifacts"
-        description="The list didn’t load. Nothing Juno built with you was lost: the page failed to read it, and the record is intact."
+        description={`The list didn’t load. Nothing ${PRODUCT_NAME} built with you was lost: the page failed to read it, and the record is intact.`}
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

@@ -15,6 +15,7 @@ import {
   codeVoiceCatchUp,
   type CodeVoiceBriefingInput,
 } from "@/components/code/code-voice-briefing";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Voice mode for Juno Code — the launcher's gate, and the live call.
@@ -305,7 +306,7 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
             decides whether to believe what they just heard, and at the moment
             they decide whether it is safe to hang up. */}
         <p className="text-caption leading-relaxed text-muted-foreground">
-          Juno was told where this runs
+          {`${PRODUCT_NAME} was told where this runs`}
           {briefing.turns.length > 0 ? " and how the session has gone so far" : ""} when you started
           talking. This is a separate conversation about the work: it can&rsquo;t see your code, it
           can&rsquo;t run anything, and nothing said here is kept — only the one line you send.
@@ -318,11 +319,11 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
              ground there is no headroom left below the panel to recess into. */
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border/60 bg-accent px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
-              This has moved on since Juno was briefed
+              {`This has moved on since ${PRODUCT_NAME} was briefed`}
             </p>
             <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2 coarse:h-11">
               <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-              Bring Juno up to date
+              {`Bring ${PRODUCT_NAME} up to date`}
             </Button>
           </div>
         )}
@@ -361,7 +362,7 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
             <p className="font-mono text-label text-muted-foreground">{intentSentence(send)}</p>
             <p className="text-ui leading-relaxed text-foreground">{sendable.text}</p>
             <p className="text-caption text-muted-foreground">
-              These exact words go over. Juno&rsquo;s side of this call does not.
+              {`These exact words go over. ${PRODUCT_NAME}’s side of this call does not.`}
               {send.endsCall ? " Sending starts the session and ends this call." : ""}
             </p>
             {send.blockedReason ? (

@@ -23,6 +23,7 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { ImportHistoryRow } from "@/components/settings/import-history";
 import { SharedLinksList } from "@/components/share/shared-links-card";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The three export formats, each with the one line that tells them apart. */
 const EXPORT_FORMATS: { href: string; label: string; description: string }[] = [
@@ -33,7 +34,7 @@ const EXPORT_FORMATS: { href: string; label: string; description: string }[] = [
   },
   {
     href: "/api/account/export?format=juno",
-    label: "Juno package",
+    label: `${PRODUCT_NAME} package`,
     description: "Everything, plus your Library files where they fit.",
   },
   {
@@ -103,7 +104,7 @@ export function DataPrivacySection() {
         <SettingRow
           label="Delete all conversations"
           tone="destructive"
-          description="Every chat and its messages, at once. What Juno made, memories and projects stay."
+          description={`Every chat and its messages, at once. What ${PRODUCT_NAME} made, memories and projects stay.`}
           control={
             <Button variant="destructive-outline" size="sm" onClick={() => setDeleteChatsOpen(true)}>
               Delete all
@@ -117,8 +118,7 @@ export function DataPrivacySection() {
           <DialogHeader>
             <DialogTitle>Delete all conversations?</DialogTitle>
             <DialogDescription>
-              Every conversation and its messages are deleted for good. Everything Juno made in them stays in your
-              Library, and memories and projects stay. This can’t be undone.
+              {`Every conversation and its messages are deleted for good. Everything ${PRODUCT_NAME} made in them stays in your Library, and memories and projects stay. This can’t be undone.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -16,6 +16,7 @@ import type { WorkThreadContextState } from "@/components/work/composer/use-work
 import type { WorkThreadFiles } from "@/components/work/composer/work-thread-files";
 import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The [+] on a running task: everything you can hand it that is not a message.
@@ -107,8 +108,7 @@ export function WorkThreadAddPanel({
         {context.reachUnreadable && (
           <div className="space-y-2 rounded-field border border-border/70 px-2.5 py-2">
             <p className="text-ui leading-relaxed text-muted-foreground">
-              Juno couldn’t read what this task is already working with, so it can’t safely add to
-              it. Nothing has changed.
+              {`${PRODUCT_NAME} couldn’t read what this task is already working with, so it can’t safely add to it. Nothing has changed.`}
             </p>
             <Button variant="outline" size="sm" onClick={context.reload} className="gap-1.5">
               <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Try again

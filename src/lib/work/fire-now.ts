@@ -30,6 +30,7 @@ import {
 } from "@/lib/work/code-routine";
 import { startCodeRoutineRun, type CodeRunOutcome } from "@/lib/work/code-dispatch";
 import { effectiveHostState } from "@/app/api/work/protocol";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Running one routine once, now, without moving its clock.
@@ -181,7 +182,7 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     return {
       outcome: "refused",
       reason: "unknown_run_kind",
-      message: "This automation was created by a newer version of Juno, so this one cannot run it.",
+      message: `This automation was created by a newer version of ${PRODUCT_NAME}, so this one cannot run it.`,
     };
   }
 

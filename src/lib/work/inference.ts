@@ -45,6 +45,7 @@ import {
   type WorkCapability,
   type WorkTarget,
 } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** One capability, and the words in the goal that argued for it. */
 export interface CapabilityEvidence {
@@ -289,7 +290,7 @@ export function selectForInferred(input: {
         kind: "local_portion_skipped",
         explanation: `This reads like it also needs ${guessedLocal
           .map(describeCapability)
-          .join(", ")}, which no Mac is available for. Juno will do the rest.`,
+          .join(", ")}, which no Mac is available for. ${PRODUCT_NAME} will do the rest.`,
       },
     ],
     explanation: without.explanation,

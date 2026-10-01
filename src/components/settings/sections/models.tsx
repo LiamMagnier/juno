@@ -14,6 +14,7 @@ import { SaveStatus, useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { resolveModel, type ModelInfo } from "@/lib/models";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const EFFORTS: { value: Exclude<ReasoningEffort, null>; label: string }[] = [
   { value: "minimal", label: "Minimal" },
@@ -123,7 +124,7 @@ export function ModelsSection() {
           description={
             defaultModel
               ? "New chats start on this model. You can switch in any message."
-              : "Juno picks the model and thinking depth each message needs."
+              : `${PRODUCT_NAME} picks the model and thinking depth each message needs.`
           }
           wide
           status={saves.status("defaultModel")}

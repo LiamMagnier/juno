@@ -15,6 +15,7 @@ import { StatusIcons } from "@/lib/app-icons";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** How many logos the collapsed pill shows before it just reports the count. */
 const CLUSTER_MAX = 3;
@@ -144,7 +145,7 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
       <Row
         {...linkProps}
         {...(Row === "span"
-          ? { title: "Juno did not link this: it is not a web address." }
+          ? { title: `${PRODUCT_NAME} did not link this: it is not a web address.` }
           : {})}
         className={cn(
           "group/row relative flex items-center gap-2.5 rounded-menu p-2",

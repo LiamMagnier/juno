@@ -14,6 +14,7 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { detectPlatform, downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { cn, formatBytes } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Get Juno as an app, from wherever you happen to be reading this.
@@ -113,7 +114,7 @@ export function DownloadMenu({ className }: { className?: string }) {
               0.01em tracking — this is the same menu-header role the rest of the
               shell sets, and it was the only one carrying bespoke metrics. */}
           <p className="font-sans text-body font-medium leading-tight text-foreground">
-            Juno on your desktop
+            {`${PRODUCT_NAME} on your desktop`}
           </p>
           <p className="mt-0.5 text-caption text-muted-foreground">
             Same account, same chats, offline-aware.
