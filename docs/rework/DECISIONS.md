@@ -225,3 +225,19 @@ dots); motion is mostly event-driven, with a subtle idle allowed only on the
 large character in the member's own thread (stopped when hidden or under
 Reduce Motion); performance rules from D-031 still apply (shared renderer,
 sprites at small sizes, fur level-of-detail, zero GPU when idle).
+
+**D-033 · Framed shell, restrained blur, centred composer; crew modeled in
+Blender (owner, 2026-10-01).** The owner called the first character build
+"weird … uncanny valley and not cute", asked for Blender, and for the chat:
+background blur on components, a reworked sidebar (spacing and sizes), the home
+composer centred in the screen, and the framed layout from a screenshot (the
+sidebar on the window frame, the main area a rounded inset panel). Decisions:
+the shell becomes a frame plus an inset main panel in both themes (full-bleed at
+phone width); floating layers (menus, popovers, palettes, sheets, toasts, the
+sticky header and the docked composer's backdrop) use a translucent blurred
+material with a solid reduced-transparency fallback, never content surfaces;
+characters follow explicit cuteness principles (large, low, wide-set eyes; one
+soft mass; plush materials; no realistic irises) and are modeled in Blender
+5.2 (installed with the owner's OK via Homebrew), exported as glb for the live
+three.js renderer and USD for RealityKit, with Cycles hero renders. The owner
+marked the first-pass icon set as good for now.
