@@ -230,6 +230,18 @@ final class PreviewVerifyLoopTests: XCTestCase {
         XCTAssertEqual(model.receivedRequests.count, 8)
     }
 
+    /// §4.6 checks UI edits under "a running or configured web
+    /// configuration": what discovery merely proposes (a Node backend's `dev`
+    /// script) triggers nothing until a launch file names it or it runs.
+    func testOnlyConfiguredOrRunningPreviewsTriggerUIChecks() {
+        let raw = [PreviewLaunchConfiguration(name: "dev", runtimeExecutable: "npm", runtimeArgs: ["run", "dev"], cwd: "server")]
+        let discovered = LaunchConfigurationStore.resolve(raw, source: .discovered, workspaceRoot: root).configurations
+        let configured = LaunchConfigurationStore.resolve(raw, source: .juno, workspaceRoot: root).configurations
+        XCTAssertEqual(PreviewSessionHub.webRoots(PreviewLaunchCatalog(configurations: discovered)), [])
+        XCTAssertEqual(PreviewSessionHub.webRoots(PreviewLaunchCatalog(configurations: discovered), running: discovered), ["server"])
+        XCTAssertEqual(PreviewSessionHub.webRoots(PreviewLaunchCatalog(configurations: configured)), ["server"])
+    }
+
     /// The gate never runs anything itself and never widens a permission: in
     /// a session that may not start servers, the agent's start is still asked
     /// about, by its bytes.

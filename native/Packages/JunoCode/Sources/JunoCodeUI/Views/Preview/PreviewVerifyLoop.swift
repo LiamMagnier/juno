@@ -126,7 +126,7 @@ final class PreviewSessionHub: @unchecked Sendable {
             let path = change.path.value
             Task {
                 let catalog = self.catalog(for: root)
-                let roots = Self.webRoots(catalog)
+                let roots = await self.webRoots(for: root)
                 guard catalog.autoVerify, PreviewUIEdits.isUIEdit(path, webRoots: roots) else { return }
                 self.scheduleSettle(entry)
             }
@@ -148,7 +148,7 @@ final class PreviewSessionHub: @unchecked Sendable {
                 try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled, let self else { return }
                 var errors: [String] = []
-                let since = entry.verify.errorBaseline(webRoots: Self.webRoots(self.catalog(for: entry.workspaceRoot))) ?? .distantPast
+                let since = entry.verify.errorBaseline(webRoots: await self.webRoots(for: entry.workspaceRoot)) ?? .distantPast
                 for key in await registry.leasedKeys(session: entry.sessionID) {
                     if let page = PreviewPageRegistry.shared.existing(key), page.origin != nil {
                         _ = await PreviewBrowserEngine(page: page, workspaceRoot: entry.workspaceRoot).settle(timeout: 10)
@@ -174,7 +174,7 @@ final class PreviewSessionHub: @unchecked Sendable {
         guard outcome.screenshotHash != nil, page.isOnPreviewOrigin, let route = outcome.route ?? page.currentURL.map(PreviewBrowserEngine.route(of:)) else {
             return nil
         }
-        let since = entry.verify.errorBaseline(webRoots: Self.webRoots(catalog(for: entry.workspaceRoot))) ?? .distantPast
+        let since = entry.verify.errorBaseline(webRoots: await webRoots(for: entry.workspaceRoot)) ?? .distantPast
         let consoleErrors = page.diagnostics.console.filter { $0.level == .error && $0.at >= since }
         let overlay = ((try? await engine.js("return __juno.overlay()", [:])) as? String).flatMap { $0.isEmpty ? nil : $0 }
         let serverErrors = await registry.logErrors(key, since: 0)
@@ -205,16 +205,29 @@ final class PreviewSessionHub: @unchecked Sendable {
         let errors = existingEntry(for: sessionID).map { entry in entry.lock.withLock { entry.serverErrorsSinceEdit } } ?? []
         return PreviewVerifyEnvironment(
             autoVerify: catalog.autoVerify,
-            webRoots: Self.webRoots(catalog),
+            webRoots: await webRoots(for: workspaceRoot),
             hasLiveServer: live,
             serverErrorsSinceEdit: errors
         )
     }
 
-    /// The folders of the workspace's web configurations.
-    static func webRoots(_ catalog: PreviewLaunchCatalog) -> [String] {
+    /// The folders whose UI edits are checked: those of the configurations a
+    /// launch file names, and of any preview running now (§4.6: "a running
+    /// or configured web configuration"). What discovery merely proposes is
+    /// neither, so a Node backend with a `dev` script does not send every
+    /// `.ts` edit to the Preview until a file says it is a website or a
+    /// server for it runs.
+    func webRoots(for root: URL) async -> [String] {
+        let running = await registry.snapshots(checkoutRoot: root)
+            .filter(\.phase.isLive)
+            .compactMap(\.configuration)
+        return Self.webRoots(catalog(for: root), running: running)
+    }
+
+    static func webRoots(_ catalog: PreviewLaunchCatalog, running: [ResolvedPreviewConfiguration] = []) -> [String] {
         var roots: [String] = []
-        for configuration in catalog.configurations {
+        let configured = catalog.configurations.filter { $0.source != .discovered }
+        for configuration in configured + running {
             let root = configuration.isAttach ? "." : configuration.workingDirectoryDisplay
             if !roots.contains(root) { roots.append(root) }
         }
