@@ -109,6 +109,7 @@ final class SimulatorToolsTests: XCTestCase {
         let simulator = FakeSimulator()
         let (tool, permissions) = tool(simulator, mode: .fullAccess)
         _ = await answerAll(permissions)
+        _ = try await tool.execute(input: ["action": "launch", "bundle_id": "ai.example.app"], context: context("launch"))
         let result = try await tool.execute(input: ["action": "screenshot", "bundle_id": "ai.example.app"], context: context())
         XCTAssertFalse(result.isError)
         guard case let .uiVerificationRecorded(record)? = result.sideEffects.first else {
@@ -125,6 +126,20 @@ final class SimulatorToolsTests: XCTestCase {
         let source = try XCTUnwrap(CGImageSourceCreateWithData(image.data as CFData, nil))
         let frame = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
         XCTAssertTrue(CaptureScaler.fits(PixelSize(width: frame.width, height: frame.height), .anthropicHighResolution))
+    }
+
+    func testEvidenceNamesOnlyAnAppThisSessionLaunched() async throws {
+        let simulator = FakeSimulator()
+        let (tool, permissions) = tool(simulator, mode: .fullAccess)
+        _ = await answerAll(permissions)
+        // The model names an app it never launched: a picture of whatever the
+        // device shows must not stand as a check of that app.
+        let result = try await tool.execute(input: ["action": "screenshot", "bundle_id": "ai.example.app"], context: context())
+        guard case let .uiVerificationRecorded(record)? = result.sideEffects.first else {
+            return XCTFail("no evidence recorded")
+        }
+        XCTAssertEqual(record.target, "iPhone 17 Pro")
+        XCTAssertTrue(result.content.contains("was not launched with this tool in this session"))
     }
 
     func testListNeedsNoConsentAndNamesDevicesAsData() async throws {

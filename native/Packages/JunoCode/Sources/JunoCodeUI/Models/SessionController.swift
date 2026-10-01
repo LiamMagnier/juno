@@ -1388,7 +1388,7 @@ public final class SessionController {
                 self?.apply(update, own: sessionID)
             }
         }
-        screen.bind(sessionID: sessionID, coordinator: live.context?.computerUse, store: live.store)
+        screen.bind(sessionID: sessionID, coordinator: live.context?.computerUse, store: live.store, permissions: live.permissions)
         let restored = await live.store.events(for: sessionID)
         usageLedger = await live.store.usageLedger(for: sessionID)
         let delivered = eventsDeliveredWhileRestoring ?? []
@@ -2095,6 +2095,8 @@ public final class SessionController {
             #endif
             return
         }
+        // A grant sheet's unticks reach the service before its Allow does.
+        await screen.settleGrantChoices()
         await live.permissions.resolve(approvalID: approvalID, decision: .approved)
     }
 

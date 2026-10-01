@@ -57,21 +57,30 @@ public struct ComputerUseSnapshot: Sendable {
 public actor ComputerUseCoordinator: ScreenControlling {
     private let service: ScreenControlService
     private let permissions: any ComputerUsePermissionChecking
+    /// The reader's narrowing from Settings, read at every start.
+    private let preferences: @Sendable () -> ScreenControlPreferences
     private var journal: [ComputerUseJournalEntry] = []
     private var journalTask: Task<Void, Never>?
 
     public init(
         service: ScreenControlService,
-        permissions: any ComputerUsePermissionChecking
+        permissions: any ComputerUsePermissionChecking,
+        preferences: @escaping @Sendable () -> ScreenControlPreferences = { .default }
     ) {
         self.service = service
         self.permissions = permissions
+        self.preferences = preferences
     }
 
     #if os(macOS)
-    /// The app's coordinator onto the shared service and the real TCC state.
+    /// The app's coordinator onto the shared service, the real TCC state and
+    /// the reader's saved narrowing.
     public init() {
-        self.init(service: .shared, permissions: SystemComputerUsePermissions())
+        self.init(
+            service: .shared,
+            permissions: SystemComputerUsePermissions(),
+            preferences: { ScreenControlPreferencesStore.standard.load() }
+        )
     }
     #endif
 
@@ -92,6 +101,9 @@ public actor ComputerUseCoordinator: ScreenControlling {
         guard permissions.requestAccessibilityPermission() == .granted else {
             throw ComputerUseError.accessibilityPermissionMissing
         }
+        // The apps the reader denied or lowered, as saved: the service starts
+        // with none after a relaunch, and only Settings pushed them before.
+        await service.setPreferences(preferences())
         do {
             try await service.activate(sessionID: sessionID.value, title: title ?? "", kind: .codeSession)
         } catch let ScreenControlError.lockHeld(holder) {
@@ -281,6 +293,10 @@ public actor ComputerUseCoordinator: ScreenControlling {
 
     public func isGranted(sessionID: String, bundleID: String) async -> Bool {
         await service.isGranted(sessionID: sessionID, bundleID: bundleID)
+    }
+
+    public func discard(sessionID: String, preparedID: String) async {
+        await service.discard(sessionID: sessionID, preparedID: preparedID)
     }
 
     public func setImageBudget(sessionID: String, budget: ImageBudget) async {

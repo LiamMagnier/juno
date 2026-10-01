@@ -60,6 +60,23 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         }
     }
 
+    /// A deny saved in Settings holds after a relaunch: the service starts
+    /// empty, and the coordinator hands it the saved narrowing at every start.
+    func testTheSavedNarrowingIsAppliedWhenScreenControlStarts() async throws {
+        let service = makeTestScreenService()
+        let coordinator = ComputerUseCoordinator(
+            service: service,
+            permissions: FakePermissions(),
+            preferences: { ScreenControlPreferences(denied: ["com.apple.textedit"]) }
+        )
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+        let proposal = try await coordinator.proposeGrants(
+            sessionID: sessionID.value, apps: ["TextEdit"], reason: nil, clipboardRead: false, clipboardWrite: false
+        )
+        XCTAssertFalse(proposal.hasOffer)
+        XCTAssertEqual(proposal.offers.first?.outcome, .refused("you denied it in Settings"))
+    }
+
     func testEmergencyStopEndsEverySession() async throws {
         let service = makeTestScreenService()
         let coordinator = ComputerUseCoordinator(service: service, permissions: FakePermissions())

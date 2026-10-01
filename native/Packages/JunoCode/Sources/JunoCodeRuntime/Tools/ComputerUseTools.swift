@@ -175,7 +175,14 @@ struct ScreenActionRunner: Sendable {
         await computer.setImageBudget(sessionID: context.sessionID.value, budget: budget)
         let prepared = try await computer.prepare(sessionID: context.sessionID.value, action: action)
         if prepared.isInput {
-            try await approve(prepared, toolName: toolName, input: input)
+            do {
+                try await approve(prepared, toolName: toolName, input: input, sessionID: context.sessionID.value)
+            } catch {
+                // Never performed: its bound frame goes now, not at the end
+                // of the session.
+                await computer.discard(sessionID: context.sessionID.value, preparedID: prepared.id)
+                throw error
+            }
         }
         return try await computer.perform(
             sessionID: context.sessionID.value,
@@ -186,7 +193,7 @@ struct ScreenActionRunner: Sendable {
     }
 
     /// One approval, with the whole card, bound to the frame.
-    func approve(_ prepared: PreparedScreenAction, toolName: String, input: JSONValue) async throws {
+    func approve(_ prepared: PreparedScreenAction, toolName: String, input: JSONValue, sessionID: String) async throws {
         let digest = Self.digest(prepared, toolName: toolName, input: input)
         await computer.publishApprovalDetail(.action(prepared), digest: digest)
         let outcome = await permissions.authorize(
@@ -206,6 +213,13 @@ struct ScreenActionRunner: Sendable {
                 throw ScreenToolDenial(reason: "The approval no longer matches the action.")
             }
         case let .denied(reason):
+            // A card denied because the reader pressed Esc or Stop while it
+            // waited ends the turn as the stop does, rather than reading as
+            // one declined step the model may route around.
+            if case .stopped = await computer.state(sessionID: sessionID) {
+                _ = try? await computer.settledFrame(sessionID: sessionID)
+                throw ScreenControlError.stoppedByReader
+            }
             throw ScreenToolDenial(reason: reason)
         }
     }
@@ -404,9 +418,16 @@ public struct ComputerTool: CodeTool {
 
 public struct ComputerBatchTool: CodeTool {
     let runner: ScreenActionRunner
+    let tracker: ScreenTurnTracker?
 
-    public init(computer: any ScreenControlling, permissions: PermissionCoordinator, budget: ImageBudget) {
+    public init(
+        computer: any ScreenControlling,
+        permissions: PermissionCoordinator,
+        budget: ImageBudget,
+        tracker: ScreenTurnTracker? = nil
+    ) {
         self.runner = ScreenActionRunner(computer: computer, permissions: permissions, budget: budget)
+        self.tracker = tracker
     }
 
     public let name = ComputerUseToolName.batch
@@ -441,6 +462,14 @@ public struct ComputerBatchTool: CodeTool {
         guard let items = input["actions"]?.arrayValue, !items.isEmpty else {
             return ToolResult(content: "actions must list at least one action.", isError: true)
         }
+        // The same rule across calls as inside one: after a failed computer
+        // call in this turn, nothing more runs on a screen the model has not
+        // seen.
+        if let tracker, await tracker.earlierCallFailed(before: context.toolCallID) {
+            await tracker.markFailed(context.toolCallID)
+            let lines = items.indices.map { "\($0 + 1). \(ScreenControlError.notExecutedText)" }
+            return ToolResult(content: lines.joined(separator: "\n"), isError: true)
+        }
         var lines: [String] = []
         var images: [ModelImage] = []
         var failure: ToolResult?
@@ -467,6 +496,7 @@ public struct ComputerBatchTool: CodeTool {
                 failure = answer
             }
         }
+        if failure != nil { await tracker?.markFailed(context.toolCallID) }
         // A failed batch still hands back the screen, so the next step is
         // chosen from what is there now — unless the reader stopped it.
         if let failure, failure.endsRun == nil,
@@ -704,7 +734,7 @@ public struct ComputerMenuTool: CodeTool {
         do {
             await computer.setImageBudget(sessionID: context.sessionID.value, budget: budget)
             let prepared = try await computer.prepareMenu(sessionID: context.sessionID.value, app: input["app"]?.stringValue, path: path)
-            try await runner.approve(prepared, toolName: name, input: input)
+            try await runner.approve(prepared, toolName: name, input: input, sessionID: context.sessionID.value)
             let result = try await computer.performMenu(
                 sessionID: context.sessionID.value, prepared: prepared, path: path, toolCallID: context.toolCallID
             )

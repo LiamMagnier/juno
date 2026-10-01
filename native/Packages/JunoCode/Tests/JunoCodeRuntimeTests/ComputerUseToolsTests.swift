@@ -15,10 +15,19 @@ final class FakeScreen: ScreenControlling, @unchecked Sendable {
     private(set) var attachedFrame: [Bool] = []
     private(set) var published: [String: ScreenApprovalDetail] = [:]
     private(set) var settledCalls = 0
+    /// Set to report screen control as stopped by the reader.
+    var stoppedBy: ScreenControlStopReason?
+    private(set) var discarded: [String] = []
 
     static let frame = EncodedFrame(data: Data([0x89, 0x50, 0x4E, 0x47]), mediaType: "image/png", size: PixelSize(width: 1372, height: 887))
 
-    func state(sessionID: String) async -> ScreenSessionState { .running(mode: .background, app: "TextEdit") }
+    func state(sessionID: String) async -> ScreenSessionState {
+        if let reason = lock.withLock({ stoppedBy }) { return .stopped(reason) }
+        return .running(mode: .background, app: "TextEdit")
+    }
+    func discard(sessionID: String, preparedID: String) async {
+        lock.withLock { discarded.append(preparedID) }
+    }
     func setImageBudget(sessionID: String, budget: ImageBudget) async {}
     func listApps(sessionID: String) async -> [ScreenAppListing] {
         [ScreenAppListing(bundleID: "com.apple.TextEdit", name: "TextEdit", running: true, category: .other, grantedTier: .full, cap: .full)]
@@ -213,7 +222,75 @@ final class ComputerUseToolsTests: XCTestCase {
         XCTAssertFalse(next.isError)
     }
 
+    func testABatchAfterAFailedCallInTheSameTurnRunsNothing() async throws {
+        let screen = FakeScreen()
+        screen.failOn[.leftClick] = .screenChanged
+        let tracker = ScreenTurnTracker()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let click = ComputerTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution, tracker: tracker)
+        let batch = ComputerBatchTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution, tracker: tracker)
+        for (call, name) in [("a", "computer"), ("b", "computer_batch")] {
+            await tracker.observe(SessionEvent(sessionID: sessionID, sequence: 0, timestamp: Date(), payload: .toolProposed(
+                ToolProposedEvent(toolCallID: call, toolName: name, input: [:], risk: .read, summary: "")
+            )))
+        }
+        _ = try await click.execute(input: ["action": "left_click", "coordinate": [1, 1]], context: context("a"))
+        let result = try await batch.execute(input: [
+            "actions": [["action": "type", "text": "hello"], ["action": "key", "text": "return"]],
+        ], context: context("b"))
+        XCTAssertTrue(result.isError)
+        XCTAssertEqual(result.content, """
+        1. Not executed: an earlier computer action in this turn failed.
+        2. Not executed: an earlier computer action in this turn failed.
+        """)
+        XCTAssertTrue(screen.performed.isEmpty, "nothing ran on a screen the model had not seen")
+    }
+
     // MARK: Approvals
+
+    /// Denies every question, recording it.
+    private func autoDeny(_ permissions: PermissionCoordinator) async -> LockedRequests {
+        let asked = LockedRequests()
+        await permissions.addObserver { update in
+            guard case let .requested(request) = update else { return }
+            asked.append(request)
+            Task { await permissions.resolve(approvalID: request.id, decision: .denied) }
+        }
+        return asked
+    }
+
+    func testADeniedActionDropsItsBoundFrameAndIsNotPerformed() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        let asked = await autoDeny(permissions)
+        let tool = ComputerTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution)
+        for call in ["1", "2", "3"] {
+            let result = try await tool.execute(input: ["action": "left_click", "coordinate": [5, 5]], context: context(call))
+            XCTAssertEqual(result.content, "Not done: The user declined this action.")
+            XCTAssertNil(result.endsRun)
+        }
+        XCTAssertEqual(asked.requests.count, 3)
+        XCTAssertTrue(screen.performed.isEmpty)
+        XCTAssertEqual(screen.discarded.count, 3, "every denied action's frame is dropped at once")
+    }
+
+    func testACardAnsweredNoBecauseTheReaderStoppedEndsTheTurn() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        // Esc while the card waits: screen control is stopped and the card
+        // is answered no on the reader's behalf.
+        await permissions.addObserver { update in
+            guard case let .requested(request) = update else { return }
+            screen.stoppedBy = .escapeKey
+            Task { await permissions.resolve(approvalID: request.id, decision: .denied) }
+        }
+        let tool = ComputerTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "key", "text": "return"], context: context())
+        XCTAssertTrue(result.isError)
+        XCTAssertEqual(result.content, "The reader stopped screen control. Do not retry; say what you still need.")
+        XCTAssertNotNil(result.endsRun, "the turn ends; the model does not route around the stop")
+        XCTAssertTrue(screen.performed.isEmpty)
+    }
 
     func testFullAccessRunsOrdinaryInputWithoutAsking() async throws {
         let screen = FakeScreen()

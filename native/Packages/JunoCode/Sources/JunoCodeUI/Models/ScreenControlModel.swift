@@ -26,6 +26,9 @@ public final class ScreenControlModel {
     @ObservationIgnored private var store: CodeSessionStore?
     @ObservationIgnored private var storeObserver: UUID?
     @ObservationIgnored private var streams: [Task<Void, Never>] = []
+    @ObservationIgnored private var permissions: PermissionCoordinator?
+    @ObservationIgnored private var trackerFeed: AsyncStream<SessionEvent>.Continuation?
+    @ObservationIgnored private var grantChoiceUpdates: Task<Void, Never>?
     @ObservationIgnored private var simulatorAgent: SimulatorAgentService?
     /// Card details for previews and snapshots, which have no coordinator.
     @ObservationIgnored private var previewDetails: [String: ScreenApprovalDetail] = [:]
@@ -53,20 +56,45 @@ public final class ScreenControlModel {
     // MARK: - Wiring
 
     /// Connects the model to its session. Idempotent per session.
-    public func bind(sessionID: CodeSessionID, coordinator: ComputerUseCoordinator?, store: CodeSessionStore) {
+    ///
+    /// - Parameter permissions: the session's coordinator, so a screen
+    ///   approval still on screen when screen control stops is answered
+    ///   no instead of waiting on an action that can no longer run.
+    public func bind(
+        sessionID: CodeSessionID,
+        coordinator: ComputerUseCoordinator?,
+        store: CodeSessionStore,
+        permissions: PermissionCoordinator? = nil
+    ) {
         if self.sessionID == sessionID, self.coordinator === coordinator, self.store === store { return }
         unbind()
         self.sessionID = sessionID
         self.coordinator = coordinator
         self.store = store
+        self.permissions = permissions
         let tracker = turnTracker
         let session = sessionID
+        // One ordered feed: the tracker groups a turn's proposals by their
+        // order, which a task per event does not keep.
+        let (feed, continuation) = AsyncStream<SessionEvent>.makeStream()
+        trackerFeed = continuation
+        streams.append(Task {
+            for await event in feed {
+                await tracker.observe(event)
+            }
+        })
         Task { [weak self] in
             let token = await store.addObserver { update in
                 guard case let .eventAppended(event) = update, event.sessionID == session else { return }
-                Task { await tracker.observe(event) }
+                continuation.yield(event)
             }
-            await MainActor.run { self?.storeObserver = token }
+            let kept = await MainActor.run { () -> Bool in
+                guard let self, self.store === store, self.sessionID == session else { return false }
+                self.storeObserver = token
+                return true
+            }
+            // Unbound while the observer was being added: take it back off.
+            if !kept { await store.removeObserver(token) }
         }
         guard let coordinator else { return }
         streams.append(Task { [weak self] in
@@ -84,8 +112,11 @@ public final class ScreenControlModel {
     }
 
     public func unbind() {
+        trackerFeed?.finish()
+        trackerFeed = nil
         for task in streams { task.cancel() }
         streams = []
+        permissions = nil
         if let storeObserver, let store {
             Task { await store.removeObserver(storeObserver) }
         }
@@ -104,6 +135,22 @@ public final class ScreenControlModel {
         if wasActive, !isThisSessionActive {
             latestStep = nil
             ScreenStepThumbnails.shared.clear(session: sessionID?.value)
+            denyPendingScreenApprovals()
+        }
+    }
+
+    /// Screen control ended (Esc, Stop, the menu bar, switched off): a card
+    /// for a screen action still waiting is answered no, so the turn is not
+    /// left waiting on a click that can no longer happen. The tool reads the
+    /// stop and ends the turn.
+    private func denyPendingScreenApprovals() {
+        guard let permissions else { return }
+        Task {
+            for request in await permissions.pendingApprovals
+                where ComputerUseToolName.input.contains(request.toolName) && request.toolName != ComputerUseToolName.simulator
+            {
+                await permissions.resolve(approvalID: request.id, decision: .denied)
+            }
         }
     }
 
@@ -172,8 +219,25 @@ public final class ScreenControlModel {
     }
 
     /// The reader's choices on a grant sheet, before Allow.
-    public func updateGrantChoices(proposalID: String, offers: [AppGrantOffer]) async {
-        await coordinator?.updateGrantChoices(proposalID: proposalID, offers: offers)
+    ///
+    /// Synchronous and chained, so the order of the reader's clicks is the
+    /// order the service sees them, and ``settleGrantChoices()`` — awaited by
+    /// Allow — cannot finish before the last untick has landed. Sent from a
+    /// fresh task each, an app the reader unticked just before Allow could
+    /// reach the service after the grant and be granted anyway.
+    public func updateGrantChoices(proposalID: String, offers: [AppGrantOffer]) {
+        let previous = grantChoiceUpdates
+        let coordinator = self.coordinator
+        grantChoiceUpdates = Task {
+            await previous?.value
+            await coordinator?.updateGrantChoices(proposalID: proposalID, offers: offers)
+        }
+    }
+
+    /// Waits until every choice made on a grant sheet has reached the
+    /// service. Allow calls it before answering the card.
+    public func settleGrantChoices() async {
+        await grantChoiceUpdates?.value
     }
 }
 

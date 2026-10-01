@@ -35,7 +35,8 @@ struct StudioScreenApprovalDetail: View {
                 StudioScreenActionCard(prepared: prepared)
             case let .grants(proposal)?:
                 StudioScreenGrantSheet(proposal: proposal) { offers in
-                    Task { await screen.updateGrantChoices(proposalID: proposal.id, offers: offers) }
+                    // In order, before Allow (see `settleGrantChoices`).
+                    screen.updateGrantChoices(proposalID: proposal.id, offers: offers)
                 }
             case let .takeover(_, display)?:
                 StudioScreenTakeoverCard(display: display)
