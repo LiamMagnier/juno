@@ -7,6 +7,32 @@ This file is the running record: what each phase did, how it was verified, and
 what it left open. `PRODUCT_REFOUNDATION.md` is the product decision;
 `DECISIONS.md` is the log of individual decisions and their reasons.
 
+## 2026-10-01 Codex continuation — implementation stopped by the owner
+
+This section supersedes the stale branch/checklist status below. The continuation was saved as `b1295d77` and integrated by another session into **main** `/Users/liammagnier/Developer/project/juno`. The old refoundation worktree is back at clean `756a93dc` and does not contain that work. Integrated main reached `133dd285`; the VM current release was observed at that SHA. The owner then requested stopping development, saving all work/evidence in HANDOFF and pushing/deploying the integrated result. Do not restart unfinished work until the owner resumes.
+
+The detailed records are `HANDOFF.md`, `CONTINUATION_PAGES.md`, `CONTINUATION_NATIVE.md` and `CONTINUATION_SECURITY.md`. Production source now contains the round-3 framed neutral shell, simpler navigation, custom web icons, context-token composer/receipts, transcript/approval changes, Customize/Library/skills/apps changes, native/Code control parity and security/backend maintenance. **Implemented source is not the same as complete cross-platform acceptance.**
+
+| Track | Current evidence | Remaining before complete acceptance |
+|---|---|---|
+| Shared web foundation / Phase 3 | Production tokens, fonts, shell/sidebar, composer, transcript and pages ported | Authenticated production workflow and settled desktop/mobile light/dark comparison; cleanup noted in HANDOFF; not every legacy secondary surface restyled |
+| Composer/context / Phase 3 | Real mention endpoint and atomic tokens; component browser keyboard/range/multiline send verified | Slash-rewrite ranges, undo/IME/paste/dictation/draft restoration, loading/accessibility polish, full send/reload receipts on real authenticated route |
+| Native foundations / Phase 4 | Source shell/token adaptation; generated token contract; native lane tests/build evidence | New custom web glyphs still need native asset projection; full unified Customize/mobile contract projection and cross-platform real-app QA |
+| Apps/Skills / Phase 5 | Real connector blocking/grants, richer import/export/provenance, Customize hub | Authenticated OAuth/permissions/import workflows and remaining native parity; chat Save as skill helper wiring |
+| Crew / Phase 6 | Existing operational backend and simplified presentation; existing faces preserved | Designer-toy/character selection and acceptance; don't ship an unapproved replacement |
+| Work/Research/Voice / Phase 7 | Existing runtime preserved; transcript calmer; external voice branch integrated | Finished voice/dictation presentation and real voice/research/background-work acceptance |
+| Artifacts / Phase 8 | Generic artifact/file lifecycle, Library union, base-version native editing | Binary WorkArtifact delete/restore/version API parity and end-to-end lifecycle acceptance |
+| Code / Phases 9–11 | Verifier fixes, question/plan controls, run usage and honest terminal events; full JunoCode suite passed | Production remote host scenarios, Mac final SDK compile status, iPhone/iPad visual/hardware parity; read lane notes |
+| Accessibility/responsive / Phase 12 | Shared material fallback and restrained source motion, many native hit targets corrected | Fresh comprehensive functional/accessibility/light/dark/reduced-motion acceptance |
+| Security / Phase 13 | Fail-closed owner guards, independent encryption key policy, bounded maintenance; real isolated image/migration/restore checks | Production computer broker/egress rollout (provider disabled); integrated MCP/computer CI failures require review |
+| Release / Phase 14 | Integrated source already pushed/deployed externally at 133dd285; health/db and all 10 PM2 apps healthy; authenticated chat/catalog/completion/replay/voice and public UI smoke passed | CI is failed, not green; external bypasses reinstated; signed Mac/iOS publication remains separate |
+| Visual QA / Phase 15 | Component-level editor evidence plus pages lane observations | Authenticated production matrix and independent accepted review not completed |
+| **New premium naming + full identity** | Scope recorded in `BRAND_IDENTITY_WORKSTREAM.md`; no rename applied | Inventory old names/icons; complete old-to-new map; collision-screen final names; master/Crew names unresolved; original logo/wordmark, favicon/platform icons/interface family, light/dark and all visible references, real-app validation |
+
+New naming scope supersedes the older recommendation to retain Juno. Preserve round-3 neutral/charcoal/ultramarine and serif/custom-icon decisions. Neral failed the owner's existing-use criterion; Ensemble was explicitly rejected by the owner and also has reported AI-product collisions. Neither is approved. The Neral board is a concept only. Preserve third-party logos/names and stable internal API/database/routing identifiers unless a migration is necessary; clear functional action names may remain. Collision searches cannot guarantee global uniqueness or legal availability. The voice-chat coordinator owns further identity exploration; this record is documentation only.
+
+Prior-to-integration web checks: TypeScript passed, lint 0 errors/17 warnings, shell contract 15/15 passed, web tests 4,498 total / 4,421 passed / 6 failed / 71 skipped. Integrated CI adds further failures from other merged branches. See HANDOFF for exact failures/logs; do not mark the entire redesign complete or all gates passed.
+
 ## Baseline (main @ 1feb392c, before any refoundation edit)
 
 Run with `.claude/local-tools/refoundation/gate.sh` (3 machine-wide slots) in
@@ -1173,4 +1199,3 @@ and spot-checked the lanes' rows. Words only; no status pills.
   `~/.juno/agents` can no longer replace a built-in agent (the review pass
   parses the built-in reviewer's JSON), and Lane E's test fixture runs with
   the stop check off.
-

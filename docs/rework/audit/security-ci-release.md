@@ -1,5 +1,7 @@
 # Audit: Security, CI and Release
 
+> Historical baseline audit. For implemented hardening, actual October 1 validation, integrated-main CI failures and production deployment evidence, read [CONTINUATION_SECURITY.md](../CONTINUATION_SECURITY.md). Original findings below remain as the audit record; they do not describe every current control.
+
 Phase 0 of the Juno Refoundation. Read-only audit of `rework/refoundation` (same tree as `main` @ `1feb392c`), 2026-09-30.
 
 Method: read the code and scripts, queried GitHub (`gh run list`, `gh api`, `gh release`), probed the live site (`/api/health`, response headers, `/sign-in`), ran two light static checks (`node scripts/check-approval-dispatch.mjs`, `npm audit --omit=dev`). I did not run typecheck, tests, builds, Swift or Xcode, because the baseline gate run needs the machine. Anything I could not confirm is marked **UNVERIFIED**.
