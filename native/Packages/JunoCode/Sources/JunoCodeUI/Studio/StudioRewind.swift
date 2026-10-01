@@ -68,7 +68,17 @@ struct StudioRewindFlow: View {
                     restoreAnyway: { scope in run(scope, force: true) },
                     cancel: finish,
                     stop: { Task { await controller.stop() } },
-                    back: back
+                    back: back,
+                    shellWarning: controller.rewindShellWarning(for: turnID),
+                    fork: controller.reviewQueue.sessionActions == nil ? nil : { inNewWorktree in
+                        Task {
+                            if await controller.fork(throughTurn: turnID, inNewWorktree: inNewWorktree) != nil {
+                                finish()
+                            } else {
+                                phase = .failed(controller.reviewQueue.message ?? "Could not fork the session.")
+                            }
+                        }
+                    }
                 )
             } else {
                 HStack(spacing: JunoSpace.snug) {
@@ -127,6 +137,12 @@ struct StudioRewindPanel: View {
     let cancel: () -> Void
     let stop: () -> Void
     var back: (() -> Void)?
+    /// What the rewind cannot put back: files commands changed in the turns
+    /// it removes (§5.6). Nil when those turns ran no command.
+    var shellWarning: String?
+    /// Fork a new session through this message instead, optionally in a
+    /// worktree of its own; nil where forking is not available.
+    var fork: ((_ inNewWorktree: Bool) -> Void)?
 
     @State private var highlighted: RewindScope?
     @FocusState private var focused: Bool
@@ -160,6 +176,16 @@ struct StudioRewindPanel: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 files
+                if let fork {
+                    forkChoice(fork)
+                }
+            }
+            if let shellWarning {
+                Text(StudioRunRow.markdown(shellWarning))
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("juno.code.rewind.shell-warning")
             }
             Text(RewindCopy.untracked)
                 .font(Studio.Font.meta)
@@ -216,6 +242,33 @@ struct StudioRewindPanel: View {
     }
 
     // MARK: Parts
+
+    /// The other answer to "go back here": keep this session and start a new
+    /// one from this message.
+    private func forkChoice(_ fork: @escaping (Bool) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline + 1) {
+            Text("Or fork from here")
+                .font(Studio.Font.labelEmphasis)
+                .foregroundStyle(Studio.Ink.primary)
+            Text("A new session with the conversation up to and including this message. This one stays as it is.")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: JunoSpace.tight) {
+                Button("Fork from here") { fork(false) }
+                    .buttonStyle(StudioSecondaryButtonStyle())
+                    .contentShape(Capsule())
+                    .disabled(isWorking)
+                    .accessibilityIdentifier("juno.code.rewind.fork")
+                Button("Fork into a new worktree") { fork(true) }
+                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .contentShape(.rect)
+                    .disabled(isWorking)
+                    .help("The new session works in its own checkout, with the files as they were after this message")
+            }
+        }
+        .padding(.top, JunoSpace.hairline)
+    }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {

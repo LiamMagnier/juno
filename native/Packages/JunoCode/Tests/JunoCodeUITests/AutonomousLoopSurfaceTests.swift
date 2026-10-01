@@ -106,7 +106,8 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
                 CICheck(name: "lint", state: .passed), CICheck(name: "build", state: .passed),
                 CICheck(name: "e2e", state: .passed), CICheck(name: "test (ubuntu)", state: .failed),
             ])),
-            "CI: 3 of 4 checks passed; test (ubuntu) failed"
+            // Lane E's row: check names in code voice, as the CI bar says them.
+            "CI: 3 of 4 checks passed; `test (ubuntu)` failed"
         )
         XCTAssertEqual(
             StudioScreenStepRow.caption(for: StudioScreenStep(eventID: "e", verb: "Clicked", app: "TextEdit", element: "Save button", succeeded: true)),

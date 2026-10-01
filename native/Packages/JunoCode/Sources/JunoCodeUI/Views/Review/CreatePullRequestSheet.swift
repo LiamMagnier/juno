@@ -113,7 +113,8 @@ public struct CreatePullRequestSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button(controller.isCreatingPullRequest ? "Creating…" : "Create") {
                     Task {
-                        createdURL = await controller.createPullRequest(draft)
+                        // Then follows its CI until the checks settle (§5.3).
+                        createdURL = await controller.createPullRequestAndWatch(draft)
                     }
                 }
                 .buttonStyle(.borderedProminent)

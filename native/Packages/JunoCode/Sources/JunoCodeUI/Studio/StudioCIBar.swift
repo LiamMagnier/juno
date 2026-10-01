@@ -1,19 +1,21 @@
+import AppKit
 import SwiftUI
 import JunoCodeCore
+import JunoCodeLocal
 import JunoDesignSystem
 
-// CI for the session's pull request.
-//
-// Owned by Lane E (review, ship, sessions and away). A placeholder from the
-// seams commit (CODE_AGENT_SPEC §6.0): the thread row in plain words, which
-// Lane E replaces, and beside which it builds the CI bar (§5.3).
+// The rows Lane E puts above the composer and in the thread (CODE_AGENT_SPEC
+// §5.3, §1.12, §5.7): CI for the session's pull request with Fix it and
+// Auto-fix, Resume for a run Juno quit in the middle of, and where a session
+// in its own worktree is working. Words only, in the Studio style: no
+// pills, no status dots. Owned by Lane E.
 
-/// "CI: 3 of 4 checks passed; `test (ubuntu)` failed".
+/// "CI for #42: 3 of 4 checks passed; `test (ubuntu)` failed", in the thread.
 struct StudioCIStatusRow: View {
     let event: CIStatusEvent
 
     var body: some View {
-        Text(Self.caption(for: event))
+        Text(StudioRunRow.markdown(Self.caption(for: event)))
             .font(Studio.Font.meta)
             .foregroundStyle(Studio.Ink.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -21,18 +23,328 @@ struct StudioCIStatusRow: View {
     }
 
     static func caption(for event: CIStatusEvent) -> String {
-        let checks = event.checks
-        guard !checks.isEmpty else { return "CI: no checks yet" }
-        let passed = checks.filter { $0.state == .passed }.count
-        let failed = checks.filter { $0.state == .failed }.map(\.name)
-        let running = checks.filter { !$0.state.isSettled }.count
-        var text = "CI: \(passed) of \(checks.count) checks passed"
-        if !failed.isEmpty {
-            text += "; \(failed.joined(separator: ", ")) failed"
+        let prefix = event.pullRequestNumber.map { "CI for #\($0): " } ?? "CI: "
+        return prefix + CIStatusWords.summary(event.checks)
+    }
+}
+
+/// Everything Lane E shows above the composer, top to bottom: Resume for an
+/// interrupted run, the worktree a session works in, and its CI.
+public struct StudioShipBar: View {
+    let controller: SessionController
+
+    public init(controller: SessionController) {
+        self.controller = controller
+    }
+
+    public var body: some View {
+        VStack(spacing: JunoSpace.snug) {
+            if controller.isInterrupted, !controller.isRunning {
+                StudioInterruptedRow(
+                    unknownCalls: controller.interruptedCallSummaries,
+                    resume: { await controller.resumeInterrupted() }
+                )
+            }
+            StudioWorktreeLine(controller: controller)
+            StudioCIBar(pullRequest: controller.reviewQueue.pullRequest)
         }
-        if running > 0 {
-            text += "; \(running) still running"
+    }
+}
+
+/// "Juno quit while this was running", with Resume.
+struct StudioInterruptedRow: View {
+    let unknownCalls: [String]
+    let resume: () async -> Bool
+
+    @State private var isResuming = false
+    @State private var problem: String?
+
+    var body: some View {
+        StudioShipCard {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    Text("Juno quit while this was running.")
+                        .font(Studio.Font.labelEmphasis)
+                        .foregroundStyle(Studio.Ink.primary)
+                    Spacer(minLength: JunoSpace.snug)
+                    Button(isResuming ? "Resuming…" : "Resume") {
+                        isResuming = true
+                        problem = nil
+                        Task {
+                            if !(await resume()) {
+                                problem = "Juno could not resume: the session is busy."
+                            }
+                            isResuming = false
+                        }
+                    }
+                    .buttonStyle(StudioPrimaryButtonStyle())
+                    .contentShape(Capsule())
+                    .disabled(isResuming)
+                    .help("Carry on from where it stopped, with no new message")
+                }
+                if !unknownCalls.isEmpty {
+                    Text("Running when it quit, outcome unknown: " + unknownCalls.joined(separator: ", "))
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let problem {
+                    Text(problem).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)
+                }
+            }
         }
-        return text
+    }
+}
+
+/// CI for the session's pull request, with Fix it and the Auto-fix switch.
+public struct StudioCIBar: View {
+    let pullRequest: PullRequestModel
+
+    public init(pullRequest: PullRequestModel) {
+        self.pullRequest = pullRequest
+    }
+
+    public var body: some View {
+        if let text = pullRequest.barText {
+            StudioShipCard {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    HStack(alignment: .center, spacing: JunoSpace.snug) {
+                        Text(StudioRunRow.markdown(text))
+                            .font(Studio.Font.label)
+                            .foregroundStyle(Studio.Ink.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: JunoSpace.snug)
+                        if let ref = pullRequest.pullRequest, let url = URL(string: ref.url) {
+                            Button("#\(ref.number)") { NSWorkspace.shared.open(url) }
+                                .buttonStyle(StudioQuietButtonStyle())
+                                .contentShape(.rect)
+                                .help("Open the pull request on GitHub")
+                        }
+                        if pullRequest.canFix {
+                            Button(pullRequest.isFixing ? "Starting…" : "Fix it") {
+                                Task { await pullRequest.fixIt() }
+                            }
+                            .buttonStyle(StudioSecondaryButtonStyle())
+                            .contentShape(Capsule())
+                            .help("Read the failing logs and work until CI passes. Every push asks you first.")
+                        }
+                        Toggle("Auto-fix", isOn: Binding(
+                            get: { pullRequest.autoFix.isEnabled },
+                            set: { pullRequest.setAutoFix($0) }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .font(Studio.Font.meta)
+                        .help("When CI fails, start a fix automatically, at most \(CIAutoFixPolicy.maximumAttempts) times for this pull request. Every push still asks.")
+                    }
+                    if pullRequest.autoFix.isEnabled, pullRequest.pullRequest != nil {
+                        Text(autoFixLine)
+                            .font(Studio.Font.meta)
+                            .foregroundStyle(Studio.Ink.secondary)
+                    }
+                    if let problem = pullRequest.problem {
+                        Text(problem).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(text)
+        }
+    }
+
+    private var autoFixLine: String {
+        if pullRequest.autoFixStopped {
+            return "Auto-fix tried \(CIAutoFixPolicy.maximumAttempts) times. Fix it by hand, or ask Juno."
+        }
+        let left = pullRequest.attemptsLeft
+        return "Auto-fix is on: \(left == 1 ? "1 attempt" : "\(left) attempts") left. Every push asks you first."
+    }
+}
+
+/// Where a session in its own worktree is working, its setup if it is
+/// waiting, and Bring changes back.
+struct StudioWorktreeLine: View {
+    let controller: SessionController
+
+    @State private var info: SessionWorktreeInfo?
+    @State private var setup: String?
+    @State private var problem: String?
+    @State private var isBringingBack = false
+
+    var body: some View {
+        Group {
+            if let info {
+                StudioShipCard {
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        HStack(spacing: JunoSpace.snug) {
+                            Text(StudioRunRow.markdown(info.headline))
+                                .font(Studio.Font.meta)
+                                .foregroundStyle(Studio.Ink.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: JunoSpace.snug)
+                            Button("Bring changes back…") { isBringingBack = true }
+                                .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                                .contentShape(.rect)
+                                .font(Studio.Font.meta)
+                        }
+                        if let setup {
+                            HStack(spacing: JunoSpace.snug) {
+                                Text(StudioRunRow.markdown("This worktree's setup has not run: `\(setup)`"))
+                                    .font(Studio.Font.meta)
+                                    .foregroundStyle(Studio.Ink.secondary)
+                                Spacer(minLength: JunoSpace.snug)
+                                Button("Allow and run") {
+                                    Task {
+                                        let result = await controller.reviewQueue.sessionActions?.runSetup(setup)
+                                        if case let .refused(reason)? = result { problem = reason }
+                                        self.setup = controller.reviewQueue.sessionActions?.pendingSetup()
+                                    }
+                                }
+                                .buttonStyle(StudioSecondaryButtonStyle())
+                                .contentShape(Capsule())
+                                .help("Remembers these exact bytes for this project; an edited command asks again")
+                            }
+                        }
+                        if let problem {
+                            Text(problem).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: controller.sessionID) {
+            guard controller.session.executionRootPath != nil,
+                  let actions = controller.reviewQueue.sessionActions
+            else { return }
+            info = await actions.worktreeInfo()
+            setup = actions.pendingSetup()
+        }
+        .sheet(isPresented: $isBringingBack) {
+            StudioBringBackSheet(controller: controller) { isBringingBack = false }
+                .junoSheetSurface(.fitted)
+        }
+    }
+}
+
+/// Bringing a worktree's changes back: each step with its exact command,
+/// confirmed on its own.
+struct StudioBringBackSheet: View {
+    let controller: SessionController
+    let dismiss: () -> Void
+
+    @State private var method: WorktreeBringBackMethod = .merge
+    @State private var steps: [WorktreeBringBackStep] = []
+    @State private var done: Set<String> = []
+    @State private var message: String?
+    @State private var isWorking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            Text("Bring changes back")
+                .font(Studio.Font.title)
+            Text("Each step runs only when you choose it.")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+            Picker("How", selection: $method) {
+                Text("Merge").tag(WorktreeBringBackMethod.merge)
+                Text("Cherry-pick").tag(WorktreeBringBackMethod.cherryPick)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if steps.isEmpty {
+                Text("Nothing to bring back: the worktree has no changes.")
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+            }
+            ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                VStack(alignment: .leading, spacing: JunoSpace.hairline + 1) {
+                    HStack {
+                        Text("\(index + 1). \(step.title)")
+                            .font(Studio.Font.label)
+                        Spacer()
+                        if done.contains(step.id) {
+                            Text("Done").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                        } else {
+                            Button("Run this step") { run(step) }
+                                .buttonStyle(StudioSecondaryButtonStyle())
+                                .contentShape(Capsule())
+                                .disabled(isWorking || !isNext(step))
+                        }
+                    }
+                    Text(step.command)
+                        .font(Studio.Font.monoSmall)
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+            if let message {
+                Text(message).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)
+            }
+            HStack {
+                Spacer()
+                Button("Close", action: dismiss)
+                    .buttonStyle(StudioSecondaryButtonStyle())
+                    .contentShape(Capsule())
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(JunoSpace.section)
+        .frame(width: 520)
+        .task(id: method) { await load() }
+    }
+
+    private func isNext(_ step: WorktreeBringBackStep) -> Bool {
+        steps.first { !done.contains($0.id) }?.id == step.id
+    }
+
+    private func load() async {
+        guard let actions = controller.reviewQueue.sessionActions else { return }
+        switch await actions.bringBackPlan(method) {
+        case let .success(plan):
+            steps = plan
+            done = []
+            message = nil
+        case let .failure(error):
+            steps = []
+            message = error.localizedDescription
+        }
+    }
+
+    private func run(_ step: WorktreeBringBackStep) {
+        guard let actions = controller.reviewQueue.sessionActions else { return }
+        isWorking = true
+        Task {
+            let result = await actions.performBringBack(step)
+            isWorking = false
+            switch result {
+            case .done:
+                done.insert(step.id)
+                message = nil
+            case let .refused(reason):
+                message = reason
+            }
+        }
+    }
+}
+
+/// The raised card the ship rows sit in, matching the approval card.
+struct StudioShipCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                    .fill(Studio.Surface.raised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                    .strokeBorder(Studio.Surface.hairline)
+            )
     }
 }

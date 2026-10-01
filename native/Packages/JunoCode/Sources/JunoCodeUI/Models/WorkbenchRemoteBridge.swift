@@ -447,10 +447,15 @@ public final class WorkbenchRemoteBridge:
     }
 
     nonisolated public func forkSession(sessionID: String) async throws -> String {
-        // Not yet implemented on the local surface either. Refusing explicitly
-        // is the honest answer: silently doing nothing would show the phone a
-        // fork that never appears.
-        throw CodeRemoteCommandError.unsupportedKind("fork")
+        // The whole conversation, into a new session beside it in the same
+        // checkout (CODE_AGENT_SPEC §5.6). The phone is not moved to it, nor
+        // is the reader at this Mac.
+        _ = try await require(sessionID)
+        guard let fork = await model.fork(CodeSessionID(value: sessionID), throughTurn: nil, select: false) else {
+            let reason = await MainActor.run { model.lastError } ?? "the session could not be forked"
+            throw CodeRemoteCommandError.invalidField("sessionId", reason: reason)
+        }
+        return fork.id.value
     }
 
     nonisolated public func updateSession(

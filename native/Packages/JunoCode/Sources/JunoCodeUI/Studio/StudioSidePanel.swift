@@ -95,6 +95,10 @@ public struct StudioSidePanel: View {
 
 // MARK: - Changes
 
+/// The review of a session's changes (CODE_AGENT_SPEC §5.10): pick a scope,
+/// click any line to leave a comment that rides on the next message, Keep
+/// (stage) or Revert per hunk, per file or all, and read the reviewer's
+/// findings on their lines.
 struct StudioChangesView: View {
     let controller: SessionController
     let createPullRequest: () -> Void
@@ -109,9 +113,9 @@ struct StudioChangesView: View {
     @State private var committing = false
     @State private var confirmRevertAll = false
     @State private var revertMessage: String?
-    @State private var commentDraft: (path: String, hunk: DiffHunk)?
 
     private var review: ReviewModel { controller.review }
+    private var queue: ReviewQueueModel { controller.reviewQueue }
     private var preferences: StudioPreferences { .shared }
 
     private var totals: (added: Int, removed: Int) {
@@ -120,21 +124,26 @@ struct StudioChangesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if controller.changes.isEmpty {
+            if queue.scope == .session, controller.changes.isEmpty {
+                scopeBar
                 empty
             } else {
                 header
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(controller.changes) { change in
-                            fileSection(change)
+                        if queue.scope == .session {
+                            ForEach(controller.changes) { change in
+                                fileSection(change)
+                            }
+                        } else {
+                            scopedSections
                         }
                     }
                     .padding(.bottom, JunoSpace.regular)
                 }
-                if !controller.reviewComments.isEmpty {
-                    commentsBar
-                }
+            }
+            if queue.hasComments {
+                commentsBar
             }
         }
         .task(id: controller.changes.map { "\($0.path):\($0.linesAdded):\($0.linesRemoved)" }) {
@@ -168,20 +177,6 @@ struct StudioChangesView: View {
         } message: {
             Text("Each file goes back to how it was before Juno changed it. Files you edited since are left alone.")
         }
-        .sheet(item: Binding(
-            get: { commentDraft.map { StudioCommentTarget(path: $0.path, hunk: $0.hunk) } },
-            set: { if $0 == nil { commentDraft = nil } }
-        )) { target in
-            StudioCommentSheet(target: target) { text in
-                controller.addReviewComment(
-                    ReviewComment(path: target.path, hunkHeader: target.hunk.header, text: text)
-                )
-                commentDraft = nil
-            } cancel: {
-                commentDraft = nil
-            }
-            .junoSheetSurface(.fitted)
-        }
     }
 
     private var empty: some View {
@@ -200,16 +195,53 @@ struct StudioChangesView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Which changes the review shows.
+    private var scopeBar: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Menu {
+                Picker("Review", selection: Binding(
+                    get: { queue.scope },
+                    set: { scope in Task { await controller.loadReviewScope(scope) } }
+                )) {
+                    ForEach(ReviewScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                StudioChipLabel(title: queue.scope.title)
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("Which changes to review: this session's, everything uncommitted, what is staged, the branch, or the last turn")
+            if queue.isLoadingScope {
+                StudioSpinner().frame(width: 10, height: 10)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.snug)
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            scopeBar.padding(.horizontal, -JunoSpace.regular).padding(.top, -JunoSpace.snug)
             HStack(spacing: JunoSpace.snug) {
-                Text(StudioFormat.plural(controller.changes.count, "file") + " changed")
-                    .font(Studio.Font.labelEmphasis)
-                    .foregroundStyle(Studio.Ink.primary)
-                StudioDiffStat(added: totals.added, removed: totals.removed)
+                if queue.scope == .session {
+                    Text(StudioFormat.plural(controller.changes.count, "file") + " changed")
+                        .font(Studio.Font.labelEmphasis)
+                        .foregroundStyle(Studio.Ink.primary)
+                    StudioDiffStat(added: totals.added, removed: totals.removed)
+                } else {
+                    Text(StudioFormat.plural(queue.scopedFiles.count, "file") + " in \(queue.scope.title.lowercased())")
+                        .font(Studio.Font.labelEmphasis)
+                        .foregroundStyle(Studio.Ink.primary)
+                }
                 Spacer()
                 Menu {
-                    Button("Expand All") { expanded = Set(controller.changes.map(\.path)) }
+                    Button("Expand All") { expanded = Set(allPaths) }
                     Button("Collapse All") { expanded = [] }
                     Divider()
                     Picker("Layout", selection: Binding(
@@ -222,8 +254,11 @@ struct StudioChangesView: View {
                         get: { preferences.wrapLines },
                         set: { preferences.wrapLines = $0 }
                     ))
-                    Divider()
-                    Button("Revert All Changes…", role: .destructive) { confirmRevertAll = true }
+                    if queue.scope == .session {
+                        Divider()
+                        Button("Keep All Changes") { Task { await controller.keepAll() } }
+                        Button("Revert All Changes…", role: .destructive) { confirmRevertAll = true }
+                    }
                 } label: {
                     JunoIconView(.ellipsis, size: 14)
                 }
@@ -245,13 +280,13 @@ struct StudioChangesView: View {
                     JunoIconView(.branch, size: 12)
                     Text(branch).font(Studio.Font.mono)
                     if let ahead = controller.gitStatus?.ahead, ahead > 0 {
-                        Text("↑\(ahead)").font(Studio.Font.metaDigits)
+                        Text("\(ahead) ahead").font(Studio.Font.metaDigits)
                     }
                 }
                 .foregroundStyle(Studio.Ink.tertiary)
             }
-            if let revertMessage {
-                Text(revertMessage)
+            if let message = revertMessage ?? queue.message {
+                Text(message)
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.danger)
             }
@@ -262,11 +297,45 @@ struct StudioChangesView: View {
         .task { await controller.refreshWorkspacePanels() }
     }
 
+    private var allPaths: [String] {
+        queue.scope == .session ? controller.changes.map(\.path) : queue.scopedFiles.map(\.path)
+    }
+
+    private func lineReview(for path: String) -> StudioLineReview {
+        let findings = ReviewFindingsProjection.findings(controller.inlineFindings, path: path)
+        return StudioLineReview(
+            path: path,
+            comments: { line in
+                queue.comments(for: path, line: line.anchorLine, isOldLine: line.isOldOnly)
+            },
+            findings: { line in
+                guard let number = line.newLineNumber else { return [] }
+                return findings.filter { $0.line == number }
+            },
+            addComment: { line, text in
+                controller.queueLineComment(
+                    path: path,
+                    line: line.anchorLine,
+                    isOldLine: line.isOldOnly,
+                    quotedLine: line.text,
+                    text: text
+                )
+            },
+            sendAll: { Task { await controller.sendQueuedComments() } },
+            removeComment: { queue.remove(id: $0) },
+            fixFinding: { finding, line in controller.fixFinding(finding, quotedLine: line.text) },
+            dismissFinding: { queue.dismiss($0) }
+        )
+    }
+
     private func fileSection(_ change: TrackedChange) -> some View {
         let isOpen = expanded.contains(change.path)
+        let fileFindings = ReviewFindingsProjection.findings(controller.inlineFindings, path: change.path)
         return VStack(alignment: .leading, spacing: 0) {
-            StudioFileRow(change: change, isOpen: isOpen) {
+            StudioFileRow(path: change.path, kind: change.kind, added: change.linesAdded, removed: change.linesRemoved, isOpen: isOpen) {
                 if isOpen { expanded.remove(change.path) } else { expanded.insert(change.path) }
+            } keep: {
+                Task { await controller.keepFile(change.path) }
             } revert: {
                 Task {
                     let result = await review.revertFile(change.path, using: controller)
@@ -278,18 +347,27 @@ struct StudioChangesView: View {
             }
             if isOpen {
                 if let diff = review.diffs[change.path] {
+                    let unplaced = fileFindings.filter { finding in
+                        guard let line = finding.line else { return true }
+                        return !diff.hunks.contains { $0.lines.contains { $0.newLineNumber == line } }
+                    }
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        ForEach(unplaced) { finding in
+                            StudioFindingNote(finding: finding, fix: { controller.fixFinding(finding) }, dismiss: { queue.dismiss(finding) })
+                        }
                         ForEach(Array(diff.hunks.enumerated()), id: \.element.reviewIdentifier) { index, hunk in
                             StudioHunkView(
                                 hunk: hunk,
                                 layout: preferences.diffLayout,
                                 wraps: preferences.wrapLines,
                                 isReverting: review.revertingHunkID == hunk.reviewIdentifier,
+                                isKept: controller.isHunkKept(path: change.path, hunk: hunk),
                                 failure: review.revertFailures[hunk.reviewIdentifier],
+                                review: lineReview(for: change.path),
+                                keep: { Task { await controller.keepHunk(path: change.path, hunk: hunk) } },
                                 revert: {
                                     Task { await review.revertHunk(at: index, in: change.path, hunk: hunk, using: controller) }
-                                },
-                                comment: { commentDraft = (change.path, hunk) }
+                                }
                             )
                         }
                     }
@@ -309,20 +387,92 @@ struct StudioChangesView: View {
         .studioHairline(.bottom)
     }
 
+    /// A scope other than the session's own: Git's view, or the last turn's.
+    /// Keep stages; there is no checkpoint here to revert to.
+    @ViewBuilder
+    private var scopedSections: some View {
+        if queue.scopedFiles.isEmpty, !queue.isLoadingScope {
+            Text("Nothing in \(queue.scope.title.lowercased()).")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.tertiary)
+                .padding(JunoSpace.regular)
+        }
+        ForEach(queue.scopedFiles) { file in
+            let isOpen = expanded.contains(file.path)
+            VStack(alignment: .leading, spacing: 0) {
+                StudioFileRow(
+                    path: file.path,
+                    kind: Self.kind(file.status),
+                    added: file.diff.linesAdded,
+                    removed: file.diff.linesRemoved,
+                    isOpen: isOpen,
+                    toggle: {
+                        if isOpen { expanded.remove(file.path) } else { expanded.insert(file.path) }
+                    },
+                    keep: queue.scope == .staged ? nil : {
+                        Task {
+                            _ = await controller.keepFile(file.path)
+                            await controller.loadReviewScope(queue.scope)
+                        }
+                    },
+                    revert: nil,
+                    open: {
+                        guard let path = try? WorkspacePath(file.path) else { return }
+                        Task { await review.open(path, using: controller) }
+                    }
+                )
+                if isOpen {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        ForEach(file.diff.hunks, id: \.reviewIdentifier) { hunk in
+                            StudioHunkView(
+                                hunk: hunk,
+                                layout: preferences.diffLayout,
+                                wraps: preferences.wrapLines,
+                                isReverting: false,
+                                isKept: controller.isHunkKept(path: file.path, hunk: hunk),
+                                failure: nil,
+                                review: lineReview(for: file.path),
+                                keep: queue.scope == .staged ? nil : {
+                                    Task { await controller.keepHunk(path: file.path, hunk: hunk) }
+                                },
+                                revert: nil
+                            )
+                        }
+                    }
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.bottom, JunoSpace.cozy)
+                }
+            }
+            .studioHairline(.bottom)
+        }
+    }
+
+    static func kind(_ status: String) -> FileChangeKind {
+        switch status {
+        case "A", "?": .created
+        case "D": .deleted
+        case "R": .moved
+        default: .modified
+        }
+    }
+
     private var commentsBar: some View {
         HStack(spacing: JunoSpace.snug) {
-            Text(StudioFormat.plural(controller.reviewComments.count, "comment"))
+            Text(StudioFormat.plural(queue.comments.count, "comment") + " queued for your next message")
                 .font(Studio.Font.label)
                 .foregroundStyle(Studio.Ink.secondary)
-            Button("Discard") { controller.discardReviewComments() }
+                .lineLimit(1)
+            Button("Discard") { queue.discardAll() }
                 .buttonStyle(StudioQuietButtonStyle())
+                .contentShape(.rect)
             Spacer()
-            Button("Send to Juno") {
-                Task { _ = await controller.submitReviewComments() }
+            Button("Send now") {
+                Task { await controller.sendQueuedComments() }
             }
             .buttonStyle(StudioPrimaryButtonStyle())
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
-            .help("Send your comments as the next message (⇧⌘↩)")
+            .contentShape(Capsule())
+            .keyboardShortcut(.return, modifiers: [.command])
+            .help("Send the comments as their own message now (⌘↩). Your draft stays where it is.")
         }
         .padding(.horizontal, JunoSpace.regular)
         .frame(height: 52)
@@ -330,30 +480,48 @@ struct StudioChangesView: View {
     }
 }
 
-struct StudioCommentTarget: Identifiable {
+/// What a hunk's lines need to take and show comments and findings.
+struct StudioLineReview {
     let path: String
-    let hunk: DiffHunk
-    var id: String { path + hunk.reviewIdentifier }
+    let comments: (DiffLine) -> [QueuedReviewComment]
+    let findings: (DiffLine) -> [InlineFinding]
+    let addComment: (DiffLine, String) -> Void
+    let sendAll: () -> Void
+    let removeComment: (UUID) -> Void
+    let fixFinding: (InlineFinding, DiffLine) -> Void
+    let dismissFinding: (InlineFinding) -> Void
+}
+
+extension DiffLine {
+    /// The line a comment on it names: the new file's, or the old file's for
+    /// a removed line.
+    var anchorLine: Int? { newLineNumber ?? oldLineNumber }
+    var isOldOnly: Bool { newLineNumber == nil }
+    var reviewKey: String { "\(oldLineNumber ?? -1):\(newLineNumber ?? -1)" }
 }
 
 /// One changed file: its kind, its name, its size of change.
 struct StudioFileRow: View {
-    let change: TrackedChange
+    let path: String
+    let kind: FileChangeKind
+    let added: Int
+    let removed: Int
     let isOpen: Bool
     let toggle: () -> Void
-    let revert: () -> Void
+    let keep: (() -> Void)?
+    let revert: (() -> Void)?
     let open: () -> Void
 
     @State private var hovering = false
 
-    private var name: String { (change.path as NSString).lastPathComponent }
+    private var name: String { (path as NSString).lastPathComponent }
     private var folder: String {
-        let parent = (change.path as NSString).deletingLastPathComponent
+        let parent = (path as NSString).deletingLastPathComponent
         return parent.isEmpty ? "" : parent + "/"
     }
 
     private var kindMark: (String, Color) {
-        switch change.kind {
+        switch kind {
         case .created: ("A", Studio.Ink.added)
         case .modified: ("M", Studio.Ink.secondary)
         case .deleted: ("D", Studio.Ink.removed)
@@ -389,11 +557,20 @@ struct StudioFileRow: View {
                     Button(action: open) { JunoIconView(.fileCode, size: 13) }
                         .buttonStyle(StudioIconButtonStyle())
                         .help("Open the file")
-                    Button(action: revert) { JunoIconView(.undo, size: 13) }
-                        .buttonStyle(StudioIconButtonStyle())
-                        .help("Revert this file")
+                    if let keep {
+                        Button("Keep", action: keep)
+                            .buttonStyle(StudioQuietButtonStyle())
+                            .contentShape(.rect)
+                            .font(Studio.Font.meta)
+                            .help("Keep this file: stage it and mark it reviewed")
+                    }
+                    if let revert {
+                        Button(action: revert) { JunoIconView(.undo, size: 13) }
+                            .buttonStyle(StudioIconButtonStyle())
+                            .help("Revert this file")
+                    }
                 }
-                StudioDiffStat(added: change.linesAdded, removed: change.linesRemoved)
+                StudioDiffStat(added: added, removed: removed)
             }
             .padding(.horizontal, JunoSpace.cozy)
             .frame(height: 34)
@@ -406,27 +583,36 @@ struct StudioFileRow: View {
             Button("Open File", action: open)
             Button("Copy Path") {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(change.path, forType: .string)
+                NSPasteboard.general.setString(path, forType: .string)
             }
-            Divider()
-            Button("Revert File", role: .destructive, action: revert)
+            if let keep {
+                Divider()
+                Button("Keep File", action: keep)
+            }
+            if let revert {
+                Button("Revert File", role: .destructive, action: revert)
+            }
         }
     }
 }
 
 // MARK: - Hunks
 
-/// One hunk of a diff, unified or side by side, with its own revert.
+/// One hunk of a diff, unified or side by side, with Keep and Revert, and
+/// line comments and findings under their lines.
 struct StudioHunkView: View {
     let hunk: DiffHunk
     let layout: StudioDiffLayout
     let wraps: Bool
     let isReverting: Bool
+    var isKept = false
     let failure: String?
-    let revert: () -> Void
-    let comment: () -> Void
+    let review: StudioLineReview?
+    let keep: (() -> Void)?
+    let revert: (() -> Void)?
 
     @State private var hovering = false
+    @State private var editingLine: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -434,15 +620,27 @@ struct StudioHunkView: View {
                 Text(hunk.header)
                     .font(Studio.Font.monoSmall)
                     .foregroundStyle(Studio.Ink.tertiary)
+                if isKept {
+                    Text("Kept")
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.secondary)
+                }
                 Spacer()
                 if hovering || isReverting {
-                    Button("Comment", action: comment)
-                        .buttonStyle(StudioQuietButtonStyle())
-                        .font(Studio.Font.meta)
-                    Button(isReverting ? "Reverting…" : "Revert", action: revert)
-                        .buttonStyle(StudioQuietButtonStyle())
-                        .font(Studio.Font.meta)
-                        .disabled(isReverting)
+                    if let keep, !isKept {
+                        Button("Keep", action: keep)
+                            .buttonStyle(StudioQuietButtonStyle())
+                            .contentShape(.rect)
+                            .font(Studio.Font.meta)
+                            .help("Keep this change: stage exactly this hunk")
+                    }
+                    if let revert {
+                        Button(isReverting ? "Reverting…" : "Revert", action: revert)
+                            .buttonStyle(StudioQuietButtonStyle())
+                            .contentShape(.rect)
+                            .font(Studio.Font.meta)
+                            .disabled(isReverting)
+                    }
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
@@ -475,7 +673,8 @@ struct StudioHunkView: View {
     private var unifiedBody: some View {
         let content = VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                StudioDiffLineRow(line: line, wraps: wraps)
+                StudioDiffLineRow(line: line, wraps: wraps, onTap: review == nil ? nil : { editingLine = line.reviewKey })
+                annotations(for: line)
             }
         }
         if wraps {
@@ -492,12 +691,58 @@ struct StudioHunkView: View {
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 0) {
-                    StudioDiffLineRow(line: row.left, wraps: true, showsNewNumber: false)
+                    StudioDiffLineRow(line: row.left, wraps: true, showsNewNumber: false, onTap: tapAction(row.left))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Rectangle().fill(Studio.Surface.hairline).frame(width: 1)
-                    StudioDiffLineRow(line: row.right, wraps: true, showsOldNumber: false)
+                    StudioDiffLineRow(line: row.right, wraps: true, showsOldNumber: false, onTap: tapAction(row.right))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if let left = row.left, left.kind == .removed { annotations(for: left) }
+                if let right = row.right { annotations(for: right) }
+            }
+        }
+    }
+
+    private func tapAction(_ line: DiffLine?) -> (() -> Void)? {
+        guard review != nil, let line else { return nil }
+        return { editingLine = line.reviewKey }
+    }
+
+    /// The comments, findings and comment field under one line.
+    @ViewBuilder
+    private func annotations(for line: DiffLine) -> some View {
+        if let review {
+            ForEach(review.findings(line)) { finding in
+                StudioFindingNote(
+                    finding: finding,
+                    fix: { review.fixFinding(finding, line) },
+                    dismiss: { review.dismissFinding(finding) }
+                )
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.hairline)
+            }
+            ForEach(review.comments(line)) { comment in
+                StudioQueuedCommentNote(comment: comment, remove: { review.removeComment(comment.id) })
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.vertical, JunoSpace.hairline)
+            }
+            if editingLine == line.reviewKey {
+                StudioLineCommentField(
+                    location: line.anchorLine.map { "\(review.path):\($0)" } ?? review.path,
+                    add: { text in
+                        review.addComment(line, text)
+                        editingLine = nil
+                    },
+                    sendAll: { text in
+                        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            review.addComment(line, text)
+                        }
+                        editingLine = nil
+                        review.sendAll()
+                    },
+                    cancel: { editingLine = nil }
+                )
+                .padding(JunoSpace.snug)
             }
         }
     }
@@ -532,6 +777,10 @@ struct StudioDiffLineRow: View {
     var wraps: Bool
     var showsOldNumber = true
     var showsNewNumber = true
+    /// Click to comment on this line, where the surface takes comments.
+    var onTap: (() -> Void)?
+
+    @State private var hovering = false
 
     private var tint: Color {
         switch line?.kind {
@@ -571,7 +820,14 @@ struct StudioDiffLineRow: View {
         .padding(.vertical, 1)
         .padding(.trailing, JunoSpace.snug)
         .background(tint)
+        .background(hovering && onTap != nil ? Studio.Surface.hover : Color.clear)
         .frame(minHeight: 18)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            onTap?()
+        }
+        .help(onTap == nil ? "" : "Click to comment on this line")
     }
 
     private func gutter(_ number: Int?) -> some View {
@@ -583,52 +839,131 @@ struct StudioDiffLineRow: View {
     }
 }
 
-// MARK: - Sheets
-
-struct StudioCommentSheet: View {
-    let target: StudioCommentTarget
+/// The comment field under a line: Return adds the comment to the queue,
+/// ⌘Return sends every queued comment now, Escape closes it.
+struct StudioLineCommentField: View {
+    let location: String
     let add: (String) -> Void
+    let sendAll: (String) -> Void
     let cancel: () -> Void
 
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text("Comment for Juno")
-                .font(Studio.Font.title)
-            Text("\(target.path)  \(target.hunk.header)")
-                .font(Studio.Font.monoSmall)
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text("Comment on \(location)")
+                .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             TextField("What should change here?", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .studioReadingFont()
-                .lineLimit(3...8)
+                .font(Studio.Font.label)
+                .lineLimit(1...6)
                 .focused($focused)
                 .padding(JunoSpace.snug)
                 .background(
                     RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
+                        .fill(Studio.Surface.raised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
                         .strokeBorder(Studio.Surface.hairline)
                 )
-            HStack {
-                Text("Comments are sent together, as one message.")
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.command) {
+                        sendAll(text)
+                        return .handled
+                    }
+                    if press.modifiers.contains(.shift) { return .ignored }
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .handled }
+                    add(text)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    cancel()
+                    return .handled
+                }
+            Text("Return adds it to your next message · ⌘Return sends all now")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.tertiary)
+        }
+        .onAppear { focused = true }
+    }
+}
+
+/// A comment waiting for the next message, under its line.
+struct StudioQueuedCommentNote: View {
+    let comment: QueuedReviewComment
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Text("Your comment")
+                .font(Studio.Font.metaEmphasis)
+                .foregroundStyle(Studio.Ink.secondary)
+            Text(comment.text)
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: JunoSpace.snug)
+            Button("Remove", action: remove)
+                .buttonStyle(StudioQuietButtonStyle())
+                .contentShape(.rect)
+                .font(Studio.Font.meta)
+        }
+        .padding(JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
+                .fill(Studio.Surface.muted)
+        )
+    }
+}
+
+/// A reviewer finding under its line: its priority in words, never a badge.
+struct StudioFindingNote: View {
+    let finding: InlineFinding
+    let fix: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline + 1) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text("Review: \(finding.words)")
+                    .font(Studio.Font.metaEmphasis)
+                    .foregroundStyle(finding.priority.isBlocking ? Studio.Ink.danger : Studio.Ink.secondary)
+                Spacer(minLength: JunoSpace.snug)
+                Button("Fix this", action: fix)
+                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .contentShape(.rect)
                     .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.tertiary)
-                Spacer()
-                Button("Cancel", action: cancel)
-                    .buttonStyle(StudioSecondaryButtonStyle())
-                    .keyboardShortcut(.cancelAction)
-                Button("Add Comment") { add(text) }
-                    .buttonStyle(StudioPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("Queue this finding as a comment for your next message")
+                Button("Dismiss", action: dismiss)
+                    .buttonStyle(StudioQuietButtonStyle())
+                    .contentShape(.rect)
+                    .font(Studio.Font.meta)
+            }
+            Text(finding.title)
+                .font(Studio.Font.label)
+                .foregroundStyle(Studio.Ink.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !finding.body.isEmpty {
+                Text(finding.body)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(JunoSpace.section)
-        .frame(width: 460)
-        .onAppear { focused = true }
+        .padding(JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
+                .fill(Studio.Surface.raised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
+        )
     }
 }
 
