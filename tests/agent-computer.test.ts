@@ -326,6 +326,8 @@ describe("agent-computer provider and lifecycle", () => {
       "--tmpfs",
       "/run:rw,nosuid,nodev,size=64m",
       "--tmpfs",
+      "/run/juno:rw,nosuid,nodev,noexec,size=1m,uid=1001,gid=1001,mode=0700",
+      "--tmpfs",
       "/var/tmp:rw,nosuid,nodev,size=256m",
       "--mount",
       "type=volume,source=juno-agent-ag_123,target=/home/agent",

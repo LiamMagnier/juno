@@ -82,6 +82,11 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     "/tmp:rw,nosuid,nodev,size=1g,mode=1777",
     "--tmpfs",
     "/run:rw,nosuid,nodev,size=64m",
+    // The CDP token and VNC password handover: a tmpfs the daemon mounts
+    // owned by the browser uid and 0700, so the agent (1000) can neither read
+    // it nor plant anything in it, from the first instant of the container.
+    "--tmpfs",
+    "/run/juno:rw,nosuid,nodev,noexec,size=1m,uid=1001,gid=1001,mode=0700",
     "--tmpfs",
     "/var/tmp:rw,nosuid,nodev,size=256m",
     "--mount",
@@ -335,8 +340,8 @@ export class DockerProvider implements ComputerProvider {
 
   /**
    * Hands the CDP gate its token after a start. Written through stdin (never
-   * argv, never env) into /run/juno, a tmpfs directory only uid 1001 can enter
-   * (the entrypoint creates it 0700 or refuses to start), created exclusively
+   * argv, never env) into /run/juno, a tmpfs Docker mounts 0700 for uid 1001
+   * (the entrypoint refuses to start if it is anything else), created exclusively
    * (`set -C`), renamed into place so the gate never reads half a token, and
    * waited on until the gate has taken and deleted it, so the first browser
    * connection after a wake is not refused. Nothing the agent can write is on
@@ -352,10 +357,7 @@ export class DockerProvider implements ComputerProvider {
         handle.name,
         "sh",
         "-c",
-        // The entrypoint creates /run/juno a moment after a start; wait for it
-        // rather than create it here (only the entrypoint checks its mode).
-        "for i in $(seq 1 50); do [ -d /run/juno ] && break; sleep 0.1; done; " +
-          "umask 077 && rm -f /run/juno/cdp-token.part && set -C && cat > /run/juno/cdp-token.part && mv -f /run/juno/cdp-token.part /run/juno/cdp-token",
+        "umask 077 && rm -f /run/juno/cdp-token.part && set -C && cat > /run/juno/cdp-token.part && mv -f /run/juno/cdp-token.part /run/juno/cdp-token",
       ],
       Buffer.from(token, "utf8")
     );

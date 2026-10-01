@@ -99,7 +99,8 @@ def validate(argv, policy):
             "--name": [name], "--hostname": ["computer"], "--network": [policy["network"]],
             "--dns": ["1.1.1.1", "9.9.9.9"], "--pids-limit": ["2048"], "--shm-size": ["1g"],
             "--cap-drop": ["ALL"], "--security-opt": ["no-new-privileges"], "--read-only": [True],
-            "--tmpfs": ["/tmp:rw,nosuid,nodev,size=1g,mode=1777", "/run:rw,nosuid,nodev,size=64m", "/var/tmp:rw,nosuid,nodev,size=256m"],
+            "--tmpfs": ["/tmp:rw,nosuid,nodev,size=1g,mode=1777", "/run:rw,nosuid,nodev,size=64m",
+                        "/run/juno:rw,nosuid,nodev,noexec,size=1m,uid=1001,gid=1001,mode=0700", "/var/tmp:rw,nosuid,nodev,size=256m"],
             "--mount": [f"type=volume,source={name},target=/home/agent", f"type=volume,source={name}-browser,target=/home/browser"],
             "--restart": ["no"], "--stop-timeout": ["20"],
         }

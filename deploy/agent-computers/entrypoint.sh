@@ -4,12 +4,11 @@ set -euo pipefail
 export DISPLAY=:0 HOME=/home/browser
 mkdir -p /home/browser/.chrome
 chmod 700 /home/browser /home/browser/.chrome
-# Where the CDP token and the VNC password are handed over: a directory only this
-# uid can enter, on the /run tmpfs. /tmp is shared with the agent (mode 1777), and
-# whether a file the agent planted there could capture a write depended on host
-# sysctls. /run is empty at every start, so this either creates it or stops.
-mkdir -m 0700 /run/juno
-[ "$(stat -c '%u:%a' /run/juno)" = "1001:700" ] || { echo "/run/juno is not private" >&2; exit 1; }
+# Where the CDP token and the VNC password are handed over: a tmpfs Docker mounts
+# 0700 for this uid (the create argv and the broker both require it). /tmp is
+# shared with the agent (mode 1777), and whether a file the agent planted there
+# could capture a write depended on host sysctls. Anything else here: stop.
+[ -d /run/juno ] && [ "$(stat -c '%u:%a' /run/juno)" = "1001:700" ] || { echo "/run/juno is not a private browser-owned tmpfs" >&2; exit 1; }
 rm -f /tmp/.X0-lock /home/browser/.chrome/SingletonLock /home/browser/.chrome/SingletonSocket /home/browser/.chrome/SingletonCookie
 Xvfb :0 -screen 0 1280x800x24 -nolisten tcp -ac -dpi 96 >/tmp/xvfb.log 2>&1 &
 xvfb=$!

@@ -27,6 +27,9 @@ const MAC_DEPLOY = readFileSync(path.join(ROOT, "deploy/deploy-from-mac.sh"), "u
 const DEPLOY_WORKFLOW = readFileSync(path.join(ROOT, ".github/workflows/deploy.yml"), "utf8");
 const RELEASE_MACOS = readFileSync(path.join(ROOT, "native/Scripts/release-macos.sh"), "utf8");
 
+/** A bare environment for a child shell (Next types ProcessEnv with a required NODE_ENV). */
+const bareEnv = (values: Record<string, string>) => values as unknown as NodeJS.ProcessEnv;
+
 const code = (source: string) =>
   source
     .split(/\r?\n/)
@@ -48,7 +51,7 @@ test("SKIP_CHECKS=1 in the environment does not skip a single shared gate", () =
     }
     writeFileSync(path.join(dir, "scripts", "release-gates.sh"), `echo "release-gates" >> "${log}"\n`);
     const run = spawnSync("bash", [path.join(dir, "scripts", "local-gates.sh")], {
-      env: { PATH: `${path.join(dir, "bin")}:/usr/bin:/bin`, SKIP_CHECKS: "1", HOME: dir },
+      env: bareEnv({ PATH: `${path.join(dir, "bin")}:/usr/bin:/bin`, SKIP_CHECKS: "1", HOME: dir }),
       encoding: "utf8",
     });
     assert.equal(run.status, 0, run.stderr);
@@ -85,13 +88,13 @@ test("the Mac deploy never inherits the bypass and refuses one without a reason"
   assert.match(body, /\nSKIP_CHECKS=0\n/);
   const script = path.join(ROOT, "deploy/deploy-from-mac.sh");
   // These all stop during argument parsing, before any SSH, Docker or network.
-  const bare = spawnSync("bash", [script, "--skip-checks"], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: tmpdir() } });
+  const bare = spawnSync("bash", [script, "--skip-checks"], { encoding: "utf8", env: bareEnv({ PATH: "/usr/bin:/bin", HOME: tmpdir() }) });
   assert.equal(bare.status, 2);
   assert.match(bare.stderr, /needs a reason/);
-  const short = spawnSync("bash", [script, "--skip-checks=tests"], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: tmpdir() } });
+  const short = spawnSync("bash", [script, "--skip-checks=tests"], { encoding: "utf8", env: bareEnv({ PATH: "/usr/bin:/bin", HOME: tmpdir() }) });
   assert.equal(short.status, 2);
   assert.match(short.stderr, /12 to 300 characters/);
-  const help = spawnSync("bash", [script, "--help"], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: tmpdir(), SKIP_CHECKS: "1" } });
+  const help = spawnSync("bash", [script, "--help"], { encoding: "utf8", env: bareEnv({ PATH: "/usr/bin:/bin", HOME: tmpdir(), SKIP_CHECKS: "1" }) });
   assert.equal(help.status, 0);
   assert.match(help.stderr, /SKIP_CHECKS in the environment is ignored/);
   assert.match(help.stdout, /EMERGENCY ONLY/);

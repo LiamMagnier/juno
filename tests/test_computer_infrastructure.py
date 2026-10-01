@@ -40,7 +40,7 @@ class BrokerContainment(unittest.TestCase):
             "--dns": ["1.1.1.1", "9.9.9.9"], "--memory": ["2048m"], "--memory-swap": ["2048m"],
             "--cpus": ["1.5"], "--pids-limit": ["2048"], "--shm-size": ["1g"], "--cap-drop": ["ALL"],
             "--security-opt": ["no-new-privileges"],
-            "--tmpfs": ["/tmp:rw,nosuid,nodev,size=1g,mode=1777", "/run:rw,nosuid,nodev,size=64m", "/var/tmp:rw,nosuid,nodev,size=256m"],
+            "--tmpfs": ["/tmp:rw,nosuid,nodev,size=1g,mode=1777", "/run:rw,nosuid,nodev,size=64m", "/run/juno:rw,nosuid,nodev,noexec,size=1m,uid=1001,gid=1001,mode=0700", "/var/tmp:rw,nosuid,nodev,size=256m"],
             "--mount": ["type=volume,source=juno-agent-test,target=/home/agent", "type=volume,source=juno-agent-test-browser,target=/home/browser"],
             "--label": ["app=juno", "juno.agent=test", "juno.user=user"], "--restart": ["no"], "--stop-timeout": ["20"],
         }
@@ -55,6 +55,9 @@ class BrokerContainment(unittest.TestCase):
         for argv in (valid[:-1] + ["attacker-image"], valid[:-1] + ["--privileged", POLICY["image"]], [value for value in valid if value != "--read-only"]):
             with self.assertRaises(ValueError):
                 broker.validate(argv, POLICY)
+        # Without the browser-owned handover tmpfs the agent could reach the token path.
+        with self.assertRaises(ValueError):
+            broker.validate(args({**options, "--tmpfs": [t for t in options["--tmpfs"] if not t.startswith("/run/juno")]}), POLICY)
         for key, replacement in (("--mount", ["type=bind,source=/,target=/host"]), ("--network", ["host"]), ("--memory", ["9999m"]), ("--cpus", ["nan"]), ("--cap-drop", ["NET_ADMIN"])):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 broker.validate(args({**options, key: replacement}), POLICY)
