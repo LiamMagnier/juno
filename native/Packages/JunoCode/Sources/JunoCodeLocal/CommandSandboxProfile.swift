@@ -50,6 +50,15 @@ public struct CommandSandboxProfile: Equatable, Sendable {
     public let protectsPolicyFiles: Bool
     /// The reader's home folder, whose toolchain folders the profile protects.
     public let homeDirectory: String
+    /// Whether the reader's credentials are unreadable to the command: SSH
+    /// keys, cloud and GitHub CLI tokens, keychains, browser profiles,
+    /// `~/.netrc` (S3, D-019). See ``credentialPaths(homeDirectory:)``.
+    ///
+    /// On for everything the agent runs; off, like `protectsPolicyFiles`, for
+    /// the reader's own terminal, where `git push` over SSH and `gh` are
+    /// theirs to use. Unless set, it follows `protectsPolicyFiles`, the same
+    /// line between the agent and the reader.
+    public let protectsCredentials: Bool
 
     public init(
         workspaceRoot: URL,
@@ -58,7 +67,8 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         allowsLocalhost: Bool = false,
         additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths,
         protectsPolicyFiles: Bool = true,
-        homeDirectory: String = NSHomeDirectory()
+        homeDirectory: String = NSHomeDirectory(),
+        protectsCredentials: Bool? = nil
     ) {
         self.workspaceRoot = workspaceRoot
         self.filesystem = filesystem
@@ -67,6 +77,55 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         self.additionalWritablePaths = additionalWritablePaths
         self.protectsPolicyFiles = protectsPolicyFiles
         self.homeDirectory = homeDirectory
+        self.protectsCredentials = protectsCredentials ?? protectsPolicyFiles
+    }
+
+    /// What no command the agent runs may read: where the reader keeps the
+    /// keys to other machines and accounts.
+    ///
+    /// Reads stay broadly allowed, because a toolchain reads far more than
+    /// the workspace (D-019: keep toolchains working). This list is the
+    /// exception, and it is narrow on purpose: nothing on it is read by a
+    /// compiler, a package manager installing from its registry, or a test
+    /// runner. The package managers' own configuration (`~/.npmrc`,
+    /// `~/.yarnrc`) stays readable, since registry settings live there, and
+    /// Cargo's credentials are already out of reach because agent commands
+    /// get a Cargo home of Juno's own.
+    ///
+    /// A path is denied as named and as resolved, so a link does not lead
+    /// around it. A workspace the reader opened inside one of these folders
+    /// stays readable: they chose it.
+    public static func credentialPaths(homeDirectory home: String) -> [String] {
+        [
+            // SSH and GPG keys
+            "/.ssh", "/.gnupg",
+            // Git credential stores and netrc logins (curl, git, Heroku)
+            "/.netrc", "/.git-credentials", "/.config/git/credentials",
+            // GitHub, GitLab and other forge CLIs
+            "/.config/gh", "/.config/hub", "/.config/glab-cli",
+            // Cloud and infrastructure CLIs
+            "/.aws", "/.config/gcloud", "/.azure", "/.kube", "/.oci", "/.config/doctl",
+            "/.docker/config.json", "/.terraform.d/credentials.tfrc.json", "/.fly", "/.supabase",
+            "/.config/stripe", "/.vault-token", "/.config/op", "/.password-store",
+            // Publishing tokens
+            "/.pypirc", "/.gem/credentials", "/.cargo/credentials", "/.cargo/credentials.toml",
+            // Database logins
+            "/.pgpass", "/.my.cnf",
+            // Keychains
+            "/Library/Keychains",
+            // Browser profiles: cookies, saved logins and session tokens
+            "/Library/Application Support/Google/Chrome",
+            "/Library/Application Support/Chromium",
+            "/Library/Application Support/BraveSoftware",
+            "/Library/Application Support/Microsoft Edge",
+            "/Library/Application Support/Arc",
+            "/Library/Application Support/Vivaldi",
+            "/Library/Application Support/com.operasoftware.Opera",
+            "/Library/Application Support/Firefox",
+            "/Library/Safari", "/Library/Cookies", "/Library/Containers/com.apple.Safari",
+            // Shell histories, where tokens typed on a command line end up
+            "/.zsh_history", "/.bash_history",
+        ].map { home + $0 } + ["/Library/Keychains"]
     }
 
     /// Paths a real build cannot function without.
@@ -226,6 +285,11 @@ public struct CommandSandboxProfile: Equatable, Sendable {
             "(allow file-read*)",
             "(allow file-read-metadata)",
         ]
+        // ...except the reader's credentials. Later rules win in SBPL, so
+        // these refusals override the read allowance above.
+        if protectsCredentials {
+            lines += credentialReadDenials()
+        }
 
         if filesystem == .readWrite {
             for path in ([workspaceRoot.path] + additionalWritablePaths).map(Self.resolved) {
@@ -273,6 +337,29 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         }
 
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// The rules refusing reads of `credentialPaths`, as named and as
+    /// resolved. Existence (`file-read-metadata`) stays visible, so a
+    /// toolchain that stats the home folder's entries does not fail; the
+    /// contents, and a folder's listing, do not.
+    private func credentialReadDenials() -> [String] {
+        let workspace = Self.resolved(workspaceRoot.path)
+        var lines: [String] = []
+        var seen = Set<String>()
+        for path in Self.credentialPaths(homeDirectory: homeDirectory) {
+            for denied in Set([path, Self.resolved(path)]).sorted() where seen.insert(denied).inserted {
+                if workspace == denied || workspace.hasPrefix(denied + "/") {
+                    lines.append(
+                        "(deny file-read-data (require-all (subpath \(Self.quote(denied))) "
+                            + "(require-not (subpath \(Self.quote(workspace))))))"
+                    )
+                } else {
+                    lines.append("(deny file-read-data (subpath \(Self.quote(denied))))")
+                }
+            }
+        }
+        return lines
     }
 
     /// The rules refusing writes to `protectedToolchainPaths`, as named and as
