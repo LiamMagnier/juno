@@ -82,7 +82,7 @@ function portraitsPage(S, theme) {
 function iconsPage(S, theme) {
   const t = THEMES[theme];
   const m = cast[S];
-  const rows = m.map((c, i) => `<div class="row">
+  const rows = m.map((c) => `<div class="row">
     <div class="nm">${c.name}</div>
     ${[20, 32, 64].map((s) => `<div class="cell"><canvas data-src="${f(path.join(passDir, S, `${c.id}_icon.png`))}" data-size="${s}" width="${s}" height="${s}"></canvas><i>${s}px</i></div>`).join("")}
     <div class="sep"></div>
@@ -143,14 +143,37 @@ async function shoot(html, file, w, h) {
   console.log("WROTE", file);
 }
 
+// Small JPEG copies for the repo (public/crew/renders): SMALL_DIR=<dir> SMALL_W=1000
+const SMALL_DIR = process.env.SMALL_DIR;
+const SMALL_W = +(process.env.SMALL_W || 1000);
+async function small(file) {
+  if (!SMALL_DIR) return;
+  fs.mkdirSync(SMALL_DIR, { recursive: true });
+  const out = path.join(SMALL_DIR, path.basename(file).replace(/\.png$/, ".jpg"));
+  const html = `<!doctype html><html><body style="margin:0;background:#000"><img src="${f(file)}" style="width:${SMALL_W}px;display:block"></body></html>`;
+  const tmp = path.join(outDir, ".small.html");
+  fs.writeFileSync(tmp, html);
+  const ctx = await browser.newContext({ viewport: { width: SMALL_W, height: 400 }, deviceScaleFactor: 1 });
+  const pg = await ctx.newPage();
+  await pg.goto("file://" + tmp, { waitUntil: "load" });
+  await pg.screenshot({ path: out, fullPage: true, type: "jpeg", quality: 82 });
+  await ctx.close();
+  console.log("WROTE", out);
+}
+
 for (const S of sheets) {
   for (const theme of ["dark", "light"]) {
     await shoot(lineupPage(S, theme), path.join(outDir, `lineup_${S}_${theme}.png`), 2000, 1125);
+    await small(path.join(outDir, `lineup_${S}_${theme}.png`));
     await shoot(portraitsPage(S, theme), path.join(outDir, `portraits_${S}_${theme}.png`), 2000);
+    if (theme === "light") await small(path.join(outDir, `portraits_${S}_${theme}.png`));
     await shoot(iconsPage(S, theme), path.join(outDir, `icons_${S}_${theme}.png`), 2000);
     if (cast[`${S}_variants`]) await shoot(variantsPage(S, theme), path.join(outDir, `variants_${S}_${theme}.png`), 2000);
   }
   if (dotsRef) await shoot(comparePage([S]), path.join(outDir, `compare_${S}.png`), 2000, 562);
 }
-if (dotsRef) await shoot(comparePage(sheets), path.join(outDir, `compare_all.png`), 2000, 562 * sheets.length);
+if (dotsRef) {
+  await shoot(comparePage(sheets), path.join(outDir, `compare_all.png`), 2000, 562 * sheets.length);
+  await small(path.join(outDir, `compare_all.png`));
+}
 await browser.close();

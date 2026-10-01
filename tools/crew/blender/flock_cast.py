@@ -781,14 +781,14 @@ CAST = {
         dict(id="gus", name="Gus", shape="gumdrop", color=PAL["violet"], eyes=dict(style="dot"), acc=[dict(id="sprout", color=PAL["chartreuse"])]),
         dict(id="belle", name="Belle", shape="bell", color=PAL["aqua"], eyes=dict(style="pill"), acc=[]),
         dict(id="momo", name="Momo", shape="mochi", color=PAL["magenta"], eyes=dict(style="arc"), acc=[dict(id="beanie", color=PAL["butter"], pom=WHITE)]),
-        dict(id="bo", name="Bo", shape="peanut", color=PAL["sunflower"], eyes=dict(style="dot"), acc=[dict(id="cone", color=INK, ball=WHITE)]),
+        dict(id="bo", name="Bo", shape="peanut", color=PAL["sunflower"], eyes=dict(style="dot", size=1.12), acc=[dict(id="cone", color=INK, ball=WHITE)]),
     ],
     # B — snack bar, sticker eyes and arcs
     "B": [
         dict(id="nori", name="Nori", shape="onigiri", color=PAL["rice"], eyes=dict(style="dot", z=0.47), acc=[dict(id="nori", color=PAL["nori"])]),
         dict(id="toasty", name="Toasty", shape="toast", color=PAL["crust"], crumb=PAL["crumb"], eyes=dict(style="sticker", look=(0.3, 0.2)), acc=[dict(id="butter")]),
         dict(id="jelly", name="Jelly", shape="bean", color=PAL["magenta"], eyes=dict(style="sticker", look=(-0.35, 0.1)), acc=[]),
-        dict(id="mac", name="Mac", shape="macaron", color=PAL["lilac"], eyes=dict(style="arc"), acc=[]),
+        dict(id="mac", name="Mac", shape="macaron", color=PAL["lilac"], eyes=dict(style="arc"), acc=[], lift=0.06),
         dict(id="acorn", name="Hazel", shape="acorn", color=PAL["tangerine"], eyes=dict(style="sticker", look=(0.0, 0.3)), acc=[dict(id="acorncap", color=PAL["cocoa"])]),
         dict(id="bun", name="Peaches", shape="bun", color=PAL["peach"], gradient=("#fff1e4", "#ff7aa8"), eyes=dict(style="arc"), acc=[dict(id="leaf", color=PAL["emerald"])]),
     ],
@@ -797,10 +797,18 @@ CAST = {
         dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="round", gap=1.3, z=0.47), acc=[dict(id="visor", color=INK)]),
         dict(id="luna", name="Luna", shape="moon", color=PAL["cobalt"], eyes=dict(style="sleep"), acc=[dict(id="nightcap", color=PAL["sky"], pom=WHITE)]),
         dict(id="zap", name="Zip", shape="sparkle", color=PAL["aqua"], eyes=dict(style="round"), acc=[]),
-        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8), acc=[]),
+        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8), acc=[], lift=0.14),
         dict(id="drip", name="Drip", shape="drop", color=PAL["emerald"], eyes=dict(style="sleep"), acc=[]),
         dict(id="daisy", name="Daisy", shape="flower", color=PAL["bubblegum"], center=PAL["butter"], eyes=dict(style="round", gap=1.15), acc=[]),
     ],
+}
+
+
+# Lineup order for the key art (alternate heights, hats and colours).
+LINEUP = {
+    "A": ["pip", "gus", "cubby", "momo", "belle", "bo"],
+    "B": ["toasty", "jelly", "nori", "acorn", "mac", "bun"],
+    "C": ["luna", "zap", "sol", "drip", "volt", "daisy"],
 }
 
 

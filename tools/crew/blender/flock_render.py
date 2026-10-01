@@ -119,7 +119,7 @@ if mode in ("test", "portraits"):
             render(sc, os.path.join(out_dir, f"{m['id']}_icon.png"))
 
 elif mode == "lineup":
-    members = [find(i) for i in only] if only else cast(sheet)
+    members = [find(i) for i in only] if only else [find(i) for i in C.LINEUP.get(sheet, [])] or cast(sheet)
     W = int(os.environ.get("LW", 2000))
     H = int(os.environ.get("LH", 560))
     # The lights move back and grow so the whole row is lit like one portrait.
@@ -150,7 +150,14 @@ elif mode == "lineup":
         x = pos[i] - mid
         yaw = -x * float(os.environ.get("TURN", 5))
         y = float(os.environ.get("DEPTH", 0.35)) * (i % 2)
-        root, ob, c = FB.place(m, loc=(x, y, 0), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
+        z = 0.0
+        if os.environ.get("EYEUP"):
+            # Peek like the dots key art: every eye line sits EYEUP above the
+            # picture's bottom edge (z = 0); bodies sink below it as needed.
+            cc, _ = FB.build_meshes(m)
+            ez = m.get("eyes", {}).get("z", cc.face["z"])
+            z = float(os.environ["EYEUP"]) - ez + m.get("lift", 0.0)
+        root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
         lean = m.get("lean", 0.0)
         if lean:
             root.rotation_euler[1] = math.radians(lean)
@@ -164,7 +171,7 @@ elif mode == "lineup":
     vis_h = vis_w * H / W
     # The frame's bottom edge cuts the characters at z = CROP (body units):
     # they peek up from the bottom of the picture.
-    crop = float(os.environ.get("CROP", 0.08))
+    crop = 0.0 if os.environ.get("EYEUP") else float(os.environ.get("CROP", 0.08))
     zc = crop + vis_h / 2
     B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)
     render(sc, os.path.join(out_dir, f"lineup_{sheet}.png"))
