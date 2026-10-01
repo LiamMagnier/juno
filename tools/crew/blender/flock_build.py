@@ -81,7 +81,18 @@ def build_meshes(spec):
     return c, out
 
 
-def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=None):
+def vert_normals(ob):
+    me = ob.data
+    n = np.zeros(len(me.vertices) * 3)
+    me.vertices.foreach_get("normal", n)
+    return n.reshape(-1, 3)
+
+
+def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=None, view=None):
+    """view: the world direction toward the camera. With it (and FUZZ_VIEW != 0) the
+    fibres are only grown where the camera can see them, plus a margin past the
+    silhouette: the back of a character holds half the hair and none of the look,
+    and hair is what costs memory (renders must stay under 10 GB)."""
     c, meshes = build_meshes(spec)
     sid = spec["id"]
     coll = coll or bpy.data.collections.get("characters") or bpy.context.scene.collection
@@ -98,16 +109,30 @@ def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=
         B.assign(ob, material_for(part, sid))
         if fuzz_on and part["fuzz"]:
             group = None
+            cover = 1.0
+            co = B.vert_co(ob)
+            w = np.ones(len(co))
             if part["kind"] == "body" and c.excl:
-                co = B.vert_co(ob)
-                w = np.ones(len(co))
                 for reg, ycut in c.excl:
                     r = reg(co[:, 0], co[:, 2])
                     m = np.ones(len(co), bool) if ycut is None else co[:, 1] < ycut + 0.02
                     w = np.where(m, np.minimum(w, S.sstep(0.008, 0.026, r)), w)
+            if view is not None and os.environ.get("FUZZ_VIEW", "1") != "0":
+                # the camera direction in the character's frame (yaw about z, lean about y)
+                v = np.asarray(view, float)
+                v = v / np.linalg.norm(v)
+                a = -math.radians(yaw)
+                v = np.array([v[0] * math.cos(a) - v[1] * math.sin(a), v[0] * math.sin(a) + v[1] * math.cos(a), v[2]])
+                L_ = -math.radians(spec.get("lean", 0.0))
+                v = np.array([v[0] * math.cos(L_) + v[2] * math.sin(L_), v[1], -v[0] * math.sin(L_) + v[2] * math.cos(L_)])
+                nd = vert_normals(ob) @ v
+                cut = float(os.environ.get("FUZZ_VIEW_CUT", -0.4))
+                w = w * S.sstep(cut - 0.15, cut + 0.1, nd)
+            if w.min() < 0.999:
                 B.set_group(ob, "dens", w)
                 group = "dens"
+                cover = max(0.05, float(w.mean()))
             L = float(os.environ.get("FUZZ_LEN", 0.012)) * part.get("fuzz_len", 1.0)
-            B.fuzz(ob, fuzz_mat_for(part, sid), length=L, quality=quality, seed=seed + len(objs), density_group=group)
+            B.fuzz(ob, fuzz_mat_for(part, sid), length=L, quality=quality, seed=seed + len(objs), density_group=group, coverage=cover)
         objs.append(ob)
     return root, objs, c

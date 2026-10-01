@@ -55,6 +55,12 @@ def world_bounds(objs):
     return lo, hi
 
 
+def cam_dir(yaw, elev=7):
+    """The world direction from the subject toward a camera at this yaw/elevation (see B.camera)."""
+    a, e = math.radians(yaw), math.radians(elev)
+    return (math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e))
+
+
 def portrait_cam(sc, objs, yaw, fill=0.74, elev=7, lens=70):
     lo, hi = world_bounds(objs)
     h = hi.z - 0.0
@@ -108,14 +114,14 @@ if mode in ("test", "portraits"):
     for m in members:
         for vname, yaw in views:
             sc = scene(RES, RES)
-            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ)
+            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ, view=cam_dir(yaw))
             portrait_cam(sc, objs, yaw)
             render(sc, os.path.join(out_dir, f"{m['id']}_{vname}.png"))
         if mode == "portraits" and os.environ.get("ICONS", "1") == "1":
             r = int(os.environ.get("ICON_RES", 384))
             sc = scene(r, r, floor=False)
             sc.cycles.samples = max(48, SPP // 2)
-            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ)
+            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ, view=cam_dir(0, 0))
             icon_cam(sc, objs, r)
             render(sc, os.path.join(out_dir, f"{m['id']}_icon.png"))
 
@@ -160,7 +166,7 @@ elif mode == "lineup":
             ez = m.get("eyes", {}).get("z", cc.face["z"])
             z = float(os.environ["EYEUP"]) - ez + m.get("lift", 0.0)
         layered = os.environ.get("LAYERED") == "1"
-        root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ and not layered)
+        root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ and not layered, view=cam_dir(0, 0))
         lean = m.get("lean", 0.0)
         if lean:
             root.rotation_euler[1] = math.radians(lean)
@@ -191,7 +197,7 @@ elif mode == "lineup":
             for ob in list(bpy.data.objects):
                 if ob.name.startswith(m["id"] + "_") and ob.type == "MESH":
                     bpy.data.objects.remove(ob, do_unlink=True)
-            root, ob_k, c = FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
+            root, ob_k, c = FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ, view=cam_dir(0, 0))
             for ob in bpy.data.objects:
                 if ob.type == "MESH" and ob.name != "floor":
                     ob.visible_camera = ob in ob_k
@@ -237,8 +243,9 @@ elif mode == "states":
         m.update(over)
         m["id"] = f"{base['id']}_s{k}"
         sc = scene(RES, RES)
-        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ)
-        portrait_cam(sc, objs, float(os.environ.get("YAW", 14)))
+        yv = float(os.environ.get("YAW", 14))
+        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ, view=cam_dir(yv))
+        portrait_cam(sc, objs, yv)
         render(sc, os.path.join(out_dir, f"state_{base['id']}_{k}.png"))
 
 elif mode == "variants":
@@ -254,6 +261,7 @@ elif mode == "variants":
         m.update(v)
         m["id"] = f"{base['id']}_v{k}"
         sc = scene(RES, RES)
-        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ)
-        portrait_cam(sc, objs, float(os.environ.get("YAW", 32)))
+        yv = float(os.environ.get("YAW", 32))
+        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ, view=cam_dir(yv))
+        portrait_cam(sc, objs, yv)
         render(sc, os.path.join(out_dir, f"var_{base['id']}_{k}.png"))

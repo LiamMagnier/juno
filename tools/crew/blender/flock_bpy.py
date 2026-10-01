@@ -221,7 +221,7 @@ def surface_area(ob):
     return sum(p.area for p in ob.data.polygons)
 
 
-def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group=None, width=1.0):
+def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group=None, width=1.0, coverage=1.0):
     """Short, fine, dense flock fibres (particle hair with interpolated children).
 
     Flocking is many tiny straight fibres standing up from the surface: no curl,
@@ -238,7 +238,9 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     ps.type = "HAIR"
     ps.use_advanced_hair = True
     area = surface_area(ob)
-    ps.count = max(500, int(area * density * quality))
+    # coverage: the share of the surface the density group keeps (the count is
+    # spread over the weighted area only, so it scales with it).
+    ps.count = max(500, int(area * density * quality * coverage))
     # Flock fibres are short and straight: two segments each are enough, and
     # halve the curve memory (renders must stay well under 10 GB).
     steps = int(E("FUZZ_STEPS", 1))
@@ -298,6 +300,12 @@ def setup_render(scene, res_x, res_y, spp=128, transparent=True):
     scene.cycles.use_denoising = True
     try:
         scene.cycles.denoiser = "OPENIMAGEDENOISE"
+    except Exception:
+        pass
+    # OIDN on the Metal GPU reserves ~6.5 GB of unified memory (a bare cube peaks
+    # at 7.5 GB with it, 1 GB without); on the CPU it costs a second or two.
+    try:
+        scene.cycles.denoising_use_gpu = os.environ.get("DENOISE_GPU", "0") == "1"
     except Exception:
         pass
     scene.cycles.max_bounces = 6
