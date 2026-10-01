@@ -370,6 +370,9 @@ const WORDS: [string, string][] = [
   ["Orbit", "Navigation. Your agents is the descriptor; one is an agent, called by its own name. Never crew, never an Orbit."],
   ["Code", "Navigation. Alevr Code at its entry point."],
   ["Create agent", "Never Add to crew or Hire."],
+  ["Folio", "What Alevr made (D-038): the Library filter Folios and Open folio. Sentences still name the real type: a deck, a document, a site."],
+  ["Deep Field", "Deep research, always with its descriptor and always two words. Quick lookups stay Search."],
+  ["Memory, Library, Projects, Skills, Routines", "Plain words: places you trust and controls you count on."],
   ["Ready, Thinking, Working, Needs your answer, Blocked, Finished", "An agent’s states, always in words. Never Free."],
   ["Go further.", "The signature line, for identity moments only."],
 ];

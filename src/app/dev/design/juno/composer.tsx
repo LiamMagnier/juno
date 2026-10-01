@@ -1031,12 +1031,14 @@ export function ModelPopover({
 
 /* ———————————————————————————— The + menu ———————————————————————————— */
 
-const PLUS_ITEMS: { icon: string; label: string; hint?: string }[] = [
+const PLUS_ITEMS: { icon: string; label: string; hint?: string; line?: string; aria?: string }[] = [
   { icon: "attach", label: "Add photos and files", hint: "⌘U" },
   { icon: "screenshot", label: "Take a screenshot" },
   { icon: "library", label: "Add from Library" },
   { icon: "at", label: "Mention a file or app", hint: "@" },
   { icon: "skill", label: "Run a skill", hint: "/" },
+  /* D-038: the deep-research mode is Deep Field, always with its descriptor. */
+  { icon: "research", label: "Deep Field", line: "Deep research", aria: "Deep Field, deep research" },
 ];
 
 /** What + offers: things to add to the message, then the two ways to name context in the sentence. */
@@ -1071,13 +1073,14 @@ export function PlusMenu({
     >
       {PLUS_ITEMS.map((it, i) => (
         <React.Fragment key={it.label}>
-          {i === 3 ? <div className="jn-pop__sep" role="separator" /> : null}
-          <button type="button" role="menuitem" className="jn-pop__row jicon-trigger" onClick={onClose}>
+          {i === 3 || i === 5 ? <div className="jn-pop__sep" role="separator" /> : null}
+          <button type="button" role="menuitem" className="jn-pop__row jicon-trigger" onClick={onClose} aria-label={it.aria}>
             <span className="jn-pop__mark jn-pop__mark--ink">
               <Icon name={it.icon} size={16} />
             </span>
             <span className="jn-pop__text">{it.label}</span>
             {it.hint ? <kbd className="jn-pop__detail">{it.hint}</kbd> : null}
+            {it.line ? <span className="jn-pop__detail">{it.line}</span> : null}
           </button>
         </React.Fragment>
       ))}

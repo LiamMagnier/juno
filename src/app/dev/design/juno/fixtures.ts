@@ -385,12 +385,11 @@ export const LIBRARY: LibItem[] = [
   { id: "l8", kind: "image", title: "Office floor plan.png", meta: "Image, from you", when: "3 Sep", size: "2.4 MB" },
 ];
 
-export const LIB_FILTERS = ["All", "Documents", "Decks", "Designs", "Files"] as const;
+/** D-038: what Alevr makes are Folios ("What Alevr made"); what you gave it are Files. Cards still name the real type. */
+export const LIB_FILTERS = ["All", "Folios", "Files"] as const;
 export const LIB_FILTER_KINDS: Record<(typeof LIB_FILTERS)[number], LibKind[] | null> = {
   All: null,
-  Documents: ["document"],
-  Decks: ["deck"],
-  Designs: ["design"],
+  Folios: ["document", "deck", "design"],
   Files: ["sheet", "pdf", "image"],
 };
 export const LIB_STORAGE = { used: "2.1 GB", of: "10 GB", deleted: 3 };

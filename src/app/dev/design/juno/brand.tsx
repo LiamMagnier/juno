@@ -30,6 +30,7 @@
 
 import * as React from "react";
 import { CONTINUUM_BLADES, CONTINUUM_H, CONTINUUM_W } from "./brand-geometry";
+import { Icon, ICON_NAMES } from "./icons";
 import { useReduced } from "./motion";
 
 /** True while the brand pieces here are the stand-ins (shown on the brand scene). */
@@ -169,6 +170,8 @@ function arc(t0: number, t1: number, cx: number, cy: number, rx: number, ry: num
 export const ORBIT_ARCS = [arc(198, 334, 12, 12, 9.5, 5.87, -22), arc(18, 154, 12, 12, 9.5, 5.87, -22)];
 
 export function OrbitGlyph({ size = 16, className, title }: { size?: number; className?: string; title?: string }) {
+  // The icon set's own drawing wins as soon as it exists (one family, one geometry review).
+  if (ICON_NAMES.includes("orbit")) return <Icon name="orbit" size={size} className={className} title={title} />;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className ? `jn-pglyph ${className}` : "jn-pglyph"} fill="none" stroke="currentColor" strokeWidth={(strokeFor(size) * 24) / size} strokeLinecap="round" role={title ? "img" : undefined} aria-label={title} aria-hidden={title ? undefined : true} focusable="false">
       {ORBIT_ARCS.map((d) => (
@@ -180,6 +183,7 @@ export function OrbitGlyph({ size = 16, className, title }: { size?: number; cla
 
 /** Code: opposed square brackets with an inset cursor. */
 export function CodeGlyph({ size = 16, className, title }: { size?: number; className?: string; title?: string }) {
+  if (ICON_NAMES.includes("code")) return <Icon name="code" size={size} className={className} title={title} />;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className ? `jn-pglyph ${className}` : "jn-pglyph"} fill="none" stroke="currentColor" strokeWidth={(strokeFor(size) * 24) / size} strokeLinecap="round" strokeLinejoin="round" role={title ? "img" : undefined} aria-label={title} aria-hidden={title ? undefined : true} focusable="false">
       <path d="M8 4.75H5.75v14.5H8" />
