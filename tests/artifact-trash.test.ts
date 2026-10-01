@@ -113,10 +113,11 @@ test("the purge and the draft sweep are wired up, and the purge is dry unless ar
   const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
   assert.match(pkg.scripts["artifacts:maintenance"] ?? "", /tsx scripts\/artifact-maintenance\.ts$/);
 
+  // Not its own PM2 app on purpose: an eleventh process overloads the 887 MB
+  // VM during a release restart (2026-10-01). The loop moves into an existing
+  // worker; until then the script runs by hand or from a scheduler.
   const ecosystem = read("deploy/ecosystem.config.js");
-  const app = ecosystem.slice(ecosystem.indexOf('name: "juno-artifact-maintenance"'));
-  assert.ok(app.length < ecosystem.length, "PM2 runs the maintenance loop");
-  assert.match(app.slice(0, 400), /args: "run artifacts:maintenance -- --daemon"/);
+  assert.equal(ecosystem.includes('name: "juno-artifact-maintenance"'), false, "no separate maintenance process on the VM");
 
   const script = read("scripts/artifact-maintenance.ts");
   assert.match(script, /purgeExpiredArtifacts\(\{ days, dryRun: DRY \}\)/);

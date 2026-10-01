@@ -389,26 +389,13 @@ module.exports = {
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
-    {
-      // Seals idle design drafts into versions every minute and purges the
-      // artifact trash every six hours (scripts/artifact-maintenance.ts). The
-      // purge is dry until JUNO_ARTIFACTS_PURGE=1 is set in the release env.
-      name: "juno-artifact-maintenance",
-      cwd: runRoot,
-      script: "npm",
-      args: "run artifacts:maintenance -- --daemon",
-      watch: false,
-      max_memory_restart: "300M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-artifact-maintenance"),
-        NODE_ENV: "production",
-      },
-      error_file: "logs/artifact-maintenance-err.log",
-      out_file: "logs/artifact-maintenance-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
+    // juno-artifact-maintenance (scripts/artifact-maintenance.ts: seal idle
+    // design drafts, purge the artifact trash) is deliberately NOT its own app.
+    // On the 887 MB / 2-vCPU VM an eleventh Node process pushed a release's
+    // restart past the voice-relay check and filled the database pool
+    // (2026-10-01). Drafts are also sealed on save, pause, page close and before
+    // any other write, and the purge is unarmed in production, so nothing waits
+    // on it; it moves into an existing worker's loop in the refoundation.
     {
       name: "juno-voice-relay",
       // The relay is its own package inside the release, so it is the one app
