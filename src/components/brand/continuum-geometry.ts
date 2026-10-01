@@ -58,6 +58,17 @@ export type ContinuumDrawing = {
   readonly paths: readonly { readonly id: ContinuumBladeId; readonly d: string }[];
 };
 
+/**
+ * Where the master sits on the source raster: master (x, y) is raster pixel
+ * (origin + unitPx * (x, y)). Evidence only: the fidelity check uses it.
+ */
+export const CONTINUUM_SOURCE = {
+  file: "docs/rework/brand/assets/alevr-continuum-symbol.png",
+  size: 1254,
+  origin: [618, 656],
+  unitPx: 4.5,
+} as const;
+
 /** Clockwise from the upper sweep: the order the thinking handoff passes along. */
 export const CONTINUUM_BLADE_ORDER: readonly ContinuumBladeId[] = ["blade-1", "blade-2", "blade-3", "blade-4"];
 
