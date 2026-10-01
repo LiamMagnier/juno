@@ -27,6 +27,10 @@ final class PreviewSessionHub: @unchecked Sendable {
         let sessionID: CodeSessionID
         let workspaceRoot: URL
         let verify: PreviewVerifyState
+        /// The names this session's snapshots gave its refs.
+        let labels = PreviewRefLabels()
+        /// The consequential calls this session's reader was asked about.
+        let floorApprovals = PreviewFloorApprovals()
         let lock = NSLock()
         var serverErrorsSinceEdit: [String] = []
         var settleTask: Task<Void, Never>?

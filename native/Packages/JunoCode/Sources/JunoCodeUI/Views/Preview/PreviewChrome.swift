@@ -65,7 +65,7 @@ struct PreviewPaneView: View {
             addressText = url.map(PreviewBrowserEngine.route(of:)) ?? ""
         }
         .onKeyPress(.escape) {
-            guard let page = lease.page, page.agentIsDriving else { return .ignored }
+            guard let page = lease.page, page.agentRecentlyActive else { return .ignored }
             page.stopAgent()
             return .handled
         }

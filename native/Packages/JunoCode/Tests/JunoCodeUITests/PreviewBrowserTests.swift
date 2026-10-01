@@ -336,6 +336,145 @@ final class PreviewBrowserTests: XCTestCase {
         XCTAssertEqual(after, "yes")
     }
 
+    // MARK: - Floor bypasses (adversarial review)
+
+    private func centre(of id: String) async throws -> CGPoint {
+        let box = try await page.webView.evaluateJavaScript(
+            "(() => { const r = document.getElementById('\(id)').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+        ) as? [NSNumber]
+        return CGPoint(x: box?[0].doubleValue ?? 0, y: box?[1].doubleValue ?? 0)
+    }
+
+    /// A drag that presses and releases on Delete clicks it: refused without
+    /// an approval, by ref and by coordinates.
+    func testADragOnAConsequentialControlIsRefused() async throws {
+        try await open("/dialogs.html")
+        let snapshot = try await engine.perform(.snapshot(filter: "interactive", ref: nil, depth: nil, includeText: false, maxText: 6_000))
+        let delete = try ref(named: "Delete project", in: snapshot.text)
+        do {
+            _ = try await engine.perform(.drag(from: .ref(delete), to: .ref(delete)))
+            XCTFail("a drag on Delete must be refused")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("always needs the reader's approval"), error.localizedDescription)
+        }
+        let point = try await centre(of: "delete")
+        do {
+            _ = try await engine.perform(.drag(from: .point(point), to: .point(point)))
+            XCTFail("a drag by coordinates must be refused too")
+        } catch is PreviewBrowserError {}
+        XCTAssertNil(page.pendingDialog, "nothing was pressed")
+        let result = try await text("result")
+        XCTAssertEqual(result, "nothing yet")
+    }
+
+    /// A line break in typed text is Enter: into the sign-in form it is
+    /// refused like submit, whatever the line break, and so is a raw `\r`
+    /// key.
+    func testALineBreakInTypedTextIsEnter() async throws {
+        try await open("/login.html")
+        let snapshot = try await engine.perform(.snapshot(filter: "interactive", ref: nil, depth: nil, includeText: false, maxText: 6_000))
+        let email = try ref(named: "Email", in: snapshot.text)
+        for text in ["ada@example.com\n", "ada@example.com\r", "ada@example.com\r\n", "ada@example.com\u{2028}"] {
+            do {
+                _ = try await engine.perform(.type(ref: email, text: text, secret: nil, submit: false, replace: true))
+                XCTFail("a line break into a sign-in form must be refused: \(text.debugDescription)")
+            } catch let error as PreviewBrowserError {
+                XCTAssertTrue(error.localizedDescription.contains("\"Sign in\""), error.localizedDescription)
+            }
+        }
+        do {
+            _ = try await engine.perform(.key(chord: "\r", repeat: 1))
+            XCTFail("a raw carriage return is Enter")
+        } catch is PreviewBrowserError {}
+        let sent = try await text("sent")
+        XCTAssertEqual(sent, "no")
+    }
+
+    /// An approval is for the control the card named: if the page puts
+    /// another name under the ref while the reader decides, nothing is
+    /// pressed.
+    func testAnApprovalIsBoundToTheNamedControl() async throws {
+        try await open("/dialogs.html")
+        let snapshot = try await engine.perform(.snapshot(filter: "interactive", ref: nil, depth: nil, includeText: false, maxText: 6_000))
+        let delete = try ref(named: "Delete project", in: snapshot.text)
+        let approval = PreviewFloorApproval(targets: [delete: .init(role: "button", name: "Delete project")])
+        let bound = PreviewBrowserEngine(page: page, workspaceRoot: root, secrets: FakeSecrets(), floorApproval: approval)
+
+        _ = try await page.webView.evaluateJavaScript("document.getElementById('delete').textContent = 'Delete account'")
+        do {
+            _ = try await bound.perform(.click(.ref(delete), button: .left, count: 1, modifiers: []))
+            XCTFail("the approved Delete project is now Delete account")
+        } catch let error as PreviewBrowserError {
+            XCTAssertTrue(error.localizedDescription.contains("as approved"), error.localizedDescription)
+        }
+        XCTAssertNil(page.pendingDialog)
+
+        _ = try await page.webView.evaluateJavaScript("document.getElementById('delete').textContent = 'Delete project'")
+        _ = try await bound.perform(.click(.ref(delete), button: .left, count: 1, modifiers: []))
+        XCTAssertEqual(page.pendingDialog?.message, "Delete project?")
+        let wrongQuestion = PreviewBrowserEngine(
+            page: page, workspaceRoot: root, secrets: FakeSecrets(),
+            floorApproval: PreviewFloorApproval(dialogMessage: "Delete the draft?")
+        )
+        do {
+            _ = try await wrongQuestion.perform(.dialog(accept: true, text: nil))
+            XCTFail("an approval for another question accepts nothing")
+        } catch is PreviewBrowserError {}
+        _ = try await engine.perform(.dialog(accept: false, text: nil))
+    }
+
+    /// A page can send what it is given anywhere: `.env`, keys and dotfiles
+    /// are never handed to a file input, asked by name or through a symlink.
+    func testUploadNeverGivesAPageASecretFile() async throws {
+        try write("upload.html", #"<!doctype html><html><head><title>Upload</title></head><body><input type="file" id="file" aria-label="Attachment"></body></html>"#)
+        try "API_KEY=sk-live".write(to: root.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        try "-----BEGIN PRIVATE KEY-----".write(to: root.appendingPathComponent("server.key"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("notes.txt"), withDestinationURL: root.appendingPathComponent(".env"))
+        try await open("/upload.html")
+        let snapshot = try await engine.perform(.snapshot(filter: "all", ref: nil, depth: nil, includeText: false, maxText: 6_000))
+        let input = try ref(named: "Attachment", in: snapshot.text)
+        for path in [".env", "server.key", "notes.txt"] {
+            do {
+                _ = try await engine.perform(.upload(ref: input, path: path))
+                XCTFail("\(path) must not reach the page")
+            } catch let error as PreviewBrowserError {
+                XCTAssertTrue(error.localizedDescription.contains("secret"), error.localizedDescription)
+            }
+        }
+        let count = try await page.webView.evaluateJavaScript("document.getElementById('file').files.length") as? NSNumber
+        XCTAssertEqual(count?.intValue, 0)
+    }
+
+    /// A page no pane shows goes away with its stopped server; one a pane
+    /// shows stays.
+    func testAStoppedServersHiddenPageIsRetired() {
+        let hidden = PreviewKey(checkoutRoot: root, name: "retire-\(UUID().uuidString)")
+        _ = PreviewPageRegistry.shared.page(for: hidden)
+        XCTAssertTrue(PreviewPageRegistry.shared.retireIfHidden(hidden))
+        XCTAssertNil(PreviewPageRegistry.shared.existing(hidden))
+
+        let shown = PreviewKey(checkoutRoot: root, name: "shown-\(UUID().uuidString)")
+        let page = PreviewPageRegistry.shared.page(for: shown)
+        let container = PreviewPageContainerView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        page.adopt(into: container)
+        XCTAssertFalse(PreviewPageRegistry.shared.retireIfHidden(shown))
+        XCTAssertNotNil(PreviewPageRegistry.shared.existing(shown))
+        PreviewPageRegistry.shared.remove(shown)
+    }
+
+    /// Esc stops the agent for a while after it acted, not only during the
+    /// 3 s glow; Stop clears it.
+    func testEscapeStaysArmedBetweenAgentActions() async throws {
+        try await open("/menu.html")
+        XCTAssertFalse(page.agentRecentlyActive)
+        _ = try await engine.perform(.click(.point(CGPoint(x: 20, y: 20)), button: .left, count: 1, modifiers: []))
+        XCTAssertTrue(page.agentRecentlyActive)
+        page.stopAgent()
+        XCTAssertFalse(page.agentRecentlyActive)
+        XCTAssertTrue(page.agentStopped)
+        page.allowAgent()
+    }
+
     // MARK: - PV-22 effects
 
     func testEachActionReportsConsoleErrorsSinceThePreviousAction() async throws {

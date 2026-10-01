@@ -150,6 +150,10 @@ public final class PreviewPage {
     @ObservationIgnored private var containers: [WeakContainer] = []
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var drivingReset: Task<Void, Never>?
+    /// When the agent last acted on the page. Esc stops it for a while after,
+    /// not only during the 3 s glow: a model thinks between actions.
+    @ObservationIgnored private(set) var lastAgentActionAt: Date?
+    @ObservationIgnored private var escapeMonitor: Any?
     @ObservationIgnored private var dialogTimeoutTask: Task<Void, Never>?
     @ObservationIgnored var dialogCompletion: ((Bool, String?) -> Void)?
     /// A workspace file the next file chooser receives (`upload`).
@@ -216,6 +220,33 @@ public final class PreviewPage {
         container.host(webView, viewport: viewport)
         placeHostWindow()
         observe()
+        installEscape()
+    }
+
+    /// Esc in the page stops agent control (§4.7), even when the web view
+    /// has keyboard focus and SwiftUI never sees the key. Only this app's
+    /// events, only when the key goes to this page, only while the agent has
+    /// been using it.
+    private func installEscape() {
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event }
+            let windowNumber = event.windowNumber
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self, self.agentRecentlyActive,
+                      let window = self.webView.window, window.windowNumber == windowNumber,
+                      let responder = window.firstResponder as? NSView,
+                      responder === self.webView || responder.isDescendant(of: self.webView)
+                else { return false }
+                self.stopAgent()
+                return true
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    /// The agent acted on the page within the last minute, or is acting now.
+    var agentRecentlyActive: Bool {
+        agentIsDriving || lastAgentActionAt.map { Date().timeIntervalSince($0) < 60 } == true
     }
 
     /// A stable data store per checkout, so "Keep sign-in" survives relaunch
@@ -296,6 +327,8 @@ public final class PreviewPage {
     /// Releases the web view entirely; the page is going away.
     func tearDown() {
         observations.removeAll()
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        escapeMonitor = nil
         drivingReset?.cancel()
         dialogTimeoutTask?.cancel()
         answerDialog(accept: false, text: nil)
@@ -350,6 +383,14 @@ public final class PreviewPage {
             return true
         }
         return extraOrigins.contains { PreviewOrigin.sameOrigin($0, url) }
+    }
+
+    /// Whether a link the page followed can have been the reader's click: a
+    /// pane shows the page in the active app and the agent is not driving
+    /// it. A page in its background host, or one the agent drives, never
+    /// opens the reader's own browser, however its script clicks a link.
+    var readerCanHaveClicked: Bool {
+        isShownInPane && !agentIsDriving && NSApp?.isActive == true && webView.window?.isKeyWindow == true
     }
 
     /// Whether the page is on its preview's own loopback server, where the
@@ -408,6 +449,7 @@ public final class PreviewPage {
 
     func beginAgentAction() {
         agentIsDriving = true
+        lastAgentActionAt = Date()
         drivingReset?.cancel()
         drivingReset = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
@@ -420,6 +462,7 @@ public final class PreviewPage {
     public func stopAgent() {
         agentStopped = true
         agentIsDriving = false
+        lastAgentActionAt = nil
         drivingReset?.cancel()
     }
 
@@ -434,7 +477,7 @@ public final class PreviewPage {
     func presentDialog(_ dialog: PreviewDialog, completion: @escaping (Bool, String?) -> Void) {
         answerDialog(accept: false, text: nil)
         pendingDialog = dialog
-        PreviewDialogMirror.shared.set(dialog.kind == .alert ? nil : dialog.message)
+        PreviewDialogMirror.shared.set(dialog.kind == .alert ? nil : dialog.message, for: key)
         dialogCompletion = completion
         diagnostics.recordEvent("The page opened a \(dialog.kind.rawValue): \"\(dialog.message.prefix(300))\"")
         dialogTimeoutTask?.cancel()
@@ -452,7 +495,7 @@ public final class PreviewPage {
         guard let completion = dialogCompletion else { return false }
         dialogCompletion = nil
         pendingDialog = nil
-        PreviewDialogMirror.shared.set(nil)
+        PreviewDialogMirror.shared.set(nil, for: key)
         dialogTimeoutTask?.cancel()
         completion(accept, text)
         return true
@@ -594,7 +637,7 @@ final class PreviewPageCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate
             return
         }
         decisionHandler(.cancel)
-        if navigationAction.navigationType == .linkActivated, !page.agentIsDriving, ["http", "https"].contains(scheme) {
+        if navigationAction.navigationType == .linkActivated, page.readerCanHaveClicked, ["http", "https"].contains(scheme) {
             // The reader clicked a link to another site: their browser.
             NSWorkspace.shared.open(url)
             page.diagnostics.recordEvent("Opened \(url.host ?? url.absoluteString) in the default browser.")
@@ -655,7 +698,19 @@ final class PreviewPageCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate
         page?.didFailNavigation(error.localizedDescription)
     }
 
+    /// When the page's web process last ended, to bound reloads.
+    private var terminations: [Date] = []
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        terminations = terminations.filter { now.timeIntervalSince($0) < 60 } + [now]
+        // A page that kills its process on load (a memory bomb, a crash
+        // loop) would otherwise be reloaded forever.
+        guard terminations.count <= 3 else {
+            page?.diagnostics.recordEvent("The page's web process ended \(terminations.count) times in a minute; Juno stopped reloading it. Reload it when it is fixed.")
+            page?.didFailNavigation("The page's web process keeps ending.")
+            return
+        }
         page?.diagnostics.recordEvent("The page's web process ended; Juno reloaded it.")
         webView.reload()
     }
@@ -673,7 +728,7 @@ final class PreviewPageCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate
             // A same-origin popup or target=_blank loads in place.
             webView.load(navigationAction.request)
             page.diagnostics.recordEvent("A new window for \(url.path.isEmpty ? "/" : url.path) opened in place.")
-        } else if !page.agentIsDriving, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+        } else if page.readerCanHaveClicked, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             NSWorkspace.shared.open(url)
             page.diagnostics.recordEvent("Opened \(url.host ?? url.absoluteString) in the default browser.")
         } else {
@@ -791,6 +846,17 @@ final class PreviewPageRegistry {
         pages.removeValue(forKey: key)?.tearDown()
     }
 
+    /// The preview's server is no longer live: a page no pane shows goes
+    /// away with it, rather than living on in its host window (a 1-pt window
+    /// on screen in the app, so never throttled) with an HMR client retrying
+    /// forever. A page a pane shows stays, so the reader keeps what they see.
+    @discardableResult
+    func retireIfHidden(_ key: PreviewKey) -> Bool {
+        guard let page = pages[key], !page.isShownInPane else { return false }
+        remove(key)
+        return true
+    }
+
     var all: [PreviewPage] { Array(pages.values) }
 }
 
@@ -813,7 +879,21 @@ public enum PreviewHost {
         ) { _ in
             JunoCodeLocal.PreviewRegistry.sharedLedger.terminateServersOwnedByThisProcess()
         }
-        // Touch the registry so a crashed run's orphans are reaped now.
-        _ = JunoCodeLocal.PreviewRegistry.shared
+        // Touch the registry so a crashed run's orphans are reaped now, and
+        // follow it so a stopped server's hidden page does not outlive it.
+        let registry = JunoCodeLocal.PreviewRegistry.shared
+        Task {
+            await registry.addObserver { change in
+                let key: PreviewKey
+                switch change {
+                case let .changed(snapshot):
+                    guard !snapshot.phase.isLive else { return }
+                    key = snapshot.key
+                case let .removed(removed):
+                    key = removed
+                }
+                Task { @MainActor in PreviewPageRegistry.shared.retireIfHidden(key) }
+            }
+        }
     }
 }

@@ -30,9 +30,15 @@ enum CodePreviewInspectionPolicy {
     }
 }
 
-/// What every Preview tool of one session shares.
+/// What every Preview tool of one session shares. The provider builds one
+/// per session, so what it remembers (the refs Juno saw, which calls were
+/// approved as consequential, which start cards were approved) never leaks to
+/// another session's tools.
 struct PreviewToolServices: Sendable {
     let workspaceRoot: URL
+    /// The session these tools belong to. Risk is assessed without a tool
+    /// context, so the session comes from here.
+    let sessionID: CodeSessionID?
     let shells: (any ShellSessionManaging)?
     let evidenceDirectory: URL?
     let supportsVision: Bool
@@ -43,9 +49,14 @@ struct PreviewToolServices: Sendable {
     /// The session's coordinator, so a read-only session starts nothing even
     /// for an approved configuration.
     let permissions: PermissionCoordinator?
+    /// The names this session's snapshots gave its refs.
+    let labels: PreviewRefLabels
+    /// Which exact calls were assessed (and so approved) as consequential.
+    let floorApprovals: PreviewFloorApprovals
 
     init(
         workspaceRoot: URL,
+        sessionID: CodeSessionID? = nil,
         permissions: PermissionCoordinator? = nil,
         shells: (any ShellSessionManaging)? = nil,
         evidenceDirectory: URL? = nil,
@@ -53,9 +64,12 @@ struct PreviewToolServices: Sendable {
         registry: JunoCodeLocal.PreviewRegistry = .shared,
         hub: PreviewSessionHub = .shared,
         approvals: PreviewConfigApprovals = .shared,
-        settings: PreviewLocalSettings = .shared
+        settings: PreviewLocalSettings = .shared,
+        labels: PreviewRefLabels = PreviewRefLabels(),
+        floorApprovals: PreviewFloorApprovals = PreviewFloorApprovals()
     ) {
         self.workspaceRoot = workspaceRoot
+        self.sessionID = sessionID
         self.permissions = permissions
         self.shells = shells
         self.evidenceDirectory = evidenceDirectory
@@ -64,6 +78,8 @@ struct PreviewToolServices: Sendable {
         self.hub = hub
         self.approvals = approvals
         self.settings = settings
+        self.labels = labels
+        self.floorApprovals = floorApprovals
     }
 
     func catalog() -> PreviewLaunchCatalog {
@@ -86,10 +102,18 @@ struct PreviewToolServices: Sendable {
 
     /// Whether the reader approved these bytes: always (this Mac), or by
     /// approving a start card for them in this session.
+    ///
+    /// An attach configuration is asked about like any other: the file is
+    /// repository-authored, and a `url` it names points the agent's browser
+    /// (and its clicks) at whatever else listens on this Mac.
     func isApproved(_ configuration: ResolvedPreviewConfiguration, session: CodeSessionID?) -> Bool {
-        if configuration.isAttach { return true }
         if settings.isApproved(configuration, in: workspaceRoot) { return true }
         return session.map { approvals.isApproved(configuration, root: workspaceRoot, session: $0) } ?? false
+    }
+
+    /// The session's start approvals, or none without a session.
+    func isApprovedForThisSession(_ configuration: ResolvedPreviewConfiguration) -> Bool {
+        isApproved(configuration, session: sessionID)
     }
 
     /// The session's live preview for a browser action: the one named, or the
@@ -135,10 +159,12 @@ struct PreviewToolServices: Sendable {
     @MainActor
     func openPage(key: PreviewKey, url: URL, configuration: ResolvedPreviewConfiguration?) -> PreviewPage {
         let page = PreviewPageRegistry.shared.page(for: key)
+        // Other configured loopback servers the page may move to: only the
+        // ones the reader approved, never every `url` the file lists.
         let extras = (configuration?.allowedExternalOrigins ?? [])
             + catalog().configurations.compactMap { config -> URL? in
-                if case let .attach(url) = config.kind { return url }
-                return nil
+                guard case let .attach(url) = config.kind, isApprovedForThisSession(config) else { return nil }
+                return url
             }
         page.open(origin: url, extraOrigins: extras)
         return page
@@ -205,9 +231,12 @@ struct PreviewServerTool: CodeTool {
             guard let configuration = services.configuration(named: input["name"]?.stringValue, catalog: services.catalog()) else {
                 return .critical
             }
-            services.approvals.noteShown(configuration, root: services.workspaceRoot, digest: actionDigest(input: input))
-            return services.isApproved(configuration, session: nil) || services.approvals.wasApprovedAnywhere(configuration, root: services.workspaceRoot)
-                ? .read : .critical
+            services.approvals.noteShown(
+                configuration, root: services.workspaceRoot, session: services.sessionID, digest: actionDigest(input: input)
+            )
+            // This session's approval only: a card approved in another
+            // session (or a sub-agent's) never stands in for this one.
+            return services.isApprovedForThisSession(configuration) ? .read : .critical
         default:
             return .read
         }
@@ -241,11 +270,12 @@ struct PreviewServerTool: CodeTool {
             guard let configuration = services.configuration(named: input["name"]?.stringValue, catalog: catalog) else {
                 throw ToolError.invalidInput(message: "No such configuration.")
             }
-            // The bytes that run are the bytes the card showed (§4.4).
+            // The bytes that run are the bytes the card showed (§4.4). With
+            // no record of what was shown, nothing runs that was not
+            // approved before.
             let digest = actionDigest(input: input)
             if !services.isApproved(configuration, session: session),
-               let shown = services.approvals.shownHash(digest: digest),
-               shown != configuration.contentHash
+               services.approvals.shownHash(session: services.sessionID, digest: digest) != configuration.contentHash
             {
                 throw ToolError.denied(reason: "\(configuration.name) changed after it was shown for approval. Call start again to see it.")
             }
@@ -440,40 +470,49 @@ enum PreviewConfigurationDescription {
 
 /// Which configuration bytes the reader approved on a start card in a
 /// session, learned from the session's permission coordinator: the approval
-/// is for the configuration, not each call (§4.4).
+/// is for the configuration, not each call (§4.4). Everything is scoped to
+/// the session: two sessions on one checkout ask the same digest
+/// (`{"action":"start"}`), and one session's card never stands in for the
+/// other's.
 final class PreviewConfigApprovals: @unchecked Sendable {
     static let shared = PreviewConfigApprovals()
 
     private let lock = NSLock()
-    /// The hash each start card's digest showed.
+    /// The configuration each session's start card showed, by digest.
     private var shown: [String: (key: String, hash: String)] = [:]
-    /// Approval request id → digest, while pending.
+    /// Approval request id → shown key, while pending.
     private var pending: [String: String] = [:]
     /// Session → approved "checkout#name#hash".
     private var approved: [CodeSessionID: Set<String>] = [:]
-    private var observed: Set<CodeSessionID> = []
+    /// The coordinator each session is observed through. A session that gets
+    /// a new coordinator (reopened) is observed again.
+    private var observed: [CodeSessionID: WeakCoordinator] = [:]
+
+    private final class WeakCoordinator {
+        weak var value: PermissionCoordinator?
+        init(_ value: PermissionCoordinator) { self.value = value }
+    }
 
     static func key(_ configuration: ResolvedPreviewConfiguration, root: URL) -> String {
         PreviewKey(checkoutRoot: root, name: configuration.name).checkoutRoot + "#" + configuration.approvalKey
     }
 
-    func noteShown(_ configuration: ResolvedPreviewConfiguration, root: URL, digest: String) {
-        lock.withLock { shown[digest] = (Self.key(configuration, root: root), configuration.contentHash) }
+    static func shownKey(session: CodeSessionID?, digest: String) -> String {
+        (session?.value ?? "-") + "#" + digest
     }
 
-    func shownHash(digest: String) -> String? {
-        lock.withLock { shown[digest]?.hash }
+    func noteShown(_ configuration: ResolvedPreviewConfiguration, root: URL, session: CodeSessionID?, digest: String) {
+        lock.withLock {
+            shown[Self.shownKey(session: session, digest: digest)] = (Self.key(configuration, root: root), configuration.contentHash)
+        }
+    }
+
+    func shownHash(session: CodeSessionID?, digest: String) -> String? {
+        lock.withLock { shown[Self.shownKey(session: session, digest: digest)]?.hash }
     }
 
     func isApproved(_ configuration: ResolvedPreviewConfiguration, root: URL, session: CodeSessionID) -> Bool {
         lock.withLock { approved[session]?.contains(Self.key(configuration, root: root)) ?? false }
-    }
-
-    /// Risk is assessed without the session in hand; an approval in any
-    /// session of this run of Juno covers the same bytes in the same checkout.
-    func wasApprovedAnywhere(_ configuration: ResolvedPreviewConfiguration, root: URL) -> Bool {
-        let key = Self.key(configuration, root: root)
-        return lock.withLock { approved.values.contains { $0.contains(key) } }
     }
 
     func approve(_ configuration: ResolvedPreviewConfiguration, root: URL, session: CodeSessionID) {
@@ -482,18 +521,25 @@ final class PreviewConfigApprovals: @unchecked Sendable {
 
     /// Watches the session's approvals for start cards the reader approved.
     func observe(permissions: PermissionCoordinator, sessionID: CodeSessionID) async {
-        let isNew = lock.withLock { observed.insert(sessionID).inserted }
+        let isNew = lock.withLock { () -> Bool in
+            if let current = observed[sessionID]?.value, current === permissions { return false }
+            observed[sessionID] = WeakCoordinator(permissions)
+            return true
+        }
         guard isNew else { return }
         await permissions.addObserver { [weak self] update in
             guard let self else { return }
             switch update {
             case let .requested(request) where ["preview_server", "open_preview"].contains(request.toolName):
-                self.lock.withLock { self.pending[request.id] = request.actionDigest }
+                self.lock.withLock {
+                    let key = Self.shownKey(session: sessionID, digest: request.actionDigest)
+                    if let shown = self.shown[key] { self.pending[request.id] = shown.key }
+                }
             case let .resolved(id, decision):
                 self.lock.withLock {
-                    guard let digest = self.pending.removeValue(forKey: id) else { return }
-                    if decision == .approved, let shown = self.shown[digest] {
-                        self.approved[sessionID, default: []].insert(shown.key)
+                    guard let shownKey = self.pending.removeValue(forKey: id) else { return }
+                    if decision == .approved {
+                        self.approved[sessionID, default: []].insert(shownKey)
                     }
                 }
             default:
@@ -609,38 +655,70 @@ struct PreviewBrowserTool: CodeTool {
     /// in every mode and is never saved as "Always allow". What Juno cannot
     /// see before the call (a click by coordinates, the button Enter would
     /// press) is checked again when it runs and refused unless approved so.
+    ///
+    /// The assessment made here is the one `execute` honours: the
+    /// orchestrator asks for risk right before it authorizes and runs a call,
+    /// and a `.destructive` call never runs without the reader's yes. So the
+    /// floor's backstop is lifted for exactly the call the reader approved,
+    /// bound to the element names the card showed, and never because a later
+    /// snapshot (or another session's) relabelled a ref.
     func assessRisk(input: JSONValue) -> ActionRisk {
         guard let action = try? PreviewBrowserAction.parse(input) else { return .read }
-        return Self.isConsequential(action) ? .destructive : action.risk
+        let approval = floorApproval(for: action)
+        services.floorApprovals.note(digest: actionDigest(input: input), approval: approval)
+        return approval != nil ? .destructive : action.risk
     }
 
-    static func isConsequential(_ action: PreviewBrowserAction) -> Bool {
-        func labelMatches(_ ref: String) -> Bool {
-            PreviewRefLabels.shared.label(ref).flatMap(PreviewConsequentialActions.match) != nil
+    /// What the reader would be approving if `action` is consequential: the
+    /// refs it presses by name, and the page question it accepts. Nil when it
+    /// is not consequential as far as Juno can see before it runs.
+    func floorApproval(for action: PreviewBrowserAction) -> PreviewFloorApproval? {
+        var approval = PreviewFloorApproval()
+        var consequential = false
+        func press(_ ref: String) {
+            guard let entry = services.labels.entry(ref), PreviewConsequentialActions.match(entry.display) != nil else { return }
+            approval.targets[ref] = entry
+            consequential = true
         }
-        switch action {
-        case let .click(.ref(ref), _, _, _): return labelMatches(ref)
-        case let .type(ref, text, secret, submit, _):
-            if secret != nil { return true }
-            if let text, PreviewConsequentialActions.looksLikeCredential(text) { return true }
-            return submit && labelMatches(ref)
-        case let .dialog(accept, _):
-            return accept && PreviewDialogMirror.shared.current.flatMap(PreviewConsequentialActions.match) != nil
-        case let .batch(actions): return actions.contains(where: isConsequential)
-        default: return false
+        func visit(_ action: PreviewBrowserAction) {
+            switch action {
+            case let .click(.ref(ref), _, _, _):
+                press(ref)
+            case let .drag(from, to):
+                // A press and a release on one control is a click.
+                if case let .ref(ref) = from { press(ref) }
+                if case let .ref(ref) = to { press(ref) }
+            case let .type(ref, text, secret, submit, _):
+                if secret != nil { consequential = true }
+                if let text, PreviewConsequentialActions.looksLikeCredential(text) { consequential = true }
+                if submit || text.map(PreviewInput.containsActivation) == true { press(ref) }
+            case let .dialog(accept, _):
+                guard accept else { return }
+                let questions = PreviewDialogMirror.shared.questions(checkoutRoot: services.workspaceRoot)
+                if let question = questions.first(where: { PreviewConsequentialActions.match($0) != nil }) {
+                    approval.dialogMessage = questions.count == 1 ? question : nil
+                    consequential = true
+                }
+            case let .batch(actions):
+                actions.forEach(visit)
+            default:
+                break
+            }
         }
+        visit(action)
+        return consequential ? approval : nil
     }
 
     func summary(input: JSONValue) -> String {
         guard let action = try? PreviewBrowserAction.parse(input) else { return "Use the local Preview" }
-        return Self.summary(action)
+        return Self.summary(action, labels: services.labels)
     }
 
     /// PV-34: the card names the element when Juno has seen it.
-    static func summary(_ action: PreviewBrowserAction) -> String {
+    static func summary(_ action: PreviewBrowserAction, labels: PreviewRefLabels) -> String {
         func label(_ target: PreviewTarget) -> String {
             switch target {
-            case let .ref(ref): PreviewRefLabels.shared.label(ref) ?? "element [\(ref)]"
+            case let .ref(ref): labels.label(ref) ?? "element [\(ref)]"
             case let .point(point): "the point (\(Int(point.x)), \(Int(point.y)))"
             }
         }
@@ -653,13 +731,14 @@ struct PreviewBrowserTool: CodeTool {
         case let .drag(from, to): return "Drag \(label(from)) to \(label(to)) in the local Preview"
         case let .type(ref, text, secret, submit, _):
             let what = secret != nil ? "••••" : "\"\((text ?? "").prefix(60))\""
-            return "Type \(what) into \(PreviewRefLabels.shared.label(ref) ?? "element [\(ref)]")\(submit ? " and press Enter" : "") in the local Preview"
+            let presses = submit || text.map(PreviewInput.containsActivation) == true
+            return "Type \(what) into \(labels.label(ref) ?? "element [\(ref)]")\(presses ? " and press Enter" : "") in the local Preview"
         case let .key(chord, _): return "Press \(chord) in the local Preview"
-        case let .select(ref, values): return "Choose \(values.joined(separator: ", ")) in \(PreviewRefLabels.shared.label(ref) ?? "element [\(ref)]")"
+        case let .select(ref, values): return "Choose \(values.joined(separator: ", ")) in \(labels.label(ref) ?? "element [\(ref)]")"
         case let .dialog(accept, _): return accept ? "Accept the page's dialog" : "Dismiss the page's dialog"
-        case let .upload(ref, path): return "Give \(path) to \(PreviewRefLabels.shared.label(ref) ?? "the file input [\(ref)]")"
+        case let .upload(ref, path): return "Give \(path) to \(labels.label(ref) ?? "the file input [\(ref)]")"
         case let .eval(js): return "Run an inspection script in the local Preview: \(js.prefix(120))"
-        case let .batch(actions): return actions.map(summary).joined(separator: "; ")
+        case let .batch(actions): return actions.map { summary($0, labels: labels) }.joined(separator: "; ")
         case .screenshot: return "Capture the local Preview"
         case .resize: return "Resize the local Preview"
         default: return "Inspect the local Preview"
@@ -669,17 +748,16 @@ struct PreviewBrowserTool: CodeTool {
     func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let action = try PreviewBrowserAction.parse(input)
         let session = context.sessionID
+        // What was approved as consequential, taken once: the assessment the
+        // reader answered, never a fresh one made now.
+        let floorApproval = services.floorApprovals.take(digest: actionDigest(input: input))
         let (key, url, configuration) = try await services.livePreview(session: session, name: input["name"]?.stringValue)
         let entry = services.hub.entry(for: session, workspaceRoot: services.workspaceRoot)
         let allowEval = services.settings.project(services.workspaceRoot).allowEval
         let supportsVision = services.supportsVision
-        // Approved as consequential only when it was assessed so: the floor's
-        // backstop refuses anything else that turns out to press such a
-        // control.
-        let consequential = assessRisk(input: input) == .destructive
         let result = try await Self.perform(
             action, key: key, url: url, configuration: configuration, entry: entry, allowEval: allowEval,
-            allowsConsequential: consequential, services: services
+            floorApproval: floorApproval, services: services
         )
 
         var (outcome, record) = result
@@ -705,18 +783,18 @@ struct PreviewBrowserTool: CodeTool {
         configuration: ResolvedPreviewConfiguration?,
         entry: PreviewSessionHub.Entry,
         allowEval: Bool,
-        allowsConsequential: Bool,
+        floorApproval: PreviewFloorApproval?,
         services: PreviewToolServices
     ) async throws -> (PreviewActionOutcome, UIVerificationRecord?) {
         let page = services.openPage(key: key, url: url, configuration: configuration)
         await waitForFirstLoad(page)
         let engine = PreviewBrowserEngine(
             page: page, workspaceRoot: services.workspaceRoot, allowEval: allowEval,
-            evidenceDirectory: services.evidenceDirectory, allowsConsequential: allowsConsequential
+            evidenceDirectory: services.evidenceDirectory, floorApproval: floorApproval
         )
         do {
             let outcome = try await engine.perform(action)
-            PreviewRefLabels.shared.remember(outcome.text)
+            services.labels.remember(outcome.text)
             let record = await services.hub.mint(entry: entry, key: key, page: page, outcome: outcome, engine: engine)
             return (outcome, record)
         } catch let error as PreviewBrowserError {
@@ -736,31 +814,73 @@ struct PreviewBrowserTool: CodeTool {
     }
 }
 
-/// The last names Juno saw for refs, so an approval card can say
-/// `Click "Delete project" (button)` (PV-34).
+/// The names one session's latest snapshot gave its refs, so an approval card
+/// can say `Click "Delete project" (button)` (PV-34) and the floor can tell a
+/// Delete from an Open before the call runs. One per session: another
+/// session's snapshot of another page never relabels this one's refs.
 final class PreviewRefLabels: @unchecked Sendable {
-    static let shared = PreviewRefLabels()
+    struct Entry: Equatable, Sendable {
+        var role: String
+        /// The accessible name as the snapshot showed it, at most 60
+        /// characters; empty when the element has none.
+        var name: String
+
+        var display: String { name.isEmpty ? "the \(role)" : "\"\(name)\" (\(role))" }
+    }
+
     private let lock = NSLock()
-    private var labels: [String: String] = [:]
+    private var entries: [String: Entry] = [:]
+
+    func entry(_ ref: String) -> Entry? {
+        lock.withLock { entries[ref] }
+    }
 
     func label(_ ref: String) -> String? {
-        lock.withLock { labels[ref] }
+        lock.withLock { entries[ref] }.map { $0.name.isEmpty ? "the \($0.role) [\(ref)]" : $0.display }
     }
 
     /// Reads `[e12] button "Save"` lines out of a snapshot or find result.
     func remember(_ text: String) {
         let pattern = #"^\[(e[0-9]{1,4})\] ([a-z]+)(?: "([^"]*)")?"#
         guard let expression = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return }
-        var found: [String: String] = [:]
+        var found: [String: Entry] = [:]
         for match in expression.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             guard let ref = Range(match.range(at: 1), in: text).map({ String(text[$0]) }),
                   let role = Range(match.range(at: 2), in: text).map({ String(text[$0]) })
             else { continue }
             let name = Range(match.range(at: 3), in: text).map { String(text[$0]) } ?? ""
-            found[ref] = name.isEmpty ? "the \(role) [\(ref)]" : "\"\(name.prefix(60))\" (\(role))"
+            found[ref] = Entry(role: role, name: String(name.prefix(60)))
         }
         guard !found.isEmpty else { return }
-        lock.withLock { labels = found }
+        lock.withLock { entries = found }
+    }
+}
+
+/// What the reader approved when they said yes to a consequential Preview
+/// call: the controls it presses by ref (with the names the card showed) and
+/// the page question it accepts. The engine holds the call to them.
+struct PreviewFloorApproval: Equatable, Sendable {
+    var targets: [String: PreviewRefLabels.Entry] = [:]
+    var dialogMessage: String?
+}
+
+/// The consequential assessment of each exact call (by action digest), made
+/// right before it is authorized and taken once when it runs.
+final class PreviewFloorApprovals: @unchecked Sendable {
+    private let lock = NSLock()
+    private var assessed: [String: PreviewFloorApproval] = [:]
+
+    func note(digest: String, approval: PreviewFloorApproval?) {
+        lock.withLock {
+            if let approval { assessed[digest] = approval } else { assessed.removeValue(forKey: digest) }
+            // A session asks about a handful of calls at a time; never let
+            // stale ones pile up.
+            if assessed.count > 64 { assessed.removeAll() }
+        }
+    }
+
+    func take(digest: String) -> PreviewFloorApproval? {
+        lock.withLock { assessed.removeValue(forKey: digest) }
     }
 }
 
@@ -788,9 +908,10 @@ struct CodePreviewOpenTool: CodeTool {
     func precheck(input: JSONValue) -> ToolError? { server.precheck(input: ["action": "start"]) }
     func assessRisk(input: JSONValue) -> ActionRisk {
         guard let configuration = services.configuration(named: nil, catalog: services.catalog()) else { return .critical }
-        services.approvals.noteShown(configuration, root: services.workspaceRoot, digest: actionDigest(input: input))
-        return services.isApproved(configuration, session: nil) || services.approvals.wasApprovedAnywhere(configuration, root: services.workspaceRoot)
-            ? .read : .critical
+        services.approvals.noteShown(
+            configuration, root: services.workspaceRoot, session: services.sessionID, digest: actionDigest(input: input)
+        )
+        return services.isApprovedForThisSession(configuration) ? .read : .critical
     }
     func summary(input: JSONValue) -> String { server.summary(input: ["action": "start"]) }
 
@@ -801,8 +922,7 @@ struct CodePreviewOpenTool: CodeTool {
             throw ToolError.invalidInput(message: "This project has no launch configuration.")
         }
         if !services.isApproved(configuration, session: context.sessionID),
-           let shown = services.approvals.shownHash(digest: actionDigest(input: input)),
-           shown != configuration.contentHash
+           services.approvals.shownHash(session: services.sessionID, digest: actionDigest(input: input)) != configuration.contentHash
         {
             throw ToolError.denied(reason: "\(configuration.name) changed after it was shown for approval.")
         }
@@ -876,12 +996,18 @@ struct PreviewToolProvider: CodeToolProvider {
         let evidence = context.store.commandOutputDirectory(for: context.sessionID)
             .deletingLastPathComponent()
             .appendingPathComponent("preview-evidence", isDirectory: true)
+        // The session's own memory of refs and floor approvals, kept across
+        // registry builds and never shared with another session.
+        let entry = hub.entry(for: context.sessionID, workspaceRoot: context.workspaceRoot)
         let services = PreviewToolServices(
             workspaceRoot: context.workspaceRoot,
+            sessionID: context.sessionID,
             permissions: context.permissions,
             shells: context.shells,
             evidenceDirectory: evidence,
-            supportsVision: context.supportsVision
+            supportsVision: context.supportsVision,
+            labels: entry.labels,
+            floorApprovals: entry.floorApprovals
         )
         return [
             PreviewServerTool(services: services),

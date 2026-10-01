@@ -135,7 +135,8 @@ public final class PreviewLeaseModel {
 
     public func needsApproval(_ configuration: ResolvedPreviewConfiguration) -> Bool {
         guard let workspaceRoot else { return true }
-        if configuration.isAttach { return false }
+        // An attach `url` is asked about too: it points the page (and the
+        // agent's input) at another server on this Mac.
         if settings.isApproved(configuration, in: workspaceRoot) { return false }
         if let sessionID, PreviewConfigApprovals.shared.isApproved(configuration, root: workspaceRoot, session: sessionID) {
             return false

@@ -26,6 +26,24 @@ enum PreviewInput {
         }
     }
 
+    /// Whether pressing `key` activates what has focus: Enter submits a form
+    /// or presses a button, Space presses a button. Any line-break character
+    /// counts, since WebKit reads it as Enter.
+    nonisolated static func isActivationKey(_ key: String) -> Bool {
+        if ["enter", "return", "space", " "].contains(key.lowercased()) { return true }
+        return key.count == 1 && key.first.map(isActivationCharacter) == true
+    }
+
+    /// Whether typing `text` would press Enter somewhere in it.
+    nonisolated static func containsActivation(_ text: String) -> Bool {
+        text.contains(where: isActivationCharacter)
+    }
+
+    /// A line break (`\n`, `\r`, `\r\n`, U+2028…) or the Enter character.
+    nonisolated static func isActivationCharacter(_ character: Character) -> Bool {
+        character.isNewline || character == "\u{3}"
+    }
+
     nonisolated static func parseChord(_ text: String) -> Chord? {
         let parts = text.split(separator: "+", omittingEmptySubsequences: false).map {
             $0.trimmingCharacters(in: .whitespaces)
@@ -146,7 +164,7 @@ enum PreviewInput {
     static func type(_ webView: WKWebView, _ text: String) {
         withFirstResponder(webView) {
             for character in text {
-                if character == "\n" {
+                if isActivationCharacter(character) {
                     sendKey(webView, "Enter", modifiers: [])
                 } else {
                     sendKey(webView, String(character), modifiers: [])

@@ -335,9 +335,13 @@ struct PreviewBrowserEngine {
     var secrets: any PreviewSecretProviding = KeychainPreviewSecrets()
     /// Where screenshots kept as evidence go (D-022): the session's folder.
     var evidenceDirectory: URL?
-    /// Whether this call was approved as consequential (send, delete, buy,
-    /// sign in…). Without it, the engine refuses to press such a control.
-    var allowsConsequential = false
+    /// What the reader approved when this call was asked about as
+    /// consequential (send, delete, buy, sign in…). Without it, the engine
+    /// refuses to press such a control; with it, only the controls and the
+    /// question the card named.
+    var floorApproval: PreviewFloorApproval?
+
+    var allowsConsequential: Bool { floorApproval != nil }
 
     private var webView: WKWebView { page.webView }
     private let redactor = SecretRedactor()
@@ -348,6 +352,7 @@ struct PreviewBrowserEngine {
         allowEval: Bool = false,
         secrets: any PreviewSecretProviding = KeychainPreviewSecrets(),
         evidenceDirectory: URL? = nil,
+        floorApproval: PreviewFloorApproval? = nil,
         allowsConsequential: Bool = false
     ) {
         self.page = page
@@ -355,7 +360,7 @@ struct PreviewBrowserEngine {
         self.allowEval = allowEval
         self.secrets = secrets
         self.evidenceDirectory = evidenceDirectory
-        self.allowsConsequential = allowsConsequential
+        self.floorApproval = floorApproval ?? (allowsConsequential ? PreviewFloorApproval() : nil)
     }
 
     /// The always-confirm floor's backstop: refuses to press `label` unless
@@ -369,6 +374,19 @@ struct PreviewBrowserEngine {
         let name = (name as? String) ?? ""
         let role = (role as? String) ?? "control"
         return name.isEmpty ? nil : "\"\(name.prefix(80))\" (\(role))"
+    }
+
+    /// An approved consequential press by ref must still be the control the
+    /// card named: a page that re-rendered while the reader decided can put
+    /// another "Delete" under the same ref.
+    private func guardApprovedTarget(_ ref: String, role: String, name: String) throws {
+        guard let approved = floorApproval?.targets[ref] else { return }
+        let seen = String(redactor.redact(name).prefix(60)).lowercased()
+        let expected = approved.name.lowercased()
+        guard approved.role == role, !expected.isEmpty, seen.hasPrefix(expected) else {
+            let now = name.isEmpty ? "[\(ref)] \(role)" : "\"\(name.prefix(80))\" (\(role))"
+            throw PreviewBrowserError.consequential("[\(ref)] is now \(now), not \(approved.display) as approved, so pressing it")
+        }
     }
 
     /// What Enter would press, checked against the floor.
@@ -455,6 +473,7 @@ struct PreviewBrowserEngine {
         case let .click(target, button, count, modifiers):
             try requireOnPreview()
             let point = try await resolve(target, forClick: true)
+            if case let .ref(ref) = target { try guardApprovedTarget(ref, role: point.role, name: point.name) }
             try guardFloor(point.label)
             if let covered = point.covered { try guardFloor(covered) }
             if case .point = target {
@@ -474,6 +493,17 @@ struct PreviewBrowserEngine {
             try requireOnPreview()
             let start = try await resolve(from, forClick: false)
             let end = try await resolve(to, forClick: false)
+            // A press and a release on one control is a click, so both ends
+            // answer to the floor as a click does.
+            for (target, point) in [(from, start), (to, end)] {
+                if case let .ref(ref) = target { try guardApprovedTarget(ref, role: point.role, name: point.name) }
+                try guardFloor(point.label)
+                if let covered = point.covered { try guardFloor(covered) }
+                if case .point = target {
+                    let info = try await js("return __juno.labelAt(x, y)", ["x": point.point.x, "y": point.point.y]) as? [String: Any]
+                    try guardFloor(label(role: info?["role"], name: info?["name"]))
+                }
+            }
             PreviewInput.drag(webView, from: start.point, to: end.point)
             await quickSettle()
             return PreviewActionOutcome(text: "Dragged from \(start.label) to \(end.label).")
@@ -482,7 +512,7 @@ struct PreviewBrowserEngine {
         case let .key(chord, count):
             try requireOnPreview()
             guard let parsed = PreviewInput.parseChord(chord) else { throw PreviewBrowserError.failed("\(chord) is not a key chord.") }
-            if ["enter", "return"].contains(parsed.key.lowercased()) || (parsed.key == " " || parsed.key.lowercased() == "space") {
+            if PreviewInput.isActivationKey(parsed.key) {
                 try await guardEnter()
             }
             PreviewInput.press(webView, parsed, repeat: count)
@@ -541,7 +571,12 @@ struct PreviewBrowserEngine {
             guard let dialog = page.pendingDialog else {
                 throw PreviewBrowserError.failed("No dialog is open.")
             }
-            if accept, dialog.kind != .alert { try guardFloor("the page's question \"\(dialog.message.prefix(120))\"") }
+            if accept, dialog.kind != .alert {
+                if let approved = floorApproval?.dialogMessage, approved != dialog.message {
+                    throw PreviewBrowserError.consequential("The open question is now \"\(dialog.message.prefix(120))\", not the one approved, so accepting it")
+                }
+                try guardFloor("the page's question \"\(dialog.message.prefix(120))\"")
+            }
             page.answerDialog(accept: accept, text: text)
             await quickSettle()
             return PreviewActionOutcome(text: "\(accept ? "Accepted" : "Dismissed") the \(dialog.kind.rawValue) \"\(dialog.message.prefix(200))\".")
@@ -564,6 +599,8 @@ struct PreviewBrowserEngine {
         var point: CGPoint
         var label: String
         var covered: String?
+        var role = ""
+        var name = ""
     }
 
     private func resolve(_ target: PreviewTarget, forClick: Bool) async throws -> ResolvedPoint {
@@ -589,7 +626,7 @@ struct PreviewBrowserEngine {
             }
             let x = (info["x"] as? NSNumber)?.doubleValue ?? 0
             let y = (info["y"] as? NSNumber)?.doubleValue ?? 0
-            return ResolvedPoint(point: CGPoint(x: x, y: y), label: label, covered: info["covered"] as? String)
+            return ResolvedPoint(point: CGPoint(x: x, y: y), label: label, covered: info["covered"] as? String, role: role, name: name)
         }
     }
 
@@ -756,8 +793,12 @@ struct PreviewBrowserEngine {
         guard (info["editable"] as? Bool) == true else {
             throw PreviewBrowserError.failed("\(point.label) is not a text field.")
         }
+        // The focusing click lands on whatever covers the field.
+        if let covered = point.covered { try guardFloor(covered) }
         PreviewInput.click(webView, at: point.point)
         _ = try await js("return __juno.focus(ref, replace)", ["ref": ref, "replace": replace])
+        // A line break in the text is an Enter key, and Enter submits.
+        if PreviewInput.containsActivation(value) { try await guardEnter() }
         PreviewInput.type(webView, value)
         if submit {
             try await guardEnter()
@@ -912,14 +953,23 @@ struct PreviewBrowserEngine {
         else {
             throw PreviewBrowserError.failed("\(path) is not a file in the workspace.")
         }
+        // A page can send what it is given anywhere, so the files the static
+        // server never serves (dotfiles, `.env*`, keys, `.git`,
+        // `node_modules`) are never handed to one either, asked or resolved.
+        let asked = path.split(separator: "/").map(String.init)
+        let resolved = file.path.dropFirst(root.path.count + 1).split(separator: "/").map(String.init)
+        if StaticPreviewServer.isDenied(asked) || StaticPreviewServer.isDenied(resolved) {
+            throw PreviewBrowserError.failed("\(path) looks like a secret or project machinery (a dotfile, .env, a key, .git or node_modules); the Preview does not give it to a page.")
+        }
         guard let info = try await js("return __juno.point(ref)", ["ref": ref]) as? [String: Any], info["error"] == nil else {
             throw PreviewBrowserError.invalidReference
         }
         guard (info["isFile"] as? Bool) == true else {
             throw PreviewBrowserError.failed("[\(ref)] is not a file input.")
         }
-        page.pendingUploadURL = file
         let point = try await resolve(.ref(ref), forClick: true)
+        if let covered = point.covered { try guardFloor(covered) }
+        page.pendingUploadURL = file
         PreviewInput.click(webView, at: point.point)
         await quickSettle()
         page.pendingUploadURL = nil
@@ -1253,13 +1303,22 @@ enum PreviewConsequentialActions {
     }
 }
 
-/// The open dialog's message, readable where risk is assessed (off the main
-/// actor), so accepting "Delete project?" is asked about as what it is.
+/// The questions (`confirm`, `prompt`) the pages have open, readable where
+/// risk is assessed (off the main actor), so accepting "Delete project?" is
+/// asked about as what it is. Kept per page, so one page's question never
+/// stands in for another's.
 final class PreviewDialogMirror: @unchecked Sendable {
     static let shared = PreviewDialogMirror()
     private let lock = NSLock()
-    private var message: String?
+    private var messages: [PreviewKey: String] = [:]
 
-    func set(_ message: String?) { lock.withLock { self.message = message } }
-    var current: String? { lock.withLock { message } }
+    func set(_ message: String?, for key: PreviewKey) {
+        lock.withLock { messages[key] = message }
+    }
+
+    /// The open questions of the pages of `checkoutRoot`.
+    func questions(checkoutRoot: URL) -> [String] {
+        let root = PreviewKey(checkoutRoot: checkoutRoot, name: "").checkoutRoot
+        return lock.withLock { messages.filter { $0.key.checkoutRoot == root }.map(\.value) }.sorted()
+    }
 }
