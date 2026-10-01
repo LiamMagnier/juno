@@ -150,7 +150,7 @@ function LibraryEmpty() {
   return (
     <div className="jn-empty jn-empty--compact">
       <p className="t-display">Nothing here yet</p>
-      <p className="jn-empty__line">Folios, what Alevr makes, and the files you give it land here.</p>
+      <p className="jn-empty__line">What Alevr makes and the files you give it land here.</p>
       <button type="button" className="jb jb--secondary jb--sm jicon-trigger jicon-quiet">
         <Icon name="upload" size={16} />
         Upload

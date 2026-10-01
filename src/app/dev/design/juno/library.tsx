@@ -240,13 +240,11 @@ function Problem({ item }: { item: LibItem }) {
   );
 }
 
-/** A folio is something Alevr made (D-038); a file is something you gave it. */
-const isFolio = (item: LibItem) => item.kind === "document" || item.kind === "deck" || item.kind === "design";
 
 function Tile({ item }: { item: LibItem }) {
   return (
     <div className="jn-lib__item">
-      <a href="#" className="jn-lib__open" aria-label={`${isFolio(item) ? "Open folio" : "Open"}: ${item.title}, ${item.meta}, ${item.when}`}>
+      <a href="#" className="jn-lib__open" aria-label={`Open ${item.title}, ${item.meta}, ${item.when}`}>
         <Preview item={item} />
       </a>
       <span className="jn-lib__text">
@@ -320,7 +318,7 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
         <header className="jn-page__head">
           <div>
             <h1 className="t-title">Library</h1>
-            <p className="jn-page__lede">Folios, what Alevr made, and the files you gave it. Newest first.</p>
+            <p className="jn-page__lede">What Alevr made and the files you gave it, newest first.</p>
           </div>
           <span className="jn-page__actions jicon-quiet">
             <button type="button" className="jb jb--ghost jicon-trigger">
