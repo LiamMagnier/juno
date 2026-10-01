@@ -420,6 +420,82 @@
   flex: none;
 }
 
+
+/* The sidebar's popovers (activity from the bell, the account menu from the
+   account row), on the material and inside the sidebar's own width. */
+.jn .jn-sidepop {
+  left: 8px;
+  right: 8px;
+  z-index: 30;
+}
+.jn .jn-sidepop--activity {
+  top: 50px;
+  transform-origin: 85% 0;
+}
+.jn .jn-sidepop--account {
+  bottom: 58px;
+  transform-origin: 20% 100%;
+}
+.jn .jn-sidepop__item {
+  align-items: flex-start;
+  height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.jn .jn-sidepop__item .jn-pop__mark {
+  margin-top: 1px;
+}
+.jn .jn-sidepop__text {
+  font-size: 13px;
+  line-height: 18px;
+  white-space: normal;
+}
+.jn .jn-sidepop__email {
+  padding: 8px 10px 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jn .jn-sidepop__theme {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  margin: 4px 4px 6px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--fill-press);
+}
+.jn .jn-sidepop__themeopt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 5px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-sidepop__themeopt:hover {
+    color: var(--ink);
+  }
+}
+.jn .jn-sidepop__themeopt[aria-checked="true"] {
+  background: var(--thumb);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.2));
+}
+.jn .jn-side .jrow.jn-side__account[aria-expanded="true"]::before {
+  background: var(--fill-selected);
+}
+
 /* —————————————————————————————— Content header ——————————————————————————————
  *
  * Sticky inside the panel, on the bar material: content scrolls under it and

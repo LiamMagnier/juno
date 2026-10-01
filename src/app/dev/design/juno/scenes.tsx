@@ -8,9 +8,9 @@ import { AppFrame, ChatSidebar, usePanelAtEnd } from "./shell";
 import { Answer, UserMessage } from "./thread";
 
 /* Home: Chat at rest, the draft written with tokens. `focus=1` shows the focused composer; `app=stripe` opens its panel. */
-export function HomeScene({ focused, panel, empty }: { focused?: boolean; panel?: string; empty?: boolean }) {
+export function HomeScene({ focused, panel, empty, pop }: { focused?: boolean; panel?: string; empty?: boolean; pop?: "account" | "activity" }) {
   return (
-    <AppFrame sidebar={<ChatSidebar />}>
+    <AppFrame sidebar={<ChatSidebar pop={pop} />}>
       <ChatSurface initialPhase="home" initialSegs={empty ? [] : DRAFT} composerStill={{ focused, pointerFocused: !!panel, panel }} />
     </AppFrame>
   );
