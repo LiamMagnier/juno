@@ -313,12 +313,14 @@ public actor ToolScheduler {
                         )
                     )
                 )
+                let failure = await failureHooks(lifecycleHooks, hookInvocation, error: message, store: store)
                 return ExecutionResult(
                     callID: id,
                     toolName: name,
                     input: input,
-                    content: message,
-                    isError: true
+                    content: failure.annotating(message),
+                    isError: true,
+                    haltReason: failure.haltReason
                 )
             }
 
@@ -356,16 +358,20 @@ public actor ToolScheduler {
                 after.context,
                 to: ([result.content] + notes).joined(separator: "\n\n")
             )
+            // A call that ran and failed also goes to `PostToolUseFailure`.
+            let failure = result.isError
+                ? await failureHooks(lifecycleHooks, hookInvocation, error: result.content, store: store)
+                : FailureHookOutcome()
 
             return ExecutionResult(
                 callID: id,
                 toolName: name,
                 input: input,
-                content: content,
+                content: failure.annotating(content),
                 isError: result.isError,
                 images: result.images,
                 sideEffects: result.sideEffects,
-                haltReason: after.haltReason,
+                haltReason: after.haltReason ?? failure.haltReason,
                 endsRun: result.endsRun,
                 appendedContext: result.appendedContext
             )
@@ -382,14 +388,54 @@ public actor ToolScheduler {
                     )
                 )
             )
+            // A stopped call was not a failure of the tool.
+            let failure = Task.isCancelled
+                ? FailureHookOutcome()
+                : await failureHooks(lifecycleHooks, hookInvocation, error: message, store: store)
             return ExecutionResult(
                 callID: id,
                 toolName: name,
                 input: input,
-                content: "Tool execution failed: \(message)",
-                isError: true
+                content: failure.annotating("Tool execution failed: \(message)"),
+                isError: true,
+                haltReason: failure.haltReason
             )
         }
+    }
+
+    /// What `PostToolUseFailure` hooks said about one failed call.
+    struct FailureHookOutcome {
+        var context: [String] = []
+        var feedback: String?
+        var haltReason: String?
+
+        /// The result the model reads, with the hooks' feedback and context
+        /// after it. A hook cannot undo the failure; it can only say more.
+        func annotating(_ content: String) -> String {
+            var parts = [content]
+            if let feedback {
+                parts.append("PostToolUseFailure hook feedback:\n" + feedback)
+            }
+            return AgentHookContext.appending(context, to: parts.joined(separator: "\n\n"))
+        }
+    }
+
+    /// Runs the `PostToolUseFailure` hooks for a call that ran and failed, and
+    /// records what they asked the thread to show.
+    static func failureHooks(
+        _ lifecycleHooks: (any AgentLifecycleHooks)?,
+        _ invocation: AgentToolHookInvocation,
+        error: String,
+        store: CodeSessionStore
+    ) async -> FailureHookOutcome {
+        guard let lifecycleHooks else { return FailureHookOutcome() }
+        let response = await lifecycleHooks.toolFailed(invocation, error: error)
+        await record(response.notices, sessionID: invocation.sessionID, store: store)
+        return FailureHookOutcome(
+            context: response.context,
+            feedback: response.blockReason,
+            haltReason: response.haltReason
+        )
     }
 
     /// Writes what hooks asked the thread to show, where they ran.

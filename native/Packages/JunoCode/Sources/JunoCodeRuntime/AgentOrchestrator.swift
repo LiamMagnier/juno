@@ -42,6 +42,9 @@ public enum OrchestratorError: Error, Equatable, Sendable {
     /// The reader stopped the session while the prompt's hooks were still
     /// deciding on it. Nothing was sent or recorded.
     case stoppedBeforeSending
+    /// `resume` found no conversation to carry on: the session has never had
+    /// a message.
+    case nothingToResume
 }
 
 /// The per-session agent loop: sends model turns, executes gated tool calls,
@@ -152,6 +155,9 @@ public actor AgentOrchestrator {
     /// workspace to snapshot.
     private let turnCheckpoints: (any TurnCheckpointing)?
     private let verificationEngine: VerificationEngine
+    /// Decides whether a run the model means to end may end. See
+    /// ``CompletionGating``; the default reports and never enforces.
+    private let completionGate: any CompletionGating
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
@@ -247,6 +253,16 @@ public actor AgentOrchestrator {
     /// let go; this is the bound for one that never does.
     static let maximumStopHookContinuations = 8
 
+    /// A hard bound on how many times the stop check may send one run back to
+    /// work, whatever the gate's own settings say. The gate counts its
+    /// continuations itself and stops well before this (three by default);
+    /// this is the backstop for one that never does. Counted apart from the
+    /// stop hooks' continuations.
+    static let maximumGateContinuations = 12
+
+    /// - Parameter completionGate: asked every time the model tries to finish,
+    ///   after queued instructions drain and before Stop hooks. The default,
+    ///   ``ReportOnlyCompletionGate``, lets every run end as it does today.
     public init(
         sessionID: CodeSessionID,
         model: any AgentModelClient,
@@ -258,7 +274,8 @@ public actor AgentOrchestrator {
         reasoningEffort: ReasoningEffort?,
         lifecycleHooks: (any AgentLifecycleHooks)? = nil,
         fallbackResolver: (any ModelFallbackResolver)? = nil,
-        turnCheckpoints: (any TurnCheckpointing)? = nil
+        turnCheckpoints: (any TurnCheckpointing)? = nil,
+        completionGate: any CompletionGating = ReportOnlyCompletionGate()
     ) {
         self.sessionID = sessionID
         self.model = model
@@ -281,6 +298,7 @@ public actor AgentOrchestrator {
         self.fallbackResolver = fallbackResolver
         self.turnCheckpoints = turnCheckpoints
         self.verificationEngine = VerificationEngine(store: store)
+        self.completionGate = completionGate
     }
 
     private func computeFallbackModel(for current: String) async -> String? {
@@ -536,6 +554,63 @@ public actor AgentOrchestrator {
             kind: .queue,
             accepted: accepted
         )
+    }
+
+    /// Carries the session's run on with no new reader message: Retry after a
+    /// failed turn, Resume after Juno quit, Keep going after a step limit or
+    /// budget, a check-in on background work.
+    ///
+    /// The note joins the persisted conversation as runtime text — fenced as
+    /// `<juno_runtime>`, so compaction and rewind never take it for the
+    /// reader's — and a `runContinued` event records it. Nothing is added to
+    /// the composer and no user prompt is recorded. File captures belong to
+    /// the session's latest turn, since no reader message opened a new one.
+    ///
+    /// Throws when a run is already in flight, as `submit` does, and
+    /// `nothingToResume` for a session that has never had a message.
+    public func resume(note: RuntimeNote, origin: TurnOrigin = .user) async throws {
+        await waitForCompaction()
+        guard runTask == nil, admission == nil else {
+            throw OrchestratorError.sessionAlreadyRunning
+        }
+        // Taken before the first suspension, as a prompt takes it, so a
+        // submit meanwhile is refused rather than starting a second loop.
+        stoppedDuringAdmission = false
+        let admission = Task { () async throws -> PromptHookContext in
+            try await self.prepare()
+            return PromptHookContext(session: [])
+        }
+        self.admission = admission
+        defer { self.admission = nil }
+        _ = try await admission.value
+        guard !stoppedDuringAdmission else {
+            throw OrchestratorError.stoppedBeforeSending
+        }
+        guard !conversation.isEmpty else {
+            throw OrchestratorError.nothingToResume
+        }
+        conversation.append(.user(note.rendered))
+        try await store.saveConversation(sessionID: sessionID, messages: conversation)
+        _ = try await store.appendEvent(
+            sessionID: sessionID,
+            payload: .runContinued(
+                RunContinuedEvent(
+                    reason: note.reason,
+                    detail: firstLine(of: note.text),
+                    revision: note.revision,
+                    origin: origin
+                )
+            )
+        )
+        try await store.setStatus(id: sessionID, status: .running)
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runLoop()
+        }
+        runTask = task
+        if stoppedDuringAdmission {
+            task.cancel()
+        }
     }
 
     private func acceptInstruction(
@@ -822,6 +897,11 @@ public actor AgentOrchestrator {
         var lastAssistantText = ""
         var testsPassed: Bool?
         var stopHookContinuations = 0
+        // The stop check's continuations this run, in order, and how many of
+        // the turns they started in a row ended without a tool call.
+        var gateContinuations: [GateReason] = []
+        var turnsSinceToolCall = 0
+        var awaitingContinuationTurn = false
         // Whether this step already folded the history after the window
         // overflowed; a second overflow in a row is a failure.
         var overflowRecoveryUsed = false
@@ -1361,7 +1441,37 @@ public actor AgentOrchestrator {
                 if await applyPendingInstructions(includeQueued: true) {
                     continue
                 }
-                // The agent means to stop. A stop hook may send it back with a
+                // The agent means to stop; the stop check decides whether the
+                // run may. A continuation is runtime text, never the reader's,
+                // and the gate can only keep the agent working inside what is
+                // already allowed.
+                if awaitingContinuationTurn {
+                    turnsSinceToolCall += 1
+                }
+                if case let .continueWith(reason, detail) = await completionGate.evaluate(
+                    CompletionGateContext(
+                        sessionID: sessionID,
+                        steps: iteration,
+                        filesChanged: filesChanged,
+                        testsPassed: testsPassed,
+                        lastAssistantText: lastAssistantText,
+                        continuations: gateContinuations,
+                        turnsSinceToolCall: turnsSinceToolCall
+                    )
+                ), !Task.isCancelled, gateContinuations.count < Self.maximumGateContinuations {
+                    gateContinuations.append(reason)
+                    awaitingContinuationTurn = true
+                    await continueRun(
+                        with: RuntimeNote(reason: .gate(reason), text: detail),
+                        origin: .gate
+                    )
+                    continue
+                }
+                // Finishing. `runCheck`, `runReview` and `wait` need the
+                // runners Lanes A and B add; until they do, the run ends as the
+                // default gate would end it.
+                //
+                // A stop hook may send it back with a
                 // reason, which reaches the model the way Claude Code phrases
                 // it, as the next thing to act on. It is a user-role turn the
                 // reader did not write, and marked as one: compaction must
@@ -1498,6 +1608,14 @@ public actor AgentOrchestrator {
                 )
             )
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+            // The turn made a tool call: whatever continuation started it made
+            // progress.
+            turnsSinceToolCall = 0
+            awaitingContinuationTurn = false
+            await toolBatchFinished(
+                calls: scheduledCalls.map { (id: $0.id, name: $0.name) },
+                results: executionResults
+            )
             // A hook answered `"continue": false`: the run ends now that every
             // call has its answer. The hook's own row already says why.
             if let halt = hookHaltReason {
@@ -1835,6 +1953,15 @@ public actor AgentOrchestrator {
         allowModel: Bool,
         allowContinuation: Bool
     ) async -> CompactionEvent? {
+        let trigger: AgentCompactionTrigger = requestedByUser ? .manual : .auto
+        if let lifecycleHooks {
+            let response = await lifecycleHooks.compactionStarting(
+                sessionID: sessionID,
+                trigger: trigger,
+                focus: focus
+            )
+            await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+        }
         let planned = conversation.count
         let outcome = await summarize(
             plan,
@@ -1848,7 +1975,16 @@ public actor AgentOrchestrator {
         // whatever arrived, so the fold is skipped and the next boundary
         // plans again from the history as it now is.
         guard conversation.count == planned else { return nil }
-        return await adopt(outcome, requestedByUser: requestedByUser, focus: focus)
+        let event = await adopt(outcome, requestedByUser: requestedByUser, focus: focus)
+        if let lifecycleHooks {
+            let response = await lifecycleHooks.compactionFinished(
+                sessionID: sessionID,
+                trigger: trigger,
+                event: event
+            )
+            await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+        }
+        return event
     }
 
     private func summarize(
@@ -2044,6 +2180,49 @@ public actor AgentOrchestrator {
             toolEndedRun = true
         }
         return result
+    }
+
+    /// Sends the model back to work inside the current run: the note joins
+    /// the history as runtime text and a `runContinued` event records why, so
+    /// the thread can say it quietly ("Kept going: 2 todos were open").
+    private func continueRun(with note: RuntimeNote, origin: TurnOrigin) async {
+        conversation.append(.user(note.rendered))
+        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+        _ = try? await store.appendEvent(
+            sessionID: sessionID,
+            payload: .runContinued(
+                RunContinuedEvent(
+                    reason: note.reason,
+                    detail: firstLine(of: note.text),
+                    revision: note.revision,
+                    origin: origin
+                )
+            )
+        )
+    }
+
+    /// Tells `PostToolBatch` hooks the batch is answered. A hook's
+    /// `"continue": false` ends the run, as a tool hook's does.
+    private func toolBatchFinished(
+        calls: [(id: String, name: String)],
+        results: [ToolScheduler.ExecutionResult]
+    ) async {
+        guard let lifecycleHooks, !Task.isCancelled else { return }
+        let byID = Dictionary(results.map { ($0.callID, $0) }, uniquingKeysWith: { first, _ in first })
+        let response = await lifecycleHooks.toolBatchFinished(
+            sessionID: sessionID,
+            results: calls.map { call in
+                AgentToolBatchResult(
+                    toolCallID: call.id,
+                    toolName: call.name,
+                    succeeded: byID[call.id].map { !$0.isError } ?? false
+                )
+            }
+        )
+        await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+        if let halt = response.haltReason, hookHaltReason == nil {
+            hookHaltReason = halt
+        }
     }
 
     /// Asks the stop hooks whether the agent may finish. Returns the reason to
