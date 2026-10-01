@@ -1,4 +1,6 @@
-# Juno Code on Mac: the autonomous agent (implementation spec)
+# Alevr Code on Mac: the autonomous agent (implementation spec)
+
+> **2026-10-01 brand editorial update:** Alevr / Alevr Orbit / Alevr Code are the working design direction. Read [the brand package](brand/README.md) and the separate [Chat](brand/CHAT_SYSTEM.md), [Orbit](brand/ORBIT_SYSTEM.md), [Code](brand/CODE_SYSTEM.md) systems. Names in current proposed product prose are updated; source identifiers, routes, fenced code and dated evidence retain their actual spelling. Name availability and final artwork remain unresolved. This documentation pass does not authorize or claim a code rename. D-027–D-034 and the new brand specification override older visual rules; in particular D-033 allows restrained blur only on floating web layers and D-034 governs the new character direction. Original dated status below remains historical; HANDOFF.md is the current implementation record.
 
 Date: 2026-09-30. Branch `rework/refoundation` (`3e3040e6`, code identical to `main` @ `1feb392c`). Phase 10 input.
 Status: specified, not built. Author: principal engineer pass over the Phase 0 research and audits.
@@ -51,20 +53,20 @@ shipped name differs, the lane adapts to it; the contract below is semantic.
 
 ## 0. What changes for the reader
 
-Today Juno Code runs a correct tool loop, then stops whenever the model says it is done
+Today Alevr Code runs a correct tool loop, then stops whenever the model says it is done
 (`JunoCodeRuntime/AgentOrchestrator.swift:1102-1132`). Nothing checks that the work is finished, verified or
-reviewed. Step and output limits end the run as *failed*. Computer use drives the whole screen, including Juno's own
+reviewed. Step and output limits end the run as *failed*. Computer use drives the whole screen, including Alevr's own
 approval cards. Preview dies when the reader switches sessions.
 
 After this spec:
 
-1. **Juno keeps going until the work is done and checked, and says so.** A runtime *stop check* runs every time the
+1. **Alevr keeps going until the work is done and checked, and says so.** A runtime *stop check* runs every time the
    model tries to finish. Open todos, edits made after the last passing check, a failing check, an unreviewed diff or
    an unchecked UI change send it back to work, each at most once per workspace revision and within budgets.
 2. **Goals run for as long as it takes.** `/goal <objective>` sets a persistent objective with criteria. After every
    turn a deterministic gate, then a separate small-model judge, decide *continue*, *met* or *impossible*. A progress
    row above the composer shows it, in words, with Pause, Edit and Clear.
-3. **Juno checks its own work the way a person would.** A recorded per-project verify recipe (build, test, lint,
+3. **Alevr checks its own work the way a person would.** A recorded per-project verify recipe (build, test, lint,
    typecheck, launch) is discovered once and reused. UI changes are checked in the running app: Preview for web, the
    Simulator for iOS, app-scoped computer use for Mac apps. Evidence is minted by the runtime, not claimed by the
    model.
@@ -74,7 +76,7 @@ After this spec:
    in a failed run.
 6. **It works while you are away.** Runs continue with the window closed, notify with the exact thing needed (Allow
    once / Decline from the notification), survive quit with a Resume, and follow the PR through CI.
-7. **Computer use is scoped and safe.** Per-app grants with fixed tiers, Juno excluded from its own screenshots,
+7. **Computer use is scoped and safe.** Per-app grants with fixed tiers, Alevr excluded from its own screenshots,
    correct Retina and multi-display scaling, a consumed global Esc, and an always-confirm floor Full access cannot
    silence.
 8. **Preview is the agent's browser.** Session-owned dev servers from `.juno/launch.json`, server logs, console and
@@ -162,7 +164,7 @@ Every run ends with exactly one reason. The divider, the notification, the Runs 
 | `stalled` | Two continuation turns in a row made no tool call | "· Stopped: no progress in the last two tries" | Needs you |
 | `waitingOnBackground` | Background shells or sub-agents still run; the run resumes when they report | "Waiting for `xcodebuild test` to finish" | — |
 | `stopped` | The reader pressed Stop | "Stopped" | — |
-| `interrupted` | Juno quit or crashed mid-run | "Juno quit while this was running. Resume" | — |
+| `interrupted` | Alevr quit or crashed mid-run | "Alevr quit while this was running. Resume" | — |
 | `error` | An error the retry policy could not clear | The error in words, with Retry (which resumes, §1.6) | Failed |
 
 Today a blocked or paused goal ends as `.cancelled`, which maps to idle and sends nothing
@@ -405,7 +407,7 @@ dev-server discovery) and proposes one check per signal:
 Each check gets `paths` from its manifest's directory, so a monorepo runs only the affected package first.
 
 **Remembered per project.** On first need (the first run that changes files in a repo without `.juno/verify.json`),
-Juno shows one Liquid Glass card: "Use these as this project's checks?" listing each exact command. Accepting writes
+Alevr shows one Liquid Glass card: "Use these as this project's checks?" listing each exact command. Accepting writes
 `.juno/verify.json` (a normal file change, shown in Changes) and records the file's hash as accepted in
 `~/Library/Application Support/Juno/code/verify-approvals.json` (same pattern as `HookPolicyStore`). A later change
 to the file by anyone re-asks before the new commands are proposed to the model.
@@ -535,7 +537,7 @@ Left                                                                   ← model
   | `code.needs-approval` | An approval is pending and the session is not in view | The exact command or action, the tool's summary, the project | **Allow once**, **Decline**, Open |
   | `code.question` | `ask_user` is pending | The question | Reply (text input), Open |
   | `code.needs-you` | `checksFailing`, `blocked`, `stepLimit`, `budget`, `stalled` | The reason in words | **Keep going** (only for `stepLimit`, `budget`, `stalled`), Open |
-  | `code.ci` | CI finished for a PR Juno opened (§5.3) | "3 of 4 checks passed; `test (ubuntu)` failed" | Fix it, Open |
+  | `code.ci` | CI finished for a PR Alevr opened (§5.3) | "3 of 4 checks passed; `test (ubuntu)` failed" | Fix it, Open |
   | `code.failed` | `error` | The error in words | Retry, Open |
 
   Allow once and Decline resolve through `SessionController.approve/deny` (`:1903-1977`) with the same digest binding
@@ -553,10 +555,10 @@ Left                                                                   ← model
   in `applicationWillTerminate` (`:261-265`) is deferred while runs are active.
 - **Run journal.** The ledger, the goal and the pending approval are persisted per session
   (`sessions/<id>/run.json`, Lane A, written at every step boundary next to the in-progress crash-safe batch save).
-- **On relaunch** an interrupted session shows "Juno quit while this was running" with **Resume**, which calls
+- **On relaunch** an interrupted session shows "Alevr quit while this was running" with **Resume**, which calls
   `resume(note: .afterQuit)`. The note carries the in-progress "outcome unknown" results for calls that were running.
   An active goal resumes paused; the reader presses Resume to continue it. An optional setting "Resume interrupted
-  goals when Juno opens" (off by default) makes that automatic.
+  goals when Alevr opens" (off by default) makes that automatic.
 - The interrupted state is `interrupted` in the protocol (it already exists).
 
 ### 1.13 Protocol additions (D-014)
@@ -582,10 +584,10 @@ semantics later, through the protocol (Phase 11); their engines are not changed 
 ## 2. Goal mode
 
 A goal is a persistent objective with completion criteria that survives turns, relaunch and compaction. It is
-Juno's version of Codex `/goal` (CLI 0.128.0, 2026-04-30; "keep the same sandbox and approval policy",
+Alevr's version of Codex `/goal` (CLI 0.128.0, 2026-04-30; "keep the same sandbox and approval policy",
 https://learn.chatgpt.com/docs/long-running-work.md, accessed 2026-09-30) and Claude Code `/goal` (a session-scoped
 prompt Stop hook judged by a small fast model; "A goal doesn't change your permission mode",
-https://code.claude.com/docs/en/goal.md, accessed 2026-09-30). Juno's difference: the deterministic gate runs
+https://code.claude.com/docs/en/goal.md, accessed 2026-09-30). Alevr's difference: the deterministic gate runs
 before the judge, and the judge can only say *keep working*, never *allowed*.
 
 ### 2.1 Model
@@ -663,7 +665,7 @@ public struct GoalVerdict: Codable, Sendable {
   the goal itself (today `update_goal` is `.write` and asks on every step, `Tools/UpdateGoalTool.swift:66`).
 - **The goal start card** (`Studio/StudioGoalStartCard.swift`, Liquid Glass, in the thread) appears once and needs
   one click:
-  - the objective and the criteria Juno drafted from it (editable; each shows how it will be checked: a recipe
+  - the objective and the criteria Alevr drafted from it (editable; each shows how it will be checked: a recipe
     check, a Preview route, or "judged from the conversation");
   - the budget (defaults from `autonomy.goalBudget`), editable;
   - task-scoped grants (§1.8), each unticked by default: "May run `swift test` without asking while this goal is
@@ -713,12 +715,12 @@ When the stop check (§1.4) reaches rule 11 with an active goal:
    `{verdict: "not_met"|"met"|"impossible", reason: string<=300, unmet_criteria: [string]}`. Its prompt forbids
    treating effort, intent, partial progress or a plausible final answer as proof, following Codex's completion
    audit (`codex-rs/core/templates/goals/continuation.md` at `6014b667`, research O4). Judge cost and latency on
-   Juno's proxy are **UNVERIFIED**; Lane A measures them in the scripted-model soak.
+   Alevr's proxy are **UNVERIFIED**; Lane A measures them in the scripted-model soak.
 3. **Outcomes.**
    - `met` → status `achieved`, the run ends `doneChecked`, the report runs (§1.10).
    - `impossible` → status `impossible`, the run ends `blocked` with the judge's reason; notification.
    - `not_met` → `continueWith(.goalNotMet)` using the continuation template in §2.5.
-   - Judge error → one retry; then fall back to the deterministic result alone and mark the verdict "Juno could not
+   - Judge error → one retry; then fall back to the deterministic result alone and mark the verdict "Alevr could not
      check the goal this turn". Two judge failures in a row → `needsYou`.
 4. **Stall guard.** Two continuation turns in a row without a tool call → `needsYou` ("Stopped: no progress in the
    last two tries"), goal kept (Codex suppresses continuation after a turn with no tool calls; Claude Code stops
@@ -787,7 +789,7 @@ the goal to `needsYou` with the reason, ends the run `blocked`, and notifies.
 - Transient model failures follow the in-progress retry policy. When it gives up, the goal pauses as `needsYou` with
   the cause; it is not cleared.
 - `planLimitReached`, authentication, a context overflow compaction could not clear, and an unavailable model →
-  `needsYou` with the cause and the action that fixes it. (Claude Code clears the goal on these four; Juno pauses,
+  `needsYou` with the cause and the action that fixes it. (Claude Code clears the goal on these four; Alevr pauses,
   because the reader should decide to drop a goal.)
 - A reader Stop pauses the goal. It does not clear it.
 
@@ -849,7 +851,7 @@ browser → computer use (https://code.claude.com/docs/en/computer-use, accessed
   `AccessibilityControl`, `ScreenshotPolicy`). A separate package keeps `JunoNativeKit/Package.swift` (being edited
   by `rf/agent-protocol`) out of this lane.
 - `ScreenControlService` is an app-wide actor. One `ScreenControlLock` is shared by every Code workspace and by Work
-  tasks (CU-09): a second claimant is refused with a message naming the holder ("Juno is using TextEdit for 'Fix the
+  tasks (CU-09): a second claimant is refused with a message naming the holder ("Alevr is using TextEdit for 'Fix the
   export sheet'").
 - `JunoCodeLocal/ComputerUseCoordinator.swift` becomes an adapter. It keeps its consent-generation logic (checked
   across every suspension point, which the audit rates sound) and delegates capture, input and policy to the service.
@@ -873,8 +875,8 @@ public struct AppGrant: Codable, Sendable {
 
 | Category | Cap | Why |
 |---|---|---|
-| Juno itself (all Juno bundle IDs and helpers), `loginwindow`, `SecurityAgent`, `coreautha`/`coreauthd` UI, `UserNotificationCenter` (TCC and admin prompts), Keychain Access, password managers (1Password, Bitwarden, Dashlane, Apple Passwords) | **refused** | Approving its own prompts or entering secrets breaks deterministic approval (CU-01). Codex: "can't automate terminal apps or ChatGPT itself … can't … approve security and privacy permission prompts". |
-| Terminals (Terminal, iTerm2, Warp, Ghostty, kitty, Alacritty) and IDEs (Xcode editor, VS Code, Cursor, JetBrains, Zed) | **click** | Typing into a shell bypasses the command policy; shell work goes through Juno's shell tools. Claude Code caps these at "Click and scroll, but not type or use keyboard shortcuts". |
+| Alevr itself (all Alevr bundle IDs and helpers), `loginwindow`, `SecurityAgent`, `coreautha`/`coreauthd` UI, `UserNotificationCenter` (TCC and admin prompts), Keychain Access, password managers (1Password, Bitwarden, Dashlane, Apple Passwords) | **refused** | Approving its own prompts or entering secrets breaks deterministic approval (CU-01). Codex: "can't automate terminal apps or ChatGPT itself … can't … approve security and privacy permission prompts". |
+| Terminals (Terminal, iTerm2, Warp, Ghostty, kitty, Alacritty) and IDEs (Xcode editor, VS Code, Cursor, JetBrains, Zed) | **click** | Typing into a shell bypasses the command policy; shell work goes through Alevr's shell tools. Claude Code caps these at "Click and scroll, but not type or use keyboard shortcuts". |
 | Browsers (Safari, Chrome, Arc, Firefox, Edge, Brave) | **view** | Web work goes through the Preview browser, where the loopback and site rules apply. |
 | Finance, trading and crypto apps | **view**, and in the default Denied list | Claude Code: trading platforms view only; its safety article blocks them by default. |
 | Finder, System Settings | **full**, with a warning line ("Can read or write any file", "Can change system settings") | Same warnings as Claude Code. |
@@ -887,8 +889,8 @@ The reader can lower a tier or deny an app in Settings → Screen control → Ap
    app and focused element for keys and typing;
 2. refuses if the app is not granted, is refused by category, or the action exceeds its tier ("TextEdit is granted
    for clicks only");
-3. refuses a Juno window, a secure text field (`AXSecureTextField` or the secure subrole), and the menu bar extra of
-   Juno;
+3. refuses a Alevr window, a secure text field (`AXSecureTextField` or the secure subrole), and the menu bar extra of
+   Alevr;
 4. applies the always-confirm floor.
 
 **The always-confirm floor** (`ConsequentialActionFloor.swift`). These always ask, in every mode including Full
@@ -913,12 +915,12 @@ without a screen action.
 
 ### 3.4 Tool vocabulary
 
-Juno's canonical actions are Anthropic's `computer_toolset_20260801` members, verified against
+Alevr's canonical actions are Anthropic's `computer_toolset_20260801` members, verified against
 https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool (accessed 2026-09-30):
 `screenshot`, `zoom`, `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `left_click_drag`,
 `mouse_move`, `left_mouse_down`, `left_mouse_up`, `cursor_position`, `scroll`, `type`, `key` (with `repeat` 1–100),
 `hold_key`, `wait`. Batches run "in order and stop at first failure"; later actions answer exactly "Not executed: an
-earlier computer action in this turn failed." Juno caps `hold_key` and `wait` at 30 s (Anthropic allows 300).
+earlier computer action in this turn failed." Alevr caps `hold_key` and `wait` at 30 s (Anthropic allows 300).
 
 **Function-tool form** (routes without a native toolset; `JunoCodeRuntime/Tools/ComputerUseTools.swift`, rewritten):
 
@@ -985,7 +987,7 @@ still need." "TextEdit is granted for clicks only; typing was not sent."
 ### 3.5 Capture, scaling and multi-display
 
 1. **Capture at device pixels.** Background mode: `SCContentFilter(desktopIndependentWindow:)` for the target window
-   with `SCScreenshotManager` (macOS 14+). Takeover mode: `SCContentFilter(display:excludingApplications:[Juno]
+   with `SCScreenshotManager` (macOS 14+). Takeover mode: `SCContentFilter(display:excludingApplications:[Alevr]
    exceptingWindows:[])`, which also excludes the presence overlay. Never `excludingWindows: []`
    (`ComputerUseCoordinator.swift:361`, CU-01). Do not rely on `NSWindow.sharingType = .none` (behaviour under
    ScreenCaptureKit on macOS 15+ **UNVERIFIED**).
@@ -1005,7 +1007,7 @@ still need." "TextEdit is granted for clicks only; typing was not sent."
 6. **Retention.** Computer-use sessions call the in-progress `ImageRetention.withinBudget` with `maximumImages: 3`
    pruned in batches of 25 steps (Anthropic: "keep the last three screenshots and prune every 25 turns, so the prefix
    stays byte-identical between prune events"). On Opus 5.5 with thinking, Anthropic advises server-side tool-result
-   clearing instead of client pruning; whether Juno's proxy passes that through is **UNVERIFIED** (Lane C checks it
+   clearing instead of client pruning; whether Alevr's proxy passes that through is **UNVERIFIED** (Lane C checks it
    against `src/app/api/agent/[...path]/route.ts`).
 7. **Calibration test** (offscreen, §6 Lane C): a grid window rendered at 1512×982, 1728×1117 and 3008×1692 points
    with backing scale 2, synthetic model coordinates through the whole pipeline, injected events captured by a fake
@@ -1028,33 +1030,33 @@ still need." "TextEdit is granted for clicks only; typing was not sent."
 
 ### 3.7 Activation flow and what the UI shows
 
-1. **Session switch.** The reader turns on "Let Juno use apps" for the session (today's Start, More menu). The tools
+1. **Session switch.** The reader turns on "Let Alevr use apps" for the session (today's Start, More menu). The tools
    are declared whenever this is on and the model has vision, so starting mid-run needs no orchestrator rebuild
    (CU-15); until the grants exist, calls return "Ask the reader to grant an app with computer_apps request".
 2. **macOS permissions.** Screen Recording and Accessibility are checked (`ComputerUsePermissionProbe.swift`). When
-   Juno appears in System Settings but `AXIsProcessTrusted()` is false (the ad-hoc dev feed voids grants on update,
-   CU-20), the banner says: "macOS no longer trusts this build of Juno. Remove Juno from the Accessibility list and
+   Alevr appears in System Settings but `AXIsProcessTrusted()` is false (the ad-hoc dev feed voids grants on update,
+   CU-20), the banner says: "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and
    add it again."
 3. **App grants.** The model calls `computer_apps request`. One grant sheet (`Studio/StudioScreenGrantSheet.swift`,
-   Liquid Glass) lists each app with its tier in words ("TextEdit: full control", "Terminal: clicks only — Juno
+   Liquid Glass) lists each app with its tier in words ("TextEdit: full control", "Terminal: clicks only — Alevr
    uses its own shell for commands"), warnings, clipboard checkboxes, and **Allow for this session** / **Deny**.
 4. **Mode.** Background per-window is the default: the reader keeps the pointer and keyboard. Takeover (whole display,
-   real pointer, other apps hidden and restored at turn end) needs a second card, "Let Juno take over the screen",
+   real pointer, other apps hidden and restored at turn end) needs a second card, "Let Alevr take over the screen",
    every session.
-5. **Start and end.** A system notification when Juno starts ("Juno is using TextEdit. Press Esc to stop.") and when
+5. **Start and end.** A system notification when Alevr starts ("Alevr is using TextEdit. Press Esc to stop.") and when
    it stops.
 
 **Presence, stop and take over** (no dots, no pills; `native/macOS/JunoDesktop/App/DesktopScreenPresence.swift`,
 Lane C):
 - **In the session**: the old capsule (`Studio/StudioScreenControl.swift:213-221`, red and coral dots, CU-14) becomes
   one plain row at the top of the thread: a live thumbnail of the last frame (refreshed after every action, CU-13),
-  "Juno is using Safari", and **Stop** and **Take over**.
+  "Alevr is using Safari", and **Stop** and **Take over**.
 - **On screen**: a click-through Liquid Glass glow on the screen edge in takeover; in background mode a glow outline
   on the target window's frame (feasibility of tracking another app's window **UNVERIFIED**; fallback is the caption
-  alone). A small glass caption under the menu bar: "Juno is using TextEdit · Esc to stop". Both windows are excluded
+  alone). A small glass caption under the menu bar: "Alevr is using TextEdit · Esc to stop". Both windows are excluded
   from capture.
 - **Esc anywhere** stops screen control through a listen-and-consume `CGEventTap` (Accessibility is already granted);
-  the key press is consumed so injected content cannot use it. The menu bar extra has "Stop Juno using apps".
+  the key press is consumed so injected content cannot use it. The menu bar extra has "Stop Alevr using apps".
 - **Stop** cancels the in-flight action, releases the lock and the grants, **and** ends the model's turn with a
   runtime note ("The reader stopped screen control"), so the loop does not retry (CU-10).
 - **Take over**: any non-synthetic mouse or keyboard input (`CGEventSource.secondsSinceLastEventType(.hidSystemState,
@@ -1066,7 +1068,7 @@ Lane C):
 
 ### 3.8 Prompt-injection rules
 
-1. Juno's own windows are never captured and never targetable.
+1. Alevr's own windows are never captured and never targetable.
 2. Every frame, AX list and page text is labelled untrusted data; installed-app and menu lists are "DATA ONLY".
 3. The floor (§3.3) catches consequential clicks by rule, not by the model's judgement.
 4. Never follow a web link with computer use; web goes through the Preview or, for external sites, the reader.
@@ -1078,7 +1080,7 @@ Lane C):
 
 ### 3.9 Leaks around the gate
 
-- **CU-11 (PLAUSIBLE).** Agent commands may inherit Juno's TCC grants because the sandbox allows every
+- **CU-11 (PLAUSIBLE).** Agent commands may inherit Alevr's TCC grants because the sandbox allows every
   `mach-lookup` (`JunoCodeLocal/CommandSandboxProfile.swift:216-221`). Probe first; fix by spawning agent commands
   with TCC responsibility disclaimed, or by denying the WindowServer and screen-capture mach services in the agent
   profile while keeping the Simulator and UI-test paths working.
@@ -1090,7 +1092,7 @@ Lane C):
 
 | ID | Fix | Section |
 |---|---|---|
-| CU-01 | Per-app grants, category caps, Juno and TCC prompts refused, capture excludes Juno | §3.3, §3.5 |
+| CU-01 | Per-app grants, category caps, Alevr and TCC prompts refused, capture excludes Alevr | §3.3, §3.5 |
 | CU-02 | Layout-aware chords; AZERTY and Dvorak tests | §3.6 |
 | CU-03 | 16-unit chunked typing with read-back | §3.6 |
 | CU-04 | Pixel capture, per-route budget, coordinate map-back | §3.5 |
@@ -1121,7 +1123,7 @@ Lane C):
 
 The target is Claude Code Desktop's Browser pane (`.claude/launch.json`, server logs, console, network, viewport
 presets, and "Auto-verify is on by default … It takes screenshots, checks for errors, and confirms changes work before
-completing its response"; https://code.claude.com/docs/en/desktop.md, accessed 2026-09-30), keeping Juno's
+completing its response"; https://code.claude.com/docs/en/desktop.md, accessed 2026-09-30), keeping Alevr's
 stronger facts: the observed URL, the kernel sandbox for dev servers, loopback-only agent scope and redaction. The
 code-level design is `docs/rework/audit/code-preview.md` §5; this section fixes the contract and the order.
 
@@ -1139,7 +1141,7 @@ code-level design is `docs/rework/audit/code-preview.md` §5; this section fixes
   `takeSnapshot` and synthesized events in such a window is **UNVERIFIED**: Lane D's first task is a one-day spike.
   The fallback (a 1-pt, near-transparent on-screen host) needs an owner call.
 - **PGID ledger** at `~/Library/Application Support/Juno/preview-servers.json` (`pgid, pid, start time, cwd, config
-  hash`); on launch Juno reaps entries whose owner is gone, checking the leader's start time before signalling
+  hash`); on launch Alevr reaps entries whose owner is gone, checking the leader's start time before signalling
   (PV-14).
 - `DevServerService.start` becomes `async`, so a restart never blocks the main actor (PV-17).
 - **Durable shells** (in progress) become the process layer when they land: a preview server is a shell with
@@ -1148,7 +1150,7 @@ code-level design is `docs/rework/audit/code-preview.md` §5; this section fixes
 ### 4.2 Launch configuration and dev-server lifecycle
 
 **`.juno/launch.json`** (`JunoCodeLocal/LaunchConfiguration.swift`), plus a read-only import of `.claude/launch.json`
-when present (the owner's repo already has five configurations there). Claude's field set plus three Juno fields:
+when present (the owner's repo already has five configurations there). Claude's field set plus three Alevr fields:
 
 ```json
 {
@@ -1164,10 +1166,10 @@ when present (the owner's repo already has five configurations there). Claude's 
 }
 ```
 
-- `url` with no command attaches to a server Juno did not start (a Terminal server, a durable shell) (PV-5). A
+- `url` with no command attaches to a server Alevr did not start (a Terminal server, a durable shell) (PV-5). A
   loopback `url` must be origin-only and match `port`.
 - `network: "loopback" | "internet"` (default loopback). When the log shows a blocked outbound attempt
-  (`ENOTFOUND`, `EAI_AGAIN`, `connect EPERM` to a non-loopback address, "Failed to download … Google Fonts"), Juno
+  (`ENOTFOUND`, `EAI_AGAIN`, `connect EPERM` to a non-loopback address, "Failed to download … Google Fonts"), Alevr
   asks once per project and config hash: "The dev server tried to reach fonts.googleapis.com. Let this project's
   server use the internet?" The answer is stored locally (not committed) (PV-7).
 - `ready` gives an HTTP readiness path and timeout instead of the fixed 8 s wait (PV-23).
@@ -1293,7 +1295,7 @@ project files don't need approval, so auto-verify keeps working without prompts"
 ### 4.6 The visual verify loop (autoVerify)
 
 **Trigger (deterministic, never model-judged).** Antigravity made its browser explicit because "agents were still
-not capable enough to determine exactly when to be using the browser" (research §3.3), so Juno triggers by rule:
+not capable enough to determine exactly when to be using the browser" (research §3.3), so Alevr triggers by rule:
 - an edit batch touched files under a running or configured web configuration's `cwd` whose extension is in
   `{tsx, jsx, ts, js, vue, svelte, astro, css, scss, html, mdx}` or under `public/`, `app/`, `pages/`, `components/`,
   `styles/`; and
@@ -1333,7 +1335,7 @@ launch (§3), and `surface: ios` from simulator screenshots (§5.14).
   log drawer, Keep sign-in.
 - **State in words** in the toolbar subtitle: "Running `pnpm run dev` in apps/web on :3000 · offline". The floating
   status capsule and the shield and caution badges go (PV-36).
-- **Agent at work**: an edge glow on the page while Juno drives it, "Juno is using the preview", and **Stop**. Esc in
+- **Agent at work**: an edge glow on the page while Alevr drives it, "Alevr is using the preview", and **Stop**. Esc in
   the pane stops agent control.
 - **Annotate** (element pick into the composer) is P1 (§5.15). The stale "It cannot mirror an iOS Simulator" copy
   points to the Simulator pane instead.
@@ -1400,7 +1402,7 @@ parent through the usage ledger. Files: `Tools/DelegateTaskTool.swift`, `Subagen
 `SubagentExecution.swift`, `BuiltInAgents.swift` (new), `Models/CustomAgentDiscovery.swift`.
 
 **5.3 PR creation, CI status and the auto-fix loop (Lane E).** PR creation exists (`Views/Review/CreatePullRequestSheet.swift`,
-`SessionController.swift:3713`). Add `JunoCodeLocal/CIWatchService.swift`: after Juno opens a PR, or when the reader
+`SessionController.swift:3713`). Add `JunoCodeLocal/CIWatchService.swift`: after Alevr opens a PR, or when the reader
 links one, poll `gh pr checks <n> --json name,state,bucket,link,workflow` every 60 s with backoff to 5 minutes while
 checks run, stop when all settle. A CI bar above the composer (`Studio/StudioCIBar.swift`) says "CI: 3 of 4 passed ·
 `test (ubuntu)` failed" with **Fix it** and an **Auto-fix** toggle (off by default). Fix it fetches the failing log
@@ -1451,7 +1453,7 @@ the judge and the reviewer, labelled. Files: `Studio/StudioComposer.swift`, `Stu
 **5.6 Rewind per turn and fork (Lane E).** Turn rewind of code and/or conversation exists
 (`ConversationRewind.swift`, `JunoCodeLocal/TurnCheckpointStore.swift`, `SessionController.swift:2474-2539`). Add:
 (a) the goal, todo list and ledger are restored with the conversation, so a rewound goal does not keep stale
-evidence; (b) a warning when the turns being rewound ran commands that changed files outside Juno's edit tools
+evidence; (b) a warning when the turns being rewound ran commands that changed files outside Alevr's edit tools
 (shell changes are not in checkpoints, known gap in `04-HANDOFF.md`); (c) **Fork**: from any turn, or `/fork`,
 create a new session whose conversation is copied up to that turn (`CodeSessionStore+Fork.swift`), optionally in a new
 worktree with the files as of that turn, keeping the original untouched; the relay's "unsupported" fork
@@ -1487,12 +1489,12 @@ and handler types `command`, `http`, `mcp_tool`, `prompt`, `agent`):
   `PostToolUseFailure`, `PostToolBatch`, `PermissionRequest`, `PermissionDenied`, `SubagentStart`, `SubagentStop`,
   `TaskCreated`, `TaskCompleted` (todo items), `PreCompact`, `PostCompact`, `Notification`, `InstructionsLoaded`,
   `ConfigChange`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `PreModelSwitch`, `PostModelSwitch`, plus
-  Juno's `GoalSet` and `GoalVerdict`. Not adopted now: `Setup`, `UserPromptExpansion`, `MessageDisplay`,
+  Alevr's `GoalSet` and `GoalVerdict`. Not adopted now: `Setup`, `UserPromptExpansion`, `MessageDisplay`,
   `TeammateIdle`, `DirectoryAdded`, `CwdChanged`, `Elicitation`, `ElicitationResult`.
 - **Handlers**: `command` (have), `http` (POST JSON, same output contract), `prompt` (small-model single turn
   returning `{ok, reason}`; for `Stop`/`SubagentStop`, `ok: false` blocks with the reason, like Cursor and Claude),
   `mcp_tool` (P2). `agent` hooks are not adopted (experimental upstream).
-- **Stdin** (all events): `session_id`, `transcript_path`, `cwd`, `permission_mode` (Juno maps `readOnly→plan`,
+- **Stdin** (all events): `session_id`, `transcript_path`, `cwd`, `permission_mode` (Alevr maps `readOnly→plan`,
   `askBeforeChanges→default`, `workspaceWrite→acceptEdits`, `fullAccess→bypassPermissions`, as today),
   `hook_event_name`, `agent_id`/`agent_type` for sub-agents, plus the event fields (`tool_name`, `tool_input`,
   `tool_use_id`, `tool_response`, `prompt`, `stop_hook_active`, `last_assistant_message`, `trigger`, `goal`…).
@@ -1504,7 +1506,7 @@ and handler types `command`, `http`, `mcp_tool`, `prompt`, `agent`):
 - **Exit codes**: 0 success (JSON read if valid); 2 blocks where the event can block, stderr fed back; other codes are
   non-blocking errors shown in the thread.
 - **Timeouts**: 600 s for `command` and `http`, 30 s for `prompt`, 30 s for `UserPromptSubmit`.
-- **Juno invariants kept**: a hook `allow` ranks below the reader's rules and cannot silence screen input, the
+- **Alevr invariants kept**: a hook `allow` ranks below the reader's rules and cannot silence screen input, the
   always-confirm floor or `.alwaysRequiresApproval` tools (`CodeSettingsFile.withoutScreenInputAllowances`); project
   hooks need repository trust; Stop-hook continuations keep their cap of 8 and are counted apart from the gate's.
 Files: `HookTypes.swift`, `HookConfigurationParser.swift`, `HookRunner.swift`, `HookHTTPRunner.swift` and
@@ -1539,7 +1541,7 @@ Files: `Models/FileContextToken.swift` → `Models/MentionResolver.swift`, `Stud
 `Studio/StudioMentionPicker.swift` (new).
 
 **5.13 Diagnostics after edits (Lane B).** Claude Code feeds language-server diagnostics back after each edit through
-code-intelligence plugins, including Swift (research feature matrix, [F]). Juno: after an edit batch, run the
+code-intelligence plugins, including Swift (research feature matrix, [F]). Alevr: after an edit batch, run the
 recipe's `typecheck` check for the affected package when it is allowed without a prompt and fast (under 20 s last time),
 and attach new errors to the next tool result as a short "Diagnostics after your edit" block. A sourcekit-lsp/tsserver
 client is P2. Files: `VerificationLedger.swift`, `Tools/EditTools.swift` result hook (coordinate with `rf/code-tools`).
@@ -1575,7 +1577,7 @@ PR URLs over `summary.json` plus a lazy full-text pass. Files: `CodeSessionStore
 
 ### P2
 
-**5.18 Headless and automation (Lane F, cheap parts first).** (a) An App Intent "Start a Juno Code task" (project,
+**5.18 Headless and automation (Lane F, cheap parts first).** (a) An App Intent "Start a Alevr Code task" (project,
 prompt, optional goal, mode) so Shortcuts and the Mac's automation can start a run; it opens a normal session and
 every approval still goes to the reader. (b) `juno-code exec "<prompt>" [--goal "<condition>"] [--mode ask|auto-edit]
 [--json]`, an executable target `JunoCodeCLI` in the JunoCode package running `AgentOrchestrator` headless with the
@@ -1731,7 +1733,7 @@ Esc and Stop, CU-04 scaling with the calibration test, CU-14 dots, CU-02 layout)
   `cmd+z`, `cmd+w`, `cmd+m` map to the keys that type a, z, w, m; Dvorak likewise; an unmappable character is a named
   error.
 - `InputDriverTests.swift`: typing 200 characters with emoji and accents yields chunks of ≤ 16 UTF-16 units in order.
-- `AppGrantPolicyTests.swift`: category caps; refused list (Juno, SecurityAgent, password managers); tier
+- `AppGrantPolicyTests.swift`: category caps; refused list (Alevr, SecurityAgent, password managers); tier
   enforcement per action; secure-field refusal; floor matching on English and French titles ("Envoyer",
   "Supprimer"); Always allow scoped to bundle × action class and never offered for the floor; lapse after 30 idle
   minutes (injected clock).
@@ -1885,7 +1887,7 @@ on the French layout with `cmd+a`; Esc stops screen control from another app; qu
 | 0 | A (seams) | Shared types and hook points merged | 1–2 days |
 | 1 | A1 gate + soft limits + prompt · B1 recipe + ledger + `run_checks` + PV-11 · C1 S1 fixes · D1 P0 fixes | **The loop keeps going until checked, and says so.** Computer use and Preview stop being unsafe | 1.5 weeks |
 | 2 | A2 goal + judge + row · B2 reviewer + report · E1 runs, notifications, quit, Resume · D2 registry + launch config | **Goals run unattended under deterministic approval** | 2 weeks |
-| 3 | C2 vocabulary, background mode, provider wire · D3 tools + verify loop · E2 CI loop · F1 commands, hooks, context and cost | **Juno looks at what it built, and follows the PR** | 2–3 weeks |
+| 3 | C2 vocabulary, background mode, provider wire · D3 tools + verify loop · E2 CI loop · F1 commands, hooks, context and cost | **Alevr looks at what it built, and follows the PR** | 2–3 weeks |
 | 4 | P1s: fork, worktree sessions, line comments, user-global config, mentions, paste, Simulator tools, annotate, `/loop` | Parity | 2–3 weeks |
 
 Estimates are for one engineer per lane working in parallel and are not measured. Each step closes with
@@ -1945,9 +1947,9 @@ Claude Code iOS Simulator and Chrome; OpenAI browser and API guide; Codex PR #47
 and Design Mode; Apple API availability), `code-feature-matrix.md` §7.
 
 **UNVERIFIED** (carried or new): the exact `configs` shape of `computer_toolset_20260801`; whether Anthropic's
-injection classifiers cover custom function-tool images; whether Juno's proxy passes server-side tool-result
+injection classifiers cover custom function-tool images; whether Alevr's proxy passes server-side tool-result
 clearing; Gemini and Qwen coordinate conventions; `NSWindow.sharingType` under ScreenCaptureKit on macOS 15+;
 tracking another app's window for the background glow; WebKit behaviour in a never-front host; NSEvent delivery to an
-offscreen web view; iOS Simulator tap injection; judge cost and latency on Juno's proxy; `juno-code exec` auth outside
+offscreen web view; iOS Simulator tap injection; judge cost and latency on Alevr's proxy; `juno-code exec` auth outside
 the app; Cursor `/goal` internals; the app outliving its last window (code comment only, `StudioRunMonitor.swift:10-15`);
 CU-11 TCC inheritance (probe pending).

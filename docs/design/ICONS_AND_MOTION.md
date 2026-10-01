@@ -1,5 +1,7 @@
 # Icons and motion: the September 2026 premium pass
 
+> **Current direction, 2026-10-01:** See [the Alevr V3 brand package](../rework/brand/NAMES_AND_ICONS.md). This dated research/brief remains historical evidence. Its keep-Juno/Crew and old font/icon recommendations do not govern the new proposed identity. D-027 restores Newsreader; D-028 establishes custom icons; D-033/D-034 govern material and agent characters. Alevr remains a working concept with availability unresolved.
+
 `FLAT_UI.md` is still the material law (one plane, hairlines, tonal state, one
 accent) and `PREMIUM_AUDIT.md` still governs composition. This brief covers the
 two things those documents left to each call site, which is why they drifted:

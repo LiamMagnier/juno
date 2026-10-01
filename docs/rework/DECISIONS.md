@@ -254,3 +254,46 @@ oversized accessories, no blush or mouth, high-key light. Same genre as dots,
 never their characters. Each Blender pass is scored by independent critics for
 appeal and creepiness against the dots key art in the same composition; the
 loop stops only at appeal ≥ 8, not creepy, ownable ≥ 7, premium ≥ 8.
+
+
+## Brand documentation direction (2026-10-01)
+
+**D-035 · Alevr and three related product systems, documentation and images only.**
+The owner likes Alevr and requested AL-ver pronunciation guidance, a complete
+premium identity from the actual V3 redesign, separate Alevr Chat and Alevr
+Orbit systems, and an Alevr Code extension. Read [brand/README.md](brand/README.md).
+Alevr is coined with aleph/infinity inspiration. Orbit is the workspace/subbrand;
+individuals are named agents. This supersedes D-006's lowercase Crew guidance
+and the old keep-Juno recommendation for the proposed identity, while preserving
+dated evidence. V3 palette/type/material/motion and D-034's latest character
+brief remain authoritative. Alevr has an indexed hosted-chatbot character use,
+so final availability and the prior zero-existing-use requirement are unresolved.
+The owner explicitly excluded implementation: no app-code rename, production
+asset replacement, chat dispatch, push or deployment is authorized by this
+documentation task. Generated artwork is raster concept imagery; vectors,
+platform catalogs, final character approval and acceptance remain pending.
+
+
+**D-036 · Reject the initial logo; preserve brand work and add script/skill runtime scope.**
+The owner rejected the A-shaped Open Fold icon as too simple and insufficiently
+connected to the product, and asked to keep improving design/product identity.
+[Logo revision](brand/LOGO_REVISION.md) records three alternative concepts;
+none is adopted. The three system boards still need the chosen replacement
+projected into their applications. Separately, the owner explicitly requested
+that a future Claude task rework model tool calls so Python/other scripts and
+skills actually execute and return usable results. [TOOL_CALL_REWORK.md](TOOL_CALL_REWORK.md)
+is linked from the final section of HANDOFF.md. Both changes here are records
+and concept work, not authorization to restart app implementation.
+
+
+**D-037 · Continuum selected; branded thinking and feature micro-interactions.**
+The owner said "I really like Continuum", selecting its open-path master-mark
+direction while keeping Alevr as the product name. The rejected A-shaped mark
+is archived. Update the shared icon and all Chat/Orbit/Code boards consistently.
+The owner also explicitly requested the selected logo in thinking feedback and
+premium motion across features. [MOTION_AND_THINKING.md](brand/MOTION_AND_THINKING.md)
+records a restrained real-activity path handoff, inherited V3 timing and truthful
+state/accessibility behavior; it supersedes only the earlier blanket ban on
+purposeful brand-mark thinking motion, not the ban on decorative perpetual
+loops. Both motion and script/tool/skill runtime tasks remain at the end of
+HANDOFF.md for later implementation; no app code is changed here.

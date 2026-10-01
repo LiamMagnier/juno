@@ -1,11 +1,13 @@
-# Juno interaction spec
+# Alevr interaction spec
 
-The definitive micro-interaction and component-behaviour spec for the Juno Refoundation. It covers the web (Next.js, React, Tailwind, framer-motion 12) and maps every behaviour to the Mac (SwiftUI + AppKit) and to iPhone and iPad (SwiftUI + UIKit, Liquid Glass, haptics). An engineer should be able to build any interaction here without guessing a number, a string, a key or an ARIA attribute.
+> **2026-10-01 brand editorial update:** Alevr / Alevr Orbit / Alevr Code are the working design direction. Read [the brand package](brand/README.md) and the separate [Chat](brand/CHAT_SYSTEM.md), [Orbit](brand/ORBIT_SYSTEM.md), [Code](brand/CODE_SYSTEM.md) systems. Names in current proposed product prose are updated; source identifiers, routes, fenced code and dated evidence retain their actual spelling. Name availability and final artwork remain unresolved. This documentation pass does not authorize or claim a code rename. D-027–D-034 and the new brand specification override older visual rules; in particular D-033 allows restrained blur only on floating web layers and D-034 governs the new character direction. Original dated status below remains historical; HANDOFF.md is the current implementation record.
+
+The definitive micro-interaction and component-behaviour spec for the Alevr Refoundation. It covers the web (Next.js, React, Tailwind, framer-motion 12) and maps every behaviour to the Mac (SwiftUI + AppKit) and to iPhone and iPad (SwiftUI + UIKit, Liquid Glass, haptics). An engineer should be able to build any interaction here without guessing a number, a string, a key or an ARIA attribute.
 
 - **Status:** v1, written 2026-10-01 on `rework/refoundation` (head `cdb09e56`). Spec only; no code was changed.
 - **Owner rules (hard, override everything below):**
   1. No status pills, badges or decorative dots.
-  2. Native Liquid Glass on Apple platforms. The web never imitates glass.
+  2. Native platform materials on Apple platforms. Under D-033, web floating layers use restrained translucent blur with solid fallbacks; content surfaces stay opaque.
   3. Nothing consequential happens without a deterministic approval.
 - **Built on:**
   - the product model in `PRODUCT_REFOUNDATION.md` §3–§11;
@@ -29,7 +31,7 @@ Every interaction has an ID (`C12`, `M6`, `T6`…). Tests, PRs and design review
 | **A11y** | Roles, names, focus movement, announcements. |
 | **Failure** | What the person sees when it goes wrong, and the recovery. |
 | **Native** | The SwiftUI / AppKit / UIKit mapping and the haptic, where it differs from the web. |
-| **Ref** | Where the behaviour comes from, and **Juno differs:** what Juno does that the reference does not. |
+| **Ref** | Where the behaviour comes from, and **Alevr differs:** what Alevr does that the reference does not. |
 
 **Semantic colour roles** used throughout. The values come from `DESIGN_LANGUAGE.md` (Phase 2); this spec only fixes what each role may be used for.
 
@@ -40,12 +42,12 @@ Every interaction has an ID (`C12`, `M6`, `T6`…). Tests, PRs and design review
 | `ink-3` | new `--faint-foreground` | Tertiary text: receipts, timestamps, trace objects, placeholders. Must still reach 4.5:1 on its surface. |
 | `surface-0/1/2` | `--background`, `--card`, `--accent` | Tone steps. Structure comes from these steps, not from borders. |
 | `line` | `--border` | Hairlines, only where a boundary is interactive, and under Increase Contrast. |
-| `primary` | `--primary` (becomes the §12 ultramarine) | **Only** where Juno or a crew member is acting *now* (the live line, a working face, a live meter) and the armed send button. At most two spots on a screen. |
+| `primary` | `--primary` (becomes the §12 ultramarine) | **Only** where Alevr or an agent is acting *now* (the live line, a working face, a live meter) and the armed send button. At most two spots on a screen. |
 | `attention` | new `--attention` (amber) | **Only** the words that say someone needs the person ("needs your answer"), and the waiting face. Never a fill, never a dot. |
 | `danger` | `--destructive` | Destructive verbs and error glyphs. Never on a non-destructive primary action. |
 | `data-add` / `data-remove` | `--success-ink` / `--destructive-ink` | Diff counts and data only, as text. |
 
-Every other colour comes from an entity's own mark: an app icon, a file type, a crew face.
+Every other colour comes from an entity's own mark: an app icon, a file type, an agent face.
 
 ---
 
@@ -64,10 +66,10 @@ These rules are the test every entry in §2 passes. They come from the research 
 9. **Reduced motion means fewer and gentler, not none.** Fades stay. Travel, scale, blur, bounce and loops go.
 10. **Nothing consequential happens on a stray key.** Approval is a named verb button that ignores input for its first 500 ms, never Enter in the composer, never a voice "yes".
 
-**The novelty budget.** Juno spends invention in exactly three places ([premium §6.1-9]). Everything else is deliberately familiar.
+**The novelty budget.** Alevr spends invention in exactly three places ([premium §6.1-9]). Everything else is deliberately familiar.
 
-- **S1 · Tokens drawn with the thing's own mark.** Files, apps, crew members, projects and chats are atomic objects in the sentence, identical in the draft, the sent message and the receipt (C8–C10, M23).
-- **S2 · Faces as state instruments.** A crew member's face is a precise, legible readout of what it is doing. It is never a mascot and never idles (§2.9).
+- **S1 · Tokens drawn with the thing's own mark.** Files, apps, agents, projects and chats are atomic objects in the sentence, identical in the draft, the sent message and the receipt (C8–C10, M23).
+- **S2 · Original characters with readable state.** An agent's appearance is customizable under D-034; words say what it is doing. Motion follows the scoped D-032 exception and §2.9.
 - **S3 · The hand-off.** When a request becomes a task, the sentence that described it becomes the task card in place (T1).
 
 ---
@@ -151,25 +153,25 @@ Every entry in §2 carries its tier. Review rejects a motion that is louder than
 | **F0** | 100+ a day, or keyboard-initiated | None. Same-frame change. | Typing; composer growth; ⌘K open and close; any palette opened by a key; arrow-key navigation; switching threads; a sent message appearing; sidebar selection; find. |
 | **F1** | Tens a day | Tonal change or ≤ 120 ms opacity/scale. | Hover, press, the action row, glyph swaps, attachment chips, tooltips. |
 | **F2** | Occasional | `base` or `slow`, standard or layout springs. | Menus and popovers opened with a pointer, dialogs, sheets, disclosures, the artifact panel, toasts, an approval card arriving, the drop overlay. |
-| **F3** | Rare | Up to `emphasis`; the `reward` spring; stagger of ≤ 6 items at 40 ms. | First run, a new crew member arriving, the Library filling for the first time, a long task finishing on screen, a first publish. |
+| **F3** | Rare | Up to `emphasis`; the `reward` spring; stagger of ≤ 6 items at 40 ms. | First run, a new agent arriving, the Library filling for the first time, a long task finishing on screen, a first publish. |
 
 A pointer-opened menu is F2; the same menu opened from the keyboard is F0 and appears instantly. Components implement this with a single flag: `data-opened-by="keyboard" | "pointer"`, set on the trigger's `onKeyDown` / `onPointerDown`, read by the CSS (`[data-opened-by="keyboard"] { animation: none; transition: none; }`).
 
 ### 1.6 What may loop
 
-Loops are for live state only. This is the complete list. Anything else that loops fails review.
+Loops are for live state except D-032's subtle idle on the visible large character in its own thread, stopped when hidden or under Reduce Motion. Small sidebar/list/token faces remain cached and still. The live-state list follows; decorative logo and orbit loops fail review.
 
 1. **The voice level** (C16) and the dictation meter (C15), driven by the audio level, never by a timer.
-2. **A crew face in `thinking` or `working`**, at 32 px or larger, in the focused context only: the open thread's header or the roster card being viewed. One loop on `breathe`, 2400 ms. Sidebar, list and token faces never loop.
-3. **The Code "Juno is driving" edge glow** on the Preview pane and the screen-control outline (X8, X9), and the goal row while `working` (X2): the owner-approved "glow = state", on `breathe`, 2400 ms, opacity 0.6 ↔ 1.
+2. **An agent face in `thinking` or `working`**, at 32 px or larger, in the focused context only: the open thread's header or the roster card being viewed. One loop on `breathe`, 2400 ms. Sidebar, list and token faces never loop.
+3. **The Code "Alevr is driving" edge glow** on the Preview pane and the screen-control outline (X8, X9), and the goal row while `working` (X2): the owner-approved "glow = state", on `breathe`, 2400 ms, opacity 0.6 ↔ 1.
 4. **The elapsed-seconds counter** in a live line. A number changing once a second is information, not animation.
 5. **A spinner inside a control the person pressed** (`Button loading`), shown only after `showDelay`, 16 px, `ink-2`, one turn per 800 ms, linear.
 
-Banned as loops: shimmer sweeps across text, typing dots, streaming carets, orbs, breathing idle faces, blinking and glancing on timers, animated gradient borders, pulsing badges.
+Banned as loops: shimmer sweeps across text, typing dots, streaming carets, orbs, idle faces outside the D-032 exception, blinking and glancing on timers, animated gradient borders, pulsing badges.
 
 ### 1.7 Reduced motion
 
-**Triggers.** Web: `prefers-reduced-motion: reduce`, plus `<MotionConfig reducedMotion="user">` at the root (already in `app-shell.tsx`). Mac: `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion`. iOS: `@Environment(\.accessibilityReduceMotion)` / `UIAccessibility.isReduceMotionEnabled`. A Juno setting, Settings › Appearance › Motion (System · Reduced · Full), overrides the system by setting `data-motion` on `<html>` (web) and an environment value (native).
+**Triggers.** Web: `prefers-reduced-motion: reduce`, plus `<MotionConfig reducedMotion="user">` at the root (already in `app-shell.tsx`). Mac: `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion`. iOS: `@Environment(\.accessibilityReduceMotion)` / `UIAccessibility.isReduceMotionEnabled`. A Alevr setting, Settings › Appearance › Motion (System · Reduced · Full), overrides the system by setting `data-motion` on `<html>` (web) and an environment value (native).
 
 | Normal | Reduced |
 |---|---|
@@ -286,10 +288,10 @@ withTransaction(Transaction(animation: nil)) { model.selectThread(id) }
 
 ### 2.1 Composer
 
-One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOUNDATION §5). At rest it holds a field and four objects on one row: `+` on the left; the model control, dictate and the send/voice button on the right. Nothing is permanently armed. In Code, a quiet context row above the field names the repository, environment and mode.
+One composer everywhere: Chat, an agent thread, a project, and Code (PRODUCT_REFOUNDATION §5). At rest it holds a field and four objects on one row: `+` on the left; the model control, dictate and the send/voice button on the right. Nothing is permanently armed. In Code, a quiet context row above the field names the repository, environment and mode.
 
 **Anatomy and resting state (web).**
-- The composer is the one elevated object on the chat screen ([premium §6.1-5]): `surface-1` fill, radius 24 (concentric: its 32 px circular controls sit 8 px from the edge, 16 + 8 = 24, so a one-line composer is a true capsule), a two-layer shadow (ambient + direct). No border, no glow, no gradient.
+- Under D-030 and V3, the composer uses a surface fill, 22 px radius and a crisp edge, with no drop shadow, glow or gradient. Floating popovers have separate elevation/material rules; the composer itself does not.
 - Field text is 16 px (never smaller on touch web, or iOS zooms), `ink-1`; placeholder `ink-3`.
 - The send button is a 32 px circle. Empty field: `surface-2` fill with an `ink-3` glyph. Armed (text or attachments present): `primary` fill with a white glyph. This is one of the two permitted `primary` spots.
 - The transcript fades under the composer with a `mask-image` gradient over the 24 px above it. This is the web's stand-in for Apple's scroll-edge effect; it is not glass.
@@ -297,16 +299,16 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 
 **Native.** iPhone: the `+` is its own glass circle left of the capsule (the Messages and Siri shape, `ios/04`, `ios/02`); the capsule holds the field, the model label and dictate; the send/voice circle trails. Mac and iPad: one glass capsule. All controls sit in one `GlassEffectContainer` so send, stop and voice morph through `glassEffectID`. The dock row is glass in the same container, never a second stacked glass layer on its own.
 
-**Ref.** Claude's "Opus High ⌄" plus one send (`web/composer__claude.png`, https://claude.com/product/overview); ChatGPT's role-grouped row (`web/composer__chatgpt-goal.png`, https://learn.chatgpt.com/docs/long-running-work); Messages iOS 26 (`ios/04`). **Juno differs:** the dock is one shared slot for everything that attaches to the composer, instead of a goal-only tab.
+**Ref.** Claude's "Opus High ⌄" plus one send (`web/composer__claude.png`, https://claude.com/product/overview); ChatGPT's role-grouped row (`web/composer__chatgpt-goal.png`, https://learn.chatgpt.com/docs/long-running-work); Messages iOS 26 (`ios/04`). **Alevr differs:** the dock is one shared slot for everything that attaches to the composer, instead of a goal-only tab.
 
 #### C1 · Focus and type-to-focus (F0)
 - **Trigger:** a new chat opens; a send completes; ⇧Esc; any printable key (including `/` and `@`) pressed while focus is on the page body or the transcript, with no modifier other than Shift.
-- **Feedback:** the caret appears in the field and the typed character is inserted. Keyboard focus shows the global `:focus-visible` ring around the whole composer. Pointer focus shows no ring; the composer's shadow does not change.
+- **Feedback:** the caret appears in the field and the typed character is inserted. Keyboard focus shows the global `:focus-visible` ring around the whole composer. Pointer focus shows no ring; the composer's surface and edge remain stable.
 - **Timing:** F0, instant.
-- **A11y:** the field has the accessible name "Message Juno" ("Message Mira" in a crew thread, "Describe the change" in Code). Focus stays in the composer after send, stop, regenerate and model changes. A skip link "Skip to message field" is the first tab stop on every chat page.
+- **A11y:** the field has the accessible name "Message Alevr" ("Message Mira" in an agent thread, "Describe the change" in Code). Focus stays in the composer after send, stop, regenerate and model changes. A skip link "Skip to message field" is the first tab stop on every chat page.
 - **Failure:** hydration must not drop focus or typed text; the field is uncontrolled until hydrated, then adopts its value.
 - **Native:** iOS never autofocuses (the keyboard would cover half the screen); it focuses only on an explicit tap or on "Reply" from a notification. Mac: the field is the window's `initialFirstResponder`, and type-to-focus works from the transcript.
-- **Ref:** [micro A1]. **Juno differs:** type-to-focus from anywhere in the transcript, so reading and replying need no click.
+- **Ref:** [micro A1]. **Alevr differs:** type-to-focus from anywhere in the transcript, so reading and replying need no click.
 
 #### C2 · Growth (F0)
 - **Trigger:** the text wraps or a newline is inserted.
@@ -322,16 +324,16 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 
   | Context | Placeholder |
   |---|---|
-  | New chat (first 20 chats) | "Ask anything. @ adds files, apps or crew; / runs skills" |
-  | New chat (after the person has used `@` three times) | one of: "/research digs in and writes a report", "/deck makes a presentation", "@ a crew member to hand it off" |
+  | New chat (first 20 chats) | "Ask anything. @ adds files, apps or agents; / runs skills" |
+  | New chat (after the person has used `@` three times) | one of: "/research digs in and writes a report", "/deck makes a presentation", "@ an agent to hand it off" |
   | Thread | "Reply…" |
-  | Crew thread | "Message Mira…" |
+  | Orbit thread | "Message Mira…" |
   | Code | "Describe the change. @ files, / commands" |
   | Voice session (C16) | "Add to the conversation" |
   | Offline | "You're offline. Keep writing; it sends when you're back." |
 
 - **A11y:** the placeholder is not the label (C1 gives the name). Placeholder contrast is at least 4.5:1 on `surface-1`.
-- **Ref:** Grok's "Type @ to search your apps" (`web/composer__grok.png`); Raycast's "Ask anything, @ tools, or / for commands…" (`web/composer__raycast.png`). **Juno differs:** the hint retires itself once the person has learned it, and it never rotates while visible.
+- **Ref:** Grok's "Type @ to search your apps" (`web/composer__grok.png`); Raycast's "Ask anything, @ tools, or / for commands…" (`web/composer__raycast.png`). **Alevr differs:** the hint retires itself once the person has learned it, and it never rotates while visible.
 
 #### C4 · Paste (F0)
 - **Trigger:** ⌘V / Ctrl+V or the edit menu while the composer has focus.
@@ -344,8 +346,8 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 - **Interrupt:** ⌘Z immediately after a conversion restores the raw text inline **(proposal)**.
 - **A11y:** chips have names ("Pasted text, 412 lines"); the URL suggestion is announced once, politely: "Press Tab to add as a Linear issue".
 - **Failure:** paste is never disabled or swallowed. If conversion fails, the raw text is inserted.
-- **Native:** a user-initiated paste raises no iOS permission prompt; any "Paste" affordance Juno draws is a `PasteButton`. Mac: `NSPasteboard` types read in order: file URLs, images, HTML, string.
-- **Ref:** [micro A6]; long-paste chips in Claude and ChatGPT (UNVERIFIED thresholds, [micro S38]). **Juno differs:** a pasted app URL can become a token (S1).
+- **Native:** a user-initiated paste raises no iOS permission prompt; any "Paste" affordance Alevr draws is a `PasteButton`. Mac: `NSPasteboard` types read in order: file URLs, images, HTML, string.
+- **Ref:** [micro A6]; long-paste chips in Claude and ChatGPT (UNVERIFIED thresholds, [micro S38]). **Alevr differs:** a pasted app URL can become a token (S1).
 
 #### C5 · Drop overlay (F2)
 - **Trigger:** `dragenter` anywhere over the chat pane with `"Files"` in `dataTransfer.types`. Text and link drags never trigger it.
@@ -367,14 +369,14 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 - **A11y:** each chip is a group named by its file, with `role="progressbar"` and `aria-valuenow` while uploading, and a "Remove Q3 Forecast.xlsx" button. Removal is announced. Tab order: chips, then the field. Backspace at the start of an empty field selects the last chip; a second Backspace removes it. Enter or Space on a chip opens a preview.
 - **Failure:** the chip's glyph turns `danger`, its second line reads "Upload failed · Retry", and send is disabled with the reason as its tooltip: "1 file failed to upload". Nothing is dropped silently.
 - **Native:** iOS chips are 44 pt tall; `.contextMenu` offers Preview, Replace, Remove.
-- **Ref:** [micro A8]; Claude's file tiles (`ios/30`). **Juno differs:** progress is the chip's own edge, never a separate badge or pill.
+- **Ref:** [micro A8]; Claude's file tiles (`ios/30`). **Alevr differs:** progress is the chip's own edge, never a separate badge or pill.
 
 #### C7 · The @ palette (F0)
 - **Trigger:** `@` typed at the start of the field or after whitespace or an opening bracket. Not after a letter or digit, so "liam@acme.com" never opens it.
 - **Feedback:**
   - The palette opens **in the same frame**, anchored to the caret: above the composer on desktop (360 px wide, 8 rows visible), and as a full-width panel directly above the keyboard on phones (the Copilot shape, `ios/05`).
-  - With no query it shows recents, then sections in this order: Crew, Files, Projects, Apps, Chats. With a query, exact prefix matches first, then fuzzy matches, grouped by section. iPhone adds filter tabs: All · Crew · Files · Apps · Chats.
-  - Each row: the thing's mark (face, app icon, file type), its name in `ink-1`, and one `ink-3` line (Crew: role and "now"; Files: location and modified date; Apps: "Connected as liam@acme.com" or "Not connected"; Chats: date).
+  - With no query it shows recents, then sections in this order: Orbit, Files, Projects, Apps, Chats. With a query, exact prefix matches first, then fuzzy matches, grouped by section. iPhone adds filter tabs: All · Orbit · Files · Apps · Chats.
+  - Each row: the thing's mark (face, app icon, file type), its name in `ink-1`, and one `ink-3` line (Orbit: role and "now"; Files: location and modified date; Apps: "Connected as liam@acme.com" or "Not connected"; Chats: date).
   - The first row is preselected. Local sources filter synchronously. Remote sources (files in Drive, Linear issues) append below a "Searching Drive…" line that appears only after `showDelay`. **Rows never reorder under the highlight once shown;** late results append.
 - **Keys:** ↑/↓ and ⌃P/⌃N move the highlight instantly (no animated highlight). PageUp/PageDown jump 8 rows. Enter or Tab inserts (C8). Esc closes and leaves the literal "@query" as text. A space typed directly after `@` closes the palette. Pointer hover moves the highlight without scrolling the list; click inserts.
 - **Timing:** F0. When opened with a pointer (the `+` menu's "Mention…" item), a 120 ms origin-aware pop is allowed.
@@ -382,7 +384,7 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 - **A11y:** WAI-ARIA combobox: the field has `aria-expanded`, `aria-controls`, `aria-autocomplete="list"` and `aria-activedescendant`; the palette is `role="listbox"` with `role="option"` rows and `aria-selected`. Section headings are `role="presentation"` with the section name in each option's accessible description.
 - **Failure:** no matches gives one row, "No matches. Search all files ↵", never an empty box. A remote source that fails shows "Couldn't search Drive · Retry" as a row.
 - **Native:** iPhone: a panel inserted with `.safeAreaInset(edge: .bottom)` above the composer, moving with the keyboard's own animation curve; inserting a token plays `.sensoryFeedback(.selection)`. Mac: a non-activating child `NSPanel` anchored to the caret rectangle (`firstRect(forCharacterRange:actualRange:)`).
-- **Ref:** Copilot's `/` palette above the keyboard (`ios/05`); Raycast's `@` apps (`web/tool-calls__raycast.png`); [micro A9]. **Juno differs:** one palette for five kinds of thing, with late results that never reshuffle under the highlight.
+- **Ref:** Copilot's `/` palette above the keyboard (`ios/05`); Raycast's `@` apps (`web/tool-calls__raycast.png`); [micro A9]. **Alevr differs:** one palette for five kinds of thing, with late results that never reshuffle under the highlight.
 
 #### C8 · Token insertion (F0) — signature S1
 - **Trigger:** Enter, Tab or click on a palette row.
@@ -393,15 +395,15 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
   - A token that needs something before it can resolve shows its mark at 40% opacity (an app that is not connected, a file with no access). Its popover (C10) says why. There is no dot and no warning badge.
 - **Timing:** F0 for the insertion; the tone relaxation is a colour cross-fade on `base`.
 - **Data:** the draft is structured, not styled text. Each token carries `{ kind: "crew" | "file" | "project" | "app" | "chat" | "command", id, label, mark }`, and the request sends `context: [ … ]` (PRODUCT_REFOUNDATION §5). The field must be an editor with atomic inline nodes (ProseMirror or Lexical). The current textarea-plus-mirror (audit R9) cannot meet C9 and is replaced.
-- **A11y:** each token is `contenteditable="false"` with an accessible name ("Mira, crew member"; "Q3 Forecast.xlsx, file in Drive").
+- **A11y:** each token is `contenteditable="false"` with an accessible name ("Mira, agent"; "Q3 Forecast.xlsx, file in Drive").
 - **Native:** tokens are text attachments (`NSTextAttachment` with a view provider on Mac and iOS) so the system caret, selection and VoiceOver treat each as one character.
-- **Ref:** Raycast's inline "[◐ Linear]" in draft and sent message (`web/tool-calls__raycast.png`); Gemini's "Images ×" mode token (`ios/11`); Canvas lab's brand-mark tokens ([premium §7.2]). **Juno differs:** the same token object appears in the draft, the sent message and the receipt (M23), and it knows whether it can resolve before you send.
+- **Ref:** Raycast's inline "[◐ Linear]" in draft and sent message (`web/tool-calls__raycast.png`); Gemini's "Images ×" mode token (`ios/11`); Canvas lab's brand-mark tokens ([premium §7.2]). **Alevr differs:** the same token object appears in the draft, the sent message and the receipt (M23), and it knows whether it can resolve before you send.
 
 #### C9 · Token caret, deletion and clipboard (F0)
 - **Keys:** ←/→ step over a token as one character; ⇧←/⇧→ extend the selection over it. Double-click selects it.
-- **Deletion:** on a hardware keyboard, Backspace after a token first **selects** it (a 1.5 px `ink-1` outline; screen readers hear "Mira, crew member, selected. Press Backspace to remove"); a second Backspace deletes it. Delete is symmetric. On a touch keyboard, one Backspace deletes the whole token and ⌘Z / shake restores it.
+- **Deletion:** on a hardware keyboard, Backspace after a token first **selects** it (a 1.5 px `ink-1` outline; screen readers hear "Mira, agent, selected. Press Backspace to remove"); a second Backspace deletes it. Delete is symmetric. On a touch keyboard, one Backspace deletes the whole token and ⌘Z / shake restores it.
 - **Undo:** ⌘Z restores a deleted token with its data.
-- **Clipboard:** copying a selection that contains tokens writes `text/plain` ("@Mira", file names), `text/html`, and `application/x-juno-tokens+json`. Pasting inside Juno recreates the tokens; pasting elsewhere gives plain text.
+- **Clipboard:** copying a selection that contains tokens writes `text/plain` ("@Mira", file names), `text/html`, and `application/x-juno-tokens+json`. Pasting inside Alevr recreates the tokens; pasting elsewhere gives plain text.
 - **IME:** a composition is never split by a token, and Enter during composition never inserts or sends (C20).
 - **Ref:** [micro A9] (two-step delete, proposal); [premium §6.3] ("deletes as one unit").
 
@@ -411,21 +413,21 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
   - the mark, the full name, and what it resolves to ("File · Drive › Finance › Q3 Forecast.xlsx · 2.1 MB");
   - verbs: **Open**, **Replace…**, **Remove**;
   - for an app: "Connected as liam@acme.com · Can read issues · Creating issues asks you first"; if not connected, a primary text button **Connect Linear** that runs K3 in place;
-  - for a crew member: the face and "Mira will take this as a task";
+  - for an agent: the face and "Mira will take this as a task";
   - for an action that will need approval: "Posting to #design will ask you first".
 - **Interrupt:** clicking another token moves the popover (it retargets with `spring.standard`); Esc closes it and returns focus to the token.
 - **Reduced:** opacity only.
 - **A11y:** `role="dialog"` with `aria-labelledby` on the name; focus moves to the first verb.
 - **Native:** SwiftUI `.popover` (Mac, iPad); a medium-detent sheet on iPhone.
-- **Ref:** PRODUCT_REFOUNDATION §5. **Juno differs:** connection and approval are resolved *before* send, from the token itself.
+- **Ref:** PRODUCT_REFOUNDATION §5. **Alevr differs:** connection and approval are resolved *before* send, from the token itself.
 
 #### C11 · The / palette: skills and commands (F0)
 - **Trigger:** `/` at the start of a line or after whitespace.
 - **Feedback:** the same palette machinery as C7. Sources in order: commands (`/research`, `/design`, `/deck`, `/model`, `/voice`; in Code also `/goal`, `/ask`, `/plan`, `/code`), then enabled skills by name, each with its one-line description and origin ("Skill · by Linear"), then a last row, "Browse skills in Customize". The best match is preselected, so `/res` then Enter runs `/research`.
-  - Choosing a command inserts a **command token** at the start of the message (mark + name, like C8). The placeholder after it changes to the command's prompt ("What should Juno research?"), and the send button's accessible name changes ("Start research plan"). One command per message; choosing a second replaces the first.
+  - Choosing a command inserts a **command token** at the start of the message (mark + name, like C8). The placeholder after it changes to the command's prompt ("What should Alevr research?"), and the send button's accessible name changes ("Start research plan"). One command per message; choosing a second replaces the first.
   - `/model` and `/voice` act immediately instead of inserting a token: they open the model menu (§2.8) and start voice (C16).
 - **A11y, keys, failure:** as C7.
-- **Ref:** Raycast's "/ for commands"; ChatGPT and Claude skills [web §2.2]. **Juno differs:** research, design and decks are commands, not toggles in `+` (PRODUCT_REFOUNDATION §5).
+- **Ref:** Raycast's "/ for commands"; ChatGPT and Claude skills [web §2.2]. **Alevr differs:** research, design and decks are commands, not toggles in `+` (PRODUCT_REFOUNDATION §5).
 
 #### C12 · Send, optimistic (F0)
 - **Trigger:** Enter (C20), ⌘Enter, or a click or tap on the armed send button.
@@ -440,8 +442,8 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 - **Guards:** a second Enter within the same frame, or while `status === "submitted"`, is ignored. Every send carries an idempotency key.
 - **A11y:** the button's name flips "Send message" → "Stop response". Nothing is announced; sending is self-evident.
 - **Failure (before the stream starts):** the turn stays in place with an `ink-2` line under it, "Not sent · Retry · Edit". The draft, tokens and attachments are never lost. The line names the cause when known: "Not sent: you're offline" (§3.6).
-- **Native:** rely on the system button's press feedback. iOS 26 adds `SensoryFeedback.press(_:)` for touch-down; it must be used on every icon-only button or on none, and Juno chooses **none**. No custom haptic on send.
-- **Ref:** [micro A4]; Vercel guidelines "Optimistic updates" and "idempotency key". **Juno differs:** the send button is `primary` only while armed, so the one bright spot on the composer means "ready".
+- **Native:** rely on the system button's press feedback. iOS 26 adds `SensoryFeedback.press(_:)` for touch-down; it must be used on every icon-only button or on none, and Alevr chooses **none**. No custom haptic on send.
+- **Ref:** [micro A4]; Vercel guidelines "Optimistic updates" and "idempotency key". **Alevr differs:** the send button is `primary` only while armed, so the one bright spot on the composer means "ready".
 
 #### C13 · Stop (F1)
 - **Trigger:** the Stop button; Esc when focus is in the composer or transcript and no layer is open (§4, Esc ladder); ⌘. on the Mac.
@@ -462,9 +464,9 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
   - If the reply ends in an error, or the person stopped it, the queued message does **not** send: the row changes to "Queued · also check the EU numbers · Send" and waits, because the context changed.
 - **Keys:** ⌘Enter with text while streaming is **Send now**: it stops the current reply (kept as "Stopped") and sends. Esc with focus on the dock row removes the queued message; ⌘Z restores it.
 - **Timing:** F1. Row enter: 120 ms opacity with a 4 px rise; exit: `exit`.
-- **A11y:** the row is `role="status"`; it announces "Message queued. It sends when Juno finishes." once.
+- **A11y:** the row is `role="status"`; it announces "Message queued. It sends when Alevr finishes." once.
 - **Native:** the dock row is glass inside the composer's `GlassEffectContainer`. On iPhone, swiping the row left removes the message.
-- **Ref:** queued messages in Claude Code and Codex [web §2.8]; the goal row's placement on the composer edge (`web/composer__chatgpt-goal.png`). **Juno differs:** one queued message, merged on repeat, that never auto-sends after a stop or an error.
+- **Ref:** queued messages in Claude Code and Codex [web §2.8]; the goal row's placement on the composer edge (`web/composer__chatgpt-goal.png`). **Alevr differs:** one queued message, merged on repeat, that never auto-sends after a stop or an error.
 
 #### C15 · Dictation (F2)
 - **Trigger:** the mic button. There is no custom shortcut: system dictation (the Globe key on the Mac, the keyboard mic on iOS) also works in the field because it is a native text view, and on the web it is the browser's.
@@ -477,32 +479,32 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 - **Timing:** F2 for the state change (`fast` glyph swap). The meter follows the analyser each animation frame with smoothing 0.8; there is no timed loop.
 - **Reduced:** the meter becomes a static bar updated at most 4 times a second, and "Listening" appears as text beside the mic.
 - **A11y:** `aria-pressed` on the button, whose name is "Dictate"; announcements "Listening" and "Stopped listening". Provisional text is not announced.
-- **Failure:** microphone blocked: a line under the composer, "The microphone is blocked. Allow it in this site's settings." Native: "Juno can't use the microphone. Open Settings" with a deep link (`UIApplication.openSettingsURLString`).
+- **Failure:** microphone blocked: a line under the composer, "The microphone is blocked. Allow it in this site's settings." Native: "Alevr can't use the microphone. Open Settings" with a deep link (`UIApplication.openSettingsURLString`).
 - **Native:** `.sensoryFeedback(.start)` / `.sensoryFeedback(.stop)` on iOS.
-- **Ref:** Mistral Vibe's "Autosend OFF" separating dictation from conversation (`ios/16`); [micro A12]. **Juno differs:** dictation has no autosend at all; conversation is a separate thing (C16).
+- **Ref:** Mistral Vibe's "Autosend OFF" separating dictation from conversation (`ios/16`); [micro A12]. **Alevr differs:** dictation has no autosend at all; conversation is a separate thing (C16).
 
 #### C16 · Voice conversation (F2)
 - **Trigger:** the send/voice button while the field is empty (it shows the voice glyph in `ink-1` on `surface-2`: nothing is live yet), or `/voice`.
 - **Feedback:**
   - Voice happens **in the thread**. The composer's control row cross-fades into the voice row: **Mute**, the state word, the level, the audio route, and **End**. The field stays, with the placeholder "Add to the conversation".
   - The state word is one of "Listening", "Thinking", "Speaking", "Muted", "Paused", in `ink-1`. "Waiting for your approval" uses `attention` for "your approval".
-  - The person's speech appears as a user turn in real time (provisional `ink-3`, final `ink-1`). Juno's speech streams as a normal reply (M2), and tool lines keep arriving (M5).
+  - The person's speech appears as a user turn in real time (provisional `ink-3`, final `ink-1`). Alevr's speech streams as a normal reply (M2), and tool lines keep arriving (M5).
   - **The voice glow** (owner-approved "glow = state") lights the composer's edge **only while audio is live** (either direction), with its intensity driven by the level. At rest it is off. There is no orb.
-  - **Barge-in:** if the person speaks while Juno speaks, Juno stops speaking within 200 ms and the word becomes "Listening".
-  - **Approvals are never spoken.** If a task needs approval during voice, Juno says "I need your approval on screen", the card appears (T6), and the state word reads "Waiting for your approval". A spoken "yes" does nothing.
+  - **Barge-in:** if the person speaks while Alevr speaks, Alevr stops speaking within 200 ms and the word becomes "Listening".
+  - **Approvals are never spoken.** If a task needs approval during voice, Alevr says "I need your approval on screen", the card appears (T6), and the state word reads "Waiting for your approval". A spoken "yes" does nothing.
   - **End** (or Esc while focus is in the voice row) cross-fades the row back to the text composer. The transcript stays.
 - **Full screen** only when the camera or screen share is the input (iPhone, iPad). Controls sit on `.clear` glass with the 35% dim over bright video.
 - **Timing:** F2. Row cross-fade on `base`; state word changes on `fast`, held at least `phaseMinHold`.
 - **Reduced:** the glow becomes a static 1 px `primary` outline while audio is live; the level becomes a stepped bar.
-- **A11y:** the state word is a polite live region, debounced so flips faster than every 2 s are not announced. With VoiceOver running, voice starts in **hold-to-talk** (Space held while the voice row has focus; press and hold the voice button on touch) so Juno's speech and the screen reader do not collide **(proposal)**.
+- **A11y:** the state word is a polite live region, debounced so flips faster than every 2 s are not announced. With VoiceOver running, voice starts in **hold-to-talk** (Space held while the voice row has focus; press and hold the voice button on touch) so Alevr's speech and the screen reader do not collide **(proposal)**.
 - **Failure:** network loss: the word becomes "Reconnecting…", audio pauses; after 10 s, "Voice disconnected · Resume". Microphone blocked: as C15.
 - **Native:** the voice row morphs out of the composer through `glassEffectID`. `.sensoryFeedback(.start)` on start, `.stop` on end, nothing continuous. On iPhone, a live session becomes the `tabViewBottomAccessory` when the person leaves the thread (G6).
-- **Ref:** ChatGPT voice inside the chat since 2025-11-25 (https://techcrunch.com/2025/11/25/chatgpts-voice-mode-is-no-longer-a-separate-interface/; `web/voice__chatgpt.png`, `ios/15`), "Spoken approval is not supported" (`research/openai.md`); Gemini Live full screen with the camera (`ios/17`). **Juno differs:** no orb. The composer itself is the voice object, its glow lights only while sound is actually moving, and every state is also a word.
+- **Ref:** ChatGPT voice inside the chat since 2025-11-25 (https://techcrunch.com/2025/11/25/chatgpts-voice-mode-is-no-longer-a-separate-interface/; `web/voice__chatgpt.png`, `ios/15`), "Spoken approval is not supported" (`research/openai.md`); Gemini Live full screen with the camera (`ios/17`). **Alevr differs:** no orb. The composer itself is the voice object, its glow lights only while sound is actually moving, and every state is also a word.
 
 #### C17 · The model control in the composer (F1)
 - **Trigger:** a click or tap on the label; `/model`.
 - **Feedback:** the label reads the short model name in `ink-2`, followed by the effort in `ink-3` only when it is not Standard: "Auto", "Opus", "Opus Deep". One chevron. No logo, no pill, no border. Opening shows the menu in §2.8. After a choice, the label cross-fades to the new text on `fast`; if its width changes, the cluster slides with framer `layout="position"` on `spring.standard` (pointer-initiated) or snaps (keyboard-initiated).
-- **Ref:** "Opus High", "6 Sol Medium", "Instant High" [web §2.3] (`web/composer__claude.png`, `web/composer__chatgpt-goal.png`, `web/composer__kimi.png`). **Juno differs:** Standard effort is not printed, so the common case is one word.
+- **Ref:** "Opus High", "6 Sol Medium", "Instant High" [web §2.3] (`web/composer__claude.png`, `web/composer__chatgpt-goal.png`, `web/composer__kimi.png`). **Alevr differs:** Standard effort is not printed, so the common case is one word.
 
 #### C18 · Home to dock: the first send (F2)
 - **Trigger:** the first send from the empty home.
@@ -510,7 +512,7 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 - **Timing:** F2. This is the one keyboard-initiated action that moves something, and it is allowed because the move is secondary: the message itself appears instantly.
 - **Reduced:** a 160 ms cross-fade (the existing `JunoMotion.handoff(reduceMotion:)`).
 - **Native:** `JunoMotion.handoff` changes from `emphasized` to `layout` (§7).
-- **Ref:** ChatGPT and Claude move the composer on first send [web §2.1, MEM]. **Juno differs:** no bounce, and the move never delays the message.
+- **Ref:** ChatGPT and Claude move the composer on first send [web §2.1, MEM]. **Alevr differs:** no bounce, and the move never delays the message.
 
 #### C19 · The + menu (F2)
 - **Trigger:** the `+` button.
@@ -534,7 +536,7 @@ One composer everywhere: Chat, a crew thread, a project, and Code (PRODUCT_REFOU
 
 ### 2.2 Message and transcript
 
-**Anatomy.** User turns are a `surface-1` bubble aligned right at reading width, text `ink-1`. Juno's replies are plain text on the page (no bubble, no avatar per turn), at a reading measure of 680–720 px, body 16/26. A crew member's reply carries its face (20 px) and name once, above the first line of a run of consecutive replies. Nothing is nested inside a bordered bubble; only real outputs (a file, a deliverable, a task, an approval) get a container ([premium §5.1-7]).
+**Anatomy.** User turns are a `surface-1` bubble aligned right at reading width, text `ink-1`. Alevr's replies are plain text on the page (no bubble, no avatar per turn), at a reading measure of 680–720 px, body 16/26. An agent's reply carries its face (20 px) and name once, above the first line of a run of consecutive replies. Nothing is nested inside a bordered bubble; only real outputs (a file, a deliverable, a task, an approval) get a container ([premium §5.1-7]).
 
 The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-live="polite"`); it is never pointed at growing text.
 
@@ -542,20 +544,20 @@ The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-
 - **Trigger:** `status === "submitted"`.
 - **Feedback:**
   1. For the first `showDelay` (200 ms): nothing.
-  2. Then one line in the reply slot, 14 px, in **`primary`** (something is acting): "Thinking". Where the real phase is known, it says so: "Searching the web", "Reading Q3 Forecast.xlsx", "Asking Linear". In a crew thread it leads with the face at 16 px in its `thinking` pose: "Mira is thinking".
+  2. Then one line in the reply slot, 14 px, in **`primary`** (something is acting): "Thinking". Where the real phase is known, it says so: "Searching the web", "Reading Q3 Forecast.xlsx", "Asking Linear". In an agent thread it leads with the face at 16 px in its `thinking` pose: "Mira is thinking".
   3. After `elapsedAfter` (3 s) the line gains elapsed seconds in `ink-3` tabular figures, ticking once a second: "Thinking · 4s".
   4. A phase change cross-fades the text on `fast` and holds at least `phaseMinHold` (1 s).
   5. **The first token replaces the line in the same frame**, without an exit. Text replaces text.
 - **No shimmer, no dots, no orb, no caret.** The line's colour and its changing words are the liveness signal (§1.6). This retires `.shimmer-text`, `PhaseOrb` and the typing indicator.
 - **Reduced:** same; the text cross-fade becomes a swap.
-- **A11y:** the pending message has `aria-busy="true"`; one polite status announcement, "Juno is thinking" (or "Mira is thinking"). Phase changes are not announced individually.
+- **A11y:** the pending message has `aria-busy="true"`; one polite status announcement, "Alevr is thinking" (or "Mira is thinking"). Phase changes are not announced individually.
 - **Failure:** §3.10 (slow first token) and M16.
-- **Ref:** Vercel's show-delay rule; Cursor's "Thought 4s" (`web/thinking__cursor.png`); Apple's generative-AI HIG: "instead of 'Processing…', say 'Finding substitutions for ingredients'". **Juno differs:** no shimmer sweep. Every assistant ships the shimmer ([premium §4]); the audit traced Juno's to Claude's and ChatGPT's own ([premium §5], crew audit §3.2-6). Juno's live line is set in its presence colour and counts real seconds instead.
+- **Ref:** Vercel's show-delay rule; Cursor's "Thought 4s" (`web/thinking__cursor.png`); Apple's generative-AI HIG: "instead of 'Processing…', say 'Finding substitutions for ingredients'". **Alevr differs:** no shimmer sweep. Every assistant ships the shimmer ([premium §4]); the audit traced Alevr's to Claude's and ChatGPT's own ([premium §5], crew audit §3.2-6). Alevr's live line is set in its presence colour and counts real seconds instead.
 
 #### M2 · Streaming reveal (F0 per word)
 - **Trigger:** tokens arrive.
 - **Feedback:**
-  - **Words** fade in as they are appended: opacity 0 → 1 over 160 ms on `out-soft`, applied by a CSS class on each newly appended word span. No slide, no blur. (A blur-in paired with a text sweep is the Claude "thinking" tell the crew audit found.)
+  - **Words** fade in as they are appended: opacity 0 → 1 over 160 ms on `out-soft`, applied by a CSS class on each newly appended word span. No slide, no blur. (A blur-in paired with a text sweep is the Claude "thinking" tell the agents audit found.)
   - **Pacing.** The server smooths by word (AI SDK `smoothStream`, `chunking: "word"`, `Intl.Segmenter` for CJK and Thai). The client keeps a buffer and, on each animation frame, releases `max(1, ceil(pendingWords / 12))` words, so a backlog drains within about 12 frames and the display never lags arrival by more than ~200 ms. When the stream ends, everything left is released in one frame. The client never fakes a typewriter slower than the model.
   - **Render cost.** React commits at most once per frame (`experimental_throttle: 16` in `useChat`; 32 for replies over 2000 words). Completed Markdown blocks are memoised by index. When streaming ends, the per-word spans are flattened: the final message re-renders without wrappers.
   - **No caret.** The arriving words and the Stop button are the signal.
@@ -563,7 +565,7 @@ The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-
 - **Reduced:** no fade; words append.
 - **A11y:** `aria-busy="true"` on the streaming message until it finishes; one announcement on completion (M26).
 - **Native:** `Text` built from an `AttributedString` that is appended to; words fade through a per-run opacity attribute animated on `fast`. On the Mac, `NSTextView` with `NSLayoutManager` temporary attributes.
-- **Ref:** Streamdown per-word fade (150 ms default) and its March 2026 code-fence fix; AI SDK `smoothStream` (10 ms default). [micro B2]. **Juno differs:** the pacing never lags the model, and no caret or cursor is drawn.
+- **Ref:** Streamdown per-word fade (150 ms default) and its March 2026 code-fence fix; AI SDK `smoothStream` (10 ms default). [micro B2]. **Alevr differs:** the pacing never lags the model, and no caret or cursor is drawn.
 
 #### M3 · Markdown while streaming (F0)
 - Unterminated syntax renders as if closed and is replaced when the closer arrives (Streamdown `remend`): `**bold`, `*italic`, `` `code ``, `~~strike`, links. Nothing ever flashes raw asterisks or `|---|`.
@@ -582,7 +584,7 @@ The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-
 - **Reduced:** height snaps, content fades.
 - **A11y:** a `<button>` with `aria-expanded` and `aria-controls`.
 - **Native:** `DisclosureGroup` with a custom label; Mac uses the system disclosure triangle.
-- **Ref:** AI Elements Reasoning auto-opens and closes 1000 ms after streaming (`web/thinking__ai-elements-reasoning.png`); Linear "Worked for 10 sec ▸" (`web/thinking__linear.png`); ChatGPT "Answer now" ([ios §3.4], secondary). **Juno differs:** closed by default with one live line, and the person's choice is never overridden (decision D6 in [micro §5]).
+- **Ref:** AI Elements Reasoning auto-opens and closes 1000 ms after streaming (`web/thinking__ai-elements-reasoning.png`); Linear "Worked for 10 sec ▸" (`web/thinking__linear.png`); ChatGPT "Answer now" ([ios §3.4], secondary). **Alevr differs:** closed by default with one live line, and the person's choice is never overridden (decision D6 in [micro §5]).
 
 #### M5 · Tool activity: the work trace (F1)
 - **Trigger:** a tool call starts, updates or ends.
@@ -596,9 +598,9 @@ The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-
 - **Copy contract:** the tool registry supplies, for every tool, `present`, `past` and `failed` sentence templates and an object formatter. **A raw function name never renders.** A tool without templates renders "Used {App}".
 - **Timing:** F1. A step appears with 120 ms opacity; the fold into "earlier steps" and the final collapse use `Collapse` (`base`). No stagger.
 - **Reduced:** opacity only; heights snap.
-- **A11y:** the trace is a `role="group"` named "Juno's steps". Phase changes are announced politely, debounced to one every 3 s; the finished summary is not announced separately (M26 covers it).
+- **A11y:** the trace is a `role="group"` named "Alevr's steps". Phase changes are announced politely, debounced to one every 3 s; the finished summary is not announced separately (M26 covers it).
 - **Native:** SF Symbols or app marks at 16 pt; the live row may use `.symbolEffect(.pulse)` on its glyph (the only moving thing), with the text itself static. Everything else is still.
-- **Ref:** Cursor "Read AppManager.tsx / Searched expose patterns" (`web/thinking__cursor.png`); Raycast "Checked new bugs in Linear" (`web/tool-calls__raycast.png`); Mistral Vibe's past-tense steps (`ios/12`, `ios/13`). The slop it replaces: AI Elements Tool's `database_query`, "PARAMETERS {}" and status pills (`web/tool-calls__ai-elements-tool.png`). **Juno differs:** the live verb is the only coloured thing, and a sentence contract makes raw names impossible.
+- **Ref:** Cursor "Read AppManager.tsx / Searched expose patterns" (`web/thinking__cursor.png`); Raycast "Checked new bugs in Linear" (`web/tool-calls__raycast.png`); Mistral Vibe's past-tense steps (`ios/12`, `ios/13`). The slop it replaces: AI Elements Tool's `database_query`, "PARAMETERS {}" and status pills (`web/tool-calls__ai-elements-tool.png`). **Alevr differs:** the live verb is the only coloured thing, and a sentence contract makes raw names impossible.
 
 #### M6 · Citations (F1 chip, F2 card)
 - **Chip:** after the sentence that makes the claim, following its punctuation, a chip joined to the last word by a non-breaking space: the source's favicon or app mark (12 px, its own colour) and domain in `ink-2`, 12 px, `surface-2`, radius 6, 18 px tall: "reuters.com +2". Personal data shows the app: "Slack · #design".
@@ -608,7 +610,7 @@ The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-
 - **Unsourced claims:** when the citation audit finds any, one `ink-3` line under the message reads "2 claims have no source · Show". **Show** underlines those sentences with a dotted `ink-3` line. Never a warning badge; never a chip on unsourced text.
 - **A11y:** chips are focusable buttons named "Source: reuters.com and 2 more"; Enter opens the card; focus moves into it; Esc returns to the chip.
 - **Native:** iPad and Mac use `.popover`; iPhone uses a medium-detent sheet. Open uses `SFSafariViewController` on iOS.
-- **Ref:** AI Elements Inline Citation (`web/citations__ai-elements-inline.png`); the Siri app's "wikipedia.org +6" (`ios/02`); Dia's app-marked source cards (`web/citations__dia.png`); AYDesign, "AI citation and source UI design patterns for 2026" (2026-09-11). **Juno differs:** a click pins the card instead of navigating away, and the audit states what is unsourced in words.
+- **Ref:** AI Elements Inline Citation (`web/citations__ai-elements-inline.png`); the Siri app's "wikipedia.org +6" (`ios/02`); Dia's app-marked source cards (`web/citations__dia.png`); AYDesign, "AI citation and source UI design patterns for 2026" (2026-09-11). **Alevr differs:** a click pins the card instead of navigating away, and the audit states what is unsourced in words.
 
 #### M7 · Code blocks (F1)
 - **Header** (sticky under the thread header while the block scrolls past): language in `ink-3` 12 px mono, and the filename when known; on the right, **Copy** (icon button with a tooltip) and ⋯ (Wrap lines, Download `.{ext}`, Open in Library).
@@ -621,7 +623,7 @@ The transcript is `role="log"` with `aria-relevant="additions"` (implying `aria-
 - **Keys:** ⌘⇧; copies the last code block (§4). The block is focusable (`tabindex="0"`) so arrow keys can scroll it.
 - **A11y:** `role="region"` named "Code, TypeScript, greet.ts".
 - **Native:** a horizontal `ScrollView` around monospace `Text`; the copy glyph uses `.contentTransition(.symbolEffect(.replace))`.
-- **Ref:** Streamdown disables controls while animating and keeps them visible on touch; AI Elements `code-block.tsx` (2000 ms check) (`web/code__ai-elements-code-block.png`). **Juno differs:** no collapse after streaming, and wrap is a remembered choice.
+- **Ref:** Streamdown disables controls while animating and keeps them visible on touch; AI Elements `code-block.tsx` (2000 ms check) (`web/code__ai-elements-code-block.png`). **Alevr differs:** no collapse after streaming, and wrap is a remembered choice.
 
 #### M8 · Tables (F0)
 - A table sits in a container that scrolls horizontally, with a fade mask on the overflowing edge. Numeric columns are right-aligned in tabular figures; text columns wrap at 320 px.
@@ -686,8 +688,8 @@ Errors appear **where they happened**, as one line in `ink-1` with a small `dang
 | Provider overloaded | "Opus is busy right now · Retry · Use Sonnet" |
 | Rate limit | "You've reached the limit for Opus. Available again at 14:20 · Use Sonnet" (the time from `retry-after`, tabular) |
 | Context too long | "This chat is too long for Sonnet · Continue in a new chat with a summary · Use Opus" |
-| Content refused | "Juno can't help with that." (no verb) |
-| Unknown | "Something failed on Juno's side · Retry", with "Details" disclosing the request ID |
+| Content refused | "Alevr can't help with that." (no verb) |
+| Unknown | "Something failed on Alevr's side · Retry", with "Details" disclosing the request ID |
 
 Retry resends with the same idempotency key. **A11y:** errors are announced politely; Retry is reachable with one ⇧Tab from the composer.
 
@@ -697,7 +699,7 @@ Retry resends with the same idempotency key. **A11y:** errors are announced poli
 - Content growth is detected with a `ResizeObserver` on the message list, separately from scroll events.
 - **Reduced:** the same (it is already instant).
 - **Native:** `onScrollGeometryChange(for:of:action:)` computes "near bottom"; `ScrollPosition.scrollTo(edge: .bottom)` only when it was near the bottom. `defaultScrollAnchor(.bottom, for: .sizeChanges)` is **not** applied blanket, or the reader could never escape.
-- **Ref:** `use-stick-to-bottom` (70 px, wheel and selection escapes) [micro C1]. **Juno differs:** a plain pin rather than a velocity spring, which cannot lag or overshoot.
+- **Ref:** `use-stick-to-bottom` (70 px, wheel and selection escapes) [micro C1]. **Alevr differs:** a plain pin rather than a velocity spring, which cannot lag or overshoot.
 
 #### M18 · Anchoring the new turn on send (F2)
 - On send, the transcript scrolls so the **user's turn sits `anchorPeek` (64 px) below the transcript's top edge**, leaving the end of the previous turn visible above it. This is one smooth scroll on `slow` / `out-expo`, and the only automatic smooth scroll in the product.
@@ -737,7 +739,7 @@ Retry resends with the same idempotency key. **A11y:** errors are announced poli
 - **Feedback:** one `ink-3` line, 12 px, under the user's turn and aligned with it: "Q3 Forecast.xlsx and Stripe added · Mira takes the renewal risk · Posting to #design will ask you first". It fades in on `fast`. If resolution is quick (under `showDelay`), no pending state ever shows. If slower, the line first reads "Adding 2 files…".
 - **Failure:** "Couldn't read Q3 Forecast.xlsx: no access · Request access" (the recovery a text button).
 - **Tokens in sent turns** are the same component as in the draft (C8). On hover (after `hoverCardOpen`) they show a read-only version of the C10 popover.
-- **Ref:** Linear's "◐ DRV-364 added to context" (`web/thinking__linear.png`). **Juno differs:** the receipt also says who takes the work and what will ask first.
+- **Ref:** Linear's "◐ DRV-364 added to context" (`web/thinking__linear.png`). **Alevr differs:** the receipt also says who takes the work and what will ask first.
 
 #### M24 · Context menus (native)
 - **iOS:** long-press a message → `.contextMenu(menuItems:preview:)` with a preview of the message and: Copy, Select Text, Edit (user turns), Regenerate, Branch into new chat, Share, Read aloud, Good response, Bad response. **Select Text** matters because long-press is otherwise taken by the menu.
@@ -747,11 +749,11 @@ Retry resends with the same idempotency key. **A11y:** errors are announced poli
 #### M25 · Quote a selection (F1)
 - When a pointer selection ends inside a reply, a small toolbar appears 200 ms later just above the selection's end: **Quote** (inserts the selection into the composer as a quote block) and **Ask about this** (the same, with focus in the composer after it). It does not follow the pointer and disappears when the selection collapses.
 - Keyboard selections use the context menu item "Quote in reply".
-- **Ref:** Juno's existing `quoted-selection.tsx`.
+- **Ref:** Alevr's existing `quoted-selection.tsx`.
 
 #### M26 · Completion (F1)
 - **Feedback:** the live line and trace settle (M4, M5); the action row fades in on `fast`; Stop becomes Send; focus stays in the composer. No sound, no toast.
-- **A11y:** `aria-busy` becomes `false`, then one polite announcement: "Juno replied" plus the first sentence, or "Mira replied". Completion is passed through `useChat`'s `onFinish`.
+- **A11y:** `aria-busy` becomes `false`, then one polite announcement: "Alevr replied" plus the first sentence, or "Mira replied". Completion is passed through `useChat`'s `onFinish`.
 - **Native:** **no haptic for an ordinary reply**, and never a haptic while streaming (Apple HIG, Playing haptics: avoid long-running haptics).
 - **Ref:** [micro B7]; ChatGPT's streaming haptics are the counter-example (UNVERIFIED, [micro S37]).
 
@@ -759,17 +761,17 @@ Retry resends with the same idempotency key. **A11y:** errors are announced poli
 
 A task is delegated work inside a chat. The card leads with four things, in this order (PRODUCT_REFOUNDATION §9): **what** is being done (one sentence), **what needs you** (only when something does), **progress** (one line, the plan behind a disclosure), and, when done, **the result**. Executor telemetry is one disclosure down.
 
-**Anatomy.** A flat `surface-1` card, radius 12, no border (a `line` outline under Increase Contrast), no shadow (the composer stays the one elevated object). Header: the owner's face (Juno's mark or a crew face) at 20 px, then the title sentence in `ink-1` 15/500. The card lives in the transcript where the reply that started it is; it keeps working when the person leaves.
+**Anatomy.** A flat `surface-1` card, radius 12, no border (a `line` outline under Increase Contrast), no shadow (the composer is also shadow-free under D-030). Header: the owner's face (Alevr's mark or an agent face) at 20 px, then the title sentence in `ink-1` 15/500. The card lives in the transcript where the reply that started it is; it keeps working when the person leaves.
 
 #### T1 · The hand-off (F2) — signature S3
-- **Trigger:** Juno decides a request becomes a task, or the person named a crew member with a token.
-- **Feedback:** the live line (M1) already reads the work in words: "Drafting the renewal summary". **That line becomes the card.** Its text is the card's title; its box grows into the card header (framer `layoutId` shared between the line and the header), and the card's body opens below through `Collapse`. The receipt under the user turn (M23) gains "Mira takes the renewal risk", and if a crew member owns it, the face in the header plays its arrival (P6) the first time that member appears in the chat.
+- **Trigger:** Alevr decides a request becomes a task, or the person named an agent with a token.
+- **Feedback:** the live line (M1) already reads the work in words: "Drafting the renewal summary". **That line becomes the card.** Its text is the card's title; its box grows into the card header (framer `layoutId` shared between the line and the header), and the card's body opens below through `Collapse`. The receipt under the user turn (M23) gains "Mira takes the renewal risk", and if an agent owns it, the face in the header plays its arrival (P6) the first time that member appears in the chat.
 - **Timing:** F2, `spring.emphasized` (0.36 s, bounce 0.1). This is one of only two uses of `emphasized`.
 - **Interrupt:** a scroll or click during the morph never blocks; the card is interactive from its first frame.
 - **Reduced:** a 160 ms cross-fade from line to card.
 - **A11y:** polite announcement "Mira started a task: drafting the renewal summary". Focus does not move.
 - **Native:** `matchedGeometryEffect(id:in:)` between the line and the card header.
-- **Ref:** none; this is Juno's (the novelty budget, [premium §6.1-9]). Closest precedents: Cursor's "Started 3 agents" tree (`web/agent-progress__cursor.png`) and Copilot Cowork's "Working on it" disclosure (`ios/19`).
+- **Ref:** none; this is Alevr's (the novelty budget, [premium §6.1-9]). Closest precedents: Cursor's "Started 3 agents" tree (`web/agent-progress__cursor.png`) and Copilot Cowork's "Working on it" disclosure (`ios/19`).
 
 #### T2 · Live progress (F1)
 - **Feedback:** one line under the title, `ink-2`: "Reading 14 sources · 3 of 5 questions answered". The live verb is `primary`; numbers are tabular and change with a numeric transition. Below it, a disclosure: "Plan · 3 of 6 steps ▸" (`ink-3`), with the elapsed time in that disclosure's header only ("Plan · 3 of 6 · 4 min"). **Elapsed time is never the main progress signal.**
@@ -802,7 +804,7 @@ A task is delegated work inside a chat. The card leads with four things, in this
 - **Ref:** Cursor's checkbox question with Skip / Continue (`web/agent-progress__cursor.png`); Perplexity's clarifying question (`ios/14`).
 
 #### T6 · Approval card (F2) — deterministic approval
-- **Trigger:** a task or crew member needs a consequential action approved: send, post, buy, delete, transfer, change permissions, use credentials.
+- **Trigger:** a task or agent needs a consequential action approved: send, post, buy, delete, transfer, change permissions, use credentials.
 - **Anatomy:**
   1. Title naming the actor and the exact verb: "Mira wants to post to #design".
   2. The exact payload: the channel's mark and name, the full message text (up to 8 lines, then "Show all"), attachments. For email: recipients as tokens, subject, body. For a purchase: item, amount, payment method. For a deletion: the items by name and count.
@@ -826,7 +828,7 @@ A task is delegated work inside a chat. The card leads with four things, in this
 - **Reduced:** opacity only; the receipt settles without bounce.
 - **A11y:** `role="group"` labelled by the title; polite announcement "Mira needs your approval to post to #design"; the primary's accessible name is the full verb. The card is also listed in *Needs you*.
 - **Native (Mac):** the same card; the primary is a `.borderedProminent` button tinted `ink-1` (or `.red` for destructive). **iPhone and iPad:** T7.
-- **Ref:** Codex's Approve / Always approve / Tell Codex what to do / Deny (`research/openai.md`); Copilot Cowork's Send Email sheet (`ios/19`). The slop it replaces: "This tool wants to delete… [Reject][Approve]" with a blue primary (`web/approvals__ai-elements-confirmation.png`) and Claude's lone full-width Approve (`ios/20`). **Juno differs:** the button *is* the verb, it arms after 500 ms, it re-arms when the payload changes, and "Always" can never appear on a floor action.
+- **Ref:** Codex's Approve / Always approve / Tell Codex what to do / Deny (`research/openai.md`); Copilot Cowork's Send Email sheet (`ios/19`). The slop it replaces: "This tool wants to delete… [Reject][Approve]" with a blue primary (`web/approvals__ai-elements-confirmation.png`) and Claude's lone full-width Approve (`ios/20`). **Alevr differs:** the button *is* the verb, it arms after 500 ms, it re-arms when the payload changes, and "Always" can never appear on a floor action.
 
 #### T7 · Approval on iPhone and iPad (F2)
 - **Low-stakes questions** stay inline, always with two buttons, never one.
@@ -837,7 +839,7 @@ A task is delegated work inside a chat. The card leads with four things, in this
 - **Ref:** Copilot Cowork (`ios/19`); [ios §3.6–§3.7].
 
 #### T8 · Setup-change card (F2)
-- A crew member configured by talking ("Only notify me when you need a decision") produces a card showing **before → after** as two rows and what it affects.
+- An agent configured by talking ("Only notify me when you need a decision") produces a card showing **before → after** as two rows and what it affects.
 - A change that **narrows** access applies at once; the card reads "Applied · Undo" with Undo for `undoWindow`.
 - A change that **widens** access (a new app, a looser approval mode, spending) is an approval (T6) whose verb says exactly what widens: "Let Mira use Linear".
 - Applying collapses the card into its receipt with the same motion as T6.
@@ -854,7 +856,7 @@ A task is delegated work inside a chat. The card leads with four things, in this
 - There is no third verb. (Codex separates Pause, Stop and Cancel; two verbs are enough when Stop never discards.)
 
 #### T11 · Away from the chat
-- **In Juno, another chat open:** the *Needs you* fold gains a row (S7). For needs-you events only, a toast (O6): "Mira needs your answer on the Acme renewal · Show".
+- **In Alevr, another chat open:** the *Needs you* fold gains a row (S7). For needs-you events only, a toast (O6): "Mira needs your answer on the Acme renewal · Show".
 - **App not in view:** an OS notification. Copy names the member and carries the question: "Mira needs your answer · Acme renewal: send the revised quote today?". Web: the Notification API, after the person has allowed it from Settings (never prompted on first visit). Native: `UNNotification` with the categories in CODE_AGENT_SPEC §1.11.
 - **Long tasks on iPhone** (running more than 2 minutes): one Live Activity whose text is the T2 line; the Dynamic Island's compact leading slot shows the member's face. It ends with the outcome sentence.
 - **No app-icon badge, anywhere.**
@@ -868,18 +870,18 @@ A task is delegated work inside a chat. The card leads with four things, in this
 - **Trigger:** `/research`, or the model choosing research.
 - **Feedback:** if the request is ambiguous, one clarifying question first (T5 shape). Then a plan card:
   - Title: "Research plan".
-  - The questions Juno will answer, each an editable row (click to edit in place; ⌫ on an empty row removes it; "Add a question").
+  - The questions Alevr will answer, each an editable row (click to edit in place; ⌫ on an empty row removes it; "Add a question").
   - **Sources:** rows for Web, and each connected app that can be read (read-only, stated as "Drive · read-only"), plus "Prioritise sites…" and "Only these sites…" fields.
   - The estimate: "About 6 minutes" (`ink-3`).
   - **Start research** (`ink-1` filled) and **Not now** (ghost).
 - The gate waits indefinitely. Typing in the composer refines the plan ("also look at the EU"): the plan updates in place and each changed row carries a `surface-2` highlight that fades over `emphasis`.
 - **Keys:** with focus in the card, ⌘Enter starts. Reading is not consequential, so no arming delay.
-- **Ref:** Gemini's Edit plan / Start research; ChatGPT's editable plan with source scoping ([web §2.9]); Perplexity's clarifying question (`ios/14`). **Juno differs:** the plan is edited in place and by typing in the composer, and source scope is part of the plan.
+- **Ref:** Gemini's Edit plan / Start research; ChatGPT's editable plan with source scoping ([web §2.9]); Perplexity's clarifying question (`ios/14`). **Alevr differs:** the plan is edited in place and by typing in the composer, and source scope is part of the plan.
 
 #### R2 · Progress (F1)
 - One line: "Reading 14 sources · 3 of 5 questions answered" (T2 rules).
 - The disclosure lists each question with its state, and the last five sources read (favicon, domain, title).
-- After 20 s: an `ink-3` line, "You can leave. Juno will let you know when the report is ready."
+- After 20 s: an `ink-3` line, "You can leave. Alevr will let you know when the report is ready."
 - **No** percentage bar, no source-count odometer, no auto-scrolling step list.
 
 #### R3 · Steering a run (F1)
@@ -911,7 +913,7 @@ A deliverable (document, deck, sheet, design, app) is a Library item with its ow
 - **Keys:** ⌥⌘\ toggles the panel on the web; ⌥⌘I (the system "Show Inspector") and ⌥⌘\ on the Mac.
 - **Reduced:** 160 ms cross-fade; the transcript snaps.
 - **Native:** Mac: an inspector column (`.inspector(isPresented:)`); iPad: the third column; iPhone: a large sheet with the chat visible behind it, opened by `.navigationTransition(.zoom(sourceID:in:))` from the card.
-- **Ref:** Cursor's docked document pane (`web/artifacts__cursor.png`); Claude's artifact sheet over the chat (`ios/31`); Figma's return to fixed panels on 2024-10-10 ([premium §2.9]). **Juno differs:** the panel docks rather than floats, and the link is part of the URL.
+- **Ref:** Cursor's docked document pane (`web/artifacts__cursor.png`); Claude's artifact sheet over the chat (`ios/31`); Figma's return to fixed panels on 2024-10-10 ([premium §2.9]). **Alevr differs:** the panel docks rather than floats, and the link is part of the URL.
 
 #### A3 · Close (F2)
 - Esc (focus inside the panel, no inner layer open), the × button, Back, or the shortcut. The panel leaves on `exit` (opacity with an 8 px slide); the transcript glides back on `spring.layout`. Focus returns to the card that opened it.
@@ -951,13 +953,13 @@ A deliverable (document, deck, sheet, design, app) is a Library item with its ow
 
 #### A10 · An app that errors (F1)
 - A line inside the panel, not a toast: "This app hit an error: TypeError: rows is undefined · Fix it". **Fix it** inserts a token for the error into the composer and focuses it; the person sends.
-- **Ref:** Claude's "Try fixing with Claude" ([web §2.7]). **Juno differs:** the error arrives as a token the person can still edit around before sending.
+- **Ref:** Claude's "Try fixing with Claude" ([web §2.7]). **Alevr differs:** the error arrives as a token the person can still edit around before sending.
 
 ---
 
 ### 2.6 Sidebar
 
-Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer than the content ([premium §6.1-3]). Rows are plain text, 32 px tall on desktop, with no per-row icons except crew faces and project marks, no timestamps, no counts on rows, and no dividers.
+Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer than the content ([premium §6.1-3]). Rows are plain text, 32 px tall on desktop, with no per-row icons except agent faces and project marks, no timestamps, no counts on rows, and no dividers.
 
 #### S1 · Rows: hover, press, selection (F1 / F0)
 - **Hover:** `surface-2` fill on `fast`. **Press:** one tone deeper while held, no scale. **Selected:** the `selected` fill with `ink-1` text; inactive rows are `ink-2`.
@@ -995,7 +997,7 @@ Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer t
 - **A11y:** the row's arrival is announced politely once.
 - **Ref:** Cursor's "READY FOR REVIEW 5" grouping (`web/thinking__cursor.png`, [premium §2.14]).
 
-#### S8 · Crew rows (F0)
+#### S8 · Orbit rows (F0)
 - Face (20 px, static, its colour following P1), name in `ink-1`, and one "now" line in `ink-3`: "Drafting the renewal summary", "Free", "Paused". The words carry the state; the face never loops here.
 - The section header opens the roster.
 
@@ -1017,9 +1019,9 @@ Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer t
 | O3 | **Tooltip** | After `tooltipDelay` (300 ms): `fast`, a 2 px drift from the trigger and scale 0.97 → 1. Later tooltips within `tooltipSkip` (400 ms): instant, no animation (`data-state="instant-open"` → `transition-duration: 0ms`) | `exit` | On focus, after the same delay | Never takes focus | Never the only label: icon buttons always have `aria-label`. No tooltips on touch. |
 | O4 | **Dialog** | `base`: scale 0.97 → 1 + opacity, centred; scrim opacity on `base` | `exit` | Instant | Trapped; starts on the first sensible control (never on a destructive verb); returns to the trigger | Esc closes unless the dialog holds unsaved input, in which case Esc asks "Discard changes?" inline. |
 | O5 | **Sheet (web, mobile widths)** | `slow` on `ease-drawer`, from the bottom | `exit` | n/a | Trapped | Drag follows the finger one-to-one; dismisses on velocity (> 0.11 px/ms) or past half height; damped past the top; a drag starts only at scroll-top, with a 100 ms guard after scrolling (Vaul). `overscroll-behavior: contain`. |
-| O6 | **Toast** | `base`, from the bottom-right on desktop and the top on mobile web | `exit` | n/a | Reachable with ⌥T; never takes focus | Sonner: `toastLife` 4 s, pauses on hover and on a hidden tab, 3 visible, 14 px gap, swipe to dismiss at 45 px or 0.11 px/ms. **Only** for events outside the current view (a crew member needs you in another chat, a background task finished) and for Undo after a deletion. **Never** for copy, save, send or anything the person just watched happen. |
+| O6 | **Toast** | `base`, from the bottom-right on desktop and the top on mobile web | `exit` | n/a | Reachable with ⌥T; never takes focus | Sonner: `toastLife` 4 s, pauses on hover and on a hidden tab, 3 visible, 14 px gap, swipe to dismiss at 45 px or 0.11 px/ms. **Only** for events outside the current view (an agent needs you in another chat, a background task finished) and for Undo after a deletion. **Never** for copy, save, send or anything the person just watched happen. |
 | O7 | **Command palette (⌘K)** | Instant | Instant | Instant | Field focused; returns on close | Results update without animation; the highlight moves without animation; Enter opens; ⌘Enter opens in a new window; recents first when empty. |
-| O8 | **Hover card** (citations, tokens in sent turns, crew faces in the sidebar) | After `hoverCardOpen` (300 ms), `base`, from the trigger | After `hoverCardClose` (150 ms) grace, `exit` | Click or Enter pins it | Focus moves in only when pinned | Moving the pointer into the card keeps it open. |
+| O8 | **Hover card** (citations, tokens in sent turns, agent faces in the sidebar) | After `hoverCardOpen` (300 ms), `base`, from the trigger | After `hoverCardClose` (150 ms) grace, `exit` | Click or Enter pins it | Focus moves in only when pinned | Moving the pointer into the card keeps it open. |
 
 **Native.** Menus are `Menu` / `NSMenu`; popovers `.popover` / `NSPopover` (which may extend past the window on the Mac); dialogs are alerts or sheets; sheets use `.presentationDetents([.medium, .large])` with `.presentationDragIndicator(.visible)`. There are **no toasts on iOS**: background events use system notifications, and Undo after a deletion uses a transient glass bar above the composer or tab bar for `undoWindow` (the one toast-like element).
 
@@ -1055,14 +1057,14 @@ Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer t
 - Long-press (touch) or right-click (pointer) on the armed send button opens **Send with…**: the favourites and Auto. Choosing one sends this message with that model only; the label does not change.
 - **Ref:** ChatGPT iOS long-press on Send (2026-06-08, `research/openai.md`).
 
-**Native.** iPhone uses a native `Menu` from the label (Copilot's and Meta AI's shape, `ios/08`, `ios/09`): Auto, favourites and current models with subtitles, then the effort `Picker`, then "All models…". **Ref and slop:** the menu replaces spec-sheet pickers and the AI Elements context meter (`web/model-picker__ai-elements-context.png`). **Juno differs:** Standard effort is invisible in the label, and model changes leave a line in the transcript so history records which model answered.
+**Native.** iPhone uses a native `Menu` from the label (Copilot's and Meta AI's shape, `ios/08`, `ios/09`): Auto, favourites and current models with subtitles, then the effort `Picker`, then "All models…". **Ref and slop:** the menu replaces spec-sheet pickers and the AI Elements context meter (`web/model-picker__ai-elements-context.png`). **Alevr differs:** Standard effort is invisible in the label, and model changes leave a line in the transcript so history records which model answered.
 
-### 2.9 Crew faces: states and transitions
+### 2.9 Agent faces in Orbit: states and transitions
 
-> **Superseded in part by DECISIONS D-032 (2026-10-01).** Crew members are now cute, premium 3D characters with deep customization. The state contract below (six states, words always present, event-driven transitions, P3 attention, P4 pointer gaze and event blinks, P6 arrival) still applies. What changes: faces may be characters with personality (accessories, expressive eyes, reactions such as a small happy bounce when thanked); the large character in a member's own thread may carry a subtle idle (breathing/sway, occasional blink) that stops when the tab is hidden or Reduce Motion is on; small faces (≤ 28 px) stay still sprites.
+> **Superseded in part by DECISIONS D-032 (2026-10-01).** Agents are now cute, premium 3D characters with deep customization. The state contract below (six states, words always present, event-driven transitions, P3 attention, P4 pointer gaze and event blinks, P6 arrival) still applies. What changes: faces may be characters with personality (accessories, expressive eyes, reactions such as a small happy bounce when thanked); the large character in a member's own thread may carry a subtle idle (breathing/sway, occasional blink) that stops when the tab is hidden or Reduce Motion is on; small faces (≤ 28 px) stay still sprites.
 
 
-A face is an **instrument of state**, never a character (PRODUCT_REFOUNDATION §7). The drawing itself is decided in the identity round (`DESIGN_LANGUAGE.md`); it must stop being a Grok Bot derivative (crew audit §3.2-5). This section fixes the **state contract** every drawing must honour: the states, what each looks like in principle, when it may move, and what it says.
+A face supports the **state contract** and is also an original customizable character under D-032–D-034. Use the short-flocked designer-toy direction in [Orbit's system](brand/ORBIT_SYSTEM.md), not a Grok Bot derivative. State remains readable words; appearance never determines runtime state. The state semantics below still apply, with D-032's limited visible-large-character idle exception and reduced-motion rules.
 
 `FaceState = available | thinking | working | waitingForYou | paused | offline`
 
@@ -1102,16 +1104,16 @@ The owner asked for faces with real presence ("blink, subtly track attention, re
 - The face is decorative (`aria-hidden`); the words are the state. Where a face stands alone (roster grid), it has `role="img"` with the label "Mira, working on the renewal summary".
 
 #### P6 · Arrival (F3)
-- A new crew member's face appears once, on the roster and in its sidebar row: scale 0.9 → 1 with opacity on `emphasis` / `out-expo`. Nothing else about it moves.
+- A new agent's face appears once, on the roster and in its sidebar row: scale 0.9 → 1 with opacity on `emphasis` / `out-expo`. Nothing else about it moves.
 
-**Native.** `JunoAgentFace` renders the same contract; `JunoAgentPresence`'s `RadialGradient` and `AngularGradient` are removed; the thread bar uses system materials. **Ref:** Cursor's and Claude Code's state words ([premium §2.2, §2.14]); the crowded "AI with a face" space (OpenAI dots 2026-09-29, Superhuman Hero, Notion's face; `web/crew__notion.png`). **Juno differs:** the face never idles on a timer; it moves only in response to events (state changes, the person's attention, the pointer), and it always has words beside it.
+**Native.** `JunoAgentFace` renders the same contract; `JunoAgentPresence`'s `RadialGradient` and `AngularGradient` are removed; the thread bar uses system materials. **Ref:** Cursor's and Claude Code's state words ([premium §2.2, §2.14]); the crowded "AI with a face" space (OpenAI dots 2026-09-29, Superhuman Hero, Notion's face; `web/crew__notion.png`). **Alevr differs:** the face mostly moves in response to events, with D-032's visible-large-character idle exception; it always has readable state words.
 
 ---
 
 ### 2.10 Library
 
 #### L1 · The grid (F1)
-- Cards in a grid with a 220 px minimum column: a rendered preview thumbnail (`surface-1`, radius 10), the title in `ink-1`, and "Document · edited 2 d ago" in `ink-3`, with the owner's face (16 px) when a crew member made it. A list view shows the same fields as 40 px rows.
+- Cards in a grid with a 220 px minimum column: a rendered preview thumbnail (`surface-1`, radius 10), the title in `ink-1`, and "Document · edited 2 d ago" in `ink-3`, with the owner's face (16 px) when an agent made it. A list view shows the same fields as 40 px rows.
 - **Hover:** one tone step on the card on `fast`. The thumbnail does not zoom; the card does not lift.
 - **Keys:** the grid is `role="grid"` with a roving focus; arrow keys move, Enter opens, **Space opens Quick Look** (L2), ⌘⌫ (Mac) or Delete (Windows) moves to Trash, ⌘A selects all. ⌘-click and ⇧-click multi-select; on touch, long-press enters selection mode.
 
@@ -1130,7 +1132,7 @@ The owner asked for faces with real presence ("blink, subtly track attention, re
 - Dropping files anywhere on the Library page shows "Drop to add to Library" (C5's overlay). New cards appear at the start of the grid with their upload track (C6); existing cards move on `spring.layout`. No stagger.
 
 #### L6 · Empty and first population
-- Empty: one sentence, "Everything Juno makes and every file you add lives here.", and one action, **Upload files**. No illustration.
+- Empty: one sentence, "Everything Alevr makes and every file you add lives here.", and one action, **Upload files**. No illustration.
 - The first time the Library fills (F3 allowlist), up to the first 6 cards may stagger in at 40 ms.
 
 #### L7 · Delete
@@ -1143,7 +1145,7 @@ The owner asked for faces with real presence ("blink, subtly track attention, re
 Customize is a native `Form` on Apple platforms and a single 640 px column on the web: each row is a label, a one-line description and a control on the right. **Changes apply instantly; there is no Save button** ([web §2.13], [ios §3.10]).
 
 #### K1 · The apps directory (F1)
-- A curated first page: rows with the app's mark (28 px, its own colour), name, one line on what Juno can do with it, and on the right **Connect**, or "Connected" in `ink-3`. Search filters instantly; the long tail (Composio) appends below "Searching more apps…" after `showDelay`.
+- A curated first page: rows with the app's mark (28 px, its own colour), name, one line on what Alevr can do with it, and on the right **Connect**, or "Connected" in `ink-3`. Search filters instantly; the long tail (Composio) appends below "Searching more apps…" after `showDelay`.
 - Provenance is written as text ("Built by Linear", "Community"), never as a "Verified" or "Beta" pill.
 
 #### K2 · Connect (F2)
@@ -1161,8 +1163,8 @@ Customize is a native `Form` on Apple platforms and a single 640 px column on th
 - Each action group on an app page has a segmented control, **Allow · Ask · Off**, whose thumb moves on `spring.standard`.
 - Actions on the always-confirm floor show no control, only the words "Always asks" and, on hover, why.
 - **Narrowing** (toward Ask or Off) applies at once and shows "Changed · Undo" beside the control for `undoWindow`.
-- **Widening** (to Allow on an action that changes things) opens a confirm popover from the control: "Let Juno create Linear issues without asking?" with the verb **Allow without asking** and **Cancel**. The verb arms after `approvalArm`.
-- **Who can use it** (you, and which crew members) follows the same narrowing and widening rules.
+- **Widening** (to Allow on an action that changes things) opens a confirm popover from the control: "Let Alevr create Linear issues without asking?" with the verb **Allow without asking** and **Cancel**. The verb arms after `approvalArm`.
+- **Who can use it** (you, and which agents) follows the same narrowing and widening rules.
 
 #### K5 · Disconnect (F2)
 - **Disconnect Linear** (`danger` text button) opens a dialog that states the consequences ("Mira's routine 'Triage bugs' will stop working") with the verb **Disconnect**. No undo; the dialog notes that reconnecting is possible.
@@ -1180,7 +1182,7 @@ Customize is a native `Form` on Apple platforms and a single 640 px column on th
 
 ### 2.12 Code workspace
 
-Juno Code shares the composer, trace, approval and panel behaviour above. This section covers what is specific to it. The runtime behaviour is `CODE_AGENT_SPEC.md`; this is how it looks and responds. Code uses the dark appearance's register by default (the Instrument direction's remit, [premium §7.3]), with the same rules.
+Alevr Code shares the composer, trace, approval and panel behaviour above. This section covers what is specific to it. The runtime behaviour is `CODE_AGENT_SPEC.md`; this is how it looks and responds. Code uses the dark appearance's register by default (the Instrument direction's remit, [premium §7.3]), with the same rules.
 
 #### X1 · The context row (F0)
 - Above the field, one quiet `ink-2` line: repository · environment · mode, for example "juno · this Mac · Code". The mode is a segmented control, **Ask · Plan · Code**. The keyboard path is `/ask`, `/plan` and `/code` (C11); there is no chord, because ⇧Tab must stay focus navigation in a GUI.
@@ -1214,26 +1216,26 @@ Juno Code shares the composer, trace, approval and panel behaviour above. This s
 - Output beyond the spill limit: "Output continues in a log file · Open".
 
 #### X6 · Command and change approvals (F2)
-- T6's card with code content: "Juno wants to run" and the full command in a monospace block (wrapped, never truncated), its working directory, and the model's one-line reason. Risk is stated in words: "Changes files outside the repository" in `danger` text when true.
-- **Actions:** **Run once** (the verb); its split caret offers **"Always allow `npm test` in this repository"**, which writes the exact rule (DECISIONS D-019); **Not now**; **Tell Juno what to do**.
+- T6's card with code content: "Alevr wants to run" and the full command in a monospace block (wrapped, never truncated), its working directory, and the model's one-line reason. Risk is stated in words: "Changes files outside the repository" in `danger` text when true.
+- **Actions:** **Run once** (the verb); its split caret offers **"Always allow `npm test` in this repository"**, which writes the exact rule (DECISIONS D-019); **Not now**; **Tell Alevr what to do**.
 - Digest-bound, arming after `approvalArm`, never decaying into a denial: an unanswered approval parks the session as needing you and reminds at 15, 60 and 240 minutes (CODE_AGENT_SPEC §1.11).
 - Notification actions **Allow once** and **Decline** carry `authenticationRequired`. "Always" exists only in the app, where the rule it writes can be read.
 
 #### X7 · The inspector (F0)
 - Tabs appear only when useful: Changes, Files, Terminal, Tests, Preview, Git, Computer. Switching tabs is instant. ⌥⌘\ toggles the inspector on the web; ⌥⌘I on the Mac.
 
-#### X8 · Preview while Juno drives (F2)
-- While Juno drives the Preview, the pane's edge carries the glow (§1.6 item 3) and its toolbar subtitle reads "Juno is using the preview · Stop". Esc in the pane stops agent control. Any real input from the person pauses the agent: "You took over · Resume".
+#### X8 · Preview while Alevr drives (F2)
+- While Alevr drives the Preview, the pane's edge carries the glow (§1.6 item 3) and its toolbar subtitle reads "Alevr is using the preview · Stop". Esc in the pane stops agent control. Any real input from the person pauses the agent: "You took over · Resume".
 - State is words in the toolbar subtitle: "Running `pnpm run dev` in apps/web on :3000". The floating status capsule and shield badges are removed (CODE_AGENT_SPEC §4.7).
 
 #### X9 · Screen control on the Mac (F2)
-- One plain row at the top of the thread: the last frame's thumbnail, "Juno is using Safari", **Stop** and **Take over**. On screen: a click-through glass caption under the menu bar, "Juno is using TextEdit · Esc to stop", and the glow outline on the target window.
+- One plain row at the top of the thread: the last frame's thumbnail, "Alevr is using Safari", **Stop** and **Take over**. On screen: a click-through glass caption under the menu bar, "Alevr is using TextEdit · Esc to stop", and the glow outline on the target window.
 - **Esc anywhere stops screen control.** This is the one place Esc stops an agent, because it is a safety control (CODE_AGENT_SPEC §3.7).
 
 #### X10 · The run report (F1)
 - The final row, text only (CODE_AGENT_SPEC §1.10): outcome, What changed, Checked, Not checked, Left. It enters on `base`. "Checked" rows render only from the ledger. A run longer than 60 s that ends checked, on screen, settles its outcome line on `reward`.
 
-**Ref (Code):** Cursor's grouped agent list with state sentences and diff counts (`web/agent-progress__cursor.png`, `web/artifacts__cursor.png`); ChatGPT's goal row (`web/composer__chatgpt-goal.png`). **Juno differs:** the goal row, queued messages and needs-you rows share one dock, and approvals from notifications require an unlocked device.
+**Ref (Code):** Cursor's grouped agent list with state sentences and diff counts (`web/agent-progress__cursor.png`, `web/artifacts__cursor.png`); ChatGPT's goal row (`web/composer__chatgpt-goal.png`). **Alevr differs:** the goal row, queued messages and needs-you rows share one dock, and approvals from notifications require an unlocked device.
 
 ---
 
@@ -1248,7 +1250,7 @@ Juno Code shares the composer, trace, approval and panel behaviour above. This s
 | G3 | Long-press | A message | Context menu with preview (M24) | System |
 | G4 | Drag down on the transcript | A thread with the keyboard up | Dismisses the keyboard interactively (`.scrollDismissesKeyboard(.interactively)`); the composer rides the keyboard's edge. A tap on the transcript also dismisses it. | None |
 | G5 | Drag the grabber | Sheets | Medium ↔ large detents; down to dismiss. A sheet holding unsaved input sets `interactiveDismissDisabled` and asks "Discard draft?" in an action sheet. | System detent haptic |
-| G6 | Scroll down | Chat, Crew and Code roots | The tab bar minimises (`tabBarMinimizeBehavior(.onScrollDown)`). A live voice session, or the most urgent running task's T2 line, sits in `tabViewBottomAccessory` and folds inline when the bar minimises. **Inside a thread the tab bar yields to the composer**, so there is only ever one glass layer at the bottom. | None |
+| G6 | Scroll down | Chat, Orbit and Code roots | The tab bar minimises (`tabBarMinimizeBehavior(.onScrollDown)`). A live voice session, or the most urgent running task's T2 line, sits in `tabViewBottomAccessory` and folds inline when the bar minimises. **Inside a thread the tab bar yields to the composer**, so there is only ever one glass layer at the bottom. | None |
 | G7 | Long-press the armed send | Composer | **Send with…** (MP5) | `.selection` on choice |
 | G8 | Long-press a token | Composer | Token popover (C10) as a medium sheet | System |
 | G9 | Pinch, double-tap, swipe down | Image lightbox | Zoom; toggle zoom; dismiss, following the finger and dismissing on projected velocity | None |
@@ -1264,7 +1266,7 @@ Juno Code shares the composer, trace, approval and panel behaviour above. This s
 
 ### 2.14 Haptics map (iOS; Mac trackpad)
 
-The complete map. Anything not listed plays no haptic. A Juno setting (Settings › Sounds & Haptics › Haptics, on by default) turns them all off.
+The complete map. Anything not listed plays no haptic. A Alevr setting (Settings › Sounds & Haptics › Haptics, on by default) turns them all off.
 
 | Moment | Feedback | Why |
 |---|---|---|
@@ -1278,7 +1280,7 @@ The complete map. Anything not listed plays no haptic. A Juno setting (Settings 
 | Send, copy, an ordinary reply finishing, an approval card appearing, a question appearing | **None** | Avoid overuse; the notification or the screen carries it. |
 | While a reply streams | **Never** | Apple: long-running haptics dilute meaning. ChatGPT's streaming haptics are the counter-example (UNVERIFIED). |
 
-**Ref:** Apple HIG, Playing haptics; [micro §2F]; [ios §6-10]. **Juno differs from [ios §6-10]:** no impact on send and no `.warning` when a crew member needs you in the foreground; the face's turn (P3) and the words carry that, and a warning haptic for a routine question would train people to ignore it.
+**Ref:** Apple HIG, Playing haptics; [micro §2F]; [ios §6-10]. **Alevr differs from [ios §6-10]:** no impact on send and no `.warning` when an agent needs you in the foreground; the face's turn (P3) and the words carry that, and a warning haptic for a routine question would train people to ignore it.
 
 ---
 
@@ -1302,10 +1304,10 @@ One sentence and at most one action. No illustrations, no mascots, no generic su
 
 | Surface | Copy | Action |
 |---|---|---|
-| New chat home | A one-line greeting in the interface face, e.g. "Good to see you, Liam." (no serif), then up to three suggestions **derived from the person's own state**: a crew member who needs them, an app just connected, a project touched today. Each is a plain text row with the relevant token mark. When nothing real exists, there are no suggestions. | — |
-| Library | "Everything Juno makes and every file you add lives here." | Upload files |
+| New chat home | A one-line upright Newsreader greeting under D-027, e.g. "What’s next, Liam?", then up to three suggestions **derived from the person's own state**: an agent who needs them, an app just connected, a project touched today. Each is a plain text row with the relevant token mark. When nothing real exists, there are no suggestions. | — |
+| Library | "Everything Alevr makes and every file you add lives here." | Upload files |
 | Projects | "Projects keep chats, files and instructions together." | New project |
-| Crew roster | "No crew yet. A crew member has a role, their own thread, and keeps working when you leave." | Add to crew |
+| Orbit roster | "No agents yet. An agent has a role, their own thread, and keeps working when you leave." | Create agent |
 | Needs you | Not shown at all when empty. | — |
 | Search, no results | "Nothing matches 'acme'." | Search all files ↵ |
 | Customize › Apps | The curated directory is the empty state. | — |
@@ -1316,13 +1318,13 @@ One sentence and at most one action. No illustrations, no mascots, no generic su
 
 ### 3.4 Errors
 - **Where it happened.** An error appears next to the thing that failed, as one line: what happened, then one recovery verb. Never a red banner across the page, never a toast for an error tied to something visible.
-- **Words.** "What happened. What to do." Not "Oops", not "Something went wrong" on its own, no exclamation marks. When the cause is unknown: "Something failed on Juno's side · Retry", with **Details** disclosing the request ID for support.
+- **Words.** "What happened. What to do." Not "Oops", not "Something went wrong" on its own, no exclamation marks. When the cause is unknown: "Something failed on Alevr's side · Retry", with **Details** disclosing the request ID for support.
 - **Colour.** The text is `ink-1`; only the small glyph is `danger`.
 - **Retry** is idempotent everywhere.
 - The reply-level table is M16; tool failures are M5; upload failures C6; connection failures K2.
 
 ### 3.5 Partial failure
-When some steps failed but Juno still answered, the trace shows the failed lines (M5) and the answer says what it could not use in one sentence ("I couldn't open Q3 Forecast.xlsx, so the totals below leave out Q3.").
+When some steps failed but Alevr still answered, the trace shows the failed lines (M5) and the answer says what it could not use in one sentence ("I couldn't open Q3 Forecast.xlsx, so the totals below leave out Q3.").
 
 ### 3.6 Offline
 - **Detection:** `navigator.onLine`, a failed fetch, or a missed WebSocket heartbeat (15 s). Native: `NWPathMonitor`.
@@ -1434,13 +1436,13 @@ One Esc does exactly one thing, in this order:
 
 With focus inside a task, question or approval card, Esc returns focus to the composer and answers nothing.
 
-**Esc never** clears the draft, denies an approval, stops a task, or ends a voice session unless focus is in the voice row. **The one exception** is Code's screen control, where Esc anywhere stops Juno, because it is a safety control (X9).
+**Esc never** clears the draft, denies an approval, stops a task, or ends a voice session unless focus is in the voice row. **The one exception** is Code's screen control, where Esc anywhere stops Alevr, because it is a safety control (X9).
 
 ### 4.7 Focus rules
 - `:focus-visible` rings on everything interactive, from the global rule; never removed without a replacement.
 - Closing any layer returns focus to what opened it.
 - After a send, focus stays in the composer.
-- Nothing Juno does on its own (a card arriving, a reply finishing, a notification) moves focus.
+- Nothing Alevr does on its own (a card arriving, a reply finishing, a notification) moves focus.
 - Every icon-only control has an accessible name and a tooltip; touch targets are at least 24 px on desktop and 44 px on touch.
 - Lists (sidebar, palette, Library, menus) use a roving focus, so Tab enters and leaves them in one step.
 
@@ -1448,7 +1450,7 @@ With focus inside a task, question or approval card, Esc returns focus to the co
 
 ## 5. Banned
 
-Each item is banned in every Juno surface. "Detect" says how review or CI catches it.
+Each item is banned in every Alevr surface. "Detect" says how review or CI catches it.
 
 ### 5.1 Visual state
 | # | Banned | Instead | Detect |
@@ -1483,7 +1485,7 @@ Each item is banned in every Juno surface. "Detect" says how review or CI catche
 | # | Banned | Instead | Detect |
 |---|---|---|---|
 | B22 | Sparkles, gradient orbs, the `thinking-orbs`, `voice-glow` (outside C16), `metal-fx`, `img-fx` and `bot-avatars` effects | The live line; faces as instruments; the voice glow only while audio is live | `package.json` review |
-| B23 | A glowing, gradient or beaming composer border | The composer's shadow; the voice glow only while audio is live | Review |
+| B23 | A glowing, gradient or beaming composer border | The composer's crisp surface/edge; meaningful voice feedback only while audio is live | Review |
 | B24 | "Good morning, Name" in a serif over starter cards; generic suggestions ("Write a poem", "How many Rs in strawberry?") | One sans line; ≤ 3 state-derived suggestions or none | Review |
 | B25 | Raw tool names, JSON, "PARAMETERS {}" in the default view | Sentence templates (M5); Details one disclosure down | Test: every registered tool has templates |
 | B26 | "This tool wants to…", anonymous actors, generic Approve/Reject | Actor + exact verb (T6) | Review |
@@ -1522,7 +1524,7 @@ Each item is banned in every Juno surface. "Detect" says how review or CI catche
 | # | Banned | Instead |
 |---|---|---|
 | B49 | "Oops", "Uh-oh", exclamation marks, "Something went wrong" alone | "What happened. What to do." |
-| B50 | "Processing…", "AI is thinking…", "Your agent needs attention", "Your crew member" | The real phase; the member's name ("Mira needs your answer") |
+| B50 | "Processing…", "AI is thinking…", "Your agent needs attention", "Your agent" | The real phase; the member's name ("Mira needs your answer") |
 | B51 | Three dots instead of the ellipsis character; straight quotes in UI copy | "…"; curly quotes |
 | B52 | Title Case in UI labels | Sentence case |
 
@@ -1533,20 +1535,20 @@ Each item is banned in every Juno surface. "Detect" says how review or CI catche
 A UI change merges only when every applicable item passes. Items are testable; the method is in brackets. **[E2E]** is a Playwright test (Chrome channel, web); **[XCT]** an XCTest or XCUITest; **[Rec]** a screen recording attached to the PR, slowed 5× in DevTools or the Simulator; **[Frame]** a static screenshot review at phone, tablet and desktop widths in both appearances, with real content.
 
 ### 6.1 Frames
-- **Q-F1** Every frame uses real transcripts, real crew names, real files and at least one real failure state. No lorem ipsum. [Frame]
+- **Q-F1** Every validation frame uses real transcripts, real agent names, real files and at least one real failure state. Concept boards remain clearly labelled and do not substitute for validation. [Frame]
 - **Q-F2** Count the chromatic spots: `primary` appears at most twice and only on something acting or the armed send; `attention` only on needs-you words; every other colour comes from an entity's mark. [Frame]
 - **Q-F3** No pill, badge, dot or count badge anywhere (B1–B3). [Frame]
 - **Q-F4** Exactly one elevated object per screen (usually the composer). [Frame]
 - **Q-F5** The content is the brightest surface; the chrome sits one tone step dimmer. [Frame]
 - **Q-F6** Every state on screen is readable as words without the colour. [Frame, grayscale]
-- **Q-F7** The frame holds up next to its reference on the board and beats today's Juno at the same frame (DECISIONS D-016). [Frame]
+- **Q-F7** The frame holds up next to its reference on the board and beats today's Alevr at the same frame (DECISIONS D-016). [Frame]
 
 ### 6.2 Motion
 - **Q-M1** No animation exceeds its tier (§1.5); F2 motions finish within 360 ms, F3 within 560 ms. [Rec]
 - **Q-M2** Every animation can be interrupted mid-way and reverses from where it is, without a jump. [Rec: reverse each F2 motion at 50%]
 - **Q-M3** Palettes, ⌘K, menus opened from the keyboard, thread switches, find and sidebar selection change in the same frame. [E2E: assert no running `Animation` via `document.getAnimations()` the frame after the key]
 - **Q-M4** Nothing loops outside §1.6's list; the page is still after 3 s idle. [E2E: `document.getAnimations().filter(a => a.playState === "running")` is empty on an idle chat]
-- **Q-M5** With reduced motion (system and the Juno setting), nothing translates, scales, blurs or bounces; fades remain; scrolls are instant. [E2E with `reducedMotion: "reduce"`; XCT with Reduce Motion]
+- **Q-M5** With reduced motion (system and the Alevr setting), nothing translates, scales, blurs or bounces; fades remain; scrolls are instant. [E2E with `reducedMotion: "reduce"`; XCT with Reduce Motion]
 - **Q-M6** Streaming a 3000-word reply with the CPU throttled 4× keeps scrolling smooth and typing in the composer without visible lag. [Rec + Performance panel: no long task over 50 ms attributable to the transcript]
 - **Q-M7** Switching theme shows no staggered colour fades. [Rec]
 - **Q-M8** `grep -rhoE 'cubic-bezier\(' src | sort -u` finds only the token file; `transition-all` finds nothing; the lint gate in §1.8 passes. [CI]
@@ -1600,7 +1602,7 @@ A UI change merges only when every applicable item passes. Items are testable; t
 ### 6.8 Words
 - **Q-W1** Every error states what happened and what to do; none says only "Something went wrong". [Copy review]
 - **Q-W2** Busy labels use "…"; UI labels use sentence case; quotes are curly. [Lint on string files]
-- **Q-W3** Crew events always name the member. [Copy review]
+- **Q-W3** Orbit events always name the member. [Copy review]
 
 ---
 
@@ -1620,7 +1622,7 @@ This spec changes the following. Each line is a task for the implementation pass
 | `src/components/chat/message-list.tsx` | `ATTACH_SLOP_PX` 24 → 48; escapes for wheel up, keyboard scrolling and text selection; top turn anchoring with the spacer; jump-then-smooth | M17–M19 |
 | `.shimmer-text` (`globals.css`), `PhaseOrb` (`effects/phase-orb.tsx`), `AgentStatusBadge`'s orb | Removed; replaced by the M1 live line | M1, B15, B22 |
 | `thinking-orbs`, `bot-avatars`, `metal-fx`, `img-fx` in `package.json` | Removed once unused; `voice-glow` kept only for C16 pending the owner's re-confirmation (§9) | B22 |
-| `staggerDelay` (72 files) | Removed except the F3 allowlist: onboarding, first Library population, crew member arrival | B14, audit R7 |
+| `staggerDelay` (72 files) | Removed except the F3 allowlist: onboarding, first Library population, agent arrival | B14, audit R7 |
 | `agent-face.css`, `agent-presence.tsx`, `face-rig.ts`, `agents.css`, `JunoAgentFace.swift`, `JunoAgentPresence.swift`, `NativeAgentsHome.swift` | Remove halos, sheens, gradients, idle breathing, timed blinks and glances; implement the P1 contract and derivation | §2.9 |
 | `JunoMotion.reward` | Bounce 0.18 → 0.15 | §1.4 cap; parity with the web |
 | `JunoMotion.handoff` | `emphasized` → `layout` (no bounce); reduced form unchanged | C18 |

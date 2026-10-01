@@ -1,5 +1,7 @@
 # Naming and identity research: "Crew", "Juno", and the Orbital Precision palette
 
+> **Current direction, 2026-10-01:** See [the Alevr V3 brand package](../brand/README.md). This dated research/brief remains historical evidence. Its keep-Juno/Crew and old font/icon recommendations do not govern the new proposed identity. D-027 restores Newsreader; D-028 establishes custom icons; D-033/D-034 govern material and agent characters. Alevr remains a working concept with availability unresolved.
+
 Phase 0 research for Juno Refoundation. Researched 2026-09-30 on branch `rework/refoundation` (same as main @ 1feb392c).
 Scope: (1) renaming persistent Agents to "Crew", (2) collisions on the name "Juno", (3) brand colour and type landscape, and whether an ultramarine or ion-blue primary can be owned.
 

@@ -1,38 +1,35 @@
-# Premium naming and identity — newly requested, not implemented
+# Alevr brand identity — documentation and concept artwork
 
-Recorded 2026-10-01 from the owner's voice-chat request. This document adds future scope; it does not authorize resuming implementation during the owner's current stop. No final master name or Crew replacement is selected. No product strings, identifiers or artwork have been renamed by this documentation task.
+Updated 2026-10-01 from the owner’s voice requests. The owner likes Alevr and explicitly requested separate Chat and Orbit design systems, plus Code, based on Claude Code’s Juno V3 redesign. This task creates documentation and image concepts only; application implementation remains stopped and belongs to Claude later.
 
-The owner wants the chatbot currently called Juno renamed, with a premium, original identity coherent with the **Juno refoundation round-3 product design**. This is not a request to copy Claude's branding. The existing research recommendation to retain Juno is superseded by the owner's full-rename exploration. Keep the chosen neutral/charcoal/ultramarine palette, serif-return decision, custom-icon direction and restrained motion; do not revive the superseded warm Claude-like direction.
+## Current direction
 
-## Required sequence and deliverables
+Master name **Alevr**, pronounced **AL-ver**. Coined inspiration from aleph/infinite cardinalities; not a literal translation. Agent product **Alevr Orbit**; individuals remain named agents. Coding product **Alevr Code**. Three related systems share V3 foundations while expressing different workflows.
 
-1. **Inventory before designing.** Audit all user-facing names and artwork in production web, macOS, iOS/iPadOS, onboarding, settings, feature/tool surfaces, dialogs, notifications, receipts, downloads and release assets. Include Chat, Crew, Code, Library, Projects, Customize, Apps, Skills, Routines, Memory, Instructions, Work, Research, Voice and agent/computer/task/tool terminology wherever actually exposed. Distinguish these user-facing labels from stable database/API/routing/protocol identifiers and from third-party brands. The inventory itself remains to be performed.
-2. **Naming architecture and old-to-new map.** Propose a master product name and coherent replacements for Crew and other feature/tool/navigation names where beneficial. Record every old label, proposed label, rationale, affected surfaces, localization keys, migration necessity and approval status. Plain functional names may remain when clearest; do not make every action poetic. Resolve the full product hierarchy, not just the app's title.
-3. **Collision-screen shortlisted names before approval.** Check relevant software/AI products, Apple/other applicable app stores, GitHub, domains, social handles and formal trademark registers in applicable territories/classes. Keep dated queries, result links, exact/phonetic/related-name conflicts and limitations. Distinguish “no indexed matches found” from legal availability; web search never proves absolute worldwide uniqueness. The owner places unusually high importance on premium quality and avoiding an existing brand name.
-4. **Original logo and wordmark.** Explore original concepts tied to the selected name and product, refine silhouette and typography, test small sizes and light/dark/monochrome use. Deliver editable vector masters, spacing/minimum-size rules, color variants and export naming. No new logo is approved yet.
-5. **Favicon and platform app icons.** Produce coherent website favicon/apple-touch/manifest assets, macOS app icon and iOS/iPadOS icon sets where present, including platform mask/size and optical adjustments. Verify installed/launcher/browser-tab appearances rather than only an identity board.
-6. **Consistent interface icon family.** Audit current custom/Phosphor/native glyph usage; establish brand geometry, stroke, optical sizing, small cuts, active states and purposeful restrained motion. Project the same original drawings into web and native asset catalogs with parity checks. Preserve recognizable third-party logos and names. The current partially ported round-3 family is a starting point, not a completed brand system.
-7. **Apply all user-visible references after approval.** Include light/dark web/macOS/iOS/iPadOS presentation, localization catalogs, metadata/OpenGraph, titles, accessibility labels, notifications, help text, emails where owned, installers/manifests, download/release strings and any other actual brand reference. Maintain stable internal API/database/routing names unless a necessary migration is explicitly planned and tested. Third-party integrations retain their recognizable names/logos.
-8. **Real-app validation and handoff.** Verify authenticated workflows, navigation/composer/agent creation/permissions/receipts and installed native surfaces at desktop/phone/tablet sizes, both themes, reduced motion and accessibility. Record screenshots, functional checks, residual old strings, approved exceptions, migration impact and release evidence. Deliver a complete naming map and reusable identity specification for Claude.
+Read [the complete package](brand/README.md), [identity foundations](brand/BRAND_IDENTITY.md), [Chat](brand/CHAT_SYSTEM.md), [Orbit](brand/ORBIT_SYSTEM.md), [Code](brand/CODE_SYSTEM.md), [names and interface icons](brand/NAMES_AND_ICONS.md), [naming evidence](brand/NAMING_SCREEN.md) and [later implementation handoff](brand/IMPLEMENTATION_HANDOFF.md).
 
-## Rejected or unresolved exploration
+## Delivered documentation
 
-The following findings were reported by the voice-chat naming research; this documentation pass has not independently rerun the searches. Recheck current candidates during the naming workstream.
+- Exact inherited V3 light/dark palette, typography, materials, framed shell, composer geometry and motion.
+- Three product specifications and generated visual boards: ordinary conversation, mathematical/cosmic persistent agents, precise coding work.
+- Continuum selected master-mark direction, shared app-icon direction, Orbit arcs and Code bracket glyph direction.
+- Feature/tool/navigation old-to-new naming map, semantic interface-icon inventory and accessibility/state rules.
+- Agent-character direction aligned with D-034: original short-flocked designer toys, graphic eyes, bold silhouettes and customization.
+- Read-only source-surface inventory, future export manifest and implementation/acceptance requirements for Claude.
+- Current proposed product, interaction and Code prose updated to the working names; historical audits/releases and technical identifiers preserved.
 
-| Candidate | Status | Reported conflict / use |
-|---|---|---|
-| Neral (master name) | **Not approved; failed the owner's zero-existing-use criterion** | [Neral Software House](https://neral.com.br/) identifies itself as existing software/AI automation business. Do not apply this name. |
-| Ensemble (Crew replacement) | **Rejected by the owner: “I don’t like the name Ensemble.” Do not propose or implement it.** | [Ensemble app](https://ensembleapp.ai/) and [Ensemble HQ](https://ensemblehq.io/) also already use it for AI-agent products. |
+## Naming status
 
-An exploratory raster board using Neral was generated and shown in the voice chat. It is a **concept reference only**, not approved artwork or a chosen identity:
+Alevr is a **working visual concept**, not a cleared final name. An exact indexed hosted-chatbot character use was found; it cannot be described as unused. No company-brand absence, domain/handle availability or formal trademark clearance is established. See the dated naming screen. The earlier requirement for no existing use remains unresolved; no purchase or registration occurred.
 
-`/Users/liammagnier/.codex/generated_images/01a0f8b8-9a92-7a11-a7d7-d2b6e4e30dbb/exec-562f3b17-72ae-4db0-ae55-4be19af21cac.png`
+Neral is excluded for existing software/AI-company use. Ensemble was explicitly rejected and has agent-product collisions. Eviren and Nerivel were rejected for taste/length. Older recommendations to keep Juno or label the collective Crew are superseded for this proposed direction. Do not ship the historical Neral board.
 
-## Remaining-work status
+## Remaining work
 
-- Inventory, old-to-new map, candidate screening and final naming: **not started / unresolved**.
-- Original logo/wordmark, favicon, platform icon sets, complete interface icon family: **unimplemented**.
-- Product-wide application, localization/metadata/accessibility/release references: **unimplemented**.
-- Cross-platform real-app acceptance and release: **unverified / not released**.
+- **Continuum is selected:** preserve its master shape, finish consistent imagery and create final reviewed vector/optical/platform exports; Open Fold is archived. Branded thinking and feature micro-interactions are specified in brand/MOTION_AND_THINKING.md for later implementation.
+- Owner decision on availability/name and final artwork.
+- Reviewed vector masters, exact optical glyphs and complete favicon/platform exports.
+- Exhaustive localized string/call-site inventory and actual approved application of display names/icons.
+- Approved final character meshes/rigs, native icon projection and installed/authenticated workflow validation.
 
-No user memories were modified. Keep this scope in `HANDOFF.md` and `PROGRESS.md` until the owner resumes and approves the naming direction.
+The generated PNGs are concept references, not finished vector or platform catalogs. No source application files, production assets, stable identifiers, deployments or release evidence were changed by this task. Third-party brands retain their recognizable identity. Do not restart implementation without the owner’s later authorization.

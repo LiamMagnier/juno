@@ -1,6 +1,8 @@
-# Juno Refoundation — the product decision
+# Alevr Refoundation — the product decision
 
-2026-09-30. This document says what Juno *is* after the refoundation: which
+> **2026-10-01 brand editorial update:** Alevr / Alevr Orbit / Alevr Code are the working design direction. Read [the brand package](brand/README.md) and the separate [Chat](brand/CHAT_SYSTEM.md), [Orbit](brand/ORBIT_SYSTEM.md), [Code](brand/CODE_SYSTEM.md) systems. Names in current proposed product prose are updated; source identifiers, routes, fenced code and dated evidence retain their actual spelling. Name availability and final artwork remain unresolved. This documentation pass does not authorize or claim a code rename. D-027–D-034 and the new brand specification override older visual rules; in particular D-033 allows restrained blur only on floating web layers and D-034 governs the new character direction. Original dated status below remains historical; HANDOFF.md is the current implementation record.
+
+2026-09-30. This document says what Alevr *is* after the refoundation: which
 nouns a person has to learn, where each capability lives, what every screen is
 for, and what was cut. `DECISIONS.md` is the log of each decision with its
 reasons and rejected alternatives; `PROGRESS.md` is the phase record. The
@@ -53,10 +55,10 @@ ChatGPT's plugin directory), and voice that can act.
 
 ## 2. The product in one paragraph
 
-Juno is one conversation that can answer, make things and do work — with a
-crew of named teammates who keep working when you leave — and a professional
+Alevr is one conversation that can answer, make things and do work — with a
+group of named agents who keep working when you leave — and a professional
 coding tool beside it. You type (or say) what you want, naming the files, apps,
-projects and crew members involved right in the sentence. Juno decides whether
+projects and agents involved right in the sentence. Alevr decides whether
 that needs an answer, a document, a research run or a long task, shows only
 what currently matters while it works, stops to ask before anything
 consequential, and ends with the finished thing.
@@ -69,10 +71,10 @@ Seven, down from fourteen.
 |---|---|---|
 | **Chat** | The conversation. Answers, research, making things and delegated tasks all happen here. | Workspace (⌘⇧1) |
 | **Code** | Coding sessions on this Mac, in the cloud or on a paired Mac. | Workspace (⌘⇧2) |
-| **Crew** | Named teammates with a role, their own thread, standing work and (where enabled) their own computer. | Sidebar section; `/crew` roster |
+| **Orbit** | The workspace for named agents with a role, their own thread, standing work and (where enabled) their own computer. | Sidebar section; `/crew` roster |
 | **Project** | A folder of chats, files and standing instructions. | Sidebar destination |
-| **Library** | Everything Juno made (documents, decks, sheets, designs, apps) and everything you gave it (files, images). | Sidebar destination |
-| **Apps** | Services Juno can act in (Slack, Linear, Gmail, custom MCP servers). | Customize, and inline in the composer |
+| **Library** | Everything Alevr made (documents, decks, sheets, designs, apps) and everything you gave it (files, images). | Sidebar destination |
+| **Apps** | Services Alevr can act in (Slack, Linear, Gmail, custom MCP servers). | Customize, and inline in the composer |
 | **Skills** | Reusable methods: how to do a kind of task. | Customize, and `/` in the composer |
 
 Everything else is a *capability* (research, voice, web search, memory,
@@ -84,11 +86,11 @@ sidebar destination.
 
 - **Artifacts** and **Design** become kinds of things in the Library. A design
   is a type of creation, not a place. The object keeps its `/a/{id}` page.
-- **Assistants** retire into Crew. An assistant was a persona with a prompt,
-  tools and a model; a crew member is that plus a thread and standing work.
-  Existing assistants stay readable and get a one-step "Move to crew". Nothing
+- **Assistants** retire into Orbit. An assistant was a persona with a prompt,
+  tools and a model; an agent is that plus a thread and standing work.
+  Existing assistants stay readable and get a one-step "Move to Orbit". Nothing
   new is created as an assistant.
-- **Automations** become **routines**, owned by you or by a crew member, listed
+- **Automations** become **routines**, owned by you or by an agent, listed
   in Customize and on the owner's page. One scheduling primitive.
 - **Connections / Connectors** become **Apps** in every user-facing string. "MCP
   server" survives only where a person adds a custom one.
@@ -104,7 +106,7 @@ sidebar destination.
 ### 4.1 Chat workspace (web, Mac, iPad sidebar)
 
 ```
-Juno                     [bell] [collapse]
+Alevr                    [bell] [collapse]
 [ Chat | Code ]
 + New chat                              ⌘N
   Search                                ⌘K
@@ -112,13 +114,13 @@ Juno                     [bell] [collapse]
   Library
   Customize
 ── Needs you  (only when non-empty; each row names who and what)
-── Crew        Mira · Scout · Otto …   + Add to crew
+── Orbit       Mira · Scout · Otto …   + Create agent
 ── Pinned
 ── Recent
 [account]
 ```
 
-- The crew section lists members as rows (face, name, one-line "now"). Its
+- The Orbit section lists agents as rows (face, name, one-line "now"). Its
   header opens the roster. There is no separate "Agents" destination row, which
   removes today's double listing.
 - *Needs you* is the only attention surface. A row says who needs what: "Mira
@@ -131,7 +133,7 @@ Juno                     [bell] [collapse]
 ### 4.2 Code workspace
 
 ```
-Juno                     [bell] [collapse]
+Alevr                    [bell] [collapse]
 [ Chat | Code ]
 + New session                           ⌘N
   Search                                ⌘K
@@ -147,7 +149,7 @@ destination.
 
 ### 4.3 iPhone
 
-Tab bar: **Chat · Crew · Code**, plus the system search tab. Library,
+Tab bar: **Chat · Orbit · Code**, plus the system search tab. Library,
 Projects and Customize are reached from the Chat tab's top-left menu. The Work
 tab goes: tasks render inside their chat as on every other surface. The iPhone
 is a first-class *control* surface for Code: start cloud sessions, monitor and
@@ -170,7 +172,7 @@ a reason.
 
 ## 5. The composer: one pattern everywhere
 
-Chat, Code, a crew thread and a project all use the same composer. What changes
+Chat, Code, an agent thread and a project all use the same composer. What changes
 between them is only the context row.
 
 **At rest:** a field and four objects on one row — `+`, the model control,
@@ -178,14 +180,14 @@ dictate, and a send/voice button. Nothing is permanently armed. In Code, the
 context row above the field names the repository, the environment and the mode
 (Ask · Plan · Code), quietly.
 
-**Inline context tokens.** Typing `@` opens a palette with Crew, Files,
+**Inline context tokens.** Typing `@` opens a palette with Orbit, Files,
 Projects, Apps and Chats. Choosing one inserts a *token*: an atomic object in
 the sentence, drawn with the thing's own mark ("Compare [Q3 Forecast.xlsx] with
 [Stripe] and ask [Mira] to flag renewal risk"). Tokens are structured data, not
 styled text: the request carries `context: [{ kind, id, … }]` and the server
 resolves each through the mechanism that already exists — an attachment, a
-project context, a connector enabled for this turn, a hand-off to a crew
-member. A token for an app that needs connecting shows that in its popover and
+project context, a connector enabled for this turn, a hand-off to an agent.
+A token for an app that needs connecting shows that in its popover and
 connects in place; one for an action that will need approval says so before
 you send ("Posting to #design will ask you first").
 
@@ -196,9 +198,9 @@ enabled skill by name. Research stops being a toggle in `+`.
 screenshot, from Library) and the per-message switches that people actually
 flip (web search, memory). Everything else is reachable by typing.
 
-**The greeting and suggestions.** A one-line greeting set in the interface
-face (no serif), and at most three suggestions *derived from the person's own
-state*: a crew member who needs them, an app just connected, a project touched
+**The greeting and suggestions.** A one-line greeting in upright Newsreader
+(D-027), and at most three suggestions *derived from the person's own
+state*: an agent who needs them, an app just connected, a project touched
 today. When there is nothing real to suggest, there are no suggestions. No
 generic "Write a poem" starters.
 
@@ -213,16 +215,16 @@ windows, modality grids and per-token prices move one layer deeper, into
 **All models**, a sheet with the provider rail and full specs. Grades that are
 estimates are labelled as estimates or not drawn.
 
-## 7. Crew
+## 7. Orbit
 
-**Name.** "Crew" as a lowercase collective noun ("your crew", "Add to crew",
-"New crew member"). Members are always named: events say "Mira needs you", not
-"Your crew member needs you"; "Crew needs you" is only for several at once.
-Never "Juno Crew" as a sub-brand (AWS launched Kiro Crew on 4 August; CrewAI
-holds CREWAI registrations) and never "crewmate". Fallback if counsel objects:
-"Agents". See DECISIONS D-006.
+**Name.** Alevr Orbit is the proposed agent product; Orbit is its navigation
+label and Your agents is its first-use descriptor. Individuals are agents,
+addressed by their own names: "Mira needs your answer". The collective is
+"your agents", never an Orbit or crewmates. This supersedes D-006's Crew
+recommendation; see D-035 and the brand naming screen. Availability remains
+unresolved, so this is a working identity rather than a released rename.
 
-**A crew member is a place, not a form.** Its surfaces:
+**An agent is a persistent workspace.** Its surfaces:
 
 - **Roster** (`/crew`): who exists, what each is responsible for, who needs you.
 - **Thread**: the member's persistent conversation and work history, with the
@@ -239,9 +241,12 @@ change* cards in the thread: before → after, what it affects, Apply / Undo.
 Anything that widens access (a new app, a looser approval mode, spending)
 needs a deterministic approval; narrowing applies at once and is undoable.
 
-**Presence.** The face stays a state indicator, never a character: available,
-thinking, working, waiting for you, paused, offline. Motion is reserved for
-change (arrival, attention, settling), not idling. State is always also text.
+**Presence and characters.** D-032–D-034 supersede the earlier instrument-only
+face rule: original short-flocked designer-toy characters with graphic eyes,
+customizable shape/color/accessories and readable state words. Motion is mostly
+event-driven; any subtle idle is limited to the visible large thread character
+and stops under Reduce Motion. Small faces use cached sprites. Existing shipped
+faces remain until final replacements are approved. See ORBIT_SYSTEM.md.
 
 **Multi-member rooms are not shipped in this pass.** Prerequisites come first:
 every task has one owning member, an explicit transfer/claim, a parent link for
@@ -258,7 +263,7 @@ them, the UI says nothing about them.
 
 **Apps** are capabilities you install, not OAuth records. Each app has a page:
 its account, what it can read, what it can change, when it was last used, who
-can use it (you, which crew members), and the policy per action (Allow ·
+can use it (you, which agents), and the policy per action (Allow ·
 Ask · Off). Revoke and reconnect live there. The directory opens on a curated
 first page and searches the long tail (Composio). Custom MCP servers are added
 from the same directory.
@@ -272,7 +277,7 @@ switch. A skill that needs apps says which.
 provenance) are the unit of sharing. This pass defines the manifest and makes
 install / update / trust excellent for skills; no marketplace.
 
-**One approval ladder** across chat, tasks, crew and Code, named by what the
+**One approval ladder** across chat, tasks, agents and Code, named by what the
 person experiences: *Ask me first* · *Ask for anything that changes things* ·
 *Only ask for things that can't be undone*. The always-confirm floor (send,
 publish, buy, delete, transfer, change permissions, credentials) cannot be
@@ -280,7 +285,7 @@ lowered by any setting, grant or skill.
 
 ## 9. Tasks, research, voice
 
-**A task in a chat** leads with four things, in this order: what Juno is doing
+**A task in a chat** leads with four things, in this order: what Alevr is doing
 (one sentence), what needs you (if anything), progress (one line, plan behind
 a disclosure), and when done the result — deliverables, changes, sources,
 receipts, next action. Executor telemetry is one disclosure down.
@@ -304,7 +309,7 @@ separate preview origin and publish-time screening exist; interactive public
 pages are gated on that. Duplicate/remix and download are standard; GitHub
 export follows.
 
-## 11. Juno Code
+## 11. Alevr Code
 
 Runtime before polish:
 
@@ -331,25 +336,27 @@ Runtime before polish:
 
 ## 12. Identity
 
-Decided in Phase 2 from three rendered directions under the "Orbital
-Precision" brief; the outcome is recorded in `DESIGN_LANGUAGE.md` and
-DECISIONS D-020 onward. Fixed constraints going in:
+The current working direction is **Alevr**, pronounced AL-ver, with separate
+[Alevr Chat](brand/CHAT_SYSTEM.md), [Alevr Orbit](brand/ORBIT_SYSTEM.md) and
+[Alevr Code](brand/CODE_SYSTEM.md) systems. Read [the shared identity](brand/BRAND_IDENTITY.md)
+and [names/icons](brand/NAMES_AND_ICONS.md). D-035 records the documentation-only
+scope and unresolved availability; the hosted-chatbot exact name use means
+this is not a claim that Alevr is unused.
 
-- no warm paper, no coral, no serif greeting, no speech-bubble-with-sparkle
-  mark;
-- a primary that is ownable in the 2026 assistant landscape (research:
-  OKLCH h 266–271, L 0.44–0.50 in light; darker than Tailwind indigo and
-  clear of Gemini/Meta/systemBlue at h 250–263 and the "blurple" band);
-- an amber signal used only for *needs you*, as coloured text or a face state;
-- an interface face that is not Inter, Geist, Space Grotesk or any vendor's
-  own, with Cyrillic and Vietnamese coverage;
-- native apps keep system materials (Liquid Glass), SF Pro for controls, and
-  carry the brand through the display face, colour, iconography, spacing and
-  motion.
+The foundation is actual V3: bright neutral light, layered charcoal dark,
+restrained ultramarine, upright Newsreader display, Inter UI and JetBrains
+Mono technical text, with Literata Cyrillic display fallback. Desktop is
+framed with an inset panel; floating layers alone receive D-033 blur. Composer
+has a crisp edge and no shadow. Shared custom icons follow D-028. Orbit adds
+mathematical/cosmic construction and the latest original short-flocked character
+direction D-034. Native retains platform-appropriate controls/materials while
+sharing color roles, display identity, spacing and original glyph geometry.
+Generated concepts guide review; vectors, catalogs and actual application remain
+future authorized work. The older no-serif/not-Inter research is superseded.
 
 ## 13. What is deliberately not built
 
-- A marketplace, a public crew-template gallery, or social features.
+- A marketplace, a public agent-template gallery, or social features.
 - Multi-member rooms before ownership and claim semantics exist.
 - Purchasing, payment cards, WhatsApp/iMessage bridges.
 - A Chat/Work mode switch or a Research toggle.

@@ -1,5 +1,11 @@
 # Juno Refoundation — owner stopped implementation; continuation saved (2026-10-01)
 
+## Alevr brand package — current documentation entry point
+
+The owner requested design/documentation only, with Claude implementing later. Read [the package index](brand/README.md), then [shared identity](brand/BRAND_IDENTITY.md), [Chat](brand/CHAT_SYSTEM.md), [Orbit](brand/ORBIT_SYSTEM.md), [Code](brand/CODE_SYSTEM.md), [feature names and icons](brand/NAMES_AND_ICONS.md), [source/export handoff](brand/IMPLEMENTATION_HANDOFF.md), [naming evidence](brand/NAMING_SCREEN.md), [image manifest and prompts](brand/IMAGE_PROMPTS.md), [logo revision](brand/LOGO_REVISION.md), and [completion status](brand/COMPLETION_STATUS.md). The separately requested [tool-call/script/skill rework](TOOL_CALL_REWORK.md) is recorded at the end of this handoff. All files are in this checkout; this brand pass has not committed or pushed them.
+
+**Status: Continuum is the owner-selected logo direction; specifications and artwork are design references, not a finalized production asset library.** The previous A-shaped Open Fold is rejected and archived. Use the selected Continuum master consistently across the app icon, Chat/Orbit/Code and the new [thinking/micro-interaction specification](brand/MOTION_AND_THINKING.md). Name availability, final character/production-artwork approval, editable vector/platform exports and real-app acceptance remain open. Nothing here authorizes restarting application development or deployment.
+
 ## Current continuation: read this before the historical pause notes
 
 The owner authorized continuing the rework on 2026-10-01, then explicitly said: “stop what you are doin', include everything you have done into the handoff and push all to main and deploy (the redesign and everything)”. Broad implementation is stopped. Do not interpret the historical completion mandate as permission to restart unfinished implementation. The historical notes below are preserved, but the current checkout and release facts in this section supersede them.
@@ -56,9 +62,11 @@ The stop-time documentation update is made on main and will be pushed. Documenta
 
 The redesign is partially implemented and deployed, **not completely accepted**. Continue from `main` only when the owner explicitly resumes. Use `PROGRESS.md`'s continuation tracker and the lane logs for the remaining work; retain the round-3 neutral/charcoal/ultramarine direction and serif/custom-icon decisions, existing faces until a character is approved, and honest platform-specific differences.
 
-The owner additionally requested a **complete premium rename and coherent brand identity** in the voice chat. It is newly requested, unimplemented work, with **no final name selected**. The prior recommendation to retain Juno is superseded. See `BRAND_IDENTITY_WORKSTREAM.md` for the full scope: master name; replacement for Crew and all feature/tool/navigation names; old-to-new inventory/map; original logo/wordmark; favicon/platform icons; a coherent interface icon family, optical sizing and restrained purposeful motion; light/dark web/macOS/iOS/iPadOS; localization/metadata/accessibility/installers/manifests; collision screening; and real-app validation. Preserve recognizable third-party brands and stable internal identifiers unless a migration is necessary. Do not force poetic labels onto clear functional actions.
+The owner requested a **complete premium rename and coherent brand identity**, followed by three distinct systems: **Alevr Chat**, **Alevr Orbit** (persistent agents, mathematics/cosmos and new characters) and **Alevr Code**. Alevr is pronounced AL-ver and remains a **working visual concept**, not a cleared name or an applied rename. The documentation and generated concept package is [brand/README.md](brand/README.md); [BRAND_IDENTITY_WORKSTREAM.md](BRAND_IDENTITY_WORKSTREAM.md) records delivered design scope and remaining implementation. V3 foundations and D-027–D-034 govern; Orbit individuals are named agents, functional actions stay clear, and third-party/stable technical identities are preserved.
 
-**Neral is not approved**: the voice-chat research reported existing Neral Software House/AI automation at `https://neral.com.br/`. **Ensemble was explicitly rejected by the owner** (“I don’t like the name Ensemble”); do not propose or implement it. Existing AI-agent products were also reported at `https://ensembleapp.ai/` and `https://ensemblehq.io/`. The Neral raster board is a concept reference only at `/Users/liammagnier/.codex/generated_images/01a0f8b8-9a92-7a11-a7d7-d2b6e4e30dbb/exec-562f3b17-72ae-4db0-ae55-4be19af21cac.png`; do not ship it or apply its name. Collision research must distinguish indexed results from legal availability and must never promise absolute global uniqueness. The voice-chat coordinator is handling further identity exploration; this continuation applied no rename and made only these bounded documentation additions.
+**Naming caveat:** an exact hosted-chatbot character use of Alevr was found; the name cannot be called unused. Formal availability and the owner's earlier zero-existing-use requirement remain unresolved. Neral failed the existing-software-company criterion; Ensemble, Eviren and Nerivel were rejected. Historical Neral artwork must not ship. Read [the naming screen](brand/NAMING_SCREEN.md).
+
+**Scope boundary:** this pass updated documentation and created reviewable raster concepts only. It did not modify app code/assets, restart implementation, change current release facts, push or deploy. Vector masters, platform exports, complete string application, character approval and real-app cross-platform acceptance remain future work for Claude after authorization.
 
 ---
 
@@ -264,3 +272,33 @@ pages, the screenshot harness `shots/shots.mjs`, `mkwt.sh`).
 - Never SendMessage a live workflow agent; stop and relaunch instead.
 - The owner's design rules: no status pills or decorative dots; native Liquid
   Glass; use the four design skills; show designs early and often.
+
+
+---
+
+## Owner-requested follow-ups at the end of this handoff: tool execution and brand motion
+
+Recorded 2026-10-01. The owner explicitly asked that Claude **rework how tool calls are handled** so supported AI models can actually run **Python and other supported scripts**, use **skills and their referenced workflows**, receive real execution results/files/images and continue the conversation, as users expect from ChatGPT and Claude. A code block or claim of execution is not sufficient.
+
+Read the concrete implementation brief: [TOOL_CALL_REWORK.md](TOOL_CALL_REWORK.md). Audit/reuse the existing runner and native Code tool harness; unify provider tool schemas/call-result handling, execution context, skill discovery/instructions, streaming/cancellation/recovery and artifact delivery. Preserve existing permission/runtime boundaries and verify the actual provider/capability matrix rather than promising unsupported models can execute.
+
+**Scope:** this is a recorded task for Claude's later authorized implementation. No runtime/app code was changed here. It is separate from the brand system. Continue the identity work as well: the owner rejected the earlier A-shaped icon and asked to improve the overall design/product identity; read [the current brand completion status](brand/COMPLETION_STATUS.md) and [replacement-logo exploration](brand/LOGO_REVISION.md). The identity must not be marked final until the Continuum production artwork and unresolved naming/artwork decisions are resolved.
+
+
+### Continuum thinking, micro-interactions and coherent product motion
+
+The owner selected **Continuum** ("I really like Continuum") as the Alevr logo direction, and explicitly asked for thinking feedback that uses the product's own mark, plus premium micro-interactions and motion across every feature linked to the overall brand/design system. Product names remain Alevr Chat, Alevr Orbit and Alevr Code; Continuum is the logo concept. The rejected A-shaped Open Fold must not be used.
+
+Read [MOTION_AND_THINKING.md](brand/MOTION_AND_THINKING.md). Prototype a restrained tonal handoff through the selected mark's existing paths beside truthful Thinking/tool-phase words; carry shared V3 timing, geometry and meaningful state changes through composer/tokens, navigation, menus, artifacts, Orbit/characters, Code and voice. Preserve silhouette, keyboard immediacy, existing approval semantics, reduced-motion/transparency forms and accessibility; stop motion when hidden. Avoid generic AI glow/orbs/particles, fake progress and unnecessary looping. This explicitly permits purposeful branded thinking feedback while retaining the ban on decorative logo animation.
+
+**Implementation remains later work:** build reviewed vector/segmented geometry, project the chosen logo across the app icon and all three systems, implement the actual state transitions, and validate real-app behavior and performance. The current documentation/artwork task does not modify application code. Keep both this motion request and the script/tool/skill task above in the eventual implementation scope; neither is lost or replaced by the other.
+
+
+### Full scope to retain from the owner's prompts
+
+- **Identity and naming:** Alevr master name; Alevr Chat, Alevr Orbit and Alevr Code; coherent names for every feature/tool/navigation/action where helpful; clear everyday labels, preserved third-party identity and stable technical identifiers. Alevr availability remains unresolved.
+- **Three V3 systems:** the actual Claude Code Juno V3 neutral/charcoal/ultramarine, Newsreader/UI/mono fonts, framed shell, composer, materials, custom icons and responsive/native differences. Orbit carries mathematics/cosmos and the latest original customizable character direction; Chat remains quiet; Code remains precise.
+- **Selected artwork and all applications:** Continuum across wordmark, website/favicon/app launcher icons and product boards; semantic interface icon family and optical sizes. The rejected A-shaped artwork must not return.
+- **Motion and thinking:** the product's own selected mark in premium thinking feedback, micro-interactions and meaningful motion across every feature/state, with real activity words, accessibility, reduced motion/transparency, keyboard behavior and performance.
+- **Real tool use:** supported models actually execute Python/other supported scripts and skills, receive results/files/images, continue toward outcomes and recover honestly. Read TOOL_CALL_REWORK.md; preserve existing permission/execution contracts.
+- **Handoff boundary:** retain discoverable documents, reproducible prompts/assets and honest completion status. The owner requested documentation/artwork here; Claude implements later when authorized. No app code, push/deploy or new chat is implied.
