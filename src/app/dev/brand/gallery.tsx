@@ -270,17 +270,19 @@ function Construction({ tone }: { tone: PlateTone }) {
 /* ———————————————————————— 4. Optical masters ———————————————————————— */
 
 const OPTICAL_SIZES: ContinuumOpticalSize[] = [16, 20, 24, 32];
+/** Enlargement per size, so a pair fits side by side at phone width. */
+const ZOOM: Record<ContinuumOpticalSize, number> = { 16: 8, 20: 7, 24: 6, 32: 4 };
 
 function OpticalBench({ tone }: { tone: PlateTone }) {
   const p = PLATE[tone];
   return (
-    <Plate tone={tone} label="Each pair: the master scaled down (left) and the optical master (right), rasterised by this browser at the real size, then enlarged 8x">
+    <Plate tone={tone} label="Each pair: the master scaled down (left) and the optical master (right), rasterised by this browser at the real size, then enlarged with hard pixels">
       <div className="flex flex-wrap gap-8">
         {OPTICAL_SIZES.map((n) => (
           <div key={n} className="flex flex-col gap-3">
-            <div className="flex items-end gap-3">
-              <PixelZoom size={n} zoom={n <= 20 ? 8 : 6} label={`Master scaled to ${n} px`} svg={markSvg(CONTINUUM_SQUARE_VIEWBOX, CONTINUUM_MASTER_PATHS, n, p.color, p.background)} />
-              <PixelZoom size={n} zoom={n <= 20 ? 8 : 6} label={`Optical master at ${n} px`} svg={markSvg(`0 0 ${n} ${n}`, CONTINUUM_OPTICAL[n].blades, n, p.color, p.background)} />
+            <div className="flex flex-wrap items-end gap-3">
+              <PixelZoom size={n} zoom={ZOOM[n]} label={`Master scaled to ${n} px`} svg={markSvg(CONTINUUM_SQUARE_VIEWBOX, CONTINUUM_MASTER_PATHS, n, p.color, p.background)} />
+              <PixelZoom size={n} zoom={ZOOM[n]} label={`Optical master at ${n} px`} svg={markSvg(`0 0 ${n} ${n}`, CONTINUUM_OPTICAL[n].blades, n, p.color, p.background)} />
             </div>
             <div className="flex items-center gap-3">
               <ContinuumMark size={n} tone="current" />
