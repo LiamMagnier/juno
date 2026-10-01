@@ -207,7 +207,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json(
       {
         error: "unknown_run_kind",
-        message: `This automation was created by a newer version of ${PRODUCT_NAME}, so this one cannot edit it.`,
+        message: `This routine was created by a newer version of ${PRODUCT_NAME}, so this one cannot edit it.`,
       },
       { status: 409 }
     );

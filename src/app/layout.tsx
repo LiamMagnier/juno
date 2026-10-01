@@ -68,6 +68,8 @@ export const metadata: Metadata = {
   title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
   description: APP_DESCRIPTION,
   applicationName: PRODUCT_NAME,
+  // The name under the icon on an iPhone home screen.
+  appleWebApp: { title: PRODUCT_NAME },
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   ),

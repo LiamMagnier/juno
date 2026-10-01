@@ -90,16 +90,17 @@ export function AgentsHome({
   );
 }
 
-/** "Mira needs you. Scout is working." Only what is happening, in plain words. */
+/** "Your agents. Mira needs your answer. Scout is working." Only what is happening, in plain words. */
 function TeamSentence({ agents }: { agents: readonly ClientAgent[] }) {
   const waiting = agents.filter(needsYou);
   const busy = agents.filter((a) => a.state === "working" || a.state === "thinking");
   const names = (list: readonly ClientAgent[]) =>
     list.length === 1 ? list[0].name : list.length === 2 ? `${list[0].name} and ${list[1].name}` : `${list[0].name} and ${list.length - 1} others`;
-  const parts: string[] = [];
-  if (waiting.length) parts.push(`${names(waiting)} ${waiting.length === 1 ? "needs" : "need"} you.`);
+  // Orbit's descriptor first: the page is named Orbit, and this says what it holds.
+  const parts: string[] = [`${BRAND.orbit.description}.`];
+  if (waiting.length) parts.push(`${names(waiting)} ${waiting.length === 1 ? "needs" : "need"} your answer.`);
   if (busy.length) parts.push(`${names(busy)} ${busy.length === 1 ? "is" : "are"} working.`);
-  if (!parts.length) parts.push("Everyone is caught up.");
+  if (parts.length === 1) parts.push("Everyone is caught up.");
   return <>{parts.join(" ")}</>;
 }
 

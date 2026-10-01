@@ -4,7 +4,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The web app manifest — what "Add to Home Screen" and the install prompt
- * read. Absent until now, so an installed Juno launched with a white splash
+ * read. Absent until now, so an installed app launched with a white splash
  * and a stock icon while the site itself was painting warm paper.
  *
  * `start_url` is the front door rather than /chat: the manifest is also read
@@ -15,7 +15,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: PRODUCT_NAME,
     short_name: PRODUCT_NAME,
     description:
-      "Every frontier AI model — Claude, GPT, Gemini and a dozen more labs — in one calm workspace, metered by what answers actually cost.",
+      "Every frontier AI model (Claude, GPT, Gemini and a dozen more labs) in one calm workspace, metered by what answers actually cost.",
     start_url: "/",
     display: "standalone",
     background_color: THEME_COLOR.light,

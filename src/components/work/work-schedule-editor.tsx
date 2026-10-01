@@ -540,7 +540,7 @@ export function WorkScheduleEditor({
               { value: "work", label: "A task" },
               { value: "code", label: "Code" },
             ]}
-            ariaLabel="What this automation runs"
+            ariaLabel="What this routine runs"
             optionClassName="px-3 py-1 text-ui"
             className="max-w-xs"
           />
@@ -553,7 +553,7 @@ export function WorkScheduleEditor({
       ) : (
         isCode && (
           <p className="text-caption leading-relaxed text-muted-foreground">
-            A Code automation. Each run is a Code session of its own, with its own branch and pull
+            A Code routine. Each run is a Code session of its own, with its own branch and pull
             request.
           </p>
         )
@@ -1079,7 +1079,7 @@ function CodeRoutineFields({
                   longer holds it. Dropping it would silently reset a choice the
                   reader made, and the save would then write that reset. */}
               {draft.environmentId && !named && (
-                <option value={draft.environmentId}>The one this automation already uses</option>
+                <option value={draft.environmentId}>The one this routine already uses</option>
               )}
               {(environments ?? []).map((environment) => (
                 <option key={environment.id} value={environment.id}>

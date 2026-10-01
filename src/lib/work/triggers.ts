@@ -1378,7 +1378,7 @@ export function apiTriggerRefusal(
     ? {
         error: "one_api_trigger",
         message:
-          "An automation has one fire URL and one token, so it can have one API trigger. Use its text to tell the run which caller it was.",
+          "A routine has one fire URL and one token, so it can have one API trigger. Use its text to tell the run which caller it was.",
       }
     : null;
 }

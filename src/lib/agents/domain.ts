@@ -20,7 +20,7 @@ import { resolveModel } from "@/lib/models";
 import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import type { ReasoningEffort } from "@/types/chat";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { AGENT_STATE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -77,13 +77,14 @@ export const AGENT_STATES = [
 ] as const;
 export type AgentState = (typeof AGENT_STATES)[number];
 
+/** The words for each state, from the Orbit state vocabulary (src/lib/brand/names.ts). */
 export const AGENT_STATE_LABEL: Record<AgentState, string> = {
-  idle: "Ready",
-  thinking: "Thinking",
-  working: "Working",
-  waiting: "Needs you",
-  blocked: "Stopped",
-  done: "Done",
+  idle: AGENT_STATE_NAMES.ready,
+  thinking: AGENT_STATE_NAMES.thinking,
+  working: AGENT_STATE_NAMES.working,
+  waiting: AGENT_STATE_NAMES.needsAnswer,
+  blocked: AGENT_STATE_NAMES.blocked,
+  done: AGENT_STATE_NAMES.finished,
   sleeping: "Paused",
   listening: "Listening",
 };
@@ -353,14 +354,14 @@ export function agentStateSentence(input: {
       if (input.task?.status === "waiting_approval") return `Needs your approval on ${title}`;
       if (input.task?.status === "waiting_input") return `Has a question about ${title}`;
       if (input.task?.status === "host_offline") return `Waiting for your Mac to finish ${title}`;
-      return `Needs you on ${title}`;
+      return `Needs your answer on ${title}`;
     case "working":
       return `Working on ${title}`;
     case "done":
       return `Finished ${title}`;
     case "blocked":
-      if (input.task?.status === "budget_exceeded") return `Stopped: your usage window ran out during ${title}`;
-      return `Stopped before finishing ${title}`;
+      if (input.task?.status === "budget_exceeded") return `Blocked: your usage window ran out during ${title}`;
+      return `Blocked before finishing ${title}`;
     case "thinking":
       return "Thinking";
     case "listening":

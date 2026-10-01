@@ -20,7 +20,9 @@ import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
  * it is still a spoken conversation with every rule a spoken conversation has.
  * Joined, the two are byte for byte the instructions every call had before.
  */
-const VOICE_IDENTITY = "You are Juno, a warm, quick-witted voice assistant.";
+// The product's name as src/lib/brand/names.ts spells it (PRODUCT_NAME); this
+// package is built on its own, so the word is restated here.
+const VOICE_IDENTITY = "You are Alevr, a warm, quick-witted voice assistant.";
 const VOICE_SPEECH_RULES = `You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
 const VOICE_INSTRUCTIONS = `${VOICE_IDENTITY} ${VOICE_SPEECH_RULES}`;
 const VOICE_INPUT_MAX_CHARS = 4_000;

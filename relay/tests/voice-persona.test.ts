@@ -76,13 +76,13 @@ function call(opts: ConstructorParameters<typeof RelaySession>[2]) {
 test("without a persona the instructions are Juno's, byte for byte", () => {
   assert.equal(voiceInstructions(null, null), voiceInstructions(null));
   assert.equal(voiceInstructions(MEMORY, null), voiceInstructions(MEMORY));
-  assert.match(voiceInstructions(null), /^You are Juno, a warm, quick-witted voice assistant\. You are having a spoken conversation: /);
+  assert.match(voiceInstructions(null), /^You are Alevr, a warm, quick-witted voice assistant\. You are having a spoken conversation: /);
 });
 
 test("a persona replaces who is speaking, keeps how, and memory still follows", () => {
   const text = voiceInstructions(MEMORY, PERSONA);
   assert.ok(text.startsWith(PERSONA));
-  assert.equal(text.includes("You are Juno"), false);
+  assert.equal(text.includes("You are Alevr"), false);
   assert.match(text, /\n\nYou are having a spoken conversation: keep replies short/);
   assert.ok(text.endsWith("The user likes tea."));
   assert.ok(voiceInstructions(null, PERSONA).endsWith("pick up naturally."));

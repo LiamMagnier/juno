@@ -173,7 +173,7 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     return {
       outcome: "refused",
       reason: "paused",
-      message: "This automation is paused, so nothing starts it until you resume it.",
+      message: "This routine is paused, so nothing starts it until you resume it.",
     };
   }
 
@@ -182,7 +182,7 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     return {
       outcome: "refused",
       reason: "unknown_run_kind",
-      message: `This automation was created by a newer version of ${PRODUCT_NAME}, so this one cannot run it.`,
+      message: `This routine was created by a newer version of ${PRODUCT_NAME}, so this one cannot run it.`,
     };
   }
 
@@ -206,7 +206,7 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     return {
       outcome: "refused",
       reason: "already_running",
-      message: "This automation is already running. Let it finish before starting another.",
+      message: "This routine is already running. Let it finish before starting another.",
     };
   }
 

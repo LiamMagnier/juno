@@ -55,7 +55,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       {
         error: "no_api_trigger",
         message:
-          "Add the “Something calls it” trigger to this automation first — without it, nothing would read the token.",
+          "Add the “Something calls it” trigger to this routine first — without it, nothing would read the token.",
       },
       { status: 409 }
     );

@@ -9,7 +9,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // Signed-in users go straight to the app; strangers get the front door.
 export const metadata: Metadata = {
-  title: { absolute: `${PRODUCT_NAME} — every frontier AI model, one honest subscription` },
+  title: { absolute: `${PRODUCT_NAME}: every frontier AI model, one honest subscription` },
   description:
     "Chat with Claude, GPT, Gemini and models from a dozen more labs in one calm workspace. Plans are metered by real API cost — you see what every answer costs. Hosted in France, GDPR by default.",
   alternates: { canonical: "/" },

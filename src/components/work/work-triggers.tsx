@@ -93,7 +93,7 @@ const TRIGGER_META: Record<WorkTriggerKind, TriggerMeta> = {
   manual: { label: "Only when you press Run", hint: "Nothing starts this on its own." },
   api: {
     label: "Something calls it",
-    hint: "A request to this automation's fire URL, carrying the token you issue for it.",
+    hint: "A request to this routine's fire URL, carrying the token you issue for it.",
   },
 };
 
@@ -889,7 +889,7 @@ function TriggerConfigFields({
             </>
           ) : (
             <p className="text-ui leading-relaxed text-muted-foreground">
-              A fire starts this automation and carries nothing with it. Its task is what you wrote,
+              A fire starts this routine and carries nothing with it. Its task is what you wrote,
               and every run is validated against that — so there is nowhere a caller’s words could
               go that the run would read.
             </p>
