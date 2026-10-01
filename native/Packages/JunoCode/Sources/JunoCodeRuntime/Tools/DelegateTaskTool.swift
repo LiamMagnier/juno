@@ -366,10 +366,14 @@ public struct DelegateTaskTool: CodeTool {
         let backgroundSpecs = specs.filter(\.background)
         if !backgroundSpecs.isEmpty {
             // Refused whole, before anything starts, so a call never leaves
-            // half its children running: within the running cap and the
-            // session's total.
-            if let refusal = await background.reserveOrRefuse(backgroundSpecs.count, parentSessionID: parentSessionID) {
-                throw ToolError.invalidInput(message: refusal)
+            // half its children running.
+            let room = await background.capacity(parentSessionID: parentSessionID)
+            guard await background.reserve(backgroundSpecs.count, parentSessionID: parentSessionID) else {
+                let limit = BackgroundSubagents.maximumRunningPerParent
+                throw ToolError.invalidInput(
+                    message: "At most \(limit) background sub-agents can work at once, and \(limit - room) already are. "
+                        + "Collect results with await_subagents or stop one with cancel_subagent first."
+                )
             }
         }
         specs = specs.filter { !$0.background }

@@ -211,15 +211,11 @@ public enum RunIndex {
             return row(.interrupted, "Juno quit while this was running", reason: .interrupted, actions: [.resume])
         }
         if let approval = facts.approval {
-            // A screen card is allowed on the card itself, which shows the
-            // frame with the target marked and keeps the grant sheet's
-            // choices (CU-07): the row declines, or opens the session.
-            let atTheCardOnly = ComputerUseToolName.allowedOnlyAtTheMac.contains(approval.toolName)
             return row(
                 .needsYou,
                 "Waiting for you to allow \(approvalSubject(approval))",
                 reason: .needsYou,
-                actions: atTheCardOnly ? [.decline] : [.allowOnce, .decline],
+                actions: [.allowOnce, .decline],
                 approval: approval
             )
         }

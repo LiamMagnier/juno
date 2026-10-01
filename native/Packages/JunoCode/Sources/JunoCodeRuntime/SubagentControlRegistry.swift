@@ -146,12 +146,6 @@ public actor BackgroundSubagents {
     /// run of its own, and a write child a worktree, so a model that keeps
     /// starting them must collect or stop some first.
     public static let maximumRunningPerParent = 4
-    /// How many children one parent may start in all, finished ones
-    /// included. The running cap alone let a model that collects or stops
-    /// its children start four more, and four more, without end: each one a
-    /// model run with its own spend, a write one a worktree on disk (Lane F's
-    /// bound, kept when the integration chose this runtime over Lane F's).
-    public static let maximumStartedPerParent = 16
     /// How many finished children a parent keeps for `await_subagents` and
     /// `inspect_subagent`; older ones are forgotten (their transcripts stay).
     public static let maximumFinishedPerParent = 32
@@ -160,22 +154,11 @@ public actor BackgroundSubagents {
 
     /// Slots promised to calls that are about to start children.
     private var reserved: [CodeSessionID: Int] = [:]
-    /// How many children each parent has started, forgotten ones included.
-    private var started: [CodeSessionID: Int] = [:]
 
-    /// How many more children the parent may start now: within both the
-    /// running cap and what is left of the session's total.
+    /// How many more children the parent may start now.
     public func capacity(parentSessionID: CodeSessionID) -> Int {
         let running = entries.values.filter { $0.parentSessionID == parentSessionID && $0.finishedAt == nil }.count
-        let held = reserved[parentSessionID, default: 0]
-        let now = Self.maximumRunningPerParent - running - held
-        let left = Self.maximumStartedPerParent - started[parentSessionID, default: 0] - held
-        return max(0, min(now, left))
-    }
-
-    /// How many children the parent has started so far.
-    public func startedCount(parentSessionID: CodeSessionID) -> Int {
-        started[parentSessionID, default: 0]
+        return max(0, Self.maximumRunningPerParent - running - reserved[parentSessionID, default: 0])
     }
 
     /// Holds `count` slots for children about to start, all or none, so two
@@ -185,21 +168,6 @@ public actor BackgroundSubagents {
         guard count <= capacity(parentSessionID: parentSessionID) else { return false }
         reserved[parentSessionID, default: 0] += count
         return true
-    }
-
-    /// Why `count` more children cannot start now, in words for the model, or
-    /// nil when they can (and their slots are then held, as ``reserve(_:parentSessionID:)``).
-    public func reserveOrRefuse(_ count: Int, parentSessionID: CodeSessionID) -> String? {
-        if reserve(count, parentSessionID: parentSessionID) { return nil }
-        let total = started[parentSessionID, default: 0] + reserved[parentSessionID, default: 0]
-        if total + count > Self.maximumStartedPerParent {
-            return "This session has started \(total) background sub-agents, and it may start at most "
-                + "\(Self.maximumStartedPerParent). Do the rest yourself or delegate it in the foreground."
-        }
-        let limit = Self.maximumRunningPerParent
-        let busy = limit - capacity(parentSessionID: parentSessionID)
-        return "At most \(limit) background sub-agents can work at once, and \(busy) already are. "
-            + "Collect results with await_subagents or stop one with cancel_subagent first."
     }
 
     /// Starts `work` as a child of `parentSessionID`.
@@ -212,7 +180,6 @@ public actor BackgroundSubagents {
         if let held = reserved[parentSessionID], held > 0 {
             reserved[parentSessionID] = held > 1 ? held - 1 : nil
         }
-        started[parentSessionID, default: 0] += 1
         let task = Task { await work() }
         entries[id] = Entry(parentSessionID: parentSessionID, title: title, task: task, startedAt: Date())
         order.append(id)

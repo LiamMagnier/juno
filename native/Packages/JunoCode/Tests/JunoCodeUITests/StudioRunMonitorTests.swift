@@ -77,8 +77,6 @@ final class StudioRunMonitorTests: XCTestCase {
     func testEachCategoryOffersTheActionsTheSpecLists() {
         XCTAssertEqual(CodeNotificationCategory.done.actions, [.open, .reviewChanges])
         XCTAssertEqual(CodeNotificationCategory.needsApproval.actions, [.allowOnce, .decline, .open])
-        XCTAssertEqual(CodeNotificationCategory.needsScreenApproval.actions, [.decline, .open],
-                       "a screen card is allowed on its card, never from a banner")
         XCTAssertEqual(CodeNotificationCategory.question.actions, [.reply, .open])
         XCTAssertEqual(CodeNotificationCategory.needsYou.actions, [.open])
         XCTAssertEqual(CodeNotificationCategory.needsYouKeepGoing.actions, [.keepGoing, .open])
@@ -292,47 +290,6 @@ final class StudioRunMonitorTests: XCTestCase {
         XCTAssertEqual(calls.list, ["open s1", "open s1"])
         await monitor.handle(actionIdentifier: CodeNotificationAction.allowOnce.rawValue, userInfo: stranger, text: nil)
         XCTAssertEqual(calls.list, ["open s1", "open s1", "allow s1 a2"], "the banner Juno posted for it does")
-    }
-
-    /// A screen card shows the frame with the target marked and keeps the
-    /// grant sheet's choices; a banner shows a sentence (CU-07, Lane C). Its
-    /// banner and reminders offer Decline and Open, and an Allow once that
-    /// arrives anyway opens the session.
-    func testAScreenCardsBannerNeverAllowsAndOpensTheSessionInstead() async throws {
-        let screen = ApprovalRequest(
-            id: "c1",
-            sessionID: sessionID,
-            actionDigest: "digest-c1",
-            toolName: ComputerUseToolName.computer,
-            summary: "Click “Send” in Mail",
-            risk: .destructive,
-            approvalPolicy: .alwaysRequiresApproval,
-            requestedAt: now,
-            expiresAt: now.addingTimeInterval(900)
-        )
-        XCTAssertEqual(CodeNotificationCategory.forApproval(screen), .needsScreenApproval)
-        XCTAssertEqual(CodeNotificationCategory.forApproval(approval()), .needsApproval)
-
-        let calls = Calls()
-        monitor.install(responder: CodeNotificationResponder(
-            open: { calls.list.append("open \($0.value)") },
-            allowOnce: { session, id, _ in calls.list.append("allow \(session.value) \(id)") },
-            decline: { session, id, _ in calls.list.append("decline \(session.value) \(id)") }
-        ))
-        monitor.observeRuns([entry(.working)])
-        monitor.observeRuns([entry(.needsYou, reason: .needsYou, approval: screen)])
-        let banner = try XCTUnwrap(sink.posted.first { $0.delay == nil })
-        XCTAssertEqual(banner.category, .needsScreenApproval)
-        XCTAssertFalse(banner.category.actions.contains(.allowOnce))
-        XCTAssertEqual(banner.userInfo[CodeNotificationKey.category], CodeNotificationCategory.needsScreenApproval.rawValue)
-        XCTAssertTrue(banner.body.contains("Open the session to allow it"), banner.body)
-        let reminders = sink.posted.filter { $0.delay != nil }
-        XCTAssertEqual(reminders.count, 3)
-        XCTAssertTrue(reminders.allSatisfy { $0.category == .needsScreenApproval }, "and so do its reminders")
-
-        await monitor.handle(actionIdentifier: CodeNotificationAction.allowOnce.rawValue, userInfo: banner.userInfo, text: nil)
-        await monitor.handle(actionIdentifier: CodeNotificationAction.decline.rawValue, userInfo: banner.userInfo, text: nil)
-        XCTAssertEqual(calls.list, ["open s1", "decline s1 c1"], "Allow once opens the session; Decline still answers")
     }
 
     func testCISettledSaysHowManyPassed() throws {

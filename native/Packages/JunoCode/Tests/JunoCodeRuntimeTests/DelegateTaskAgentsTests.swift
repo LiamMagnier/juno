@@ -233,38 +233,6 @@ final class DelegateTaskAgentsTests: XCTestCase {
         await background.cancelAll(parentSessionID: parent.id)
     }
 
-    /// Collecting or stopping children frees running slots, never the
-    /// session's total: a model cannot start four, stop them and start four
-    /// more without end (Lane F's bound, kept at integration).
-    func testASessionStartsAtMostSixteenBackgroundChildrenInAll() async throws {
-        let model = ScriptedModelClient(steps: Array(repeating: .neverFinishes, count: 20))
-        let background = BackgroundSubagents()
-        let delegate = tool(model, background: background)
-        for round in 0..<4 {
-            let tasks: [JSONValue] = (0..<4).map { index in
-                ["prompt": .string("Task \(round).\(index)"), "title": .string("Task \(round).\(index)"), "background": true]
-            }
-            _ = try await delegate.execute(input: ["tasks": .array(tasks)], context: context("round\(round)"))
-            await background.cancelAll(parentSessionID: parent.id)
-            let ids = await background.snapshots(parentSessionID: parent.id).map(\.id)
-            _ = await background.wait(ids: ids, parentSessionID: parent.id, timeout: .seconds(10))
-        }
-        let started = await background.startedCount(parentSessionID: parent.id)
-        XCTAssertEqual(started, BackgroundSubagents.maximumStartedPerParent)
-        let running = await background.hasRunning(parentSessionID: parent.id)
-        XCTAssertFalse(running, "every child was stopped")
-        let room = await background.capacity(parentSessionID: parent.id)
-        XCTAssertEqual(room, 0, "nothing runs, and still no room is left")
-        do {
-            _ = try await delegate.execute(input: ["task": "One more", "background": true], context: context("over"))
-            XCTFail("the seventeenth background child is refused")
-        } catch let ToolError.invalidInput(message) {
-            XCTAssertTrue(message.contains("at most 16"), message)
-        }
-        let afterRefusal = await background.startedCount(parentSessionID: parent.id)
-        XCTAssertEqual(afterRefusal, 16, "the refused call started nothing")
-    }
-
     func testAParentKeepsOnlyItsNewestFinishedChildren() async {
         let background = BackgroundSubagents()
         let ids = (0..<40).map { "c\($0)" }

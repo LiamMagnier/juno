@@ -52,8 +52,7 @@ public extension SessionController {
 
     /// Allow once, from outside the session. Only when that exact approval is
     /// still pending with that digest: an answer meant for one action never
-    /// carries out another, and a stale banner is refused. Never a screen
-    /// card (``isAllowedOnlyOnItsCard(approvalID:)``).
+    /// carries out another, and a stale banner is refused.
     @discardableResult
     func allowOnce(approvalID: String, digest: String) async -> Bool {
         await resolveFromOutside(approvalID: approvalID, digest: digest, decision: .approved)
@@ -65,25 +64,10 @@ public extension SessionController {
         await resolveFromOutside(approvalID: approvalID, digest: digest, decision: .denied)
     }
 
-    /// Whether this pending approval is a screen card, which is allowed only
-    /// on the card in the session (CU-07, Lane C): a banner or a Runs row
-    /// shows the sentence, not the frame with the target marked, and the
-    /// grant sheet's unticks are settled on the card before its Allow
-    /// (`approve`). Declining one from anywhere stays open.
-    func isAllowedOnlyOnItsCard(approvalID: String) async -> Bool {
-        guard let live,
-              let request = await live.permissions.pendingApprovals.first(where: { $0.id == approvalID })
-        else { return false }
-        return ComputerUseToolName.allowedOnlyAtTheMac.contains(request.toolName)
-    }
-
     private func resolveFromOutside(approvalID: String, digest: String, decision: ApprovalDecision) async -> Bool {
         guard let live else { return false }
         let pending = await live.permissions.pendingApprovals
-        guard let request = pending.first(where: { $0.id == approvalID && $0.actionDigest == digest }) else {
-            return false
-        }
-        if decision == .approved, ComputerUseToolName.allowedOnlyAtTheMac.contains(request.toolName) {
+        guard pending.contains(where: { $0.id == approvalID && $0.actionDigest == digest }) else {
             return false
         }
         await live.permissions.resolve(approvalID: approvalID, decision: decision)

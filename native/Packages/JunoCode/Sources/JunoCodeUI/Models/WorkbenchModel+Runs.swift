@@ -71,14 +71,10 @@ public extension WorkbenchModel {
 
     /// Allow once, bound to the digest the row or banner showed. A stale
     /// answer — the approval was decided, or a different action is waiting —
-    /// is refused rather than applied, and so is a screen card, which is
-    /// allowed only on its card in the session.
+    /// is refused rather than applied.
     func allowOnce(sessionID: CodeSessionID, approvalID: String, digest: String) async -> RunActionResult {
         guard let controller = controllers[sessionID] else {
             return .refused("That run is not loaded. Open the session to answer.")
-        }
-        if await controller.isAllowedOnlyOnItsCard(approvalID: approvalID) {
-            return .refused("Screen actions are allowed on their card in the session, which shows what Juno will click. Open the session to allow it, or decline from here.")
         }
         return await controller.allowOnce(approvalID: approvalID, digest: digest)
             ? .done
