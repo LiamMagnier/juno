@@ -347,11 +347,6 @@ export class UnifiedAgentRegistry {
     }
 
     call.onAuthorized?.();
-    const settle = async (ok: boolean, result: string) => {
-      if (!receiptId) return;
-      const { completeExternalAction } = await import("@/lib/action-approval-store");
-      await completeExternalAction({ userId: context.userId, receiptId, ok, result });
-    };
     try {
       const outcome = await spec.execute(params, {
         userId: context.userId,
@@ -365,11 +360,28 @@ export class UnifiedAgentRegistry {
         reportProgress: call.reportProgress ?? (() => {}),
         onApprovalRequest: composeApprovalCallbacks(context.onApprovalRequest, call.onApprovalRequest),
       });
-      await settle(outcome.status === "succeeded", outcome.text.slice(0, 30_000));
+      // Settle the receipt (when the broker issued one) with what the model
+      // was given, so a replay of this call returns the same text.
+      if (receiptId) {
+        const { completeExternalAction } = await import("@/lib/action-approval-store");
+        await completeExternalAction({
+          userId: context.userId,
+          receiptId,
+          ok: outcome.status === "succeeded",
+          result: outcome.text.slice(0, 30_000),
+        });
+      }
       return outcome;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      await settle(false, message);
+      if (receiptId) {
+        const { completeExternalAction } = await import("@/lib/action-approval-store");
+        await completeExternalAction({
+          userId: context.userId,
+          receiptId,
+          ok: false,
+          result: err instanceof Error ? err.message : String(err),
+        });
+      }
       throw err;
     }
   }

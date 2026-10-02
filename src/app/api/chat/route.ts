@@ -12,7 +12,7 @@ import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
 import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
-import { loadModelCapabilityMap, modelCanRoute } from "@/lib/model-capability";
+import { loadModelCapabilityMap, modelCanRoute, modelToolCallingVerdict } from "@/lib/model-capability";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPromptSections, buildDynamicContext } from "@/lib/anthropic";
@@ -79,7 +79,7 @@ import {
 } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
-import { encryptJsonField } from "@/lib/field-crypto";
+import { decryptJsonField, encryptJsonField } from "@/lib/field-crypto";
 import {
   billingPeriodFor,
   budgetForPlan,
@@ -110,7 +110,12 @@ import { supportsProMode } from "@/lib/model-metrics";
 import { buildUsage } from "@/lib/chat-usage";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { logDebug } from "@/lib/logger";
-import { createStallWatchdog, stallDetail, stallMessageFor } from "@/lib/chat-stall";
+import { createStallWatchdog, stallDetail, stallMessageFor, trackToolActivity } from "@/lib/chat-stall";
+import { historyCarriesToolNotes, withHistoryNote } from "@/lib/chat/history-notes";
+import { executionEntitlements } from "@/lib/tools/entitlements";
+import { openGrantedProviders, providerAvailability, toolProviders } from "@/lib/tools/providers";
+import { clientToolProgress, clientToolRun } from "@/lib/tools/wire";
+import type { ToolOutcomeStatus, ToolRunRecord, ToolTurn } from "@/lib/tools/types";
 import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
 import {
   AttachmentClaimError,
@@ -173,7 +178,7 @@ import {
   type EntitlementRejection,
 } from "@/lib/chat/entitlements";
 import { postGenerationPlan } from "@/lib/chat/post-processing";
-import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
+import { appendSkillBlock, codeExecutionNote, composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { loadChatSkill } from "@/lib/chat/skill-runtime";
 import {
   CHAT_SKILL_REFUSAL_MESSAGES,
@@ -242,7 +247,14 @@ import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
-import type { ChatFinishReason, ClientActivityEvent, ClientArtifact, ClientToolDetail, StreamChunk } from "@/types/chat";
+import type {
+  ChatFinishReason,
+  ClientActivityEvent,
+  ClientArtifact,
+  ClientToolDetail,
+  ClientToolProgress,
+  StreamChunk,
+} from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -466,14 +478,30 @@ function createToolActivity(
   enabled: boolean
 ): {
   open(effect: { server: string; name: string; callId: string; args?: string }): void;
-  close(effect: { server: string; name: string; callId: string; args?: string; result: string; ok: boolean; durationMs?: number }): void;
+  /** The dispatcher's queued / awaiting_approval / running act: the live row's phase. */
+  status(effect: { callId: string; status: "queued" | "awaiting_approval" | "running"; timeoutMs?: number }): void;
+  /** A running call's latest output on its live row. */
+  progress(effect: { callId: string; progress: ClientToolProgress }): void;
+  close(effect: {
+    server: string;
+    name: string;
+    callId: string;
+    args?: string;
+    result: string;
+    ok: boolean;
+    durationMs?: number;
+    status?: ToolOutcomeStatus;
+    errorCode?: string;
+    run?: ToolRunRecord;
+    cached?: boolean;
+  }): void;
 } {
   const budget = createToolDetailBudget();
-  const rows = new Map<string, { entry: ClientActivityEvent; opened?: ClientToolDetail }>();
+  const rows = new Map<string, { entry: ClientActivityEvent; opened?: ClientToolDetail; timeoutMs?: number }>();
 
   return {
     open(effect) {
-      const opened = enabled ? openToolDetail(effect, budget) : undefined;
+      const opened = enabled ? { ...openToolDetail(effect, budget), callId: effect.callId } : undefined;
       const task = effect.name === START_TASK_TOOL_ID;
       const handoff = effect.name === HAND_OFF_TOOL_ID;
       const entry = sender.sendActivity({
@@ -486,6 +514,26 @@ function createToolActivity(
       // Tracked even when detail is disabled, so a later `result` is still
       // recognised as paired and silently dropped rather than half-handled.
       rows.set(effect.callId, { entry, opened });
+    },
+    status(effect) {
+      const row = rows.get(effect.callId);
+      if (!row || !enabled || !row.entry.tool) return;
+      if (effect.timeoutMs !== undefined) row.timeoutMs = effect.timeoutMs;
+      // `queued` is the row's state from the moment it opened; only a change is news.
+      if (effect.status === "queued" && !row.entry.tool.phase) return;
+      row.entry.tool = {
+        ...row.entry.tool,
+        phase: effect.status,
+        ...(row.timeoutMs === undefined ? {} : { timeoutMs: row.timeoutMs }),
+      };
+      sender.send({ type: "activity", event: row.entry });
+    },
+    progress(effect) {
+      const row = rows.get(effect.callId);
+      if (!row || !enabled || !row.entry.tool) return;
+      // The dispatcher already holds this to one frame a second per call.
+      row.entry.tool = { ...row.entry.tool, progress: clientToolProgress(effect.progress) };
+      sender.send({ type: "activity", event: row.entry });
     },
     close(effect) {
       const row = rows.get(effect.callId);
@@ -507,7 +555,17 @@ function createToolActivity(
         if (task || handoff) sender.send({ type: "activity", event: row.entry });
         return;
       }
-      row.entry.tool = closeToolDetail(row.opened, effect, budget);
+      // The completed detail replaces the live one wholesale, so `phase` and
+      // `progress` (claims about a running call) leave with it.
+      row.entry.tool = {
+        ...closeToolDetail(row.opened, effect, budget),
+        callId: effect.callId,
+        ...(row.timeoutMs === undefined ? {} : { timeoutMs: row.timeoutMs }),
+        ...(effect.status ? { outcome: effect.status } : {}),
+        ...(effect.errorCode ? { errorCode: effect.errorCode } : {}),
+        ...(effect.run ? { run: clientToolRun(effect.run) } : {}),
+        ...(effect.cached ? { cached: true } : {}),
+      };
       sender.send({ type: "activity", event: row.entry });
     },
   };
@@ -989,6 +1047,13 @@ async function handleChat(req: Request) {
   }
 
   let eligible: (model: ModelInfo) => boolean;
+  /*
+   * The capability rows, kept for the whole request: routing reads the
+   * transport verdict here, and the tool entitlements below read the tool
+   * round-trip verdict from the same snapshot (src/lib/model-tool-probe.ts).
+   * Empty under the deterministic smoke provider, so every model is untested.
+   */
+  let capabilityProbes: Awaited<ReturnType<typeof loadModelCapabilityMap>> = new Map();
   if (deterministicSmokeProviderEnabled) {
     // Keep the requested model's identity in receipts and UI diagnostics while
     // replacing only the external generation call below. This makes the E2E
@@ -1001,7 +1066,7 @@ async function handleChat(req: Request) {
     // keeps every fallback decision in this request on the same snapshot: a
     // model cannot pass the explicit-selection check and fail the platform
     // budget degradation check because two probes changed between them.
-    const capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
+    capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
 
     // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
     // decide what a turn costs, and inline here they were reachable only by
@@ -2453,7 +2518,31 @@ async function handleChat(req: Request) {
   // Wholesale reference files ride the first user turn, each in its untrusted
   // envelope, instead of the system prompt — see buildProjectReferenceFiles.
   const projectReferenceFiles = buildProjectReferenceFiles(assistantProjectRow, projectKnowledge);
-  const modelHistory = prependToFirstUserTurn(baseHistory, projectReferenceFiles);
+  /*
+   * Earlier tool-using answers carry a note of what their calls did
+   * (src/lib/chat/history-notes.ts), so "now plot it by month" can build on
+   * the run that made the numbers. From each row's own persisted activity
+   * only, so the cached prompt prefix is stable; enveloped, so the
+   * untrusted-content rule below turns on with it.
+   */
+  const toolNoteActivity = new Map<string, unknown[]>();
+  for (const message of recent) {
+    if (message.role !== "ASSISTANT" || !message.activity) continue;
+    try {
+      const activity = decryptJsonField(message.activity);
+      if (Array.isArray(activity)) toolNoteActivity.set(message.id, activity);
+    } catch {
+      // An unreadable log costs that row its note, never the turn.
+    }
+  }
+  const historyHasToolNotes = historyCarriesToolNotes(
+    baseHistory.map((message) => ({ role: message.role, activity: toolNoteActivity.get(message.id) })),
+  );
+  const modelHistory = prependToFirstUserTurn(baseHistory, projectReferenceFiles).map((message) =>
+    message.role === "ASSISTANT" && toolNoteActivity.has(message.id)
+      ? { ...message, content: withHistoryNote(message.content, toolNoteActivity.get(message.id)) }
+      : message,
+  );
 
   /*
    * ── Context tokens, phase two ─────────────────────────────────────────────
@@ -2618,6 +2707,8 @@ async function handleChat(req: Request) {
     // model only through the tool, and would otherwise arrive marked but
     // ungoverned.
     attachmentToolToggles.documents ||
+    // Notes of earlier tool calls ride the envelope too (history-notes.ts).
+    historyHasToolNotes ||
     // A chat excerpt, an artifact or a project's documents the message named.
     turnContext.untrusted;
   /*
@@ -2698,6 +2789,72 @@ async function handleChat(req: Request) {
    */
   const contextBlock = turnContext.turnBlock({ handoffAvailable: !!agentContext?.handoff && !!userMessageId });
   const turnHistory = appendToLastUserTurn(modelHistory, contextBlock);
+  const generationId = durableGenerationId ?? input.generationId ?? crypto.randomUUID();
+  /*
+   * ── Execution and skill tools ─────────────────────────────────────────────
+   *
+   * Which of `run_code`, `check_run`, `use_skill` and `read_skill_file` this
+   * turn carries, from one table of rows keyed to the providers that serve
+   * them (src/lib/tools/entitlements.ts), and what the model is told when it
+   * carries none. The decisive fact is the model's VERIFIED tool calling
+   * (the round-trip probe's evidence on the capability row): an untested
+   * model gets no execution tool, only a plain-language note, so it never
+   * writes code and implies it ran. The legacy `code_interpreter` is gated
+   * the same way. No provider is installed until the execution and skill
+   * lanes land, so today every turn gets the note and no execution tool.
+   */
+  const toolCallingVerdict = modelToolCallingVerdict(modelInfo, capabilityProbes);
+  const installedToolProviders = toolProviders();
+  const toolTurn: ToolTurn = {
+    userId: user.id,
+    surface: input.voiceMode ? "voice" : "chat",
+    sessionId: generationId,
+    conversationId: conversation.id,
+    projectId: conversation.projectId,
+    plan,
+    modelId: modelInfo.id,
+    vision: modelInfo.vision,
+    skillSlug: turnSkillSlug ?? null,
+  };
+  const execution = executionEntitlements({
+    plan,
+    private: false,
+    lockdown: !!settings?.lockdownMode,
+    artifactEdit: !!artifactEditTarget,
+    workspaceRestrictsTools: workspaceConfig.allowedTools !== undefined,
+    toolsReachModel: taskGate.functionToolsReachModel,
+    modelVerdict: toolCallingVerdict,
+    providers: installedToolProviders.length > 0 ? await providerAvailability(installedToolProviders, toolTurn) : {},
+    legacySandboxConfigured: attachmentToolToggles.code,
+  });
+  // The old code tool is an execution tool: a verified model only.
+  attachmentToolToggles.code = execution.legacyCodeInterpreter;
+  // A skill narrows the grant and can never widen it, as it does every tool.
+  const executionGrant = {
+    exec: narrowRuntimeToolsForSkill(execution.granted.exec, appliedSkill),
+    skills: narrowRuntimeToolsForSkill(execution.granted.skills, appliedSkill),
+  };
+  const toolProviderSessions =
+    executionGrant.exec.length + executionGrant.skills.length > 0
+      ? await openGrantedProviders(installedToolProviders, toolTurn, executionGrant)
+      : null;
+  const verifiedAlternatives =
+    execution.codeExecution === "unverified_model"
+      ? MODEL_LIST.filter(
+          (candidate) =>
+            candidate.modality === "chat" &&
+            candidate.status === "current" &&
+            !candidate.comingSoon &&
+            candidate.id !== modelInfo!.id &&
+            isProviderConfigured(candidate.provider) &&
+            canUseModel(plan, candidate.id) &&
+            modelToolCallingVerdict(candidate, capabilityProbes) === "verified",
+        ).map((candidate) => candidate.name)
+      : [];
+  const executionSections =
+    toolProviderSessions && toolProviderSessions.specs.length > 0
+      ? toolProviderSessions.promptSections
+      : [codeExecutionNote(execution.codeExecution, verifiedAlternatives)].filter((note): note is string => !!note);
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -2729,6 +2886,7 @@ async function handleChat(req: Request) {
           documentTool: attachmentToolToggles.documents,
           imageTool: attachmentToolToggles.images,
           codeTool: attachmentToolToggles.code,
+          executionSections,
           targetedArtifactEditPrompt,
           canvasOn,
         }),
@@ -2745,7 +2903,6 @@ async function handleChat(req: Request) {
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);
-  const generationId = durableGenerationId ?? input.generationId ?? crypto.randomUUID();
   if (durableGenerationId) {
     const now = new Date();
     const markedRunning = await prisma.chatFirstSubmissionReceipt.updateMany({
@@ -3376,6 +3533,7 @@ async function handleChat(req: Request) {
         });
         generationController.abort();
       });
+      const toolWatch = trackToolActivity(stallWatchdog);
 
       // One callback for every approval this turn raises, connector calls and
       // task handoffs alike, so both pause the watchdog and reach the card the
@@ -3614,9 +3772,15 @@ async function handleChat(req: Request) {
           // `start_task` and `hand_off_to_teammate`, when this turn may carry
           // them (`taskToolOn` and the agent context's `handoff` above).
           nativeTools: nativeTools.length > 0 ? nativeTools : undefined,
+          // The execution and skill tools this turn was granted
+          // (`executionEntitlements` above), run behind the runtime broker.
+          toolSpecs: toolProviderSessions?.specs.length ? toolProviderSessions.specs : undefined,
         });
         for await (const ev of modelStream) {
           stallWatchdog.touch();
+          // While a call runs the turn waits on the tool, which has its own
+          // bound: the watchdog is held from its `running` act to its result.
+          toolWatch.observe(ev);
           const effect = acc.apply(ev);
           if (effect.kind === "text") {
             if (effect.startedWriting) {
@@ -3633,6 +3797,10 @@ async function handleChat(req: Request) {
             enforceStreamBudget();
           } else if (effect.kind === "tool_call") {
             toolActivity.open(effect);
+          } else if (effect.kind === "tool_status") {
+            toolActivity.status(effect);
+          } else if (effect.kind === "tool_progress") {
+            toolActivity.progress(effect);
           } else if (effect.kind === "tool_result") {
             // Deliberately NOT followed by enforceStreamBudget(): that guard
             // projects micro-USD from token counts, and a tool payload spends
@@ -3656,6 +3824,7 @@ async function handleChat(req: Request) {
             enforceStreamBudget();
           }
         }
+        toolWatch.releaseAll();
         // The provider is done. Everything below is Juno's own persistence, and
         // the watchdog only measures provider silence — leaving it armed made a
         // slow database look like a stalled model on a generation that had
@@ -4079,8 +4248,11 @@ async function handleChat(req: Request) {
           });
         }
       } finally {
+        toolWatch.releaseAll();
         stallWatchdog.stop();
         stopGenerationTimers();
+        // The execution and skill providers' sessions, best-effort.
+        await toolProviderSessions?.close().catch(() => undefined);
         /*
          * RELEASE THE HOLD THIS TURN NEVER SPENT.
          *

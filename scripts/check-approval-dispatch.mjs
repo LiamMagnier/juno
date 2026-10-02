@@ -672,6 +672,58 @@ if (
   fail(`native tool.execute inventory changed; expected ${expectedNativeToolCallers.join(", ")}, found ${nativeToolCallers.join(", ") || "none"}`);
 }
 
+// -------------------------------------------------------------------------
+// Chat runtime: registry tools and provider specs (run_code, check_run,
+// use_skill, read_skill_file) run behind the receipt broker in the runtime.
+// The tool dispatcher (src/lib/tools/dispatch.ts) only ever calls a toolset's
+// execute — it never runs a tool or a spec itself — so authorisation stays in
+// these two functions and in the MCP chokepoint above.
+// -------------------------------------------------------------------------
+
+const runtimePath = "src/lib/agent/runtime.ts";
+const runtimeSource = parse(runtimePath);
+for (const [runtimeFunction, sinkReceiver] of [
+  ["executeToolCall", "tool"],
+  ["executeSpec", "spec"],
+]) {
+  const owner = findFunction(runtimeSource, runtimeFunction);
+  requireOrderedCalls(runtimePath, owner, runtimeSource, [
+    { description: "authorizeExternalAction", matches: (call) => call.name === "authorizeExternalAction" },
+    {
+      description: `the ${sinkReceiver}.execute sink`,
+      matches: (call) => call.name === "execute" && call.receiver === sinkReceiver,
+    },
+    { description: "completeExternalAction", matches: (call) => call.name === "completeExternalAction" },
+  ]);
+  if (owner) {
+    const handled = new Set();
+    visit(owner.body, (node) => {
+      if (ts.isStringLiteral(node) && (node.text === "refused" || node.text === "replay")) handled.add(node.text);
+    });
+    if (!handled.has("refused") || !handled.has("replay")) {
+      fail(`${runtimePath} ${runtimeFunction}() must return on refused/replayed authorization before its sink`);
+    }
+  }
+}
+const runtimeSinks = callRecords(runtimeSource).filter(
+  (record) => record.name === "execute" && (record.receiver === "tool" || record.receiver === "spec")
+);
+for (const sink of runtimeSinks) {
+  const owner = enclosingFunction(sink.node);
+  const name = owner ? functionName(owner) : "<none>";
+  if (name !== "executeToolCall" && name !== "executeSpec") {
+    fail(`${runtimePath} has a tool/spec execute sink outside executeToolCall/executeSpec (in ${name})`);
+  }
+}
+for (const [relativePath, sourceFile] of parsedProduction) {
+  if (!relativePath.startsWith("src/lib/tools/")) continue;
+  for (const record of callRecords(sourceFile)) {
+    if (record.name === "execute" && (record.receiver === "spec" || record.receiver === "tool")) {
+      fail(`${relativePath} runs a tool or spec directly; route it through the toolset's brokered execute`);
+    }
+  }
+}
+
 if (failures.length) {
   console.error("\n[approval-dispatch] FAIL\n");
   for (const message of failures) console.error(`  - ${message}`);

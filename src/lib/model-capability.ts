@@ -294,7 +294,7 @@ export async function persistToolProbeEvidence(model: ModelInfo, evidence: ToolP
     const merged = { ...((row.evidence as Record<string, unknown> | null) ?? {}), tools: evidence };
     await prisma.modelCapabilityProbe.update({
       where: { modelId: model.id },
-      data: { evidence: merged as Prisma.InputJsonObject },
+      data: { evidence: merged as unknown as Prisma.InputJsonObject },
     });
     return;
   }

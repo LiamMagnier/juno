@@ -385,7 +385,13 @@ export interface ToolProvider {
   tools: readonly string[];
   /** Cheap, cached, never throws: a failure is `{ available: false }`. */
   availability(turn: ToolTurn): Promise<ToolProviderAvailability>;
-  /** Called only for an available provider and a non-empty grant. */
+  /**
+   * Called only for an available provider and a non-empty grant, before the
+   * system prompt is built (its `promptSection` goes there). Must be cheap and
+   * must not allocate remote resources: allocate on the first `execute`
+   * (sandbox sessions are keyed by `ToolContext.sessionId`). `close()` is
+   * best-effort cleanup at the end of the turn.
+   */
   open(turn: ToolTurn, granted: readonly string[]): Promise<ToolProviderSession>;
 }
 
