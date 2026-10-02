@@ -319,7 +319,11 @@ test("an identical call in the same turn returns the first outcome without runni
   const first = await drain(loop.run([call("lookup", '{"q":"same"}', 0), call("lookup", '{ "q" : "same" }', 1)], undefined));
   const second = await drain(loop.run([call("lookup", '{"q":"same"}', 0, 1)], undefined));
   assert.equal(runs, 1);
-  assert.deepEqual([...first.results, ...second.results].map((r) => r.text), ["first", "first", "first"]);
+  // The repeats carry the first outcome, and say they are repeats.
+  assert.deepEqual([...first.results, ...second.results].map((r) => r.text.split("\n\n")[0]), ["first", "first", "first"]);
+  assert.equal(first.results[0].text, "first");
+  assert.match(first.results[1].text, /identical call made earlier in this reply; it was not run again/);
+  assert.match(second.results[0].text, /it was not run again/);
   const cached = results([...first.events, ...second.events]).filter((e) => e.cached);
   assert.equal(cached.length, 2);
 });
@@ -415,6 +419,8 @@ test("a write in between makes earlier answers stale: list, create, list lists a
   const repeat = await drain(loop.run([call("gh__list", "{}", 0, 1)], undefined));
   await drain(loop.run([call("gh__create", '{"title":"x"}', 0, 2)], undefined));
   const after = await drain(loop.run([call("gh__list", "{}", 0, 3)], undefined));
-  assert.deepEqual([first, repeat, after].map((r) => r.results[0].text), ["list 1", "list 1", "list 2"]);
+  assert.deepEqual([first, repeat, after].map((r) => r.results[0].text.split("\n\n")[0]), ["list 1", "list 1", "list 2"]);
+  assert.match(repeat.results[0].text, /it was not run again/);
+  assert.equal(after.results[0].text, "list 2", "a fresh run carries no repeat note");
   assert.equal(lists, 2);
 });

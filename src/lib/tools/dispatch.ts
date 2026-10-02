@@ -31,6 +31,7 @@
 
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import {
+  CACHED_RESULT_NOTE,
   CANCELLED_BEFORE_RUN_TEXT,
   CANCELLED_WHILE_RUNNING_EFFECT_TEXT,
   CANCELLED_WHILE_RUNNING_TEXT,
@@ -384,8 +385,10 @@ async function runCall(
     const earlier = inflight.get(entry.dedupeKey);
     if (earlier) await earlier;
     const cached = ctx.cache.get(entry.dedupeKey);
-    // The first call was authorised and ran; a repeat runs nothing.
-    if (cached) return finish(cached, { cached: true });
+    // The first call was authorised and ran; a repeat runs nothing, and the
+    // model is told so (CACHED_RESULT_NOTE) rather than handed a stale answer
+    // as a fresh one.
+    if (cached) return finish({ ...cached, text: `${cached.text}\n\n${CACHED_RESULT_NOTE}` }, { cached: true });
     if (signal.aborted) return finish(failedOutcome("cancelled", CANCELLED_BEFORE_RUN_TEXT, "cancelled"));
   }
 

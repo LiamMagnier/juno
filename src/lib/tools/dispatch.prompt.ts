@@ -76,4 +76,13 @@ export function oversizedResultText(chars: number, limit: number): string {
   return `The tool's output was ${chars} characters long, over the ${limit}-character limit, so it was withheld. Ask for a smaller part of it.`;
 }
 
+/**
+ * Appended (outside any envelope) to a result served from the turn's duplicate
+ * cache. Without it a model polling a status ("is the deploy done yet?") reads
+ * the first answer again and again as if it were fresh, and loops until its
+ * rounds run out.
+ */
+export const CACHED_RESULT_NOTE =
+  "[This is the result of an identical call made earlier in this reply; it was not run again. To see a newer state, change the request or do something else first.]";
+
 export const NO_RESULT_TEXT = "The call returned no result, so nothing is known about its outcome.";
