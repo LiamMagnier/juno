@@ -126,6 +126,8 @@ export type IconDrawing = {
   motion?: string;
   /** Drawn from a live value (progress): a control, not a symbol; the native projection skips it. */
   live?: true;
+  /** Optical size: multiplies the keyline for a glyph lighter than its neighbours (see KEYLINE). */
+  optical?: number;
 };
 
 /* —————————————————————————————— Numbers —————————————————————————————— */
@@ -362,10 +364,10 @@ export function koTight(d: string): IconElement {
 
 /**
  * Apply a point transform to an absolute path (M L H V C Q A Z). H and V become
- * L; arcs keep their radii (every arc here is circular) and flip their sweep
- * when the transform mirrors.
+ * L; arcs keep their radii (every arc here is circular), times `radii` when the
+ * transform scales (the keyline), and flip their sweep when it mirrors.
  */
-export function xform(d: string, f: (x: number, y: number) => [number, number], mirror = false): string {
+export function xform(d: string, f: (x: number, y: number) => [number, number], mirror = false, radii = 1): string {
   const tokens = d.match(/[MLHVCQAZ]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
   let i = 0;
   let cx = 0;
@@ -420,7 +422,7 @@ export function xform(d: string, f: (x: number, y: number) => [number, number], 
       const sweep = num();
       cx = num();
       cy = num();
-      out += `A${fmt(rx)} ${fmt(ry)} ${fmt(rotation)} ${large} ${mirror ? 1 - sweep : sweep} ${put(cx, cy)}`;
+      out += `A${fmt(rx * radii)} ${fmt(ry * radii)} ${fmt(rotation)} ${large} ${mirror ? 1 - sweep : sweep} ${put(cx, cy)}`;
     } else {
       i++;
     }
@@ -506,19 +508,21 @@ const THUMB = "M7.5 10.5L10.6 4.45A1.8 1.8 0 0 1 14 5.55L13.4 9H18.35A1.9 1.9 0 
 /** The sleeve: one bar standing the house gap off the hand (a cuff that shares the hand's edge is everyone else's thumb). */
 const SLEEVE = poly(4.5, 11.25, 4.5, 18.75);
 /*
- * The crew: two members on one ground line, the nearer one shorter, wider and
- * smiling at you. D-029 retired the two-dot face and D-034 drew the crew with
- * graphic eyes; at icon size those are closed arcs (the content, eyes-shut
- * smile), set low and wide, the way the cuteness rules in D-033 place them.
- * Nothing in the glyph can read as a pair of staring dots.
+ * The crew: two agents on one ground line, the nearer one shorter and wider.
+ * Revision 2: the eyes are D-034's matte ovals (the Orbit board's Mira), drawn
+ * as two short upright strokes set low and wide (D-033's cuteness rules), not
+ * revision 1's closed arcs, which turned to a squiggle at 16 px. A stroke with
+ * round caps is an oval, never a staring dot (D-029 retired the two-dot face);
+ * the body is one soft gumdrop with a broad base, so it reads as a character,
+ * not a ghost.
  */
-const CREW_FRONT = gumdrop(9, 8.25, 20.25, 12.75);
-const CREW_BACK = gumdrop(15.375, 5.25, 20.25, 11.25);
-/** Closed eyes: two upper half circles, `apart` between their centres. */
-const smile = (cx: number, y: number, apart: number, r = 1.125): string => `${arc(cx - apart / 2, y, r, 180, 360)}${arc(cx + apart / 2, y, r, 180, 360)}`;
-const CREW_EYES = smile(9, 15, 5.25);
-const MEMBER = gumdrop(10.5, 5.625, 20.25, 14.25);
-const MEMBER_EYES = smile(10.5, 13.125, 6, 1.3);
+const CREW_FRONT = gumdrop(9.375, 7.875, 20.25, 13.5, 0.5);
+const CREW_BACK = gumdrop(15.75, 4.5, 20.25, 11.25, 0.5);
+/** Matte oval eyes: two upright strokes `apart` between them, from y0 to y1. */
+const ovals = (cx: number, y0: number, y1: number, apart: number): string => `${poly(cx - apart / 2, y0, cx - apart / 2, y1)}${poly(cx + apart / 2, y0, cx + apart / 2, y1)}`;
+const CREW_EYES = ovals(9.375, 14.25, 16.5, 4.5);
+const MEMBER = gumdrop(10.5, 5.25, 20.25, 14.25, 0.5);
+const MEMBER_EYES = ovals(10.5, 12.75, 15, 4.875);
 /** One hop: up a unit and a half and down, once (hello). */
 const hop = { anim: "hop" as const, y: -1.25 };
 /** The house plus, for a corner: arms `a` either side of (cx, cy). */
@@ -587,21 +591,60 @@ export function ellArc(cx: number, cy: number, a: number, b: number, phi: number
 }
 
 /**
- * Orbit, Alevr's agent workspace: one ellipse in the board's construction
- * (b = 0.618 a), its major axis rising, drawn as two open arcs that never
- * meet. Each arc is the other turned half a turn (equilibrium), so the glyph
- * has no start and no end to chase: it can never read as a spinner.
+ * Orbit, Alevr's agent workspace (revision 2, redrawn from the Orbit board's
+ * construction: "two separated elliptical arcs in equilibrium", a = 1,
+ * b = 0.618, the major axis rising 24 degrees). Revision 1 broke one ellipse
+ * at both tips into two equal arcs, each the other turned half a turn: the
+ * refresh glyph without its arrowheads. Now the arcs are unequal and step
+ * past each other the way the board's blades (and the Continuum's) do:
+ *   - the back arc runs over the top on the full ellipse (a = 9.375), about
+ *     205 degrees, from just under the left tip to the right tip;
+ *   - the front arc runs under, on the same ellipse at 0.86, so at both breaks
+ *     its end sits inside the back arc's (a step, not a gap in one line);
+ *   - the breaks are measured in arc length, not angle, against the 16 px line
+ *     (1.667 construction units): the open one at the right tip clears 3 lines
+ *     plus 0.6, the closing one under the left tip 1.5 lines, so each stays
+ *     open at 16 px on 1x and nothing reads as a dash.
+ * The minor axis is 11.6 units (13 on the keyline): the two arcs stay more than
+ * 8 px apart at 16 px. No rotational symmetry, no arrowhead, no start or end
+ * to chase: it cannot read as refresh, sync or a spinner, and it never moves.
  */
 const ORBIT_A = 9.375;
 const ORBIT_B = n3(ORBIT_A * 0.618);
 const ORBIT_TILT = -24;
-const orbitArcs = (gapA: number, gapB: number): string[] => [
-  ellArc(12, 12, ORBIT_A, ORBIT_B, ORBIT_TILT, 180 + gapA, 360 - gapB),
-  ellArc(12, 12, ORBIT_A, ORBIT_B, ORBIT_TILT, gapA, 180 - gapB),
-];
+const ORBIT_FRONT = 0.86;
+/** The 16 px line in construction units (1.25 px at 16 is 1.875 keyline units). */
+const LINE16 = 1.667;
+/** ds/dt of an ellipse, units per degree of its parameter. */
+const ellSpeed = (a: number, b: number, t: number): number => Math.hypot(a * Math.sin((t * Math.PI) / 180), b * Math.cos((t * Math.PI) / 180)) * (Math.PI / 180);
+/** The parameter reached after walking arc length `s` from `t0`, forward (1) or back (-1). */
+function ellWalk(a: number, b: number, t0: number, s: number, dir: 1 | -1): number {
+  let t = t0;
+  for (let acc = 0; acc < s; t += 0.05 * dir) acc += ellSpeed(a, b, t) * 0.05;
+  return Math.round(t * 100) / 100;
+}
+const orbitArcs = (): string[] => {
+  const open = 4 * LINE16 + 0.6;
+  const close = 2.5 * LINE16;
+  const openFrom = ellWalk(ORBIT_A, ORBIT_B, 5, open / 2, -1);
+  const openTo = ellWalk(ORBIT_A, ORBIT_B, 5, open / 2, 1);
+  const closeFrom = ellWalk(ORBIT_A, ORBIT_B, 170, close / 2, -1);
+  const closeTo = ellWalk(ORBIT_A, ORBIT_B, 170, close / 2, 1);
+  return [
+    ellArc(12, 12, n3(ORBIT_A * ORBIT_FRONT), n3(ORBIT_B * ORBIT_FRONT), ORBIT_TILT, openTo, closeFrom),
+    ellArc(12, 12, ORBIT_A, ORBIT_B, ORBIT_TILT, closeTo, openFrom + 360),
+  ];
+};
 
-/** Code: opposed square brackets with continuous corners; the cursor stands inset between them. */
-const BRACKET = `M9.75 4.5H${fmt(4.5 + 2.655)}${corner(4.5, 4.5, 1, 0, 0, 1, 2.25)}V${fmt(19.5 - 2.655)}${corner(4.5, 19.5, 0, -1, 1, 0, 2.25)}H9.75`;
+/**
+ * Code (revision 2, the Code board's construction): opposed square brackets
+ * and the cursor. Revision 1's brackets ran 5.25 units in from each side with
+ * 2.25 corners, so the pair closed into a box ("[I]" read as a frame or an ID
+ * card). Now each arm is 3 units with a 1.5 continuous corner (about a unit of
+ * it straight), the counter between the arms is 9 units wide, and the cursor
+ * is half the brackets' height, centred: the board's proportions.
+ */
+const BRACKET = `M7.5 4.5H${fmt(4.5 + 1.77)}${corner(4.5, 4.5, 1, 0, 0, 1, 1.5)}V${fmt(19.5 - 1.77)}${corner(4.5, 19.5, 0, -1, 1, 0, 1.5)}H7.5`;
 const CURSOR = poly(12, 8.25, 12, 15.75);
 
 /** A simple person: head and shoulders, the house gap between them. */
@@ -654,26 +697,105 @@ const ALMOND = "M6.75 12C8.25 9.75 10 8.625 12 8.625C14 8.625 15.75 9.75 17.25 1
 /** Bookmark: a ribbon with continuous top corners and a notched foot. */
 const RIBBON = `M6.75 20.25V${fmt(3.75 + 2.655)}${corner(6.75, 3.75, 0, 1, 1, 0, 2.25)}H${fmt(17.25 - 2.655)}${corner(17.25, 3.75, -1, 0, 0, 1, 2.25)}V20.25L12 16.125Z`;
 
-/** Apps: two framed tiles, connected by two quarter paths (Alevr's curved paths, not a flowchart elbow). */
-const TILE_A = rr(3.75, 3.75, 7.5, 7.5, 2.25);
-const TILE_B = rr(12.75, 12.75, 7.5, 7.5, 2.25);
+/**
+ * Apps (revision 2): framed tiles set as one grid, three squares and one
+ * circle, the circle the app that joins. Revision 1's two tiles linked by a
+ * quarter path read as a flowchart at 16 px and sat a long way from every
+ * apps glyph people know. The tiles are 6.375 units with 3.75 between their
+ * lines, so they stay apart at 16 px on 1x (Lucide's grid keeps 4); the circle
+ * keeps its tile's optical size (r = 3.375, a little over half the tile).
+ */
+const TILE = 6.375;
+const TILES = [rr(3.75, 3.75, TILE, TILE, 2.25), rr(3.75, 13.875, TILE, TILE, 2.25), rr(13.875, 13.875, TILE, TILE, 2.25)];
+const APP_JOIN: [number, number, number] = [17.0625, 6.9375, 3.375];
 
 
 /**
- * Deep Field (D-038, "Deep research"): one long look into a field. Two
- * opposed corners of a viewfinder hold four points of falling size, set on a
- * spiral so they read as found, not scattered (no starfield: four points, one
- * frame). Two corners, not four: four empty corners are the screenshot, which
- * sits beside it in the + menu (revision 1 close, self-critique).
+ * Deep Field (D-038, "Deep research", revision 2): one long look into a field.
+ * Two opposed corners of a viewfinder (four empty corners are the screenshot,
+ * beside it in the + menu) hold three points on one line of sight, receding:
+ * each point 0.68 the size of the one before and closer to it (5.8 then 4.8
+ * units apart), the near one low left, the far one high right, across the
+ * corners' diagonal. Revision 1 set four points on a spiral that read as
+ * scattered at 16 px; three in perspective read as depth, and at 16 px on 1x
+ * they land as 3, 2 and 1 pixel points.
  */
 const FIELD_CORNERS = [
   "M3.75 9.75V6.75A3 3 0 0 1 6.75 3.75H9.75",
   "M20.25 14.25V17.25A3 3 0 0 1 17.25 20.25H14.25",
 ];
+const FIELD_POINTS: [number, number, number][] = [
+  [8.625, 15.375, 1.875],
+  [12.75, 11.25, 1.275],
+  [16.125, 7.875, 0.825],
+];
 
 /* —————————————————————————————— The set —————————————————————————————— */
 
-const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => ({ viewBox: 24, line: 1.5, ...d });
+/* —————————————————————————————— The keyline (revision 2) —————————————————————————————— */
+
+/**
+ * THE KEYLINE. Every drawing below is authored on the construction grid
+ * described at the top (live area 3 to 21, stems on the 1.5 unit lattice, a
+ * 16.5 unit circle beside a 15 unit square) and projected to the family's
+ * keyline by one uniform scale about the centre: KEYLINE = 9/8. The live area
+ * becomes 1.875 to 22.125, the primary circle 18.56 units (19.5 with Phosphor's
+ * 18, Lucide's 20), the square 16.9, the page 13.5 x 20.25. Revision 1 drew
+ * the whole family about 15% under Lucide and Phosphor at the same nominal
+ * size (tools/rev2/bbox.mjs: a median of 0.86 of Lucide's extent, 0.92 of
+ * Phosphor's); at 16 px beside 14 px Inter the glyphs read about 11 px. The
+ * line does not scale (1.5 units from 18 px, 1.25 px at 16) and neither does
+ * the house gap (1.5 units), so the projection adds size, not weight. The
+ * renderer fits the projected stems to the device grid per size, keeping
+ * equal gaps equal (index.tsx, fitDrawing).
+ *
+ * `optical` on a drawing multiplies the keyline for glyphs whose silhouette
+ * is lighter than its neighbours' (play and pause, the chevrons, a check):
+ * optical size, the way a type designer lets an o overshoot an x.
+ */
+export const KEYLINE = 1.125;
+
+function keylineMove(m: IconMove | undefined, s: number, f: (x: number, y: number) => [number, number]): IconMove | undefined {
+  if (!m) return m;
+  const out: IconMove = { ...m };
+  if (m.x != null) out.x = n3(m.x * s);
+  if (m.y != null) out.y = n3(m.y * s);
+  if (m.o) out.o = f(m.o[0], m.o[1]);
+  return out;
+}
+
+function keylineEls(els: IconElement[], s: number, f: (x: number, y: number) => [number, number]): IconElement[] {
+  return els.map((el) => {
+    const a = { ...el.attrs };
+    if (el.tag === "g") return { ...el, attrs: a, children: keylineEls(el.children ?? [], s, f), hover: keylineMove(el.hover, s, f) };
+    if (el.tag === "path") a.d = xform(String(a.d), f, false, s);
+    else if (el.tag === "circle") {
+      [a.cx, a.cy] = f(Number(a.cx), Number(a.cy));
+      a.r = n3(Number(a.r) * s);
+    } else if (el.tag === "rect") {
+      [a.x, a.y] = f(Number(a.x ?? 0), Number(a.y ?? 0));
+      a.width = n3(Number(a.width ?? 0) * s);
+      a.height = n3(Number(a.height ?? 0) * s);
+      if (a.rx != null) a.rx = n3(Number(a.rx) * s);
+      if (a.ry != null) a.ry = n3(Number(a.ry) * s);
+    }
+    return { ...el, attrs: a };
+  });
+}
+
+/** A drawing on the construction grid, projected to the keyline (and its optical size). */
+export function keyline(d: IconDrawing): IconDrawing {
+  const s = KEYLINE * (d.optical ?? 1);
+  const f = (x: number, y: number): [number, number] => [n3(12 + (x - 12) * s), n3(12 + (y - 12) * s)];
+  const out: IconDrawing = { ...d, elements: keylineEls(d.elements, s, f) };
+  if (d.fill) out.fill = keylineEls(d.fill, s, f);
+  if (d.hover) out.hover = keylineMove(d.hover, s, f);
+  if (d.on?.kind === "turn" && d.on.o) out.on = { ...d.on, o: f(d.on.o[0], d.on.o[1]) };
+  if (d.small) out.small = { elements: d.small.elements && keylineEls(d.small.elements, s, f), fill: d.small.fill && keylineEls(d.small.fill, s, f) };
+  return out;
+}
+
+const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => keyline({ viewBox: 24, line: 1.5, ...d });
 
 
 export const ICONS = {
@@ -688,7 +810,7 @@ export const ICONS = {
   }),
   orbit: I({
     group: "Navigation",
-    elements: orbitArcs(18, 18).map((d) => p(d)),
+    elements: orbitArcs().map((d) => p(d)),
     motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
   }),
   code: I({
@@ -704,7 +826,7 @@ export const ICONS = {
   }),
   search: I({
     group: "Navigation",
-    elements: [c(10.125, 10.125, 6.375), p(poly(17.063, 17.063, 20.25, 20.25))],
+    elements: [c(10.125, 10.125, 6.375), p(poly(17.063, 17.063, 20.625, 20.625))],
     hover: { r: -14, o: [10.125, 10.125] },
     motion: "The handle stands a house gap off the lens (Juno's join). The lens tilts about its own centre, so only the handle swings.",
   }),
@@ -747,7 +869,7 @@ export const ICONS = {
     ],
     fill: [g([solid(CREW_BACK)], { y: -0.75 }), { ...ko(CREW_FRONT), hover: hop }, g([solid(CREW_FRONT), koTight(CREW_EYES)], hop)],
     on: { kind: "fill" },
-    motion: "The one behind stands up; the one in front, eyes closed in a smile, hops once: hello.",
+    motion: "The one behind stands up; the one in front hops once: hello.",
   }),
   bell: I({
     group: "Navigation",
@@ -1158,12 +1280,14 @@ export const ICONS = {
   }),
   pause: I({
     group: "Agents and time",
+    optical: 1.1,
     elements: [p(poly(9, 6, 9, 18)), p(poly(15, 6, 15, 18))],
     on: { kind: "swap", to: "play" },
     motion: "Active: becomes play.",
   }),
   play: I({
     group: "Agents and time",
+    optical: 1.1,
     elements: [p(PLAY)],
     hover: { x: 0.75 },
     on: { kind: "swap", to: "pause" },
@@ -1533,8 +1657,8 @@ export const ICONS = {
   }),
   apps: I({
     group: "Apps",
-    elements: [p(TILE_A), p(TILE_B), g([p(arc(11.25, 12.75, 5.25, -90, 0), { draw: true })], { anim: "draw" })],
-    motion: "Two framed tiles joined by one quarter path (a curve, never a flowchart elbow). The path draws in: connected.",
+    elements: [...TILES.map((d) => p(d)), g([c(...APP_JOIN)], { x: 0.75, y: -0.75 })],
+    motion: "Framed tiles as one grid, the circle the app that joins. The circle lifts out of its place a unit, as an app being added.",
   }),
   dictation: I({
     group: "Composer",
@@ -1690,8 +1814,8 @@ export const ICONS = {
 
   "deep-field": I({
     group: "Work and evidence",
-    elements: [...FIELD_CORNERS.map((d) => p(d)), dot(10.125, 10.875, 1.875), dot(15, 9, 1.125), dot(14.25, 15, 1.5), dot(9, 15.75, 0.9)],
-    motion: "Deep Field (D-038, deep research): two opposed viewfinder corners holding four points of falling size. None: a long look is still.",
+    elements: [...FIELD_CORNERS.map((d) => p(d)), ...FIELD_POINTS.map(([x, y, r]) => dot(x, y, r))],
+    motion: "Deep Field (D-038, deep research): two opposed viewfinder corners holding three points receding on one line of sight. None: a long look is still.",
   }),
 } satisfies Record<string, IconDrawing>;
 
