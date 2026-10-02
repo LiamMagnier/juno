@@ -21,6 +21,7 @@ import { ContinuumMark } from "@/components/brand/continuum-mark";
 import { OrbitGlyph } from "@/components/brand/orbit-glyph";
 import { ThinkingMark, type ThinkingPhase } from "@/components/brand/thinking-mark";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/juno-icons";
 import { cn } from "@/lib/utils";
 
 /* V3 specimen plates: explicit values so light and dark sit side by side whatever the page theme. */
@@ -276,21 +277,44 @@ const ZOOM: Record<ContinuumOpticalSize, number> = { 16: 8, 20: 7, 24: 6, 32: 4 
 function OpticalBench({ tone }: { tone: PlateTone }) {
   const p = PLATE[tone];
   return (
-    <Plate tone={tone} label="Each pair: the master scaled down (left) and the optical master (right), rasterised by this browser at the real size, then enlarged with hard pixels">
+    <Plate tone={tone} label="Each size: the master scaled down, the optical master, and what a 2x screen draws for the same CSS size (the 32 master below 21 px, the master from 24 px), each rasterised by this browser and enlarged with hard pixels">
       <div className="flex flex-wrap gap-8">
         {OPTICAL_SIZES.map((n) => (
           <div key={n} className="flex flex-col gap-3">
             <div className="flex flex-wrap items-end gap-3">
               <PixelZoom size={n} zoom={ZOOM[n]} label={`Master scaled to ${n} px`} svg={markSvg(CONTINUUM_SQUARE_VIEWBOX, CONTINUUM_MASTER_PATHS, n, p.color, p.background)} />
               <PixelZoom size={n} zoom={ZOOM[n]} label={`Optical master at ${n} px`} svg={markSvg(`0 0 ${n} ${n}`, CONTINUUM_OPTICAL[n].blades, n, p.color, p.background)} />
+              {n <= 20 ? (
+                <PixelZoom size={n * 2} zoom={ZOOM[n] / 2} label={`${n} px on a 2x screen: the 32 master at ${n * 2} device px`} svg={markSvg("0 0 32 32", CONTINUUM_OPTICAL[32].blades, n * 2, p.color, p.background)} />
+              ) : null}
             </div>
             <div className="flex items-center gap-3">
               <ContinuumMark size={n} tone="current" />
               <span className="font-mono text-micro tabular-nums" style={{ color: p.sub }}>
-                {n} px · channels ≥ {CONTINUUM_OPTICAL[n].channel} px
+                {n} px · channels ≥ {CONTINUUM_OPTICAL[n].channel} px · {CONTINUUM_OPTICAL[n].method === "placement" ? "blades placed" : "edges inset"}
               </span>
             </div>
           </div>
+        ))}
+      </div>
+    </Plate>
+  );
+}
+
+/** The 16 and 20 masters as outlines, large: each blade is the master's own outline, only placed. */
+function OpticalOutlines({ tone }: { tone: PlateTone }) {
+  const p = PLATE[tone];
+  return (
+    <Plate tone={tone} label="The 16 and 20 px masters drawn large: every blade keeps the master's outline (round heads, curvature-continuous edges); only its placement changes">
+      <div className="grid grid-cols-2 gap-4">
+        {([16, 20] as const).map((n) => (
+          <svg key={n} viewBox={`0 0 ${n} ${n}`} className="w-full" role="img" aria-label={`${n} px optical master, enlarged`}>
+            <g fill={p.color}>
+              {CONTINUUM_OPTICAL[n].blades.map((b) => (
+                <path key={b.id} d={b.d} />
+              ))}
+            </g>
+          </svg>
         ))}
       </div>
     </Plate>
@@ -303,13 +327,17 @@ function Lockups() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {(["light", "dark"] as const).map((tone) => (
-        <Plate key={tone} tone={tone} label="Lockup at 64, 40 and 24 px; wordmark at 72 px wide (the minimum) and 40 px tall; one path width of clear space dashed">
+        <Plate key={tone} tone={tone} label="Lockup at 64 and 40 px (one drawing), then 28, 24 and 20 px (the optical mark at a whole-pixel height beside the word); wordmark at 40 px tall and 72 px wide (the minimum); one path width of clear space dashed">
           <div className="flex flex-col items-start gap-8">
             <div className="relative max-w-full">
               <AlevrLockup height={64} tone="current" withClearSpace className="h-auto max-w-full" style={{ outline: `1px dashed ${PLATE[tone].rule}` }} />
             </div>
             <AlevrLockup height={40} tone="current" className="h-auto max-w-full" />
-            <AlevrLockup height={24} tone="current" />
+            <div className="flex flex-wrap items-center gap-6">
+              <AlevrLockup height={28} tone="current" />
+              <AlevrLockup height={24} tone="current" />
+              <AlevrLockup height={20} tone="current" />
+            </div>
             <div className="flex items-end gap-8">
               <AlevrWordmark height={40} tone="current" />
               <AlevrWordmark height={Math.round(((72 * ALEVR_WORDMARK.bounds.height) / ALEVR_WORDMARK.bounds.width) * 100) / 100} tone="current" />
@@ -327,7 +355,7 @@ function Glyphs() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {(["light", "dark"] as const).map((tone) => (
-        <Plate key={tone} tone={tone} label="Orbit and Code at their 16, 20 and 24 px masters, then beside their navigation labels at 16 px">
+        <Plate key={tone} tone={tone} label="Orbit and Code at their 16, 20 and 24 px masters (balanced below 24), then the navigation rows at 16 px from the shared icon registry, with Chat and then Orbit selected">
           <div className="flex flex-wrap items-end gap-6">
             {([16, 20, 24] as const).map((s) => (
               <div key={`o${s}`} className="flex flex-col items-center gap-2">
@@ -346,20 +374,24 @@ function Glyphs() {
               </div>
             ))}
           </div>
-          <ul className="mt-6 flex w-56 flex-col gap-0.5 text-ui">
-            <li className="flex h-8 items-center gap-2.5 rounded-lg px-2">
-              <ContinuumMark size={16} tone="current" />
-              Chat
-            </li>
-            <li className="flex h-8 items-center gap-2.5 rounded-lg px-2" style={{ background: tone === "light" ? "#e6e7e9" : "#2d2e31" }}>
-              <OrbitGlyph size={16} />
-              Orbit
-            </li>
-            <li className="flex h-8 items-center gap-2.5 rounded-lg px-2">
-              <CodeGlyph size={16} />
-              Code
-            </li>
-          </ul>
+          {/* The navigation row draws the shared registry (juno-icons): Chat is the open conversation
+              contour (filled when selected), Orbit has no selected form (selection is tonal, on the
+              row), Code is the bracket pair. The Continuum is the brand mark, never an action glyph. */}
+          <div className="mt-6 flex flex-wrap gap-6">
+            {(["chat", "orbit"] as const).map((selected) => (
+              <ul key={selected} className="flex w-48 flex-col gap-0.5 text-ui" aria-label={`Navigation with ${selected} selected`}>
+                {(["chat", "orbit", "code"] as const).map((name) => {
+                  const on = name === selected;
+                  return (
+                    <li key={name} className="flex h-8 items-center gap-2.5 rounded-lg px-2" style={on ? { background: tone === "light" ? "#e6e7e9" : "#2d2e31" } : { color: PLATE[tone].sub }}>
+                      <Icon name={name} size={16} state={on && name === "chat" ? "active" : "rest"} />
+                      {name === "chat" ? "Chat" : name === "orbit" ? "Orbit" : "Code"}
+                    </li>
+                  );
+                })}
+              </ul>
+            ))}
+          </div>
         </Plate>
       ))}
     </div>
@@ -370,14 +402,14 @@ function Glyphs() {
 
 function Icons() {
   // Cache-bust so a re-export shows without a hard reload.
-  const v = "?v=continuum-1";
+  const v = "?v=continuum-2";
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-6">
         {[
-          { src: `/brand/icon-512.png${v}`, label: "Manifest any 512 · icon.png", size: 128 },
+          { src: `/brand/app-icon-mac.png${v}`, label: "macOS: Apple's grid (824 squircle in 1024, standard shadow)", size: 128 },
+          { src: `/brand/icon-512.png${v}`, label: "Manifest any 512", size: 128 },
           { src: `/apple-icon.png${v}`, label: "Apple touch 180 (system rounds it)", size: 128 },
-          { src: `/brand/app-icon-mac.png${v}`, label: "Download page Mac icon", size: 128 },
           { src: `/brand/icon-192.png${v}`, label: "Manifest any 192", size: 96 },
         ].map((i) => (
           <figure key={i.src} className="flex flex-col items-center gap-2">
@@ -391,16 +423,20 @@ function Icons() {
             {/* eslint-disable-next-line @next/next/no-img-element -- the exported file itself is under review */}
             <img src={`/brand/icon-maskable-512.png${v}`} alt="" width={128} height={128} className="size-32" style={{ transform: "scale(1.25)" }} />
           </div>
-          <figcaption className="max-w-36 text-center text-label text-muted-foreground">Maskable 512 under a circle mask (80% safe zone)</figcaption>
+          <figcaption className="max-w-36 text-center text-label text-muted-foreground">Maskable 512 under a circle mask (mark at 52%)</figcaption>
         </figure>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {(["light", "dark"] as const).map((tone) => (
-          <Plate key={tone} tone={tone} label="favicon.ico at its real 16 px, in a tab">
-            <div className="flex items-center gap-2 rounded-t-lg border px-3 py-2" style={{ background: tone === "light" ? "#ffffff" : "#222326", borderColor: PLATE[tone].rule, width: 240 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element -- the real favicon at its real size */}
-              <img src={`/favicon.ico${v}`} alt="" width={16} height={16} />
-              <span className="truncate text-label">Alevr</span>
+          <Plate key={tone} tone={tone} label="In a tab at the real 16 px: icon.svg, the bare mark (Chrome, Firefox, Edge; graphite or pale by the colour scheme), then favicon.ico's hand-drawn 16 px frame (other browsers)">
+            <div className="flex flex-col gap-2">
+              {[`/icon.svg${v}`, `/favicon.ico${v}`].map((src) => (
+                <div key={src} className="flex items-center gap-2 rounded-t-lg border px-3 py-2" style={{ background: tone === "light" ? "#ffffff" : "#222326", borderColor: PLATE[tone].rule, width: 240, colorScheme: tone }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the real tab icon at its real size */}
+                  <img src={src} alt="" width={16} height={16} />
+                  <span className="truncate text-label">{src.startsWith("/icon") ? "Alevr · icon.svg" : "Alevr · favicon.ico"}</span>
+                </div>
+              ))}
             </div>
           </Plate>
         ))}
@@ -421,8 +457,8 @@ const PHASE_WORDS: Record<ThinkingPhase, string> = {
 };
 
 const PHASE_STYLE: Record<ThinkingPhase, CSSProperties> = {
-  thinking: { color: "hsl(var(--foreground))" },
-  working: { color: "hsl(var(--foreground))" },
+  thinking: { color: "hsl(var(--muted-foreground))" },
+  working: { color: "hsl(var(--muted-foreground))" },
   waiting: { color: "hsl(var(--attention))" },
   finished: { color: "hsl(var(--muted-foreground))" },
   error: { color: "hsl(var(--foreground))" },
@@ -442,18 +478,19 @@ function ThinkingBench() {
   const burst = useRef<ReturnType<typeof setInterval> | null>(null);
   const watched = useRef<HTMLDivElement>(null);
 
-  // Count passes as the mark draws them (the <g data-mode="pass"> remounts per pass).
+  // Count passes as the mark starts them (its data-pass counter steps once per pass).
   useEffect(() => {
     const el = watched.current;
     if (!el) return;
-    let last: Element | null = null;
+    let last = "0";
     const check = () => {
-      const g = el.querySelector('[data-mode="pass"]');
-      if (g && g !== last) setPasses((p) => [...p, Math.round(performance.now() - t0.current)]);
-      last = g;
+      const mark = el.querySelector("[data-pass]");
+      const id = mark?.getAttribute("data-pass") ?? "0";
+      if (id !== last && id !== "0") setPasses((p) => [...p, Math.round(performance.now() - t0.current)]);
+      last = id;
     };
     const mo = new MutationObserver(check);
-    mo.observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-mode"] });
+    mo.observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-pass"] });
     return () => mo.disconnect();
   }, []);
 
@@ -476,12 +513,12 @@ function ThinkingBench() {
     setEventKey((k) => k + 1);
     setSent((n) => n + 1);
   };
-  const runBurst = () => {
+  const runBurst = (ms: number) => {
     if (burst.current) clearInterval(burst.current);
     const start = performance.now();
     burst.current = setInterval(() => {
       event();
-      if (performance.now() - start > 3000 && burst.current) {
+      if (performance.now() - start > ms && burst.current) {
         clearInterval(burst.current);
         burst.current = null;
       }
@@ -495,7 +532,8 @@ function ThinkingBench() {
         <Button size="sm" variant="outline" onClick={() => go("thinking")}>Start thinking</Button>
         <Button size="sm" variant="outline" onClick={() => go("working")}>Tool work</Button>
         <Button size="sm" variant="outline" onClick={event} disabled={!pending}>One event</Button>
-        <Button size="sm" variant="outline" onClick={runBurst} disabled={!pending}>Event burst (3 s at 20 Hz)</Button>
+        <Button size="sm" variant="outline" onClick={() => runBurst(3000)} disabled={!pending}>Event burst (3 s at 20 Hz)</Button>
+        <Button size="sm" variant="outline" onClick={() => runBurst(12000)} disabled={!pending}>Steady stream (12 s at 20 Hz)</Button>
         <Button size="sm" variant="outline" onClick={() => go("waiting")}>Waiting</Button>
         <Button size="sm" variant="outline" onClick={() => go("finished")}>Finished</Button>
         <Button size="sm" variant="outline" onClick={() => go("error")}>Error</Button>
@@ -507,20 +545,21 @@ function ThinkingBench() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-ui" aria-live="polite">
+          {/* The row carries the colour; the mark takes it (currentColor), so at rest it is never darker than its words. */}
+          <div className="flex items-center gap-2 text-ui" aria-live="polite" style={PHASE_STYLE[phase]}>
             <ThinkingMark key={`s${run}`} phase={phase} eventKey={eventKey} size={16} reducedMotion={reduced || undefined} />
-            <span style={PHASE_STYLE[phase]}>{PHASE_WORDS[phase]}</span>
+            <span>{PHASE_WORDS[phase]}</span>
           </div>
-          <div className="flex items-center gap-2.5 text-body">
+          <div className="flex items-center gap-2.5 text-body" style={PHASE_STYLE[phase]}>
             <ThinkingMark key={`m${run}`} phase={phase} eventKey={eventKey} size={20} reducedMotion={reduced || undefined} />
-            <span style={PHASE_STYLE[phase]}>{PHASE_WORDS[phase]}</span>
+            <span>{PHASE_WORDS[phase]}</span>
           </div>
           <p className="mt-2 font-mono text-label tabular-nums text-muted-foreground" data-testid="thinking-log">
             phase {phase} · events sent {sent} · passes {passes.length}
             {passes.length ? ` at ${passes.map((t) => `${(t / 1000).toFixed(2)}s`).join(", ")}` : ""}
           </p>
         </div>
-        <div ref={watched} className="flex items-center justify-center rounded-xl border border-border bg-card p-6" data-testid="thinking-large">
+        <div ref={watched} className="flex items-center justify-center rounded-xl border border-border bg-card p-6 text-foreground" data-testid="thinking-large">
           <ThinkingMark key={`l${run}`} phase={phase} eventKey={eventKey} size={96} reducedMotion={reduced || undefined} />
         </div>
       </div>
@@ -536,7 +575,7 @@ export function BrandGallery() {
       <header className="flex flex-col gap-4">
         <AlevrLockup height={44} tone="ink" />
         <p className="max-w-prose text-ui text-muted-foreground">
-          Continuum, rebuilt from the owner-selected raster as four clockwise blades with nodes only at tips and extrema, curvature-continuous joins and a half-unit lattice; optical masters for 16, 20, 24 and 32 px; the outlined Newsreader wordmark; the Orbit and Code glyphs; every exported icon; and the thinking mark. Method and evidence: docs/rework/brand/CONTINUUM_GEOMETRY.md.
+          Continuum, rebuilt from the owner-selected raster as four clockwise blades with nodes only at tips and extrema, curvature-continuous joins and a half-unit lattice; optical masters for 16, 20, 24 and 32 px, chosen by device pixels; the outlined Newsreader wordmark; the Orbit and Code glyphs; every exported icon; and the thinking mark. Method and evidence: docs/rework/brand/CONTINUUM_GEOMETRY.md.
         </p>
       </header>
       <Section id="ladder" title="The mark at size">
@@ -551,22 +590,26 @@ export function BrandGallery() {
           <Construction tone="dark" />
         </div>
       </Section>
-      <Section id="optical" title="Optical masters" note="Below 32 px the master's channels fall under a pixel and the blades fuse. Each optical master opens every channel to its minimum width and leaves the rest of the outline where it was.">
+      <Section id="optical" title="Optical masters" note="Below 32 px the master's channels fall under a pixel and the blades fuse. At 16 and 20 px each blade keeps the master's exact outline and only moves (a translation, a small turn, a slight scale) until every channel opens; at 24 and 32 the edges facing a channel inset. A mark picks its master by device pixels, so a 16 px mark on a 2x screen draws the 32 master.">
         <div className="flex flex-col gap-4">
           <OpticalBench tone="light" />
           <OpticalBench tone="dark" />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <OpticalOutlines tone="light" />
+            <OpticalOutlines tone="dark" />
+          </div>
         </div>
       </Section>
-      <Section id="lockups" title="Wordmark and lockups" note="Upright Newsreader SemiBold, outlined, with optical kerning. The mark stands 1.18 cap heights tall, 1.5 path widths from the word.">
+      <Section id="lockups" title="Wordmark and lockups" note="Upright Newsreader SemiBold, outlined; the A, l and v serifs trimmed so every pair sits at its natural spacing, and every glyph one clean outline. The mark stands 1.10 cap heights tall, 1.5 path widths from the word.">
         <Lockups />
       </Section>
       <Section id="glyphs" title="Orbit and Code" note="Two separated open elliptical arcs in point symmetry (b = a / φ); opposed brackets with an inset cursor. Static, in the V3 icon grammar.">
         <Glyphs />
       </Section>
-      <Section id="icons" title="Application icons and favicon" note="Exported by scripts/brand/export-brand-assets.ts from the same geometry: a charcoal tile with the pale mark at 64% of its width.">
+      <Section id="icons" title="Application icons and favicon" note="Exported by scripts/brand/export-brand-assets.ts from the same geometry: a charcoal tile with the pale mark at 64% of its width (52% when maskable); macOS on Apple's icon grid; the tab icon is the bare mark.">
         <Icons />
       </Section>
-      <Section id="thinking" title="Thinking mark" note="The silhouette never moves. A pass hands presence ink along the blades in order (220 ms per blade, 70 ms apart), once when work starts and again for new real activity, at most once every 1.6 s. Nothing for the first 200 ms; once shown, at least 400 ms. Waiting and error are static; finished settles once.">
+      <Section id="thinking" title="Thinking mark" note="The silhouette never moves. A pass hands presence ink from blade to blade, clockwise: each rises over 120 ms and falls over 220 ms, the next starting as it peaks. Once when work starts, and again for a new real step; a step inside the window is absorbed, and while steps keep coming the window grows from 1.6 to 3.2 to 6.4 s. Nothing for the first 200 ms; once shown, at least 400 ms. Waiting and error are static; finished settles once, from wherever the pass was.">
         <ThinkingBench />
       </Section>
     </main>
