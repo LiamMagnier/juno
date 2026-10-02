@@ -33,7 +33,9 @@ export const UNTRUSTED_CLOSE = `<<<${SENTINEL}_END>>>`;
 /**
  * The system-prompt rule. Constant by construction — see the note above about
  * the cached prefix. Included only on turns where untrusted content can
- * actually appear, so a plain chat keeps its original prefix.
+ * actually appear, so a plain chat keeps its original prefix. Its text lives in
+ * `src/lib/web/untrusted-rule.prompt.ts` (model-facing text, INV-29); the
+ * markers it names are asserted equal to these by `tests/untrusted-content.test.ts`.
  */
 export const UNTRUSTED_CONTENT_RULE = [
   "# Untrusted content",

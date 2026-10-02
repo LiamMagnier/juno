@@ -30,10 +30,17 @@ const MermaidBlock = nextDynamic(
   { ssr: false },
 );
 import { SourceChip } from "@/components/chat/source-chip";
+import { PhraseWithArgs } from "@/lib/i18n-phrase";
 import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
+import { allowedImageKeys, imageDecision } from "@/lib/web/image-policy";
 import type { ClientSource } from "@/types/chat";
 import { fenceMatchesWrittenFile } from "@/lib/chat/tool-receipt";
+
+export const MARKDOWN_COPY = {
+  /** Followed by the image's host: "Image from example.com". */
+  imageFrom: "Image from",
+} as const;
 
 /** Pull the `language-xxx` hint rehype-highlight writes onto the inner <code>. */
 function langOf(children: React.ReactNode): string {
@@ -341,9 +348,8 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
  * source list and asks it to cite as `[1]`/`[2][3]`, so on THAT path a marker maps
  * to `sources[n - 1]` BY POSITION. Those markers become favicon chips.
  *
- * It is the ONLY path with that contract. `buildSearchContext` (web-search.ts) has
- * the same shape but zero call sites — it is dead code, so citing it as
- * justification would be citing something that never runs. On the native-search
+ * It is the ONLY path with that contract (the dead `buildSearchContext` that
+ * had the same shape is gone from web-search.ts). On the native-search
  * paths (Claude/Gemini/xAI provider tools) sources arrive from grounding metadata
  * and the model is never shown an index, so a `[1]` there is coincidental prose and
  * resolving it positionally would attach a confidently WRONG source to a claim.
@@ -655,16 +661,77 @@ export function rangeFromAnchoredText(
   return range;
 }
 
+/*
+ * ---- Images -----------------------------------------------------------------
+ * A markdown image is a request the reader's browser sends as soon as the
+ * answer renders, so a model steered by a page it read could send the user's
+ * data to any host just by writing `![](https://host/?d=…)`. With
+ * `allowedImageUrls`, a remote image loads only when it is one of the URLs the
+ * turn already had (its sources, its tools' pages, its attachments) or Juno's
+ * own; anything else is a link chip that loads nothing until it is clicked.
+ * The decision is `imageDecision` (src/lib/web/image-policy.ts).
+ *
+ * WITHOUT the prop nothing changes: the canvas, shared transcripts and
+ * artifacts, Work, the compare pane and every other caller render images
+ * exactly as before (SPEC §12.1 shim table).
+ */
+/*
+ * Juno's own origin, from the build-time app URL rather than `window.location`,
+ * so the server render and the client's first render make the same decision
+ * (a relative `src` is same-origin on both without it).
+ */
+const APP_ORIGIN = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_APP_URL ? new URL(process.env.NEXT_PUBLIC_APP_URL).origin : null;
+  } catch {
+    return null;
+  }
+})();
+
+function GuardedImage({
+  src,
+  alt,
+  title,
+  allowedKeys,
+}: {
+  src?: string;
+  alt?: string;
+  title?: string;
+  allowedKeys: ReadonlySet<string>;
+}) {
+  const decision = imageDecision(src, allowedKeys, APP_ORIGIN);
+  if (decision.kind === "render") return <img src={src} alt={alt ?? ""} title={title} />;
+  if (decision.kind === "drop") return alt ? <span>{alt}</span> : null;
+  return (
+    <a
+      href={decision.href}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      referrerPolicy="no-referrer"
+      title={alt || undefined}
+      data-image-link=""
+      className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
+    >
+      <PhraseWithArgs spec={{ parts: [{ phrase: MARKDOWN_COPY.imageFrom }, { kind: "domain", value: decision.host }] }} />
+    </a>
+  );
+}
+
 /** One parsed block. Memoized so streamed chunks only re-render the final block. */
 const MarkdownBlock = React.memo(function MarkdownBlock({
   content,
   offset,
   sources,
+  allowedImageKeys: imageKeys,
+  renderCitation,
 }: {
   content: string;
   /** Where this block starts in the message, for the source-offset attributes. */
   offset: number;
   sources?: ClientSource[];
+  /** Present only when the caller passed `allowedImageUrls`. */
+  allowedImageKeys?: ReadonlySet<string>;
+  renderCitation?: (index: number, children: React.ReactNode) => React.ReactNode;
 }) {
   // Positional [n] resolution is licensed ONLY by the numbered-corpus contract,
   // which deep research marks with `cited`. It flags every source it supplies, so
@@ -715,14 +782,25 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
         // carrying `data-cite` out here a chip is indistinguishable from prose
         // when a block's text is read back — and "…rose sharply[3]." comes back
         // as "…rose sharply3.", which matches no claim the audit extracted.
+        const chip = <SourceChip source={source} index={Number(cite)} />;
         return (
-          <span {...{ [CITATION_ATTR]: cite }}>
-            <SourceChip source={source} index={Number(cite)} />
-          </span>
+          <span {...{ [CITATION_ATTR]: cite }}>{renderCitation ? renderCitation(Number(cite), chip) : chip}</span>
         );
       },
+      ...(imageKeys
+        ? {
+            img: ({ node: _node, src, alt, title }) => (
+              <GuardedImage
+                src={typeof src === "string" ? src : undefined}
+                alt={alt}
+                title={title}
+                allowedKeys={imageKeys}
+              />
+            ),
+          }
+        : {}),
     }),
-    [sources],
+    [sources, imageKeys, renderCitation],
   );
   return (
     <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
@@ -737,6 +815,8 @@ export const Markdown = React.memo(function Markdown({
   streaming,
   sources,
   writtenFiles,
+  allowedImageUrls,
+  renderCitation,
 }: {
   content: string;
   className?: string;
@@ -745,6 +825,17 @@ export const Markdown = React.memo(function Markdown({
   sources?: ClientSource[];
   /** Paths this turn wrote (Code). A fence naming one folds to a single line. */
   writtenFiles?: ReadonlySet<string>;
+  /**
+   * When present, a remote image renders only if its URL is in this set (or it
+   * is same-origin, or a `data:` image); any other becomes a link chip that
+   * loads nothing. Absent keeps today's behaviour. See `GuardedImage`.
+   */
+  allowedImageUrls?: ReadonlySet<string>;
+  /**
+   * Wraps each rendered citation chip — the research report's hover card.
+   * `index` is the 1-based marker; `children` is the default chip.
+   */
+  renderCitation?: (index: number, children: React.ReactNode) => React.ReactNode;
 }) {
   // Split FIRST, normalise per block. Whole-document normalisation ran before
   // the split and cost the blocks their offsets: `\(` → `$` shortens the text,
@@ -757,6 +848,10 @@ export const Markdown = React.memo(function Markdown({
     () => splitIntoBlocks(content).map((block) => ({ ...block, text: normalizeMathDelimiters(block.text) })),
     [content],
   );
+  const imageKeys = React.useMemo(
+    () => (allowedImageUrls ? allowedImageKeys(allowedImageUrls) : undefined),
+    [allowedImageUrls],
+  );
   return (
     <StreamingContext.Provider value={!!streaming}>
     <WrittenFilesContext.Provider value={writtenFiles && writtenFiles.size > 0 ? writtenFiles : null}>
@@ -767,6 +862,8 @@ export const Markdown = React.memo(function Markdown({
           content={streaming && i === blocks.length - 1 ? closeDangling(block.text) : block.text}
           offset={block.offset}
           sources={sources}
+          allowedImageKeys={imageKeys}
+          renderCitation={renderCitation}
         />
       ))}
     </div>

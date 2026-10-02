@@ -254,6 +254,42 @@ export function isUrlSafeForToolAccess(urlString: string): boolean {
   return !isDisallowedHost(urlString);
 }
 
+/** Why a chat fetch refuses a URL before any network activity. */
+export type ChatFetchBlockReason = "scheme" | "credentials" | "port" | "private_address" | "own_origin";
+
+/**
+ * The chat fetch policy on one literal URL, with no DNS (SPEC §6.1 step 5).
+ *
+ * Stricter than `isDisallowedHost`, which Research and Work keep as it is:
+ * chat fetches run on every model by default and on URLs a web page chose, so
+ * they are held to the web's two ports and kept off Juno's own origins — the
+ * app itself, the voice relay, a self-hosted SearXNG, the code sandbox. A
+ * public page that redirects to `https://<app host>/api/…` would otherwise be
+ * Juno fetching itself, and `http://public-host:8080` is a service somebody
+ * did not mean to put on the web. The resolved addresses are judged later, by
+ * the pinned transport, on every hop.
+ *
+ * `ownHosts` are lowercase hostnames without a trailing dot or brackets.
+ */
+export function chatFetchBlockReason(rawUrl: string, ownHosts: ReadonlySet<string>): ChatFetchBlockReason | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return "scheme";
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return "scheme";
+  if (url.username || url.password) return "credentials";
+  // `URL` drops a port that is its scheme's default, so "" covers :80 on http
+  // and :443 on https; an explicit :443 on http (or :80 on https) is still one
+  // of the web's two ports.
+  if (url.port !== "" && url.port !== "80" && url.port !== "443") return "port";
+  if (isDisallowedHost(rawUrl)) return "private_address";
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "").replace(/^\[|\]$/g, "");
+  if (ownHosts.has(host) || ownHosts.has(host.replace(/^www\./, ""))) return "own_origin";
+  return null;
+}
+
 /**
  * The dedupe key for a result.
  *
@@ -262,6 +298,11 @@ export function isUrlSafeForToolAccess(urlString: string): boolean {
  * so deduping on the raw string leaves the corpus full of the same page three
  * times, which then reads to the synthesis model as three independent sources
  * corroborating each other. That is the specific failure this prevents.
+ *
+ * Never a provenance key: it deletes `ref`, `source` and `utm_*`, so a URL a
+ * model ADDED `?ref=<secret>` to would compare equal to the one it was shown.
+ * `src/lib/web/url-canon.ts` is the key that may drop information and never
+ * add it.
  */
 export function canonicalUrl(raw: string): string {
   try {
