@@ -72,6 +72,10 @@ export function internalToolErrorText(mayHaveTakenEffect: boolean): string {
     : "The tool failed with an internal error. Try again later or another approach.";
 }
 
+export function tooManyCallsText(limit: number): string {
+  return `Too many calls in one response: only the first ${limit} were considered, and this one was not run. Send it again in your next step if you still need it.`;
+}
+
 export function oversizedResultText(chars: number, limit: number): string {
   return `The tool's output was ${chars} characters long, over the ${limit}-character limit, so it was withheld. Ask for a smaller part of it.`;
 }

@@ -39,6 +39,7 @@ import {
   invalidJsonText,
   oversizedResultText,
   timeoutText,
+  tooManyCallsText,
   toolErrorText,
   unknownToolText,
 } from "@/lib/tools/dispatch.prompt";
@@ -78,6 +79,13 @@ export const FINAL_ROUND_NOTE = `[${PRODUCT_NAME}: this is the last step. Do not
 
 /** Most calls of one parallel group in flight at once (SPEC DECISIONS T5). */
 export const MAX_PARALLEL_CALLS = 4;
+/**
+ * Most calls one response may have considered. A model that emits hundreds of
+ * calls at once (it costs it a few thousand tokens) would otherwise queue
+ * hundreds of rows, approvals and runs on one turn; the rest are answered —
+ * every provider needs a result per call — and nothing of theirs runs.
+ */
+export const MAX_CALLS_PER_ROUND = 32;
 /** A thrown error's message is cut to this before it reaches the model. */
 const ERROR_MESSAGE_CHARS = 2_000;
 /**
@@ -286,7 +294,9 @@ export async function* executeToolBatch(
   let completed = false;
 
   try {
-    const prepared = calls.map((call) => prepare(call, ctx.toolset));
+    const prepared = calls.map((call, i): PreparedCall =>
+      i < MAX_CALLS_PER_ROUND ? prepare(call, ctx.toolset) : { call, ok: false, code: "budget", text: tooManyCallsText(MAX_CALLS_PER_ROUND) },
+    );
     const channel = new EventChannel();
     const results = new Array<BatchResult>(prepared.length);
     const inflight = new Map<string, Promise<void>>();

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MAX_TOOL_RESULT_CHARS, executeToolBatch } from "@/lib/tools/dispatch";
+import { MAX_CALLS_PER_ROUND, MAX_TOOL_RESULT_CHARS, executeToolBatch } from "@/lib/tools/dispatch";
 import { coercePortableArguments, portableArgumentsProblem } from "@/lib/tools/validate";
 import { defineTool, type BatchResult, type ChatToolset, type PortableSchema, type ResolvedTool, type ToolCallInput, type ToolExecuteOptions } from "@/lib/tools/types";
 import { toolCallingVerdict } from "@/lib/model-tool-probe";
@@ -296,4 +296,16 @@ test("probe evidence gathered through another adapter does not verify this turn'
   assert.equal(toolCallingVerdict(evidence, now), "verified");
   assert.equal(toolCallingVerdict(evidence, now, "openai-compatible"), "verified");
   assert.equal(toolCallingVerdict(evidence, now, "openai-responses"), "untested", "Pro mode moves the model onto Responses");
+});
+
+test("a response with hundreds of calls runs a bounded number and answers every one", async () => {
+  const tools = toolset([{ resolved: resolved("lookup", { input: { type: "object", properties: {} } }), run: async (_a, _s, opts) => (opts?.onAuthorized?.(), ok("hit")) }]);
+  const calls = Array.from({ length: 200 }, (_, i) => call("lookup", "{}", i));
+  const { results, events } = await drain(executeToolBatch(calls, new AbortController().signal, { toolset: tools, cache: new Map() }));
+  assert.equal(results.length, 200, "every call is answered");
+  assert.equal(tools.dispatched.length, MAX_CALLS_PER_ROUND);
+  assert.equal(results[MAX_CALLS_PER_ROUND].errorCode, "budget");
+  assert.match(results[199].text, /Too many calls in one response/);
+  const queued = events.filter((e) => e.type === "tool" && e.phase === "status" && e.status === "queued");
+  assert.equal(queued.length, MAX_CALLS_PER_ROUND, "no row is queued for a call that will not run");
 });
