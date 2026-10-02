@@ -612,7 +612,7 @@ export function ApprovalCard({
             <ConnectorMark id={current.connectorId} className="size-4" />
           )}
         </span>
-        <p id={labelId} className={cn("min-w-0 flex-1 text-[15px] leading-[22px]", answerable ? "font-medium text-foreground" : "text-foreground/75")}>
+        <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-foreground/75")}>
           {answerable ? (
             <>
               <NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}
@@ -622,7 +622,7 @@ export function ApprovalCard({
           )}
         </p>
         {!task && !agentConfig && answerable && (
-          <span className="mt-0.5 shrink-0 text-caption text-muted-foreground">{risk.label}</span>
+          <span className="mt-0.5 shrink-0 text-ui text-muted-foreground">{risk.label}</span>
         )}
       </header>
 
@@ -631,9 +631,9 @@ export function ApprovalCard({
         <div className="pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
           {task ? (
             <>
-              <p className="text-ui font-medium leading-relaxed text-foreground">{taskTitle ?? current.preview}</p>
+              <p className="text-nav font-medium text-foreground">{taskTitle ?? current.preview}</p>
               {(teammate || taskEstimate) && (
-                <p className="mt-0.5 text-caption tabular-nums text-muted-foreground">
+                <p className="mt-0.5 text-ui tabular-nums text-muted-foreground">
                   {teammate && (
                     <>
                       To <span className="text-foreground">{teammate}</span>
@@ -650,7 +650,7 @@ export function ApprovalCard({
             </>
           ) : agentConfig ? (
             <>
-              <p className="text-ui leading-relaxed text-foreground">{agentConfigPreview?.headline ?? current.preview}</p>
+              <p className="text-nav text-foreground">{agentConfigPreview?.headline ?? current.preview}</p>
               {agentConfigPreview && agentConfigPreview.changes.length > 0 && (
                 <dl className="mt-1.5 space-y-1">
                   {agentConfigPreview.changes.map((item, idx) => (
@@ -676,23 +676,23 @@ export function ApprovalCard({
             </>
           ) : (
             <>
-              <p className="text-caption text-muted-foreground">
+              <p className="text-ui text-muted-foreground">
                 <span className="font-medium text-foreground">{current.connectorLabel}</span>{" "}
                 <span className="font-mono">{current.toolName}</span>
               </p>
-              <p className="mt-0.5 text-ui leading-relaxed text-foreground">{current.preview}</p>
+              <p className="mt-0.5 text-nav text-foreground">{current.preview}</p>
             </>
           )}
         </div>
 
         {(!task || answerable) && !agentConfig && (
-          <p className="mt-2.5 text-label leading-relaxed text-foreground/75">{task ? taskCopy.description : risk.detail}</p>
+          <p className="mt-2.5 text-ui leading-relaxed text-foreground/75">{task ? taskCopy.description : risk.detail}</p>
         )}
 
         {current.derivedFromUntrusted && (
           // Said in words, beside the payload it is about. The attention ink on
           // the lead only; no tinted box.
-          <p className="mt-2 flex gap-2 text-label leading-relaxed text-foreground/75">
+          <p className="mt-2 flex gap-2 text-ui leading-relaxed text-foreground/75">
             <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--attention))]" aria-hidden="true" />
             <span>
               <NeedsLead>Check this first.</NeedsLead>{" "}
@@ -711,7 +711,7 @@ export function ApprovalCard({
               aria-expanded={detailOpen}
               aria-controls={detailOpen ? detailId : undefined}
               className={cn(
-                "-ml-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-left text-label text-muted-foreground coarse:min-h-11",
+                "-ml-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
                 "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
               )}
             >
@@ -727,9 +727,9 @@ export function ApprovalCard({
             <Collapse open={detailOpen}>
               <div id={detailId} className="pb-1 pt-1.5">
                 {task && taskBrief ? (
-                  <p className="whitespace-pre-wrap break-words text-label leading-relaxed text-foreground">{taskBrief}</p>
+                  <p className="whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground">{taskBrief}</p>
                 ) : detailRows.length === 0 ? (
-                  <p className="text-label leading-relaxed text-muted-foreground">This call sends no arguments.</p>
+                  <p className="text-ui leading-relaxed text-muted-foreground">This call sends no arguments.</p>
                 ) : (
                   <dl className="space-y-1.5">
                     {detailRows.map(([key, value]) => (
@@ -789,7 +789,7 @@ export function ApprovalCard({
           role="status"
           aria-live="polite"
           className={cn(
-            "flex items-start gap-1.5 text-label leading-relaxed",
+            "flex items-start gap-1.5 text-ui leading-relaxed",
             resultText ? "mt-2.5" : "sr-only",
             outcome.kind === "refused" ? "text-foreground" : "text-muted-foreground"
           )}
@@ -801,7 +801,7 @@ export function ApprovalCard({
         </p>
 
         {answerable && !sending && untouched && (
-          <p className="mt-2.5 text-caption text-muted-foreground">
+          <p className="mt-2.5 text-ui text-muted-foreground">
             {expiryLine}
             {remaining !== null && (
               <>

@@ -93,6 +93,7 @@ const ImageEditOverlay = nextDynamic(
   { ssr: false },
 );
 import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
+import { TIMING } from "@/lib/interaction";
 import { AgentFace } from "@/components/agents/agent-face";
 import { useAgentThread } from "@/components/agents/agent-thread-context";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
@@ -1105,18 +1106,31 @@ export const MessageItem = React.memo(function MessageItem({
     return () => window.removeEventListener("juno:edit-last-user-message", handler);
   }, [editOnRequest, canEdit, view.content]);
 
+  // Copy -> check, held for `copiedHold` (INTERACTION_SPEC M11). The check is
+  // drawn only once the clipboard write actually succeeded (MOTION_AND_THINKING:
+  // a local confirmation verifies success); a refusal says so in the tooltip.
+  // A second copy restarts the hold; unmount clears it.
+  const copyTimer = React.useRef<number | null>(null);
+  const [copyFailed, setCopyFailed] = React.useState(false);
+  React.useEffect(() => () => {
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+  }, []);
   const copy = async () => {
     // Stripped, not raw: the stored reply ends in the memory tags the model
     // wrote, and copying an answer must not paste the user's profile with it.
-    await navigator.clipboard.writeText(stripMemoryTags(view.content).trimEnd()).catch(() => {});
-    setCopied(true);
-    // The button is its own receipt — the glyph swaps to a check and the
-    // tooltip reads "Copied" — so no toast: a corner notification for an act
-    // completed under the cursor is a second voice saying the same thing.
-    // Two seconds of dwell: long enough to be seen after the eye has moved
-    // back to the text, short enough that the control is itself again before
-    // anyone wants it twice.
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await navigator.clipboard
+      .writeText(stripMemoryTags(view.content).trimEnd())
+      .then(() => true)
+      .catch(() => false);
+    // The button is its own receipt (the glyph swaps to a check and the
+    // tooltip reads "Copied"), so no toast.
+    setCopied(ok);
+    setCopyFailed(!ok);
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => {
+      setCopied(false);
+      setCopyFailed(false);
+    }, TIMING.copiedHold);
   };
 
   if (isUser) {
@@ -1214,7 +1228,7 @@ export const MessageItem = React.memo(function MessageItem({
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
             <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
-              <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
+              <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
               </IconAction>
               {canEdit && (
@@ -1580,7 +1594,7 @@ export const MessageItem = React.memo(function MessageItem({
                 // The copy glyph cross-fades into a check and back rather than
                 // swapping in a frame — the confirmation is the entire feedback
                 // now that copying raises no toast.
-                <IconAction label={copied ? "Copied" : "Copy"} onClick={copy} shortcut={isLast && !copied ? `${mod}⇧C` : undefined}>
+                <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy} shortcut={isLast && !copied ? `${mod}⇧C` : undefined}>
                   <CopyGlyph copied={copied} />
                 </IconAction>
               )}
