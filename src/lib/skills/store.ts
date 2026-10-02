@@ -40,6 +40,7 @@ import {
 } from "@/lib/work/skill-security";
 import { bundleCounts, parseBundleManifest, skillBundleScanInput, type SkillBundle } from "@/lib/skills/bundle";
 import { loadSkillBundleTar, storeSkillBundle, type SkillBundleColumns } from "@/lib/skills/bundle-store";
+import { consentReasonsOf } from "@/lib/skills/workflow";
 import {
   SKILL_CONTRACT_VERSION,
   emptySkillContract,
@@ -385,7 +386,7 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
     bundle: bundle.scan,
   });
   const permissionDigest = createHash("sha256").update(baseScan.permissionFingerprint).digest("hex");
-  const [previousVersion, consented, headTrust] = await Promise.all([
+  const [previousVersion, sameBytes, headTrust] = await Promise.all([
     prisma.workSkillVersion.findFirst({
       where: { skillId: input.skill.id },
       orderBy: { version: "desc" },
@@ -393,8 +394,8 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
     }),
     bundle.columns
       ? prisma.workSkillVersion.findMany({
-          where: { skillId: input.skill.id, requiresConsent: false, bundleDigest: { not: null } },
-          select: { bundleDigest: true },
+          where: { skillId: input.skill.id, bundleDigest: bundle.columns.bundleDigest },
+          select: { bundleDigest: true, requiresConsent: true, securityScan: true },
         })
       : Promise.resolve([]),
     input.head?.trust !== undefined
@@ -405,7 +406,17 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
   const scriptsNeedConsent = bundleRequiresConsent({
     trust: headTrust?.trust ?? "untrusted",
     bundle: bundle.columns?.bundleManifest ?? null,
-    consentedDigests: new Set(consented.map((row) => row.bundleDigest).filter((digest): digest is string => !!digest)),
+    // Versions of this skill holding the same bytes: consented already (no
+    // second ask), or still waiting on their scripts (the wait carries over).
+    consentedDigests: new Set(
+      sameBytes.filter((row) => !row.requiresConsent).map((row) => row.bundleDigest).filter((digest): digest is string => !!digest)
+    ),
+    pendingDigests: new Set(
+      sameBytes
+        .filter((row) => row.requiresConsent && consentReasonsOf(row.securityScan).includes("scripts"))
+        .map((row) => row.bundleDigest)
+        .filter((digest): digest is string => !!digest)
+    ),
   });
   const consentFor: SkillConsentReason[] = [
     ...(expansion.length > 0 ? (["permissions"] as const) : []),

@@ -488,14 +488,21 @@ export function scanSkillVersion(input: SkillSecurityInput): SkillSecurityScan {
  * code. A bundle already consented to on an earlier version of the same skill
  * (same digest, so byte-identical) does not ask again: an edit to the
  * instructions or a restore carries the files over unchanged.
+ *
+ * A pending review travels with the bytes. Scripts still waiting for consent on
+ * an earlier version (`pendingDigests`) keep waiting on the next one, whatever
+ * the trust says by then: marking an imported skill "written by me" and then
+ * editing a typo must not be a way past reviewing its scripts.
  */
 export function bundleRequiresConsent(input: {
   trust: string;
   bundle: { digest: string; files: readonly { kind: SkillBundleFileKind }[] } | null | undefined;
   consentedDigests: ReadonlySet<string>;
+  pendingDigests?: ReadonlySet<string>;
 }): boolean {
   if (!input.bundle) return false;
   if (!input.bundle.files.some((file) => file.kind === "script")) return false;
-  if (input.trust === "user_authored" || input.trust === "verified") return false;
-  return !input.consentedDigests.has(input.bundle.digest);
+  if (input.consentedDigests.has(input.bundle.digest)) return false;
+  if (input.pendingDigests?.has(input.bundle.digest)) return true;
+  return !(input.trust === "user_authored" || input.trust === "verified");
 }
