@@ -20,10 +20,21 @@ import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
  * it is still a spoken conversation with every rule a spoken conversation has.
  * Joined, the two are byte for byte the instructions every call had before.
  */
+/**
+ * What this call cannot do, said plainly (TOOL_RUNTIME_DESIGN.md §6.12, G18).
+ * The relay carries audio and nothing else: no tool calls, no code, no files,
+ * no browsing. A caller who asks for any of that hears that it happens in the
+ * chat, rather than a voice that describes code as if it had run it.
+ * Recorded in contracts/capabilities/tool-runtime-coverage.json as the
+ * realtime voice row.
+ */
+export const VOICE_TOOL_LIMIT =
+  "In this call you cannot run code or scripts, open or make files, browse, or use any tool. If asked to, say plainly that you can't do that in a voice call and that it can be done in the chat. Never describe code or results as if you had run them.";
+
 // The product's name as src/lib/brand/names.ts spells it (PRODUCT_NAME); this
 // package is built on its own, so the word is restated here.
 const VOICE_IDENTITY = "You are Alevr, a warm, quick-witted voice assistant.";
-const VOICE_SPEECH_RULES = `You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
+const VOICE_SPEECH_RULES = `You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. ${VOICE_TOOL_LIMIT} It is fine to be interrupted mid-sentence — just pick up naturally.`;
 const VOICE_INSTRUCTIONS = `${VOICE_IDENTITY} ${VOICE_SPEECH_RULES}`;
 const VOICE_INPUT_MAX_CHARS = 4_000;
 
