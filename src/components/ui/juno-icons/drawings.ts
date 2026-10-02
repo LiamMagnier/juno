@@ -761,7 +761,7 @@ const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => keyline({ v
 /* Redrawn 2026-10-02 on Lucide's geometry (ISC), placed on the construction
    grid so the keyline projects it back to the reference size, and drawn in the
    house line. The owner rejected the earlier marks for these navigation glyphs. */
-const CHAT_BUBBLE = "M20.889 16.444A1.778 1.778 0 0 1 19.111 18.222L7.403 18.222A1.778 1.778 0 0 0 6.146 18.743L4.188 20.7A0.631 0.631 0 0 1 3.111 20.254L3.111 5.778A1.778 1.778 0 0 1 4.889 4L19.111 4A1.778 1.778 0 0 1 20.889 5.778Z";
+const CHAT_BUBBLE = "M8.444 4.889L15.556 4.889A4.444 4.444 0 0 1 20 9.333L20 12.889A4.444 4.444 0 0 1 15.556 17.333L10.756 17.333L7.289 19.822A0.578 0.578 0 0 1 6.4 19.378L6.4 17.067A4.444 4.444 0 0 1 4 12.889L4 9.333A4.444 4.444 0 0 1 8.444 4.889Z";
 const NEW_CHAT_PEN = "M17.667 3.667A0.889 0.889 0 0 1 20.333 6.333L12.322 14.346A1.778 1.778 0 0 1 11.564 14.795L9.01 15.541A0.444 0.444 0 0 1 8.459 14.99L9.205 12.436A1.778 1.778 0 0 1 9.655 11.679Z";
 const FOLDER_SHUT = "M19.111 19.111A1.778 1.778 0 0 0 20.889 17.333L20.889 8.444A1.778 1.778 0 0 0 19.111 6.667L12.089 6.667A1.778 1.778 0 0 1 10.587 5.867L9.867 4.8A1.778 1.778 0 0 0 8.382 4L4.889 4A1.778 1.778 0 0 0 3.111 5.778L3.111 17.333A1.778 1.778 0 0 0 4.889 19.111Z";
 const LIBRARY_LEAN = "M19.467 18.133C19.644 18.578 19.378 19.111 18.933 19.289L17.244 19.911C16.8 20.089 16.267 19.822 16.089 19.378L11.2 5.867C11.022 5.422 11.289 4.889 11.733 4.711L13.422 4.089C13.867 3.911 14.4 4.178 14.578 4.622Z";
@@ -778,7 +778,7 @@ export const ICONS = {
     elements: [p(CHAT_BUBBLE)],
     fill: [solid(CHAT_BUBBLE)],
     on: { kind: "fill" },
-    hover: { s: 1.06, o: [3.111, 20.7], anim: "pop" },
+    hover: { s: 1.06, o: [6.4, 19.8], anim: "pop" },
     motion: "The bubble speaks: a small pop from the tail.",
   }),
   orbit: I({
@@ -798,7 +798,7 @@ export const ICONS = {
   "new-chat": I({
     group: "Navigation",
     elements: [
-      p("M12 4L5.778 4A1.778 1.778 0 0 0 4 5.778L4 18.222A1.778 1.778 0 0 0 5.778 20L18.222 20A1.778 1.778 0 0 0 20 18.222L20 12"),
+      p("M12 4.444L8.444 4.444A4 4 0 0 0 4.444 8.444L4.444 15.556A4 4 0 0 0 8.444 19.556L15.556 19.556A4 4 0 0 0 19.556 15.556L19.556 12"),
       g([p(NEW_CHAT_PEN)], { r: -8, o: [9, 15] }),
     ],
     motion: "A new chat is a page with a pen on it. The pen tips as if starting to write.",

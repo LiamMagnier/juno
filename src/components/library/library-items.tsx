@@ -434,36 +434,40 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
   const when = libraryWhen(entry.at);
   const external = Boolean(entry.file || entry.made?.kind === "deliverable");
   return (
-    <div className="group/tile relative flex min-w-0 flex-col gap-2.5">
+    /*
+     * ONE CARD PER ITEM (owner: "the way the name, date and icons are placed
+     * doesn't look good"). The miniature, the name and one quiet line of
+     * type and date share a single quiet card, the whole card is the target,
+     * and the chat link waits for the pointer instead of sitting on every
+     * tile. The miniature runs flush to the card's top edge, so its corners
+     * are the card's own (no inner radius to keep concentric).
+     */
+    <div className="group/tile surface-raised relative flex h-full min-w-0 flex-col overflow-hidden rounded-card transition-[transform,box-shadow] duration-base ease-out-soft hover:-translate-y-px hover:shadow-raised-lg motion-reduce:hover:translate-y-0">
       <a
         href={entry.href}
         {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
         aria-label={`Open ${entry.title}, ${entry.type}, ${when}`}
-        className="relative block aspect-[4/3] overflow-hidden rounded-control bg-muted transition-colors duration-fast ease-out-soft hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:bg-card dark:hover:bg-accent"
-      >
+        className="absolute inset-0 z-[1] rounded-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      />
+      <div className="relative aspect-[4/3] overflow-hidden border-b border-foreground/[0.06] bg-background dark:border-white/[0.06]">
         <EntryPreview entry={entry} />
-      </a>
+      </div>
       <EntryMenu
         entry={entry}
         actions={actions}
-        className="absolute right-1.5 top-1.5 rounded-control bg-background/90 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 [&:has([data-state=open])]:opacity-100"
+        className="absolute right-2 top-2 z-[2] rounded-control bg-background/90 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 [&:has([data-state=open])]:opacity-100"
       />
-      <div className="flex min-w-0 flex-col gap-1 px-0.5">
-        <a
-          href={entry.href}
-          {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
-          tabIndex={-1}
-          className="grid grid-cols-[16px_minmax(0,1fr)] items-start gap-2 text-ui leading-5 text-foreground [&:hover>span]:underline [&:hover>span]:decoration-border [&:hover>span]:underline-offset-[3px]"
-        >
-          <TypeGlyph type={entry.type} className="mt-0.5" />
-          <span className="line-clamp-2 [overflow-wrap:anywhere]">{entry.title}</span>
-        </a>
-        <span className="flex min-w-0 items-center gap-1.5 pl-6 text-caption leading-[18px] text-muted-foreground">
-          {entry.made?.agent ? <MadeBy entry={entry} comma /> : null}
+      <div className="flex min-w-0 flex-col gap-1 px-3 pb-3 pt-2.5">
+        <span className="truncate text-ui font-medium leading-5 text-foreground">{entry.title}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-caption leading-[18px] text-muted-foreground">
+          <TypeGlyph type={entry.type} className="size-3.5 shrink-0" />
+          <span className="truncate">{entry.made?.agent ? <MadeBy entry={entry} /> : entry.type}</span>
+          <span aria-hidden="true">·</span>
           <span className="shrink-0 tabular-nums">{when}</span>
-          <ChatLink entry={entry} />
+          <span className="relative z-[2] ml-auto opacity-0 transition-opacity duration-fast ease-out-soft group-hover/tile:opacity-100 focus-within:opacity-100 coarse:opacity-100">
+            <ChatLink entry={entry} />
+          </span>
         </span>
-        <EntryProblem entry={entry} />
       </div>
     </div>
   );
@@ -559,7 +563,6 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
           >
             {entry.title}
           </a>
-          <EntryProblem entry={entry} />
         </span>
       </span>
       <span role="cell" className="hidden truncate @[48rem]/page:block">{entry.type}</span>

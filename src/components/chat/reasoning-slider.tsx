@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { ChevronRight, RotateCcw, Zap } from "@/components/ui/icons";
 import type { ReasoningOption } from "@/lib/model-metrics";
 import {
   Tooltip,
@@ -70,6 +71,19 @@ const atStop = (i: number, count: number) => {
   return `calc(${(t * 100).toFixed(4)}% + ${(THUMB / 2 - t * THUMB).toFixed(3)}px)`;
 };
 
+/**
+ * The effort panel's surroundings, supplied by the model chip's popover: the
+ * model's name (pressing it opens the model list in the same popover).
+ */
+export const EffortPanelContext = React.createContext<{ modelName: string; onOpenModels: () => void } | null>(null);
+
+const PANEL_THUMB = 40;
+/** Where stop `i` of `count` sits on the panel track (4px inset at each end). */
+const panelStop = (i: number, count: number) => {
+  const t = count > 1 ? i / (count - 1) : 0;
+  return `calc(${(t * 100).toFixed(4)}% + ${(PANEL_THUMB / 2 + 4 - t * (PANEL_THUMB + 8)).toFixed(3)}px)`;
+};
+
 export function ReasoningSlider({
   options,
   value,
@@ -80,7 +94,13 @@ export function ReasoningSlider({
   onFastModeChange,
   proMode = false,
   onProModeChange,
+  defaultValue,
+  variant = "inline",
 }: {
+  /** The model's own default rung, for the panel's reset. */
+  defaultValue?: ReasoningOption["value"];
+  /** `panel`: OpenAI's thinking-time popover (the owner's reference). */
+  variant?: "inline" | "panel";
   options: ReasoningOption[];
   value: ReasoningOption["value"];
   onChange: (value: ReasoningOption["value"]) => void;
@@ -97,6 +117,21 @@ export function ReasoningSlider({
   const current = options[index];
 
   if (count < 2) return null;
+
+  if (variant === "panel") {
+    return (
+      <EffortPanel
+        options={options}
+        index={index}
+        onChange={onChange}
+        disabled={disabled}
+        className={className}
+        fastMode={fastMode}
+        onFastModeChange={onFastModeChange}
+        defaultValue={defaultValue}
+      />
+    );
+  }
 
   const head = atStop(index, count);
   return (
@@ -255,5 +290,136 @@ function ModeChip({
       </TooltipTrigger>
       <TooltipContent>{help}</TooltipContent>
     </Tooltip>
+  );
+}
+
+
+/**
+ * OpenAI's thinking-time panel, in Alevr's materials: the rung named large in
+ * the middle with the model under it (press it to change model), Flash on the
+ * left, reset on the right, and a thick pill track with one stop per rung and
+ * a 40px thumb that travels on the compositor.
+ */
+function EffortPanel({
+  options,
+  index,
+  onChange,
+  disabled,
+  className,
+  fastMode,
+  onFastModeChange,
+  defaultValue,
+}: {
+  options: ReasoningOption[];
+  index: number;
+  onChange: (value: ReasoningOption["value"]) => void;
+  disabled?: boolean;
+  className?: string;
+  fastMode: boolean;
+  onFastModeChange?: (value: boolean) => void;
+  defaultValue?: ReasoningOption["value"];
+}) {
+  const panel = React.useContext(EffortPanelContext);
+  const count = options.length;
+  const current = options[index];
+  const head = panelStop(index, count);
+  const canReset = defaultValue !== undefined && current?.value !== defaultValue;
+  const iconButton =
+    "pressable grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:size-11";
+  return (
+    <div className={cn("select-none", className)}>
+      <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-2">
+        {onFastModeChange ? (
+          <button
+            type="button"
+            aria-pressed={fastMode}
+            aria-label={fastMode ? "Flash on: faster replies" : "Flash: faster replies"}
+            title="Flash: prefer faster generation"
+            disabled={disabled}
+            onClick={() => onFastModeChange(!fastMode)}
+            className={cn(iconButton, fastMode && "bg-foreground text-background hover:bg-foreground/90 hover:text-background")}
+          >
+            <Zap className="size-4" />
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="flex min-w-0 flex-col items-center">
+          <span key={current?.label} className="text-heading font-medium text-foreground motion-safe:animate-fade-in">
+            {current?.label}
+          </span>
+          {panel ? (
+            <button
+              type="button"
+              onClick={panel.onOpenModels}
+              className="group inline-flex max-w-full items-center gap-0.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+            >
+              <span className="truncate" translate="no">{panel.modelName}</span>
+              <ChevronRight className="size-3.5 shrink-0 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          aria-label="Reset to the model's default"
+          title="Reset to the model's default"
+          disabled={disabled || !canReset}
+          onClick={() => defaultValue !== undefined && onChange(defaultValue)}
+          className={iconButton}
+        >
+          <RotateCcw className="size-4" />
+        </button>
+      </div>
+
+      <div className={cn("relative mt-4 h-12 w-full", disabled && "opacity-55")}>
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.07] dark:bg-white/[0.08]">
+          <div
+            className={cn(
+              "absolute inset-0 rounded-full bg-foreground/85 transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none",
+              index === 0 && "opacity-0",
+            )}
+            style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2}px))` }}
+          />
+        </div>
+        {options.map((option, i) => (
+          <span
+            key={`panel-stop-${option.value}-${option.label}`}
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
+              i < index ? "bg-background/55" : i === index ? "bg-transparent" : "bg-foreground/25"
+            )}
+            style={{ left: panelStop(i, count) }}
+          />
+        ))}
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
+          <div
+            className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+            style={{ transform: `translateX(${head})` }}
+          >
+            <div className="absolute left-0 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.18),0_4px_12px_rgb(0_0_0/0.12)]" />
+          </div>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={count - 1}
+          step={1}
+          value={index}
+          disabled={disabled}
+          aria-label="Thinking effort"
+          aria-valuetext={current?.label ?? String(index)}
+          onChange={(event) => {
+            const next = options[Number(event.target.value)];
+            if (next) onChange(next.value);
+          }}
+          className="peer absolute inset-0 m-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-foreground/20 transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
+        />
+      </div>
+    </div>
   );
 }

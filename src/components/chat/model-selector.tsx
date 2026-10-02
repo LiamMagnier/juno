@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
-import { ChevronDown, ChevronRight, LayoutGrid, Lock } from "@/components/ui/icons";
+import { ArrowLeft, ChevronDown, ChevronRight, LayoutGrid, Lock } from "@/components/ui/icons";
+import { EffortPanelContext } from "@/components/chat/reasoning-slider";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { menuGlyphInkClass, menuRowClass, menuSeparatorClass } from "@/components/ui/menu-recipe";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -338,6 +339,8 @@ export function ModelSelector({
   const plan = quota.plan;
   /** Stage one: the menu the composer chip opens. */
   const [open, setOpen] = React.useState(false);
+  /** With an effort control the chip opens on Thinking; the model name inside switches to the list. */
+  const [view, setView] = React.useState<"effort" | "models">("effort");
   /** Stage two: the catalogue, opened from "More models". */
   const [pickerOpen, setPickerOpen] = React.useState(false);
   /**
@@ -435,7 +438,7 @@ export function ModelSelector({
       // usual one, one chevron. No logo, no pill, no border.
       className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", layer && "composer-model-chip")}
     >
-      {current && !layer ? <ModelMark model={current} className="size-3.5 sm:size-4" /> : null}
+      {current ? <ModelMark model={current} className="size-4" /> : null}
       <span
         key={current?.id ?? "no-model"}
         aria-hidden="true"
@@ -461,6 +464,7 @@ export function ModelSelector({
             open={open && !disabled}
             onOpenChange={(next) => {
               if (next) {
+                setView(thinking ? "effort" : "models");
                 // The one place the catalogue chunk can be fetched for free:
                 // the row that opens it is inside the menu this opens.
                 prefetchCatalogue();
@@ -482,24 +486,50 @@ export function ModelSelector({
               // In the composer it is capped to the room on its side, so a
               // short window scrolls the list rather than covering the draft.
               className={cn(
-                "w-72 rounded-menu p-1",
-                layer && "w-[min(21.5rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain",
+                "rounded-menu",
+                thinking && view === "effort"
+                  ? "w-[min(22rem,calc(100vw-1.5rem))] p-4"
+                  : cn(
+                      "w-72 p-1.5",
+                      layer && "w-[min(21.5rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain",
+                    ),
               )}
               // Radix makes the content a dialog; a dialog needs a name.
-              aria-label="Model"
+              aria-label={thinking && view === "effort" ? "Thinking" : "Model"}
               // The menu places focus itself (see `initialFocus`).
               onOpenAutoFocus={(event) => event.preventDefault()}
             >
-              <ModelQuickMenu
-                models={quickModels}
-                showAuto={showAuto}
-                value={value}
-                isLocked={(m) => isModelLocked(m, plan)}
-                onPick={select}
-                onMore={openCatalogue}
-                thinking={thinking}
-                initialFocus={openedWith === "pointer" ? "menu" : "checked"}
-              />
+              {thinking && view === "effort" ? (
+                <div key="effort" className="motion-safe:animate-fade-in">
+                  <EffortPanelContext.Provider
+                    value={{ modelName: current?.name ?? "Model", onOpenModels: () => setView("models") }}
+                  >
+                    {thinking}
+                  </EffortPanelContext.Provider>
+                </div>
+              ) : (
+                <div key="models" className="motion-safe:animate-fade-in">
+                  {thinking ? (
+                    <button
+                      type="button"
+                      onClick={() => setView("effort")}
+                      className={cn(menuRowClass, "w-full text-left text-muted-foreground hover:bg-accent hover:text-foreground")}
+                    >
+                      <ArrowLeft className="size-4" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate">Thinking</span>
+                    </button>
+                  ) : null}
+                  <ModelQuickMenu
+                    models={quickModels}
+                    showAuto={showAuto}
+                    value={value}
+                    isLocked={(m) => isModelLocked(m, plan)}
+                    onPick={select}
+                    onMore={openCatalogue}
+                    initialFocus={openedWith === "pointer" ? "menu" : "checked"}
+                  />
+                </div>
+              )}
             </PopoverContent>
           </Popover>
       </AnchorSpan>

@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
-import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
@@ -143,12 +142,12 @@ function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
 }
 
 /** The app's mark on a tone step: brand marks keep their own colours. */
-function AppLogo({ item, size = "row" }: { item: DirectoryItem; size?: "row" | "sheet" }) {
+function AppLogo({ item }: { item: DirectoryItem; size?: "row" | "sheet" }) {
   return (
     <span
       className={cn(
         "flex shrink-0 items-center justify-center overflow-hidden text-muted-foreground",
-        size === "row" ? "size-9 rounded-control bg-muted dark:bg-card" : "size-10 rounded-control bg-muted dark:bg-card",
+        "size-10 rounded-field border border-foreground/[0.07] bg-card dark:border-white/[0.08]",
       )}
     >
       {item.source === "custom" ? (
@@ -156,10 +155,10 @@ function AppLogo({ item, size = "row" }: { item: DirectoryItem; size?: "row" | "
           {monogram(item.label)}
         </span>
       ) : item.source === "native" ? (
-        <ConnectorMark id={item.id} className="size-5" />
+        <ConnectorMark id={item.id} className="size-[22px]" />
       ) : item.logo ? (
         // eslint-disable-next-line @next/next/no-img-element -- a provider logo from the catalog; no optimiser route for third-party hosts
-        <img src={item.logo} alt="" className="size-5 object-contain" loading="lazy" />
+        <img src={item.logo} alt="" className="size-[22px] object-contain" loading="lazy" />
       ) : (
         <Plug className="size-[18px]" />
       )}
@@ -233,8 +232,8 @@ function ConnectorTile({
     <>
       <AppLogo item={item} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-ui font-medium leading-5 text-foreground">{item.label}</span>
-        <span className="truncate text-ui leading-[18px] text-muted-foreground">{line}</span>
+        <span className="truncate text-body font-medium leading-6 text-foreground">{item.label}</span>
+        <span className="truncate text-ui leading-5 text-muted-foreground">{line}</span>
       </span>
     </>
   );
@@ -255,14 +254,14 @@ function ConnectorTile({
           type="button"
           onClick={onOpen}
           aria-haspopup="dialog"
-          className="-mx-2.5 flex min-h-[60px] w-[calc(100%+1.25rem)] items-center gap-3.5 rounded-control px-2.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+          className="-mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-field px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/60 active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
         >
           {body}
           <span className={cn("shrink-0 text-ui", status === "Couldn’t reach it" ? "text-foreground" : "text-muted-foreground")}>{status}</span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>
       ) : (
-        <div className="-mx-2.5 flex min-h-[60px] items-center gap-3.5 px-2.5 py-2">
+        <div className="group/row -mx-3 flex min-h-[68px] items-center gap-3.5 rounded-field px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
           {body}
           {needsSetup ? (
             <Tooltip>
@@ -284,16 +283,29 @@ function ConnectorTile({
               Connecting
             </span>
           ) : (
-            <Button size="sm" variant="secondary" disabled={busy} loading={busy} onClick={onConnect} className="h-7 shrink-0 rounded-full px-3 coarse:h-10">
-              {custom ? (
-                <>
-                  <KeyRound className="size-3.5" aria-hidden="true" />
-                  Sign in
-                </>
-              ) : (
-                "Connect"
-              )}
-            </Button>
+            custom ? (
+              <Button size="sm" variant="secondary" disabled={busy} loading={busy} onClick={onConnect} className="h-7 shrink-0 rounded-full px-3 coarse:h-10">
+                <KeyRound className="size-3.5" aria-hidden="true" />
+                Sign in
+              </Button>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={busy}
+                    loading={busy}
+                    onClick={onConnect}
+                    aria-label={`Connect ${item.label}`}
+                    className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground coarse:size-11"
+                  >
+                    <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover/row:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Connect</TooltipContent>
+              </Tooltip>
+            )
           )}
         </div>
       )}
@@ -317,7 +329,7 @@ function TileGrid({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className="grid grid-cols-1 gap-x-12 gap-y-1 @[40rem]/page:grid-cols-2">
       {items.map((item) => (
         <ConnectorTile
           key={item.key}
@@ -333,7 +345,26 @@ function TileGrid({
   );
 }
 
+/** A Composio catalog entry as a directory row. */
+function catalogToItem(a: CatalogItem): DirectoryItem {
+  return {
+    key: `composio:${a.slug}`,
+    source: "composio",
+    id: a.id,
+    slug: a.slug,
+    label: appLabel(a),
+    description: a.noAuth ? "Ready without sign-in" : "Available to connect",
+    logo: a.logo,
+    connected: a.connected,
+    connecting: a.connecting,
+    configured: true,
+    noAuth: a.noAuth,
+    managedAuth: a.managedAuth,
+  };
+}
+
 export function ConnectorDirectory({
+  headerAction,
   connectors,
   composioConfigured,
   enabled,
@@ -349,6 +380,8 @@ export function ConnectorDirectory({
   onConnectCustom,
   landedId = null,
 }: {
+  /** Shown beside the search field (the page Add button). */
+  headerAction?: React.ReactNode;
   connectors: ConnectorStatus[];
   composioConfigured: boolean;
   /**
@@ -511,24 +544,44 @@ export function ConnectorDirectory({
       apps
         // Drop Composio's copy of an app Juno integrates natively.
         .filter((a) => !NATIVE_EQUIVALENT[a.slug])
-        .map((a) => ({
-          key: `composio:${a.slug}`,
-          source: "composio" as const,
-          id: a.id,
-          slug: a.slug,
-          label: appLabel(a),
-          description: a.noAuth ? "Ready without sign-in" : "Available to connect",
-          logo: a.logo,
-          connected: a.connected,
-          connecting: a.connecting,
-          configured: true,
-          noAuth: a.noAuth,
-          managedAuth: a.managedAuth,
-        })),
+        .map((a) => catalogToItem(a)),
     [apps]
   );
 
   const q = query.trim().toLowerCase();
+
+  /**
+   * THE OVERVIEW IS SECTIONED (ChatGPT's Plugins page, the owner's reference):
+   * with no search and no category picked, the directory shows a few apps per
+   * category under a heading that opens the whole category, instead of one
+   * flat list of a thousand toolkits. Each section is the first page of that
+   * category, fetched in parallel once the category list is known.
+   */
+  const overview = !q && !activeCategory && filter === "all" && composioConfigured;
+  const sectionIds = React.useMemo(() => categories.slice(0, 6).map((c) => c.id).join(","), [categories]);
+  const [sections, setSections] = React.useState<{ category: Category; items: CatalogItem[] }[]>([]);
+  React.useEffect(() => {
+    if (!overview || !sectionIds) return;
+    const controller = new AbortController();
+    const picked = categories.slice(0, 6);
+    void Promise.all(
+      picked.map((category) =>
+        fetch(`/api/connectors/composio/catalog?category=${encodeURIComponent(category.id)}`, { signal: controller.signal })
+          .then((r) => (r.ok ? (r.json() as Promise<CatalogResponse>) : { items: [] }))
+          .then((data) => ({
+            category,
+            items: (data.items ?? []).filter((a) => !NATIVE_EQUIVALENT[a.slug] && !a.connected).slice(0, 6),
+          }))
+          .catch(() => ({ category, items: [] as CatalogItem[] }))
+      )
+    ).then((result) => {
+      if (!controller.signal.aborted) setSections(result.filter((section) => section.items.length > 0));
+    });
+    return () => controller.abort();
+    // `categories` is read through `sectionIds`, its stable key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overview, sectionIds]);
+
   const items = React.useMemo(() => {
     // Composio items arrive already searched and category-filtered by the API;
     // the native handful and user MCP rows are matched here so one keystroke
@@ -596,48 +649,40 @@ export function ConnectorDirectory({
     ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
     : null;
 
-  const sectionLabel = "mb-1 flex gap-1.5 text-ui font-medium text-muted-foreground";
+  const sectionLabel = "mb-3 flex items-baseline gap-2 text-title font-medium text-foreground";
 
   return (
     <section>
-      <label className="relative block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-        <Input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search apps"
-          aria-label="Search apps"
-          className="h-9 pl-9"
-        />
-      </label>
+      {/* ChatGPT's Plugins header: one large rounded search, the Add button
+          beside it, and no chip row; a category is opened from its section. */}
+      <div className="flex items-center gap-2">
+        <label className="relative block min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search apps"
+            aria-label="Search apps"
+            className="h-11 rounded-full pl-11 text-body"
+          />
+        </label>
+        {headerAction}
+      </div>
 
-      {/* Composio has about a thousand toolkits; categories are what stands between a
-          person and an endless list, so they stay, as a quiet row that scrolls. */}
-      {categories.length > 0 && (
-        <div
-          role="group"
-          aria-label="Filter by category"
-          className="-mx-1 mt-2 flex gap-1 overflow-x-auto px-1 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <Pressable kind="chip" size="lg" selected={!category} aria-pressed={!category} onClick={() => setCategory(null)}>
-            All
-          </Pressable>
-          {categories.map((c) => (
-            <Pressable
-              key={c.id}
-              kind="chip"
-              size="lg"
-              selected={category === c.id}
-              aria-pressed={category === c.id}
-              onClick={() => setCategory(category === c.id ? null : c.id)}
-              className="shrink-0 whitespace-nowrap"
-            >
-              {c.label}
-            </Pressable>
-          ))}
+      {activeCategory ? (
+        <div className="mt-8 flex items-center gap-2 motion-safe:animate-fade-in">
+          <button
+            type="button"
+            onClick={() => setCategory(null)}
+            aria-label="All apps"
+            className="pressable grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+          >
+            <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
+          </button>
+          <h2 className="text-title font-medium text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
         </div>
-      )}
+      ) : null}
 
       <div className="mt-6">
         {!composioConfigured && canConfigureServer && <ComposioSetupCallout />}
@@ -667,7 +712,39 @@ export function ConnectorDirectory({
           </div>
         )}
 
-        {(availableItems.length > 0 || loading || addTile) && (
+        {overview && sections.length > 0 ? (
+          <>
+            {registryItems.some((i) => !i.connected) && (
+              <div className={cn(connectedItems.length > 0 && "mt-10")}>
+                <h2 className="mb-3 text-title font-medium text-foreground">Built in</h2>
+                <TileGrid items={registryItems.filter((i) => !i.connected)} {...gridProps} />
+              </div>
+            )}
+            {sections.map((section, sectionIndex) => (
+              <div
+                key={section.category.id}
+                className="mt-10 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                style={{ animationDelay: `${Math.min(sectionIndex, 5) * 60}ms` }}
+              >
+                <h2 className="mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setCategory(section.category.id)}
+                    className="group inline-flex items-center gap-1 text-title font-medium text-foreground"
+                  >
+                    {section.category.label}
+                    <ChevronRight
+                      aria-hidden="true"
+                      className="size-4 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+                    />
+                  </button>
+                </h2>
+                <TileGrid items={section.items.map(catalogToItem)} {...gridProps} />
+              </div>
+            ))}
+            {addTile && <div className="mt-10">{addTile}</div>}
+          </>
+        ) : (availableItems.length > 0 || loading || addTile) && (
           <div className={cn(connectedItems.length > 0 && "mt-8")}>
             <h2 className={sectionLabel}>{connectedItems.length > 0 ? "More apps" : "Apps you can connect"}</h2>
             <TileGrid items={availableItems} {...gridProps} trailing={<>{skeletons}{addTile}</>} />

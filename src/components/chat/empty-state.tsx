@@ -1,6 +1,7 @@
 "use client";
 
 import { useApp } from "@/components/app/app-provider";
+import { IncognitoGlyph } from "@/components/chat/incognito-glyph";
 
 /**
  * The home's one line (V3 gallery, home scene): upright Newsreader at its
@@ -24,16 +25,16 @@ export function EmptyGreeting() {
  *  one still headline for another. */
 export function PrivateGreeting() {
   return (
-    <div className="flex w-full flex-col items-center gap-2 text-center">
-      <h1 className="font-sans text-page-title">
-        You&apos;re incognito
-      </h1>
-      {/* On the scale, not Tailwind's stock rungs: `text-body` is the same 24px
-          line box `text-sm leading-6` was building by hand, and `body-lg` is the
-          rung `text-base` was standing next to. */}
-      <p className="max-w-md text-body-lg text-muted-foreground">
-        Chats aren&apos;t saved, added to memory, or used to train models.
-      </p>
+    <div className="flex w-full flex-col items-center gap-4 text-center">
+      <span className="grid size-14 place-items-center rounded-full bg-foreground text-background">
+        <IncognitoGlyph className="size-7" strokeWidth={1.5} />
+      </span>
+      <div className="flex flex-col items-center gap-1.5">
+        <h1 className="font-serif text-page-title font-normal text-foreground">Incognito chat</h1>
+        <p className="max-w-md text-body text-muted-foreground">
+          This chat won&apos;t appear in your history, won&apos;t be added to memory, and isn&apos;t used to train models.
+        </p>
+      </div>
     </div>
   );
 }

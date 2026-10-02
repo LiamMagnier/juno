@@ -29,6 +29,7 @@ import { PLANS } from "@/lib/plans";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { formatBytes } from "@/lib/utils";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { Pressable } from "@/components/ui/pressable";
 
 /*
  * The Library: one place for what Alevr made and the files you gave it
@@ -43,7 +44,16 @@ import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
  * the file manager (`?view=files`), one press away from the Files filter.
  */
 
-type Show = "all" | "made" | "files";
+type Show = "all" | "made" | "files" | "media";
+type MediaKind = "all" | "image" | "video" | "audio";
+
+/** Pictures, video and sound: what the Media filter holds and Files leaves out. */
+function mediaKindOf(mimeType: string): Exclude<MediaKind, "all"> | null {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return null;
+}
 
 const VIEW_STORAGE_KEY = "juno-library-home-view";
 const SEARCH_DEBOUNCE_MS = 200;
@@ -140,11 +150,14 @@ function useDeletedCount() {
 export function LibraryHome() {
   const { quota } = useApp();
   const [show, setShow] = React.useState<Show>("all");
+  const [mediaKind, setMediaKind] = React.useState<MediaKind>("all");
+  /** Files and Media are both the uploaded files, split by type; neither shows made items. */
+  const filesOnly = show === "files" || show === "media";
   const [view, setView] = React.useState<"grid" | "list">("grid");
   const [query, setQuery] = React.useState("");
   const q = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
   const files = useLibrary({ q, kind: "all", sort: "newest", deleted: false });
-  const made = useMade(q, show !== "files");
+  const made = useMade(q, !filesOnly);
   const deletedCount = useDeletedCount();
   const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
   const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
@@ -159,7 +172,7 @@ export function LibraryHome() {
     }
     const params = new URLSearchParams(window.location.search);
     const wanted = params.get("show");
-    if (wanted === "made" || wanted === "files") setShow(wanted);
+    if (wanted === "made" || wanted === "files" || wanted === "media") setShow(wanted);
     if (params.get("upload") === "1") fileInput.current?.click();
   }, []);
   const changeView = (next: "grid" | "list") => {
@@ -184,16 +197,22 @@ export function LibraryHome() {
     onDelete: (item) => files.deleteItems([item]),
   };
 
+  const visibleFiles = (files.items ?? []).filter((file) => {
+    const kind = mediaKindOf(file.mimeType);
+    if (show === "files") return kind === null;
+    if (show === "media") return kind !== null && (mediaKind === "all" || kind === mediaKind);
+    return true;
+  });
   const entries: LibraryEntry[] = [
-    ...(show !== "made" ? (files.items ?? []).map(entryFromFile) : []),
-    ...(show !== "files" ? (made.items ?? []).map(entryFromMade) : []),
+    ...(show !== "made" ? visibleFiles.map(entryFromFile) : []),
+    ...(!filesOnly ? (made.items ?? []).map(entryFromMade) : []),
   ].sort((a, b) => b.at.localeCompare(a.at) || a.key.localeCompare(b.key));
 
   const filesPending = show !== "made" && files.items === null && !files.error;
-  const madePending = show !== "files" && made.items === null && !made.error;
+  const madePending = !filesOnly && made.items === null && !made.error;
   const pending = filesPending || madePending;
-  const failed = (show !== "made" && files.error) || (show !== "files" && made.error);
-  const hasMore = (show !== "made" && files.hasMore) || (show !== "files" && made.hasMore);
+  const failed = (show !== "made" && files.error) || (!filesOnly && made.error);
+  const hasMore = (show !== "made" && files.hasMore) || (!filesOnly && made.hasMore);
   const loadingMore = files.loadingMore || made.loadingMore;
   const pendingUploads = show === "made" ? [] : uploads.uploads;
   const empty = !pending && !failed && entries.length === 0 && pendingUploads.length === 0;
@@ -201,7 +220,7 @@ export function LibraryHome() {
   const loadMoreRef = React.useRef<() => void>(() => {});
   loadMoreRef.current = () => {
     if (show !== "made" && files.hasMore) void files.loadMore();
-    if (show !== "files" && made.hasMore) void made.loadMore();
+    if (!filesOnly && made.hasMore) void made.loadMore();
   };
 
   // The next page as the end of the list comes into view; the button stays for keyboards.
@@ -268,6 +287,7 @@ export function LibraryHome() {
               { value: "all", label: "All" },
               { value: "made", label: FEATURE_NAMES.artifacts.label },
               { value: "files", label: "Files" },
+              { value: "media", label: "Media" },
             ]}
           />
           <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
@@ -314,6 +334,27 @@ export function LibraryHome() {
           </div>
         </div>
 
+        {show === "media" ? (
+          <div role="group" aria-label="Media type" className="-mt-3 mb-6 flex flex-wrap gap-1.5 motion-safe:animate-fade-in">
+            {([
+              ["all", "All media"],
+              ["image", "Images"],
+              ["video", "Videos"],
+              ["audio", "Audio"],
+            ] as const).map(([value, label]) => (
+              <Pressable
+                key={value}
+                kind="chip"
+                selected={mediaKind === value}
+                aria-pressed={mediaKind === value}
+                onClick={() => setMediaKind(value)}
+              >
+                {label}
+              </Pressable>
+            ))}
+          </div>
+        ) : null}
+
         {failed ? (
           <p role="alert" className="mb-6 flex flex-wrap items-center gap-2 text-ui text-muted-foreground">
             Some of your Library couldn’t load. Nothing was changed.
@@ -347,7 +388,7 @@ export function LibraryHome() {
           ) : (
             <EmptyState
               icon={Upload}
-              title={show === "files" ? "No files yet" : "Your Library starts here"}
+              title={show === "files" ? "No files yet" : show === "media" ? "No media yet" : "Your Library starts here"}
               description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them.`}
               action={
                 <>

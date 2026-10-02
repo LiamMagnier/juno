@@ -1247,6 +1247,8 @@ export function Composer({
   const thinkingControl =
     isAuto || !resolved || effortOptions.length < 2 ? null : (
       <ReasoningSlider
+        variant="panel"
+        defaultValue={defaultReasoning(resolved)}
         options={effortOptions}
         value={reasoningEffort}
         onChange={onReasoningChange}

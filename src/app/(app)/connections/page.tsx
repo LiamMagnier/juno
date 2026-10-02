@@ -19,9 +19,8 @@ import { AddCustomConnectorDialog } from "@/components/connections/add-custom-co
 import { CustomConnectorDialog } from "@/components/connections/custom-connector-dialog";
 import { beginCustomConnectorSignIn } from "@/components/connections/custom-connector-api";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
-import { AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
-import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -289,16 +288,6 @@ export default function ConnectionsPage() {
           above a toolbar whose "Connected" segment prints the same number —
           and the segment is the control that filters to them, so its copy of
           the integer is the one that earns its place. */}
-      <AppPageHeader
-        heading={FEATURE_NAMES.apps.label}
-        lede={`The services ${PRODUCT_NAME} can work in. You decide what each one may do.`}
-        actions={
-          <Button variant="secondary" size="sm" onClick={() => setAddMcpOpen(true)}>
-            <Plus className="size-4" aria-hidden="true" />
-            Add a custom app
-          </Button>
-        }
-      />
 
       {error ? (
         <LoadError
@@ -322,6 +311,12 @@ export default function ConnectionsPage() {
         </div>
       ) : (
         <ConnectorDirectory
+          headerAction={
+            <Button variant="secondary" onClick={() => setAddMcpOpen(true)} className="h-11 shrink-0 rounded-full px-4">
+              <Plus className="size-4" aria-hidden="true" />
+              Add
+            </Button>
+          }
           connectors={connectors ?? []}
           composioConfigured={composioConfigured}
           canConfigureServer={features.isOwner}
