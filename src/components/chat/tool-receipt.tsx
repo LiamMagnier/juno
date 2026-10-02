@@ -130,6 +130,7 @@ export function ToolReceiptRow({
   retrying,
   retryLabel,
   mark,
+  quietStatus,
   className,
 }: {
   /** The house glyph kind. Mapped here; never a hand-rolled SVG. */
@@ -161,6 +162,8 @@ export function ToolReceiptRow({
    * of a transcript carries it. Absent, a running row keeps the house orb.
    */
   mark?: React.ReactNode;
+  /** The label already says how it ended ("Python failed"): no status word. */
+  quietStatus?: boolean;
   className?: string;
 }) {
   const Glyph = RECEIPT_ICONS[icon] ?? Wrench;
@@ -170,7 +173,7 @@ export function ToolReceiptRow({
   const running = status === "running";
   const stopped = status === "stopped";
   const unknown = status === "unknown";
-  const statusText = receiptStatusText(status);
+  const statusText = quietStatus ? null : receiptStatusText(status);
   const canOpen = expandable && !!children;
 
   const row = (

@@ -655,6 +655,8 @@ export function runReceiptParts(view: ToolRunView): RunReceiptParts {
         label: limit ? `Timed out after ${formatRunLimit(limit)}` : "Timed out",
         object: skillTool ? null : lang.noun,
         status: "failed",
+        // The limit is in the label; a duration beside it would say it twice.
+        durationMs: limit ? null : view.durationMs,
         reason: RUN_REASON_LABEL.timedOut,
       };
     }
@@ -857,22 +859,24 @@ export function runAnnouncement(view: ToolRunView): string {
  *
  * `seen` maps a row id to the last phase announced for it; the caller keeps it
  * between renders. A phase is announced once, a stored conversation announces
- * nothing (`initial` seeds `seen` silently), and a progress frame never counts.
+ * nothing (`initial` seeds `seen` silently; with `live`, a run still working
+ * at that first look is announced), and a progress frame never counts.
  */
 export function pendingRunAnnouncements(
   views: readonly ToolRunView[],
   seen: Map<string, ToolRunPhase>,
-  opts: { initial?: boolean } = {},
+  opts: { initial?: boolean; live?: boolean } = {},
 ): string[] {
   const out: string[] = [];
   for (const view of views) {
     const last = seen.get(view.id);
     if (last === view.phase) continue;
     seen.set(view.id, view.phase);
-    if (opts.initial) continue;
-    // A queued call that turns running inside one batch is one announcement.
-    if (last === undefined && view.phase === "queued") continue;
-    if (last === "queued" && view.phase === "running") continue;
+    // The first look: what already ended is history, never announced. A run
+    // still working when a live turn mounts (a reconnect) is announced once.
+    if (opts.initial && (!opts.live || isTerminalRunPhase(view.phase))) continue;
+    // Queued is a moment, not a phase worth a sentence: the next one says it.
+    if (view.phase === "queued") continue;
     out.push(runAnnouncement(view));
   }
   return out;

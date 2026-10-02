@@ -132,7 +132,7 @@ export function ToolRunDetail({
   const progressNote = runProgressNote(view.progress);
   const lines = view.progress?.lines ?? [];
   return (
-    <div className="pt-0.5">
+    <div className="min-w-0 pt-0.5">
       {context ? <p className="text-caption text-muted-foreground">{context}</p> : null}
       {view.reason ? <p className="mt-1 text-caption text-foreground/80">{view.reason}</p> : null}
 
@@ -193,17 +193,20 @@ export function ToolRunDetail({
 export function ToolRunReceipt({
   view,
   active,
+  defaultOpen,
   onRunAgain,
   onOpenFile,
 }: {
   view: ToolRunView;
   /** THE active row of the turn: the only one that carries the live mark. */
   active: boolean;
+  /** Open the detail on first render. A failed run always does. */
+  defaultOpen?: boolean;
   onRunAgain?: (draft: string) => void;
   onOpenFile?: (attachment: ClientAttachment) => void;
 }) {
   const parts = runReceiptParts(view);
-  const [open, setOpen] = React.useState(view.phase === "failed");
+  const [open, setOpen] = React.useState(defaultOpen ?? view.phase === "failed");
   const icon = view.tool === "use_skill" || view.tool === "read_skill_file" ? "skill" : receiptIconKind("run_code");
   const hasDetail =
     !!view.code || !!view.stdout || !!view.stderr || view.files.length > 0 || !!view.context || (view.progress?.lines.length ?? 0) > 0;
@@ -225,6 +228,9 @@ export function ToolRunReceipt({
       open={open}
       onToggle={() => setOpen((value) => !value)}
       mark={mark}
+      // Every run label says how it ended ("Python failed", "Stopped"), so the
+      // right edge keeps only the evidence: the exit, the files, the time.
+      quietStatus
       onRetry={onRunAgain && runCanRunAgain(view) ? () => onRunAgain(runAgainDraft(view)) : undefined}
       retryLabel="Run again"
     >

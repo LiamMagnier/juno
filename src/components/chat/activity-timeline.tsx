@@ -242,7 +242,9 @@ export function ActivityTimeline({
   // read "See how this response was made" — the generic invitation — over the
   // one kind of run whose panel now carries the most. Warnings are excluded;
   // they already have their own slot in `run.note`.
-  const toolCalls = run.calls.filter((c) => !c.warn).length;
+  // Runs are counted by their own words (the title below), not again as
+  // "tool calls": "2 runs · 2 tool calls" says one thing twice.
+  const toolCalls = run.calls.filter((c) => !c.warn && !c.run).length;
   // The connectors this run reached, by name, for the resting label. "Run" was
   // the one word the row could say about a turn that used GitHub and Linear,
   // and it named the mechanism rather than what happened.
@@ -252,7 +254,7 @@ export function ActivityTimeline({
   const restingTitle = hasReasoning
     ? "Thought process"
     : runViews.length === 1
-      ? runReceiptParts(runViews[0]).label
+      ? [runReceiptParts(runViews[0]).label, runReceiptParts(runViews[0]).object].filter(Boolean).join(" · ")
       : runViews.length > 1
         ? `${runViews.length} runs`
         : toolServers.length
@@ -264,7 +266,7 @@ export function ActivityTimeline({
   // decorative grey dot used to sit.
   // It follows the title: a thought process is reasoning first, whatever
   // else the run did on the way.
-  const RestingIcon = hasReasoning ? Brain : toolCalls ? Wrench : run.searches || run.sourceCount ? Globe : Brain;
+  const RestingIcon = hasReasoning ? Brain : toolCalls || runViews.length ? Wrench : run.searches || run.sourceCount ? Globe : Brain;
   const restingDetail = [
     run.searches ? `${run.searches} ${run.searches === 1 ? "search" : "searches"}` : null,
     run.sourceCount ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
@@ -277,7 +279,7 @@ export function ActivityTimeline({
   // made" over a panel that is empty. ChatGPT and Claude show no trace line for
   // a plain completion, and neither does this. Live runs always render — the
   // shimmering status IS the feedback while the first token is on its way.
-  if (!streaming && !hasReasoning && !restingDetail) return null;
+  if (!streaming && !hasReasoning && !restingDetail && runViews.length === 0) return null;
   // A phase change should animate once. Reasoning-token growth never changes
   // this key, so the collapsed UI stays calm during long streams.
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";

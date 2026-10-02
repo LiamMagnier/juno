@@ -98,7 +98,7 @@ export function ToolRunAnnouncer({ views, live }: { views: readonly ToolRunView[
   React.useEffect(() => {
     const first = seen.current === null;
     if (first) seen.current = new Map();
-    const said = pendingRunAnnouncements(views, seen.current!, { initial: first && !live });
+    const said = pendingRunAnnouncements(views, seen.current!, { initial: first, live });
     if (said.length) setMessage(said.join(" "));
   }, [views, live]);
   return (

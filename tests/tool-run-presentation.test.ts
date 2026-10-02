@@ -236,6 +236,14 @@ test("announcements: once per phase change, never for a stored turn or a progres
   const done = { ...view(F.succeeded), id: "running" };
   assert.deepEqual(pendingRunAnnouncements([done], seen), ["Ran Python, 2 files."]);
   assert.equal(runAnnouncement(view(F.failedKeyError)), "Python failed, exit code 1.");
+  // Queued says nothing; the run starting says it once.
+  const fresh = new Map<string, ToolRunPhase>();
+  assert.deepEqual(pendingRunAnnouncements([view(F.queued, true)], fresh), []);
+  assert.deepEqual(pendingRunAnnouncements([{ ...view(F.running, true), id: "queued" }], fresh), ["Running Python."]);
+  // A live turn mounting mid-run (a reconnect): the settled run is history,
+  // the working one is announced once.
+  const remount = new Map<string, ToolRunPhase>();
+  assert.deepEqual(pendingRunAnnouncements(readToolRuns([F.succeeded, F.running], { live: true }), remount, { initial: true, live: true }), ["Running Python."]);
   assert.equal(runAnnouncement(view(F.stopped)), "Python: Stopped.");
 });
 

@@ -48,7 +48,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { readWorkToolRun } from "@/lib/work/tool-run-events";
-import { runContextLine, runSummaryLine, type ToolRunView } from "@/lib/chat/tool-run";
+import { runContextLine, runReceiptParts, runSummaryLine, type ToolRunView } from "@/lib/chat/tool-run";
 
 /*
  * The plan, the activity, and the thing Juno is doing right now.
@@ -704,6 +704,9 @@ function applyRunOutcome(entry: ActivityEntry, payload: Payload): void {
   const run = readWorkToolRun(payload);
   if (!run) return;
   entry.title = runSummaryLine(run);
+  // The second line is the reason it did not simply finish, or nothing: the
+  // outcome sentence is already the title, and repeating it is noise.
+  entry.detail = run.phase === "outcome_unknown" ? null : runReceiptParts(run).reason;
   entry.facts = [...entry.facts, ...runFacts(run)];
   if (run.phase === "outcome_unknown") {
     entry.state = "unreported";
