@@ -32,6 +32,21 @@ export interface LibraryMadeItem {
   /** Deliverable only: its MIME type and whether the validator re-opened it. */
   mimeType?: string;
   validated?: boolean;
+  /**
+   * The agent whose thread or task made it, when one did (its chat is an agent
+   * thread, or its task ran for an agent). Absent for things made in an
+   * ordinary chat. Name and face only: the Library's byline, nothing more.
+   */
+  agent?: LibraryMadeAgent;
+  /** Artifact only: the opening of its newest version, for the Library's miniature. */
+  preview?: string | null;
+}
+
+export interface LibraryMadeAgent {
+  id: string;
+  name: string;
+  /** The stored `{shape, tone, eyes, mark}`; the client normalises it. */
+  avatar: unknown;
 }
 
 export interface LibraryCursor {

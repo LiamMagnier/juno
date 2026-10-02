@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { LibraryNav } from "@/components/library/library-nav";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -588,8 +587,9 @@ function ArtifactsHome() {
     // only list route at `reading`, so hopping Library → Artifacts in the
     // sidebar moved the column 16rem for no reason the user could see.
     <AppPage measure="wide">
-        <LibraryNav current="made" />
       <AppPageHeader
+        backHref="/library"
+        backLabel={FEATURE_NAMES.library.label}
         /*
          * NO EYEBROW. It read "Canvas" over a heading that reads "Artifacts",
          * on a page the sidebar row "Artifacts" takes you to — three words for
@@ -634,8 +634,8 @@ function ArtifactsHome() {
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search artifacts…"
-                aria-label="Search artifacts"
+                placeholder="Search what you made"
+                aria-label="Search what you made"
                 className="pl-9"
               />
             </div>
