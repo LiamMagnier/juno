@@ -32,6 +32,6 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export function ShareGone() {
   return <PublicState title="This page isn’t shared any more" description="Whoever shared it has taken it down, so there’s nothing to show here right now.">
     <Button asChild><Link href="/">{`Open ${PRODUCT_NAME}`}</Link></Button>
-    <Button asChild variant="secondary"><Link href="/sign-up">Create your own account</Link></Button>
+    <Button asChild variant="secondary"><Link href="/sign-up">Create account</Link></Button>
   </PublicState>;
 }

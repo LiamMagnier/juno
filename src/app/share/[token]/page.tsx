@@ -146,6 +146,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         </AppPage>
       </header>
 
+      <main className={cn("min-h-0 flex-1", artifact && "flex flex-col")}>
       <SandboxProfileProvider profile={publicShareProfile()}>
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
@@ -158,7 +159,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
                 <p className="font-serif text-title font-medium">Go further.</p>
                 <p className="mt-2 max-w-sm text-body text-muted-foreground">A calm place to think, make something, and carry your work forward.</p>
               </div>
-              <Button asChild className="shrink-0"><Link href="/sign-up">{`Start with ${PRODUCT_NAME}`}</Link></Button>
+              <Button asChild className="shrink-0"><Link href="/sign-up">Create account</Link></Button>
             </aside>
           </AppPage>
         ) : artifact ? (
@@ -183,6 +184,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           </AppPage>
         ) : null}
       </SandboxProfileProvider>
+      </main>
 
       <footer className="shrink-0 border-t border-border/60">
         {/* min-h and wrap rather than a fixed h-12: with Report in the row,
@@ -204,9 +206,9 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             <ReportShareButton token={token} />
             <Link
               href="/sign-up"
-              className="rounded-xs text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
+              className="inline-flex min-h-11 items-center rounded-xs text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
             >
-              Create your own account
+              Create account
             </Link>
           </div>
         </AppPage>

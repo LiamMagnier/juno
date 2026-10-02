@@ -2,6 +2,8 @@
 
 This record belongs to `/Users/liammagnier/Developer/project/juno-rf-public`, branch `rf/public-pages`. It describes the public-pages implementation and its evidence at the documentation checkpoint. Continue in this worktree; do not assume the canonical `juno` checkout contains these changes. No push, merge, deployment, native build, or production acceptance is established by this document.
 
+The latest homepage and public-polish pass is recorded under **Second design pass** below and in `PUBLIC_PAGES_DESIGN_PASS_2.md`. Earlier evidence remains historical.
+
 ## Identity authority and documentation boundary
 
 This is an **ordinary extension of the pinned Alevr V3 identity**, not a replacement visual world. The product is Alevr; Continuum names the selected logo concept. The exact committed vector geometry remains authoritative. The sculpture photograph is editorial material, never a replacement mark.
@@ -205,3 +207,31 @@ The smoke script checks real HTML markers, security headers, and signed-out `/ch
 12. Re-run the HTTP gate on the intended running environment and complete authenticated real-route acceptance before any production-ready claim. Native/macOS and signed-release checks belong to their authorized workstreams; no native acceptance follows from the download page or a successful web suite.
 
 The implemented presentation, limited captures, and passing reported regression checks are preserved for continuation. The unverified requirements above remain acceptance work rather than silently completed scope.
+
+
+## Second design pass, 2026-10-02
+
+The owner explicitly authorized beginning the homepage now, using the documented product overview brief. The newer instruction supersedes the older homepage scheduling restriction. This pass invokes design-taste-frontend, preserves the pinned identity and excluded app component ownership, and introduces no application dependency.
+
+### Changes and commits
+
+- `f8b7c9aa`, **Rebuild Alevr's public overview around real product examples**: horizon hero, responsive light/dark artwork, actual transcript/AgentFace/FileDiff examples with accessible Chat/Orbit/Code tabs, editorial capabilities, aleph story, static registry logos, honest pricing/platform availability, compact navigation and consistent account/download actions. The actual components are imported, never edited. Homepage metadata/canonical/registry offers remain intact. A regression fixture now checks download destinations in the marketing files that actually own them.
+- **Polish Alevr public recovery and reading surfaces**: follow-up commit for auth, shared-state recovery, independent root failure, embedded offline fallback, download, legal layout, shared reading landmark/44px artifact controls, regression fixture and this documentation. Obtain this commit's hash from git log after the documentation checkpoint.
+
+Auth now uses the dark horizon; recovery surfaces use the silver open-fold study with the primary action first on phones. Auth behavior/provider readiness remains intact. The shared page has a semantic main landmark without losing the artifact's flex viewport. Legal bodies are untouched. Earlier onboarding, owner reading, mail templates and OG implementation remains in place.
+
+Three WebP assets and their generation prompts live under `public/brand/home-*.webp` and `home-editorial.prompts.txt`. These are editorial imagery, not replacement logo geometry or evidence of native workflow execution. Decorative horizon backgrounds follow the existing root theme, selecting optimized 750px mobile/1920px desktop candidates without an image controller or new preference cookie.
+
+### Current verification
+
+Node 24 production build (without its redundant lint stage), typecheck, lint and the entire npm test chain completed with exit 0 before the homepage commit. Tests report 4,547 total, 4,475 pass, 72 skipped, zero failures. Lint retains seven inherited design-gallery warnings and zero errors. The three required checks were repeated before the follow-up commit, all with exit 0 and the same test totals and inherited warnings; see ignored final logs for process evidence.
+
+Live production routes were inspected at 1280x800, 390x844 and 320px in the in-app browser, with real light/dark theme switching. Product tabs, shared artifact Preview/Code, password visibility and compact navigation were exercised. A 320px header overflow was fixed. Shared chat/artifact fixtures use isolated local synthetic content. The public artifact now retains a 670px reading main area at an 800px viewport and source controls remain functional. Live dev preview is restored on port 3175 at closeout.
+
+Final CSS-layer production Lighthouse (default simulated mobile): performance **78**, accessibility **100**, best practices **96**, SEO **100**; FCP **1.7s**, LCP **5.8s**, TBT **70ms**, CLS **0**. A separate DevTools-throttled run: performance **91**, accessibility **100**, best practices **96**, SEO **100**; FCP **2.3s**, LCP **3.0s**, TBT **30ms**, CLS **0**. These are two different diagnostic protocols, not field data or a passed 2.5s LCP gate. Best-practices reports a CSP inspector issue; its cause was not established here. Background appearance was checked visually; a foreground-content metric alone does not establish landscape readiness. No claim about field INP is made.
+
+Relevant local evidence: `home-pass2-{light,dark}.png`, their full-page variants, phone homepage/sign-in captures, `sign-in-pass2-desktop-{light,dark}.png`, `404-pass2-*.png`, `pass2-*-desktop.png`, both production Lighthouse JSON files and the visual gallery under `.impeccable/review/`. The self-contained 32-capture gallery is `.impeccable/review/public-pages-review.html`, served locally at `http://127.0.0.1:3176/public-pages-review.html` during review. It includes an enlargement dialog and live-page links. The gallery is local review material, not a shipped route.
+
+### Remaining acceptance
+
+The complete design-taste checklist is recorded in `PUBLIC_PAGES_DESIGN_PASS_2.md`. Full acceptance remains open for slow-mobile LCP, a browser run with JavaScript disabled and OS reduced motion enabled, authenticated onboarding/owner-read/native handoff, configured OAuth/reset/mail delivery and actual email clients. Source reduced-motion/print/no-script rules are verified; unavailable live journeys are not treated as completed. Public visuals and regression checks are delivered without editing shared-root/app ownership to chase the remaining performance work. No push, deploy or merge was performed.

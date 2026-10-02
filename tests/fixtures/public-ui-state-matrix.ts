@@ -68,7 +68,7 @@ export const UI_STATE_FIXTURES = [
       /<main\b/,
     ],
     forbidden: [],
-    responsive: [/flex-wrap/, /max-width:560px/, /max-width:/],
+    responsive: [/flex-wrap/, /max-width:1152px/, /grid-template-columns:minmax\(0,1fr\)/],
   },
   {
     id: "partial",

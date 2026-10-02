@@ -5,7 +5,7 @@ import { staggerDelay } from "@/lib/motion";
 
 /** The prose treatment, as plain `[&_…]` selectors on the article. */
 const ARTICLE = [
-  "pb-16 text-body leading-relaxed text-foreground/90",
+  "pb-16 text-body-lg leading-relaxed text-foreground/90",
   // Headings on Juno's own scale (display / title / heading). The tokens carry
   // weight and tracking, so nothing is restated beside them.
   "[&_h1]:text-balance [&_h1]:font-serif [&_h1]:text-display [&_h1]:font-medium [&_h1]:tracking-tight [&_h1]:text-foreground",
@@ -29,7 +29,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
   return (
     <div className="alevr-public relative min-h-dvh bg-background text-foreground">
       <SiteHeader />
-      <AppPage scroll={false} measure="reading" contentClassName="pb-8 pt-10 sm:pt-16">
+      <AppPage scroll={false} measure="reading" contentClassName="pb-8 pt-12 sm:pt-24">
         {/* The documents are French (the service is operated from France);
             the chrome around them is the site's English. */}
         <main lang="fr" style={staggerDelay(1, "loose")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">

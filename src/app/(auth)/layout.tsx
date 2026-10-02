@@ -15,7 +15,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <div className="alevr-auth-mobile-art relative mx-6 h-36 overflow-hidden rounded-menu bg-[#18191b] sm:mx-10 lg:hidden" aria-hidden="true">
-          <Image src="/brand/auth-continuation.webp" alt="" fill priority unoptimized sizes="(max-width:1023px) 100vw, 1px" className="object-cover object-[50%_38%]" />
+          <Image src="/brand/home-horizon-dark.webp" alt="" fill priority fetchPriority="high" sizes="(max-width:1023px) 100vw, 1px" className="object-cover object-[50%_65%]" />
           <p className="absolute inset-x-0 bottom-0 bg-[#18191b] px-6 py-3 font-serif text-title font-medium text-[#e8e9eb]">Go further.</p>
         </div>
         <main className="alevr-auth-form mx-auto flex w-full max-w-[28rem] flex-1 flex-col justify-center px-6 py-10 sm:px-8 lg:py-12">{children}</main>
@@ -32,11 +32,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       </div>
       <aside className="hidden p-2 pl-0 lg:block" aria-label="Go further with Alevr">
         <div className="alevr-auth-art relative sticky top-2 h-[calc(100dvh-16px)] min-h-[36rem] overflow-hidden rounded-menu bg-[#18191b] text-[#e8e9eb]">
-          <Image src="/brand/auth-continuation.webp" alt="" fill priority unoptimized sizes="50vw" className="alevr-auth-image object-cover" />
+          <Image src="/brand/home-horizon-dark.webp" alt="" fill priority fetchPriority="high" sizes="50vw" className="alevr-auth-image object-cover object-[60%_50%]" />
           <div className="absolute inset-x-0 bottom-0 bg-[#18191b] px-10 pb-12 pt-6 xl:px-14 xl:pb-14">
             <p className="alevr-auth-art-title font-serif text-hero font-medium tracking-tight">Go further.</p>
             <p className="alevr-auth-art-copy mt-4 max-w-sm text-body leading-relaxed text-[#b4b6ba]">A calm place to think, make something, and carry your work forward.</p>
-            <p className="alevr-auth-art-copy mt-8 text-ui text-[#95979c]">Conversation. Agents. Code.</p>
           </div>
         </div>
       </aside>

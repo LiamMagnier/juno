@@ -581,7 +581,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
           <>
             {`New to ${PRODUCT_NAME}?`}{" "}
             <Link href={`/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="rounded-xs font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline focus-visible:text-primary">
-              Create an account
+              Create account
             </Link>
           </>
         )}

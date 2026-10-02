@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Not found" };
 
 export default function NotFound() {
   return (
-    <PublicState title="This page isn’t here" description="The link may be out of date, or the address may have a typo. Nothing in your account has changed.">
+    <PublicState code="404" title="This page isn’t here" description="The link may be out of date, or the address may have a typo. Nothing in your account has changed.">
       <Button asChild><Link href="/chat">Back to chat</Link></Button>
       <Button asChild variant="secondary"><Link href="/">Go to the home page</Link></Button>
     </PublicState>

@@ -58,8 +58,8 @@
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes alevr-auth-image-enter {
-  from { opacity: .7; transform: scale(1.025); clip-path: inset(0 0 3% 0); }
-  to { opacity: 1; transform: scale(1); clip-path: inset(0); }
+  from { opacity: .7; transform: scale(1.025); }
+  to { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .alevr-auth-header { animation: alevr-auth-enter 220ms cubic-bezier(.33,1,.68,1) both; }
@@ -79,10 +79,21 @@
 .alevr-public :is(a, button) { transition-duration: 120ms; transition-timing-function: cubic-bezier(.33,1,.68,1); }
 .alevr-public button:active:not(:disabled) { transform: translateY(1px); }
 @media (prefers-reduced-motion: no-preference) {
-  .alevr-public-state main > h1, .alevr-public article > header, .alevr-public main > header { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
-  .alevr-public-state main > p { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; }
-  .alevr-public-state main > div { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; }
+  .alevr-state-copy h1, .alevr-public article > header, .alevr-public main > header { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
+  .alevr-state-copy > p:not(.alevr-state-code) { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; }
+  .alevr-state-actions { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; }
+  .alevr-state-image { animation: alevr-auth-image-enter 560ms cubic-bezier(.16,1,.3,1) both; }
   [role="dialog"]:has(#onboarding-name) h2 { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
+}
+.alevr-state-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:64px; align-items:center; }
+.alevr-public .alevr-state-actions :is(a,button) { min-height:44px; }
+.alevr-public .alevr-state-code { letter-spacing:.08em; }
+.alevr-download-art-dark { display:none; }
+.dark .alevr-download-art-light { display:none; }
+.dark .alevr-download-art-dark { display:block; }
+@media(max-width:767px) {
+  .alevr-state-layout { grid-template-columns:minmax(0,1fr); gap:40px; }
+  .alevr-state-image { aspect-ratio:4/3; }
 }
 @media (prefers-reduced-motion: reduce) {
   .alevr-public :is(a, button) { transition: none; }

@@ -58,7 +58,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
               <Button asChild size="lg">
                 <a {...macLink}>
                   <ActionIcons.download aria-hidden />
-                  Download for macOS
+                  Download for Mac
                 </a>
               </Button>
             ) : (
@@ -89,7 +89,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
 
         <LandingColumn contentClassName="py-16 sm:py-24">
           <h2 className="font-serif text-display font-medium tracking-tight">Also on your other devices</h2>
-          <div className="mt-8 grid gap-4 lg:grid-cols-3">
+          <div className="mt-8 grid gap-x-10 gap-y-8 lg:grid-cols-3">
             <OtherCell
               icon={Smartphone}
               title="iPhone and iPad"
@@ -161,7 +161,7 @@ function OtherCell({
   action: React.ReactNode;
 }) {
   return (
-    <div className="surface-raised flex flex-col justify-between gap-5 rounded-menu p-6">
+    <div className="flex flex-col justify-between gap-5 border-t border-border py-6">
       <div className="flex items-start gap-3.5">
         <Icon className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
         <div>
@@ -180,8 +180,9 @@ function OtherCell({
  * server-only, and this page is also rendered by the feed tests.
  */
 function MacStage() {
-  return <div className="relative aspect-[4/3] overflow-hidden rounded-menu bg-[#18191b]" aria-hidden="true">
-    <Image src="/brand/auth-continuation.webp" alt="" fill unoptimized sizes="(max-width:1023px) 100vw, 60vw" className="object-cover object-[50%_28%]" />
+  return <div className="relative aspect-[16/7] overflow-hidden rounded-menu bg-muted" aria-hidden="true">
+    <Image src="/brand/home-horizon-light.webp" alt="" fill sizes="(max-width:1023px) 100vw, 80vw" className="alevr-download-art-light object-cover" />
+    <Image src="/brand/home-horizon-dark.webp" alt="" fill sizes="(max-width:1023px) 100vw, 80vw" className="alevr-download-art-dark object-cover" />
   </div>;
 }
 

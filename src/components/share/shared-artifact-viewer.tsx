@@ -72,15 +72,10 @@ export function SharedArtifactViewer({
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "code")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 pb-3">
-        {/* No `h-8` override. TabsList is h-9 with p-1, and its triggers are
-            `py-1` around a 20px line — 28px of content that needs a 36px shell.
-            Forcing the track to 32px left 24px of slot, so both triggers hung
-            2px past the top and bottom of the well they are supposed to sit in,
-            on the one tab row a visitor sees before signing up. It also put this
-            row at a height no other TabsList in the product uses. */}
-        <TabsList>
-          {hasPreview && <TabsTrigger value="preview">Preview</TabsTrigger>}
-          <TabsTrigger value="code">Code</TabsTrigger>
+        {/* Public reading controls keep a 44px pointer target in every mode. */}
+        <TabsList className="h-auto gap-1 bg-transparent p-0">
+          {hasPreview && <TabsTrigger className="min-h-11" value="preview">Preview</TabsTrigger>}
+          <TabsTrigger className="min-h-11" value="code">Code</TabsTrigger>
         </TabsList>
         {previewOff && (
           <span className="min-w-0 truncate text-caption text-muted-foreground">
@@ -127,8 +122,8 @@ function KindLabel({ label, version }: { label: string; version: number }) {
 /**
  * A shared design, as its poster.
  *
- * The row above the card keeps the tab row's height (`h-12` less its `pb-3` is
- * the 36px TabsList), so a design's card starts where every other shared
+ * The row above the card keeps the tab row's height (`h-14` less its `pb-3` is
+ * the 44px TabsList), so a design's card starts where every other shared
  * artifact's does and a visitor moving between two links sees the frame hold
  * still.
  *
@@ -165,7 +160,7 @@ function SharedDesignPoster({ src, label, version }: { src: string | null; label
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-12 items-center gap-2 pb-3">
+      <div className="flex h-14 items-center gap-2 pb-3">
         <KindLabel label={label} version={version} />
       </div>
       <div className={cn(PANEL, "flex items-center justify-center p-4 sm:p-6")}>

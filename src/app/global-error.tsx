@@ -15,10 +15,12 @@ const STYLES = `
   header { padding:24px 32px; }
   header a { display:inline-flex; align-items:center; min-height:44px; color:inherit; }
   header a > span { position:relative; display:inline-block; flex-shrink:0; vertical-align:middle; }
-  main { min-height:calc(100dvh - 100px); max-width:560px; margin:auto; padding:80px 24px; display:flex; flex-direction:column; justify-content:center; text-align:center; }
+  main { min-height:calc(100dvh - 100px); max-width:1152px; margin:auto; padding:64px 32px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:64px; align-items:center; }
+  .continuity { display:block; width:100%; aspect-ratio:1; object-fit:cover; border-radius:14px; }
+  .code { margin:0 0 24px; letter-spacing:.08em; }
   h1 { margin:0; font-family:Newsreader,Georgia,serif; font-size:48px; line-height:1.1; font-weight:400; letter-spacing:-.02em; text-wrap:balance; }
   p { margin:20px 0 0; color:#686b70; font-size:14px; line-height:1.6; }
-  .actions { margin-top:32px; display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+  .actions { margin-top:32px; display:flex; flex-wrap:wrap; gap:12px; }
   .actions a,button { font:500 14px Inter,system-ui,sans-serif; min-height:44px; padding:12px 20px; border:0; border-radius:8px; color:#191b1e; background:#eff0f1; cursor:pointer; text-decoration:none; transition:background-color 120ms cubic-bezier(.33,1,.68,1); }
   .actions > :first-child { background:#191b1e; color:#fcfcfd; }
   .actions > :first-child:hover { background:#4e5054; }
@@ -30,11 +32,11 @@ const STYLES = `
   @media(prefers-color-scheme:dark) {
     :root { --foreground:220 6.977% 91.569%; --background:220 5.882% 10%; }
     body { background:#18191b; color:#e8e9eb; } p { color:#95979c; }
-    .actions a { background:#2d2e31; color:#e8e9eb; } .actions a:hover { background:#37383c; }
+    .actions a,button { background:#2d2e31; color:#e8e9eb; } .actions a:hover { background:#37383c; }
     .actions > :first-child { background:#e8e9eb; color:#18191b; } .actions > :first-child:hover { background:#b4b6ba; }
     :focus-visible { outline-color:#97a6e6; }
   }
-  @media(max-width:480px) { header { padding:20px 24px; } h1 { font-size:40px; } }
+  @media(max-width:767px) { header { padding:20px 24px; } main { grid-template-columns:minmax(0,1fr); padding:48px 24px; gap:40px; } h1 { font-size:40px; } .continuity { aspect-ratio:4/3; } }
   @keyframes public-enter { from { opacity:.5; transform:translateY(6px); } to { opacity:1; transform:none; } }
   @media(prefers-reduced-motion:no-preference) { main h1 { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) both; } main p { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; } .actions { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; } }
   @media(prefers-reduced-motion:reduce) { .actions a,button { transition:none; } }
@@ -48,10 +50,16 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
         <style dangerouslySetInnerHTML={{ __html: STYLES }} />
         <header><a href="/" aria-label={`${PRODUCT_NAME} home`}><AlevrLockup height={26} tone="current" decorative /></a></header>
         <main>
+          <div>
+          <p className="code">500</p>
           <h1>Something went wrong</h1>
           <p>We couldn’t load this page. Try again in a moment. Your saved work is still there.</p>
           <div className="actions"><button type="button" onClick={reset}>Try again</button><a href="/">Go to the home page</a></div>
           {error.digest && <p className="reference">Reference {error.digest}</p>}
+          </div>
+          {/* Plain HTML keeps root recovery independent of the image runtime. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="continuity" src="/brand/home-continuity.webp" alt="" width="900" height="900" />
         </main>
       </body>
     </html>
