@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { customAccessToken, refreshCustomConnectorTools, toCustomConnectorView } from "@/lib/custom-connectors";
 import { prisma } from "@/lib/prisma";
 import { notFound, ownedConnector, probeAllowed, tooMany } from "../../shared";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -20,7 +21,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const token = await customAccessToken(connector, link);
   if (!token) {
     return NextResponse.json(
-      { error: "signed_out", message: "Juno's sign-in to this server has expired. Reconnect to keep using it." },
+      { error: "signed_out", message: `${PRODUCT_NAME}'s sign-in to this server has expired. Reconnect to keep using it.` },
       { status: 409 }
     );
   }

@@ -13,6 +13,7 @@ import { MetalCta } from "@/components/effects/metal-cta";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type MaxTier = "MAX" | "MAX20";
 type BillingInterval = "month" | "year";
@@ -69,7 +70,7 @@ const FAQ: { q: string; a: string; annualOnly?: boolean }[] = [
   },
   {
     q: "What does fair use mean?",
-    a: "Fair use keeps Juno fast for everyone. If your usage ever looks like it needs a conversation, we reach out first — nothing changes on your account without notice.",
+    a: `Fair use keeps ${PRODUCT_NAME} fast for everyone. If your usage ever looks like it needs a conversation, we reach out first — nothing changes on your account without notice.`,
   },
 ];
 
@@ -297,7 +298,7 @@ export default function UpgradePage() {
 
       <p className="mt-6 flex items-center gap-1.5 text-caption text-muted-foreground">
         <StatusIcons.info className="size-3.5 shrink-0" aria-hidden />
-        Fair-use applies to keep Juno fast for everyone; we’ll always reach out before anything changes.
+        {`Fair-use applies to keep ${PRODUCT_NAME} fast for everyone; we’ll always reach out before anything changes.`}
       </p>
 
       <section className="mt-8" aria-labelledby="upgrade-faq">

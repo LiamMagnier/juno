@@ -6,6 +6,7 @@ import { createNotification } from "@/lib/notifications";
 import { shareUrl } from "@/lib/share";
 import { parseShareToken, shareStatus, type ShareStatus } from "@/lib/share-policy";
 import type { ShareReportInput } from "@/lib/share-schemas";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Taking a public link down, and hearing about one that should be.
@@ -250,9 +251,9 @@ export async function takeDownShare({
         priority: "high",
         title: "A shared link was removed",
         body:
-          `Juno removed your public link to “${share.title || "Untitled"}”. ` +
+          `${PRODUCT_NAME} removed your public link to “${share.title || "Untitled"}”. ` +
           `Reason: ${why}. The link no longer opens, and this item can’t be shared again. ` +
-          `If you think this is a mistake, contact Juno support.`,
+          `If you think this is a mistake, contact ${PRODUCT_NAME} support.`,
         sourceType: "share",
         sourceId: share.id,
       });
@@ -329,9 +330,9 @@ async function takeDownPublication({
         priority: "high",
         title: "A published page was removed",
         body:
-          `Juno removed your published page for “${publication.artifact.title || "Untitled"}”. ` +
+          `${PRODUCT_NAME} removed your published page for “${publication.artifact.title || "Untitled"}”. ` +
           `Reason: ${why}. The page no longer opens, and this item can’t be published again. ` +
-          `If you think this is a mistake, contact Juno support.`,
+          `If you think this is a mistake, contact ${PRODUCT_NAME} support.`,
         sourceType: "share",
         sourceId: publication.id,
       });

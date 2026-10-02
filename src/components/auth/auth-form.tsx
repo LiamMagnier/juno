@@ -12,6 +12,7 @@ import { Field } from "@/components/ui/field";
 import { Pressable } from "@/components/ui/pressable";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 function AppleIcon() {
   return (
@@ -421,7 +422,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             label="Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="How Juno should address you"
+            placeholder={`How ${PRODUCT_NAME} should address you`}
             autoComplete="name"
           />
         )}
@@ -578,7 +579,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
           </>
         ) : (
           <>
-            New to Juno?{" "}
+            {`New to ${PRODUCT_NAME}?`}{" "}
             <Link href={`/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="rounded-xs font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline focus-visible:text-primary">
               Create an account
             </Link>

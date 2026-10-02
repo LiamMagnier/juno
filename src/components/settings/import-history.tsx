@@ -9,6 +9,7 @@ import { Collapse } from "@/components/ui/collapse";
 import { useApp } from "@/components/app/app-provider";
 import { SettingRow } from "@/components/settings/setting-row";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const MAX_BYTES = 100 * 1024 * 1024;
 
@@ -32,7 +33,7 @@ const FORMAT_LABEL: Record<string, string> = {
   chatgpt: "ChatGPT",
   claude: "Claude",
   gemini: "Gemini",
-  juno: "Juno",
+  juno: PRODUCT_NAME,
 };
 
 /**
@@ -71,7 +72,7 @@ export function ImportHistoryRow() {
   const start = (file: File) => {
     if (busy) return;
     if (!/\.(zip|json)$/i.test(file.name)) {
-      setPhase({ name: "error", message: "Choose a .zip or .json export from ChatGPT, Claude, Gemini or Juno." });
+      setPhase({ name: "error", message: `Choose a .zip or .json export from ChatGPT, Claude, Gemini or ${PRODUCT_NAME}.` });
       return;
     }
     if (file.size > MAX_BYTES) {
@@ -155,7 +156,7 @@ export function ImportHistoryRow() {
     >
       <SettingRow
         label="Import chat history"
-        description="From ChatGPT, Claude, Gemini or another Juno account. A .zip or .json export up to 100 MB, or drop it here."
+        description={`From ChatGPT, Claude, Gemini or another ${PRODUCT_NAME} account. A .zip or .json export up to 100 MB, or drop it here.`}
         control={
           <Button variant="outline" size="sm" onClick={pick} loading={busy}>
             Choose file
@@ -200,8 +201,7 @@ function ExportHelp() {
       </button>
       <Collapse open={open} innerClassName="pt-2">
         <p className="max-w-prose text-ui text-muted-foreground">
-          In ChatGPT, open Settings, Data controls, Export data. In Claude, open Settings, Privacy, Export data. Both
-          email you a .zip. Imported messages are encrypted at rest like everything else in Juno.
+          {`In ChatGPT, open Settings, Data controls, Export data. In Claude, open Settings, Privacy, Export data. Both email you a .zip. Imported messages are encrypted at rest like everything else in ${PRODUCT_NAME}.`}
         </p>
       </Collapse>
     </div>

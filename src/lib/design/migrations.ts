@@ -18,6 +18,7 @@
 
 import { DESIGN_SCHEMA_VERSION, type DesignDocument } from "@/lib/design/types";
 import { DesignValidationError, parseDesignDocument } from "@/lib/design/schema";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type RawDocument = Record<string, unknown>;
 
@@ -64,7 +65,7 @@ export function migrateDesignDocument(raw: unknown): DesignDocument {
   }
   if (version > DESIGN_SCHEMA_VERSION) {
     throw new DesignValidationError(
-      `This document was written by a newer version of Juno (schema v${version}; this build understands v${DESIGN_SCHEMA_VERSION}).`
+      `This document was written by a newer version of ${PRODUCT_NAME} (schema v${version}; this build understands v${DESIGN_SCHEMA_VERSION}).`
     );
   }
 

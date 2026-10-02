@@ -29,6 +29,8 @@ const {
 } = req("../src/lib/computer/provider") as typeof import("@/lib/computer/provider");
 const {
   acquireComputerLease,
+  CAPS_HOST_MESSAGE,
+  CAPS_USER_MESSAGE,
   createInMemoryComputerPersistence,
   disableComputer,
   enableComputer,
@@ -221,10 +223,22 @@ describe("agent-computer provider and lifecycle", () => {
     await ensureAwake("user_1", "agent_1", { autoEnable: true });
     await ensureAwake("user_1", "agent_2", { autoEnable: true });
 
+    // The refusal is the user-facing sentence, without counts or ids
+    // (errors are sanitised before they reach a person or a model).
     await assert.rejects(
       () => ensureAwake("user_1", "agent_3", { autoEnable: true }),
-      /You already have 2 awake agent computers/
+      (err: unknown) => err instanceof Error && err.message === CAPS_USER_MESSAGE
     );
+    assert.doesNotMatch(CAPS_USER_MESSAGE, /\d/, "the cap sentence names no count");
+
+    // The host cap counts every account's computers: a second person is
+    // refused once the host is full, even with none of their own awake.
+    process.env.AGENT_COMPUTER_MAX_AWAKE_HOST = "2";
+    await assert.rejects(
+      () => ensureAwake("user_2", "agent_9", { autoEnable: true }),
+      (err: unknown) => err instanceof Error && err.message === CAPS_HOST_MESSAGE
+    );
+    delete process.env.AGENT_COMPUTER_MAX_AWAKE_HOST;
 
     // Preflight failure surfaces plain user-facing message
     await sleepComputer("user_1", "agent_2");
@@ -311,6 +325,8 @@ describe("agent-computer provider and lifecycle", () => {
       "/tmp:rw,nosuid,nodev,size=1g,mode=1777",
       "--tmpfs",
       "/run:rw,nosuid,nodev,size=64m",
+      "--tmpfs",
+      "/run/juno:rw,nosuid,nodev,noexec,size=1m,uid=1001,gid=1001,mode=0700",
       "--tmpfs",
       "/var/tmp:rw,nosuid,nodev,size=256m",
       "--mount",

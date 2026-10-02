@@ -15,6 +15,7 @@
 import { z } from "zod";
 import { safeAppPath } from "@/lib/notify/paths";
 import type { NotifyChannel, PushPreferences } from "@/lib/notify/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Subscriptions
@@ -231,7 +232,7 @@ function byteLength(value: string): number {
  */
 export function webPushMessage(payload: WebPushPayload): string {
   const message = {
-    title: clip(payload.title, MAX_TITLE_CHARS) || "Juno",
+    title: clip(payload.title, MAX_TITLE_CHARS) || PRODUCT_NAME,
     body: clip(payload.body, MAX_BODY_CHARS),
     path: safeAppPath(payload.path),
     tag: clip(payload.tag, MAX_TAG_CHARS) || "juno",

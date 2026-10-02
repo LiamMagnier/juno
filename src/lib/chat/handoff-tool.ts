@@ -60,6 +60,7 @@ import {
 } from "@/lib/chat/task-tool";
 import { agentTaskKeys } from "@/lib/agents/domain";
 import { MAX_LIVE_TASKS_PER_CONVERSATION, memberAtCapMessage } from "@/lib/work/conversation-tasks";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const HAND_OFF_TOOL_ID = "hand_off_to_teammate";
@@ -77,13 +78,13 @@ export const HAND_OFF_TOOL: McpFunctionTool = {
   function: {
     name: HAND_OFF_TOOL_ID,
     description:
-      "Hand a piece of work to one of your teammates, another of the user's agents. It runs as them, in their own thread, with their apps and autonomy, and they report back there, not in this conversation. The user approves every handoff before it starts. Use it only when the user asks you to pass work to a teammate or agrees when you suggest it. It returns whether the work was handed off.",
+      "Hand a piece of work to another of the user's agents. It runs as them, in their own thread, with their apps and autonomy, and they report back there, not in this conversation. The user approves every handoff before it starts. Use it only when the user asks you to pass work to another agent or agrees when you suggest it. It returns whether the work was handed off.",
     parameters: {
       type: "object",
       properties: {
         teammate: {
           type: "string",
-          description: "The teammate's name, exactly as it appears under Your teammates.",
+          description: "The agent's name, exactly as it appears under Other agents.",
         },
         title: {
           type: "string",
@@ -93,7 +94,7 @@ export const HAND_OFF_TOOL: McpFunctionTool = {
         goal: {
           type: "string",
           description:
-            "A self-contained brief for your teammate: what the user wants, every relevant detail from this conversation (names, links, numbers, preferences), constraints, and what done looks like. Your teammate cannot read this conversation, so include everything it needs.",
+            "A self-contained brief for the other agent: what the user wants, every relevant detail from this conversation (names, links, numbers, preferences), constraints, and what done looks like. The other agent cannot read this conversation, so include everything it needs.",
         },
         deliverable: {
           type: "string",
@@ -185,7 +186,7 @@ export function resolveTeammate<T extends HandoffCandidate>(
   if (matches.length > 1) {
     return refused(
       "ambiguous_teammate",
-      `More than one teammate is called "${matches[0].name}", so it is not clear which one should take this. Ask the user to rename one of them on its page first. Nothing was handed off.`
+      `More than one agent is called "${matches[0].name}", so it is not clear which one should take this. Ask the user to rename one of them on its page first. Nothing was handed off.`
     );
   }
   const paused = teammates.find(same);
@@ -202,8 +203,8 @@ export function resolveTeammate<T extends HandoffCandidate>(
   return refused(
     "unknown_teammate",
     names.length > 0
-      ? `There is no active teammate called "${oneLine(wanted)}". Your teammates are ${nameList(names)}. Nothing was handed off.`
-      : "You have no active teammates to hand this to. Nothing was handed off."
+      ? `There is no active agent called "${oneLine(wanted)}". Your other agents are ${nameList(names)}. Nothing was handed off.`
+      : "You have no other active agents to hand this to. Nothing was handed off."
   );
 }
 
@@ -250,16 +251,16 @@ export type HandoffOutcome =
 
 /** The tool's own refusals. Refusals about a particular teammate name it, and are built where they arise. */
 export const HANDOFF_REFUSALS = {
-  invalid_arguments: "A handoff needs a teammate, a title and a goal. Nothing was handed off.",
+  invalid_arguments: "A handoff needs an agent, a title and a goal. Nothing was handed off.",
   declined: "The user declined this handoff, so nothing was handed off.",
   approval_expired: "The request to hand this off expired before it was answered, so nothing was handed off.",
   approval_blocked: "Your approval settings do not allow this handoff, so nothing was handed off.",
   approval_failed: "The approval for this handoff could not be used, so nothing was handed off.",
   stopped: "The reply was stopped before the handoff, so nothing was handed off.",
   already_tried: "This message already tried to hand work off and it did not go through. Nothing new was handed off.",
-  agent_paused: "This agent is paused. Resume it before handing work to a teammate. Nothing was handed off.",
+  agent_paused: "This agent is paused. Resume it before handing work to another agent. Nothing was handed off.",
   rate_limited: "There have been too many handoffs in the last hour, so nothing was handed off.",
-  internal_error: "Juno could not hand this off because of a problem on its side. Nothing was handed off.",
+  internal_error: `${PRODUCT_NAME} could not hand this off because of a problem on its side. Nothing was handed off.`,
 } as const;
 
 export type HandoffRefusalReason = keyof typeof HANDOFF_REFUSALS;
@@ -356,7 +357,7 @@ export function isHandoffApproval(approval: Pick<ClientActionApproval, "connecto
 
 /** The activity row's wording for this tool, before and after it answers. */
 export function handoffActivityTitle(phase: "call" | "result", ok?: boolean): string {
-  if (phase === "call") return "Handing off to a teammate";
+  if (phase === "call") return "Handing off to another agent";
   return ok ? "Handed off" : "Not handed off";
 }
 

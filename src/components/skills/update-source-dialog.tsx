@@ -21,6 +21,7 @@ import { SkillDialogContent, SkillDialogFixed, SkillDialogStep } from "@/compone
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
 import { shortCommit, updateCheckHasChoices } from "@/components/skills/skill-library-model";
 import { checkSkillSource, skillsFailureMessage, updateSkillSource } from "@/components/skills/skills-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface UpdateSourceHandlers {
   check?: typeof checkSkillSource;
@@ -272,7 +273,7 @@ export function UpdateSourceFlow({
               />
               {state.check.more ? (
                 <p className="px-5 pb-3 text-caption text-muted-foreground sm:px-6">
-                  This repository has more skills than Juno reads at once, so some new ones may not be listed.
+                  {`This repository has more skills than ${PRODUCT_NAME} reads at once, so some new ones may not be listed.`}
                 </p>
               ) : null}
               {state.check.removed.length > 0 ? (

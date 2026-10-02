@@ -228,7 +228,12 @@ export async function ensureAttachmentText(
     size: number;
     extractedText: string | null;
   }[],
-  options: { skip?: (attachment: { mimeType: string; fileName: string }) => boolean } = {},
+  options: {
+    /** The conversation owner. The cache write is scoped to them; unscoped it
+     * was refused by the ownership guard and every turn paid for the read again. */
+    userId: string;
+    skip?: (attachment: { mimeType: string; fileName: string }) => boolean;
+  },
 ): Promise<void> {
   const pending = attachments
     .filter(
@@ -255,7 +260,7 @@ export async function ensureAttachmentText(
         // is so the next turn does not pay for the same read.
         attachment.extractedText = text;
         await prisma.attachment
-          .updateMany({ where: { id: attachment.id }, data: { extractedText: text } })
+          .updateMany({ where: { id: attachment.id, userId: options.userId }, data: { extractedText: text } })
           .catch(() => undefined);
       } catch (error) {
         console.error("[knowledge] could not read an attachment for this turn", {

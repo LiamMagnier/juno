@@ -17,6 +17,7 @@ import {
   type WorkSessionContextInput,
   type WorkTransportFailure,
 } from "@/components/work/work-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * What a task is working with, and what changing it mid-task actually does.
@@ -157,7 +158,7 @@ function restoreField(next: LocalValues, previous: LocalValues, field: WorkConte
 /** What to say about a change that did not happen. Never blames the reader. */
 function failureSentence(result: WorkBlocked | WorkTransportFailure): string {
   if (result.kind === "blocked") return result.explanation;
-  if (result.cause === "offline") return "Couldn’t reach Juno, so nothing was changed.";
+  if (result.cause === "offline") return `Couldn’t reach ${PRODUCT_NAME}, so nothing was changed.`;
   // The route's own sentence, where it wrote one — it is the only part of this
   // that knows which plan, which model or which app.
   if (result.message !== null) return result.message;
@@ -165,7 +166,7 @@ function failureSentence(result: WorkBlocked | WorkTransportFailure): string {
     return "This task, or something it points at, is no longer there. Nothing was changed.";
   }
   if (result.cause === "unauthorized") {
-    return "Juno turned this down. You may have been signed out — reload the page to check.";
+    return `${PRODUCT_NAME} turned this down. You may have been signed out — reload the page to check.`;
   }
   return "Couldn’t change this just now, so it is unchanged.";
 }

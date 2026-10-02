@@ -9,6 +9,7 @@ import { MAX_CONTEXT_TOKENS, type ContextToken } from "@/lib/chat/context-tokens
 import { mentionToToken, type MentionItem, type MentionSearchResult } from "@/lib/mentions/types";
 import { readEditor, editorOffset, setEditorSelection } from "./context-editor-dom";
 import { cn } from "@/lib/utils";
+import { AGENT_NOUN, FEATURE_NAMES } from "@/lib/brand/names";
 
 type Props = Omit<React.ComponentPropsWithoutRef<"textarea">, "value"> & {
   value: string;
@@ -19,7 +20,7 @@ type Props = Omit<React.ComponentPropsWithoutRef<"textarea">, "value"> & {
   loadMentions?: (query: string, signal: AbortSignal) => Promise<MentionSearchResult>;
 };
 
-const GROUPS: Record<string, string> = { crew: "Crew", file: "Files", project: "Projects", app: "Apps", skill: "Skills", chat: "Chats", artifact: "Made by Juno" };
+const GROUPS: Record<string, string> = { crew: AGENT_NOUN.pluralLabel, file: "Files", project: "Projects", app: "Apps", skill: "Skills", chat: "Chats", artifact: FEATURE_NAMES.artifacts.label };
 
 function MentionMark({ item }: { item: MentionItem }) {
   if (item.kind === "app") return <ConnectorMark id={item.connectorId ?? item.id} className="size-4" />;
@@ -96,19 +97,22 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     if (document.activeElement === root) setEditorSelection(root, value.length);
   }, [value, onTokensChange]);
 
+  // The lookup reruns when the typed text changes, not when the caret moves
+  // inside the same @query (its start/end change, its text does not).
+  const queryText = query?.text ?? null;
   React.useEffect(() => {
-    if (!query) { setItems([]); setLoading(false); setFailure(null); return; }
+    if (queryText === null) { setItems([]); setLoading(false); setFailure(null); return; }
     const abort = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoading(true); setFailure(null);
       try {
-        const params = new URLSearchParams({ q: query.text, limit: "5" });
+        const params = new URLSearchParams({ q: queryText, limit: "5" });
         if (conversationId) params.set("conversationId", conversationId);
         let result: MentionSearchResult;
-        if (loadMentions) result = await loadMentions(query.text, abort.signal);
+        if (loadMentions) result = await loadMentions(queryText, abort.signal);
         else {
           const response = await fetch(`/api/mentions?${params}`, { signal: abort.signal });
-          if (!response.ok) throw new Error(response.status === 401 ? "Sign in to find your files, apps and crew." : "Could not find your context. Type @ to try again.");
+          if (!response.ok) throw new Error(response.status === 401 ? "Sign in to find your files, apps and agents." : "Could not find your context. Type @ to try again.");
           result = await response.json() as MentionSearchResult;
         }
         if (!abort.signal.aborted) { setItems(result.items); setActive(0); }
@@ -116,7 +120,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
       finally { if (!abort.signal.aborted) setLoading(false); }
     }, 120);
     return () => { abort.abort(); window.clearTimeout(timer); };
-  }, [query?.text, conversationId, loadMentions]);
+  }, [queryText, conversationId, loadMentions]);
 
   function makeToken(token: ContextToken) {
     const node = document.createElement("span");
@@ -181,7 +185,9 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
       })}
       <div {...Object.fromEntries(Object.entries(aria).filter(([key]) => key.startsWith("aria-")))} ref={rootRef} id={id}
         contentEditable={!disabled} suppressContentEditableWarning role="combobox" aria-label={label}
-        aria-multiline="true" aria-autocomplete="list" aria-expanded={Boolean(query) || aria["aria-expanded"]}
+        // No aria-multiline: combobox does not support it, and Enter sends here
+        // (Shift+Enter breaks the line), as the textarea combobox this replaced.
+        aria-autocomplete="list" aria-expanded={Boolean(query) || aria["aria-expanded"]}
         aria-controls={query ? paletteId : aria["aria-controls"]} aria-activedescendant={query && items.length ? `${paletteId}-${active}` : aria["aria-activedescendant"]}
         aria-disabled={disabled} data-placeholder={placeholder} className={cn(className, "context-composer-field whitespace-pre-wrap break-words")}
         style={style} tabIndex={disabled ? -1 : 0} onInput={publish} onKeyDown={keyDown}
@@ -202,7 +208,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
             <MentionMark item={item} /><span className="min-w-0 flex-1"><span className="block truncate">{item.label}</span>{(item.approval?.summary || item.subtitle || item.needsConnection) && <span className="block text-caption text-muted-foreground">{item.needsConnection ? "Connect this app before using it" : item.approval?.summary ?? item.subtitle}</span>}</span>
           </button>
         </React.Fragment>)}
-        {!items.length && <p role="status" className="px-3 py-3 text-ui text-muted-foreground">{loading ? "Finding your context…" : failure ?? "No matching files, apps or crew."}</p>}
+        {!items.length && <p role="status" className="px-3 py-3 text-ui text-muted-foreground">{loading ? "Finding your context…" : failure ?? "No matching files, apps or agents."}</p>}
       </div>}
     </>
   );

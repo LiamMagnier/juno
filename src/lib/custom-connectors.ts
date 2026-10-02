@@ -11,6 +11,7 @@ import { discoverEndpoints, refreshMcpToken, type McpOAuthEndpoints } from "@/li
 import { customMcpUrlProblem, safeMcpFetch } from "@/lib/mcp-safe-fetch";
 import { prisma } from "@/lib/prisma";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * MCP servers people add themselves, by URL.
@@ -93,13 +94,13 @@ export type ProbeFailure = "invalid_url" | "blocked" | "unreachable" | "no_auth"
 
 const PROBE_MESSAGES: Record<ProbeFailure, string> = {
   invalid_url: "That isn't a valid server address.",
-  blocked: "That address is on a private network Juno can't reach.",
-  unreachable: "Juno couldn't reach an MCP server at that address. Check the URL and try again.",
+  blocked: `That address is on a private network ${PRODUCT_NAME} can't reach.`,
+  unreachable: `${PRODUCT_NAME} couldn't reach an MCP server at that address. Check the URL and try again.`,
   no_auth:
-    "That server doesn't ask you to sign in. For now Juno only adds servers that sign in with OAuth, so your account stays yours.",
+    `That server doesn't ask you to sign in. For now ${PRODUCT_NAME} only adds servers that sign in with OAuth, so your account stays yours.`,
   no_oauth: "That server asks for sign-in but doesn't say how. It needs to support MCP's OAuth sign-in.",
   no_registration:
-    "That server's sign-in doesn't let new apps register themselves (dynamic client registration), so Juno can't connect to it yet.",
+    `That server's sign-in doesn't let new apps register themselves (dynamic client registration), so ${PRODUCT_NAME} can't connect to it yet.`,
 };
 
 function probeFailure(reason: ProbeFailure, message?: string): ProbeResult {
@@ -158,7 +159,7 @@ export async function probeCustomMcpServer(url: string): Promise<ProbeResult> {
     if (!endpoints.registrationEndpoint) return probeFailure("no_registration");
     for (const endpoint of [endpoints.authorizationEndpoint, endpoints.tokenEndpoint, endpoints.registrationEndpoint]) {
       if (customMcpUrlProblem(endpoint)) {
-        return probeFailure("blocked", "That server's sign-in points somewhere Juno can't reach.");
+        return probeFailure("blocked", `That server's sign-in points somewhere ${PRODUCT_NAME} can't reach.`);
       }
     }
     return { ok: true, endpoints, authHost: new URL(endpoints.authorizationEndpoint).hostname };

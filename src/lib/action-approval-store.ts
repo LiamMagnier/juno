@@ -27,6 +27,7 @@ import {
   type ClientActionApproval,
 } from "@/lib/action-approval";
 import type { ToolAccessHints } from "@/lib/tool-access";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const POLL_MS = 400;
 const RESULT_LIMIT = 30_000;
@@ -347,7 +348,7 @@ async function recoverOrCreateReceipt(input: {
       void notifyUser({
         userId: request.userId,
         type: "code_approval",
-        title: "Juno needs your approval",
+        title: `${PRODUCT_NAME} needs your approval`,
         body: preview,
         priority: "urgent",
         sourceType: "action_approval",
@@ -444,7 +445,7 @@ export async function authorizeExternalAction(request: AuthorizeActionInput): Pr
     policy,
     status: initialStatus,
     ...(unattendedRefusal
-      ? { blockedReason: "This ran without anyone attached, and it needs your approval. Start it from Juno to approve it." }
+      ? { blockedReason: `This ran without anyone attached, and it needs your approval. Start it from ${PRODUCT_NAME} to approve it.` }
       : {}),
   });
 
@@ -540,10 +541,10 @@ export type ActionDecisionResult =
 const ACTION_DECISION_MESSAGES: Record<Exclude<ActionDecisionResult, { ok: true }>["code"], string> = {
   not_found: "Approval not found.",
   digest_mismatch: "This answer is for a different action than the one you reviewed.",
-  policy_changed: "Your permissions changed after this request was created. Juno will ask again.",
+  policy_changed: `Your permissions changed after this request was created. ${PRODUCT_NAME} will ask again.`,
   expired: "This request expired before it was answered.",
   already_decided: "This request has already been answered.",
-  not_scope_allowable: "Juno only remembers approval for narrowly reversible actions.",
+  not_scope_allowable: `${PRODUCT_NAME} only remembers approval for narrowly reversible actions.`,
   blocked: "This connector is blocked by your current permissions.",
 };
 

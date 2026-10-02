@@ -23,6 +23,7 @@ import type {
   SkillResource,
   WorkSkillContract,
 } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Everything the Work surfaces ask the server for, in one place.
@@ -287,7 +288,7 @@ async function refusal(res: Response): Promise<WorkBlocked | WorkTransportFailur
       kind: "blocked",
       reason: text(data, "error") ?? "unavailable",
       explanation:
-        message ?? "Juno cannot run this right now and did not say why. Try again in a moment.",
+        message ?? `${PRODUCT_NAME} cannot run this right now and did not say why. Try again in a moment.`,
       missing: capabilitiesFrom(data.missing),
       degradation: degradationsFrom(data.degradation),
       ...(confirmation ? { confirmation } : {}),
@@ -1929,7 +1930,7 @@ export function hostIsReachable(host: ClientWorkHost): boolean {
  */
 export function hostUnavailableReason(host: ClientWorkHost): string | null {
   if (host.revokedAt !== null) return "Access to this Mac was revoked.";
-  if (!host.enabled) return "Juno Work is switched off on this Mac.";
+  if (!host.enabled) return `${PRODUCT_NAME} Work is switched off on this Mac.`;
   if (host.state === "offline") return "This Mac has not checked in for several minutes.";
   if (host.state === "stale") return "This Mac stopped checking in a minute ago.";
   return null;

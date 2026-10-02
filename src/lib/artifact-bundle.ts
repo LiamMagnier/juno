@@ -3,6 +3,7 @@ import { extensionForLanguage } from "@/lib/artifact-runtime";
 import { designPosterSvg } from "@/lib/design/poster";
 import { buildHandoffBundle } from "@/lib/design/export";
 import { parseStoredDesignDocument } from "@/lib/design/migrations";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * DOWNLOAD (PRODUCT_REFOUNDATION §10): an artifact as a file, or as a ZIP
@@ -140,14 +141,14 @@ export function bundleFiles(input: BundleInput): Array<{ path: string; content: 
     `- Type: ${artifact.type}${artifact.language ? ` (${artifact.language})` : ""}`,
     `- Version: ${version}`,
     `- Exported: ${now}`,
-    `- Juno artifact: ${artifact.id}`,
+    `- ${PRODUCT_NAME} artifact: ${artifact.id}`,
   ];
   if (artifact.derivedFromId) {
     lines.push(`- Copied from: ${artifact.derivedFromId}${artifact.derivedFromVersion ? ` (version ${artifact.derivedFromVersion})` : ""}`);
   }
   lines.push("", `\`${main}\` is the source.`);
   if (artifact.type === "DESIGN") {
-    lines.push("`poster.svg` is a picture of its first page; `handoff.json` is the Juno Code handoff bundle.");
+    lines.push(`\`poster.svg\` is a picture of its first page; \`handoff.json\` is the ${PRODUCT_NAME} Code handoff bundle.`);
   }
   if (included.length > 0) lines.push(`\`history/\` holds versions ${included.join(", ")}.`);
   if (history.length > included.length) {

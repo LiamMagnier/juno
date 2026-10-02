@@ -18,6 +18,7 @@ import { filterBranches, isUsableGitRef } from "@/lib/code-branches";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * "Where does this run" — two chips above the Code composer's field, one for
@@ -707,7 +708,7 @@ function DeviceList({
               tone="error"
               icon={<StatusIcons.error className="size-5" aria-hidden="true" />}
               title="Couldn’t load your projects"
-              body="Juno couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced — try again."
+              body={`${PRODUCT_NAME} couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced — try again.`}
               action={
                 <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 coarse:h-11">
                   <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
@@ -718,7 +719,7 @@ function DeviceList({
             <PickerNote
               icon={<AppIcons.projects className="size-5" aria-hidden="true" />}
               title="No projects synced yet"
-              body="Open a project folder in the Juno app on your Mac and it appears here, ready for a new session."
+              body={`Open a project folder in the ${PRODUCT_NAME} app on your Mac and it appears here, ready for a new session.`}
             />
           ) : filtered.length === 0 ? (
             <PickerNote
@@ -849,7 +850,7 @@ function CloudList({
         title={reconnect ? "Your GitHub connection expired" : "GitHub isn’t connected"}
         body={
           reconnect
-            ? "Juno can’t list your repositories until it is reconnected. Nothing was started, and sessions on your device are unaffected."
+            ? `${PRODUCT_NAME} can’t list your repositories until it is reconnected. Nothing was started, and sessions on your device are unaffected.`
             : "Cloud runs clone one of your GitHub repositories onto a fresh machine and push a branch back. Connect GitHub to pick one."
         }
         action={
@@ -938,7 +939,7 @@ function CloudList({
             <PickerNote
               icon={<GitHubMark className="size-5" />}
               title="No repositories found"
-              body="This GitHub account has no repositories Juno can see. Granting Juno access to an organisation in Connections adds its repos here."
+              body={`This GitHub account has no repositories ${PRODUCT_NAME} can see. Granting ${PRODUCT_NAME} access to an organisation in Connections adds its repos here.`}
             />
           ) : filtered.length === 0 ? (
             <PickerNote
@@ -1115,7 +1116,7 @@ function BranchList({
               onClick={() => onPick(typed)}
               icon={<CodeIcons.branch className="size-4" aria-hidden="true" />}
               title={<span className="font-mono">{typed}</span>}
-              meta={<span className="truncate">Start from this ref — Juno hasn’t checked that it exists</span>}
+              meta={<span className="truncate">{`Start from this ref — ${PRODUCT_NAME} hasn’t checked that it exists`}</span>}
             />
           )}
           {loading ? (

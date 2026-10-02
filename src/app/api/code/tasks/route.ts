@@ -25,6 +25,7 @@ import { getCodingMemory } from "@/lib/memory";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isUsableGitRef, MAX_REF_LENGTH } from "@/lib/code-branches";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -612,7 +613,7 @@ export async function POST(req: Request) {
           }],
           { status: "failed", fromStatus: "queued" },
         );
-        failedTask = await prisma.codeTask.findUnique({ where: { id: task.id } });
+        failedTask = await prisma.codeTask.findUnique({ where: { id: task.id, userId: task.userId } });
         if (failedTask) await persistCodeTaskOutcome(failedTask);
         // The rows this request wrote, handed back so the client can keep the
         // user's turn on screen and append the failure beneath it — exactly
@@ -667,7 +668,7 @@ export async function POST(req: Request) {
         {
           error: "device_does_not_serve_queued_tasks",
           message:
-            `${device.name} is signed in but is not set up to run remote Juno Code work, so this ` +
+            `${device.name} is signed in but is not set up to run remote ${PRODUCT_NAME} Code work, so this ` +
             "task would never start. Enable remote hosting on that computer and try again.",
           deviceId: device.id,
         },

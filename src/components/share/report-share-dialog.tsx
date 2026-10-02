@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { SHARE_REPORT_DETAIL_MAX, SHARE_REPORT_REASONS, type ShareReportReason } from "@/lib/share-policy";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The Report link at the foot of a public share page, and the form behind it.
@@ -42,7 +43,7 @@ import { SHARE_REPORT_DETAIL_MAX, SHARE_REPORT_REASONS, type ShareReportReason }
 type SendState = "idle" | "sending" | "sent";
 
 const GENERIC_ERROR = "Couldn’t send the report. Please try again.";
-const NETWORK_ERROR = "Couldn’t reach Juno. Check your connection and try again.";
+const NETWORK_ERROR = `Couldn’t reach ${PRODUCT_NAME}. Check your connection and try again.`;
 
 export function ReportShareButton({ token }: { token: string }) {
   const [open, setOpen] = React.useState(false);
@@ -131,7 +132,7 @@ export function ReportShareButton({ token }: { token: string }) {
         <DialogHeader>
           <DialogTitle>Report this page</DialogTitle>
           <DialogDescription>
-            Your report goes to the Juno team. The person who shared this page won’t see who sent it.
+            {`Your report goes to the ${PRODUCT_NAME} team. The person who shared this page won’t see who sent it.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +140,7 @@ export function ReportShareButton({ token }: { token: string }) {
           <div className="space-y-4 motion-safe:animate-fade-in">
             <p role="status" className="flex items-start gap-2 text-body text-foreground">
               <StatusIcons.success className="mt-1 size-4 shrink-0 text-success" aria-hidden="true" />
-              <span className="min-w-0">Thanks. The Juno team will review this page.</span>
+              <span className="min-w-0">{`Thanks. The ${PRODUCT_NAME} team will review this page.`}</span>
             </p>
             <DialogFooter>
               <DialogClose asChild>
@@ -200,7 +201,7 @@ export function ReportShareButton({ token }: { token: string }) {
               inputMode="email"
               autoComplete="email"
               label="Email (if you’d like a reply)"
-              hint="Only the Juno team sees it."
+              hint={`Only the ${PRODUCT_NAME} team sees it.`}
               value={contact}
               onChange={(e) => setContact(e.target.value)}
               maxLength={320}

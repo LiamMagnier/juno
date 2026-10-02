@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { budgetAlert } from "@/lib/email-templates";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Thin Resend REST client (no SDK) + the lifecycle senders that wrap it.
@@ -19,7 +20,7 @@ export function isEmailEnabled(): boolean {
 }
 
 function fromAddress(): string {
-  return process.env.EMAIL_FROM ?? "Juno <hello@chat.liams.dev>";
+  return process.env.EMAIL_FROM ?? `${PRODUCT_NAME} <hello@chat.liams.dev>`;
 }
 
 export interface SendEmailInput {
@@ -199,7 +200,7 @@ function securityLayout(opts: { eyebrow: string; heading: string; body: string[]
 }
 
 function securityText(body: string[], cta: { label: string; href: string }): string {
-  return [...body, "", `${cta.label}: ${cta.href}`, "", "Juno · chat.liams.dev"].join("\n");
+  return [...body, "", `${cta.label}: ${cta.href}`, "", `${PRODUCT_NAME} · chat.liams.dev`].join("\n");
 }
 
 const IGNORE_LINE = "If you didn't ask for this, you can ignore this email — nothing changes until the link is opened.";
@@ -207,14 +208,14 @@ const IGNORE_LINE = "If you didn't ask for this, you can ignore this email — n
 /** "Confirm your email address" — sent at registration and on resend. */
 export async function sendEmailVerification(to: string, verifyUrl: string): Promise<SendEmailResult> {
   const body = [
-    "Confirm this address to finish setting up your Juno account.",
+    `Confirm this address to finish setting up your ${PRODUCT_NAME} account.`,
     "The link works once and expires in 24 hours.",
     IGNORE_LINE,
   ];
   return sendEmail({
     to,
     subject: "Confirm your email address",
-    html: securityLayout({ eyebrow: "Juno", heading: "Confirm your email address", body, cta: { label: "Confirm address", href: verifyUrl } }),
+    html: securityLayout({ eyebrow: PRODUCT_NAME, heading: "Confirm your email address", body, cta: { label: "Confirm address", href: verifyUrl } }),
     text: securityText(body, { label: "Confirm address", href: verifyUrl }),
   });
 }
@@ -227,14 +228,14 @@ export async function sendEmailVerification(to: string, verifyUrl: string): Prom
  */
 export async function sendEmailChangeVerification(to: string, verifyUrl: string): Promise<SendEmailResult> {
   const body = [
-    `Confirm ${to} to make it the address you sign in to Juno with.`,
+    `Confirm ${to} to make it the address you sign in to ${PRODUCT_NAME} with.`,
     "Your current address keeps working until you do. The link expires in 24 hours.",
     IGNORE_LINE,
   ];
   return sendEmail({
     to,
     subject: "Confirm your new email address",
-    html: securityLayout({ eyebrow: "Juno", heading: "Confirm your new address", body, cta: { label: "Confirm address", href: verifyUrl } }),
+    html: securityLayout({ eyebrow: PRODUCT_NAME, heading: "Confirm your new address", body, cta: { label: "Confirm address", href: verifyUrl } }),
     text: securityText(body, { label: "Confirm address", href: verifyUrl }),
   });
 }
@@ -242,13 +243,13 @@ export async function sendEmailChangeVerification(to: string, verifyUrl: string)
 /** The passwordless sign-in link (Auth.js email provider). */
 export async function sendMagicLink(to: string, signInUrl: string): Promise<SendEmailResult> {
   const body = [
-    "Open this link to sign in to Juno. It works once and expires shortly.",
+    `Open this link to sign in to ${PRODUCT_NAME}. It works once and expires shortly.`,
     "If you didn't ask to sign in, you can ignore this email.",
   ];
   return sendEmail({
     to,
-    subject: "Your Juno sign-in link",
-    html: securityLayout({ eyebrow: "Juno", heading: "Sign in to Juno", body, cta: { label: "Sign in", href: signInUrl } }),
+    subject: `Your ${PRODUCT_NAME} sign-in link`,
+    html: securityLayout({ eyebrow: PRODUCT_NAME, heading: `Sign in to ${PRODUCT_NAME}`, body, cta: { label: "Sign in", href: signInUrl } }),
     text: securityText(body, { label: "Sign in", href: signInUrl }),
   });
 }

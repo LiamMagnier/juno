@@ -6,6 +6,7 @@ import { getObjectBytes } from "@/lib/storage";
 import { ARTIFACT_MIME } from "@/lib/work/domain";
 import { serializeArtifact } from "@/lib/work/serializers";
 import { attachmentDisposition, contentHashFor } from "@/lib/work/deliverables";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -102,7 +103,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         error: "content_hash_mismatch",
         message:
           `The stored bytes for version ${version.version} do not match the SHA-256 recorded ` +
-          `when it was produced, so this is not the file Juno made. Nothing has been served. ` +
+          `when it was produced, so this is not the file ${PRODUCT_NAME} made. Nothing has been served. ` +
           `Regenerate the deliverable.`,
         expected: version.contentHash,
         actual: actualHash,

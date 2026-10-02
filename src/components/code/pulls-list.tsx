@@ -11,6 +11,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* /code/pulls: real PRs from GET /api/code/github/pulls, grouped by repository,
  * with open-on-GitHub links and a refresh.
@@ -154,7 +155,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
       <EmptyState
         icon={AppIcons.pulls}
         title="Connect GitHub"
-        description="Link your GitHub account so Juno can list and track the pull requests your code sessions open."
+        description={`Link your GitHub account so ${PRODUCT_NAME} can list and track the pull requests your code sessions open.`}
         action={
           <Button asChild className="gap-1.5">
             <Link href="/connections">
@@ -220,7 +221,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
         <EmptyState
           icon={AppIcons.pulls}
           title="No open pull requests"
-          description="Pull requests you open — including the ones Juno Code pushes from your sessions — show up here."
+          description={`Pull requests you open — including the ones ${PRODUCT_NAME} Code pushes from your sessions — show up here.`}
           action={
             <Button asChild variant="outline" className="gap-1.5">
               {/* `/code` — the composer itself. `/code/new` still resolves, as
@@ -237,7 +238,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
           <PullSection
             label="Yours"
             items={data.created}
-            emptyNote="Pull requests you open yourself land here — including the ones Juno Code pushes from a cloud session."
+            emptyNote={`Pull requests you open yourself land here — including the ones ${PRODUCT_NAME} Code pushes from a cloud session.`}
           />
           {data.involved.length > 0 && <PullSection label="Involving you" items={data.involved} />}
         </>

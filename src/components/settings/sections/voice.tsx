@@ -14,10 +14,11 @@ import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 import { VOICES, DEFAULT_VOICE, type VoiceId } from "@/lib/voices";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // Short on purpose: a preview is billed per character and the reader may
 // audition a dozen voices in a row. Long enough to hear timbre.
-const VOICE_PREVIEW_TEXT = "Hi, I'm Juno. This is how I sound when I read an answer aloud.";
+const VOICE_PREVIEW_TEXT = `Hi, I'm ${PRODUCT_NAME}. This is how I sound when I read an answer aloud.`;
 
 const VOICE_OPTIONS = VOICES.map((v) => ({ value: v.id, label: v.label, description: v.description }));
 
@@ -166,7 +167,7 @@ export function VoiceSection() {
       <p className="pt-6 text-ui text-muted-foreground">
         <span>
           {features.serverStt
-            ? "Dictation is transcribed by Juno, in any language."
+            ? `Dictation is transcribed by ${PRODUCT_NAME}, in any language.`
             : "Dictation uses your browser’s speech recognition."}
         </span>{" "}
         <span>

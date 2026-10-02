@@ -16,6 +16,7 @@ import { ACCENTS, swatchInk } from "@/lib/accents";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const KEY = "juno:onboarded:v1";
 
@@ -196,7 +197,7 @@ export function Onboarding() {
         </div>
 
         <div className="relative px-7 pb-7 pt-7">
-          <DialogTitle className="font-sans text-title font-medium leading-tight">Welcome to Juno</DialogTitle>
+          <DialogTitle className="font-sans text-title font-medium leading-tight">{`Welcome to ${PRODUCT_NAME}`}</DialogTitle>
           {/* Full --muted-foreground, no /80: at this size the composite fell
               under 4.5:1 on the popover ground. */}
           <DialogDescription className="mt-1.5 text-body text-muted-foreground">
@@ -210,7 +211,7 @@ export function Onboarding() {
             <div style={staggerDelay(0, "loose")} className="motion-safe:animate-fade-in-up [animation-fill-mode:backwards]">
               <Field
                 id="onboarding-name"
-                label="What should Juno call you?"
+                label={`What should ${PRODUCT_NAME} call you?`}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your first name"

@@ -18,6 +18,7 @@ import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export default function SkillError({
   error,
@@ -36,7 +37,7 @@ export default function SkillError({
         tone="error"
         icon={StatusIcons.error}
         title="This skill couldn’t load"
-        description="Nothing has been changed by the attempt. The skill, its instructions and whether Juno may reach for it are all as they were."
+        description={`Nothing has been changed by the attempt. The skill, its instructions and whether ${PRODUCT_NAME} may reach for it are all as they were.`}
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

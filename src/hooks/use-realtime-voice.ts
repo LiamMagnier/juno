@@ -46,6 +46,7 @@ import {
   VOICE_BAND_COUNT,
   type VoiceLevelSource,
 } from "@/lib/voice-level";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
 
@@ -166,7 +167,7 @@ async function fetchVoiceAttachmentContext(
     | (Partial<VoiceAttachmentContextResponse> & { error?: string })
     | null;
   if (!response.ok || !body) {
-    throw new Error(body?.error || `Juno could not read those attachments (${response.status}).`);
+    throw new Error(body?.error || `${PRODUCT_NAME} could not read those attachments (${response.status}).`);
   }
   return {
     context: typeof body.context === "string" ? body.context : "",

@@ -41,6 +41,7 @@ import {
 import { SKILL_MD_REFUSAL_MESSAGES, titleFromSkillName, type SkillMdRefusal } from "@/lib/skills/skill-md";
 import type { LibrarySkill } from "@/lib/skills/library-contract";
 import { MAX_SKILL_NAME_CHARS, normalizeSkillSlug } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -73,11 +74,11 @@ async function readLink(raw: string): Promise<{ result: PackageReadResult; url: 
   try {
     url = new URL(raw);
   } catch {
-    return refuse("invalid_url", "That isn't a link Juno can open.");
+    return refuse("invalid_url", `That isn't a link ${PRODUCT_NAME} can open.`);
   }
   if (GITHUB_HOSTS.has(url.hostname)) {
     // A repository page is HTML; the GitHub importer walks it properly.
-    return refuse("use_github", "That's a GitHub link. Juno imports it from the repository instead.", 409);
+    return refuse("use_github", `That's a GitHub link. ${PRODUCT_NAME} imports it from the repository instead.`, 409);
   }
   const fetched = await fetchSafePublicUrl(url.href, {
     headers: { Accept: "text/markdown, text/plain, application/zip, application/octet-stream;q=0.9, */*;q=0.5" },
@@ -86,8 +87,8 @@ async function readLink(raw: string): Promise<{ result: PackageReadResult; url: 
     return refuse(
       fetched?.kind === "blocked" ? "blocked" : "unreachable",
       fetched?.kind === "blocked"
-        ? "That link points somewhere Juno can't reach."
-        : "Juno couldn't download that link. Check it opens in a browser without signing in.",
+        ? `That link points somewhere ${PRODUCT_NAME} can't reach.`
+        : `${PRODUCT_NAME} couldn't download that link. Check it opens in a browser without signing in.`,
       502
     );
   }
@@ -330,7 +331,7 @@ export async function POST(req: Request) {
         path: candidate.path,
         slug: rename ?? candidate.skill.name,
         reason: "invalid_slug",
-        message: "Juno could not turn that name into something you can type after a slash.",
+        message: `${PRODUCT_NAME} could not turn that name into something you can type after a slash.`,
       });
       continue;
     }

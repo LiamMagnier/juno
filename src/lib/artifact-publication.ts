@@ -8,6 +8,7 @@ import { shareIsServable } from "@/lib/share-policy";
 import { lockArtifact, sealDraftLocked } from "@/lib/artifact-writes";
 import { artifactLineageTakenDown } from "@/lib/artifact-takedown";
 import type { ArtifactType } from "@/lib/message-content";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * PUBLISH (PRODUCT_REFOUNDATION §10, DECISIONS D-013).
@@ -55,7 +56,7 @@ import type { ArtifactType } from "@/lib/message-content";
 
 export class PublicationTakenDownError extends Error {
   constructor() {
-    super("This was removed from public sharing for breaking Juno’s rules, so it can’t be published again.");
+    super(`This was removed from public sharing for breaking ${PRODUCT_NAME}’s rules, so it can’t be published again.`);
     this.name = "PublicationTakenDownError";
   }
 }

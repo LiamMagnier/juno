@@ -90,7 +90,7 @@ export function memberBudgetMessage(input: {
   resetsAtMs: number | null;
   stage: "admission" | "running";
 }): string {
-  const name = input.name.trim() || "This crew member";
+  const name = input.name.trim() || "This agent";
   const cap = formatBudget(input.capMicroUsd);
   const frees = whenItFrees(input.resetsAtMs);
   const lead =

@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "037f9196659e3c9adf912ef9583eac42a58d61b72fccb0b2d3c6e6fc79cb506f"
+    public static let digest = "47437c0f0baa6311c4713bcb1b920938f1543bede42fb1faf0e1fc2862f921ba"
 }
 
 /// Every state a Work session or run can be in.
@@ -121,11 +121,11 @@ public enum JunoWorkTerminalReason: String, CaseIterable, Codable, Sendable {
 
 /// Where a task is asked to run.
 public enum JunoWorkTarget: String, CaseIterable, Codable, Sendable {
-    /// Juno's own executor, which keeps going when every user device is offline.
+    /// Alevr's own executor, which keeps going when every user device is offline.
     case cloud = "cloud"
     /// An opted-in Mac, which is the only place local files, apps and browsers exist.
     case local = "local"
-    /// Let Juno choose from the capabilities the task requires. A request, never an outcome.
+    /// Let Alevr choose from the capabilities the task requires. A request, never an outcome.
     case automatic = "automatic"
 
     /// Whether this can be an outcome as well as a request. Automatic cannot: something has to choose.
@@ -154,7 +154,7 @@ public enum JunoWorkCapability: String, CaseIterable, Codable, Sendable {
     case webResearch = "web_research"
     /// Call a linked connector or remote MCP server.
     case connectors = "connectors"
-    /// Read and write files held by Juno or a cloud drive rather than a local disk.
+    /// Read and write files held by Alevr or a cloud drive rather than a local disk.
     case cloudFiles = "cloud_files"
     /// Produce documents, workbooks, decks, PDFs and sites.
     case deliverables = "deliverables"
@@ -187,7 +187,7 @@ public enum JunoWorkCapability: String, CaseIterable, Codable, Sendable {
         case .localShell: return "a shell on your Mac"
         case .webResearch: return "web research"
         case .connectors: return "your connected apps"
-        case .cloudFiles: return "files stored with Juno"
+        case .cloudFiles: return "files stored with Alevr"
         case .deliverables: return "document and spreadsheet creation"
         case .backgroundContinuation: return "running while your devices are offline"
         }

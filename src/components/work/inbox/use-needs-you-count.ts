@@ -11,6 +11,7 @@ import {
   fetchWorkSessions,
   type WorkInboxSession,
 } from "@/components/work/work-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * WHICH CHATS ARE CARRYING A RUN, for the sidebar — and the count that used to
@@ -217,7 +218,7 @@ function announceRise(previous: number | null, next: number | null): void {
     // `tag` collapses successive notifications into one entry rather than
     // stacking them: the reader needs to know that something is waiting, not
     // to clear four of them.
-    new Notification(sentence, { body: "Open Juno to answer it.", tag: WORK_NEEDS_YOU_TAG });
+    new Notification(sentence, { body: `Open ${PRODUCT_NAME} to answer it.`, tag: WORK_NEEDS_YOU_TAG });
   } catch {
     // Permission granted and the constructor still refused. The toast is out.
   }

@@ -10,6 +10,7 @@ import { composerFieldClass, composerIconButtonClass } from "@/components/ui/com
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Dictation — the composer, listening.
@@ -498,7 +499,7 @@ export function ComposerDictation({
           </p>
         ) : micError ? (
           <p className="text-muted-foreground">
-            Juno needs the microphone to dictate. Allow it in your browser, then try again.
+            {`${PRODUCT_NAME} needs the microphone to dictate. Allow it in your browser, then try again.`}
           </p>
         ) : transcript ? (
           <p className="whitespace-pre-wrap text-foreground">

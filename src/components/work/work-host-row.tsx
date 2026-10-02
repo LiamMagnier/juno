@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { PhaseOrb } from "@/components/effects/phase-orb";
 import { StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * One Mac in a list, and the mark that says whether it is there.
@@ -147,7 +148,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
             : (workload ?? "Nothing running on it right now.")}
         </span>
         <span className="mt-1.5 block truncate font-mono text-micro tabular-nums text-muted-foreground">
-          {host.platform} · Juno {host.appVersion} · last seen {workTimeAgo(host.lastSeenAt)}
+          {host.platform}{` · ${PRODUCT_NAME} `}{host.appVersion} · last seen {workTimeAgo(host.lastSeenAt)}
         </span>
       </span>
       <ChevronRight className={workRowChevronClass} aria-hidden="true" />

@@ -15,6 +15,7 @@
 
 import { openOoxml, scanXml, xmlAttr } from "./ooxml";
 import { BlockCollector, type ExtractedBlock, type ExtractionResult } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const DOCX_PARSER = "docx";
 export const DOCX_PARSER_VERSION = "1";
@@ -210,7 +211,7 @@ export async function extractDocx(input: { bytes: Uint8Array; fileName: string }
       ...base,
       status: "degraded",
       blocks: [],
-      reason: "This document has no text — it is probably images only, and Juno does not read text out of pictures yet.",
+      reason: `This document has no text — it is probably images only, and ${PRODUCT_NAME} does not read text out of pictures yet.`,
     };
   }
 
@@ -220,7 +221,7 @@ export async function extractDocx(input: { bytes: Uint8Array; fileName: string }
     blocks,
     pageCount: sawPageBreak ? page : undefined,
     reason: collector.hitLimit
-      ? "This document is longer than Juno's indexing limit, so only its first part was indexed."
+      ? `This document is longer than ${PRODUCT_NAME}'s indexing limit, so only its first part was indexed.`
       : undefined,
   };
 }

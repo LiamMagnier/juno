@@ -15,6 +15,7 @@ import type { StatusTone } from "@/lib/conversation-status";
 import { humanize } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
 import { PhaseOrb } from "@/components/effects/phase-orb";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * How Work says things.
@@ -60,16 +61,16 @@ const STATUS_META: Record<WorkStatus, StatusMeta> = {
     tone: "live",
     sentence: "Fetching inputs, resolving permissions and starting up.",
   },
-  running: { label: "Running", tone: "live", sentence: "Juno is working on this now." },
+  running: { label: "Running", tone: "live", sentence: `${PRODUCT_NAME} is working on this now.` },
   waiting_input: {
     label: "Needs an answer",
     tone: "attention",
-    sentence: "Juno has asked you something and cannot continue until you answer.",
+    sentence: `${PRODUCT_NAME} has asked you something and cannot continue until you answer.`,
   },
   waiting_approval: {
     label: "Needs approval",
     tone: "attention",
-    sentence: "Juno is waiting for you to allow or refuse an action.",
+    sentence: `${PRODUCT_NAME} is waiting for you to allow or refuse an action.`,
   },
   paused: { label: "Paused", tone: "neutral", sentence: "You stopped this. It can be resumed." },
   completed: { label: "Done", tone: "good", sentence: "This finished." },
@@ -109,7 +110,7 @@ const STATUS_META: Record<WorkStatus, StatusMeta> = {
     label: "Interrupted",
     tone: "attention",
     sentence:
-      "The executor stopped reporting and its lease expired. Juno does not restart an interrupted run on its own, because it may already have changed something.",
+      `The executor stopped reporting and its lease expired. ${PRODUCT_NAME} does not restart an interrupted run on its own, because it may already have changed something.`,
   },
   // Two untrue clauses, both removed.
   //
@@ -168,7 +169,7 @@ export function statusLabel(status: WorkStatus): string {
  */
 export function statusSentence(status: WorkStatus, actor?: string | null): string {
   const sentence = STATUS_META[status].sentence;
-  return actor && sentence.startsWith("Juno ") ? `${actor}${sentence.slice("Juno".length)}` : sentence;
+  return actor && sentence.startsWith(`${PRODUCT_NAME} `) ? `${actor}${sentence.slice(PRODUCT_NAME.length)}` : sentence;
 }
 
 /**

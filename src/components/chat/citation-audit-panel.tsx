@@ -53,6 +53,7 @@ import {
   type CitationAuditSource,
 } from "@/components/chat/citation-audit";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // The source inspector
@@ -420,8 +421,7 @@ function ClaimRow({
               ))
             ) : (
               <p className="mt-2 rounded-menu border border-border/70 bg-card p-3 text-body text-muted-foreground">
-                The report states this without citing anything. Juno could not check it against a source, so treat it as
-                unverified.
+                {`The report states this without citing anything. ${PRODUCT_NAME} could not check it against a source, so treat it as unverified.`}
               </p>
             )}
           </div>

@@ -55,6 +55,7 @@ import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/pro
 import { ProjectCodeList } from "@/components/projects/project-code-list";
 import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/projects/project-sources-list";
 import { madeInConversations } from "@/lib/artifact-links";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -110,7 +111,7 @@ interface Detail {
 
 const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
   webSearch: "Web search",
-  deepResearch: "Research",
+  deepResearch: FEATURE_NAMES.research.label,
   canvas: "Canvas",
   mediaGeneration: "Image & video",
   connectors: "Connected apps",
@@ -1047,7 +1048,7 @@ export default function ProjectDetailPage() {
                 <Textarea
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
-                  placeholder="How should Juno behave? (role, tone, constraints…)"
+                  placeholder={`How should ${PRODUCT_NAME} behave? (role, tone, constraints…)`}
                   spellCheck={false}
                   aria-label="Project instructions"
                   className="min-h-[16rem] text-body leading-relaxed"
@@ -1075,7 +1076,7 @@ export default function ProjectDetailPage() {
                   <div className="min-h-9">
                     <CardEyebrow className="font-sans text-caption font-medium">Identity and model</CardEyebrow>
                     <p className="mt-1 text-body text-muted-foreground">
-                      What Juno is called here, and which model answers by default.
+                      {`What ${PRODUCT_NAME} is called here, and which model answers by default.`}
                     </p>
                   </div>
                   <div className="mt-4 space-y-4">
@@ -1143,7 +1144,7 @@ export default function ProjectDetailPage() {
                     <div className="min-h-9 min-w-0">
                       <CardEyebrow className="font-sans text-caption font-medium">Tools</CardEyebrow>
                       <p className="mt-1 text-body text-muted-foreground">
-                        Narrow what Juno may reach for while answering here.
+                        {`Narrow what ${PRODUCT_NAME} may reach for while answering here.`}
                       </p>
                     </div>
                     <Switch
@@ -1191,8 +1192,7 @@ export default function ProjectDetailPage() {
                           same control to a reader who had not used it yet. It
                           folds with the list it qualifies. */}
                       <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
-                        Restrictions narrow what is available while Juno generates in this project.
-                        They do not disconnect anything.
+                        {`Restrictions narrow what is available while ${PRODUCT_NAME} generates in this project. They do not disconnect anything.`}
                       </p>
                     </Collapse>
                   </div>
@@ -1268,8 +1268,7 @@ export default function ProjectDetailPage() {
           <DialogHeader>
             <DialogTitle>Delete this chat?</DialogTitle>
             <DialogDescription>
-              “{chatToDelete?.title}” and its messages are removed for good. Anything Juno made in it stays in your
-              Library. This can’t be undone.
+              “{chatToDelete?.title}{`” and its messages are removed for good. Anything ${PRODUCT_NAME} made in it stays in your Library. This can’t be undone.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1306,15 +1305,14 @@ export default function ProjectDetailPage() {
           <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-6 py-5 pr-14 text-left">
             <CardEyebrow className="font-sans text-caption font-medium">Project instructions</CardEyebrow>
             <DialogTitle className="mt-2 text-title">
-              How Juno behaves in this project
+              {`How ${PRODUCT_NAME} behaves in this project`}
             </DialogTitle>
             {/* `text-body` is the prose rung this description wanted; DialogDescription
                 itself only sets `text-ui`. It could not be passed until utils.ts
                 registered the fontSize keys — twMerge read it as a colour and evicted the
                 component's own text-muted-foreground. Both survive the merge now. */}
             <DialogDescription className="mt-1.5 text-body">
-              Prepended to every chat here. Juno reads this before your first message, alongside the
-              referenced files.
+              {`Prepended to every chat here. ${PRODUCT_NAME} reads this before your first message, alongside the referenced files.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -1333,7 +1331,7 @@ export default function ProjectDetailPage() {
                   void saveInstructionsAndClose();
                 }
               }}
-              placeholder={"How should Juno behave? (role, tone, constraints…)\n\nPaste a full system prompt. Headings, bullets and code fences all keep their shape."}
+              placeholder={`How should ${PRODUCT_NAME} behave? (role, tone, constraints…)\n\nPaste a full system prompt. Headings, bullets and code fences all keep their shape.`}
               spellCheck={false}
               autoFocus
               aria-label="Project instructions"

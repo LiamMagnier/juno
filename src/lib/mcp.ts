@@ -144,6 +144,9 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
     if (isCustomConnectorId(row.provider)) {
       const connector = customs.get(row.provider);
       if (!connector) continue;
+      // The same rule as a user MCP row above: the URL was typed into a form,
+      // so it is judged again under today's rules before a token is spent on it.
+      if (userMcpUrlProblem(connector.url)) continue;
       const token = await customAccessToken(connector, row);
       if (!token) continue;
       out.push({
@@ -415,17 +418,18 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
   await Promise.all(
     active.map(async (c) => {
       try {
-        // A user MCP server is a URL somebody typed into a form. Every request
-        // to one, the handshake, tools/list, each tool call and the SSE
-        // stream, goes through the SSRF-safe fetcher, and its URL is checked
-        // again here because callers rebuild ActiveConnector from parts (the
-        // Work runner does) and the id is the one thing they all keep. Built-in
-        // and Composio connectors dial hosts Juno chose and keep plain fetch.
-        const userServer = isUserMcpConnectorId(c.id);
+        // A user MCP server, or a custom connector (`mcp:…`), is a URL
+        // somebody typed into a form. Every request to one, the handshake,
+        // tools/list, each tool call and the SSE stream, goes through the
+        // SSRF-safe fetcher, and its URL is checked again here because callers
+        // rebuild ActiveConnector from parts (the Work runner does, without
+        // `custom`) and the id is the one thing they all keep. Built-in and
+        // Composio connectors dial hosts Juno chose and keep plain fetch.
+        const userServer = isUserMcpConnectorId(c.id) || isCustomConnectorId(c.id);
         if (userServer && userMcpUrlProblem(c.mcpUrl)) return;
         const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
           requestInit: { headers: c.headers },
-          ...(userServer || c.custom ? { fetch: safeMcpFetch } : {}),
+          ...(userServer ? { fetch: safeMcpFetch } : {}),
         });
         const client = new Client({ name: "juno", version: "1.0.0" });
         await client.connect(transport);

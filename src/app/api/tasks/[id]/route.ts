@@ -55,7 +55,7 @@ function movedResponse(scheduleId: string) {
       error: "moved_to_automations",
       scheduleId,
       message:
-        "This task is now an Automation, and that is what runs it. Edit it there — changes here would not reach the run.",
+        "This task is now a routine, and that is what runs it. Edit it there — changes here would not reach the run.",
     },
     { status: 409 }
   );

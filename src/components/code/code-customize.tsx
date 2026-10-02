@@ -18,6 +18,7 @@ import {
   CODE_PERMISSIONS,
 } from "@/lib/code-environment";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * THE BODY OF `/code/customize`: four sections, in the order a run needs them.
@@ -185,7 +186,7 @@ export function CodeCustomize() {
       {/* ───────────────────────────── Repositories ───────────────────────── */}
       <SettingsGroup
         title="Repositories"
-        description="What a cloud run can clone. Juno sees what your GitHub connection grants it, so this list is changed in Connections rather than here."
+        description={`What a cloud run can clone. ${PRODUCT_NAME} sees what your GitHub connection grants it, so this list is changed in Connections rather than here.`}
         aside={
           <Button asChild variant="outline" size="sm" className="gap-1.5">
             <Link href="/connections">
@@ -200,7 +201,7 @@ export function CodeCustomize() {
         ) : repoLoad.state === "not_connected" || repoLoad.state === "unauthorized" ? (
           <SectionNote>
             {repoLoad.state === "unauthorized"
-              ? "Your GitHub connection has expired, so Juno cannot list your repositories. Nothing was started, and runs on your Mac are unaffected."
+              ? `Your GitHub connection has expired, so ${PRODUCT_NAME} cannot list your repositories. Nothing was started, and runs on your Mac are unaffected.`
               : "GitHub isn’t connected. A cloud run clones one of your repositories onto a fresh machine and opens a pull request, so it needs the connection before it can reach anything."}
           </SectionNote>
         ) : repoLoad.state === "error" ? (
@@ -212,12 +213,11 @@ export function CodeCustomize() {
               </Button>
             }
           >
-            Juno couldn’t reach GitHub, so this list is empty rather than wrong. Nothing was disconnected.
+            {`${PRODUCT_NAME} couldn’t reach GitHub, so this list is empty rather than wrong. Nothing was disconnected.`}
           </SectionNote>
         ) : repos.length === 0 ? (
           <SectionNote>
-            This GitHub account has no repositories Juno can see. Granting Juno access to an organisation in
-            Connections adds its repositories here.
+            {`This GitHub account has no repositories ${PRODUCT_NAME} can see. Granting ${PRODUCT_NAME} access to an organisation in Connections adds its repositories here.`}
           </SectionNote>
         ) : (
           <>
@@ -257,7 +257,7 @@ export function CodeCustomize() {
       {/* ──────────────────────────── Mac workspaces ──────────────────────── */}
       <SettingsGroup
         title="Mac workspaces"
-        description="The project folders a device run can work in. A folder appears here once you open it in the Juno app on that Mac; the Mac has to be awake for a run to start in it."
+        description={`The project folders a device run can work in. A folder appears here once you open it in the ${PRODUCT_NAME} app on that Mac; the Mac has to be awake for a run to start in it.`}
       >
         {wsLoad.state === "loading" ? (
           <RowSkeletons />
@@ -270,12 +270,11 @@ export function CodeCustomize() {
               </Button>
             }
           >
-            Juno couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced.
+            {`${PRODUCT_NAME} couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced.`}
           </SectionNote>
         ) : workspaces.length === 0 ? (
           <SectionNote>
-            No project folders have synced yet. Open one in the Juno app on your Mac and it appears here, ready for
-            a run.
+            {`No project folders have synced yet. Open one in the ${PRODUCT_NAME} app on your Mac and it appears here, ready for a run.`}
           </SectionNote>
         ) : (
           <>

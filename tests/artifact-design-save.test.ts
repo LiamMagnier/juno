@@ -63,7 +63,7 @@ test("the compact authoring form is not a stored document", () => {
 test("a document from a newer schema is refused rather than stored half-understood", () => {
   const check = checkDesignDocumentSave(mutated((doc) => (doc.schemaVersion = DESIGN_SCHEMA_VERSION + 1)));
   assert.equal(check.ok, false);
-  assert.match(!check.ok ? check.error : "", /newer version of Juno/);
+  assert.match(!check.ok ? check.error : "", /newer version of Alevr/);
 });
 
 test("a field of the wrong shape and a broken hierarchy are refused with their issues", () => {

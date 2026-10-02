@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import type { Memory } from "@/components/memory/memory-model";
 import { createRemovalQueue, type RemovalKind } from "@/components/memory/removal-queue";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type { RemovalKind } from "@/components/memory/removal-queue";
 
@@ -112,8 +113,8 @@ export function useDeferredRemoval(
       // be relearned from the chat the fact came from, forget cannot.
       const toastId =
         kind === "forget"
-          ? toast.success("Forgotten. Juno won’t learn this again.", options)
-          : toast.success("Deleted. Juno may learn it again from the chat it came from.", options);
+          ? toast.success(`Forgotten. ${PRODUCT_NAME} won’t learn this again.`, options)
+          : toast.success(`Deleted. ${PRODUCT_NAME} may learn it again from the chat it came from.`, options);
       queue.add({ memory, kind, toastId });
     },
     [flush, queue, setMember, undo]

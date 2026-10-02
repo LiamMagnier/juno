@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
+import { ComputerError } from "./errors";
 import type {
   ComputerFileEntry,
   ComputerHandle,
@@ -104,7 +105,9 @@ export class FakeProvider implements ComputerProvider {
     this.record("create", { agentId: opts.agentId, userId: opts.userId });
     const pre = await this.preflight();
     if (!pre.ok) {
-      throw new Error(pre.reason ?? "Computer host preflight failed");
+      // As the Docker provider: a preflight refusal is already a sentence for
+      // the person, so it is a ComputerError and survives sanitising.
+      throw new ComputerError(pre.reason ?? "The server cannot start another computer right now.");
     }
     const handle: ComputerHandle = {
       name: `juno-agent-${opts.agentId}`,
@@ -128,7 +131,9 @@ export class FakeProvider implements ComputerProvider {
     this.record("start", handle);
     const pre = await this.preflight();
     if (!pre.ok) {
-      throw new Error(pre.reason ?? "Computer host preflight failed");
+      // As the Docker provider: a preflight refusal is already a sentence for
+      // the person, so it is a ComputerError and survives sanitising.
+      throw new ComputerError(pre.reason ?? "The server cannot start another computer right now.");
     }
     const c = this.containers.get(handle.name);
     if (!c) {

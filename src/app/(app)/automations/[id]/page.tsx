@@ -44,6 +44,7 @@ import { ScheduleFireCard } from "@/components/work/schedules/fire-card";
 import { WorkStateNote, WorkStatusPill, workTimeAgo } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * One schedule: what it does, and what it has actually done.
@@ -158,7 +159,7 @@ export default function AutomationPage() {
     setBusy(false);
     if (result.kind === "ok") {
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-      toast.success("Started. This run is extra, and the automation still fires when it was going to.");
+      toast.success("Started. This run is extra, and the routine still fires when it was going to.");
       void loadRuns();
       return;
     }
@@ -185,15 +186,15 @@ export default function AutomationPage() {
     toast.error(
       result.kind === "blocked"
         ? result.explanation
-        : "Couldn’t delete this automation. It is exactly as it was."
+        : "Couldn’t delete this routine. It is exactly as it was."
     );
   };
 
   if (missing) {
     return (
-      <ScheduleFrame heading="Automation not found">
+      <ScheduleFrame heading="Routine not found">
         <WorkStateNote tone="error">
-          This automation no longer exists. It may have been deleted from another device.
+          This routine no longer exists. It may have been deleted from another device.
         </WorkStateNote>
       </ScheduleFrame>
     );
@@ -201,9 +202,9 @@ export default function AutomationPage() {
 
   if (failed) {
     return (
-      <ScheduleFrame heading="Automation">
+      <ScheduleFrame heading="Routine">
         <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load this automation. Nothing has been changed by the attempt, and it is still
+          Couldn’t load this routine. Nothing has been changed by the attempt, and it is still
           running to whatever clock it was set to.
         </WorkLoadError>
       </ScheduleFrame>
@@ -297,7 +298,7 @@ export default function AutomationPage() {
             tone="error"
             icon={StatusIcons.error}
             title="Couldn’t read the history"
-            description="This automation’s history couldn’t be read just now, which says nothing about whether it has run."
+            description="This routine’s history couldn’t be read just now, which says nothing about whether it has run."
           />
         ) : rows.length === 0 ? (
           <EmptyState
@@ -410,12 +411,12 @@ function ScheduleFrame({
   return (
     <AppPage measure="reading">
       <AppPageHeader
-        eyebrow="Automations"
+        eyebrow={FEATURE_NAMES.routines.label}
         heading={heading}
         lede={lede}
         actions={actions}
         backHref="/automations"
-        backLabel="Back to automations"
+        backLabel="Back to routines"
       />
       {children}
     </AppPage>

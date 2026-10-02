@@ -1,5 +1,6 @@
 import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * `/code/customize` while the shell resolves: the header, then the sections'
@@ -30,7 +31,7 @@ export default function CodeCustomizeLoading() {
     // role="status" with a label rather than aria-hidden: a screen-reader user
     // is owed the same "this is loading" the sighted reader gets from the
     // shimmer.
-    <AppPage measure="wide" role="status" aria-label="Loading your Juno Code settings">
+    <AppPage measure="wide" role="status" aria-label={`Loading your ${PRODUCT_NAME} Code settings`}>
       <AppPageHeaderSkeleton nav="eyebrow" headingWidth="w-44" ledeLines={2} />
       <div className="divide-y divide-border/60">
         {[0, 1, 2, 3].map((section) => (

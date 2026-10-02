@@ -8,6 +8,7 @@
  */
 
 import { wrapUntrusted } from "@/lib/untrusted-content";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Per-attachment ceiling on the text an adapter sends, when nothing better is
@@ -75,7 +76,7 @@ export function pdfAttachmentFallbackNote(parserState: string | null | undefined
     return "This PDF is still being indexed; its text is not available to this model yet. Do not claim to have read it.";
   }
   if (isAttachmentParserUnavailable(parserState)) {
-    return "Juno could not index this PDF, and this model does not receive raw PDF bytes. Do not invent its contents.";
+    return `${PRODUCT_NAME} could not index this PDF, and this model does not receive raw PDF bytes. Do not invent its contents.`;
   }
   return "This model does not receive raw PDF bytes. Use any retrieved passages above; if none are present, say that you cannot verify the file's contents.";
 }

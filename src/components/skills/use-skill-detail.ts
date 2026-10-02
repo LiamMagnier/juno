@@ -18,6 +18,7 @@ import {
   skillsFailureMessage,
   type PatchSkillInput,
 } from "@/components/skills/skills-transport";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type LoadState = "loading" | "ready" | "missing" | "failed";
 
@@ -117,7 +118,7 @@ export function useSkillDetail(id: string) {
     void patch(
       // Trust and automatic selection together; see `skillUsagePatch`.
       skillUsagePatch(usage, { trust: skill?.trust ?? "untrusted" }, version?.contract.provenance),
-      "Couldn’t change how Juno uses this skill. It is as it was."
+      `Couldn’t change how ${PRODUCT_NAME} uses this skill. It is as it was.`
     );
 
   const move = (projectId: string | null) =>

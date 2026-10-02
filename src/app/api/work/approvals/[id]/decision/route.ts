@@ -13,6 +13,7 @@ import {
   classifyApprovalDecision,
   type ApprovalDecisionRefusal,
 } from "@/app/api/work/protocol";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -26,11 +27,11 @@ export const runtime = "nodejs";
  */
 const REFUSAL_MESSAGES: Record<ApprovalDecisionRefusal, string> = {
   digest_mismatch: "This approval is for a different action than the one you were shown.",
-  policy_changed: "The permissions changed after you were asked. Juno will ask again.",
+  policy_changed: `The permissions changed after you were asked. ${PRODUCT_NAME} will ask again.`,
   expired: "This request expired before it was answered.",
   already_decided: "This request has already been answered.",
   not_standing_allowable:
-    "Juno will not stop asking about this one. Allow it this time if you want it to happen.",
+    `${PRODUCT_NAME} will not stop asking about this one. Allow it this time if you want it to happen.`,
 };
 
 /**

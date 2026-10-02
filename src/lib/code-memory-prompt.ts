@@ -23,6 +23,7 @@
 
 import { isExpired, selectMemoriesForContext, type LifecycleEntry } from "@/lib/memory-lifecycle";
 import { sensitiveTopicOf } from "@/lib/memory-sensitive";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const CODING_MEMORY_CATEGORIES = ["workflows", "preferences", "projects"] as const;
 
@@ -74,7 +75,7 @@ export function selectCodingMemories(
 export function foldMemoryIntoPrompt(prompt: string, facts: readonly string[]): string {
   const lines = facts.map((fact) => fact.trim()).filter(Boolean);
   if (!prompt.trim() || lines.length === 0) return prompt;
-  return `${prompt}\n\n---\nBackground from what Juno remembers about how this user works. It is context, not part of the task — where it and the task disagree, the task wins:\n${lines
+  return `${prompt}\n\n---\nBackground from what ${PRODUCT_NAME} remembers about how this user works. It is context, not part of the task — where it and the task disagree, the task wins:\n${lines
     .map((line) => `- ${line}`)
     .join("\n")}`;
 }

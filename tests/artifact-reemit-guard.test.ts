@@ -109,7 +109,7 @@ test("rule 1: a version a person wrote (edit or restore) holds the re-emit", () 
     assert.deepEqual(decideReemit({ ...base, currentOrigin: origin }), {
       action: "suggest",
       reason: "edited",
-      summary: "You edited this after Juno's last version",
+      summary: "You edited this after Alevr's last version",
     });
   }
 });

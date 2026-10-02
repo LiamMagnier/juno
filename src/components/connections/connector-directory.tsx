@@ -19,6 +19,7 @@ import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
 import { staggerDelay, transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * ONE directory for every tool Juno can connect to.
@@ -214,7 +215,6 @@ function ConnectorTile({
   permissionsReady = true,
   onManage,
   landed,
-  index = 0,
 }: {
   item: DirectoryItem;
   busy: boolean;
@@ -227,7 +227,6 @@ function ConnectorTile({
   onManage?: () => void;
   /** Just came back from signing in: flashed once. */
   landed?: boolean;
-  index?: number;
 }) {
   const [detailsOpen, setDetailsOpen] = React.useState(false);
   const reduce = useReducedMotion() ?? false;
@@ -357,8 +356,8 @@ function ConnectorTile({
                 a plain label — the toggle is a setting, not a hero. It leads
                 the footer now that the status word it followed is gone. */}
             <label className="flex cursor-pointer items-center gap-2 pr-1">
-              <Switch checked={enabled} disabled={!permissionsReady || busy} onCheckedChange={onEnabledChange} aria-label={`Allow Juno to use ${item.label}`} />
-              <span className="whitespace-nowrap text-caption text-muted-foreground">Allow Juno to use</span>
+              <Switch checked={enabled} disabled={!permissionsReady || busy} onCheckedChange={onEnabledChange} aria-label={`Allow ${PRODUCT_NAME} to use ${item.label}`} />
+              <span className="whitespace-nowrap text-caption text-muted-foreground">{`Allow ${PRODUCT_NAME} to use`}</span>
             </label>
             {custom && onManage ? (
               // A server's tools are chosen one by one, and signing out lives
@@ -441,10 +440,10 @@ function ConnectorTile({
           <div className="space-y-5 text-ui">
             <section><h4 className="font-medium">Connection</h4><p className="mt-1 text-muted-foreground">{item.connected ? (item.accountLabel || "Connected") : "Not connected"}</p></section>
             <section><h4 className="font-medium">Provider permissions</h4>
-              {item.providerScopes?.length ? <ul className="mt-2 space-y-1">{item.providerScopes.map((scope) => <li key={scope} className="break-all font-mono text-caption">{scope}</li>)}</ul> : <p className="mt-1 text-muted-foreground">This provider has not reported its exact permissions to Juno. Review access in the provider’s account settings.</p>}
+              {item.providerScopes?.length ? <ul className="mt-2 space-y-1">{item.providerScopes.map((scope) => <li key={scope} className="break-all font-mono text-caption">{scope}</li>)}</ul> : <p className="mt-1 text-muted-foreground">{`This provider has not reported its exact permissions to ${PRODUCT_NAME}. Review access in the provider’s account settings.`}</p>}
             </section>
             {item.tools?.length ? <section><h4 className="font-medium">Tools from the last successful test</h4><ul className="mt-2 max-h-48 overflow-y-auto space-y-1">{item.tools.map((tool) => <li key={tool} className="break-all text-caption">{tool}</li>)}</ul></section> : null}
-            <p className="text-caption text-muted-foreground">Juno checks your app switch and action approval policy before running a tool. Disconnecting removes Juno’s stored connection; revoke provider access in the provider’s account settings too.</p>
+            <p className="text-caption text-muted-foreground">{`${PRODUCT_NAME} checks your app switch and action approval policy before running a tool. Disconnecting removes ${PRODUCT_NAME}’s stored connection; revoke provider access in the provider’s account settings too.`}</p>
             <Button variant="secondary" asChild><a href="/settings?section=connectors">Action approval policy</a></Button>
           </div>
         </DialogContent>
@@ -855,7 +854,7 @@ export function ConnectorDirectory({
         {(availableItems.length > 0 || loading || addTile) && filter !== "connected" && (
           <div className={cn(connectedItems.length > 0 && "mt-8")}>
             <h2 className="text-heading">Available</h2>
-            <p className="mb-4 text-ui text-muted-foreground">Connect an app to let Juno work inside it.</p>
+            <p className="mb-4 text-ui text-muted-foreground">{`Connect an app to let ${PRODUCT_NAME} work inside it.`}</p>
             <TileGrid
               items={availableItems}
               {...gridProps}
@@ -973,8 +972,7 @@ function ComposioSetupCallout() {
         <div className="min-w-0">
           <p className="text-ui font-medium">Turn on the full app directory</p>
           <p className="mt-1 text-caption leading-5 text-muted-foreground">
-            The connectors below are built into Juno and work right now. To add Gmail, Slack, Linear and hundreds more,
-            set a Composio API key on the server:
+            {`The connectors below are built into ${PRODUCT_NAME} and work right now. To add Gmail, Slack, Linear and hundreds more, set a Composio API key on the server:`}
           </p>
           <ol className="mt-2.5 space-y-1 text-caption leading-5 text-muted-foreground">
             <li>
@@ -994,7 +992,7 @@ function ComposioSetupCallout() {
               2. Add <code className="rounded-xs bg-muted px-1 py-0.5 font-mono text-caption">COMPOSIO_API_KEY=…</code> to
               the server’s <code className="rounded-xs bg-muted px-1 py-0.5 font-mono text-caption">.env</code>.
             </li>
-            <li>3. Restart Juno, then reload this page.</li>
+            <li>{`3. Restart ${PRODUCT_NAME}, then reload this page.`}</li>
           </ol>
         </div>
       </div>

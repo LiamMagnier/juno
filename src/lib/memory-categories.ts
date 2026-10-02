@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * The facets a remembered fact can belong to, and the lifecycle states it can
  * be in.
@@ -63,11 +65,11 @@ export const MEMORY_CATEGORY_META: Record<MemoryCategory, { label: string; descr
   },
   temporary: {
     label: "Temporary",
-    description: "True for now, not forever. Juno forgets these on its own.",
+    description: `True for now, not forever. ${PRODUCT_NAME} forgets these on its own.`,
   },
   suppression: {
     label: "Never remember",
-    description: "Statements you asked Juno to forget. They block future recall.",
+    description: `Statements you asked ${PRODUCT_NAME} to forget. They block future recall.`,
   },
 };
 
@@ -109,13 +111,13 @@ export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
  * stop believing that?" has to have an answer.
  */
 export const MEMORY_STATUS_META: Record<MemoryStatus, { label: string; description: string }> = {
-  active: { label: "In use", description: "Juno may use this as context." },
+  active: { label: "In use", description: `${PRODUCT_NAME} may use this as context.` },
   superseded: { label: "Replaced", description: "Something newer took its place. Kept so you can see the change." },
   contradicted: {
     label: "Conflicting",
-    description: "It clashes with a fact you saved yourself, so Juno does not use it.",
+    description: `It clashes with a fact you saved yourself, so ${PRODUCT_NAME} does not use it.`,
   },
-  suppressed: { label: "Forgotten", description: "You asked Juno to forget this. It will not be relearned." },
+  suppressed: { label: "Forgotten", description: `You asked ${PRODUCT_NAME} to forget this. It will not be relearned.` },
   expired: { label: "Expired", description: "It was only true for a while, and that while has passed." },
 };
 
@@ -146,7 +148,7 @@ export function memoryStatusLabel(value: string | null | undefined): string {
  * "87%" implies a precision this classifier does not have.
  */
 export function confidenceLabel(confidence: number): string {
-  if (confidence >= 0.8) return "You told Juno";
+  if (confidence >= 0.8) return `You told ${PRODUCT_NAME}`;
   if (confidence >= 0.6) return "Confident";
   return "Inferred";
 }

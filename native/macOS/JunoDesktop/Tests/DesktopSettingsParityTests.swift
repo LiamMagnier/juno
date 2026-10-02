@@ -16,7 +16,7 @@ import Testing
 
     @Test func sectionsAreTheWebsOrderThenCode() {
         #expect(DesktopSettingsSection.allCases.map(\.label) == [
-            "General", "Personalization", "Memory", "Models", "Connectors", "Devices",
+            "General", "Personalization", "Memory", "Models", "Apps", "Devices",
             "Voice", "Data & privacy", "Account", "Plan & usage", "Code",
         ])
         // Stored and routed by, so the raw value never changes.

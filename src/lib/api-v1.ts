@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { NativeAuthError } from "@/lib/native-auth";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const CONTRACT_VERSION = "1.3.0";
 
@@ -27,7 +28,7 @@ export function apiV1Json(body: unknown, init: ResponseInit = {}, requestId = `r
 
 export function apiV1Error(error: unknown, requestId = `req_${randomUUID()}`) {
   let code = "server_unavailable";
-  let message = "Juno could not complete this request.";
+  let message = `${PRODUCT_NAME} could not complete this request.`;
   let status = 500;
   let retryable = true;
   if (error instanceof NativeAuthError) {

@@ -24,6 +24,7 @@ import {
   describePreviewOmissions,
   type SpreadsheetPreview,
 } from "@/lib/work/deliverables/spreadsheet-preview-shape";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * LOOKING AT WHAT A RUN PRODUCED, WITHOUT DOWNLOADING IT.
@@ -529,7 +530,7 @@ function useSitePreview(artifactId: string, version: number, active: boolean) {
       if (cancelled) return;
       const doc = previewDoc(text, state.stylesheet, state.pages, path, randomNonce());
       if (doc === null) {
-        setPageProblem(`“${path}” is not a page Juno can show safely, so it has not been rendered.`);
+        setPageProblem(`“${path}” is not a page ${PRODUCT_NAME} can show safely, so it has not been rendered.`);
         return;
       }
       setHtml(doc);

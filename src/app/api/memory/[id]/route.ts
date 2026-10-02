@@ -6,6 +6,7 @@ import { embedMemoryEntries, getSuppressions, refreshSummaries } from "@/lib/mem
 import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Edit, forget and delete for a single memory.
@@ -71,7 +72,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await prisma.$transaction([
       prisma.memoryEntry.updateMany({
         where: { id, userId: user.id },
-        data: { status: "suppressed", reason: "You asked Juno to forget this.", supersededById: null },
+        data: { status: "suppressed", reason: `You asked ${PRODUCT_NAME} to forget this.`, supersededById: null },
       }),
       // The block-list entry is what survives a re-extraction of the original
       // chat. Without it, forgetting only lasts until the next backfill.

@@ -20,6 +20,7 @@ import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 interface LibItem {
   id: string;
@@ -134,7 +135,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                 Add from your library
               </DialogTitle>
               <DialogDescription className="text-caption text-muted-foreground">
-                Attach files and images you’ve previously shared with Juno.
+                {`Attach files and images you’ve previously shared with ${PRODUCT_NAME}.`}
               </DialogDescription>
             </div>
           </div>

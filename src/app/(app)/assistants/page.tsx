@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { BRAND } from "@/lib/brand/names";
 
 /**
  * Custom Juno assistants — the product's equivalent of reusable Gems / custom
@@ -123,7 +125,7 @@ export default function AssistantsPage() {
       return;
     }
     setAssistants((current) => current.filter((item) => item.id !== assistant.id));
-    toast.success(`${data.agent.name ?? assistant.name} is in your crew now.`);
+    toast.success(`${data.agent.name ?? assistant.name} is an agent in ${BRAND.orbit.label} now.`);
     if (data.agent.conversationId) router.push(`/chat/${data.agent.conversationId}`);
   };
 
@@ -157,7 +159,7 @@ export default function AssistantsPage() {
       <AppPageHeader
         eyebrow="Assistants"
         heading="Specialists you can reuse"
-        lede="Focused Juno personalities with their own instructions, starter prompts and model preference."
+        lede={`Focused ${PRODUCT_NAME} personalities with their own instructions, starter prompts and model preference.`}
         actions={
           <Button onClick={() => openStudio(null)}>
             <Plus className="size-4" aria-hidden="true" />
@@ -194,7 +196,7 @@ export default function AssistantsPage() {
             tone="error"
             icon={StatusIcons.error}
             title="Assistants are unavailable"
-            description="Juno could not read your assistant library. Nothing was deleted; retry the request."
+            description={`${PRODUCT_NAME} could not read your assistant library. Nothing was deleted; retry the request.`}
             action={
               <Button variant="outline" size="sm" onClick={() => void fetchAssistants()}>
                 Try again
@@ -277,7 +279,7 @@ export default function AssistantsPage() {
                         )}
                       </span>
                       <span className="mt-0.5 block line-clamp-2 text-caption leading-5 text-muted-foreground">
-                        {assistant.description || "Custom Juno assistant"}
+                        {assistant.description || `Custom ${PRODUCT_NAME} assistant`}
                       </span>
                     </span>
                   </button>
@@ -318,8 +320,8 @@ export default function AssistantsPage() {
                       variant="ghost"
                       size="icon-sm"
                       onClick={() => void moveToCrew(assistant)}
-                      aria-label={`Move ${assistant.name} to crew`}
-                      title="Move to crew"
+                      aria-label={`Move ${assistant.name} to ${BRAND.orbit.label}`}
+                      title={`Move to ${BRAND.orbit.label}`}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <AppIcons.agents className="size-3.5" aria-hidden="true" />

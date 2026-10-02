@@ -10,6 +10,7 @@ import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { staggerDelay } from "@/lib/motion";
 import { formatBytes } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The download page's body, fed the release feed by the route (app/download)
@@ -46,13 +47,13 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
       <main>
         <LandingColumn contentClassName="flex flex-col items-center pb-10 pt-10 text-center sm:pb-14 sm:pt-16">
           <h1 style={staggerDelay(0, "loose")} className={`text-balance font-serif text-hero font-medium tracking-tight ${ENTER}`}>
-            Download Juno for Mac
+            {`Download ${PRODUCT_NAME} for Mac`}
           </h1>
           <p
             style={staggerDelay(1, "loose")}
             className={`mt-4 max-w-[32rem] text-pretty text-body-lg text-muted-foreground ${ENTER}`}
           >
-            Chat and Juno Code in one native app. Same account, same conversations, same projects.
+            {`Chat and ${PRODUCT_NAME} Code in one native app. Same account, same conversations, same projects.`}
           </p>
           <div style={staggerDelay(2, "loose")} className={`mt-8 flex flex-col items-center ${ENTER}`}>
             {macLink ? (
@@ -112,7 +113,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
               action={
                 <Button asChild variant="secondary" size="sm">
                   <Link href="/sign-in">
-                    Open Juno
+                    {`Open ${PRODUCT_NAME}`}
                     <ArrowRight aria-hidden />
                   </Link>
                 </Button>
@@ -121,7 +122,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
             <OtherCell
               icon={Monitor}
               title="Windows"
-              body="A native Windows app is on the way. Until then, Juno runs in any browser."
+              body={`A native Windows app is on the way. Until then, ${PRODUCT_NAME} runs in any browser.`}
               action={<PlatformAction download={windows} fallback="Not published yet" />}
             />
           </div>
@@ -200,7 +201,7 @@ function MacStage() {
           <div className="scroll-settle mx-auto max-w-[66rem]">
             <ProductShot
               name={MAC_SHOT}
-              alt="Juno for Mac: Juno Code ready to start a session in a project"
+              alt={`${PRODUCT_NAME} for Mac: ${PRODUCT_NAME} Code ready to start a session in a project`}
               width={3072}
               height={1992}
               priority
@@ -212,7 +213,7 @@ function MacStage() {
         <div className="relative flex min-h-[22rem] items-center justify-center sm:min-h-[30rem]">
           <Image
             src="/brand/app-icon-mac.png"
-            alt="The Juno app icon"
+            alt={`The ${PRODUCT_NAME} app icon`}
             width={512}
             height={512}
             priority

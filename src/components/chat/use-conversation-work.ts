@@ -36,6 +36,7 @@ import {
 } from "@/components/work/work-timeline";
 import { useWorkArtifactList, type WorkArtifactList } from "@/components/work/work-documents";
 import { deriveArtifacts } from "@/components/work/work-detail-panels";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The delegated task attached to a conversation, followed once.
@@ -312,7 +313,7 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
       toast.error(
         result.kind === "blocked"
           ? result.explanation
-          : "Couldn’t send that answer, so Juno hasn’t seen it. Try again."
+          : `Couldn’t send that answer, so ${PRODUCT_NAME} hasn’t seen it. Try again.`
       );
       return false;
     },
@@ -379,7 +380,7 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
       toast.error(
         result.kind === "blocked"
           ? result.explanation
-          : "Couldn’t record your decision, so Juno has not acted on it. Try again."
+          : `Couldn’t record your decision, so ${PRODUCT_NAME} has not acted on it. Try again.`
       );
       return false;
     },
@@ -420,7 +421,7 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
         toast.error(
           result.kind === "blocked"
             ? result.explanation
-            : "Couldn’t reach Juno to stop that. The task is still going."
+            : `Couldn’t reach ${PRODUCT_NAME} to stop that. The task is still going.`
         );
         return false;
       },

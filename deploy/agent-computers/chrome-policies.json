@@ -6,5 +6,15 @@
   "MetricsReportingEnabled": false,
   "BackgroundModeEnabled": false,
   "PromptForDownloadLocation": false,
-  "DownloadDirectory": "/home/agent/work/downloads"
+  "DownloadDirectory": "/home/agent/work/downloads",
+  "URLBlocklist": [
+    "file://*",
+    "chrome://*",
+    "chrome-untrusted://*",
+    "devtools://*",
+    "view-source:*"
+  ],
+  "NewTabPageLocation": "about:blank",
+  "HomepageLocation": "about:blank",
+  "HomepageIsNewTabPage": false
 }

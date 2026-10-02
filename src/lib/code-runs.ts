@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /*
  * THE JUNO CODE RUN VOCABULARY — one set of words, defined once.
  *
@@ -173,7 +175,7 @@ export const RUN_STATE_META: Record<
     label: "Needs you",
     bucket: "needs-you",
     tone: "attention",
-    meaning: "Juno Code stopped to ask permission. Nothing moves until you answer.",
+    meaning: `${PRODUCT_NAME} Code stopped to ask permission. Nothing moves until you answer.`,
   },
   stalled: {
     label: "Stalled",
@@ -315,7 +317,7 @@ export function originLabel(origin: string): string {
     case "cloud":
       return "Started for the cloud";
     case "remote":
-      return "Started from a Juno app";
+      return `Started from a ${PRODUCT_NAME} app`;
     default:
       return "Started elsewhere";
   }

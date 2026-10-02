@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 export type StepLabVisualType =
   | "tokenization"
   | "embedding"
@@ -324,7 +326,7 @@ function makeFallbackLab(raw: string, error: string, seed: string): StepLab {
     blockId: stableId(`${seed}:fallback:${raw}`),
     title,
     label: "Step Lab",
-    description: "This visual explanation was incomplete, so Juno is showing a safe fallback.",
+    description: `This visual explanation was incomplete, so ${PRODUCT_NAME} is showing a safe fallback.`,
     steps: [
       {
         id: "fallback",

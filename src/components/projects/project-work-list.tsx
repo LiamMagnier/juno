@@ -89,7 +89,7 @@ export function ProjectWorkList({
           description={
             query
               ? "Try another search term."
-              : "Delegate long-running goals and automations; they run with this project’s context."
+              : "Delegate long-running goals and routines; they run with this project’s context."
           }
           action={
             query ? (

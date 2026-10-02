@@ -2,6 +2,7 @@ import { ArrowRight, AudioLines, EyeOff, FileUp, Lock, ShieldCheck, type IconCom
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { LandingColumn } from "@/components/landing/section";
 import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What ships, every line of it today. The heading holds its place on the left
@@ -35,17 +36,17 @@ const FEATURES: Feature[] = [
   {
     title: "Projects and memory",
     icon: AppIcons.projects,
-    body: "Group related work, attach files, and let Juno carry context across conversations when you want it to.",
+    body: `Group related work, attach files, and let ${PRODUCT_NAME} carry context across conversations when you want it to.`,
   },
   {
-    title: "Research",
+    title: FEATURE_NAMES.research.label,
     icon: AppIcons.research,
-    body: "Approve the search plan, follow the sources live, steer the run, and get a report with checked citations.",
+    body: `${FEATURE_NAMES.research.description}: approve the search plan, follow the sources live, steer the run, and get a report with checked citations.`,
   },
   {
-    title: "Juno Code",
+    title: `${PRODUCT_NAME} Code`,
     icon: AppIcons.code,
-    body: "On your Mac, Juno Code works in an isolated worktree, runs your tests and shows every diff. It asks before it acts.",
+    body: `On your Mac, ${PRODUCT_NAME} Code works in an isolated worktree, runs your tests and shows every diff. It asks before it acts.`,
     link: { href: "/download", label: "Download for Mac" },
   },
   {
@@ -57,12 +58,12 @@ const FEATURES: Feature[] = [
     title: "Bring your history",
     // The mark Settings > Data & privacy draws on its import drop zone.
     icon: FileUp,
-    body: "Import a ChatGPT or Claude export. Titles and dates come across intact, and the archive never leaves Juno's servers.",
+    body: `Import a ChatGPT or Claude export. Titles and dates come across intact, and the archive never leaves ${PRODUCT_NAME}'s servers.`,
   },
   {
     title: "Export everything",
     icon: ActionIcons.download,
-    body: "JSON, CSV or a full Juno package, any time. What you bring with you stays yours to take away.",
+    body: `JSON, CSV or a full ${PRODUCT_NAME} package, any time. What you bring with you stays yours to take away.`,
   },
 ];
 

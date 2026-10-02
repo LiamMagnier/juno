@@ -263,7 +263,7 @@ test("an owned Library file is cloned onto the message; someone else's is not fo
   assert.equal(outcome(turn, id("forecast")).label, "Q3 Forecast.xlsx");
   const theirs = outcome(turn, id("theirs"));
   assert.equal(theirs.code, "not_found");
-  assert.equal(theirs.message, "Juno couldn't find the file “payroll”.", "the typed label, never the other account's name");
+  assert.equal(theirs.message, "Alevr couldn't find the file “payroll”.", "the typed label, never the other account's name");
 });
 
 test("files share the per-message attachment ceiling", async () => {
@@ -423,7 +423,7 @@ test("in a teammate's thread with the handoff tool on, the ask goes to hand_off_
   const turn = await TurnContext.begin([token("crew", id("mira"), "Mira")], baseFacts, port);
   await turn.resolveReferences({ ...referenceFacts, threadAgentId: id("self") }, port);
   const block = turn.turnBlock({ handoffAvailable: true });
-  assert.match(block, /## Crew member: Mira — Revenue analyst/);
+  assert.match(block, /## Agent: Mira — Revenue analyst/);
   assert.match(block, /call hand_off_to_teammate with teammate "Mira"\. The user approves every handoff/);
   assert.match(block, /You are not Mira; never speak as them\./);
   assert.equal(outcome(turn, id("mira")).via, "handoff");
@@ -454,7 +454,7 @@ test("a paused member is consulted even where handoffs are on; the thread's own 
   assert.equal(outcome(turn, id("self")).via, "already_in_context");
   assert.equal(outcome(turn, id("theiragent")).code, "not_found");
   assert.doesNotMatch(block, /Rival/, "another account's agent contributes nothing, not even its name");
-  assert.match(block, /“Someone” \(crew member\): not available in this reply\./, "only the words the person typed come back");
+  assert.match(block, /“Someone” \(agent\): not available in this reply\./, "only the words the person typed come back");
 });
 
 test("crewRoute: handoff only when the tool is on and the member is active", () => {
@@ -618,7 +618,7 @@ test("an app the person told Juno not to ask about again does not promise that e
   assert.equal(approval.changes, "allow", "some changes go ahead without a card");
   assert.equal(approval.sends, "ask", "a grant never lifts a send");
   assert.equal(approval.deletes, "ask");
-  assert.match(approval.summary, /except the ones you've told Juno not to ask about again/);
+  assert.match(approval.summary, /except the ones you've told Alevr not to ask about again/);
 
   const without = await TurnContext.begin(
     [token("app", "github")],

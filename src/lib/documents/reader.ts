@@ -5,6 +5,7 @@ import { extractDocument } from "@/lib/knowledge/extract";
 import { fileExtension } from "@/lib/documents/viewer-kind";
 import { MAX_BLOCKS, readSheets, toReaderBlocks } from "@/lib/documents/reader-blocks";
 import type { ReaderDocument } from "@/lib/documents/reader-types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * An office document, laid out for READING rather than for retrieval.
@@ -119,7 +120,7 @@ export async function readDocumentForViewer(
       blocks: [],
       pageCount: result?.pageCount ?? null,
       truncated: false,
-      note: result?.reason ?? "Juno could not find any text in this file.",
+      note: result?.reason ?? `${PRODUCT_NAME} could not find any text in this file.`,
     };
   }
   const { blocks, truncated } = toReaderBlocks(result.blocks);

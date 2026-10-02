@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Lifecycle email templates. Pure string builders — no I/O — so they can be
@@ -85,7 +86,7 @@ function layout(opts: {
         <tr>
           <td align="center" style="padding:20px 8px 0;">
             <p style="margin:0;font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">
-              Juno &middot; chat.liams.dev &middot; <a href="${appUrl("/settings")}" style="color:${MUTED};text-decoration:underline;">manage notifications</a>
+              ${PRODUCT_NAME} &middot; chat.liams.dev &middot; <a href="${appUrl("/settings")}" style="color:${MUTED};text-decoration:underline;">manage notifications</a>
             </p>
           </td>
         </tr>
@@ -97,7 +98,7 @@ function layout(opts: {
 
 /** Plain-text alternate shell: body lines + CTA + the same mono footer. */
 function textLayout(lines: string[], cta: { label: string; href: string }): string {
-  return [...lines, "", `${cta.label}: ${cta.href}`, "", `Juno · chat.liams.dev · manage notifications: ${appUrl("/settings")}`].join("\n");
+  return [...lines, "", `${cta.label}: ${cta.href}`, "", `${PRODUCT_NAME} · chat.liams.dev · manage notifications: ${appUrl("/settings")}`].join("\n");
 }
 
 /** One inline-styled body paragraph. */
@@ -107,9 +108,9 @@ function para(html: string): string {
 
 /** One-hour, single-use credential recovery email. */
 export function passwordReset(resetUrl: string): EmailTemplate {
-  const subject = "Reset your Juno password";
+  const subject = `Reset your ${PRODUCT_NAME} password`;
   const bodyHtml =
-    para("We received a request to reset the password for your Juno account.") +
+    para(`We received a request to reset the password for your ${PRODUCT_NAME} account.`) +
     para("This link expires in one hour and can only be used once. If you did not request it, you can safely ignore this email.");
 
   return {
@@ -124,7 +125,7 @@ export function passwordReset(resetUrl: string): EmailTemplate {
       [
         subject,
         "",
-        "We received a request to reset the password for your Juno account.",
+        `We received a request to reset the password for your ${PRODUCT_NAME} account.`,
         "This link expires in one hour and can only be used once.",
         "If you did not request it, you can safely ignore this email.",
       ],
@@ -145,7 +146,7 @@ export function budgetAlert(
 ): EmailTemplate {
   const shownPct = Math.min(99, Math.max(1, Math.floor(pct)));
   const renews = resetsAt ? ` It renews on ${dayLabel(resetsAt)}.` : "";
-  const subject = `You've used ${shownPct}% of your Juno budget`;
+  const subject = `You've used ${shownPct}% of your ${PRODUCT_NAME} budget`;
   const bodyHtml =
     para(
       `You've spent <strong>${usd(spentUsd)}</strong> of your <strong>${usd(budgetUsd)}</strong> monthly model budget.${escapeHtml(renews)}`
@@ -189,7 +190,7 @@ export interface WeeklyDigestStats {
  * (a Monday cron will, honoring settings.emailWeeklyDigest).
  */
 export function weeklyDigest(stats: WeeklyDigestStats): EmailTemplate {
-  const subject = `Your week on Juno · ${stats.weekRange}`;
+  const subject = `Your week on ${PRODUCT_NAME} · ${stats.weekRange}`;
   const models = stats.topModels.slice(0, 3);
   const row = (label: string, value: string) =>
     `<tr>
@@ -209,7 +210,7 @@ export function weeklyDigest(stats: WeeklyDigestStats): EmailTemplate {
       eyebrow: "Weekly digest",
       heading: subject,
       bodyHtml,
-      cta: { label: "Open Juno", href: appUrl("/chat") },
+      cta: { label: `Open ${PRODUCT_NAME}`, href: appUrl("/chat") },
     }),
     text: textLayout(
       [
@@ -219,7 +220,7 @@ export function weeklyDigest(stats: WeeklyDigestStats): EmailTemplate {
         `Model spend: ${usd(stats.spendUsd)}`,
         ...(models.length ? [`Top models: ${models.join(", ")}`] : []),
       ],
-      { label: "Open Juno", href: appUrl("/chat") }
+      { label: `Open ${PRODUCT_NAME}`, href: appUrl("/chat") }
     ),
   };
 }

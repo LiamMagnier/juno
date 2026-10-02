@@ -124,7 +124,7 @@ function buildSystemPrompt(cwd: string, delegation = false): string {
       break;
     }
   }
-  return `You are Juno, an agentic coding assistant working directly in the user's repository.
+  return `You are Alevr Code, an agentic coding assistant working directly in the user's repository.
 
 Environment:
 - Working directory: ${cwd}

@@ -46,6 +46,7 @@ import {
   toolPresentLabel,
 } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The plan, the activity, and the thing Juno is doing right now.
@@ -683,7 +684,7 @@ function toolFacts(payload: Payload): ActivityFact[] {
     facts.push({
       label: "Output",
       value:
-        trust === "untrusted" ? "Text Juno did not write — treated as data" : "From Juno’s own work",
+        trust === "untrusted" ? `Text ${PRODUCT_NAME} did not write — treated as data` : `From ${PRODUCT_NAME}’s own work`,
     });
   }
   return facts;
@@ -709,9 +710,9 @@ function injectionWarning(payload: Payload): string | null {
   if (bool(summary, "detected") !== true) return null;
   const what =
     str(summary, "severity") === "hostile"
-      ? "instructions aimed at Juno"
+      ? `instructions aimed at ${PRODUCT_NAME}`
       : "something shaped like an instruction";
-  return `This result contained ${what}. Juno read it as data, not as a request.`;
+  return `This result contained ${what}. ${PRODUCT_NAME} read it as data, not as a request.`;
 }
 
 const TONE_CLASS: Record<EntryTone, string> = {
@@ -764,10 +765,10 @@ export function WorkActivity({
     return (
       <p className="text-ui leading-relaxed text-muted-foreground">
         {phase === "not-started"
-          ? "Nothing has run yet. Once you start this, every step Juno takes appears here as it takes it."
+          ? `Nothing has run yet. Once you start this, every step ${PRODUCT_NAME} takes appears here as it takes it.`
           : phase === "settled"
             ? "This attempt ended without recording a single step, so there is nothing to read back. Starting it again is safe."
-            : "Waiting for the first step. This fills in the moment Juno starts working."}
+            : `Waiting for the first step. This fills in the moment ${PRODUCT_NAME} starts working.`}
       </p>
     );
   }

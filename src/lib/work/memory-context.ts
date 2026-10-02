@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /*
  * WHAT A WORK RUN IS TOLD ABOUT THE PERSON IT IS WORKING FOR.
  *
@@ -66,7 +68,7 @@ export function workMemoryContext(input: WorkMemoryInput): string | null {
   // as a complete one, and the model would treat what is missing as unknown.
   const cut = body.slice(0, WORK_MEMORY_MAX_CHARS);
   const lastBreak = cut.lastIndexOf("\n");
-  return `${cut.slice(0, lastBreak > WORK_MEMORY_MAX_CHARS / 2 ? lastBreak : WORK_MEMORY_MAX_CHARS)}\n\n[Cut off here — the rest of what Juno remembers was left out to keep room for the task.]`;
+  return `${cut.slice(0, lastBreak > WORK_MEMORY_MAX_CHARS / 2 ? lastBreak : WORK_MEMORY_MAX_CHARS)}\n\n[Cut off here — the rest of what ${PRODUCT_NAME} remembers was left out to keep room for the task.]`;
 }
 
 /**

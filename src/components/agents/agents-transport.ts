@@ -33,6 +33,7 @@ import type {
   ClientAgentRoutine,
 } from "@/lib/agents/types";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type AgentOutcome<T> =
   | { kind: "ok"; value: T }
@@ -72,7 +73,7 @@ async function call<T>(
         : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(init.body) }),
     });
   } catch {
-    return { kind: "failed", status: 0, error: "offline", message: "Juno could not be reached. Check your connection and try again." };
+    return { kind: "failed", status: 0, error: "offline", message: `${PRODUCT_NAME} could not be reached. Check your connection and try again.` };
   }
   const data = await json(res);
   if (res.ok) return { kind: "ok", value: pick(data) };
@@ -84,7 +85,7 @@ async function call<T>(
         ? "You have been signed out. Sign in again to continue."
         : res.status === 404
           ? "That no longer exists."
-          : "Something went wrong on Juno's side. Try again in a moment.";
+          : `Something went wrong on ${PRODUCT_NAME}'s side. Try again in a moment.`;
   if (res.status === 409 && error === "confirm_expensive") {
     const estimate = typeof data.estimatedCostMicroUsd === "number" ? data.estimatedCostMicroUsd : 0;
     return { kind: "confirm", estimatedCostMicroUsd: estimate, message };
@@ -108,7 +109,7 @@ export function fetchAgents(): Promise<AgentOutcome<ClientAgent[]>> {
         kind: "failed",
         status: 0,
         error: "malformed",
-        message: "Juno could not read your agents. Try again in a moment.",
+        message: `${PRODUCT_NAME} could not read your agents. Try again in a moment.`,
       } as const;
     }
     return { kind: "ok", value: agents as ClientAgent[] } as const;

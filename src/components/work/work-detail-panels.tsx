@@ -21,6 +21,7 @@ import { num, prose, readEvent, records, str } from "@/components/work/work-payl
 import { CapabilityChip, DegradationNotes, WorkTargetLabel, formatDuration, formatMicroUsd, workTimeAgo } from "@/components/work/work-vocabulary";
 import { UsageMeter } from "@/components/ui/usage-meter";
 import { formatBytes, formatTokens } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The right-hand column's reference panels: what went in, what came out, what
@@ -566,7 +567,7 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
     return (
       <p className="text-ui leading-relaxed text-muted-foreground">
         {unclassified === 0
-          ? "Juno hasn’t changed anything yet. Every action that touches the world — a file written, a message sent, a batch applied — is listed here after it happens."
+          ? `${PRODUCT_NAME} hasn’t changed anything yet. Every action that touches the world — a file written, a message sent, a batch applied — is listed here after it happens.`
           : // Not "nothing was changed", which this panel is in no position to
             // claim: an executor that reports neither a risk level nor a
             // mutating flag leaves every one of its calls unclassified, and

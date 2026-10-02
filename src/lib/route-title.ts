@@ -1,6 +1,8 @@
+import { BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Pathname prefix → tab title. Longest prefix wins, so "/code/pulls" beats
- * "/code". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
+ * "/code". The root layout's template is "%s · <product>" (src/app/layout.tsx), so
  * these are the bare nouns; the suffix is added once, at the call site, because
  * `document.title` is set imperatively and no metadata template applies to it.
  *
@@ -13,38 +15,38 @@
  * in both places, and the bar is the one a user reads to answer "where am I".
  */
 export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
-  ["/chat", "Juno"], // the new-chat screen has no subject yet
+  ["/chat", PRODUCT_NAME], // the new-chat screen has no subject yet
   /* The three that came out of Work, under their own names now. A title
      describes what is SERVED, which is why they moved in the same commit as
      the pages: /work/skills is a redirect and a redirect draws no window to
      caption. `/work` and `/code/new` are absent for the same reason. */
-  ["/skills", "Skills"],
-  ["/automations", "Automations"],
+  ["/skills", FEATURE_NAMES.skills.label],
+  ["/automations", FEATURE_NAMES.routines.label],
   /* "Macs" is gone with /work/hosts. One Mac is now `/permissions/<hostId>`,
      and the longest-prefix rule gives it "Permissions" — which is right: the
      page is one machine's permissions, and it is reached from the hub of that
      name rather than from a list of machines. */
   ["/permissions", "Permissions"],
   ["/code/pulls", "Pull requests"],
-  ["/code/customize", "Customize"],
-  ["/code", "Code"],
+  ["/code/customize", FEATURE_NAMES.customize.label],
+  ["/code", BRAND.code.label],
   /* `/design` is absent now: it redirects to Artifacts, and `/design/{id}` to
      the artifact's own address below, and a redirect draws no window to
      caption. One artifact is "Artifact" whatever its type — the header inside
      names the type and the title, and the URL deliberately carries neither.
      It cannot catch /admin or /artifacts: a prefix matches only itself or
      itself followed by "/". */
-  ["/a", "Artifact"],
-  ["/library", "Library"],
-  ["/artifacts", "Artifacts"],
-  ["/projects", "Projects"],
+  ["/a", FEATURE_NAMES.artifacts.singular],
+  ["/library", FEATURE_NAMES.library.label],
+  ["/artifacts", FEATURE_NAMES.artifacts.label],
+  ["/projects", FEATURE_NAMES.projects.label],
   ["/assistants", "Assistants"],
-  ["/agents/new", "New agent"],
-  ["/agents", "Agents"],
-  ["/memory", "Memory"],
-  ["/connections", "Connections"],
+  ["/agents/new", FEATURE_NAMES.createAgent.label],
+  ["/agents", BRAND.orbit.label],
+  ["/memory", FEATURE_NAMES.memory.label],
+  ["/connections", FEATURE_NAMES.apps.label],
   ["/knowledge/documents", "Document"],
-  ["/research", "Research"],
+  ["/research", FEATURE_NAMES.research.label],
   ["/compare", "Compare"],
   ["/roadmap", "Roadmap"],
   ["/upgrade", "Plans"],
@@ -63,7 +65,7 @@ export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
  */
 export function titleForPath(pathname: string): string {
   let best = "";
-  let title = "Juno";
+  let title = PRODUCT_NAME;
   for (const [prefix, name] of ROUTE_TITLES) {
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
       if (prefix.length > best.length) {

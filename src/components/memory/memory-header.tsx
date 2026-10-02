@@ -16,6 +16,7 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The page's name, the one switch, and the things done rarely.
@@ -39,7 +40,7 @@ export function MemoryHeader({ actions }: { actions: React.ReactNode }) {
   return (
     <AppPageHeader
       heading="Memory"
-      lede="What Juno carries from one chat to the next."
+      lede={`What ${PRODUCT_NAME} carries from one chat to the next.`}
       actions={actions}
       className="mb-5"
     />

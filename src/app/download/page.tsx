@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { DownloadView } from "@/components/download/download-view";
 import { buildDownloadFeed } from "@/lib/download-feed";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // A literal for the same reason as the API route: route segment config is read
 // by static analysis. Kept in step with DOWNLOAD_FEED_REVALIDATE.
 export const revalidate = 60;
 
 export const metadata: Metadata = {
-  title: "Download Juno",
+  title: `Download ${PRODUCT_NAME}`,
   description:
-    "Juno for Mac: Chat and Juno Code in one native app. Every build lists its version, size and SHA-256 so you can check what you installed.",
+    `${PRODUCT_NAME} for Mac: Chat and ${PRODUCT_NAME} Code in one native app. Every build lists its version, size and SHA-256 so you can check what you installed.`,
   alternates: { canonical: "/download" },
 };
 

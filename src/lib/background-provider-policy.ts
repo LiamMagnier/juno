@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Where Juno is allowed to send *background* work.
  *
@@ -178,7 +180,7 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
  */
 const DENIAL_MESSAGE: Record<BackgroundDenialReason, string> = {
   no_candidate_for_conversation_provider:
-    "Juno keeps background work with the provider you chat with, and that provider has no model free for it right now. You can change this under Settings → Memory → Background processing.",
+    `${PRODUCT_NAME} keeps background work with the provider you chat with, and that provider has no model free for it right now. You can change this under Settings → Memory → Background processing.`,
   selected_provider_unavailable:
     "Background work is pinned to one provider, and that provider isn’t configured or has no model available. You can change this under Settings → Memory → Background processing.",
   no_local_model:

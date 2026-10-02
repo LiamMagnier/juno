@@ -41,6 +41,7 @@ import {
   shortCommit,
   type ProvenanceSource,
 } from "@/components/skills/skill-library-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // The chat's renderer, loaded with the page that shows it rather than with
 // every page that imports this module: it brings the syntax highlighter.
@@ -449,7 +450,7 @@ function SkillNotices({
   if (status === "blocked") {
     notices.push(
       <WorkStateNote key="security" tone="blocked">
-        <span className="block font-medium">Blocked by Juno’s safety check</span>
+        <span className="block font-medium">{`Blocked by ${PRODUCT_NAME}’s safety check`}</span>
         <span className="block">This version can’t run or be switched on.</span>
         {findingList}
       </WorkStateNote>
@@ -457,7 +458,7 @@ function SkillNotices({
   } else if (status === "warning") {
     notices.push(
       <WorkStateNote key="security" tone="warning">
-        <span className="block font-medium text-foreground">Juno’s safety check flagged something</span>
+        <span className="block font-medium text-foreground">{`${PRODUCT_NAME}’s safety check flagged something`}</span>
         <span className="block">It can still run. Read the instructions before you rely on it.</span>
         {findingList}
       </WorkStateNote>
@@ -465,7 +466,7 @@ function SkillNotices({
   } else if (status === "pending") {
     notices.push(
       <WorkStateNote key="security" tone="info">
-        Juno hasn’t checked this version yet. It’s checked before a task uses it.
+        {`${PRODUCT_NAME} hasn’t checked this version yet. It’s checked before a task uses it.`}
       </WorkStateNote>
     );
   }
@@ -545,8 +546,7 @@ function UsageChoice({
       </RadioGroup>
       {skill.projectId !== null ? (
         <p className="mt-2.5 text-caption text-muted-foreground">
-          Filed in <span className="font-medium text-foreground">{projectName ?? "a project"}</span>, so Juno only
-          picks it for that project’s tasks.{" "}
+          Filed in <span className="font-medium text-foreground">{projectName ?? "a project"}</span>{`, so ${PRODUCT_NAME} only picks it for that project’s tasks.`}{" "}
           <button
             type="button"
             onClick={onMove}

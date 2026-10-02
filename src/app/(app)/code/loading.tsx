@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * `/code` while the shell resolves: the greeting and the composer, in the
@@ -25,7 +26,7 @@ export default function CodeLandingLoading() {
     // shimmer.
     <div
       role="status"
-      aria-label="Loading Juno Code"
+      aria-label={`Loading ${PRODUCT_NAME} Code`}
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
     >
       <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">

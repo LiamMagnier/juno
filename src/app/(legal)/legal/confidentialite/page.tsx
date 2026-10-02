@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Politique de confidentialité (RGPD) — static French privacy policy for Juno.
@@ -12,18 +13,18 @@ export const dynamic = "force-static";
 export const metadata: Metadata = {
   title: "Politique de confidentialité",
   description:
-    "Politique de confidentialité de Juno (chat.liams.dev) : données collectées, finalités, bases légales, durées de conservation, sous-traitants et droits RGPD (accès, rectification, effacement, portabilité, réclamation CNIL).",
+    `Politique de confidentialité de ${PRODUCT_NAME} (chat.liams.dev) : données collectées, finalités, bases légales, durées de conservation, sous-traitants et droits RGPD (accès, rectification, effacement, portabilité, réclamation CNIL).`,
 };
 
 export default function ConfidentialitePage() {
   return (
     <>
-      <p className="font-mono text-label text-muted-foreground">Juno · RGPD</p>
+      <p className="font-mono text-label text-muted-foreground">{`${PRODUCT_NAME} · RGPD`}</p>
       <h1 className="mt-3">Politique de confidentialité</h1>
       <p className="text-muted-foreground">Dernière mise à jour : 5 juillet 2026.</p>
 
       <p>
-        La présente politique décrit comment Juno (le « Service »), accessible à l&apos;adresse{" "}
+        {`La présente politique décrit comment ${PRODUCT_NAME} (le « Service »), accessible à l'adresse`}{" "}
         <strong>chat.liams.dev</strong>, traite vos données personnelles, conformément au règlement
         (UE) 2016/679 (« RGPD ») et à la loi Informatique et Libertés.
       </p>

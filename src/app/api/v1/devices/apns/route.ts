@@ -8,6 +8,7 @@ import {
   registerDevicePushToken,
   deactivateDevicePushToken,
 } from "@/lib/apns";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ const REGISTRATIONS_PER_HOUR = 30;
 const registerTokenSchema = z.object({
   token: z.string().min(10, "A valid device push token is required").max(512),
   platform: z.enum(["ios", "macos"]).default("ios"),
-  bundleId: z.string().trim().regex(BUNDLE_ID, "This is not a Juno app.").optional(),
+  bundleId: z.string().trim().regex(BUNDLE_ID, `This is not a ${PRODUCT_NAME} app.`).optional(),
   environment: z.enum(["production", "sandbox"]).default("production"),
   // Omitted keeps the device's current choice, so re-registering on launch
   // never turns a switch back on.

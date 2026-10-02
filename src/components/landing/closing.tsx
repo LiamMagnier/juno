@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Plate } from "@/components/landing/plate";
 import { LandingColumn } from "@/components/landing/section";
 import { Reveal } from "@/components/landing/reveal";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The last thing on the page before the footer: the sea horizon at golden hour
@@ -32,7 +33,7 @@ export function Closing() {
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                 <Button asChild size="lg">
                   <Link href="/sign-up">
-                    Start with Juno
+                    {`Start with ${PRODUCT_NAME}`}
                     <ArrowRight aria-hidden />
                   </Link>
                 </Button>

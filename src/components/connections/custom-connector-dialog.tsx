@@ -25,6 +25,7 @@ import {
 } from "@/components/connections/custom-connector-api";
 import { staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * One custom MCP server, managed: its name, whether Juno is signed in, and
@@ -221,7 +222,7 @@ function ManageConnector({
       <AnimatePresence mode="popLayout" initial={false}>
         {!connector.connected ? (
           <SkillDialogStep key="signed-out" className="p-5 sm:p-6">
-            <WorkStateNote tone="info">Juno isn’t signed in to this server, so its tools aren’t available.</WorkStateNote>
+            <WorkStateNote tone="info">{`${PRODUCT_NAME} isn’t signed in to this server, so its tools aren’t available.`}</WorkStateNote>
             <div className="mt-4 flex justify-end">
               <Button onClick={() => beginCustomConnectorSignIn(connector.id)} className="gap-1.5">
                 <KeyRound className="size-4" />
@@ -267,14 +268,14 @@ function ManageConnector({
                 <div className="space-y-5">
                   <ToolGroup
                     title="Reads"
-                    note="Juno uses these as needed."
+                    note={`${PRODUCT_NAME} uses these as needed.`}
                     tools={reads}
                     disabled={disabled}
                     onToggle={setToolsEnabled}
                   />
                   <ToolGroup
                     title="Changes things"
-                    note="Juno asks you in the chat before each use."
+                    note={`${PRODUCT_NAME} asks you in the chat before each use.`}
                     tools={changes}
                     disabled={disabled}
                     onToggle={setToolsEnabled}
@@ -424,7 +425,7 @@ function ToolGroup({
               <Switch
                 checked={on}
                 onCheckedChange={(value) => onToggle([tool.name], value)}
-                aria-label={`Let Juno use ${tool.title ?? tool.name}`}
+                aria-label={`Let ${PRODUCT_NAME} use ${tool.title ?? tool.name}`}
                 className="mt-0.5"
               />
             </li>

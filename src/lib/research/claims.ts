@@ -667,7 +667,7 @@ async function storeCorpus(opts: {
     });
     const sourceRow = existingSource
       ? await prisma.researchSource.update({
-          where: { id: existingSource.id },
+          where: { id: existingSource.id, userId: opts.userId },
           data: {
             title: source.title.slice(0, 500),
             publishedAt: source.publishedAt ?? null,

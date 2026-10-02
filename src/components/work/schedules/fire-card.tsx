@@ -11,6 +11,7 @@ import {
   type WorkFireToken,
 } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Firing an automation from somewhere else.
@@ -54,7 +55,7 @@ export function ScheduleFireCard({ schedule }: { schedule: ClientWorkSchedule })
     toast.error(
       result.kind === "blocked"
         ? result.explanation
-        : "Couldn’t issue a token. Whatever token this automation had still works."
+        : "Couldn’t issue a token. Whatever token this routine had still works."
     );
   };
 
@@ -77,7 +78,7 @@ export function ScheduleFireCard({ schedule }: { schedule: ClientWorkSchedule })
       <h2 className="font-mono text-label text-muted-foreground">Firing this from elsewhere</h2>
       <p className="mt-1.5 text-ui leading-relaxed text-muted-foreground">
         A POST to this URL, carrying the token as a bearer header, starts one run. It does not move
-        the schedule: whatever this automation was going to do next, it still does.
+        the schedule: whatever this routine was going to do next, it still does.
       </p>
 
       {/* The URL is not a secret and is always readable; the token is neither.
@@ -111,13 +112,13 @@ export function ScheduleFireCard({ schedule }: { schedule: ClientWorkSchedule })
         {hasToken
           ? issuedAt
             ? `A token was issued on ${new Date(issuedAt).toLocaleDateString()}. Issuing another stops it working.`
-            : "This automation has a token. Issuing another stops it working."
-          : "No token yet, so nothing outside Juno can start this."}
+            : "This routine has a token. Issuing another stops it working."
+          : `No token yet, so nothing outside ${PRODUCT_NAME} can start this.`}
       </p>
       <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
         Text sent with a fire reaches the run as data from an untrusted source, after the
         instructions and marked as something to read rather than obey — and only when this
-        automation’s API trigger is set to accept it.
+        routine’s API trigger is set to accept it.
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

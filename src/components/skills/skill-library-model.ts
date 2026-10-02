@@ -19,6 +19,7 @@ import {
   type SkillSourceUpdateResult,
 } from "@/lib/skills/library-contract";
 import { normalizeSkillSlug } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * A row as the list draws it: the library skill as sent, `requiresConsent`
@@ -173,7 +174,7 @@ const UPDATE_SKIP_REASONS: Record<string, (many: boolean) => string> = {
   not_installed: (many) => (many ? "they aren’t installed from this repository" : "it isn’t installed from this repository"),
   installed: (many) => (many ? "they were already installed" : "it was already installed"),
   invalid_slug: (many) =>
-    many ? "Juno couldn’t turn their names into slash names" : "Juno couldn’t turn its name into a slash name",
+    many ? `${PRODUCT_NAME} couldn’t turn their names into slash names` : `${PRODUCT_NAME} couldn’t turn its name into a slash name`,
   slug_taken: (many) => (many ? "their slash names were taken" : "its slash name was taken"),
   version_conflict: (many) =>
     many ? "they were being saved somewhere else at the same moment" : "it was being saved somewhere else at the same moment",
@@ -195,7 +196,7 @@ export function updateOutcomeMessage(
   for (const skip of result.skipped) counts.set(skip.reason, (counts.get(skip.reason) ?? 0) + 1);
   const description = [...counts]
     .map(([reason, count]) => {
-      const words = UPDATE_SKIP_REASONS[reason]?.(count > 1) ?? (count > 1 ? "Juno couldn’t apply them" : "Juno couldn’t apply it");
+      const words = UPDATE_SKIP_REASONS[reason]?.(count > 1) ?? (count > 1 ? `${PRODUCT_NAME} couldn’t apply them` : `${PRODUCT_NAME} couldn’t apply it`);
       return `${count} skipped because ${words}.`;
     })
     .join(" ");

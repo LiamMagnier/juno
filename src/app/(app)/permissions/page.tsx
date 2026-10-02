@@ -26,6 +26,7 @@ import {
 import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { actionVerb } from "@/components/work/approvals/action-verbs";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What Juno is allowed to do, and on which machine.
@@ -135,7 +136,7 @@ export default function PermissionsPage() {
     <AppPage measure="wide">
       <AppPageHeader
         heading="Permissions"
-        lede="What Juno may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach."
+        lede={`What ${PRODUCT_NAME} may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach.`}
       />
 
       <div>
@@ -153,9 +154,7 @@ export default function PermissionsPage() {
         {hosts !== null && hosts.length === 0 && !failed ? (
           <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="min-w-0 flex-1 text-body text-muted-foreground">
-              Every task runs in Juno’s cloud. To let a task reach a folder, an app or the browser
-              on your own Mac, install Juno on it and switch Work on from the app — it appears here
-              on its own once it does.
+              {`Every task runs in ${PRODUCT_NAME}’s cloud. To let a task reach a folder, an app or the browser on your own Mac, install ${PRODUCT_NAME} on it and switch Work on from the app — it appears here on its own once it does.`}
             </p>
             {/* The shell's own download menu, not a link to a page that does
                 not exist: it reads the release feed on open and offers the
@@ -188,9 +187,7 @@ export default function PermissionsPage() {
 
           {failed && hosts === null ? (
             <WorkLoadError onRetry={() => void load()}>
-              Couldn’t load your Macs. This section is empty because the request failed, not
-              because you have none — anything already signed in is still reachable by Juno, with
-              whatever permissions it had.
+              {`Couldn’t load your Macs. This section is empty because the request failed, not because you have none — anything already signed in is still reachable by ${PRODUCT_NAME}, with whatever permissions it had.`}
             </WorkLoadError>
           ) : hosts === null ? (
             <WorkList>
@@ -201,7 +198,7 @@ export default function PermissionsPage() {
               size="panel"
               icon={CodeIcons.device}
               title="No Macs yet"
-              description="A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all."
+              description={`A Mac appears here on its own once you install ${PRODUCT_NAME} on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all.`}
             />
           ) : (
             <>
@@ -210,8 +207,7 @@ export default function PermissionsPage() {
                   did not establish; the rows are what we last actually knew. */}
               {failed && (
                 <WorkStateNote tone="warning" className="mb-3">
-                  These are the last answers Juno got. The most recent check failed, so a Mac may
-                  have woken or gone away since.
+                  {`These are the last answers ${PRODUCT_NAME} got. The most recent check failed, so a Mac may have woken or gone away since.`}
                 </WorkStateNote>
               )}
               <WorkList>
@@ -246,7 +242,7 @@ export default function PermissionsPage() {
 function AlwaysAsks() {
   return (
     <section>
-      <h2 className="text-heading">Juno always asks first</h2>
+      <h2 className="text-heading">{`${PRODUCT_NAME} always asks first`}</h2>
       <p className="mt-1 text-ui text-muted-foreground">
         These stop and wait for you every time, under every setting on this page and every setting
         on a task. There is nothing anywhere that turns them off.
@@ -319,9 +315,7 @@ function ApprovalModes() {
     <section className="mt-8">
       <h2 className="text-heading">How much it asks otherwise</h2>
       <p className="mt-1 text-ui text-muted-foreground">
-        Below that floor, how often Juno stops is set per task — on the composer before you start
-        it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a
-        task asks for, and the stricter of the two always wins.
+        {`Below that floor, how often ${PRODUCT_NAME} stops is set per task — on the composer before you start it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a task asks for, and the stricter of the two always wins.`}
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {WORK_PERMISSION_POLICIES.map((policy) => (

@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Stage: entitlements — the request-shaped refusals, as data.
  *
@@ -93,7 +95,7 @@ export function codeSessionRefusal(
   return {
     status: 409,
     body: {
-      error: "This is a Juno Code session — prompts run on your Mac via /api/code/tasks, not /api/chat.",
+      error: `This is a ${PRODUCT_NAME} Code session — prompts run on your Mac via /api/code/tasks, not /api/chat.`,
     },
   };
 }

@@ -6,6 +6,7 @@ import type { ClientWorkHost } from "@/lib/work/serializers";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import { fetchWorkHosts } from "@/components/work/work-transport";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * A new schedule.
@@ -32,11 +33,11 @@ export default function NewAutomationPage() {
   return (
     <AppPage measure="reading">
       <AppPageHeader
-        eyebrow="Automations"
-        heading="New automation"
-        lede="Say what should happen, when it should start, and what Juno may do about it while you are not there."
+        eyebrow={FEATURE_NAMES.routines.label}
+        heading="New routine"
+        lede={`Say what should happen, when it should start, and what ${PRODUCT_NAME} may do about it while you are not there.`}
         backHref="/automations"
-        backLabel="Back to automations"
+        backLabel="Back to routines"
       />
       <WorkScheduleEditor
         schedule={null}

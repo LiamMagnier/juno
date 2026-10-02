@@ -4,6 +4,7 @@ import * as React from "react";
 import { attachmentKind, isAcceptedUpload } from "@/lib/uploads";
 import type { ClientAttachment } from "@/types/chat";
 import type { LibraryUpload } from "@/components/library/library-types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Uploads started from the Library page.
@@ -101,7 +102,7 @@ export function useLibraryUploads({ maxBytes, onUploaded }: LibraryUploadsOption
       };
       xhr.onerror = () => {
         requests.current.delete(localId);
-        patch(localId, { status: "failed", error: "Couldn’t reach Juno. Check your connection.", retryable: true });
+        patch(localId, { status: "failed", error: `Couldn’t reach ${PRODUCT_NAME}. Check your connection.`, retryable: true });
       };
       const form = new FormData();
       form.append("file", file);
@@ -123,7 +124,7 @@ export function useLibraryUploads({ maxBytes, onUploaded }: LibraryUploadsOption
         if (previewUrl) previews.current.set(localId, previewUrl);
         const base = { localId, fileName: file.name || "Untitled", size: file.size, kind, progress: 0, previewUrl };
         if (!isAcceptedUpload(file.name || "file", file.type || "application/octet-stream")) {
-          rows.push({ ...base, status: "failed", error: "Juno can’t store this type of file.", retryable: false });
+          rows.push({ ...base, status: "failed", error: `${PRODUCT_NAME} can’t store this type of file.`, retryable: false });
         } else if (file.size > maxBytes) {
           rows.push({ ...base, status: "failed", error: "This file is larger than your plan allows.", retryable: false });
         } else {

@@ -27,6 +27,7 @@ import { isRetired, type Memory } from "@/components/memory/memory-model";
 import { relativeTime, shortDate } from "@/components/memory/memory-time";
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * One remembered fact: a line of text, one muted line about it, and a menu.
@@ -271,7 +272,7 @@ function learnedFrom(memory: Memory): string | null {
   if (memory.sourceRef === "edit") return "From an edit you made";
   if (memory.sourceRef === "forget") return "From a fact you forgot";
   if (memory.sourceRef === "import") return "Imported from another assistant";
-  if (memory.source === "MANUAL") return "You told Juno";
+  if (memory.source === "MANUAL") return `You told ${PRODUCT_NAME}`;
   return null;
 }
 
@@ -336,7 +337,7 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
         // Warm-tinted: this is the token that says "you may not have meant to
         // keep this", so it has to out-rank the words beside it.
         <span
-          title="A sensitive subject. Juno only learns these on its own when you allow the topic in Settings."
+          title={`A sensitive subject. ${PRODUCT_NAME} only learns these on its own when you allow the topic in Settings.`}
           className="ml-0.5 inline-flex h-[1.125rem] items-center gap-1 rounded-full bg-warning/15 px-1.5 font-medium text-foreground dark:bg-warning/10 dark:text-warning"
         >
           <ShieldAlert className="size-3" aria-hidden="true" />
@@ -488,7 +489,7 @@ function RowMenu({
             <EyeOff className="mt-0.5" />
             <span className="flex min-w-0 flex-col">
               <span>Forget</span>
-              <span className="text-caption text-muted-foreground">Juno won’t learn this again</span>
+              <span className="text-caption text-muted-foreground">{`${PRODUCT_NAME} won’t learn this again`}</span>
             </span>
           </DropdownMenuItem>
         )}
@@ -496,7 +497,7 @@ function RowMenu({
           <ActionIcons.delete className="mt-0.5" />
           <span className="flex min-w-0 flex-col">
             <span>Delete</span>
-            <span className="text-caption text-muted-foreground">Juno may learn it again from its chat</span>
+            <span className="text-caption text-muted-foreground">{`${PRODUCT_NAME} may learn it again from its chat`}</span>
           </span>
         </DropdownMenuItem>
       </DropdownMenuContent>

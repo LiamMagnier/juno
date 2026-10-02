@@ -39,6 +39,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { staggerDelay } from "@/lib/motion";
 import { useAgents } from "@/components/agents/use-agents";
 import type { ClientConversation } from "@/types/chat";
+import { BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
@@ -964,7 +965,7 @@ function SearchPalette() {
     // surface can find was quieter than the placeholder in the field above it.
     <PaletteEmpty
       icon={AppIcons.search}
-      title="Search everything in Juno"
+      title={`Search everything in ${PRODUCT_NAME}`}
       hint="Chats and their messages, projects, files, artifacts, memories and tasks."
     />
   );
@@ -1185,9 +1186,9 @@ function CommandMenu() {
          rather than on a list: scheduled tasks are retired into Automations,
          and its old keywords ride along so the words people type for it still
          find something. */
-      { id: "new-automation", group: "Actions", label: "New automation", icon: AppIcons.automations, keywords: "schedule scheduled task recurring automation cron reminder trigger", run: () => go("/automations/new") },
+      { id: "new-automation", group: "Actions", label: "New routine", icon: AppIcons.automations, keywords: "schedule scheduled task recurring automation routine cron reminder trigger", run: () => go("/automations/new") },
       { id: "new-assistant", group: "Actions", label: "New assistant", icon: AppIcons.assistants, keywords: "create custom assistant bot gem gpt instructions", run: () => go("/assistants") },
-      { id: "new-agent", group: "Actions", label: "New agent", icon: AppIcons.agents, keywords: "hire agent teammate bot muse grok delegate", run: () => go("/agents/new") },
+      { id: "new-agent", group: "Actions", label: FEATURE_NAMES.createAgent.label, icon: AppIcons.agents, keywords: "new hire agent orbit crew teammate bot muse grok delegate", run: () => go("/agents/new") },
       {
         id: "search-everything",
         group: "Actions",
@@ -1217,8 +1218,8 @@ function CommandMenu() {
         },
       },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
-      { id: "agents", group: "Actions", label: "Open Agents", icon: AppIcons.agents, keywords: "agents teammates roster delegate goals routines", run: () => go("/agents") },
-      { id: "code-runs", group: "Actions", label: "Open Code", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
+      { id: "agents", group: "Actions", label: `Open ${BRAND.orbit.label}`, icon: AppIcons.orbit, keywords: "orbit agents your agents crew teammates roster delegate goals routines", run: () => go("/agents") },
+      { id: "code-runs", group: "Actions", label: `Open ${BRAND.code.label}`, icon: AppIcons.code, keywords: "sessions runs agents executions tasks alevr juno code", run: () => go("/code") },
       { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
       /* DESIGN IS A TYPE NOW, NOT A PLACE, and this row is the word people
          already type for it. It lands on Artifacts filtered to designs, which
@@ -1233,19 +1234,19 @@ function CommandMenu() {
          at word starts, so no word here may begin another row's word either:
          "frame" on one row would still find "frames" on another. */
       { id: "design", group: "Actions", label: "Open Designs", icon: AppIcons.design, keywords: "canvas frames screens figma", run: () => go("/artifacts?type=DESIGN") },
-      { id: "artifacts", group: "Actions", label: "Open Artifacts", icon: AppIcons.artifacts, keywords: "documents generated made", run: () => go("/artifacts") },
-      { id: "library", group: "Actions", label: "Open Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
-      { id: "connections", group: "Actions", label: "Open Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
+      { id: "artifacts", group: "Actions", label: FEATURE_NAMES.artifacts.label, icon: AppIcons.artifacts, keywords: "documents generated made", run: () => go("/artifacts") },
+      { id: "library", group: "Actions", label: `Open ${FEATURE_NAMES.library.label}`, icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
+      { id: "connections", group: "Actions", label: `Open ${FEATURE_NAMES.apps.label}`, icon: AppIcons.connections, keywords: "apps connections plugins integrations github mcp connectors", run: () => go("/connections") },
       /* The three rooms Work's tab row used to hold. They are destinations in
          their own right now, so they are reachable from the keyboard — which
          the tab row never made them, since you had to be standing inside Work
          to see it. Left out of the shell's own commit because the routes did
          not exist yet; they do. */
-      { id: "skills", group: "Actions", label: "Open Skills", icon: AppIcons.skills, keywords: "instructions reusable slash capability library", run: () => go("/skills") },
-      { id: "automations", group: "Actions", label: "Open Automations", icon: AppIcons.automations, keywords: "schedule scheduled tasks recurring trigger cron email calendar monitor", run: () => go("/automations") },
+      { id: "skills", group: "Actions", label: `Open ${FEATURE_NAMES.skills.label}`, icon: AppIcons.skills, keywords: "instructions reusable slash capability library", run: () => go("/skills") },
+      { id: "automations", group: "Actions", label: `Open ${FEATURE_NAMES.routines.label}`, icon: AppIcons.automations, keywords: "routines automations schedule scheduled tasks recurring trigger cron email calendar monitor", run: () => go("/automations") },
       { id: "permissions", group: "Actions", label: "Open Permissions", icon: AppIcons.permissions, keywords: "approvals allow ask macs hosts security", run: () => go("/permissions") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
-      { id: "memory", group: "Actions", label: "Open Memory", icon: ComposerIcons.memory, keywords: "remember facts", run: () => go("/memory") },
+      { id: "memory", group: "Actions", label: `Open ${FEATURE_NAMES.memory.label}`, icon: ComposerIcons.memory, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
     ].filter((c) => matches(c.label, c.keywords));
 
@@ -1424,8 +1425,8 @@ const shortcutGroups = (mod: string): { title: string; items: { keys: string[]; 
     // never learned them.
     title: "Products",
     items: [
-      { keys: [mod, "⇧", "1"], label: "Chat" },
-      { keys: [mod, "⇧", "2"], label: "Code" },
+      { keys: [mod, "⇧", "1"], label: BRAND.chat.label },
+      { keys: [mod, "⇧", "2"], label: BRAND.code.label },
     ],
   },
   {
@@ -1438,7 +1439,7 @@ const shortcutGroups = (mod: string): { title: string; items: { keys: string[]; 
       { keys: ["⇧", "Esc"], label: "Focus the composer" },
       { keys: ["Esc"], label: "Stop generating · close a menu" },
       { keys: ["/"], label: "Commands" },
-      { keys: ["@"], label: "Tools and connectors" },
+      { keys: ["@"], label: "Apps and tools" },
     ],
   },
   {

@@ -29,6 +29,7 @@ import { ReaderView } from "./reader-view";
 import { clearFindHighlights, findRanges, paintFindHighlights, scrollRangeIntoView } from "./find";
 import { SelectionActions, ViewerLoading, ViewerMessage, copyText } from "./viewer-ui";
 import type { DocumentAsk, FindCommand, FindStatus, Tool } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * A FILE, OPENED BESIDE THE CONVERSATION ABOUT IT.
@@ -508,7 +509,7 @@ export function DocumentViewer({
     body = (
       <ViewerMessage
         title="There’s no preview for this kind of file."
-        body="Juno can still read it — ask about it in the chat — or download it to open it on your device."
+        body={`${PRODUCT_NAME} can still read it — ask about it in the chat — or download it to open it on your device.`}
         action={<DownloadButton attachment={attachment} />}
       />
     );
