@@ -241,6 +241,8 @@ export function skillLoadResult(input: {
   via: SkillSelectionVia;
   code: boolean | "unknown";
   skillFiles: boolean;
+  /** The folder has scripts and could not be mounted this turn (see `skillBundleNote`). */
+  mountRefused?: boolean;
   wrapUntrusted: (label: string, content: string) => string;
 }): { text: string; untrusted: boolean } {
   const block = skillSystemSuffix({
@@ -261,6 +263,7 @@ export function skillLoadResult(input: {
     manifest: input.version.bundle?.manifest,
     code: input.code,
     skillFiles: input.skillFiles,
+    mountRefused: input.mountRefused,
   });
   return {
     text: [block.systemSuffix, codeNote, bundleNote].filter(Boolean).join("\n\n"),

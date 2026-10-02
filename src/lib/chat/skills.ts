@@ -361,6 +361,12 @@ export function skillBundleNote(input: {
    */
   code: boolean | "unknown";
   skillFiles: boolean;
+  /**
+   * The folder could not be mounted for this turn although code may run (the
+   * session already holds the most mounts one turn may), so its scripts are
+   * not at /skills/<slug> and the model must not be told they are.
+   */
+  mountRefused?: boolean;
 }): string | null {
   const files = bundleCompanionFiles(input.manifest);
   if (files.length === 0) return null;
@@ -380,7 +386,9 @@ export function skillBundleNote(input: {
     `no access to the person's computer, whatever the skill says it needs.`;
   const running = !scripts
     ? ""
-    : input.code === true
+    : input.mountRefused && input.code !== false
+      ? ` Its scripts cannot run on this turn: more skills with files were loaded than one turn can mount, so this one's folder is not in the sandbox. Do those steps another way or say plainly that you could not.`
+      : input.code === true
       ? ` Its scripts are${mounted}`
       : input.code === "unknown"
         ? ` If run_code is among your tools, its scripts are${mounted} If it is not, its scripts cannot run here: do those steps another way or say plainly that you could not.`

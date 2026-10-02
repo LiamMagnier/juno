@@ -44,6 +44,14 @@ import type { ToolOutcome } from "@/lib/tools/types";
 
 /** How many head rows discovery reads before it decides. Ordered, so stable. */
 const LIBRARY_READ_LIMIT = 200;
+/**
+ * How many skills' unpacked files a turn keeps for `read_skill_file`. A turn
+ * may load up to 30 skills of up to 5 MB each, and every copy held is the tar
+ * plus its files, on a web process with well under a gigabyte: unbounded, one
+ * turn reading a file from each could hold hundreds of megabytes. The most
+ * recently read ones stay; another is read again from storage if needed.
+ */
+const MAX_CACHED_BUNDLES = 2;
 
 export interface SkillToolSessionInput {
   userId: string;
@@ -231,11 +239,15 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
     const bundle = skill.version.bundle;
     if (!bundle) return Promise.resolve(new Map());
     let pending = tars.get(bundle.digest);
-    if (!pending) {
+    if (pending) {
+      // Most recently used last, so the eviction below drops the oldest.
+      tars.delete(bundle.digest);
+    } else {
       pending = loadTar({ bundleKey: bundle.key, bundleDigest: bundle.digest }).then(unpackTar);
       pending.catch(() => tars.delete(bundle.digest));
-      tars.set(bundle.digest, pending);
     }
+    tars.set(bundle.digest, pending);
+    while (tars.size > MAX_CACHED_BUNDLES) tars.delete(tars.keys().next().value!);
     return pending;
   };
 
@@ -284,12 +296,16 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
       }
       const skill: LoadedSkill = { row, version, via: "automatic", mounted: mount(row, version) };
       loaded.set(row.slug, skill);
+      // Code may run but the folder is not in the sandbox (the turn holds the
+      // most mounts it may): say so rather than point at /skills/<slug>.
+      const mountRefused = !skill.mounted && input.code !== false && !!version.bundle;
       const result = skillLoadResult({
         row,
         version,
         via: "automatic",
         code: input.code,
         skillFiles: input.skillFiles,
+        mountRefused,
         wrapUntrusted: input.wrapUntrusted,
       });
       const body = skillLoadResult({
@@ -298,6 +314,7 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
         via: "automatic",
         code: input.code,
         skillFiles: input.skillFiles,
+        mountRefused,
         wrapUntrusted: (_label, content) => content,
       }).text;
       void recordWorkAudit({

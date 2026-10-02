@@ -509,6 +509,12 @@ test("loading returns the instructions, the files and how to run the script when
   const unknown = skillLoadResult({ row: row(), version: versionWithBundle({ requestedTools: ["Bash"] }), via: "automatic", code: "unknown", skillFiles: true, wrapUntrusted: wrap });
   assert.match(unknown.text, /If run_code is among your tools, its scripts are mounted read-only/);
   assert.doesNotMatch(unknown.text, /expects to run code, and this conversation cannot/);
+
+  // The turn already holds the most mounts it may: the folder is NOT in the
+  // sandbox, so the model is not pointed at /skills/<slug>.
+  const full = skillLoadResult({ row: row(), version: versionWithBundle(), via: "automatic", code: true, mountRefused: true, skillFiles: true, wrapUntrusted: wrap });
+  assert.doesNotMatch(full.text, /mounted read-only/);
+  assert.match(full.text, /scripts cannot run on this turn/);
 });
 
 test("an imported skill's instructions arrive enveloped", () => {

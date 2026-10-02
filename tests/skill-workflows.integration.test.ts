@@ -645,4 +645,50 @@ if (!URL) {
     assert.equal(body.version.bundle?.digest, digest);
     assert.equal(body.version.requiresConsent, false, "these bytes were approved already");
   });
+
+  routeTest("a turn keeps at most two skills' files in memory: reading a third evicts the oldest, which is read again", async () => {
+    const { createSkillWithFirstVersion } = await import("@/lib/skills/store");
+    const { buildSkillBundle } = await import("@/lib/skills/bundle");
+    const { emptySkillContract } = await import("@/lib/work/skills");
+    const { loadSkillBundleTar } = await import("@/lib/skills/bundle-store");
+    const { openSkillToolSession } = await import("@/lib/skills/session");
+    for (const slug of ["cache-a", "cache-b", "cache-c"]) {
+      const built = buildSkillBundle([
+        { path: "SKILL.md", bytes: new TextEncoder().encode(`---\nname: ${slug}\ndescription: d\n---\nRead notes.md.`) },
+        { path: "notes.md", bytes: new TextEncoder().encode(`notes of ${slug}`) },
+      ]);
+      assert.ok(built.ok);
+      if (!built.ok) return;
+      const created = await createSkillWithFirstVersion({
+        userId: stranger, slug, name: slug, description: `The ${slug} method.`, instructions: "Read notes.md.",
+        requestedTools: [], contract: emptySkillContract(), origin: "authored", bundle: built.bundle,
+      });
+      assert.ok(created.ok);
+      await db.workSkill.update({ where: { id: created.ok ? created.skill.id : "" }, data: { autoSelect: true } });
+    }
+    const loads: string[] = [];
+    const session = await openSkillToolSession({
+      userId: stranger, surface: "chat", sessionId: `gen_${randomUUID()}`, projectId: null, code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
+      deps: { loadTar: async (columns) => { loads.push(columns.bundleDigest); return loadSkillBundleTar(columns); } },
+    });
+    try {
+      const read = async (slug: string) => {
+        const page = await session.readSkillFile({ skill: slug, path: "notes.md" });
+        assert.equal(page.status, "succeeded", page.text);
+        assert.match(page.text, new RegExp(`notes of ${slug}`));
+      };
+      for (const slug of ["cache-a", "cache-b", "cache-c"]) assert.equal((await session.loadSkill(slug)).status, "succeeded");
+      await read("cache-a");
+      await read("cache-b");
+      await read("cache-c");
+      assert.equal(loads.length, 3);
+      await read("cache-c");
+      await read("cache-b");
+      assert.equal(loads.length, 3, "the two most recent stay cached");
+      await read("cache-a");
+      assert.equal(loads.length, 4, "the oldest was evicted and is read again from storage");
+    } finally {
+      await session.close();
+    }
+  });
 }
