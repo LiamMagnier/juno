@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { PLAN_LIST } from "@/lib/plans";
 import { env } from "@/lib/env";
-import { LandingPage } from "@/components/landing/landing-page";
+import { AlevrHome } from "@/components/home/home-page";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // Signed-in users go straight to the app; strangers get the front door.
@@ -54,7 +54,7 @@ export default async function HomePage() {
   return (
     <>
       <script nonce={nonce} suppressHydrationWarning type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData() }} />
-      <LandingPage />
+      <AlevrHome />
     </>
   );
 }

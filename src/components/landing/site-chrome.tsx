@@ -56,10 +56,11 @@ const COMPANY_LINKS = [
 ];
 
 const SECTIONS = [
-  { id: "metering", label: "Metering" },
-  { id: "apps", label: "Apps" },
-  { id: "features", label: "Features" },
+  { id: "features", label: "Product" },
+  { id: "orbit", label: "Orbit" },
+  { id: "code", label: "Code" },
   { id: "pricing", label: "Pricing" },
+  { id: "apps", label: "Download" },
 ];
 
 /** `py-1` lifts the 15px line box to the 24px target SC 2.5.8 asks for. */
