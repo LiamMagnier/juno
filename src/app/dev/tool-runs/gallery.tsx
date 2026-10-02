@@ -99,6 +99,12 @@ function turn(...events: ClientActivityEvent[]): ClientActivityEvent[] {
   ];
 }
 
+/** A finished turn: the same rows, then the usage row a completed reply ends with. */
+function settledTurn(...events: ClientActivityEvent[]): ClientActivityEvent[] {
+  const rows = turn(...events);
+  return [...rows, { id: "usage", kind: "usage", title: "Usage", detail: "1,240 input · 310 output", createdAt: at(rows.length) }];
+}
+
 let workSeq = 0;
 function workEvent(kind: ClientWorkEvent["kind"], payload: Record<string, unknown>): ClientWorkEvent {
   workSeq += 1;
@@ -165,12 +171,12 @@ function StripSection() {
           </div>
           <div data-strip="settled">
             <p className="mb-1 font-mono text-caption text-muted-foreground">Settled: the run&apos;s files above the answer</p>
-            <ActivityTimeline messageId="strip-settled" events={turn(F.failedKeyError, F.succeeded)} />
+            <ActivityTimeline messageId="strip-settled" events={settledTurn(F.failedKeyError, F.succeeded)} />
             <p className="text-reading">The West leads at 24,410.75 on average; the chart and the CSV are attached.</p>
           </div>
           <div data-strip="unknown">
             <p className="mb-1 font-mono text-caption text-muted-foreground">Settled: one run, outcome unknown</p>
-            <ActivityTimeline messageId="strip-unknown" events={turn(F.outcomeUnknown)} />
+            <ActivityTimeline messageId="strip-unknown" events={settledTurn(F.outcomeUnknown)} />
           </div>
           {draft ? (
             <p data-seeded-draft className="font-mono text-caption text-muted-foreground">
