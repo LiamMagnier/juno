@@ -71,6 +71,14 @@ function ModelMark({ model, className }: { model: ModelInfo; className?: string 
   );
 }
 
+/** A model row's second line: what it is for, in a few words. */
+function modelLine(model: ModelInfo): string | undefined {
+  if (isAutoModelId(model.id)) return "Picks the right model for each message";
+  const what = model.description?.trim();
+  if (model.cost === 3) return what ? `Uses more of your limit. ${what}` : "Uses more of your limit";
+  return what || undefined;
+}
+
 /** Where the typeahead buffer resets: long enough to type "gpt", short enough that a pause starts over. */
 const TYPEAHEAD_RESET_MS = 600;
 
@@ -228,9 +236,16 @@ export function ModelQuickMenu({
               className={rowClass}
               {...itemProps(model.id, model.name)}
             >
-              <ModelMark model={model} className="size-4" />
-              <span className="min-w-0 flex-1 truncate" translate="no">
-                {model.name}
+              <ModelMark model={model} className="size-4 self-start mt-0.5" />
+              {/* The name, and one line saying what it is good at (MP1). A
+                  model that uses much more of the allowance says so in words. */}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate" translate="no">
+                  {model.name}
+                </span>
+                {modelLine(model) ? (
+                  <span className="truncate text-caption text-muted-foreground">{modelLine(model)}</span>
+                ) : null}
               </span>
               {locked && <span className="sr-only">Needs an upgrade</span>}
               <span aria-hidden="true" className="flex w-4 shrink-0 items-center justify-center">
@@ -252,10 +267,10 @@ export function ModelQuickMenu({
           aria-haspopup="dialog"
           onClick={onMore}
           className={rowClass}
-          {...itemProps("more", "More models")}
+          {...itemProps("more", "All models")}
         >
           <LayoutGrid className="size-4" />
-          <span className="min-w-0 flex-1 truncate">More models</span>
+          <span className="min-w-0 flex-1 truncate">All models</span>
           <ChevronRight motion="none" className="size-3.5" />
         </button>
       </div>
@@ -273,12 +288,30 @@ export function ModelQuickMenu({
   );
 }
 
+/**
+ * How the chat composer places this control's popovers: OUTSIDE its own box,
+ * never over the draft or the composer's buttons (critique 1; INTERACTION_SPEC
+ * MP1). The popover is anchored to a virtual rect with the chip's x and the
+ * composer's full height, so Radix's own flip and shift keep it on screen
+ * while either side it lands on is clear of the composer.
+ */
+export interface ModelSelectorLayer {
+  /** The composer surface. */
+  box: React.RefObject<HTMLElement | null>;
+  /** The side to open toward, chosen when it opens (below on the home, above in the dock, by room). */
+  pickSide: (need: number) => "top" | "bottom";
+  /** The side a popover is open on, or null when none is (the home moves its suggestions aside). */
+  onSide?: (side: "top" | "bottom" | null) => void;
+}
+
 export function ModelSelector({
   value,
   onChange,
   filter: modelFilter,
   disabled = false,
   thinking,
+  layer,
+  effortLabel,
 }: {
   value: ModelId;
   onChange: (m: ModelId) => void;
@@ -287,6 +320,10 @@ export function ModelSelector({
   /** The thinking-effort control for the chosen model, drawn under the menu.
    *  Omit it (or pass null) when the model has one effort. */
   thinking?: React.ReactNode;
+  /** Composer placement (the chat composer); other callers keep the chip-anchored popover. */
+  layer?: ModelSelectorLayer;
+  /** The effort, in words, when it is not the model's usual one ("Opus Deep"): the label's third ink (C17). */
+  effortLabel?: string;
 }) {
   const router = useRouter();
   const { quota, models, settings } = useApp();
@@ -306,6 +343,27 @@ export function ModelSelector({
   const [recent, setRecent] = React.useState<string[]>([]);
   /** Opened by the pointer or the keyboard, which decides where focus lands. */
   const [openedWith, setOpenedWith] = React.useState<"pointer" | "keyboard">("pointer");
+
+  const chipRef = React.useRef<HTMLButtonElement>(null);
+  /** Where the popovers open: chosen as they open, so a short window picks the side with room. */
+  const [side, setSide] = React.useState<"top" | "bottom">("top");
+  const layerBox = layer?.box;
+  const virtualAnchor = React.useMemo(
+    () => ({
+      current: {
+        getBoundingClientRect: () => {
+          const chipBox = chipRef.current?.getBoundingClientRect() ?? new DOMRect();
+          const box = layerBox?.current?.getBoundingClientRect() ?? chipBox;
+          return new DOMRect(chipBox.x, box.y, chipBox.width, box.height);
+        },
+      },
+    }),
+    [layerBox],
+  );
+  const onSide = layer?.onSide;
+  React.useEffect(() => {
+    onSide?.(open || pickerOpen ? side : null);
+  }, [onSide, open, pickerOpen, side]);
 
   const current = isAutoModelId(value) ? AUTO_MODEL_INFO : (models.find((m) => m.id === value) ?? resolveModel(value));
   const autoSelected = isAutoModelId(value);
@@ -357,17 +415,19 @@ export function ModelSelector({
 
   const chip = (
     <button
+      ref={chipRef}
       type="button"
       disabled={disabled}
-      aria-label={`Model: ${current?.name ?? "Select model"}`}
+      aria-label={`Model: ${current?.name ?? "Select model"}${effortLabel ? `, ${effortLabel}` : ""}`}
       onPointerDown={() => setOpenedWith("pointer")}
       onKeyDown={() => setOpenedWith("keyboard")}
-      // The shared composer chip: flat text, accent fill on hover and while
-      // open. The name is set in the UI face, not mono: it is a label on a
-      // control, not a value in a table.
-      className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]")}
+      // The shared composer chip: flat text, a tone under the pointer and
+      // while open. In the chat composer it is words only (C17): the short
+      // name in the second ink, the effort in the third when it is not the
+      // usual one, one chevron. No logo, no pill, no border.
+      className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", layer && "composer-model-chip")}
     >
-      {current ? <ModelMark model={current} className="size-3.5 sm:size-4" /> : null}
+      {current && !layer ? <ModelMark model={current} className="size-3.5 sm:size-4" /> : null}
       <span
         key={current?.id ?? "no-model"}
         aria-hidden="true"
@@ -375,8 +435,9 @@ export function ModelSelector({
         className="min-w-0 truncate motion-safe:animate-fade-in max-[359px]:hidden"
       >
         {current?.name ?? "Select model"}
+        {effortLabel ? <span className="composer-model-chip__effort"> {effortLabel}</span> : null}
       </span>
-      <ChevronDown className={composerChevronClass} />
+      <ChevronDown className={composerChevronClass} motion="none" />
     </button>
   );
 
@@ -386,8 +447,8 @@ export function ModelSelector({
     // stage one's trigger, and two Radix triggers on one element fight over
     // its `data-state`, leaving the chip stuck open-looking after a close.
     <Popover open={pickerOpen && !disabled} onOpenChange={setPickerOpen}>
-      <PopoverAnchor asChild>
-        <span className="inline-flex min-w-0">
+      {layer ? <PopoverAnchor virtualRef={virtualAnchor} /> : null}
+      <AnchorSpan virtual={!!layer}>
           <Popover
             open={open && !disabled}
             onOpenChange={(next) => {
@@ -396,19 +457,26 @@ export function ModelSelector({
                 // the row that opens it is inside the menu this opens.
                 prefetchCatalogue();
                 setRecent(readRecent());
+                if (layer) setSide(layer.pickSide(420));
               }
               setOpen(next);
             }}
           >
+            {layer ? <PopoverAnchor virtualRef={virtualAnchor} /> : null}
             <PopoverTrigger asChild>{chip}</PopoverTrigger>
             <PopoverContent
               align="end"
-              side="top"
+              side={layer ? side : "top"}
               sideOffset={8}
-              collisionPadding={16}
+              collisionPadding={12}
               // The menu rung, not the popover's: this is a list of rows, and
               // a 14px shell with p-1 holds the rows' 10px corners concentric.
-              className="w-72 rounded-menu p-1"
+              // In the composer it is capped to the room on its side, so a
+              // short window scrolls the list rather than covering the draft.
+              className={cn(
+                "w-72 rounded-menu p-1",
+                layer && "w-[min(21.5rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain",
+              )}
               // Radix makes the content a dialog; a dialog needs a name.
               aria-label="Model"
               // The menu places focus itself (see `initialFocus`).
@@ -426,8 +494,7 @@ export function ModelSelector({
               />
             </PopoverContent>
           </Popover>
-        </span>
-      </PopoverAnchor>
+      </AnchorSpan>
 
       {/* ── Stage two: the catalogue ───────────────────────────────── */}
       {catalogueMounted && (
@@ -438,8 +505,20 @@ export function ModelSelector({
           autoSelected={autoSelected}
           filter={modelFilter}
           onPick={select}
+          side={layer ? side : undefined}
         />
       )}
     </Popover>
   );
+}
+
+/**
+ * The span around the chip. Stage two is anchored to it when the chip's own
+ * popover is (stage two WRAPS stage one: two Radix triggers on one element
+ * fight over its `data-state`); in the composer both are anchored to the
+ * virtual rect instead, and the span is only layout.
+ */
+function AnchorSpan({ virtual, children }: { virtual: boolean; children: React.ReactNode }) {
+  const span = <span className="inline-flex min-w-0">{children}</span>;
+  return virtual ? span : <PopoverAnchor asChild>{span}</PopoverAnchor>;
 }

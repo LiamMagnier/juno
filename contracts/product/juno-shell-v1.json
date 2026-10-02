@@ -238,7 +238,7 @@
       "rows": [
         {
           "id": "files",
-          "label": "Add files or photos",
+          "label": "Add photos and files",
           "kind": "action",
           "icon": "ComposerIcons.attach"
         },
@@ -258,9 +258,17 @@
         },
         {
           "id": "library",
-          "label": "Add from library",
+          "label": "Add from Library",
           "kind": "action",
           "icon": "AppIcons.library"
+        },
+        {
+          "id": "mention",
+          "label": "Mention a file, app or agent",
+          "kind": "action",
+          "icon": "AtSign",
+          "nativeIcon": "textCursor",
+          "optional": true
         },
         {
           "id": "project",
@@ -278,7 +286,7 @@
         },
         {
           "id": "skill",
-          "label": "Use a skill",
+          "label": "Run a skill",
           "kind": "sub",
           "icon": "AppIcons.skills",
           "optional": true
@@ -311,14 +319,17 @@
             "library"
           ],
           [
-            "project",
-            "connectors"
+            "mention",
+            "skill"
           ],
           [
-            "skill",
             "research",
             "search",
             "memory"
+          ],
+          [
+            "project",
+            "connectors"
           ]
         ],
         "voice": [

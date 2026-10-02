@@ -29,39 +29,46 @@ function spacing(token: string): number {
   return Number(token) * TW;
 }
 
+const metrics = () => /const COMPOSER_FIELD_METRICS =[\s\S]*?"([^"]+)";/.exec(SHELL)?.[1] ?? "";
+/** The field's min-height in px: the pointer rung, or the `coarse:` one. */
+function fieldMinHeight(variant: "pointer" | "coarse"): number {
+  const re = variant === "coarse" ? /coarse:min-h-\[([\d.]+)rem\]/ : /(?:^|\s)min-h-\[([\d.]+)rem\]/;
+  const hit = re.exec(metrics());
+  assert.ok(hit, `COMPOSER_FIELD_METRICS declares a ${variant} rem min-height`);
+  return Number(hit![1]) * REM;
+}
+
 test("the field's rest height is the min-height in its metrics", () => {
-  const metrics = /const COMPOSER_FIELD_METRICS =[\s\S]*?"([^"]+)";/.exec(SHELL)?.[1] ?? "";
-  const minH = /min-h-\[([\d.]+)rem\]/.exec(metrics);
-  assert.ok(minH, "COMPOSER_FIELD_METRICS declares a rem min-height");
-  assert.equal(Number(minH![1]) * REM, 52);
+  // V3: a 45px field in the dock (13px over one 26px line, 4px under it,
+  // rounded to the line box), 52px under a coarse pointer.
+  assert.equal(fieldMinHeight("pointer"), 45);
+  assert.equal(fieldMinHeight("coarse"), 52);
 });
 
 test("the constant is the field, the controls row and the hairline, added up", () => {
-  const metrics = /const COMPOSER_FIELD_METRICS =[\s\S]*?"([^"]+)";/.exec(SHELL)?.[1] ?? "";
-  const field = Number(/min-h-\[([\d.]+)rem\]/.exec(metrics)![1]) * REM;
-
-  // The row: `flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5`.
-  const row = /className="flex flex-nowrap items-center gap-1 px-2\.5 pb-([\d.]+) pt-([\d.]+)"/.exec(SHELL);
+  // The row: `flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5`.
+  const row = /className="flex flex-nowrap items-center gap-0\.5 px-2\.5 pb-([\d.]+) pt-([\d.]+)"/.exec(SHELL);
   assert.ok(row, "the controls row keeps its padding in one className");
   const rowPad = spacing(row![1]) + spacing(row![2]);
 
-  // The row's controls: the icon button, the send circle and the chip.
+  // The row's controls: the 34px icon button, the 36px disc and the chip;
+  // every one of them 44px under a coarse pointer.
   const icon = /export const composerIconButtonClass =\s*"([^"]+)"/.exec(SHELL)![1];
   const chip = /export const composerChipClass =\s*"([^"]+)"/.exec(SHELL)![1];
-  assert.match(icon, /(^|\s)size-8(\s|$)/);
+  assert.match(icon, /(^|\s)size-\[34px\](\s|$)/);
   assert.match(icon, /coarse:size-11/);
   assert.match(chip, /(^|\s)h-8(\s|$)/);
   assert.match(chip, /coarse:h-10/);
-  assert.match(SHELL, /composer-primary-action pressable relative grid size-8/);
+  assert.match(SHELL, /composer-primary-action pressable relative grid size-9/);
   assert.match(SHELL, /coarse:size-11",\n\s+className/);
-  const tallest = { pointer: 8 * TW, coarse: 11 * TW };
+  const tallest = { pointer: 9 * TW, coarse: 11 * TW };
 
   const edge = 2; // `.composer-surface`: 1px solid, top and bottom
 
   const declared = /export const COMPOSER_REST_HEIGHT = \{ pointer: (\d+), coarse: (\d+) \}/.exec(SHELL);
   assert.ok(declared, "COMPOSER_REST_HEIGHT is exported");
-  assert.equal(Number(declared![1]), field + rowPad + tallest.pointer + edge);
-  assert.equal(Number(declared![2]), field + rowPad + tallest.coarse + edge);
+  assert.equal(Number(declared![1]), fieldMinHeight("pointer") + rowPad + tallest.pointer + edge);
+  assert.equal(Number(declared![2]), fieldMinHeight("coarse") + rowPad + tallest.coarse + edge);
 
   const cls = /export const composerRestHeightClass = "h-\[(\d+)px\] coarse:h-\[(\d+)px\]"/.exec(SHELL);
   assert.ok(cls, "the class form is exported beside the numbers");
@@ -69,10 +76,29 @@ test("the constant is the field, the controls row and the hairline, added up", (
   assert.equal(cls![2], declared![2]);
 });
 
+test("the home's rest height is its taller field over the same row and edge", () => {
+  const composer = read("src/components/chat/composer.tsx");
+  const home = /frame === "landing" && "min-h-\[([\d.]+)rem\]/.exec(composer);
+  assert.ok(home, "composer.tsx gives the landing frame's field its min-height");
+  const declared = /export const COMPOSER_HOME_REST_HEIGHT = \{ pointer: (\d+), coarse: (\d+) \}/.exec(SHELL);
+  assert.ok(declared, "COMPOSER_HOME_REST_HEIGHT is exported");
+  const dock = /export const COMPOSER_REST_HEIGHT = \{ pointer: (\d+), coarse: (\d+) \}/.exec(SHELL)!;
+  // The same row and edge as the dock; only the field differs (and only for a fine pointer).
+  assert.equal(Number(declared![1]) - Number(home![1]) * REM, Number(dock[1]) - fieldMinHeight("pointer"));
+  assert.equal(Number(declared![2]), Number(dock[2]));
+  const cls = /export const composerHomeRestHeightClass = "h-\[(\d+)px\] coarse:h-\[(\d+)px\]"/.exec(SHELL);
+  assert.ok(cls);
+  assert.deepEqual([cls![1], cls![2]], [declared![1], declared![2]]);
+});
+
 test("both chat skeletons take the composer's height from the shell", () => {
-  for (const file of ["src/app/(app)/chat/loading.tsx", "src/app/(app)/chat/[id]/loading.tsx"]) {
+  const cases = [
+    ["src/app/(app)/chat/loading.tsx", /composerHomeRestHeightClass/, "the home's rest height"],
+    ["src/app/(app)/chat/[id]/loading.tsx", /composerRestHeightClass/, "the dock's rest height"],
+  ] as const;
+  for (const [file, uses, what] of cases) {
     const source = read(file);
-    assert.match(source, /composerRestHeightClass/, `${file} draws the composer at the shell's rest height`);
+    assert.match(source, uses, `${file} draws the composer at ${what}`);
     assert.ok(!/h-\[\d+px\][^"]*rounded-composer/.test(source), `${file} writes no composer height of its own`);
   }
 });

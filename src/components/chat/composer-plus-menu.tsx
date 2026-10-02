@@ -219,6 +219,18 @@ export const PlusMenuRow = React.forwardRef<
   );
 });
 
+/**
+ * How the chat composer places the menu: outside its own box, never over the
+ * draft (critique 1, INTERACTION_SPEC C19). Chosen as the menu opens, from the
+ * trigger: the side with room (below on the home, above in the dock) and the
+ * offset that clears the composer's edge on that side.
+ */
+export interface PlusMenuLayer {
+  pick: (trigger: HTMLElement, need: number) => { side: "top" | "bottom"; sideOffset: number };
+  /** The side the menu is open on, or null when it is closed. */
+  onSide?: (side: "top" | "bottom" | null) => void;
+}
+
 export function PlusMenu({
   open,
   onOpenChange,
@@ -227,6 +239,7 @@ export function PlusMenu({
   tooltip,
   sections,
   className,
+  layer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -236,7 +249,16 @@ export function PlusMenu({
   tooltip: string;
   sections: PlusMenuSection[];
   className?: string;
+  layer?: PlusMenuLayer;
 }) {
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const [placed, setPlaced] = React.useState<{ side: "top" | "bottom"; sideOffset: number }>({ side: "top", sideOffset: 8 });
+  /** A menu opened from the keyboard appears in the same frame (F0); by pointer it pops from the trigger (F2). */
+  const [openedBy, setOpenedBy] = React.useState<"keyboard" | "pointer">("pointer");
+  const onSide = layer?.onSide;
+  React.useEffect(() => {
+    onSide?.(open ? placed.side : null);
+  }, [onSide, open, placed.side]);
   const [compact, setCompact] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -263,20 +285,27 @@ export function PlusMenu({
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
+      if (next && layer && triggerRef.current) setPlaced(layer.pick(triggerRef.current, 300));
       onOpenChange(next);
     }}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
+              ref={triggerRef}
               type="button"
               variant="ghost"
               size="icon-sm"
               aria-label={label}
               disabled={disabled}
-              className={cn(composerIconButtonClass, "group relative", className)}
+              data-opened-by={openedBy}
+              onPointerDown={() => setOpenedBy("pointer")}
+              onKeyDown={() => setOpenedBy("keyboard")}
+              className={cn(composerIconButtonClass, "composer-plus group relative", className)}
             >
-              <Plus aria-hidden="true" className="size-4" />
+              {/* The plus turns a quarter into a close mark while the menu is
+                  open (C19: base, in-out); from the keyboard it turns at once. */}
+              <Plus aria-hidden="true" className="composer-plus__glyph size-5" motion="none" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -285,9 +314,14 @@ export function PlusMenu({
 
       <DropdownMenuContent
         align="start"
-        side="top"
-        sideOffset={8}
+        side={layer ? placed.side : "top"}
+        sideOffset={layer ? placed.sideOffset : 8}
+        alignOffset={layer ? -4 : 0}
+        // The composer chose a side with room that clears its own box; letting
+        // Radix flip would put the menu back over the draft.
+        avoidCollisions={!layer}
         collisionPadding={16}
+        data-opened-by={openedBy}
         ref={menuRef}
         aria-label={compact && panel ? panel.label : "Add"}
         onKeyDown={(event) => { if (event.key === "ArrowLeft" && panelId && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); back(); } }}

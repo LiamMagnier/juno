@@ -2,14 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import {
-  AnimatePresence,
-  MotionConfig,
-  animate,
-  motion,
-  useReducedMotion,
-  type AnimationPlaybackControls,
-} from "framer-motion";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { AudioLines, Loader2, Send, Square } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
@@ -70,10 +63,18 @@ export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<
    * `bottom-full` — the slash/@ palette — resolves against this, not the shell.
    */
   fieldTierRef?: React.Ref<HTMLDivElement>;
+  /** Where the composer stands: the home's composer is taller at rest than the dock's. */
+  frame?: "home" | "dock";
+  /**
+   * The field has focus from the keyboard: the edge becomes one ring in the
+   * presence ink (C1). Focus from a pointer only darkens the edge
+   * (`.composer-surface:focus-within`).
+   */
+  keyboardFocus?: boolean;
 }
 
 const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(function ComposerShell(
-  { field, leading, trailing, action, above, dimmed = false, fieldTierRef, className, ...props },
+  { field, leading, trailing, action, above, dimmed = false, fieldTierRef, frame, keyboardFocus = false, className, ...props },
   ref
 ) {
   const dim = cn(
@@ -83,6 +84,8 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
   return (
     <div
       ref={ref}
+      data-frame={frame}
+      data-kbd-focus={keyboardFocus ? "" : undefined}
       className={cn("composer-surface relative flex w-full flex-col rounded-composer", className)}
       {...props}
     >
@@ -94,15 +97,15 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
       <div ref={fieldTierRef} className="@container relative flex w-full min-w-0 flex-col">
         {above}
         {field}
-        {/* px-2.5 puts the 32px `+` glyph's left edge 10px in and its centre
-            at 26px; the field's text starts at 16px. That is the Claude /
-            ChatGPT geometry — the glyph reads as hanging just outside the
-            text column rather than indented into it. */}
-        <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
-          <div className={cn("flex min-w-0 shrink-0 items-center gap-1", dim)}>
+        {/* The V3 row: 6px over the controls, 10px under and at the sides,
+            so the 34px `+` hangs just outside the 20px text column and the
+            36px disc closes the right edge. Used a hundred times a day, so
+            its glyphs stay still under the pointer (I-7). */}
+        <div className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5">
+          <div className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
             {leading}
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-1">
+          <div className="ml-auto flex min-w-0 items-center gap-0.5">
             {/* No `overflow-x-auto` here. It used to scroll with no scrollbar
                 and no fade, so on a narrow window the chips simply left the
                 screen with nothing saying they existed. The row now shrinks
@@ -124,11 +127,15 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
  * An empty composer is three stacked boxes, and every one of them is declared
  * in this file:
  *
- *   field      `min-h-[3.25rem]` in COMPOSER_FIELD_METRICS            52
- *   controls   `pt-0.5` + the tallest control on the row + `pb-2.5`   44
- *              (the row's controls are 32px, 44px on a coarse pointer, so 56 there)
+ *   field      `min-h-[2.8125rem]` in COMPOSER_FIELD_METRICS          45
+ *              (`coarse:min-h-[3.25rem]`, 52, on a touch screen)
+ *   controls   `pt-1.5` + the tallest control on the row + `pb-2.5`   52
+ *              (the 36px disc; every control is 44px on a coarse pointer, so 60 there)
  *   edge       `.composer-surface`'s 1px hairline, top and bottom       2
- *                                                                      98  (110 coarse)
+ *                                                                      99  (114 coarse)
+ *
+ * The home's composer is taller at rest (its field is 70px, composer.tsx)
+ * and its skeleton is drawn by the landing frame, not from this constant.
  *
  * The chat skeletons (`app/(app)/chat/loading.tsx` and `[id]/loading.tsx`)
  * take their placeholder from here instead of writing a number of their own.
@@ -138,10 +145,19 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
  * file's source, so changing the field or the row without changing this fails
  * there rather than on screen.
  */
-export const COMPOSER_REST_HEIGHT = { pointer: 98, coarse: 110 } as const;
+export const COMPOSER_REST_HEIGHT = { pointer: 99, coarse: 114 } as const;
 
 /** The same two heights as classes. Tailwind reads classes from source text, so they are written out. */
-export const composerRestHeightClass = "h-[98px] coarse:h-[110px]";
+export const composerRestHeightClass = "h-[99px] coarse:h-[114px]";
+
+/**
+ * The HOME's composer at rest: the same row and edge over the home's taller
+ * field (`min-h-[4.375rem]`, 70px, composer.tsx's landing frame; the coarse
+ * field is the dock's 52px), so the new-chat skeleton stands exactly where
+ * the composer lands.
+ */
+export const COMPOSER_HOME_REST_HEIGHT = { pointer: 124, coarse: 114 } as const;
+export const composerHomeRestHeightClass = "h-[124px] coarse:h-[114px]";
 
 /* ————————————————————————————————————————————————————————————————————————
  * Shared recipes
@@ -160,16 +176,15 @@ export const COMPOSER_SPRING = spring.standard;
 /**
  * EVERY PROPERTY THAT DECIDES WHERE A GLYPH LANDS, in one string.
  *
- * The box, the type and the wrapping — and nothing else. It is split out
- * because two elements have to lay the draft out IDENTICALLY: the textarea,
- * and the mirror painted behind it that draws connector mentions with their
- * app's logo (`composerMirrorClass`). A caret that sits one pixel off the
- * letter under it is the most obvious kind of broken an input can be, and the
- * only way to guarantee it is for both to read their metrics from here.
+ * The box, the type and the wrapping, and nothing else. It is split out
+ * because two elements lay the draft's first line out IDENTICALLY: the field,
+ * and the marks laid over its head (`ComposerFieldLead`), which have to sit on
+ * the same inset and line as the text that follows them. V3: 13px over the
+ * first line, 20px at the sides (16 on a phone), the 16px / 26px sentence.
  */
 const COMPOSER_FIELD_METRICS =
   // eslint-disable-next-line design-system/no-raw-text-size -- 16px exactly: iOS Safari zooms the page into any focused field below it, and body-lg (17px) is a different measure.
-  "block w-full min-h-[3.25rem] px-4 pb-2 pt-3.5 text-base leading-relaxed";
+  "block w-full min-h-[2.8125rem] coarse:min-h-[3.25rem] px-5 max-[760px]:px-4 pb-1 pt-[0.8125rem] text-base leading-relaxed";
 
 /**
  * The textarea, directly on the surface: transparent, 16px inline padding
@@ -183,32 +198,6 @@ const COMPOSER_FIELD_METRICS =
 export const composerFieldClass = cn(
   COMPOSER_FIELD_METRICS,
   "resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60",
-);
-
-/**
- * THE MIRROR: the draft painted a second time, underneath the textarea, so a
- * connector mention can carry its app's logo.
- *
- * A textarea renders one run of plain text and nothing else — no spans, no
- * images — so an `@GitHub` inside the sentence you are typing cannot be drawn
- * as anything but the eight characters it is. The way every editor that shows
- * rich mentions in a plain field does it is to paint the text twice: the
- * textarea keeps the caret, the selection, IME composition, undo and the
- * native mobile keyboard, and goes `text-transparent`; this layer sits behind
- * it and draws the same string with the tokens marked up.
- *
- * It only paints text when there IS a token, which is the safety property that
- * makes the whole technique acceptable on the product's most-used control: a
- * draft with no mentions is drawn by the textarea itself, exactly as before, so
- * a mirror that somehow failed to render could never leave the field looking
- * empty.
- *
- * `select-none` and `pointer-events-none`: this is paint. Every event belongs
- * to the textarea on top of it.
- */
-export const composerMirrorClass = cn(
-  COMPOSER_FIELD_METRICS,
-  "pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-pre-wrap break-words text-foreground",
 );
 
 /**
@@ -459,54 +448,6 @@ export function ComposerFieldLead({
   );
 }
 
-/** One run of the mirrored draft: plain text, or an app the draft mentions. */
-export type ComposerFieldSegment =
-  | { kind: "text"; value: string }
-  | { kind: "mention"; value: string; icon: React.ReactNode };
-
-/**
- * The draft, painted behind the textarea, with its mentions marked up.
- *
- * See `composerMirrorClass` for why a second layer exists at all. What matters
- * here is that a mention must not change a single advance: the caret in the
- * textarea is positioned by the plain string, so anything this layer adds has
- * to be out of flow. The app's logo is therefore drawn ON the "@" — which is
- * transparent, and is about as wide as the mark that covers it — and the
- * token's padding is a `box-shadow` spread, which paints outside the box
- * without occupying any.
- */
-export function ComposerFieldMirror({
-  segments,
-  indent,
-  viewportRef,
-}: {
-  segments: ComposerFieldSegment[];
-  indent: number;
-  viewportRef: React.Ref<HTMLDivElement>;
-}) {
-  return (
-    <div ref={viewportRef} aria-hidden className={composerMirrorClass} style={{ textIndent: indent || undefined }}>
-      {segments.map((segment, i) =>
-        segment.kind === "text" ? (
-          <React.Fragment key={i}>{segment.value}</React.Fragment>
-        ) : (
-          <span key={i} className="composer-mention">
-            <span className="composer-mention__at" aria-hidden>
-              @
-              <span className="composer-mention__logo">{segment.icon}</span>
-            </span>
-            {segment.value}
-          </span>
-        ),
-      )}
-      {/* A draft ending in a newline has no content on its last line, and a
-          block collapses that line away — so the mirror would come up one row
-          short of the textarea and every wrap below the fold would drift. */}
-      {"\n"}
-    </div>
-  );
-}
-
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
 export const composerChevronClass =
   "size-3 shrink-0 opacity-70 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
@@ -525,7 +466,7 @@ export const composerChevronClass =
  * outline's 2px offset has room and the one indicator is the house one.
  */
 export const composerIconButtonClass =
-  "size-8 shrink-0 rounded-control border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-[34px] shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row
@@ -538,26 +479,14 @@ export function ComposerDivider(_: { className?: string }) {
 }
 
 /**
- * Auto-growing textarea, on the spring.
+ * The field grows one line at a time, and the growth SNAPS (C2).
  *
- * Measures the content height on every value change and animates the field's
- * inline height to it — one line at rest, up to `maxLines` before it scrolls.
- * The measurement is a synchronous set-to-auto / read / restore, so nothing
- * paints in between; framer's `animate` then drives the inline style, which
- * is the same property the measurement reads back from, so an interrupted
- * growth carries on from wherever it was. Reduced motion snaps.
- *
- * THE ONE HEIGHT TWEEN IN THE PRODUCT, on purpose. ICONS_AND_MOTION.md §2.2
- * rule 8 says height never animates, and its three escape hatches all fail
- * here: `grid-rows` 0fr → 1fr needs a track that resolves to the content's
- * height, and a textarea's height is not content-sized (it would need a
- * hidden mirror of the text kept in sync with the field's metrics); `scale`
- * would squash the glyphs and the caret mid-growth; framer `layout` animates
- * by scaling too, and the corrective counter-scale does not reach the text
- * inside a textarea. So the field's inline height rides the spring. The cost
- * is bounded: one element, a layout per frame for the ~220ms after the text
- * crosses a line boundary, nothing while it does not, and nothing at all
- * under reduced motion.
+ * Typing is the highest-frequency act in the product (F0), so its height
+ * changes in the same frame: the 220 ms height spring this hook used to run is
+ * gone (INTERACTION_SPEC C2, decision D3). The measurement is a synchronous
+ * set-to-auto / read / set, so nothing paints in between; one line at rest, up
+ * to `maxLines` before the field scrolls inside itself. It works on the
+ * textarea composers and on the chat composer's contenteditable alike.
  */
 export function useComposerAutosize(
   ref: React.RefObject<HTMLTextAreaElement | null>,
@@ -568,13 +497,9 @@ export function useComposerAutosize(
     minHeight = 0,
   }: { maxLines?: number; maxHeight?: number; minHeight?: number } = {}
 ) {
-  const reduce = useReducedMotion();
-  const controls = React.useRef<AnimationPlaybackControls | null>(null);
-
   const measure = React.useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    const prev = el.style.height;
     el.style.height = "auto";
     const cs = getComputedStyle(el);
     const line = parseFloat(cs.lineHeight) || 24;
@@ -582,24 +507,8 @@ export function useComposerAutosize(
     const cap = maxHeight ?? Math.round(line * maxLines + pad);
     const next = Math.max(minHeight, Math.min(el.scrollHeight, cap));
     el.style.overflowY = el.scrollHeight > cap ? "auto" : "hidden";
-    el.style.height = prev;
-
-    controls.current?.stop();
-    const from = parseFloat(prev);
-    if (!prev || Number.isNaN(from) || reduce || Math.abs(from - next) < 1) {
-      el.style.height = `${next}px`;
-      return;
-    }
-    controls.current = animate(from, next, {
-      ...COMPOSER_SPRING,
-      onUpdate: (v) => {
-        el.style.height = `${v}px`;
-      },
-      onComplete: () => {
-        el.style.height = `${next}px`;
-      },
-    });
-  }, [ref, maxLines, maxHeight, minHeight, reduce]);
+    el.style.height = `${next}px`;
+  }, [ref, maxLines, maxHeight, minHeight]);
 
   React.useLayoutEffect(() => {
     measure();
@@ -617,7 +526,7 @@ export function useComposerAutosize(
     });
     observer.observe(el);
     void document.fonts.ready.then(() => { if (active) measure(); });
-    return () => { active = false; observer.disconnect(); controls.current?.stop(); };
+    return () => { active = false; observer.disconnect(); };
   }, [ref, measure]);
 
   return measure;
@@ -655,9 +564,13 @@ export function useComposerAutosize(
 export type ComposerPrimaryFace = "send" | "stop" | "voice" | "busy";
 
 const FACE_MOTION = {
-  initial: { opacity: 0, scale: 0.9 },
+  // One disc, three faces (C12, C13, C16; MOTION_AND_THINKING "Send / Stop /
+  // Mic: existing semantic glyph change"): the glyphs overlap and swap in
+  // place, opacity with scale 0.8 to 1 on fast. Reduced motion keeps the fade
+  // (MotionConfig below drops the scale). Nothing delays Stop.
+  initial: { opacity: 0, scale: 0.8 },
   animate: { opacity: 1, scale: 1 },
-  exit: { opacity: 0, scale: 0.9 },
+  exit: { opacity: 0, scale: 0.8 },
   // From the scale, not a literal. This was `0.12` and a raw cubic-bezier
   // array — the exact values of `--dur-fast` and `--ease-out-strong`, copied,
   // which means a change to the scale would have silently skipped this one
@@ -710,17 +623,18 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // (globals.css), which follows the round corner. The ring and
           // card-coloured ring offset it used to add painted a halo on top of
           // it (ICONS_AND_MOTION.md §2.2, rule 3).
-          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full",
+          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full",
           face === "voice"
-            ? // Quiet, and one tonal step deeper under the pointer: the hover
-              // fill, then the selected fill while held (FLAT_UI.md §3.1).
-              // It used to hover at `bg-secondary/70`, which in the light
-              // theme is lighter than its own rest fill, so the disc paled as
-              // the pointer reached it.
-              "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground active:bg-selected"
-            : "bg-primary text-primary-foreground hover:bg-primary/90",
+            ? // Empty, the disc is the quiet voice entry: a tone step and the
+              // second ink, so the field (the thing to do) leads and the disc
+              // is never the strongest object of an empty composer.
+              "bg-secondary text-foreground/75 hover:bg-selected hover:text-foreground active:bg-selected"
+            : // With words, send: the ink disc, the one strong spot on the
+              // composer (V3: graphite is the active control, ultramarine only
+              // a small live presence). Stop and busy wear the same disc.
+              "bg-foreground text-background hover:bg-foreground/90 dark:hover:bg-white active:bg-foreground/80",
           "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
-          // 44px under a coarse pointer, the touch minimum; 32px on a mouse.
+          // 44px under a coarse pointer, the touch minimum; 36px on a mouse.
           "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
           className
         )}
@@ -734,7 +648,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               </motion.span>
             ) : face === "stop" ? (
               <motion.span key="stop" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
-                <Square className="size-3 fill-current" />
+                <Square className="size-4 fill-current" />
               </motion.span>
             ) : face === "voice" ? (
               <motion.span key="voice" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
@@ -742,14 +656,14 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
                     dictation — which this composer already has, one button to
                     the left — and the two doing different things behind the
                     same picture is the confusion this row can least afford. */}
-                <AudioLines className="size-4" />
+                <AudioLines className="size-5" />
               </motion.span>
             ) : (
               <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
                 {/* The bold cut: the one glyph on the row set on a solid
                     accent disc, where the regular line thins against the fill
                     — the same weight Claude and ChatGPT give their send arrow. */}
-                <Send weight="bold" className="size-4" />
+                <Send weight="bold" className="size-5" />
               </motion.span>
             )}
           </AnimatePresence>
