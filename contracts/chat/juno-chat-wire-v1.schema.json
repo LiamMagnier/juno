@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 166,
-    "planned": 108,
+    "planned": 134,
     "web-only": 43,
     "unclassified": 0
   },
@@ -2316,11 +2316,188 @@
         "durationMs": {
           "type": "number",
           "x-native": "native"
+        },
+        "callId": {
+          "type": "string",
+          "x-native": "planned",
+          "x-native-note": "The Alevr call id that pairs a live update with its row (src/lib/tools/call-ids.ts). Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "awaiting_approval",
+            "queued",
+            "running"
+          ],
+          "x-native": "planned",
+          "x-native-note": "Live only: queued / awaiting_approval / running from the dispatcher; never read back from a persisted row. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "timeoutMs": {
+          "type": "number",
+          "x-native": "planned",
+          "x-native-note": "The running call's bound, for 'up to 2 min'. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "progress": {
+          "$ref": "#/$defs/ClientToolProgress",
+          "x-native": "planned",
+          "x-native-note": "Live only: a running call's last lines and byte counts, at most once a second. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "cancelled",
+            "denied",
+            "expired",
+            "failed",
+            "outcome_unknown",
+            "succeeded"
+          ],
+          "x-native": "planned",
+          "x-native-note": "The typed outcome beside the legacy status, outcome_unknown included. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "errorCode": {
+          "type": "string",
+          "x-native": "planned",
+          "x-native-note": "Why a call did not succeed (invalid_args, unknown_tool, timeout, cancelled…). Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "run": {
+          "$ref": "#/$defs/ClientToolRun",
+          "x-native": "planned",
+          "x-native-note": "Execution tools: the run record (context, exit code, produced files) filled by the execution lane. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
+        },
+        "cached": {
+          "type": "boolean",
+          "x-native": "planned",
+          "x-native-note": "A repeated identical call answered from the turn's cache; nothing ran twice. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding."
         }
       },
       "required": [
         "server",
         "name"
+      ]
+    },
+    "ClientToolProgress": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientToolProgressLine"
+          },
+          "x-native": "planned"
+        },
+        "stdoutBytes": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "stderrBytes": {
+          "type": "number",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "lines"
+      ]
+    },
+    "ClientToolProgressLine": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "type": "string",
+          "enum": [
+            "stderr",
+            "stdout"
+          ],
+          "x-native": "planned"
+        },
+        "text": {
+          "type": "string",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "stream",
+        "text"
+      ]
+    },
+    "ClientToolRun": {
+      "type": "object",
+      "properties": {
+        "runId": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "context": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "language": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "status": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "exitCode": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "planned"
+        },
+        "durationMs": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "stdoutBytes": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "stderrBytes": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientToolRunFile"
+          },
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "runId",
+        "context",
+        "status",
+        "files"
+      ]
+    },
+    "ClientToolRunFile": {
+      "type": "object",
+      "properties": {
+        "attachmentId": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "name": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "mime": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "bytes": {
+          "type": "number",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "name",
+        "mime",
+        "bytes"
       ]
     },
     "ClientWorkSession": {
