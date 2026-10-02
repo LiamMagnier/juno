@@ -3,8 +3,8 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CrewMark, crewMember } from "./crew-bridge";
-import { ACCOUNT, CODE_SESSIONS, CREW, PINNED, RECENT, SIDE_STATE, WORKSPACES, type CrewRow, type SessionState } from "./fixtures";
-import { AlevrLogo, CodeGlyph, OrbitGlyph } from "./brand";
+import { ACCOUNT, CODE_SESSIONS, CREW, PINNED, RECENT, SIDE_CREW, SIDE_STATE, STATUS_FACE, WORKSPACES, type AgentStatus, type CrewRow, type SessionState } from "./fixtures";
+import { AlevrLogo, CodeGlyph, OrbitGlyph, ThinkingMark } from "./brand";
 import { Icon } from "./icons";
 import { fromKeyboard, usePopoverKeys } from "./layers";
 import { POP_IN, R, T, useReduced } from "./motion";
@@ -240,7 +240,7 @@ function Section({ label, action, children }: { label: string; action?: React.Re
  * right its state in words (as in the owner's frame). Ready is the rest state
  * and says nothing; "Needs your answer" is the one amber in the sidebar.
  */
-export function CrewRowItem({ m, current, onSelect }: { m: CrewRow; current?: boolean; onSelect?: () => void }) {
+export function CrewRowItem({ m, current, onSelect, quiet }: { m: CrewRow; current?: boolean; onSelect?: () => void; quiet?: boolean }) {
   const word = SIDE_STATE[m.status];
   const reduced = useReduced();
   return (
@@ -265,7 +265,7 @@ export function CrewRowItem({ m, current, onSelect }: { m: CrewRow; current?: bo
         {word ? (
           <motion.span
             key={word}
-            className={m.status === "needs" ? "jn-side__state jn-attn" : "jn-side__state"}
+            className={m.status === "needs" && !quiet ? "jn-side__state jn-attn" : "jn-side__state"}
             aria-hidden="true"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -336,23 +336,27 @@ function useSidePop(initial?: SidePop) {
   return { pop: state.pop, kbd: state.kbd, setPop, close };
 }
 
-/** Rows that carry the attention word on the right, in amber (a thread with a pending approval). */
+/**
+ * A chat row. A chat with an ask waiting says so on the right in the attention words ("Needs your
+ * approval"), but never the open one: the ask is on screen, so the row stays quiet (Revision 2).
+ */
 function TextRow({ label, current, needs, onSelect }: { label: string; current?: boolean; needs?: boolean; onSelect?: () => void }) {
+  const flag = needs && !current;
   return (
     <a
       href="#"
       className="jrow jrow--text"
       aria-current={current ? "page" : undefined}
-      aria-label={needs ? `${label}, needs you` : undefined}
+      aria-label={flag ? `${label}, needs your approval` : undefined}
       onClick={(e) => {
         e.preventDefault();
         onSelect?.();
       }}
     >
       <span className="jrow__text">{label}</span>
-      {needs ? (
+      {flag ? (
         <span className="jn-side__state jn-attn" aria-hidden="true">
-          Needs you
+          Needs your approval
         </span>
       ) : null}
     </a>
@@ -364,12 +368,21 @@ export function ChatSidebar({
   crewCurrent,
   pop: initialPop,
   threadNeeds = false,
+  askOnScreen = [],
+  status = {},
 }: {
   current?: "thread" | "library" | "customize" | "crew";
   crewCurrent?: string;
   pop?: SidePop;
-  /** The open thread has something waiting on the person (an approval): its row says so. */
+  /** The first recent chat has something waiting on the person (an approval): its row says so when it is not the open one. */
   threadNeeds?: boolean;
+  /**
+   * Agents whose ask is on screen right now (a task card in the open chat): their row keeps its words
+   * but drops the amber, so one ask is coloured in one place (Revision 2).
+   */
+  askOnScreen?: string[];
+  /** The agents' live state where a scene has moved it on (Mira after the person answered). */
+  status?: Record<string, AgentStatus>;
 }) {
   const { pop, kbd, setPop, close } = useSidePop(initialPop);
   // Navigation selection is tonal and immediate on press (the fill steps in on fast); the glyph never moves for it.
@@ -391,9 +404,11 @@ export function ChatSidebar({
       <div className="jn-side__scroll">
         <section className="jn-side__section" aria-label="Orbit, your agents">
           <OrbitLabel current={here === "orbit"} onSelect={() => setHere("orbit")} />
-          {CREW.slice(0, 4).map((m) => (
-            <CrewRowItem key={m.id} m={m} current={here === `agent:${m.id}`} onSelect={() => setHere(`agent:${m.id}`)} />
-          ))}
+          {SIDE_CREW.map((row) => {
+            const st = status[row.id];
+            const m = st ? { ...row, status: st, state: STATUS_FACE[st] } : row;
+            return <CrewRowItem key={m.id} m={m} quiet={askOnScreen.includes(m.id)} current={here === `agent:${m.id}`} onSelect={() => setHere(`agent:${m.id}`)} />;
+          })}
         </section>
         <Section label="Pinned">
           {PINNED.map((p, i) => (
@@ -413,18 +428,22 @@ export function ChatSidebar({
 }
 
 const SESSION_GLYPH: Record<SessionState, string> = {
-  working: "progress",
+  working: "progress" /* not drawn: the ThinkingMark leads a working session */,
   waiting: "hand",
   done: "check",
   failed: "alert",
 };
 
-/** A Code session: its glyph, its title, and under it what it is doing in words (never a glyph alone). */
+/**
+ * A Code session: its glyph, its title, and under it what it is doing in words (never a glyph alone).
+ * A working session leads with the ThinkingMark, the same live mark as its transcript (Revision 2: a
+ * presence-blue 30% arc read as a spinner); the rest are quiet glyphs in the third ink.
+ */
 function SessionRow({ s, current }: { s: (typeof CODE_SESSIONS)[number]; current?: boolean }) {
   return (
     <a href="#" className="jrow jn-side__session" data-state={s.state} aria-current={current ? "page" : undefined}>
       <span className="jn-side__lead jn-side__glyph" data-state={s.state}>
-        <Icon name={SESSION_GLYPH[s.state]} size={16} state={s.state === "working" ? "active" : "rest"} value={s.state === "working" ? 0.32 : undefined} />
+        {s.state === "working" ? <ThinkingMark size={16} /> : <Icon name={SESSION_GLYPH[s.state]} size={16} />}
       </span>
       <span className="jn-side__sessiontext">
         <span className="jn-side__sessiontitle">{s.title}</span>
@@ -442,7 +461,7 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
       <Activity open={pop === "activity"} onClose={close} kbd={kbd} />
       <WorkspaceSwitch active="code" />
       <div className="jn-side__nav-group">
-        <NavRow icon="new-chat" label="New session" kbd="⌘N" moves />
+        <NavRow icon="plus" label="New session" kbd="⌘N" moves />
         <NavRow icon="search" label="Search" kbd="⌘K" />
         <NavRow icon="customize" label="Customize" moves />
       </div>

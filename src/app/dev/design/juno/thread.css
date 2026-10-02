@@ -857,3 +857,94 @@
     line-height: 26px;
   }
 }
+
+/* —————————————————————————————— Revision 2 —————————————————————————————— */
+
+/* Stopped: one quiet row where the work stopped, with the way to carry on. */
+.jn .jn-stopped {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.jn .jn-thread__end {
+  height: 1px;
+  margin-top: -1px;
+}
+
+/* Jump to latest (M19): centred on the composer's top edge, on the popover material. */
+/* It sits just above the composer (8 px clear of its edge), so it never covers the dock row's words. */
+.jn .jn-dock .jn-jump {
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  translate: -50% 0;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  background: var(--mat-pop);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
+  box-shadow: var(--shadow-pop);
+}
+.jn .jn-jump[data-live] {
+  color: var(--presence);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-jump:hover {
+    color: var(--ink);
+  }
+}
+.jn .jn-jump:active {
+  background: var(--well-2);
+}
+
+/* The approval keeps its room after it collapses (M18's spacer): the card's box eases, the room stays. */
+.jn .jn-approve-hold {
+  display: flow-root;
+}
+
+/* The chip's ink glyph (a made thing's type, from the icon set) beside the apps' own marks. */
+.jn .jn-chip__glyph {
+  color: var(--ink-2);
+}
+
+/* The phone home's one line for an agent's ask (there is no sidebar there). Hidden on wider windows. */
+.jn .jn-home__attn {
+  display: none;
+}
+@media (max-width: 760px) {
+  .jn .jn-home {
+    position: relative;
+  }
+  .jn .jn-home__attn {
+    position: absolute;
+    top: 8px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 12px 0 10px;
+    border-radius: var(--r-card);
+    background: var(--card);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--ink);
+  }
+  .jn .jn-home__attn > span {
+    flex: 1;
+    min-width: 0;
+  }
+  .jn .jn-home__attn > svg {
+    color: var(--ink-3);
+  }
+}

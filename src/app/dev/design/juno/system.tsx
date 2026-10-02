@@ -137,7 +137,7 @@ export function CrewMarkLab({ zooms = [1.6, 1.75, 1.9], eyes = [0.44, 0.47, 0.5]
 export function SystemScene() {
   const theme = useTheme();
   const tokenSegs: Segment[] = [{ t: "text", v: "Ask " }, { t: "token", id: "mira" }, { t: "text", v: " about " }, { t: "token", id: "forecast" }];
-  const [seg, setSeg] = React.useState<"Light" | "Standard" | "Deep">("Standard");
+  const [seg, setSeg] = React.useState<"Light" | "Standard" | "Thorough">("Standard");
   const paletteGroups = PALETTE_GROUPS.map((g) => ({
     label: g.label,
     items: g.ids.slice(0, g.kind === "crew" || g.kind === "file" || g.kind === "app" ? 2 : 1).map((id) => ({ token: TOKENS[id], group: g.label })),
@@ -194,7 +194,7 @@ export function SystemScene() {
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Small, 13/18</span>
-            <span className="t-small ink-2">Waiting for your answer at step 2 of 4</span>
+            <span className="t-small ink-2">Step 2 of 4, matching Stripe customers to accounts</span>
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Meta, 12/16</span>
@@ -319,7 +319,7 @@ export function SystemScene() {
               <div className="jn-side jn-sys__siderows">
                 <a href="#" className="jrow jrow--text">
                   <span className="jrow__text">Q3 forecast against Stripe revenue</span>
-                  <span className="jn-side__state jn-attn">Needs you</span>
+                  <span className="jn-side__state jn-attn">Needs your approval</span>
                 </a>
                 <span className="jrow jn-side__account">
                   <span className="jn-avatar">LM</span>
@@ -484,7 +484,7 @@ export function SystemScene() {
       <Section id="controls" title="Controls" note="Segmented thumbs travel on the standard spring. Switch and radio edges meet 3:1.">
         <div className="jn-sys__grid">
           <Cell label="Segmented">
-            <Segmented options={["Light", "Standard", "Deep"] as const} value={seg} onChange={setSeg} label="Effort" layoutKey="sys-seg" />
+            <Segmented options={["Light", "Standard", "Thorough"] as const} value={seg} onChange={setSeg} label="Effort" layoutKey="sys-seg" />
           </Cell>
           <Cell label="Allow, Ask, Off">
             <PolicyControl value="ask" label="Post a message to a channel" />
@@ -572,7 +572,7 @@ export function SystemScene() {
             <Composer initial={tokenSegs} still={{ focused: true }} />
           </Cell>
           <Cell label="Docked while Alevr works: stop, and the dock naming what needs you out of view" wide>
-            <Composer initial={[]} variant="dock" busy placeholder="Reply…" dockRow={<NeedsYouRow count={2} />} />
+            <Composer initial={[]} variant="dock" busy placeholder="Ask a follow-up" dockRow={<NeedsYouRow count={2} />} />
           </Cell>
           <Cell label="Code: the quiet context row, permission mode as words" wide>
             <Composer initial={[]} variant="code" placeholder="Describe the change. @ files, / commands" context={<ContextRow mode="Plan" />} />
@@ -649,7 +649,7 @@ export function SystemScene() {
           <span />
           {STATES.map((s) => (
             <span key={s} className="jn-sys__colh">
-              {s === "waiting" ? "Needs you" : s[0].toUpperCase() + s.slice(1)}
+              {s === "waiting" ? "Needs your answer" : s[0].toUpperCase() + s.slice(1)}
             </span>
           ))}
           {[96, 64, 32].map((size) => (

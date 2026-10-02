@@ -46,6 +46,14 @@ export const CREW: CrewRow[] = [
 ];
 
 export const crew = (id: string): CrewRow => CREW.find((m) => m.id === id) ?? CREW[0];
+
+/**
+ * The sidebar's Orbit rows (Revision 2): the agents that need the person come
+ * first (Needs your answer, then Blocked), then the ones at work, then the
+ * rest, five at most; the Orbit page has everyone.
+ */
+const SIDE_ORDER: Record<AgentStatus, number> = { needs: 0, blocked: 1, working: 2, thinking: 3, finished: 4, ready: 5 };
+export const SIDE_CREW: CrewRow[] = [...CREW].sort((a, b) => SIDE_ORDER[a.status] - SIDE_ORDER[b.status]).slice(0, 5);
 export const MIRA = CREW[0];
 
 /** The sidebar's right-hand word for an agent's row. Ready is the rest state and says nothing. */
@@ -133,15 +141,19 @@ export const PALETTE_GROUPS: { kind: TokenKind; label: string; ids: string[] }[]
 
 export type Segment = { t: "text"; v: string } | { t: "token"; id: string; leaving?: boolean };
 
-/** "Compare [Q3 Forecast.xlsx] with [Stripe] and ask [Mira] to flag renewal risk" */
+/**
+ * "Compare [Q3 Forecast.xlsx] with [Stripe], ask [Mira] to flag renewal risk and post a summary to #design in [Slack]".
+ * The person asks for the post, so the approval that follows has a cause the thread can name (Revision 2).
+ */
 export const DRAFT: Segment[] = [
   { t: "text", v: "Compare " },
   { t: "token", id: "forecast" },
   { t: "text", v: " with " },
   { t: "token", id: "stripe" },
-  { t: "text", v: " and ask " },
+  { t: "text", v: ", ask " },
   { t: "token", id: "mira" },
-  { t: "text", v: " to flag renewal risk" },
+  { t: "text", v: " to flag renewal risk and post a summary to #design in " },
+  { t: "token", id: "slack" },
 ];
 
 /* What an app token's panel says: the actions this message could take, in words. */
@@ -156,7 +168,8 @@ export interface AppAction {
 }
 
 export const POLICY_LABEL: Record<Policy, string> = { allow: "Allow", ask: "Ask", off: "Off" };
-export const POLICY_SENTENCE: Record<Policy, string> = { allow: "Allowed", ask: "Asks you first", off: "Off" };
+/* One set of words for a permission everywhere (the token panel, Customize, the approval): Allow, Ask, Off. */
+export const POLICY_SENTENCE: Record<Policy, string> = { allow: "Allow", ask: "Ask", off: "Off" };
 
 export interface AppInfo {
   id: string;
@@ -282,9 +295,10 @@ export const MODELS: ModelRow[] = [
   { id: "grok-4.7", name: "Grok 4.7", provider: "xai", line: "Live web results and current events" },
 ];
 
-export const EFFORT = ["Light", "Standard", "Deep"] as const;
+/* Revision 2: "Deep" sat one row from the Deep Field mode; effort says how hard to think in plain words. */
+export const EFFORT = ["Light", "Standard", "Thorough"] as const;
 export type Effort = (typeof EFFORT)[number];
-export const EFFORT_LINE: Record<Effort, string> = { Light: "Answers right away", Standard: "Thinks when it helps", Deep: "Thinks longer before answering" };
+export const EFFORT_LINE: Record<Effort, string> = { Light: "Answers right away", Standard: "Thinks when it helps", Thorough: "Thinks longer before answering" };
 
 /* ———————————————————————— Code ———————————————————————— */
 
@@ -295,7 +309,7 @@ export const CODE_SESSIONS: { title: string; where: string; state: SessionState;
   { title: "Postgres index for the search endpoint", where: "Cloud", state: "waiting", when: "12 min", line: "Needs your approval to migrate" },
   { title: "Pricing page copy pass", where: "This Mac", state: "done", when: "1 h", line: "Done 1 h ago, 3 files" },
   { title: "Upgrade Next to 15.5", where: "Cloud", state: "done", when: "3 h", line: "Pull request #489 open" },
-  { title: "Flaky upload test on CI", where: "Studio Mac", state: "failed", when: "Yesterday", line: "Failed yesterday on Studio Mac" },
+  { title: "Flaky upload test on CI", where: "Studio Mac", state: "failed", when: "Yesterday", line: "Stopped yesterday: 2 tests failed" },
 ];
 
 export const WORKSPACES = [

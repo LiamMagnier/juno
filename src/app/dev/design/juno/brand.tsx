@@ -21,9 +21,10 @@
  *   OrbitGlyph      two separated open elliptical arcs (b/a = 0.618), static.
  *   CodeGlyph       opposed square brackets with an inset cursor.
  *   ThinkingMark    the Continuum, stationary, beside truthful phase words: a
- *                   tonal path handoff (220 ms tone, 70 ms stagger, one pass on
- *                   start, real events may ask for another, coalesced to at most
- *                   one every 1.6 s), then a quiet stable pose. No rotation,
+ *                   tonal path handoff, one blade at a time (rise 120 ms, fall
+ *                   220 ms, the next blade 120 ms later; one pass on start, real
+ *                   events may ask for another, absorbed inside a 1.6 s window
+ *                   that backs off while steps stream), then the plain ink. No rotation,
  *                   glow, shimmer or loop. Static under reduced motion. Hidden
  *                   (off screen, background tab): no pass runs.
  */
@@ -197,17 +198,27 @@ export function CodeGlyph({ size = 16, className, title }: { size?: number; clas
 
 export type ThinkingState = "active" | "done" | "waiting" | "error";
 
-/** The handoff's tuning (MOTION_AND_THINKING): a tone step, the stagger between paths, the coalescing window. */
-export const HANDOFF = { tone: 220, stagger: 70, coalesce: 1600 } as const;
+/**
+ * The handoff's tuning, aligned in Revision 2 with the production schedule
+ * (rf/brand-assets thinking-schedule.ts), which the critics' frames proved
+ * right: one blade RISES toward the presence ink over `fast` (120 ms) and
+ * FALLS over `base` (220 ms, out-soft, so presence leaves at once and only an
+ * afterglow lingers); the next blade starts 120 ms later, exactly as this one
+ * peaks, so only one blade is ever at its peak and attention is handed on
+ * rather than swept (the 70 ms stagger made three blades blue at once: the
+ * whole logo read as blinking). A pass is 700 ms. A request inside the
+ * coalescing window is ABSORBED, not deferred, and while steps keep arriving
+ * the window backs off (1.6 s, 3.2 s, 6.4 s; reset after 1.6 s of quiet), so
+ * a test runner's counts can never turn the mark into a beat. Between passes
+ * the mark is the row's own ink: no held blade. Finished settles once (560 ms).
+ */
+export const HANDOFF = { rise: 120, fall: 220, stagger: 120, window: 1600, windowMax: 6400, quietGap: 1600, settle: 560 } as const;
 
 /**
- * The Continuum as the thinking indicator. It never moves: on thinking start
- * one pass of tone runs through the blades clockwise from the top (each
- * shifts toward the presence ink for 220 ms and hands on 70 ms later), and
- * the last blade keeps a quiet presence tone while the work is live. Each new
- * real event (`pulse` increments: a phase change, a tool result) may ask for
- * another pass; requests inside 1.6 s of the last pass coalesce into one.
- * `done` settles once to the plain ink; `waiting` and `error` are still.
+ * The Continuum as the thinking indicator. It never moves. `pulse`
+ * increments on each real event (a new phase, a tool result: never a count
+ * or a token); the first pass runs when the work starts. `done` settles once
+ * to the plain ink; `waiting` and `error` are still, in the third ink.
  * Decorative: the words beside it carry the meaning.
  */
 export function ThinkingMark({
@@ -225,8 +236,8 @@ export function ThinkingMark({
   const reduced = useReduced();
   const ref = React.useRef<SVGSVGElement | null>(null);
   const [pass, setPass] = React.useState(0);
-  const last = React.useRef(-Infinity);
-  const pending = React.useRef<number | null>(null);
+  const [settle, setSettle] = React.useState(false);
+  const sched = React.useRef({ passAt: -Infinity, window: HANDOFF.window as number, absorbed: false, lastEventAt: -Infinity });
   const visible = React.useRef(true);
 
   React.useEffect(() => {
@@ -238,28 +249,43 @@ export function ThinkingMark({
   }, []);
 
   const request = React.useCallback(() => {
-    if (reduced) return;
-    const run = () => {
-      pending.current = null;
-      if (!visible.current || document.hidden) return;
-      last.current = performance.now();
+    if (reduced || !visible.current || (typeof document !== "undefined" && document.hidden)) return;
+    const s = sched.current;
+    const now = performance.now();
+    // The stream went quiet: the next step is news again.
+    if (now - s.lastEventAt >= HANDOFF.quietGap) {
+      s.window = HANDOFF.window;
+      s.absorbed = false;
+    }
+    s.lastEventAt = now;
+    if (now - s.passAt >= s.window) {
+      // Steps kept arriving through the last window: give the next one longer.
+      s.window = s.absorbed ? Math.min(s.window * 2, HANDOFF.windowMax) : s.window;
+      s.absorbed = false;
+      s.passAt = now;
       setPass((p) => p + 1);
-    };
-    const wait = last.current + HANDOFF.coalesce - performance.now();
-    if (wait <= 0) run();
-    else if (pending.current === null) pending.current = window.setTimeout(run, wait);
+    } else {
+      // Inside the window: absorbed. Nothing is queued; the mark holds still.
+      s.absorbed = true;
+    }
   }, [reduced]);
 
-  // One pass on start, and one per real event (coalesced).
+  // One pass on start, and one per real event (absorbed inside the window).
   React.useEffect(() => {
     if (state === "active") request();
   }, [state, pulse, request]);
-  React.useEffect(
-    () => () => {
-      if (pending.current !== null) window.clearTimeout(pending.current);
-    },
-    [],
-  );
+
+  // Finished settles once, only if the work was drawn as live.
+  const wasActive = React.useRef(state === "active");
+  React.useEffect(() => {
+    if (state === "done" && wasActive.current && !reduced) {
+      setSettle(true);
+      const t = window.setTimeout(() => setSettle(false), HANDOFF.settle);
+      wasActive.current = false;
+      return () => window.clearTimeout(t);
+    }
+    wasActive.current = state === "active";
+  }, [state, reduced]);
 
   const parity = pass === 0 ? undefined : pass % 2 ? "a" : "b";
   return (
@@ -270,8 +296,9 @@ export function ThinkingMark({
         ref,
         "data-state": state,
         "data-pass": state === "active" && !reduced ? parity : undefined,
+        "data-settle": settle ? "" : undefined,
       } as React.SVGProps<SVGSVGElement>}
-      bladeProps={(i) => ({ style: { "--i": i } as React.CSSProperties, "data-last": i === CONTINUUM_BLADES.length - 1 ? "" : undefined } as React.SVGProps<SVGPathElement>)}
+      bladeProps={(i) => ({ style: { "--i": i } as React.CSSProperties } as React.SVGProps<SVGPathElement>)}
     />
   );
 }

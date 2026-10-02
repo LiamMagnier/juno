@@ -205,20 +205,24 @@ function Mark({ item, size = 16 }: { item: LibItem; size?: number }) {
   );
 }
 
+/**
+ * Who and when on ONE line (Revision 2: three meta lines per card made the grid noisy). The chat it came
+ * from, the way back, is the line's last object: a chat glyph with its name in the tooltip and the
+ * accessible name; the list view spells it out in its own column.
+ */
 function Byline({ item }: { item: LibItem }) {
   return (
     <span className="jn-lib__meta">
       {item.by ? (
         <span className="jn-lib__by">
           <CrewMark member={face(crew(item.by))} size={16} />
-          {crew(item.by).name}
+          {crew(item.by).name},
         </span>
       ) : null}
       <span className="jn-lib__when">{item.when}</span>
       {item.chat ? (
-        <a href="#" className="jn-lib__chat" title={`Open the chat: ${item.chat}`}>
+        <a href="#" className="jn-lib__chatlink jtip" aria-label={`Open the chat: ${item.chat}`} data-tip={item.chat} data-tip-align="end">
           <Icon name="chat" size={16} />
-          <span>{item.chat}</span>
         </a>
       ) : null}
     </span>
@@ -308,6 +312,8 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
   const [filter, setFilter] = React.useState<(typeof LIB_FILTERS)[number]>(initialFilter);
   const [view, setView] = React.useState<"grid" | "list">(initialView);
   const [query, setQuery] = React.useState(initialQuery);
+  // A filter changed from the keyboard reflows in the same frame (F0); from a pointer it reflows on the standard spring.
+  const [kbd, setKbd] = React.useState(false);
   const kinds = LIB_FILTER_KINDS[filter];
   const q = query.trim().toLowerCase();
   const items = LIBRARY.filter((i) => (!kinds || kinds.includes(i.kind)) && (!q || i.title.toLowerCase().includes(q)));
@@ -334,7 +340,7 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
 
         {/* One row of controls: what to show, then search, who made it, order and view, together. */}
         <div className="jn-libbar">
-          <div className="jn-libbar__filters">
+          <div className="jn-libbar__filters" onKeyDownCapture={() => setKbd(true)} onPointerDownCapture={() => setKbd(false)}>
             <Segmented options={LIB_FILTERS} value={filter} onChange={setFilter} label="Show" layoutKey="lib-filter" className="jn-lib__filter" />
           </div>
           <span className="jn-libbar__tools jicon-quiet">
@@ -375,10 +381,10 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
               {items.map((item) => (
                 <motion.li
                   key={item.id}
-                  layout={reduced ? false : "position"}
-                  initial={{ opacity: 0 }}
+                  layout={reduced || kbd ? false : "position"}
+                  initial={kbd ? false : { opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, transition: reduced ? R : { duration: 0.1 } }}
+                  exit={{ opacity: 0, transition: kbd ? T.instant : reduced ? R : T.exit }}
                   transition={reduced ? R : { layout: SPRING.standard, opacity: T.fast }}
                 >
                   <Tile item={item} />

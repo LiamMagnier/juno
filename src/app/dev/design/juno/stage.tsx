@@ -14,6 +14,43 @@ import { BrandScene } from "./brand-scene";
 import type { SceneId } from "./scene-ids";
 
 
+/**
+ * Tooltips as a group (Revision 2): the first waits 600 ms; once one has
+ * shown, moving to a neighbour shows its tooltip at once, until the pointer
+ * has been off every tooltip trigger for 400 ms. One delegated pair of
+ * pointer listeners on the stage; CSS reads the root's data-tip-warm.
+ */
+function useTooltipGroup(ref: React.RefObject<HTMLDivElement | null>) {
+  React.useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    let warmT = 0;
+    let coolT = 0;
+    const over = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".jtip")) return;
+      window.clearTimeout(coolT);
+      if (root.hasAttribute("data-tip-warm")) return;
+      window.clearTimeout(warmT);
+      warmT = window.setTimeout(() => root.setAttribute("data-tip-warm", ""), 600);
+    };
+    const out = (e: PointerEvent) => {
+      const from = (e.target as Element | null)?.closest?.(".jtip");
+      const to = (e.relatedTarget as Element | null)?.closest?.(".jtip");
+      if (!from || to) return;
+      window.clearTimeout(warmT);
+      coolT = window.setTimeout(() => root.removeAttribute("data-tip-warm"), 400);
+    };
+    root.addEventListener("pointerover", over);
+    root.addEventListener("pointerout", out);
+    return () => {
+      root.removeEventListener("pointerover", over);
+      root.removeEventListener("pointerout", out);
+      window.clearTimeout(warmT);
+      window.clearTimeout(coolT);
+    };
+  }, [ref]);
+}
+
 export function JunoStage({
   scene,
   theme,
@@ -28,8 +65,11 @@ export function JunoStage({
   fontOverride?: React.CSSProperties;
 }) {
   const reduced = params.rm === "1";
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  useTooltipGroup(rootRef);
   return (
     <div
+      ref={rootRef}
       className={`jn ${fontClass}`}
       data-theme={theme}
       data-rm={reduced ? "" : undefined}

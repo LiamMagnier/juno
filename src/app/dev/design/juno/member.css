@@ -12,12 +12,19 @@
 
 /* ———————————————————————————— Thread colour ———————————————————————————— */
 
+/* Revision 2 (BRAND_IDENTITY: agent colours never recolour the shell;
+   CHAT_SYSTEM: a restrained user-turn surface). The person's bubble keeps the
+   neutral bubble and takes a tint of the agent's colour (light 14%, dark 16%,
+   mixed in OKLab so honey never turns to olive), with the ink's own text: it
+   says whose thread this is without a filled slab of colour. The armed send
+   disc is the one solid use of the colour; the keyboard ring and selection
+   follow it. Attention amber is never derived from an agent's colour. */
 .jn [data-member-theme] .jn-umsg__bubble {
-  background: var(--m-bubble);
-  color: var(--m-on-bubble);
+  background: light-dark(color-mix(in oklab, var(--m-disc) 14%, var(--bubble)), color-mix(in oklab, var(--m-disc) 16%, var(--bubble)));
+  color: var(--ink);
 }
 .jn [data-member-theme] .jn-umsg .jn-token {
-  background: color-mix(in srgb, var(--m-on-bubble) 18%, transparent);
+  background: var(--bubble-token);
   box-shadow: none;
   color: inherit;
 }
@@ -35,10 +42,13 @@
 .jn [data-member-theme] .jn-disc:not([data-mode="voice"])[data-force="press"] {
   background: var(--m-disc-press);
 }
-/* In a member's thread the member is the presence: the keyboard ring and the
-   selection take its colour instead of Juno's. */
+/* In an agent's thread the agent is the presence: the keyboard ring (its
+   ink, 4.6:1 on the panel) and the selection take its colour instead of Alevr's. */
+.jn [data-member-theme] .jn-composer[data-kbd] {
+  box-shadow: 0 0 0 1px var(--m-ink);
+}
 .jn [data-member-theme] .jn-composer::after {
-  box-shadow: 0 0 0 2px var(--m-ring, var(--m-soft));
+  box-shadow: 0 0 0 1px var(--m-ink);
 }
 .jn [data-member-theme] ::selection {
   background: var(--m-soft);
@@ -240,7 +250,9 @@
 .jn .jn-crewsheet[data-kind="customize"] {
   height: min(700px, calc(100dvh - 48px));
 }
-.jn .jn-crewsheet__close {
+/* Revision 2: one class more specific than .jtip (position: relative), which had pulled the close button 16 px
+   left of the sheet's edge, where the sheet clipped the X into the stray chevron the critics found. */
+.jn .jn-crewsheet .jn-crewsheet__close {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -332,4 +344,33 @@
 .jn .jn-orbit__glyph {
   color: var(--ink-2);
   transform: translateY(1px);
+}
+
+/* —————————————————————————— Revision 2: the agent's thread —————————————————————————— */
+
+/* Header actions are named (About Mira, Appearance, Pause); on a phone their words fold into tooltips. */
+.jn .jn-mhead__act {
+  padding: 0 10px;
+}
+.jn .jn-mhead__act > svg {
+  color: var(--ink-3);
+}
+@media (max-width: 760px) {
+  .jn .jn-mhead__act > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .jn .jn-mhead__act {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  /* The character's band is compact on a phone (about 112 of 844 px, was 280): the character at 72 px. */
+  .jn .jn-mhead {
+    height: 120px;
+    margin-bottom: -24px;
+  }
 }

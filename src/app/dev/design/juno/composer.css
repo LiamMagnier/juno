@@ -8,29 +8,35 @@
 }
 
 /* No shadow (D-030). The surface and one crisp hairline define it. Focus from
-   a pointer darkens the hairline; focus from the keyboard (C1) also lays a
-   restrained ring outside it, in the presence colour, because that is where
-   Juno starts listening. The ring is a pseudo-element so only opacity moves. */
+   a pointer darkens the hairline in the same frame. Focus from the keyboard
+   (C1) turns the edge into ONE 2 px ring in the presence ink, hugging the
+   composer with no gap (Revision 2: the hairline, a 3 px gap and a 2 px ring
+   read as a double border, and the ring was under 3:1): the first pixel is
+   the edge itself, switched in the same frame; the second is a pseudo-element
+   whose opacity arrives over `fast`, so only opacity moves. */
 .jn .jn-composer {
   position: relative;
   background: var(--surface);
   border-radius: var(--r-composer);
-  box-shadow: 0 0 0 1px var(--line-2);
+  box-shadow: 0 0 0 1px var(--line-composer);
   /* box-shadow never animates (spec §1.8.3): edges change in the same frame. */
   cursor: text;
 }
 .jn .jn-composer::after {
   content: "";
   position: absolute;
-  inset: -3px;
-  border-radius: calc(var(--r-composer) + 3px);
-  box-shadow: 0 0 0 2px var(--presence-ring);
+  inset: -1px;
+  border-radius: calc(var(--r-composer) + 1px);
+  box-shadow: 0 0 0 1px var(--focus-ring);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--d-fast) var(--e-out);
 }
 .jn .jn-composer[data-focus] {
   box-shadow: 0 0 0 1px var(--line-3);
+}
+.jn .jn-composer[data-kbd] {
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 .jn .jn-composer[data-kbd]::after {
   opacity: 1;
@@ -161,13 +167,19 @@
   background: var(--ink);
   color: var(--on-ink);
   flex: none;
-  transition:
-    background-color var(--d-fast) var(--e-out),
-    color var(--d-fast) var(--e-out);
+  /* No colour transition: the first keystroke turns the disc from voice to send in one frame (a 120 ms
+     background fade passed through mid-grey); the glyph swap (opacity and scale, fast) carries the change. */
 }
+/* Empty, the disc is the quiet voice entry: a light tone with the second ink, so the field (the thing to
+   do) leads and the disc never becomes the strongest object of an empty composer (Revision 2). */
 .jn .jn-disc[data-mode="voice"] {
+  background: light-dark(#f0f1f2, #2b2c2f);
+  color: var(--ink-2);
+}
+.jn .jn-disc[data-mode="send"][aria-disabled="true"] {
   background: var(--well);
-  color: var(--ink);
+  color: var(--ink-4);
+  cursor: default;
 }
 @media (hover: hover) and (pointer: fine) {
   .jn .jn-disc[data-mode="voice"]:hover {
@@ -293,12 +305,15 @@
     background-color var(--d-fast) var(--e-out),
     border-color var(--d-fast) var(--e-out);
 }
+/* inline-flex with no line box of its own (Revision 2): an agent's face, itself an inline-block, sat on the
+   token's 24 px line box and dropped about 4 px below the file and app marks beside it. */
 .jn .jn-token__mark {
-  display: inline-block;
+  display: inline-flex;
   width: 16px;
   height: 16px;
   margin-right: 5px;
   vertical-align: -3px;
+  line-height: 0;
 }
 .jn .jn-token__mark > * {
   width: 16px;
@@ -655,5 +670,22 @@
   }
   .jn .jn-model {
     height: 44px;
+  }
+}
+
+
+/* Revision 2: a layer below the home composer covers the suggestions, and a draft makes them moot: they step
+   out in the same frame (F0, keyboard-born), no fade. */
+.jn .jn-home:has(.jn-composer-wrap[data-layer-below]) .jn-home__suggest,
+.jn .jn-home:has(.jn-composer-wrap[data-draft]) .jn-home__suggest {
+  visibility: hidden;
+}
+/* Keyboard hints mean nothing on a touch screen. */
+@media (pointer: coarse) {
+  .jn kbd.jn-pop__detail,
+  .jn .jn-pop__foot,
+  .jn .jn-side__kbd,
+  .jn .jn-q__key {
+    display: none;
   }
 }

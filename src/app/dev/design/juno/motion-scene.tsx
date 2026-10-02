@@ -316,7 +316,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
             </div>
           </div>
         </div>
-        <p className="jn-mstage__cap jn-mstage__cap--frame">Mira arrives over her thread on the character spring, says what she is doing in words, and blinks when you start typing to her. Your message and the send disc wear her colour. Thank her and she is glad once: a happy bounce over the thread and her face on your message, then stillness.</p>
+        <p className="jn-mstage__cap jn-mstage__cap--frame">Mira arrives over her thread on the character spring, says what she is doing in words, and blinks when you start typing to her. Your messages take a tint of her colour and the send disc wears it. Thank her and she is glad once: a happy bounce over the thread and her face on your message, then stillness.</p>
       </div>
     </div>
   );
@@ -393,7 +393,7 @@ function MaterialMoment({ tall }: { tall?: boolean }) {
           </div>
         </div>
         <div className="jn-dock">
-          <Composer variant="dock" apiRef={api} placeholder="Reply…" label="Message Alevr" />
+          <Composer variant="dock" apiRef={api} placeholder="Ask a follow-up" label="Message Alevr" />
         </div>
       </div>
     </div>
@@ -490,7 +490,7 @@ function StopMoment() {
           </p>
         )}
       </div>
-      <Composer variant="dock" busy={busy} apiRef={api} placeholder="Reply…" onStop={() => setBusy(false)} />
+      <Composer variant="dock" busy={busy} apiRef={api} placeholder="Ask a follow-up" onStop={() => setBusy(false)} />
       <p className="jn-mstage__cap">While Alevr works the disc is Stop. The work stops in the frame it is pressed; the disc turns back in 120 ms, and the row says what stopped and what did not happen.</p>
     </div>
   );
@@ -613,7 +613,7 @@ function VerifyMoment() {
           </motion.div>
         ) : null}
       </ol>
-      {tests !== null && !passed ? <LiveLine className="jn-codelive" text={`Running the sync suite, ${tests} of 128 tests`} seconds={Math.round(tests / 3)} /> : null}
+      {tests !== null && !passed ? <LiveLine className="jn-codelive" text="Running the sync suite" detail={`${tests} of 128 tests`} seconds={Math.round(tests / 3)} /> : null}
       <p className="jn-mstage__cap">Each step lands when the tool reports it (120 ms, in place) and the count is the runner’s own. Open pull request becomes available only after the tests pass, on a tonal step. Nothing celebrates.</p>
     </div>
   );
@@ -682,10 +682,10 @@ const MOMENTS: { id: string; title: string; spec: string; C: React.ComponentType
   { id: "approval", title: "Approval: arrive, arm, land", spec: "arrive 220 ms, 6 px rise · arm 500 ms · height to the receipt 220 ms · receipt on the reward spring", C: ApprovalMoment },
   { id: "menu", title: "Menus open and close", spec: "pointer: 220 ms from the trigger, opacity in 80 ms · keyboard: same frame, focus inside · close 160 ms ease-in", C: MenuMoment },
   { id: "orbit", title: "Orbit: an agent’s attention and state", spec: "words cross-fade 120 ms in its row and under its face · pose on the standard spring · turn toward you once", C: OrbitMoment },
-  { id: "member", title: "An agent’s own thread", spec: "arrival on the character spring, 0.5 s, bounce 0.24 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
+  { id: "member", title: "An agent’s own thread", spec: "arrival on the character spring, 0.56 s, bounce 0.15 · words 120 ms · blink on typing · reaction lands once", C: MemberMoment, tall: true },
   { id: "icons", title: "Icons on hover and state", spec: "each icon’s own motion, 120 to 240 ms, reduced to a cross-fade", C: IconsMoment },
   { id: "material", title: "Material and scroll edges", spec: "content blurs under the header and the dock · palette and menu on the material · the material itself never animates", C: MaterialMoment, tall: true },
-  { id: "thinking", title: "Thinking: the Continuum handoff", spec: "220 ms tone · 70 ms stagger · one pass per real event, coalesced to 1.6 s · still when waiting · settles once", C: ThinkingMoment },
+  { id: "thinking", title: "Thinking: the Continuum handoff", spec: "one blade at a time: rise 120 ms, fall 220 ms, next blade 120 ms later · one pass per real event, absorbed inside 1.6 s (backs off to 6.4 s) · still when waiting · settles once, 560 ms", C: ThinkingMoment },
   { id: "token-remove", title: "A token leaving", spec: "keyboard: select, then gone in the same frame · pointer: yields in place, 160 ms ease-in", C: TokenRemoveMoment },
   { id: "stop", title: "Stop", spec: "stops in the frame it is pressed · disc glyph 120 ms · the row says what stopped", C: StopMoment },
   { id: "dictate", title: "Dictation", spec: "the mic draws the live input level · presence colour while on · words land as recognised", C: DictateMoment },

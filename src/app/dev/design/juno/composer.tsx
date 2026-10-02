@@ -315,7 +315,8 @@ const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 export function Composer({
   initial = [],
-  placeholder = "Ask anything. @ adds files, apps or agents; / runs skills",
+  /* Revision 2: a placeholder is an invitation, not a syntax lesson; @ and / are taught by the + menu and the palette. */
+  placeholder = "Ask anything",
   label = "Message Alevr",
   layoutId,
   still,
@@ -333,6 +334,7 @@ export function Composer({
   onStop,
   dictation,
   onDictate,
+  voiceDisc = variant !== "code",
 }: {
   initial?: Segment[];
   placeholder?: string;
@@ -361,6 +363,8 @@ export function Composer({
   /** Dictating: the microphone's live input levels (five, 0..1), drawn by the mic itself. Null when off. */
   dictation?: number[] | null;
   onDictate?: () => void;
+  /** Empty, the disc starts a voice conversation (Chat). Code's empty disc is an unavailable Send: the microphone dictates. */
+  voiceDisc?: boolean;
 }) {
   const reduced = useReduced();
   const [s, dispatch] = React.useReducer(reducer, undefined, () => ({
@@ -527,8 +531,10 @@ export function Composer({
       const c = caretRef.current.getBoundingClientRect();
       const width = Math.min(372, vw - 24);
       const left = clampLeft(c.left - w.left - 20, width);
-      // The palette is born at the caret, so it always sits above the composer unless there is truly no room there.
-      const below = roomTop < 220 && roomBottom > roomTop;
+      // Revision 2: on the home the palette opens BELOW the composer (the greeting stays whole above it; the
+      // suggestions below are disposable and step aside); in the dock it opens above (the transcript is there).
+      // Either way it flips only when its side has clearly less room than the other.
+      const below = variant === "home" ? roomBottom >= Math.min(320, roomTop) : roomTop < 220 && roomBottom > roomTop;
       next.palette = { left, width, ...vert(below, below ? roomBottom : roomTop) };
       next.paletteOrigin = `${c.left - w.left - left}px ${below ? "0%" : "100%"}`;
     }
@@ -579,10 +585,17 @@ export function Composer({
   }, [leaving, reduced]);
 
   const empty = s.segs.length === 0 && s.query === null;
-  const mode: "voice" | "send" | "stop" = busy ? "stop" : s.segs.length ? "send" : "voice";
+  const mode: "voice" | "send" | "stop" = busy ? "stop" : s.segs.length || !voiceDisc ? "send" : "voice";
+  const sendable = s.segs.length > 0;
+  // The model the person chose (MP2): the trigger says it, the popover closes, focus returns to the trigger.
+  const [model, setModel] = React.useState<{ id: string; label: string }>({ id: "auto", label: modelLabel });
+  const [effort, setEffort] = React.useState<Effort>("Standard");
+  const shownEffort = effortLabel ?? (effort === "Standard" ? undefined : effort);
+  // Any layer below the home composer covers the suggestions: they step out of the way in the same frame.
+  const layerBelow = variant === "home" && ((paletteOpen && !!anchor.palette && "top" in anchor.palette) || (s.model && anchor.modelBelow) || (s.plus && anchor.plusBelow) || (!!s.panel && anchor.panelBelow));
 
   return (
-    <div ref={wrapRef} className={["jn-composer-wrap", className].filter(Boolean).join(" ")} data-variant={variant}>
+    <div ref={wrapRef} className={["jn-composer-wrap", className].filter(Boolean).join(" ")} data-variant={variant} data-layer-below={layerBelow ? "" : undefined} data-draft={s.segs.length ? "" : undefined}>
       {/* The composer travels between the home and the dock by its position only (layout="position"): its height
           snaps, so the send disc never stretches into an oval on the way (C18). */}
       <motion.div
@@ -680,8 +693,8 @@ export function Composer({
             onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => dispatch({ type: "model", open: !s.model, kbd: fromKeyboard(e) })}
           >
-            <span className="jn-model__name">{modelLabel}</span>
-            {effortLabel ? <span className="jn-model__effort">{effortLabel}</span> : null}
+            <span className="jn-model__name">{model.label}</span>
+            {shownEffort ? <span className="jn-model__effort">{shownEffort}</span> : null}
             <Icon name="chevron-down" size={16} state={s.model ? "active" : "rest"} />
           </button>
           {/* Dictating, the mic draws the live input level in its own place (real levels, no decorative loop). */}
@@ -706,6 +719,7 @@ export function Composer({
             data-tip-side={variant === "home" ? undefined : "top"}
             data-tip-align="end"
             aria-label={mode === "stop" ? "Stop response" : mode === "send" ? "Send message" : "Start a voice conversation"}
+            aria-disabled={mode === "send" && !sendable ? true : undefined}
             onClick={mode === "send" ? send : mode === "stop" ? onStop : undefined}
           >
             {/* One disc, three faces (C12, C13, C16). The glyphs overlap and swap in place: opacity with scale 0.8 to 1 on fast. */}
@@ -745,7 +759,24 @@ export function Composer({
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
-        {s.model ? <ModelPopover key="model" style={anchor.model} origin={anchor.modelOrigin} below={anchor.modelBelow} kbd={s.kbdLayer} onClose={closeLayer} /> : null}
+        {s.model ? (
+          <ModelPopover
+            key="model"
+            style={anchor.model}
+            origin={anchor.modelOrigin}
+            below={anchor.modelBelow}
+            kbd={s.kbdLayer}
+            onClose={closeLayer}
+            chosen={model.id}
+            effort={effort}
+            onEffort={setEffort}
+            onChoose={(id, label) => {
+              setModel({ id, label });
+              closeLayer();
+              modelRef.current?.focus({ preventScroll: true });
+            }}
+          />
+        ) : null}
       </AnimatePresence>
       <AnimatePresence>
         {s.plus ? <PlusMenu key="plus" style={anchor.plus} origin={anchor.plusOrigin} below={anchor.plusBelow} kbd={s.kbdLayer} onClose={closeLayer} /> : null}
@@ -957,6 +988,10 @@ export function ModelPopover({
   className,
   kbd = false,
   onClose,
+  chosen: chosenProp,
+  onChoose,
+  effort: effortProp,
+  onEffort,
 }: {
   style?: React.CSSProperties;
   origin?: string;
@@ -965,12 +1000,30 @@ export function ModelPopover({
   /** Opened from the keyboard: appears in the same frame, focus on the chosen model. */
   kbd?: boolean;
   onClose?: () => void;
+  /** The model in use (controlled by the composer); uncontrolled in the galleries. */
+  chosen?: string;
+  /** A model was chosen: the composer names it on the trigger and closes the popover. */
+  onChoose?: (id: string, label: string) => void;
+  effort?: Effort;
+  onEffort?: (e: Effort) => void;
 }) {
   const reduced = useReduced();
   const ref = React.useRef<HTMLDivElement | null>(null);
   usePopoverKeys(ref, !!onClose, onClose ?? noop, kbd, "[data-layer-trigger]");
-  const [effort, setEffort] = React.useState<Effort>("Standard");
-  const [chosen, setChosen] = React.useState("auto");
+  const [effortLocal, setEffortLocal] = React.useState<Effort>(effortProp ?? "Standard");
+  const effort = effortProp ?? effortLocal;
+  const setEffort = (e: Effort) => (onEffort ? onEffort(e) : setEffortLocal(e));
+  const [chosenLocal, setChosenLocal] = React.useState(chosenProp ?? "auto");
+  const chosen = chosenProp ?? chosenLocal;
+  // The check is drawn (its stroke animating in) only on the row the person just chose; opening the
+  // popover shows the current choice already checked, at rest (Revision 2: it drew itself on every open).
+  const [fresh, setFresh] = React.useState<string | null>(null);
+  const choose = (id: string, label: string) => {
+    setFresh(id);
+    if (onChoose) onChoose(id, label);
+    else setChosenLocal(id);
+  };
+  const check = (id: string) => (chosen === id ? <Icon name="check" size={16} state={fresh === id ? "active" : "rest"} /> : null);
   return (
     <motion.div
       ref={ref}
@@ -985,7 +1038,7 @@ export function ModelPopover({
       transition={reduced ? R : POP_IN}
     >
       <div role="radiogroup" aria-label="Model" className="jn-modelpop__list">
-        <button type="button" role="radio" aria-checked={chosen === "auto"} className="jn-pop__row jn-pop__row--tall jicon-trigger" onClick={() => setChosen("auto")}>
+        <button type="button" role="radio" aria-checked={chosen === "auto"} className="jn-pop__row jn-pop__row--tall jicon-trigger" onClick={() => choose("auto", "Auto")}>
           <span className="jn-pop__mark jn-pop__mark--ink">
             <Icon name="auto" size={20} />
           </span>
@@ -994,11 +1047,11 @@ export function ModelPopover({
             <span className="jn-pop__line">Picks the right model for each message</span>
           </span>
           <span className="jn-pop__check" aria-hidden="true">
-            {chosen === "auto" ? <Icon name="check" size={16} state="active" /> : null}
+            {check("auto")}
           </span>
         </button>
         {MODELS.map((m) => (
-          <button key={m.id} type="button" role="radio" aria-checked={chosen === m.id} className="jn-pop__row jn-pop__row--tall" onClick={() => setChosen(m.id)}>
+          <button key={m.id} type="button" role="radio" aria-checked={chosen === m.id} className="jn-pop__row jn-pop__row--tall" onClick={() => choose(m.id, m.name)}>
             <span className="jn-pop__mark jn-pop__mark--ink">
               <ModelMark provider={m.provider} className="jn-modelmark" />
             </span>
@@ -1007,7 +1060,7 @@ export function ModelPopover({
               <span className="jn-pop__line">{m.line}</span>
             </span>
             <span className="jn-pop__check" aria-hidden="true">
-              {chosen === m.id ? <Icon name="check" size={16} state="active" /> : null}
+              {check(m.id)}
             </span>
           </button>
         ))}
@@ -1035,10 +1088,10 @@ const PLUS_ITEMS: { icon: string; label: string; hint?: string; line?: string; a
   { icon: "attach", label: "Add photos and files", hint: "⌘U" },
   { icon: "screenshot", label: "Take a screenshot" },
   { icon: "library", label: "Add from Library" },
-  { icon: "at", label: "Mention a file or app", hint: "@" },
+  { icon: "at", label: "Mention a file, app or agent", hint: "@" },
   { icon: "skill", label: "Run a skill", hint: "/" },
-  /* D-038: the deep-research mode is Deep Field, always with its descriptor. */
-  { icon: "research", label: "Deep Field", line: "Deep research", aria: "Deep Field, deep research" },
+  /* D-038: the deep-research mode is Deep Field, always with its descriptor, and its own glyph (the set's deep-field). */
+  { icon: "deep-field", label: "Deep Field", line: "Deep research", aria: "Deep Field, deep research" },
 ];
 
 /** What + offers: things to add to the message, then the two ways to name context in the sentence. */

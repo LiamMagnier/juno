@@ -168,9 +168,6 @@ function Uploads() {
           <span className="jn-upload__name">Q4 plan.pdf</span>
           <span className="jn-upload__line num">Uploading, 3.1 of 5.0 MB</span>
         </span>
-        <span className="jn-upload__glyph">
-          <Icon name="progress" size={16} value={0.62} />
-        </span>
         <button type="button" className="jb jb--ghost jb--sm">
           Cancel
         </button>
@@ -291,13 +288,13 @@ export function StatesScene() {
         <Cell label="Failed run." cap="Code: which step failed, why, in one sentence, and the next move.">
           <TestsFailed />
         </Cell>
-        <Cell label="First run." cap="No chats and no crew yet: the home teaches by offering the first connection.">
+        <Cell label="First run." cap="No chats and no agents yet: the home teaches by offering the first connection.">
           <FirstRun />
         </Cell>
         <Cell label="Empty." cap="The Library before anything lands in it.">
           <LibraryEmpty />
         </Cell>
-        <Cell label="Uploading and refused." cap="Real progress, a reason in words, a way forward.">
+        <Cell label="Uploading and refused." cap="Real progress in numbers (no spinning arc), a reason in words, a way forward.">
           <Uploads />
         </Cell>
         <Cell label="Expired." cap="An app whose sign-in lapsed: what Alevr can no longer do, and Reconnect.">

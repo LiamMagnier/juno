@@ -18,7 +18,7 @@ export interface Swatch {
 
 export const PLANES: Swatch[] = [
   { key: "side", name: "Frame", role: "The window: the sidebar sits on it (D-033)", light: "#f3f4f5", dark: "#111213" },
-  { key: "ground", name: "Panel", role: "The inset content panel, the brightest in light", light: "#fcfcfd", dark: "#18191b" },
+  { key: "ground", name: "Panel", role: "The inset content panel, the brightest in light", light: "#fbfbfc", dark: "#18191b" },
   { key: "surface", name: "Surface", role: "The composer and payloads: the one defined object", light: "#ffffff", dark: "#222326" },
   { key: "raised", name: "Raised", role: "Floating layers when the material is off", light: "#ffffff", dark: "#27282b" },
   { key: "card", name: "Card", role: "Real outputs in the transcript: tasks, approvals", light: "#f5f6f7", dark: "#1f2023" },

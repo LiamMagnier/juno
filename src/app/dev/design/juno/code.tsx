@@ -6,7 +6,7 @@ import { CODE_STEPS, DIFF, type DiffLine } from "./fixtures";
 import { Composer, Segmented } from "./composer";
 import { AlevrLogo } from "./brand";
 import { Icon } from "./icons";
-import { EASE_OUT, R, T, useReduced } from "./motion";
+import { R, T, useReduced } from "./motion";
 import { AppFrame, CodeSidebar, MobileBar, TopBar } from "./shell";
 import { LiveLine } from "./thread";
 
@@ -26,31 +26,47 @@ const MODE_LINE: Record<CodeMode, string> = {
   "Auto-edit": "Edits files, asks before commands",
 };
 
-export function ContextRow({ mode: initialMode = "Auto-edit", compact = false }: { mode?: CodeMode; compact?: boolean }) {
-  const [mode, setMode] = React.useState<CodeMode>(initialMode);
+/*
+ * The context row speaks one voice (Revision 2): repository, host and branch are controls, so they are all
+ * set in the interface sans; mono stays for code, paths in the transcript and the diff.
+ */
+export function ContextRow({
+  mode: initialMode = "Auto-edit",
+  compact = false,
+  onMode,
+}: {
+  mode?: CodeMode;
+  compact?: boolean;
+  onMode?: (m: CodeMode) => void;
+}) {
+  const [mode, setModeState] = React.useState<CodeMode>(initialMode);
+  const setMode = (m: CodeMode) => {
+    setModeState(m);
+    onMode?.(m);
+  };
   return (
     <>
       {!compact ? (
         <>
-          <button type="button" className="jn-ctx jicon-trigger jicon-quiet">
+          <button type="button" className="jn-ctx jicon-trigger jicon-quiet" aria-label="Repository juno-web">
             <Icon name="repo" size={16} />
-            <span className="mono">juno-web</span>
+            <span className="jn-ctx__text">juno-web</span>
             <Icon name="chevron-down" size={16} />
           </button>
-          <button type="button" className="jn-ctx jicon-trigger jicon-quiet">
+          <button type="button" className="jn-ctx jicon-trigger jicon-quiet" aria-label="Runs on This Mac">
             <Icon name="laptop" size={16} />
-            This Mac
+            <span className="jn-ctx__text">This Mac</span>
             <Icon name="chevron-down" size={16} />
           </button>
-          <button type="button" className="jn-ctx jicon-trigger jicon-quiet">
+          <button type="button" className="jn-ctx jicon-trigger jicon-quiet" aria-label="Branch main">
             <Icon name="branch" size={16} />
-            <span className="mono">main</span>
+            <span className="jn-ctx__text">main</span>
           </button>
         </>
       ) : (
         <span className="jn-ctx jn-ctx--static">
           <Icon name="branch" size={16} />
-          <span className="mono">fix/sync-cursor-lease</span>
+          <span className="jn-ctx__text">fix/sync-cursor-lease</span>
         </span>
       )}
       <span className="jn-mode" role="radiogroup" aria-label="Permission mode">
@@ -80,6 +96,7 @@ export function ContextRow({ mode: initialMode = "Auto-edit", compact = false }:
 }
 
 export function CodeStartScene() {
+  const [mode, setMode] = React.useState<CodeMode>("Auto-edit");
   return (
     <AppFrame sidebar={<CodeSidebar current={-1} />} className="jn-frame--code" skip={{ href: "#jn-message", label: "Skip to message" }}>
       <div className="jn-chat">
@@ -91,7 +108,11 @@ export function CodeStartScene() {
               <AlevrLogo size={15} product="Code" className="jn-codehome__lockup" />
               <h1 className="t-title jn-codehome__title">What will you build?</h1>
             </div>
-            <Composer variant="code" placeholder="Describe the change, or paste an error" context={<ContextRow />} fieldId="jn-message" />
+            <Composer variant="code" placeholder="Describe the change, or paste an error" context={<ContextRow mode={mode} onMode={setMode} />} fieldId="jn-message" />
+            {/* The chosen mode says what it allows, in one line under the composer (Revision 2: the modes were unexplained). */}
+            <p className="jn-codehome__mode" aria-live="polite">
+              <b>{mode}</b> {MODE_LINE[mode].charAt(0).toLowerCase() + MODE_LINE[mode].slice(1)}.
+            </p>
             <div className="jn-home__suggest jn-codehome__recent">
               <p className="t-label jn-codehome__label">From this repository</p>
               <button type="button" className="jrow jicon-trigger jicon-quiet">
@@ -166,6 +187,10 @@ function DiffFile({ path, add, del, lines, open: initialOpen }: { path: [string,
           <span className="jn-add">+{add}</span> <span className="jn-del">−{del}</span>
         </span>
       </button>
+      {/* Review per file (Revision 2): the change is applied; Revert takes this file back to main's version. */}
+      <button type="button" className="jib jib--sm jicon-trigger jicon-quiet jtip jn-diff__revert" aria-label={`Revert ${path.join("")}`} data-tip="Revert this file" data-tip-align="end">
+        <Icon name="undo" size={16} />
+      </button>
       <AnimatePresence initial={false}>
         {open ? (
           <motion.div
@@ -173,7 +198,7 @@ function DiffFile({ path, add, del, lines, open: initialOpen }: { path: [string,
             initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
             animate={reduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
             exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0, transition: T.exit }}
-            transition={reduced ? R : { duration: 0.24, ease: EASE_OUT }}
+            transition={reduced ? R : T.base}
             style={{ overflow: "hidden" }}
           >
             {/* Long lines wrap on a hanging indent under their own text, so nothing is cut off at the pane's edge. */}
@@ -204,6 +229,7 @@ export function DiffPanel() {
   const [tab, setTab] = React.useState("Changes");
   return (
     <aside className="jn-diff" aria-label="Changes">
+      {/* What changed, in one line, with the two review verbs: keep is the default (the work is applied), revert is one press. */}
       <div className="jn-diff__tabs jicon-quiet" role="tablist">
         {["Changes", "Files", "Terminal", "Tests"].map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className="jn-diff__tab" onClick={() => setTab(t)}>
@@ -217,6 +243,14 @@ export function DiffPanel() {
             <Icon name="external" size={16} />
           </button>
         </span>
+      </div>
+      <div className="jn-diff__review">
+        <span className="jn-diff__summary num">
+          2 files changed <span className="mono jn-add">+36</span> <span className="mono jn-del">−4</span>
+        </span>
+        <button type="button" className="jb jb--ghost jb--sm">
+          Revert all
+        </button>
       </div>
       <div className="jn-diff__body">
         <DiffFile path={["src/sync/", "worker.ts"]} add={14} del={4} lines={DIFF} open />
@@ -235,7 +269,7 @@ export function CodeScene({ pane: initialPane = "session" }: { pane?: "session" 
         <div className="jn-codeswitch">
           <MobileBar title="Sync worker drops cursors" back />
           <div className="jn-codeswitch__seg">
-            <Segmented options={["session", "changes"] as const} value={pane} onChange={setPane} label="Show" layoutKey="code-pane" labels={{ session: "Session", changes: "Changes, 2 files" }} />
+            <Segmented options={["session", "changes"] as const} value={pane} onChange={setPane} label="Show" layoutKey="code-pane" labels={{ session: "Session", changes: "Changes" }} />
           </div>
         </div>
         <div className="jn-codework__main">
@@ -246,8 +280,11 @@ export function CodeScene({ pane: initialPane = "session" }: { pane?: "session" 
               </>
             }
           >
-            {/* Not ready while the tests run: a quiet, unavailable control that says when it will be. */}
-            <button type="button" className="jb jb--secondary jb--sm jicon-trigger jicon-quiet jtip" aria-disabled="true" data-tip="Opens when the tests pass" data-ready="false">
+            {/* Not ready while the tests run: a quiet, unavailable control, and the reason in words beside it (Revision 2). */}
+            <span className="jn-top__why" id="jn-pr-why">
+              After the tests pass
+            </span>
+            <button type="button" className="jb jb--secondary jb--sm jicon-trigger jicon-quiet" aria-disabled="true" aria-describedby="jn-pr-why" data-ready="false">
               <Icon name="pull-request" size={16} />
               Open pull request
             </button>
@@ -272,7 +309,7 @@ export function CodeScene({ pane: initialPane = "session" }: { pane?: "session" 
                 <Step key={s.object + s.verb} {...s} />
               ))}
             </ol>
-            <LiveLine className="jn-codelive" text="Running the whole sync suite, 41 of 128 tests" seconds={38} />
+            <LiveLine className="jn-codelive" text="Running the whole sync suite" detail="41 of 128 tests" seconds={38} />
           </div>
           <div className="jn-dock jn-dock--code">
             <Composer variant="code" busy placeholder="Steer, or ask about the change" context={<ContextRow compact />} fieldId="jn-message" />

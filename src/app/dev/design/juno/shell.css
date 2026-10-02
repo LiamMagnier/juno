@@ -356,15 +356,19 @@
 .jn .jn-side__label--dest {
   padding-left: 4px;
 }
+/* Revision 2: the link is the whole row (less the + on its right), so selecting Orbit fills a full-width
+   row exactly as Library or Customize do; the tight pill around the 12 px label read as a badge. */
 .jn .jn-side__labellink {
   position: relative;
-  display: inline-flex;
+  display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  margin-right: auto;
+  gap: 8px;
+  height: 28px;
+  margin-right: 4px;
   padding: 0 8px 0 6px;
-  border-radius: 7px;
+  border-radius: var(--r-row);
   color: var(--ink-3);
   text-decoration: none;
   transition:
@@ -414,14 +418,10 @@
 .jn .jn-side__crew[data-state="offline"] {
   color: var(--ink-3);
 }
-.jn .jn-side__glyph[data-state="working"] {
-  color: var(--presence);
-}
-.jn .jn-side__glyph[data-state="waiting"] {
-  color: var(--attn);
-}
-.jn .jn-side__glyph[data-state="failed"] {
-  color: var(--danger);
+/* Revision 2: no traffic light. A working session leads with the ThinkingMark (the one live thing), the
+   others carry a quiet glyph in the third ink; only "Needs your approval" takes the attention words. */
+.jn .jn-side__glyph {
+  color: var(--ink-3);
 }
 /* A Code session is two lines: its title, and what it is doing in words. */
 .jn .jn-side .jrow.jn-side__session {
@@ -834,7 +834,7 @@
 }
 @media (max-width: 760px) {
   html:has(.jn-frame) body {
-    background: #fcfcfd;
+    background: #fbfbfc;
   }
   html:has(.jn[data-theme="dark"] .jn-frame) body {
     background: #18191b;

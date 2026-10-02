@@ -6,7 +6,7 @@ import { CrewMark } from "./crew-bridge";
 import { ACCOUNT, DRAFT, MIRA, PRESENCE_WORDS, RECEIPT, THREAD_TITLE, type Segment } from "./fixtures";
 import { Composer, type ComposerApi, type ComposerStill } from "./composer";
 import { Icon } from "./icons";
-import { FileMark, GmailMark, SlackMark } from "./marks";
+import { GmailMark, SlackMark } from "./marks";
 import { EASE_OUT, R, SPRING, T, useReduced } from "./motion";
 import { face, MobileBar, panelOf, TopBar } from "./shell";
 import { Answer, ANSWER_WORDS, Approval, HANDOFF_FACE_ID, HANDOFF_ID, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
@@ -54,7 +54,7 @@ export function Suggestions() {
         Catch up on #design
       </button>
       <button type="button" className="jn-chip">
-        <FileMark name="Board deck, October.pdf" size={16} />
+        <Icon name="deck" size={16} className="jn-chip__glyph" />
         Finish the board deck
       </button>
       <button type="button" className="jn-chip">
@@ -65,7 +65,7 @@ export function Suggestions() {
   );
 }
 
-type Ghost = { greet: React.CSSProperties; suggest: React.CSSProperties; composer?: React.CSSProperties; segs: Segment[] } | null;
+type Ghost = { greet: React.CSSProperties; suggest: React.CSSProperties | null; composer?: React.CSSProperties; segs: Segment[] } | null;
 
 /** How many of the thread's asks (a question, an approval) are out of view: the dock names them. */
 function useNeedsOutOfView(enabled: boolean, chat: React.RefObject<HTMLElement | null>, scroller: () => HTMLElement | null, deps: unknown[]) {
@@ -151,11 +151,15 @@ export function ChatSurface({
   const [ghost, setGhost] = React.useState<Ghost>(null);
   const [justSent, setJustSent] = React.useState(false);
   const [travel, setTravel] = React.useState(false);
+  /* Stop (Revision 2: it was never wired here): the work stops in the frame the disc is pressed, what streamed
+     stays where it is, nothing else arrives, and one row says what stopped with the way to carry on. */
+  const [stopped, setStopped] = React.useState(false);
   const dockApi = React.useRef<ComposerApi | null>(null);
   const chatRef = React.useRef<HTMLDivElement | null>(null);
   const greetRef = React.useRef<HTMLDivElement | null>(null);
   const suggestRef = React.useRef<HTMLDivElement | null>(null);
   const composerRef = React.useRef<HTMLDivElement | null>(null);
+  const endRef = React.useRef<HTMLDivElement | null>(null);
   const live = initialPhase !== "thread" || playThread;
   const scroller = React.useCallback(() => scrollRef?.current ?? panelOf(chatRef.current), [scrollRef]);
 
@@ -164,11 +168,13 @@ export function ChatSurface({
       // Snapshot where the greeting (the heading itself, not its grid track) and the chips stood, so they leave from there.
       const c = chatRef.current?.getBoundingClientRect();
       const g = greetRef.current?.querySelector(".jn-greet")?.getBoundingClientRect();
-      const s = suggestRef.current?.querySelector(".jn-suggest")?.getBoundingClientRect();
+      // A draft has already put the suggestions away (Revision 2), so they only leave with the send if they were still there.
+      const sugg = suggestRef.current;
+      const s = sugg && getComputedStyle(sugg).visibility !== "hidden" ? sugg.querySelector(".jn-suggest")?.getBoundingClientRect() : undefined;
       const k = composerRef.current?.querySelector(".jn-composer-wrap")?.getBoundingClientRect();
-      if (c && g && s) {
+      if (c && g) {
         const at = (r: DOMRect): React.CSSProperties => ({ position: "absolute", left: r.left - c.left, top: r.top - c.top, width: r.width });
-        setGhost({ greet: at(g), suggest: at(s), composer: reduced && k ? at(k) : undefined, segs });
+        setGhost({ greet: at(g), suggest: s ? at(s) : null, composer: reduced && k ? at(k) : undefined, segs });
       }
       setSent(segs);
       setPhase("thread");
@@ -180,6 +186,7 @@ export function ChatSurface({
       setSeconds(0);
       setLineShown(false);
       setReceipt(false);
+      setStopped(false);
       onPhase?.("thread");
     },
     [onPhase, reduced],
@@ -202,7 +209,7 @@ export function ChatSurface({
 
   // The thread's timeline after a live send.
   React.useEffect(() => {
-    if (stillStage || phase !== "thread" || !live || !auto || stage !== "thinking" || revealed !== 0) return;
+    if (stillStage || stopped || phase !== "thread" || !live || !auto || stage !== "thinking" || revealed !== 0) return;
     const timers = [
       window.setTimeout(() => setLineShown(true), 200),
       window.setTimeout(() => setReceipt(true), 420),
@@ -212,26 +219,26 @@ export function ChatSurface({
       window.setTimeout(() => setStage("streaming"), 3700),
     ];
     return () => timers.forEach((t) => window.clearTimeout(t));
-  }, [phase, auto, stage, revealed, stillStage, live]);
+  }, [phase, auto, stage, revealed, stillStage, live, stopped]);
 
   React.useEffect(() => {
-    if (stillStage || stage !== "streaming" || revealed === Infinity) return;
+    if (stillStage || stopped || stage !== "streaming" || revealed === Infinity) return;
     if (revealed >= ANSWER_WORDS) {
       const t = window.setTimeout(() => setStage("done"), 200);
       return () => window.clearTimeout(t);
     }
     const t = window.setTimeout(() => setRevealed((r) => r + 2), 46);
     return () => window.clearTimeout(t);
-  }, [stage, revealed, stillStage]);
+  }, [stage, revealed, stillStage, stopped]);
 
   React.useEffect(() => {
-    if (stillStage || !auto || !live) return;
+    if (stillStage || stopped || !auto || !live) return;
     const next: Partial<Record<Stage, [Stage, number]>> = { done: ["handoff", 700], handoff: ["task", 1300], task: ["approval", 1500] };
     const n = next[stage];
     if (!n) return;
     const t = window.setTimeout(() => setStage(n[0]), n[1]);
     return () => window.clearTimeout(t);
-  }, [stage, auto, stillStage, live]);
+  }, [stage, auto, stillStage, live, stopped]);
 
   // On send the person's message is the top of the view, and the view stays there: no chasing the stream.
   React.useEffect(() => {
@@ -260,6 +267,14 @@ export function ChatSurface({
         {home ? (
           <div className="jn-home">
             <div className="jn-home__stack">
+              {/* On a phone there is no sidebar to carry Mira's ask, so the home says it once, above the greeting (Revision 2). */}
+              <a href="#" className="jn-home__attn">
+                <CrewMark member={face(MIRA)} state="waiting" size={20} />
+                <span>
+                  Mira <span className="jn-attn">needs your answer</span>
+                </span>
+                <Icon name="chevron-right" size={16} />
+              </a>
               <div ref={greetRef} className="jn-home__greet">
                 <Greeting />
               </div>
@@ -276,11 +291,26 @@ export function ChatSurface({
             <motion.div className="jn-thread" role="log" aria-relevant="additions" {...threadIn}>
               <UserMessage segments={sent} receipt={receipt ? RECEIPT : null} animateIn={live} />
               {stage === "thinking" ? (
-                lineShown ? <LiveLine text={PRESENCE_WORDS[presence]} seconds={seconds} /> : <div className="jn-live jn-live--slot" aria-hidden="true" />
+                stopped ? null : lineShown ? <LiveLine text={PRESENCE_WORDS[presence]} seconds={seconds} /> : <div className="jn-live jn-live--slot" aria-hidden="true" />
               ) : (
                 <Trace />
               )}
               {stage !== "thinking" ? <Answer revealed={stage === "streaming" ? revealed : Infinity} /> : null}
+              {stopped ? (
+                <div className="jn-stopped" role="status">
+                  <span>{stage === "thinking" ? "Stopped. Nothing was read or posted." : "Stopped. Nothing was posted."}</span>
+                  <button
+                    type="button"
+                    className="jb jb--link"
+                    onClick={() => {
+                      setStopped(false);
+                      dockApi.current?.focus(false);
+                    }}
+                  >
+                    Continue
+                  </button>
+                </div>
+              ) : null}
               {past("done") ? (
                 <motion.div initial={live ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={reduced ? R : T.fast}>
                   <MessageActions />
@@ -306,14 +336,17 @@ export function ChatSurface({
                   <Approval animate={live} menuOpen={approvalMenu} onInstead={() => dockApi.current?.focus()} />
                 </div>
               ) : null}
+              <div className="jn-thread__end" ref={endRef} aria-hidden="true" />
             </motion.div>
             <motion.div className="jn-dock" {...threadIn}>
+              <JumpToLatest end={endRef} scroller={scroller} streaming={stage === "streaming" && !stopped} onJumped={() => dockApi.current?.focus()} />
               <Composer
                 layoutId={travel ? "jn-composer" : undefined}
                 variant="dock"
                 apiRef={dockApi}
-                busy={stage === "thinking" || stage === "streaming"}
-                placeholder="Reply…"
+                busy={!stopped && (stage === "thinking" || stage === "streaming")}
+                onStop={() => setStopped(true)}
+                placeholder="Ask a follow-up"
                 label="Message Alevr"
                 fieldId="jn-message"
                 dockRow={
@@ -346,9 +379,11 @@ export function ChatSurface({
               <motion.div style={ghost.greet} initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : T.exit}>
                 <Greeting />
               </motion.div>
-              <motion.div style={ghost.suggest} className="jn-ghost__suggest" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : { duration: 0.1, ease: EASE_OUT }}>
-                <Suggestions />
-              </motion.div>
+              {ghost.suggest ? (
+                <motion.div style={ghost.suggest} className="jn-ghost__suggest" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : { duration: 0.1, ease: EASE_OUT }}>
+                  <Suggestions />
+                </motion.div>
+              ) : null}
               {ghost.composer ? (
                 <motion.div style={ghost.composer} initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={R}>
                   <Composer initial={ghost.segs} />
@@ -378,6 +413,74 @@ function TaskReveal({ live, reduced, children }: { live: boolean; reduced: boole
     >
       {children}
     </motion.div>
+  );
+}
+
+/**
+ * Jump to latest (INTERACTION_SPEC M19): a 32 px round button centred on the
+ * composer's top edge, shown when the end of the thread is more than 120 px
+ * below the view (an IntersectionObserver on the thread's last line, no scroll
+ * listener). Its arrow takes the presence ink while new words stream below the
+ * fold; no count, no dot. Under two viewports away it scrolls smoothly on
+ * `slow`; further, it jumps to one viewport above the end and smooths the
+ * rest. Reduced motion: instant. Afterwards focus goes to the composer.
+ * Appear and leave: 120 ms opacity with scale 0.96 to 1.
+ */
+function JumpToLatest({
+  end,
+  scroller,
+  streaming,
+  onJumped,
+}: {
+  end: React.RefObject<HTMLElement | null>;
+  scroller: () => HTMLElement | null;
+  streaming: boolean;
+  onJumped?: () => void;
+}) {
+  const reduced = useReduced();
+  const [away, setAway] = React.useState(false);
+  React.useEffect(() => {
+    const root = scroller();
+    const el = end.current;
+    if (!root || !el) return;
+    const io = new IntersectionObserver(([e]) => setAway(!e.isIntersecting), { root, rootMargin: "0px 0px 120px 0px", threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [end, scroller]);
+  const jump = () => {
+    const root = scroller();
+    if (!root) return;
+    const target = root.scrollHeight - root.clientHeight;
+    const far = target - root.scrollTop > root.clientHeight * 2;
+    if (reduced) root.scrollTop = target;
+    else {
+      if (far) root.scrollTop = target - root.clientHeight;
+      root.scrollTo({ top: target, behavior: "smooth" });
+    }
+    onJumped?.();
+  };
+  return (
+    <AnimatePresence>
+      {away ? (
+        <motion.button
+          key="jump"
+          type="button"
+          className="jn-jump jicon-trigger jicon-quiet jtip"
+          data-live={streaming ? "" : undefined}
+          aria-label="Jump to latest"
+          data-tip="Jump to latest"
+          data-kbd="⌘↓"
+          aria-keyshortcuts="Meta+ArrowDown"
+          initial={{ opacity: 0, scale: reduced ? 1 : 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: reduced ? 1 : 0.96 }}
+          transition={T.fast}
+          onClick={jump}
+        >
+          <Icon name="arrow-down" size={16} />
+        </motion.button>
+      ) : null}
+    </AnimatePresence>
   );
 }
 

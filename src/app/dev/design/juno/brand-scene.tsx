@@ -345,7 +345,7 @@ function Thinking() {
           A new event
         </button>
         <span className="jn-brand__thinkspec num">
-          Tone {HANDOFF.tone} ms, stagger {HANDOFF.stagger} ms, one pass per real event, at most one every {HANDOFF.coalesce / 1000} s
+          One blade at a time: rise {HANDOFF.rise} ms, fall {HANDOFF.fall} ms, the next {HANDOFF.stagger} ms later. One pass per real event; inside {HANDOFF.window / 1000} s a request is absorbed, and the window grows to {HANDOFF.windowMax / 1000} s while steps keep coming
         </span>
       </div>
       <div className="jn-brand__pair">
@@ -359,7 +359,7 @@ function Thinking() {
         {(["light", "dark"] as const).map((s) => (
           <Themed key={s} scheme={s} className="jn-brand__tile jn-brand__tile--bigthink">
             <ThinkingMark key={run} size={176} pulse={events} className="jn-brand__bigthink" />
-            <span className="jn-brand__tilecap">The handoff, large: the silhouette never moves; a tone passes clockwise from the top path and rests on the last.</span>
+            <span className="jn-brand__tilecap">The handoff, large: the silhouette never moves; a tone passes clockwise from the top path, one path at a time, and leaves the mark in its ink.</span>
           </Themed>
         ))}
       </div>
@@ -458,7 +458,7 @@ export function BrandScene() {
         <Products />
       </Section>
 
-      <Section id="thinking" title="Thinking" note="The Continuum beside the truthful phase words: a stationary tonal handoff through its paths on each real event, a quiet held tone while work is live, stillness when it waits, settles or fails. Static under reduced motion.">
+      <Section id="thinking" title="Thinking" note="The Continuum beside the truthful phase words: a stationary tonal handoff, one path at a time, on each real event; between events the plain ink and the words; stillness when it waits or fails; one settle when it finishes. Static under reduced motion.">
         <Thinking />
       </Section>
 

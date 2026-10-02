@@ -1014,3 +1014,10 @@
     columns: 1;
   }
 }
+
+/* Revision 2: inside a state's frame the blocked message is the frame's own content, not a card in it. */
+.jn .jn-state__panel .jn-blocked {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
