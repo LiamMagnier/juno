@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   readWorkToolRun,
   workArtifactKindFor,
+  workRunEventKey,
   workRunCapabilityDegraded,
   workToolFinishedEvents,
   workToolStartedPayload,
@@ -147,4 +148,35 @@ test("no sandbox or an unverified model is the existing capability_unavailable d
   const entries = deriveActivity([event("degraded", down.payload)]);
   assert.equal(entries[0]?.title, "Ran with less than you asked for");
   assert.match(entries[0]?.detail ?? "", /sandbox/);
+});
+
+test("a run's ending and its files carry idempotency keys, so a retried or replayed append writes them once", () => {
+  const input = { callId: "toolu_01ABC", tool: "run_code", status: "succeeded", run: SUCCEEDED_RUN };
+  const first = workToolFinishedEvents(input);
+  const again = workToolFinishedEvents(input);
+  assert.deepEqual(first.map((e) => e.key), again.map((e) => e.key), "the same call derives the same keys");
+  assert.deepEqual(first.map((e) => e.key), [
+    "run:toolu_01ABC:finished",
+    "run:toolu_01ABC:file:att_chart",
+    "run:toolu_01ABC:file:att_xlsx",
+  ]);
+  assert.equal(new Set(first.map((e) => e.key)).size, first.length, "no two events of one call share a key");
+  // Another call never shares a key with this one.
+  const other = workToolFinishedEvents({ ...input, callId: "toolu_01ABD" });
+  assert.equal(other.some((e) => first.some((f) => f.key === e.key)), false);
+  // Two files without attachment ids and the same name are still two artifacts.
+  const twins = workToolFinishedEvents({
+    ...input,
+    run: { ...SUCCEEDED_RUN, files: [{ name: "out.csv", mime: "text/csv" }, { name: "out.csv", mime: "text/csv" }] },
+  }).filter((e) => e.kind === "artifact_created");
+  assert.equal(new Set(twins.map((e) => e.key)).size, 2);
+});
+
+test("an over-long call id still yields a key within the column, distinct from its neighbours", () => {
+  const long = "c".repeat(300);
+  const a = workRunEventKey(long, "finished");
+  const b = workRunEventKey(`${long}x`, "finished");
+  assert.ok(a.length <= 200 && b.length <= 200);
+  assert.notEqual(a, b);
+  assert.equal(workRunEventKey(long, "finished"), a);
 });

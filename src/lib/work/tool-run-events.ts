@@ -84,6 +84,39 @@ export function viewWorkToolRun(input: WorkToolRunInput): ToolRunView | null {
 export interface WorkEventDraft {
   kind: "tool_started" | "tool_finished" | "artifact_created" | "degraded";
   payload: Record<string, unknown>;
+  /**
+   * The producer's idempotency key (`WorkEventInput.key`, `WorkEvent.eventKey`).
+   *
+   * A runner that retries an append whose response was lost, or replays a
+   * call's stored outcome after a re-claim, would otherwise write the ending
+   * twice and file every produced file as a second artifact in the task's
+   * feed. `appendEvents` drops a key the run already holds. The Alevr call id
+   * is the run's record id and the replay key with the run, so the same call
+   * always derives the same keys and two calls never share one.
+   */
+  key?: string;
+}
+
+/** `WorkEvent.eventKey` holds at most this many characters (relay schema). */
+const EVENT_KEY_MAX = 200;
+
+/** FNV-1a, 32-bit, as 8 hex digits: a stable short form for an over-long key part. */
+function shortHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/** `run:<callId>:<suffix>`, kept within the column by hashing what would overflow it. */
+export function workRunEventKey(callId: string, suffix: string): string {
+  const key = `run:${callId}:${suffix}`;
+  if (key.length <= EVENT_KEY_MAX) return key;
+  // Both parts hashed in full and the readable heads kept, so two long ids
+  // that share a prefix still derive different keys.
+  return `run:${callId.slice(0, 80)}~${shortHash(callId)}:${suffix.slice(0, 80)}~${shortHash(suffix)}`.slice(0, EVENT_KEY_MAX);
 }
 
 /**
@@ -117,6 +150,7 @@ export function workToolFinishedEvents(input: WorkToolRunInput): WorkEventDraft[
   const events: WorkEventDraft[] = [
     {
       kind: "tool_finished",
+      key: workRunEventKey(input.callId, "finished"),
       payload: {
         callId: input.callId,
         tool: view.tool,
@@ -132,9 +166,12 @@ export function workToolFinishedEvents(input: WorkToolRunInput): WorkEventDraft[
     },
   ];
   if (view.phase === "succeeded" || view.phase === "failed") {
-    for (const file of view.files) {
+    for (const [index, file] of view.files.entries()) {
       events.push({
         kind: "artifact_created",
+        // The attachment is the artifact; a file without one is told apart by
+        // its place in the run's list (two files may share a name).
+        key: workRunEventKey(input.callId, `file:${file.attachmentId ?? `${index}:${file.name}`}`),
         payload: {
           artifact: {
             id: file.attachmentId ?? `${input.callId}:${file.name}`,
