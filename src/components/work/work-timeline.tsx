@@ -47,6 +47,8 @@ import {
 } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { readWorkToolRun } from "@/lib/work/tool-run-events";
+import { runContextLine, runSummaryLine, type ToolRunView } from "@/lib/chat/tool-run";
 
 /*
  * The plan, the activity, and the thing Juno is doing right now.
@@ -540,6 +542,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         started.detail = toolOutcome(payload, event.kind) ?? started.detail;
         started.facts = [...started.facts, ...resultFacts(payload)];
         started.warning = injectionWarning(payload);
+        applyRunOutcome(started, payload);
         continue;
       }
       const described = describeEvent(event, payload);
@@ -561,6 +564,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         facts: [...toolFacts(payload), ...resultFacts(payload)],
         warning: injectionWarning(payload),
       });
+      applyRunOutcome(entries[entries.length - 1], payload);
       continue;
     }
 
@@ -687,6 +691,36 @@ function toolFacts(payload: Payload): ActivityFact[] {
         trust === "untrusted" ? `Text ${PRODUCT_NAME} did not write — treated as data` : `From ${PRODUCT_NAME}’s own work`,
     });
   }
+  return facts;
+}
+
+/**
+ * A run_code / skill call's ending (lib/work/tool-run-events): the settled
+ * sentence replaces the present-tense start ("Running Python" becomes "Python
+ * failed · exit 1"), the evidence joins the facts, and a run whose end nobody
+ * saw is marked as never having reported back rather than as a failure.
+ */
+function applyRunOutcome(entry: ActivityEntry, payload: Payload): void {
+  const run = readWorkToolRun(payload);
+  if (!run) return;
+  entry.title = runSummaryLine(run);
+  entry.facts = [...entry.facts, ...runFacts(run)];
+  if (run.phase === "outcome_unknown") {
+    entry.state = "unreported";
+    entry.tone = "warning";
+    entry.icon = CircleDashed;
+  } else if (run.phase === "cancelled") {
+    entry.tone = "quiet";
+  }
+}
+
+function runFacts(run: ToolRunView): ActivityFact[] {
+  const facts: ActivityFact[] = [];
+  const where = runContextLine(run);
+  if (where) facts.push({ label: "Where", value: where });
+  if (run.exitCode !== null) facts.push({ label: "Exit code", value: String(run.exitCode) });
+  if (run.skill) facts.push({ label: "Skill", value: run.skill.name });
+  if (run.files.length) facts.push({ label: "Files", value: run.files.map((f) => f.name).join(", ") });
   return facts;
 }
 

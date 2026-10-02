@@ -17,6 +17,8 @@ import {
 } from "@/lib/chat/tool-receipt";
 import type { CodeActivityEvent } from "@/hooks/use-code-session";
 import { codeToolLabel, codeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
+import { readToolRun, runReceiptParts } from "@/lib/chat/tool-run";
+import { ToolRunReceipt } from "@/components/chat/tool-run";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -78,6 +80,10 @@ function exitCodeOf(event: ClientActivityEvent): number | null {
  */
 export function codeLiveCopy(latest: ClientActivityEvent | undefined): string | null {
   if (!latest) return null;
+  // A real run speaks the shared run vocabulary ("Running Python", "Waiting
+  // for your answer"), the same words chat and Orbit use for it.
+  const run = readToolRun(latest, { live: true });
+  if (run) return runReceiptParts(run).label;
   if (latest.kind === "tool") {
     const title = toolLabel(latest);
     if (title.startsWith("$ ")) return `Running ${title.slice(2)}`;
@@ -120,7 +126,17 @@ function toolIdFromTitle(label: string): string | undefined {
  * A failed command opens by default, its output is the thing the reader wants,
  * and everything else stays shut. A live row is ONE line, never a dump.
  */
-function ToolRow({ event, live }: { event: ClientActivityEvent; live: boolean }) {
+function ToolRow({ event, live, streaming }: { event: ClientActivityEvent; live: boolean; streaming: boolean }) {
+  // A run_code / skill call (lib/chat/tool-run) is a run receipt: its phase,
+  // exit, output and files, and the context it ran in from its own record.
+  // Read against the TURN's liveness (a stored row that never ended is over),
+  // while only the newest row wears the live mark.
+  const run = readToolRun(event, { live: streaming });
+  if (run) return <ToolRunReceipt view={run} active={live} />;
+  return <CommandRow event={event} live={live} />;
+}
+
+function CommandRow({ event, live }: { event: ClientActivityEvent; live: boolean }) {
   const label = toolLabel(event);
   const outcome = toolOutcome(event);
   const exit = exitCodeOf(event);
@@ -261,7 +277,7 @@ export function CodeActivity({
     <ToolReceiptList label={`What ${PRODUCT_NAME} Code did`} className={className}>
       {rows.map((event) =>
         event.kind === "tool" ? (
-          <ToolRow key={event.id} event={event} live={streaming && event === last} />
+          <ToolRow key={event.id} event={event} live={streaming && event === last} streaming={streaming} />
         ) : event.kind === "write" ? (
           <WriteRow key={event.id} event={event} />
         ) : (
