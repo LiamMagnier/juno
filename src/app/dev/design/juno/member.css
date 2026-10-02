@@ -369,8 +369,14 @@
     padding: 0;
   }
   /* The character's band is compact on a phone (about 112 of 844 px, was 280): the character at 72 px. */
+  /* Close-out: the band stays solid 20 px past the name line, then fades over 20 px, so a bubble sliding under the
+     caption is gone before it reaches it (half-cut lines read as broken, not as depth). */
   .jn .jn-mhead {
-    height: 120px;
-    margin-bottom: -24px;
+    height: 128px;
+    margin-bottom: -32px;
+  }
+  .jn .jn-mhead::before {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   }
 }

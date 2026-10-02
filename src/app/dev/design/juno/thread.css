@@ -940,7 +940,7 @@
     line-height: 20px;
     color: var(--ink);
   }
-  .jn .jn-home__attn > span {
+  .jn .jn-home__attn > span:not(.jn-cmark) {
     flex: 1;
     min-width: 0;
   }
