@@ -15,9 +15,9 @@ import {
   addAnthropicUsage,
   emptyAnthropicUsage,
   readAnthropicRound,
-  safeToolInput,
 } from "@/lib/anthropic-round";
-import type { McpToolset } from "@/lib/mcp";
+import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
+import type { ToolCallInput } from "@/lib/tools/types";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -206,6 +206,17 @@ function isFastModeUnavailable(err: unknown): boolean {
   return false;
 }
 
+/**
+ * The seam the scripted-transport tests replace: `messages.create` returning
+ * the raw stream events. Production leaves it absent and uses the SDK client.
+ */
+export interface AnthropicTransport {
+  create(
+    params: Anthropic.Messages.MessageCreateParamsStreaming,
+    options: { signal?: AbortSignal; headers?: Record<string, string> }
+  ): Promise<AsyncIterable<Anthropic.RawMessageStreamEvent>>;
+}
+
 export async function* streamAnthropic(
   model: ModelInfo,
   system: string,
@@ -214,11 +225,13 @@ export async function* streamAnthropic(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
-  toolset?: McpToolset,
+  tools?: ToolLoop,
   dynamicContext?: string,
   fastMode?: boolean,
-  systemStablePrefix?: string
+  systemStablePrefix?: string,
+  transport?: AnthropicTransport
 ): AsyncGenerator<LlmEvent> {
+  const toolset = tools?.toolset;
   const messages = await toAnthropicMessages(history, attachmentTextBudget(getModelMetrics(model).contextTokens));
   markConversationCacheBreakpoint(messages);
   // Cache the (large, stable) system prompt so it isn't re-billed every turn.
@@ -271,7 +284,7 @@ export async function* streamAnthropic(
         ...(i === all.length - 1 ? { cache_control: cached1h } : {}),
       }))
     : [];
-  const tools = [
+  const requestTools = [
     // Claude's native web search server tool — searches + cites inline. It runs
     // inside Anthropic and reaches no account of the user's, so it is not a
     // connector action and does not pass the broker.
@@ -287,7 +300,7 @@ export async function* streamAnthropic(
     stream: true,
     ...(thinkingBits.thinking ? { thinking: thinkingBits.thinking } : {}),
     ...(thinkingBits.outputConfig ? { output_config: thinkingBits.outputConfig } : {}),
-    ...(tools.length ? { tools } : {}),
+    ...(requestTools.length ? { tools: requestTools } : {}),
   } as Anthropic.Messages.MessageCreateParamsStreaming;
 
   // Open the stream at the requested speed. Fast mode (`speed:"fast"`) streams
@@ -297,10 +310,9 @@ export async function* streamAnthropic(
   // the whole turn — switching speed only costs a one-off prompt-cache miss.
   const openStream = (fast: boolean, params: Anthropic.Messages.MessageCreateParamsStreaming) => {
     const betas = fast ? ["fast-mode-2026-02-01"] : [];
-    return getAnthropic().messages.create(
-      (fast ? { ...params, speed: "fast" } : params) as Anthropic.Messages.MessageCreateParamsStreaming,
-      { signal, ...(betas.length ? { headers: { "anthropic-beta": betas.join(",") } } : {}) }
-    );
+    const body = (fast ? { ...params, speed: "fast" } : params) as Anthropic.Messages.MessageCreateParamsStreaming;
+    const options = { signal, ...(betas.length ? { headers: { "anthropic-beta": betas.join(",") } } : {}) };
+    return transport ? transport.create(body, options) : getAnthropic().messages.create(body, options);
   };
 
   let servedFast = !!fastMode;
@@ -363,6 +375,8 @@ export async function* streamAnthropic(
     const round = yield* readAnthropicRound(stream as AsyncIterable<Anthropic.RawMessageStreamEvent>, {
       labelFor: toolset ? (name) => toolset.labelFor(name) : undefined,
       seen,
+      issueCallId: tools ? (providerId, index) => tools.issueCallId(providerId, roundIndex, index) : undefined,
+      round: roundIndex,
     });
     const { blocks, toolUses, stopReason } = round;
 
@@ -413,25 +427,36 @@ export async function* streamAnthropic(
       continue;
     }
 
-    if (hasTools && !isFinalRound && stopReason === "tool_use" && toolUses.length > 0) {
+    if (tools && hasTools && !isFinalRound && stopReason === "tool_use" && toolUses.length > 0) {
       messages.push({ role: "assistant", content: blocks });
-      const results: Anthropic.Messages.ToolResultBlockParam[] = [];
-      for (const call of toolUses) {
-        const label = toolset!.labelFor(call.name);
-        const exec = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
+      // Every call of the response goes to the dispatcher at once: it answers
+      // malformed and unknown calls without running them, runs parallel-safe
+      // reads together, and returns one result per call in call order.
+      const calls: ToolCallInput[] = toolUses.map((call) => ({
+        name: call.name,
+        callId: call.callId,
+        ...(call.id ? { providerCallId: call.id } : {}),
+        round: roundIndex,
+        index: call.index,
+        argsText: call.json,
+      }));
+      const batch = yield* tools.run(calls, signal, { nextIsFinal: roundIndex + 1 === maxRounds - 1 });
+      const results: Anthropic.Messages.ToolResultBlockParam[] = batch.map((result) => {
         /*
          * Anthropic is the one provider where a picture belongs to the result
          * that produced it: `tool_result.content` takes the same block array a
          * message does, so the crop travels attached to the call that made it
          * rather than as a separate turn that has to explain itself.
          */
-        const images = sendableToolImages(exec.images, model.vision);
-        results.push({
+        const images = sendableToolImages(result.images, model.vision);
+        return {
           type: "tool_result",
-          tool_use_id: call.id,
+          // Anthropic pairs its own id; the Alevr id stays on our side.
+          tool_use_id: wireCallId(result),
+          ...(result.isError ? { is_error: true } : {}),
           content: images.length
             ? [
-                { type: "text" as const, text: withheldImagesNote(exec.text, exec.images, images.length) },
+                { type: "text" as const, text: withheldImagesNote(result.text, result.images, images.length) },
                 ...images.map((image) => ({
                   type: "image" as const,
                   source: {
@@ -441,24 +466,9 @@ export async function* streamAnthropic(
                   },
                 })),
               ]
-            : withheldImagesNote(exec.text, exec.images, 0),
-        });
-        yield {
-          type: "tool",
-          server: label,
-          name: call.name,
-          phase: "result",
-          callId: call.id,
-          // Anthropic's ONLY chance to supply arguments: the call event was
-          // yielded from `content_block_start`, before `input_json_delta` had
-          // begun. `call.json` is the raw accumulated JSON text, unparsed —
-          // redaction and truncation belong to the route, not to an adapter.
-          args: call.json,
-          result: exec.body,
-          ok: exec.ok,
-          durationMs: exec.durationMs,
+            : withheldImagesNote(result.text, result.images, 0),
         };
-      }
+      });
       messages.push({ role: "user", content: results });
       continue;
     }

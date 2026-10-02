@@ -6,26 +6,31 @@ import { CrewFace, type CrewMember } from "../crew";
 import { DRAFT, READS } from "../fixtures";
 import { R, T, useReduced } from "../motion";
 import { Answer, Approval, LiveLine, MessageActions, Trace, UserMessage } from "../thread";
+import { ThinkingMarkStandIn } from "./continuum";
 
 /*
  * The call, written down as it happens (C16): the thread is the transcript.
  * Your speech is a turn of your own, arriving word by word, its unstable tail
- * in the third ink until the recogniser settles it. Juno's speech is an
+ * in the third ink until the recogniser settles it. Alevr's speech is an
  * ordinary reply, its words appearing as they are spoken (M2's per-word fade,
- * 160 ms, nothing else). Juno's steps keep arriving in their usual forms: the
- * live line while it works, the folded trace after. An approval is a card on
- * screen and nothing else; a spoken "yes" does nothing.
+ * 160 ms, nothing else). Alevr's steps keep arriving in their usual forms: the
+ * live line while it works (the Continuum ThinkingMark beside the truthful
+ * phase words: "Reading Q3 Forecast.xlsx", never a generic "Thinking…" while a
+ * tool runs), the folded trace after. An approval is a card on screen and
+ * nothing else; a spoken "yes" does nothing.
  *
  * Calm on purpose: no avatar per turn, no speaker labels, no bubbles for
- * Juno, no timestamps per line. One quiet mark where the call began and one
+ * Alevr, no timestamps per line. One quiet mark where the call began and one
  * where it ended.
  */
 
 export const YOU_1 = "Which of these renewals should I actually worry about this week?";
-export const JUNO_1 =
+export const ALEVR_1 =
   "Just Halvorsen. They moved to monthly billing in August, and that accounts for €23,600 of the gap. Brightline and Oakridge look fine: usage is flat, and the Oakridge invoice is a billing error on our side.";
 export const YOU_2 = "Okay. Let the design channel know, and say Mira’s on it.";
-export const JUNO_2 = "I’ve drafted the post for #design. It needs your approval on screen.";
+export const ALEVR_2 = "I’ve drafted the post for #design. It needs your approval on screen.";
+export const YOU_YES = "Yes, send it.";
+export const ALEVR_3 = "That one needs a click on the card. I won’t post it on a spoken yes.";
 export const YOU_CUT = "Wait, which Halvorsen? The group or AS?";
 
 export const MEMBER_YOU = "Mira, where are we on Halvorsen?";
@@ -53,7 +58,7 @@ export function SpokenTurn({ text, heard, settled }: { text: string; heard: numb
   );
 }
 
-/** Juno's spoken reply: the words spoken so far, each fading in where it stays. */
+/** Alevr's (or the agent's) spoken reply: the words spoken so far, each fading in where it stays. */
 export function SpokenReply({ text, shown, cut, className }: { text: string; shown: number; cut?: boolean; className?: string }) {
   const reduced = useReduced();
   const w = words(text);
@@ -85,27 +90,58 @@ export function CallMark({ children }: { children: React.ReactNode }) {
   return <div className="jn-daymark jv-callmark">{children}</div>;
 }
 
-/* —————————————————————————— Juno's thread —————————————————————————— */
+/* —————————————————————————— The work row, in a call —————————————————————————— */
 
-export interface JunoSnap {
+/**
+ * The live line during voice thinking: the ThinkingMark (stand-in until
+ * src/components/brand lands) beside the truthful phase words, the same row
+ * the thread uses in text. The mark passes its tone on the same beats as the
+ * channel in the composer, so the two never disagree.
+ */
+export function VoiceLiveLine({ text, beats, seconds }: { text: string; beats: readonly number[]; seconds?: number }) {
+  const reduced = useReduced();
+  return (
+    <div className="jn-live jv-live" role="status" aria-live="polite">
+      <span className="jn-live__glyph jv-live__mark" aria-hidden="true">
+        <ThinkingMarkStandIn size={18} beats={beats} />
+      </span>
+      <span className="jn-live__words">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span key={text} className="jn-live__text" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fast}>
+            {text}
+          </motion.span>
+        </AnimatePresence>
+      </span>
+      {seconds !== undefined && seconds >= 3 ? <span className="jn-live__secs num">{seconds}s</span> : null}
+    </div>
+  );
+}
+
+/* —————————————————————————— Alevr's thread —————————————————————————— */
+
+export interface AlevrSnap {
   /** The call has begun (its mark is in the thread). */
   begun: boolean;
   you1?: { heard: number; settled: number };
   live?: string | null;
+  /** When real thinking activity arrived (the ThinkingMark and the channel pass on these). */
+  beats?: readonly number[];
   seconds?: number;
   trace1?: boolean;
-  juno1?: { shown: number; cut?: boolean };
+  alevr1?: { shown: number; cut?: boolean };
   youCut?: { heard: number; settled: number };
   you2?: boolean;
-  juno2?: boolean;
+  alevr2?: boolean;
   approval?: boolean;
+  /** You said yes out loud while the card waited: heard, and nothing was approved. */
+  saidYes?: { heard: number; settled: number };
   /** The call has ended: its closing mark. */
   ended?: string;
 }
 
 const VOICE_READS = READS.slice(0, 2);
 
-export function JunoTranscript({ snap }: { snap: JunoSnap }) {
+export function AlevrTranscript({ snap }: { snap: AlevrSnap }) {
   return (
     <div className="jn-thread jv-thread" role="log" aria-label="Conversation" aria-relevant="additions">
       {/* The thread before the call: the system's own first exchange. */}
@@ -116,26 +152,30 @@ export function JunoTranscript({ snap }: { snap: JunoSnap }) {
 
       {snap.begun ? <CallMark>Voice, 14:02</CallMark> : null}
       {snap.you1 ? <SpokenTurn text={YOU_1} heard={snap.you1.heard} settled={snap.you1.settled} /> : null}
-      {snap.live ? <LiveLine text={snap.live} seconds={snap.seconds} /> : null}
+      {snap.live ? <VoiceLiveLine text={snap.live} beats={snap.beats ?? [0]} seconds={snap.seconds} /> : null}
       {snap.trace1 ? <Trace label="Read Q3 Forecast.xlsx and the Stripe renewals" items={VOICE_READS} /> : null}
-      {snap.juno1 ? <SpokenReply text={JUNO_1} shown={snap.juno1.shown} cut={snap.juno1.cut} /> : null}
+      {snap.alevr1 ? <SpokenReply text={ALEVR_1} shown={snap.alevr1.shown} cut={snap.alevr1.cut} /> : null}
       {snap.youCut ? <SpokenTurn text={YOU_CUT} heard={snap.youCut.heard} settled={snap.youCut.settled} /> : null}
       {snap.you2 ? <SpokenTurn text={YOU_2} heard={99} settled={99} /> : null}
-      {snap.juno2 ? <SpokenReply text={JUNO_2} shown={99} /> : null}
+      {snap.alevr2 ? <SpokenReply text={ALEVR_2} shown={99} /> : null}
       {snap.approval ? (
         <div className="jn-thread__card">
           <Approval />
         </div>
       ) : null}
+      {snap.saidYes ? <SpokenTurn text={YOU_YES} heard={snap.saidYes.heard} settled={snap.saidYes.settled} /> : null}
+      {snap.saidYes && snap.saidYes.settled >= wordCount(YOU_YES) ? <SpokenReply text={ALEVR_3} shown={99} /> : null}
       {snap.ended ? <CallMark>{snap.ended}</CallMark> : null}
     </div>
   );
 }
 
-/* —————————————————————————— A member's thread —————————————————————————— */
+/* —————————————————————————— An agent's thread (Orbit) —————————————————————————— */
 
 export interface MemberSnap {
   you?: { heard: number; settled: number };
+  /** The agent's work row while it thinks (its own face beside the truthful step). */
+  live?: string;
   says?: number;
 }
 
@@ -161,6 +201,7 @@ export function MemberTranscript({ member, snap }: { member: CrewMember; snap: M
       </div>
       <CallMark>Voice, 14:20</CallMark>
       {snap.you ? <SpokenTurn text={MEMBER_YOU} heard={snap.you.heard} settled={snap.you.settled} /> : null}
+      {snap.live && !snap.says ? <LiveLine text={snap.live} who="mira" /> : null}
       {snap.says ? (
         <div className="jn-cmsg jv-member-reply">
           <p className="jn-cmsg__who">

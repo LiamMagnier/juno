@@ -1154,6 +1154,143 @@ export function cloudFilesTool(deps: CloudFileToolDeps): WorkToolDefinition {
 }
 
 // ---------------------------------------------------------------------------
+// Hosted code execution (run_code / check_run)
+// ---------------------------------------------------------------------------
+
+/** What the app's execution runtime reports for one call (src/lib/exec in the web app). */
+export interface ExecToolResult {
+  output: string;
+  isError: boolean;
+  exitCode?: number;
+  images?: ReadonlyArray<{ mediaType: 'image/jpeg' | 'image/png'; data: string }>;
+}
+
+export interface ExecToolDeps {
+  /**
+   * Runs the program on the hosted execution host (a fresh container with no
+   * network, the run's files only). The app owns the ToolRun record keyed by
+   * this call's id, the produced files, the logs and the metering; a replayed
+   * call returns the stored result instead of running twice.
+   */
+  runCode(input: Record<string, unknown>, call: { callId: string; signal?: AbortSignal }): Promise<ExecToolResult>;
+  /** Waits for a run that is still going, or pages its output. Never starts anything. */
+  checkRun(input: Record<string, unknown>, call: { callId: string; signal?: AbortSignal }): Promise<ExecToolResult>;
+  /** One line naming the runtimes and packages the sandbox has. */
+  manifestLine?: string | null;
+  /** Consulted per call; absent means healthy. */
+  isHealthy?(): boolean;
+}
+
+/**
+ * `run_code` and `check_run` for Work and Orbit runs.
+ *
+ * The same tools chat carries (TOOL_RUNTIME_DESIGN.md §6.5) with Work's longer
+ * limits. They are NOT host workspace tools: nothing here touches the worker's
+ * checkout, which is why `withoutHostWorkspaceTools` leaves them in. Risk
+ * `safe`: the sandbox has no network and no credentials, and what a run
+ * produces is attached to this run only. The output is whatever the program
+ * printed, which includes whatever it read from the run's files, so it is
+ * scanned and enveloped like any other untrusted text.
+ *
+ * The call id is how a replay is recognised, so a call without one (an
+ * executor that does not pass `ToolContext.callId`) is refused rather than run
+ * under an id that could collide.
+ */
+export function execTools(deps: ExecToolDeps): WorkToolDefinition[] {
+  const provenance = (action: string): WorkProvenance => ({
+    source: "Alevr's sandbox",
+    sourceKind: 'model',
+    action,
+    trust: 'untrusted',
+  });
+  const missingCallId: ToolResult = { output: 'This call has no id, so it cannot be recorded. Nothing was run.', isError: true };
+  const healthy = deps.isHealthy ? { isHealthy: deps.isHealthy } : {};
+  const runCode: WorkToolDefinition = {
+    kind: 'read',
+    tier: 'structured_file',
+    intents: ['code.run'],
+    intentFor: () => 'code.run',
+    actionFor: () => 'work.code.run',
+    riskFor: () => 'safe',
+    provenanceFor: () => provenance('work.code.run'),
+    ...healthy,
+    spec: {
+      name: 'run_code',
+      description: [
+        "Run a program in Alevr's sandbox and get its real output: exit code, stdout, stderr and the files it wrote.",
+        `Available: ${deps.manifestLine ?? 'Python 3.12 (pandas, numpy, scipy, matplotlib, seaborn, openpyxl, xlsxwriter, python-docx, python-pptx, pypdf, pdfplumber, Pillow, reportlab), Node 22 (standard library only), bash'}.`,
+        "This task's attached files are in inputs/ (read-only). The working directory is shared by every run in this task run, so a file one run writes is there for the next.",
+        "Every file a run writes outside inputs/ is attached to this task automatically. The sandbox has no internet access, cannot install packages and cannot reach anybody's computer.",
+        'When a run fails, read stderr, fix the program and run it again. State only results a run actually returned.',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          language: { type: 'string', enum: ['python', 'javascript', 'bash'], description: 'python (default), javascript (Node) or bash.' },
+          code: { type: 'string', description: 'The whole program (or, for bash, the commands). Print what you need to see.' },
+          files: { type: 'array', items: { type: 'string', description: "An attached file's name." }, description: 'Attached files to make available in inputs/. Omit for all.' },
+          timeout_seconds: { type: 'integer', description: 'Stop the program after this many seconds. Default 300, at most 1800.' },
+          reason: { type: 'string', description: 'What this run is for, in a few words.' },
+        },
+        required: ['code'],
+      },
+    },
+    summarize: (input) => {
+      const language = typeof input.language === 'string' ? input.language : 'python';
+      const reason = typeof input.reason === 'string' && input.reason ? `: ${input.reason.slice(0, 120)}` : '';
+      return `Run ${language} in Alevr's sandbox${reason}`;
+    },
+    async execute(input, ctx): Promise<ToolResult> {
+      if (!ctx.callId) return missingCallId;
+      const result = await deps.runCode(input, { callId: ctx.callId, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+      return {
+        output: result.output,
+        isError: result.isError,
+        ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+        ...(result.images?.length ? { images: result.images } : {}),
+      };
+    },
+  };
+  const checkRun: WorkToolDefinition = {
+    kind: 'read',
+    tier: 'structured_file',
+    intents: ['code.check'],
+    intentFor: () => 'code.check',
+    actionFor: () => 'work.code.check',
+    riskFor: () => 'safe',
+    provenanceFor: () => provenance('work.code.check'),
+    ...healthy,
+    spec: {
+      name: 'check_run',
+      description:
+        "Wait for a run_code run that is still running and get its result, or read more of a run's output when run_code said it was cut (pass stream and offset). It never starts or re-runs anything.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          run_id: { type: 'string', description: 'The run_id run_code returned.' },
+          wait_seconds: { type: 'integer', description: 'How long to wait, 0 to 60. Default 30.' },
+          stream: { type: 'string', enum: ['stdout', 'stderr'], description: "Read this stream of the run's full output." },
+          offset: { type: 'integer', description: 'Byte offset to read from (with stream).' },
+        },
+        required: ['run_id'],
+      },
+    },
+    summarize: (input) => `Check the run ${String(input.run_id ?? '').slice(0, 40)}`,
+    async execute(input, ctx): Promise<ToolResult> {
+      if (!ctx.callId) return missingCallId;
+      const result = await deps.checkRun(input, { callId: ctx.callId, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+      return {
+        output: result.output,
+        isError: result.isError,
+        ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+        ...(result.images?.length ? { images: result.images } : {}),
+      };
+    },
+  };
+  return [runCode, checkRun];
+}
+
+// ---------------------------------------------------------------------------
 // Connectors
 // ---------------------------------------------------------------------------
 

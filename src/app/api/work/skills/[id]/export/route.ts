@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { formatSkillMd } from "@/lib/skills/package";
 import { parseSkillContract } from "@/lib/work/skills";
+import { loadSkillBundleFiles } from "@/lib/skills/bundle-store";
 
 export const runtime = "nodejs";
 
@@ -13,9 +14,10 @@ export const runtime = "nodejs";
  * `?format=zip` is `<name>/SKILL.md` zipped, the shape claude.ai and Claude
  * Code install from. The current version, unless `?version=` names another.
  *
- * Only the instructions travel. Files attached to a skill are the reader's
- * library items, which another host could not open by id anyway, so the
- * export says what it carries rather than pretending to be complete.
+ * The zip carries the skill's kept folder too (its scripts, references and
+ * assets, from the version's bundle), so an export installs elsewhere as the
+ * same skill. Files attached to a skill from the reader's library do not
+ * travel: another host could not open them by id anyway.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -45,6 +47,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (url.searchParams.get("format") === "zip") {
     const zip = new JSZip();
     zip.file(`${skill.slug}/SKILL.md`, markdown);
+    if (version.bundleKey && version.bundleDigest) {
+      let files: Map<string, Uint8Array>;
+      try {
+        files = await loadSkillBundleFiles({ bundleKey: version.bundleKey, bundleDigest: version.bundleDigest });
+      } catch {
+        return NextResponse.json(
+          { error: "bundle_unavailable", message: "This skill's files couldn't be read right now, so nothing was exported. Try again shortly." },
+          { status: 503 }
+        );
+      }
+      for (const [path, bytes] of files) {
+        // The instructions above are this version's; the folder's own copy may predate an edit.
+        if (/^skill\.md$/i.test(path)) continue;
+        zip.file(`${skill.slug}/${path}`, bytes);
+      }
+    }
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
     return new NextResponse(Buffer.from(bytes), {
       headers: {

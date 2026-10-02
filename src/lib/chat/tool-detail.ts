@@ -36,6 +36,7 @@
 import { actionPreviewDetail } from "@/lib/action-approval";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import type { ClientToolDetail } from "@/types/chat";
+import { readToolContractFields } from "@/lib/tools/wire";
 
 /**
  * Redacted arguments, pretty-printed. 2,000 chars is ~60 rendered lines in the
@@ -325,6 +326,10 @@ export function readToolDetail(raw: unknown): ClientToolDetail | undefined {
   if (status) detail.status = status;
   const durationMs = readCount(record.durationMs);
   if (durationMs !== undefined) detail.durationMs = durationMs;
+
+  // The tool contract's fields (call id, typed outcome, run record), read by
+  // their owner in src/lib/tools/wire.ts.
+  Object.assign(detail, readToolContractFields(record));
 
   return detail;
 }

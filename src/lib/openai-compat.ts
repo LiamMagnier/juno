@@ -8,7 +8,9 @@ import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/opena
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
-import { toWireTools, type McpToolset } from "@/lib/mcp";
+import { toWireTools } from "@/lib/mcp";
+import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
+import type { ToolCallInput } from "@/lib/tools/types";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { canInlineDocument, isPdfAttachment } from "@/lib/attachment-bytes";
@@ -275,6 +277,17 @@ function splitTypedContent(content: unknown): { reasoning: string; text: string 
   return { reasoning, text };
 }
 
+/**
+ * The seam the scripted-transport tests replace: `chat.completions.create`
+ * returning the streamed chunks. Production leaves it absent.
+ */
+export interface CompatTransport {
+  create(
+    params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+    options: { signal?: AbortSignal; headers?: Record<string, string> }
+  ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>>;
+}
+
 export async function* streamOpenAICompat(
   model: ModelInfo,
   system: string,
@@ -283,11 +296,13 @@ export async function* streamOpenAICompat(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
-  toolset?: McpToolset,
+  tools?: ToolLoop,
   dynamicContext?: string,
   cacheKey?: string,
-  fastMode?: boolean
+  fastMode?: boolean,
+  transport?: CompatTransport
 ): AsyncGenerator<LlmEvent> {
+  const toolset = tools?.toolset;
   const messages = await toOpenAIMessages(system, history, model.vision, model);
   // Per-request dynamic context (the date) is injected AFTER the frozen
   // conversation history — providers cache the longest stable prefix, so
@@ -455,7 +470,9 @@ export async function* streamOpenAICompat(
   if (hasTools) params.tools = toWireTools(toolset!.tools);
 
   const seen = new Set<string>();
-  const c = client(model.provider);
+  const c: CompatTransport = transport ?? {
+    create: (body, options) => client(model.provider).chat.completions.create(body, options),
+  };
   // Turn total: rounds fold with `max` inside themselves and are ADDED here,
   // because each tool round is a separately billed request that re-sends the
   // whole conversation (see openai-compat-round.ts).
@@ -484,7 +501,7 @@ export async function* streamOpenAICompat(
     // xAI routes same-conversation requests to the same cache via this header
     // (its chat.completions API has no prompt_cache_key).
     const requestHeaders = model.provider === "xai" && cacheKey ? { "x-grok-conv-id": cacheKey } : undefined;
-    const stream = await c.chat.completions.create(params, { signal, headers: requestHeaders });
+    const stream = await c.create(params, { signal, headers: requestHeaders });
 
     let assistantText = "";
     let finishReason: string | undefined;
@@ -549,39 +566,57 @@ export async function* streamOpenAICompat(
     // Model asked to call tools — execute them and loop with the results. Never
     // on the final (forced-answer) round, so the tool results always get consumed.
     const calls = finalizeToolCalls(toolCalls);
-    if (shouldRunToolRound({ hasTools, isFinalRound, callCount: calls.length, finishReason })) {
+    if (tools && shouldRunToolRound({ hasTools, isFinalRound, callCount: calls.length, finishReason })) {
+      // Stamp every call first: a host that streamed one without an id gets a
+      // synthesized one, used on the wire too (the replayed message needs it).
+      const inputs: ToolCallInput[] = calls.map((v, index) => {
+        const callId = tools.issueCallId(v.id || undefined, round, index);
+        return { name: v.name, callId, ...(v.id ? { providerCallId: v.id } : {}), round, index, argsText: v.args };
+      });
       messages.push({
         role: "assistant",
         content: assistantText || null,
-        tool_calls: calls.map((v) => ({ id: v.id, type: "function", function: { name: v.name, arguments: v.args || "{}" } })),
+        tool_calls: inputs.map((call, i) => ({
+          id: call.providerCallId ?? call.callId,
+          type: "function",
+          function: { name: call.name, arguments: calls[i].args || "{}" },
+        })),
       } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
-      for (const v of calls) {
-        const label = toolset!.labelFor(v.name);
-        // Deltas are fully accumulated before this loop runs, so the arguments
-        // ride on the CALL — see the Responses adapter for the same shape.
-        yield { type: "tool", server: label, name: v.name, phase: "call", callId: v.id, args: v.args };
-        let parsedArgs: Record<string, unknown> = {};
-        try {
-          parsedArgs = v.args ? JSON.parse(v.args) : {};
-        } catch {
-          parsedArgs = {};
-        }
-        const exec = await toolset!.execute(v.name, parsedArgs, signal);
+      for (const call of inputs) {
+        // Deltas are fully accumulated before the dispatch, so the arguments
+        // ride on the CALL — the row is complete while the tool runs.
+        yield {
+          type: "tool",
+          server: toolset!.labelFor(call.name),
+          name: call.name,
+          phase: "call",
+          callId: call.callId,
+          args: call.argsText,
+          ...(call.providerCallId && call.providerCallId !== call.callId ? { providerCallId: call.providerCallId } : {}),
+          round,
+          index: call.index,
+        };
+      }
+      const batch = yield* tools.run(inputs, signal, { nextIsFinal: round + 1 === maxRounds - 1 });
+      // Every `tool` message first, in call order: a `user` message between
+      // two of them is rejected by the stricter hosts.
+      const followUps: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+      for (const result of batch) {
         // A `tool` message takes a string and nothing else, so pixels follow
-        // it as an ordinary user turn — the shape OpenAI documents for showing
-        // a model an image a function produced. `toolImageIntro` is what stops
-        // that turn reading as something the person just uploaded.
-        const images = sendableToolImages(exec.images, model.vision);
+        // the tool messages as an ordinary user turn — the shape OpenAI
+        // documents for showing a model an image a function produced.
+        // `toolImageIntro` is what stops that turn reading as an upload.
+        const images = sendableToolImages(result.images, model.vision);
         messages.push({
           role: "tool",
-          tool_call_id: v.id,
-          content: withheldImagesNote(exec.text, exec.images, images.length),
+          tool_call_id: wireCallId(result),
+          content: withheldImagesNote(result.text, result.images, images.length),
         } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
         if (images.length) {
-          messages.push({
+          followUps.push({
             role: "user",
             content: [
-              { type: "text", text: toolImageIntro(v.name, images) },
+              { type: "text", text: toolImageIntro(result.name, images) },
               ...images.map((image) => ({
                 type: "image_url" as const,
                 image_url: { url: toDataUrl(image) },
@@ -589,17 +624,8 @@ export async function* streamOpenAICompat(
             ],
           } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
         }
-        yield {
-          type: "tool",
-          server: label,
-          name: v.name,
-          phase: "result",
-          callId: v.id,
-          result: exec.body,
-          ok: exec.ok,
-          durationMs: exec.durationMs,
-        };
       }
+      messages.push(...followUps);
       continue;
     }
     break; // final answer produced (or tools disabled)

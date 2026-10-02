@@ -54,6 +54,7 @@ import {
 } from "@/lib/run-receipt";
 import type { ClientMemoryReceipt, ClientToolDetail } from "@/types/chat";
 import { ReceiptGlyph } from "@/components/chat/tool-receipt";
+import { ToolRunDetail } from "@/components/chat/tool-run";
 import { receiptCanRetry } from "@/lib/chat/tool-receipt";
 import {
   LiveCopy,
@@ -244,7 +245,9 @@ function matches(step: Step, query: string) {
         ? step.body.memory.content
         : step.body?.type === "tool"
           ? `${step.body.tool.args ?? ""} ${step.body.tool.result ?? ""}`
-          : "";
+          : step.body?.type === "run"
+            ? `${step.body.run.code ?? ""} ${step.body.run.stdout?.head ?? ""} ${step.body.run.stderr?.head ?? ""} ${step.body.run.files.map((f) => f.name).join(" ")}`
+            : "";
   return `${step.label} ${step.detail ?? ""} ${body}`.toLowerCase().includes(q);
 }
 
@@ -1527,6 +1530,8 @@ function StepRow({
                 <ToolBody tool={step.body.tool} rerunnable={rerunnable} onRerun={onRerun} onCopy={onCopy} />
               )}
 
+              {step.body.type === "run" && <RunBody run={step.body.run} />}
+
               {step.body.type === "memory" && memory && (
                 <MemoryBody memory={step.body.memory} state={memory} />
               )}
@@ -1536,6 +1541,16 @@ function StepRow({
       </div>
     </li>
   );
+}
+
+/**
+ * A real run's detail (lib/chat/tool-run): where it ran, the program, its
+ * output, its exit and its files. "Run again" seeds the composer with a new
+ * request; it never replays the call.
+ */
+function RunBody({ run }: { run: Extract<NonNullable<Step["body"]>, { type: "run" }>["run"] }) {
+  const seedDraft = useThoughtPanel()?.seedDraft;
+  return <ToolRunDetail view={run} onRunAgain={seedDraft ? (draft) => seedDraft(draft) : undefined} />;
 }
 
 function ToolBody({

@@ -7,6 +7,7 @@ Cycles stills of the flocked crew (pass renders).
   portraits  every character of the sheet: <id>_front.png, <id>_34.png (transparent, contact shadow)
   lineup     the sheet peeking from the bottom edge (transparent): lineup_<sheet>.png
   variants   customization variants of one character: var_<sheet>_<k>.png
+  states     the six agent states on one character: state_<id>_<k>.png
 
 Env: RES, SPP, Q (fuzz quality 0.2..1), NOFUZZ=1.
 """
@@ -34,6 +35,7 @@ out_dir = args[1]
 sheet = args[2] if len(args) > 2 else "A"
 only = args[3:]
 os.makedirs(out_dir, exist_ok=True)
+T0 = time.time()
 RES = int(os.environ.get("RES", 1000))
 SPP = int(os.environ.get("SPP", 128))
 Q = float(os.environ.get("Q", 1.0))
@@ -54,6 +56,12 @@ def world_bounds(objs):
     return lo, hi
 
 
+def cam_dir(yaw, elev=7):
+    """The world direction from the subject toward a camera at this yaw/elevation (see B.camera)."""
+    a, e = math.radians(yaw), math.radians(elev)
+    return (math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e))
+
+
 def portrait_cam(sc, objs, yaw, fill=0.74, elev=7, lens=70):
     lo, hi = world_bounds(objs)
     h = hi.z - 0.0
@@ -63,11 +71,41 @@ def portrait_cam(sc, objs, yaw, fill=0.74, elev=7, lens=70):
     B.camera(sc, target=(0.5 * (lo.x + hi.x), 0, h * 0.5), dist=dist, lens=lens, elev=elev, yaw=yaw)
 
 
+_STATS = {}
+
+
+def _stats(st):
+    # Cycles' own memory report ("Mem:..., Peak:..."), kept for the WROTE line.
+    if "Peak" in st:
+        _STATS["last"] = st.split("|")[1].strip() if "|" in st else st
+
+
+if os.environ.get("STATS") == "1":
+    bpy.app.handlers.render_stats.append(_stats)
+
+
 def render(sc, path):
     t0 = time.time()
+    psys = [p for ob in sc.objects if ob.type == "MESH" for p in ob.particle_systems]
+    hairs = sum(p.settings.count * max(1, p.settings.rendered_child_count) for p in psys)
+    # Memory: Cycles on Metal already holds ~7.3 GB for any scene here, and each
+    # million fibres adds ~0.4 GB; the guard kills Blender above 10 GB. Keep a
+    # render under HAIR_BUDGET fibres: fewer children, slightly thicker ones.
+    budget = float(os.environ.get("HAIR_BUDGET", 3.6e6))
+    if hairs > budget:
+        k = budget / hairs
+        for st in {p.settings for p in psys}:
+            st.rendered_child_count = max(3, int(st.rendered_child_count * k))
+            st.root_radius *= k ** -0.35
+            st.tip_radius *= k ** -0.35
+        new = sum(p.settings.count * max(1, p.settings.rendered_child_count) for p in psys)
+        print(f"HAIR_BUDGET {hairs / 1e6:.2f}M -> {new / 1e6:.2f}M", flush=True)
+        hairs = new
+    if os.environ.get("STATS") == "1":
+        print(f"HAIRS {hairs / 1e6:.2f}M", flush=True)
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    print("WROTE", path, f"{time.time() - t0:.1f}s", flush=True)
+    print("WROTE", path, f"{time.time() - t0:.1f}s", _STATS.get("last", ""), flush=True)
 
 
 def scene(res_x, res_y, floor=True, spread=1.0):
@@ -102,22 +140,24 @@ def icon_cam(sc, objs, res):
 if mode in ("test", "portraits"):
     members = [find(i) for i in only] if only else cast(sheet)
     views = [("front", 0), ("34", 32)] if mode == "portraits" or os.environ.get("BOTH") else [("34", 32)]
+    if os.environ.get("VIEW") == "front":
+        views = [("front", 0)]
     for m in members:
         for vname, yaw in views:
             sc = scene(RES, RES)
-            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ)
+            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ, view=cam_dir(yaw))
             portrait_cam(sc, objs, yaw)
             render(sc, os.path.join(out_dir, f"{m['id']}_{vname}.png"))
         if mode == "portraits" and os.environ.get("ICONS", "1") == "1":
             r = int(os.environ.get("ICON_RES", 384))
             sc = scene(r, r, floor=False)
             sc.cycles.samples = max(48, SPP // 2)
-            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ)
+            root, objs, c = FB.place(m, yaw=0, quality=Q, fuzz_on=FUZZ, view=cam_dir(0, 0))
             icon_cam(sc, objs, r)
             render(sc, os.path.join(out_dir, f"{m['id']}_icon.png"))
 
 elif mode == "lineup":
-    members = [find(i) for i in only] if only else cast(sheet)
+    members = [find(i) for i in only] if only else [find(i) for i in C.LINEUP.get(sheet, [])] or cast(sheet)
     W = int(os.environ.get("LW", 2000))
     H = int(os.environ.get("LH", 560))
     # The lights move back and grow so the whole row is lit like one portrait.
@@ -144,19 +184,111 @@ elif mode == "lineup":
     right = pos[-1] + widths[-1][1]
     mid = 0.5 * (left + right)
     objs = []
+    placed = []  # (index, depth y, root, objects) for the layered render
+    print(f"PHASE meshed {time.time() - T0:.0f}s", flush=True)
     for i, m in enumerate(members):
         x = pos[i] - mid
         yaw = -x * float(os.environ.get("TURN", 5))
-        y = 0.35 * (i % 2)
-        root, ob, c = FB.place(m, loc=(x, y, 0), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ)
-        objs += ob
+        y = float(os.environ.get("DEPTH", 0.35)) * (i % 2)
+        z = 0.0
+        if os.environ.get("EYEUP"):
+            # Peek like the dots key art: every eye line sits EYEUP above the
+            # picture's bottom edge (z = 0); bodies sink below it as needed.
+            cc, _ = FB.build_meshes(m)
+            ez = m.get("eyes", {}).get("z", cc.face["z"])
+            z = float(os.environ["EYEUP"]) - ez + m.get("lift", 0.0)
+        layered = os.environ.get("LAYERED") in ("1", "2")
+        iso = os.environ.get("LAYERED") == "2"
+        if not iso:
+            root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ and not layered, view=cam_dir(0, 0))
+            objs += ob
+        placed.append((i, y, (x, y, z), yaw, m))
     span = right - left
-    vis_w = span / float(os.environ.get("FILLW", 0.88))
+    if os.environ.get("PPU"):
+        # A fixed scale (pixels per body unit), like the dots key art: big heads.
+        vis_w = W / float(os.environ["PPU"])
+    else:
+        vis_w = span / float(os.environ.get("FILLW", 0.88))
     vis_h = vis_w * H / W
-    crop = float(os.environ.get("CROP", 0.08))
+    # The frame's bottom edge cuts the characters at z = CROP (body units):
+    # they peek up from the bottom of the picture.
+    crop = 0.0 if os.environ.get("EYEUP") else float(os.environ.get("CROP", 0.08))
     zc = crop + vis_h / 2
     B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)
-    render(sc, os.path.join(out_dir, f"lineup_{sheet}.png"))
+    if not layered:
+        render(sc, os.path.join(out_dir, f"lineup_{sheet}.png"))
+    else:
+        # One character's flock per render (memory), the others present as bare
+        # meshes that cast shadows and bounce light but are invisible to the
+        # camera; then composite the layers back to front.
+        import numpy as np
+
+        layers = []
+        # LAYERED=2: each character alone in a fresh scene (same camera and lights):
+        # the least memory, at the cost of the faint shadows they cast on each other.
+        for k, (i, y, loc, yaw, m) in enumerate(placed):
+            path = os.path.join(out_dir, f".layer_{sheet}_{k}.png")
+            if iso:
+                sc = scene(W, H, floor=False, spread=float(os.environ.get("LSPREAD", 2.4)))
+                FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ, view=cam_dir(0, 0))
+                B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)
+                print(f"PHASE layer {k} {m['id']} {time.time() - T0:.0f}s", flush=True)
+                render(sc, path)
+                layers.append((y, path))
+                continue
+            for ob in list(bpy.data.objects):
+                if ob.name.startswith(m["id"] + "_") and ob.type == "MESH":
+                    bpy.data.objects.remove(ob, do_unlink=True)
+            root, ob_k, c = FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ, view=cam_dir(0, 0))
+            for ob in bpy.data.objects:
+                if ob.type == "MESH" and ob.name != "floor":
+                    ob.visible_camera = ob in ob_k
+            print(f"PHASE layer {k} {m['id']} {time.time() - T0:.0f}s", flush=True)
+            render(sc, path)
+            layers.append((y, path))
+            # back to a bare stand-in for the next layer
+            for ob in ob_k:
+                bpy.data.objects.remove(ob, do_unlink=True)
+            FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=False)
+
+        def load(pth):
+            im = bpy.data.images.load(pth)
+            w, h = im.size
+            a = np.zeros(w * h * 4, np.float32)
+            im.pixels.foreach_get(a)
+            bpy.data.images.remove(im)
+            return a.reshape(h, w, 4)
+
+        acc = None
+        for y, pth in sorted(layers, key=lambda t: -t[0]):  # far first
+            L_ = load(pth)
+            if acc is None:
+                acc = L_
+                continue
+            a = L_[..., 3:4]
+            da = acc[..., 3:4]
+            oa = a + da * (1 - a)
+            rgb = (L_[..., :3] * a + acc[..., :3] * da * (1 - a)) / np.maximum(oa, 1e-6)
+            acc = np.concatenate([rgb, oa], -1)
+        h, w = acc.shape[:2]
+        out = bpy.data.images.new("lineup", w, h, alpha=True)
+        out.pixels.foreach_set(acc.ravel())
+        out.filepath_raw = os.path.join(out_dir, f"lineup_{sheet}.png")
+        out.file_format = "PNG"
+        out.save()
+        print("WROTE", out.filepath_raw, flush=True)
+
+elif mode == "states":
+    base = find(only[0]) if only else find(C.STATES[sheet])
+    for k, over in enumerate(C.state_overrides(base)):
+        m = copy.deepcopy(base)
+        m.update(over)
+        m["id"] = f"{base['id']}_s{k}"
+        sc = scene(RES, RES)
+        yv = float(os.environ.get("YAW", 14))
+        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ, view=cam_dir(yv))
+        portrait_cam(sc, objs, yv)
+        render(sc, os.path.join(out_dir, f"state_{base['id']}_{k}.png"))
 
 elif mode == "variants":
     if os.environ.get("VARIANTS"):
@@ -171,6 +303,7 @@ elif mode == "variants":
         m.update(v)
         m["id"] = f"{base['id']}_v{k}"
         sc = scene(RES, RES)
-        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ)
-        portrait_cam(sc, objs, float(os.environ.get("YAW", 32)))
+        yv = float(os.environ.get("YAW", 32))
+        root, objs, c = FB.place(m, quality=Q, fuzz_on=FUZZ, view=cam_dir(yv))
+        portrait_cam(sc, objs, yv)
         render(sc, os.path.join(out_dir, f"var_{base['id']}_{k}.png"))

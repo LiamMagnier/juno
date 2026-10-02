@@ -7,13 +7,15 @@
  * grid units (transform-box: view-box). So one rule articulates every icon,
  * and each icon's motion lives next to its drawing.
  *
- * Tokens (INTERACTION_SPEC §1): hover articulation goes out on out-soft in
- * 200 ms and comes back in 150 ms; the press dip is 70 ms on out-strong; state
- * swaps are `fast` (120 ms); a turn to an on state (plus to close, a chevron
- * opening) is `base` (220 ms) on in-out. One-shots are 200 to 240 ms, except
- * the two that travel furthest (the bell's damped swing, the hand's wave) and
- * the crew's hop, which take 280 to 300 ms: under the spec's 360 ms cap for UI
- * transitions, and never looped. Only transform and opacity move.
+ * Tokens (INTERACTION_SPEC §1, the V3 ladder: press 70, fast 120, exit 160,
+ * base 220, slow 360; revision 2 puts every duration on it): hover
+ * articulation goes out on out-soft in `base` (220 ms) and comes back in
+ * `exit` (160 ms); the press dip is `press` (70 ms) on out-strong to the
+ * spec's 0.97, and lets go in `fast`; state swaps are `fast` (120 ms); a turn
+ * to an on state (plus to close, a chevron opening) is `base` on in-out.
+ * One-shots are `base`, except the three that travel furthest (the bell's
+ * damped swing, the crew's hop, retry's turn), which take `slow` (360 ms).
+ * Nothing loops. Only transform and opacity move.
  *
  * Revision 1: hover articulation is opt-in (.jicon-hover), the press dip is
  * for icon buttons only, and no hover pose is a turn that lands where it
@@ -28,7 +30,7 @@
   flex: none;
   overflow: visible;
   vertical-align: middle;
-  transition: scale 150ms var(--ji-soft);
+  transition: scale 120ms var(--ji-soft);
 }
 
 .ji .jsnap,
@@ -50,9 +52,9 @@
 .ji .jp {
   opacity: var(--ro, 1);
   transition:
-    translate 150ms var(--ji-soft),
-    rotate 150ms var(--ji-soft),
-    scale 150ms var(--ji-soft),
+    translate 160ms var(--ji-soft),
+    rotate 160ms var(--ji-soft),
+    scale 160ms var(--ji-soft),
     opacity 120ms var(--ji-soft);
 }
 /* A drawn stroke: one dash as long as the path, then a gap twice as long, so
@@ -75,12 +77,12 @@
     rotate: var(--hr, 0deg);
     scale: var(--hsx, 1) var(--hsy, 1);
     opacity: var(--ho, 1);
-    transition-duration: 200ms, 200ms, 200ms, 120ms;
+    transition-duration: 220ms, 220ms, 220ms, 120ms;
     transition-delay: var(--hd, 0ms);
   }
   :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
     opacity: var(--ho, 1);
-    animation: var(--ji-anim) var(--ji-anim-dur, 320ms) var(--ji-soft) var(--hd, 0ms) 1 both;
+    animation: var(--ji-anim) var(--ji-anim-dur, 220ms) var(--ji-soft) var(--hd, 0ms) 1 both;
   }
   :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover {
     opacity: 1;
@@ -115,11 +117,11 @@
 
 .ji .jp[data-anim="swing"] {
   --ji-anim: ji-swing;
-  --ji-anim-dur: 300ms;
+  --ji-anim-dur: 360ms;
 }
 .ji .jp[data-anim="nod"] {
   --ji-anim: ji-nod;
-  --ji-anim-dur: 280ms;
+  --ji-anim-dur: 220ms;
 }
 .ji .jp[data-anim="pop"] {
   --ji-anim: ji-pop;
@@ -127,7 +129,7 @@
 }
 .ji .jp[data-anim="levels"] {
   --ji-anim: ji-levels;
-  --ji-anim-dur: 240ms;
+  --ji-anim-dur: 220ms;
 }
 .ji .jp[data-anim="wave"] {
   --ji-anim: ji-wave;
@@ -135,22 +137,27 @@
 }
 .ji .jp[data-anim="blink"] {
   --ji-anim: ji-blink;
-  --ji-anim-dur: 200ms;
+  --ji-anim-dur: 220ms;
+}
+/* The text cursor: one blink (out and back), as a caret does when it lands. Never repeats. */
+.ji .jp[data-anim="caret"] {
+  --ji-anim: ji-caret;
+  --ji-anim-dur: 220ms;
 }
 .ji .jp[data-anim="spin"] {
   --ji-anim: ji-spin;
-  --ji-anim-dur: 300ms;
+  --ji-anim-dur: 360ms;
 }
 .ji .jp[data-anim="hop"] {
   --ji-anim: ji-hop;
-  --ji-anim-dur: 280ms;
+  --ji-anim-dur: 360ms;
 }
 .ji .jp[data-anim="draw"] {
   --ji-anim: none;
 }
 @media (hover: hover) and (pointer: fine) {
   :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
-    animation: ji-draw 240ms var(--ji-soft) var(--hd, 0ms) 1 both;
+    animation: ji-draw 220ms var(--ji-soft) var(--hd, 0ms) 1 both;
   }
 }
 
@@ -224,6 +231,16 @@
     scale: 1 var(--hsy, 0.15);
   }
 }
+@keyframes ji-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  35%,
+  65% {
+    opacity: 0;
+  }
+}
 @keyframes ji-spin {
   from {
     rotate: 0deg;
@@ -272,7 +289,8 @@
 .jicon-press:active .ji:not([data-state="disabled"]),
 .jicon-trigger[data-force="press"] .ji,
 .ji[data-pose="press"] {
-  scale: 0.9;
+  /* INTERACTION_SPEC's press token: the 0.97 dip in 70 ms (revision 1 dipped to 0.9). */
+  scale: 0.97;
   transition: scale 70ms var(--ji-strong);
 }
 
@@ -330,11 +348,14 @@
 
 /* draw: the check draws itself when it becomes the on state, when it is
  * swapped in as another glyph's on state (copy to check), and when a name
- * change brings it in (<Icon name={copied ? "check" : "copy"} />). */
-.ji[data-state="active"][data-on="draw"] .jd,
-.ji[data-state="active"] .jg-alt .jd,
+ * change brings it in (<Icon name={copied ? "check" : "copy"} />). Only on a
+ * change: an icon that mounts already on (the current model's check in a menu
+ * that just opened) is simply there (revision 2; index.tsx sets data-turned
+ * only when state becomes "active" after mount). */
+.ji[data-turned][data-state="active"][data-on="draw"] .jd,
+.ji[data-turned][data-state="active"] .jg-alt .jd,
 .ji[data-on="draw"] .jg-enter .jd {
-  animation: ji-draw 240ms var(--ji-soft) 40ms 1 both;
+  animation: ji-draw 220ms var(--ji-soft) 40ms 1 both;
 }
 
 /* disabled */

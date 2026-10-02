@@ -244,6 +244,20 @@ answer after the fact.
 
 ### 4.3 What was deliberately not copied
 
+> **Update, 2026-10-02 (tool runtime, lane L3 `rf/tools-L3-skill-workflows`, not landed).** The
+> first and second bullets below are reversed in code, behind the design in
+> [docs/rework/TOOL_RUNTIME_DESIGN.md](rework/TOOL_RUNTIME_DESIGN.md) §6.8, on the owner's resume
+> of the tool-call rework ([TOOL_CALL_REWORK.md](rework/TOOL_CALL_REWORK.md): "use skills and
+> their referenced workflows"). A skill's folder is now kept as a scanned, content-addressed
+> bundle (`src/lib/skills/bundle.ts`: at most 200 files and 5 MB, symlinks and `..` paths
+> refused); an imported bundle with scripts waits for consent; scripts run only inside the
+> no-network sandbox (`run_code`, mounted read-only at `/skills/<slug>`), never widening the
+> turn. Automatic discovery in chat is the `use_skill` tool, offering only skills the person
+> opted in to automatic use (design §9.3 keeps "every user-authored skill too" as the owner's
+> switch). The design's §9.2 still lists the reversal as an owner decision: until the owner
+> confirms it, nothing reaches production (the lane is not landed and production has no
+> execution host). The text below is kept as the reasoning that held before.
+
 - **Level 3 (bundled files, executable scripts).** Juno has no per-skill VM in chat, and a
   skill's files already have a home: `resourceAttachmentIds`, the author's own uploads, reaching
   the model inside the envelope. A `scripts/` directory imported from a stranger's repo and run

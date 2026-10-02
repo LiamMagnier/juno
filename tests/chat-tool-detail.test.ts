@@ -245,7 +245,9 @@ test("every field of a completed row survives the JSON round trip", () => {
   // The guard against `serializeActivity`'s whitelist quietly dropping a field:
   // a payload that streams live and vanishes on reload looks exactly like the
   // feature working right up until someone refreshes.
-  const full: Required<ClientToolDetail> = {
+  // `phase` and `progress` are the two live-only fields: claims about a call
+  // still running, which a persisted row's call is not (src/lib/tools/wire.ts).
+  const full: Omit<Required<ClientToolDetail>, "phase" | "progress"> = {
     server: "Linear",
     name: "linear__create_issue",
     args: '{\n  "title": "Fix"\n}',
@@ -257,9 +259,27 @@ test("every field of a completed row survives the JSON round trip", () => {
     resultChars: 26_318,
     status: "failed",
     durationMs: 412,
+    callId: "toolu_7",
+    timeoutMs: 60_000,
+    outcome: "failed",
+    errorCode: "tool_error",
+    run: {
+      runId: "run_1",
+      context: "hosted_sandbox",
+      language: "python",
+      status: "failed",
+      exitCode: 1,
+      durationMs: 900,
+      stdoutBytes: 10,
+      stderrBytes: 20,
+      files: [{ attachmentId: "att_1", name: "out.csv", mime: "text/csv", bytes: 12 }],
+    },
+    cached: true,
   };
 
   assert.deepEqual(readToolDetail(JSON.parse(JSON.stringify(full))), full);
+  const live: ClientToolDetail = { ...full, phase: "running", progress: { lines: [{ stream: "stdout", text: "step 2" }] } };
+  assert.deepEqual(readToolDetail(JSON.parse(JSON.stringify(live))), full);
 });
 
 test("a real streamed row round-trips unchanged", () => {

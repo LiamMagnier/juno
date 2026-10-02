@@ -108,7 +108,7 @@ def _bsdf(mat):
     return mat.node_tree.nodes.get("Principled BSDF")
 
 
-def flock_material(name, hexc, sheen=1.0, sheen_rough=0.42, rough=0.78, grain=0.06, lift=0.0, spec=0.22, sheen_lift=0.55):
+def flock_material(name, hexc, sheen=1.0, sheen_rough=0.42, rough=0.78, grain=0.06, lift=0.0, spec=0.22, sheen_lift=None):
     """Velvet flocking: matte base, microfibre sheen tinted toward a lighter colour, a fine grain."""
     key = ("flock", name, hexc, sheen, sheen_rough, rough, grain, lift)
     if key in _MAT:
@@ -118,6 +118,8 @@ def flock_material(name, hexc, sheen=1.0, sheen_rough=0.42, rough=0.78, grain=0.
     nt = mat.node_tree
     b = _bsdf(mat)
     lift = lift + pile_lift(hexc)
+    if sheen_lift is None:
+        sheen_lift = float(os.environ.get("SHEEN_LIFT", 0.3))
     if float(hex_rgb(hexc).max()) < 0.3:
         # Dark flock (black felt, nori): a quieter, greyer sheen so it stays matte.
         sheen, sheen_lift, spec = min(sheen, 0.45), 0.28, 0.12
@@ -156,7 +158,7 @@ def fuzz_material(name, hexc, lift=0.0):
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     lift = lift + pile_lift(hexc)
     base = hex_lin(hexc, lift)
-    tip = hex_lin(mix_hex(hexc, "#ffffff", float(os.environ.get("FUZZ_TIP", 0.12))), lift)
+    tip = hex_lin(mix_hex(hexc, "#ffffff", float(os.environ.get("FUZZ_TIP", 0.08))), lift)
     ramp.color_ramp.elements[0].color = (*[c * 0.92 for c in base], 1)
     ramp.color_ramp.elements[1].position = 1.0
     ramp.color_ramp.elements[1].color = (*tip, 1)
@@ -165,7 +167,7 @@ def fuzz_material(name, hexc, lift=0.0):
     b.inputs["Roughness"].default_value = 0.85
     b.inputs["Specular IOR Level"].default_value = 0.15
     dark = float(hex_rgb(hexc).max()) < 0.3
-    fs = float(os.environ.get("FUZZ_SHEEN", 0.5))
+    fs = float(os.environ.get("FUZZ_SHEEN", 0.65))
     b.inputs["Sheen Weight"].default_value = fs * 0.5 if dark else fs
     b.inputs["Sheen Roughness"].default_value = 0.5
     _MAT[key] = mat
@@ -219,7 +221,7 @@ def surface_area(ob):
     return sum(p.area for p in ob.data.polygons)
 
 
-def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group=None, width=1.0):
+def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group=None, width=1.0, coverage=1.0):
     """Short, fine, dense flock fibres (particle hair with interpolated children).
 
     Flocking is many tiny straight fibres standing up from the surface: no curl,
@@ -227,7 +229,7 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     """
     E = os.environ.get
     if density is None:
-        density = float(E("FUZZ_DENSITY", 40000))
+        density = float(E("FUZZ_DENSITY", 52000))
     length = float(E("FUZZ_LEN_ABS", 0)) or length
     ob.data.materials.append(mat)
     ob.modifiers.new("fuzz", "PARTICLE_SYSTEM")
@@ -236,10 +238,15 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     ps.type = "HAIR"
     ps.use_advanced_hair = True
     area = surface_area(ob)
-    ps.count = max(500, int(area * density * quality))
+    # coverage: the share of the surface the density group keeps (the count is
+    # spread over the weighted area only, so it scales with it).
+    ps.count = max(500, int(area * density * quality * coverage))
+    # Flock fibres are short and straight: two segments each are enough, and
+    # halve the curve memory (renders must stay well under 10 GB).
+    steps = int(E("FUZZ_STEPS", 1))
     ps.hair_step = 2
-    ps.render_step = 2
-    ps.display_step = 2
+    ps.render_step = steps
+    ps.display_step = steps
     ps.emit_from = "FACE"
     ps.use_even_distribution = True
     ps.distribution = "RAND"
@@ -250,7 +257,7 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     ps.child_radius = 0.01
     ps.child_roundness = 0.0
     ps.clump_factor = 0.0
-    rough = float(E("FUZZ_ROUGH", 0.04))
+    rough = float(E("FUZZ_ROUGH", 0.03))
     ps.roughness_1 = length * rough
     ps.roughness_1_size = 1.0
     ps.roughness_endpoint = length * rough * 1.5
@@ -258,14 +265,14 @@ def fuzz(ob, mat, length=0.009, density=None, quality=1.0, seed=1, density_group
     ps.roughness_2 = 0.0
     ps.child_length = 1.0
     ps.child_length_threshold = float(E("FUZZ_LTHRESH", 0.35))
-    root = float(E("FUZZ_ROOT", 0.00026))
+    root = float(E("FUZZ_ROOT", 0.0002))
     ps.root_radius = root * width
     ps.tip_radius = root * 0.25 * width
     ps.radius_scale = 1.0
     ps.shape = 0.0
     ps.use_close_tip = True
     ps.normal_factor = length
-    ps.factor_random = length * float(E("FUZZ_SPREAD", 0.32))
+    ps.factor_random = length * float(E("FUZZ_SPREAD", 0.14))
     ps.brownian_factor = 0.0
     # The hair length setter rescales the emission velocities: set it last.
     ps.hair_length = length
@@ -284,15 +291,30 @@ def setup_render(scene, res_x, res_y, spp=128, transparent=True):
         prefs = bpy.context.preferences.addons["cycles"].preferences
         prefs.compute_device_type = "METAL"
         prefs.get_devices()
+        if os.environ.get("KOL"):
+            prefs.kernel_optimization_level = os.environ["KOL"]
+        if os.environ.get("METALRT"):
+            prefs.metalrt = os.environ["METALRT"]
+        if os.environ.get("DEVICE") == "CPU":
+            prefs.compute_device_type = "NONE"
         for d in prefs.devices:
             d.use = d.type == "METAL"
-        scene.cycles.device = "GPU"
+        scene.cycles.device = "CPU" if os.environ.get("DEVICE") == "CPU" else "GPU"
     except Exception as e:  # pragma: no cover
         print("GPU setup failed", e)
     scene.cycles.samples = spp
+    if os.environ.get("TILE"):
+        scene.cycles.use_auto_tile = True
+        scene.cycles.tile_size = int(os.environ["TILE"])
     scene.cycles.use_denoising = True
     try:
         scene.cycles.denoiser = "OPENIMAGEDENOISE"
+    except Exception:
+        pass
+    # Denoise on the CPU: it costs a second or two and keeps OIDN's buffers off the
+    # Metal device, which already holds ~7.3 GB for any Cycles scene on this Mac.
+    try:
+        scene.cycles.denoising_use_gpu = os.environ.get("DENOISE_GPU", "0") == "1"
     except Exception:
         pass
     scene.cycles.max_bounces = 6
@@ -360,9 +382,10 @@ def studio(scene, strength=1.0, floor=True, rim=1.0, spread=1.0):
             ob.light_linking.receiver_collection = chars
         return ob
 
-    K = float(os.environ.get("KEY", 1.0))
+    K = float(os.environ.get("KEY", 1.1))
     area("key", (-2.6, -3.6, 3.6), 5.5, 520 * strength * K, (1.0, 0.975, 0.95))
-    area("fill", (3.4, -3.4, 1.6), 6.0, 260 * strength, (0.96, 0.98, 1.0), shadow=os.environ.get("FILL_SHADOW", "1") == "1")
+    FL = float(os.environ.get("FILL", 0.7))
+    area("fill", (3.4, -3.4, 1.6), 6.0, 260 * strength * FL, (0.96, 0.98, 1.0), shadow=os.environ.get("FILL_SHADOW", "1") == "1")
     area("top", (0.0, -0.6, 4.6), 4.0, 260 * strength)
     area("low", (0.0, -3.5, 0.2), 4.0, 70 * strength, only_chars=True)
     area("back_l", (-2.6, 3.0, 1.9), 3.5, 160 * strength * rim, only_chars=True)

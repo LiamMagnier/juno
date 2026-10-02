@@ -6,7 +6,12 @@ import { serializeSkillVersion } from "@/lib/work/skills";
 
 export const runtime = "nodejs";
 
-/** Explicitly accepts a version's newly widened permission surface. */
+/**
+ * Explicitly accepts what a version waits for: a widened permission surface,
+ * and (for an imported skill) the scripts in its bundle. The audit row carries
+ * the bundle's digest, so "which scripts did I approve" has an answer that
+ * cannot drift: the digest names the exact bytes the sandbox will mount.
+ */
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string; version: string }> }
@@ -28,7 +33,7 @@ export async function POST(
 
   const current = await prisma.workSkillVersion.findFirst({
     where: { skillId: skill.id, skill: { userId: user.id }, version },
-    select: { id: true, version: true, securityStatus: true, requiresConsent: true },
+    select: { id: true, version: true, securityStatus: true, requiresConsent: true, bundleDigest: true },
   });
   if (!current) return NextResponse.json({ error: "version_not_found" }, { status: 404 });
   if (current.securityStatus === "blocked") {
@@ -57,6 +62,7 @@ export async function POST(
         skillSlug: skill.slug,
         skillVersion: version,
         requiresConsent: false,
+        ...(current.bundleDigest ? { contentHash: current.bundleDigest } : {}),
       },
     });
   }

@@ -207,3 +207,68 @@ test("the stored summary carries the version, so an older reader can tell", () =
   assert.equal(summary?.model, "tiny-chat");
   assert.equal(summary?.degradations.length, 1);
 });
+
+/*
+ * v4: code execution (TOOL_RUNTIME_DESIGN.md §6.11). Two different refusals
+ * with two different fixes: an unverified model (choose another model) and no
+ * sandbox for this chat (nothing the model can change). The model's evidence
+ * is checked first, so the reader is never sent to the wrong fix.
+ */
+
+test("code execution runs only on a verified model with an open gate", () => {
+  const verified = { ...full, toolCalling: "verified" as const };
+  const ok = resolveEffectiveCapabilities({
+    requested: { modelId: verified.modelId, codeExecution: true },
+    actual: verified,
+    codeExecutionGate: { allowed: true },
+  });
+  assert.equal(ok.codeExecution, true);
+  assert.equal(wasDegraded(ok), false);
+});
+
+test("an untested or failed model is tool_calling_unverified, whatever the sandbox", () => {
+  for (const toolCalling of [undefined, "untested", "failed"] as const) {
+    const effective = resolveEffectiveCapabilities({
+      requested: { modelId: full.modelId, codeExecution: true },
+      actual: { ...full, ...(toolCalling ? { toolCalling } : {}) },
+      codeExecutionGate: { allowed: true },
+    });
+    assert.equal(effective.codeExecution, false);
+    assert.deepEqual(effective.degradations.map((d) => d.kind), ["tool_calling_unverified"]);
+    assert.match(effective.degradations[0].reason, /Choose a model whose tool calling is verified/);
+  }
+});
+
+test("a verified model with no sandbox for this chat is code_execution_unavailable, with the gate's reason", () => {
+  const effective = resolveEffectiveCapabilities({
+    requested: { modelId: full.modelId, codeExecution: true },
+    actual: { ...full, toolCalling: "verified" },
+    codeExecutionGate: { allowed: false, reason: "Running code is off in private chats." },
+  });
+  assert.equal(effective.codeExecution, false);
+  assert.deepEqual(effective.degradations.map((d) => d.kind), ["code_execution_unavailable"]);
+  assert.equal(effective.degradations[0].reason, "Running code is off in private chats.");
+  const noGate = resolveEffectiveCapabilities({
+    requested: { modelId: full.modelId, codeExecution: true },
+    actual: { ...full, toolCalling: "verified" },
+  });
+  assert.equal(noGate.degradations[0].kind, "code_execution_unavailable", "no gate given means no sandbox");
+});
+
+test("not asking for code execution never degrades", () => {
+  const effective = resolveEffectiveCapabilities({ requested: { modelId: full.modelId }, actual: full });
+  assert.equal(effective.codeExecution, false);
+  assert.equal(wasDegraded(effective), false);
+});
+
+test("the manifest and the TypeScript union name the same degradation kinds", async () => {
+  const manifest = (await import("../contracts/capabilities/juno-capabilities-v1.json", { with: { type: "json" } })).default as {
+    version: number;
+    degradationKinds: { key: string }[];
+    capabilities: { key: string }[];
+  };
+  assert.equal(manifest.version, CAPABILITY_MANIFEST_VERSION);
+  const keys = manifest.degradationKinds.map((k) => k.key);
+  for (const kind of ["code_execution_unavailable", "tool_calling_unverified"]) assert.ok(keys.includes(kind), kind);
+  assert.ok(manifest.capabilities.some((c) => c.key === "codeExecution"));
+});

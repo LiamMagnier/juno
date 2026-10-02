@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 import { ICON_USAGE } from "./icon-usage";
 import { AppMark, FileMark } from "./marks";
 import { COLOURS, contrast, hex, INKS, PLANES, type Swatch, type Theme } from "./palette";
-import { CrewRowItem, face, Toast } from "./shell";
+import { CrewRowItem, face, OrbitLabel, Toast, Wordmark } from "./shell";
 import { CrewMark } from "./crew-bridge";
 import { Approval, LiveLine, MessageActions, NeedsYouRow, TaskCard, Trace, UserMessage } from "./thread";
 
@@ -137,7 +137,7 @@ export function CrewMarkLab({ zooms = [1.6, 1.75, 1.9], eyes = [0.44, 0.47, 0.5]
 export function SystemScene() {
   const theme = useTheme();
   const tokenSegs: Segment[] = [{ t: "text", v: "Ask " }, { t: "token", id: "mira" }, { t: "text", v: " about " }, { t: "token", id: "forecast" }];
-  const [seg, setSeg] = React.useState<"Light" | "Standard" | "Deep">("Standard");
+  const [seg, setSeg] = React.useState<"Light" | "Standard" | "Thorough">("Standard");
   const paletteGroups = PALETTE_GROUPS.map((g) => ({
     label: g.label,
     items: g.ids.slice(0, g.kind === "crew" || g.kind === "file" || g.kind === "app" ? 2 : 1).map((id) => ({ token: TOKENS[id], group: g.label })),
@@ -147,7 +147,7 @@ export function SystemScene() {
       <header className="jn-sys__head">
         <h1 className="t-title">System</h1>
         <p className="jn-page__lede">
-          Every piece of Juno at rest and in its states, in the {theme} theme. Ninety-five per cent neutral; colour enters only through the things themselves, the presence colour for what is acting now, and amber for the words that say someone needs you.
+          Every piece of Alevr at rest and in its states, in the {theme} theme. Ninety-five per cent neutral; colour enters only through the things themselves, the presence colour for what is acting now, and amber for the words that say someone needs you.
         </p>
       </header>
 
@@ -194,7 +194,7 @@ export function SystemScene() {
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Small, 13/18</span>
-            <span className="t-small ink-2">Waiting for your answer at step 2 of 4</span>
+            <span className="t-small ink-2">Step 2 of 4, matching Stripe customers to accounts</span>
           </div>
           <div className="jn-sys__typerow">
             <span className="jn-sys__typemeta">Meta, 12/16</span>
@@ -236,7 +236,7 @@ export function SystemScene() {
             <div className="jn-sys__frame">
               <div className="jn-side jn-sys__frameside">
                 <div className="jn-side__head">
-                  <span className="jn-wordmark">Juno</span>
+                  <Wordmark />
                   <span className="jn-side__headtools">
                     <span className="jib jib--sm">
                       <Icon name="bell" size={16} />
@@ -307,14 +307,9 @@ export function SystemScene() {
                 </a>
               </div>
             </Cell>
-            <Cell label="A section: its label and action, crew rows with their state on the right (Available says nothing)">
+            <Cell label="A section: its label and action, agent rows with their state on the right (Ready says nothing)">
               <div className="jn-side jn-sys__siderows">
-                <div className="jn-side__label">
-                  <span>Crew</span>
-                  <span className="jib jib--sm jn-side__labelbtn">
-                    <Icon name="plus" size={16} />
-                  </span>
-                </div>
+                <OrbitLabel />
                 <CrewRowItem m={CREW[0]} />
                 <CrewRowItem m={CREW[1]} />
                 <CrewRowItem m={CREW[2]} />
@@ -324,7 +319,7 @@ export function SystemScene() {
               <div className="jn-side jn-sys__siderows">
                 <a href="#" className="jrow jrow--text">
                   <span className="jrow__text">Q3 forecast against Stripe revenue</span>
-                  <span className="jn-side__state jn-attn">Needs you</span>
+                  <span className="jn-side__state jn-attn">Needs your approval</span>
                 </a>
                 <span className="jrow jn-side__account">
                   <span className="jn-avatar">LM</span>
@@ -480,7 +475,7 @@ export function SystemScene() {
           </Cell>
           <Cell label="Link">
             <button type="button" className="jb jb--link">
-              Tell Juno what to do instead
+              Tell Alevr what to do instead
             </button>
           </Cell>
         </div>
@@ -489,7 +484,7 @@ export function SystemScene() {
       <Section id="controls" title="Controls" note="Segmented thumbs travel on the standard spring. Switch and radio edges meet 3:1.">
         <div className="jn-sys__grid">
           <Cell label="Segmented">
-            <Segmented options={["Light", "Standard", "Deep"] as const} value={seg} onChange={setSeg} label="Effort" layoutKey="sys-seg" />
+            <Segmented options={["Light", "Standard", "Thorough"] as const} value={seg} onChange={setSeg} label="Effort" layoutKey="sys-seg" />
           </Cell>
           <Cell label="Allow, Ask, Off">
             <PolicyControl value="ask" label="Post a message to a channel" />
@@ -547,7 +542,7 @@ export function SystemScene() {
           <Cell label="App">
             <TokenChip id="stripe" still />
           </Cell>
-          <Cell label="Crew member">
+          <Cell label="Agent">
             <TokenChip id="mira" still />
           </Cell>
           <Cell label="Project">
@@ -565,7 +560,7 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="composer" title="Composer" note="No shadow: surface and one crisp hairline. Pointer focus darkens the hairline; keyboard focus adds the ring. The disc is voice when empty, send with words, stop while Juno works.">
+      <Section id="composer" title="Composer" note="No shadow: surface and one crisp hairline. Pointer focus darkens the hairline; keyboard focus adds the ring. The disc is voice when empty, send with words, stop while Alevr works.">
         <div className="jn-sys__stack">
           <Cell label="Rest, empty: the disc is quiet (voice)" wide>
             <Composer initial={[]} />
@@ -576,8 +571,8 @@ export function SystemScene() {
           <Cell label="Keyboard focus, with words: the ring, and the ink disc (send)" wide>
             <Composer initial={tokenSegs} still={{ focused: true }} />
           </Cell>
-          <Cell label="Docked while Juno works: stop, and the dock naming what needs you out of view" wide>
-            <Composer initial={[]} variant="dock" busy placeholder="Reply…" dockRow={<NeedsYouRow count={2} />} />
+          <Cell label="Docked while Alevr works: stop, and the dock naming what needs you out of view" wide>
+            <Composer initial={[]} variant="dock" busy placeholder="Ask a follow-up" dockRow={<NeedsYouRow count={2} />} />
           </Cell>
           <Cell label="Code: the quiet context row, permission mode as words" wide>
             <Composer initial={[]} variant="code" placeholder="Describe the change. @ files, / commands" context={<ContextRow mode="Plan" />} />
@@ -605,15 +600,15 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="transcript" title="Transcript" note="Replies are plain text on the page. While Juno works, a glyph for the kind of work is the one colour, the words stay in the second ink, and words fade in where they stay.">
+      <Section id="transcript" title="Transcript" note="Replies are plain text on the page. While Alevr works, the Continuum beside the truthful phase words is the one colour (a tonal handoff through its paths), the words stay in the second ink, and words fade in where they stay.">
         <div className="jn-sys__stack jn-sys__stack--narrow">
           <Cell label="The person’s turn and its receipt" wide>
             <UserMessage segments={DRAFT} receipt={RECEIPT} />
           </Cell>
           <Cell label="The live line, then with seconds" wide>
             <span style={{ display: "grid", gap: 8 }}>
-              <LiveLine text="Reading Q3 Forecast.xlsx" glyph="research" />
-              <LiveLine text="Comparing renewals with the forecast" glyph="sheet" seconds={4} />
+              <LiveLine text="Reading Q3 Forecast.xlsx" />
+              <LiveLine text="Comparing renewals with the forecast" seconds={4} />
               <LiveLine text="Mira is checking renewal usage" who="mira" />
             </span>
           </Cell>
@@ -647,14 +642,14 @@ export function SystemScene() {
 
       <Section
         id="crew"
-        title="Crew faces"
+        title="Agent faces"
         note="Each member is a character its person made. State is pose and expression, and always also words beside it. From 32 px up the whole character; at 24 px and below (rows, tokens, task headers) only the head, on a soft disc in the member's own colour, like an app's mark on its tile."
       >
         <div className="jn-sys__faces">
           <span />
           {STATES.map((s) => (
             <span key={s} className="jn-sys__colh">
-              {s === "waiting" ? "Needs you" : s[0].toUpperCase() + s.slice(1)}
+              {s === "waiting" ? "Needs your answer" : s[0].toUpperCase() + s.slice(1)}
             </span>
           ))}
           {[96, 64, 32].map((size) => (
@@ -680,7 +675,7 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="icons" title="Icons" note="Juno’s own set, drawn on a 24 grid for 16 and 20. Hover the grid: each icon has its own small motion, triggered by the control it sits in.">
+      <Section id="icons" title="Icons" note="Alevr’s own set, drawn on a 24 grid for 16 and 20. Hover the grid: each icon has its own small motion, triggered by the control it sits in.">
         <div className="jn-sys__icons">
           {ICON_USAGE.map((g) => (
             <div key={g.group} className="jn-sys__icongroup">
@@ -698,7 +693,7 @@ export function SystemScene() {
         </div>
       </Section>
 
-      <Section id="marks" title="Marks" note="The only colour in the chrome comes from the things themselves: an app’s real mark, a file type’s glyph, a crew member’s face.">
+      <Section id="marks" title="Marks" note="The only colour in the chrome comes from the things themselves: an app’s real mark, a file type’s glyph, an agent’s face.">
         <div className="jn-sys__marks">
           {["slack", "stripe", "linear", "github", "notion", "figma", "gmail", "drive"].map((id) => (
             <span key={id} className="jn-sys__mark">

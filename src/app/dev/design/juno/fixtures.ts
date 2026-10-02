@@ -1,4 +1,5 @@
 import type { Provider } from "@/lib/providers";
+import { AGENT_STATE_NAMES, FEATURE_NAMES } from "@/lib/brand/names";
 import type { CrewState } from "./crew/face";
 
 /*
@@ -9,7 +10,13 @@ import type { CrewState } from "./crew/face";
 
 export const ACCOUNT = { name: "Liam Magnier", first: "Liam", plan: "Pro", initials: "LM", email: "liam@northwind.io" };
 
-/* ———————————————————————————— Crew ———————————————————————————— */
+/* ———————————————————————— Agents (Alevr Orbit) ———————————————————————— */
+
+/**
+ * An agent's state in words (Alevr Orbit): Ready, Thinking, Working, Needs your answer, Blocked, Finished.
+ * The face has its own poses (CrewState); `status` is what the screens say.
+ */
+export type AgentStatus = "ready" | "thinking" | "working" | "needs" | "blocked" | "finished";
 
 export interface CrewRow {
   /** Two lines at most, under the face on the roster. */
@@ -18,44 +25,59 @@ export interface CrewRow {
   name: string;
   role: string;
   seed: string;
+  /** The face's pose. */
   state: CrewState;
-  /** A few words, in the sidebar row, of what the member is doing now. */
+  /** The state in words. */
+  status: AgentStatus;
+  /** A few words, in the sidebar row, of what the agent is doing now. */
   now: string;
-  /** The same, as a full sentence (roster, member page). */
+  /** The same, as a full sentence (roster, the agent's page). */
   long: string;
-  /** When the member last did something, relative. */
+  /** When the agent last did something, relative. */
   when: string;
 }
 
 export const CREW: CrewRow[] = [
-  { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", now: "Needs your answer", long: "Needs your answer on the Halvorsen renewal", when: "4 min ago" },
-  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", now: "Available", long: "Available. Finished the Q3 forecast review 1 h ago", when: "1 h ago" },
-  { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", now: "Reconciling invoices", roster: "Reconciling invoices, 206 of 214", long: "Reconciling September invoices, 206 of 214 matched", when: "now" },
-  { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", now: "Reading escalations", roster: "Reading this week’s escalations", long: "Reading this week’s escalations", when: "now" },
-  { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", now: "Paused", long: "Paused until Monday", when: "Friday" },
-  { id: "tomas", name: "Tomas", role: "On-call engineering", seed: "tomas-oncall", state: "offline", now: "Offline", roster: "Offline since Sunday", long: "Offline, last active Sunday", when: "Sunday" },
+  { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", status: "needs", now: "Needs your answer", long: "Needs your answer on the Halvorsen renewal", when: "4 min ago" },
+  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", status: "ready", now: "Ready", long: "Ready. Finished the Q3 forecast review 1 h ago", when: "1 h ago" },
+  { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", status: "working", now: "Reconciling invoices", roster: "Reconciling invoices, 206 of 214", long: "Reconciling September invoices, 206 of 214 matched", when: "now" },
+  { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", status: "thinking", now: "Reading escalations", roster: "Reading this week’s escalations", long: "Reading this week’s escalations", when: "now" },
+  { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", status: "blocked", now: "Blocked", roster: "Blocked: Greenhouse sign-in expired", long: "Blocked: the Greenhouse sign-in expired on Friday", when: "Friday" },
+  { id: "tomas", name: "Tomas", role: "On-call engineering", seed: "tomas-oncall", state: "available", status: "finished", now: "Finished", roster: "Finished the incident review", long: "Finished the incident review on Sunday", when: "Sunday" },
 ];
 
 export const crew = (id: string): CrewRow => CREW.find((m) => m.id === id) ?? CREW[0];
+
+/**
+ * The sidebar's Orbit rows (Revision 2): the agents that need the person come
+ * first (Needs your answer, then Blocked), then the ones at work, then the
+ * rest, five at most; the Orbit page has everyone.
+ */
+const SIDE_ORDER: Record<AgentStatus, number> = { needs: 0, blocked: 1, working: 2, thinking: 3, finished: 4, ready: 5 };
+export const SIDE_CREW: CrewRow[] = [...CREW].sort((a, b) => SIDE_ORDER[a.status] - SIDE_ORDER[b.status]).slice(0, 5);
 export const MIRA = CREW[0];
 
-/** The sidebar's right-hand word for a crew row. Available is the rest state and says nothing. */
-export const SIDE_STATE: Record<CrewState, string | null> = {
-  available: null,
-  thinking: "Thinking",
-  working: "Working",
-  waiting: "Needs you",
-  paused: "Paused",
-  offline: "Offline",
+/** The sidebar's right-hand word for an agent's row. Ready is the rest state and says nothing. */
+/* The six states' words come from the central name registry (src/lib/brand/names.ts, D-035..D-038). */
+export const STATE_WORD: Record<AgentStatus, string> = {
+  ready: AGENT_STATE_NAMES.ready,
+  thinking: AGENT_STATE_NAMES.thinking,
+  working: AGENT_STATE_NAMES.working,
+  needs: AGENT_STATE_NAMES.needsAnswer,
+  blocked: AGENT_STATE_NAMES.blocked,
+  finished: AGENT_STATE_NAMES.finished,
 };
 
-export const STATE_WORD: Record<CrewState, string> = {
-  available: "Available",
-  thinking: "Thinking",
-  working: "Working",
-  waiting: "Needs you",
-  paused: "Paused",
-  offline: "Offline",
+export const SIDE_STATE: Record<AgentStatus, string | null> = { ...STATE_WORD, ready: null };
+
+/** The face pose for each status. */
+export const STATUS_FACE: Record<AgentStatus, CrewState> = {
+  ready: "available",
+  thinking: "thinking",
+  working: "working",
+  needs: "waiting",
+  blocked: "paused",
+  finished: "available",
 };
 
 /* ———————————————————————— Sidebar ———————————————————————— */
@@ -97,7 +119,7 @@ export const TOKENS: Record<string, TokenRef> = {
   linear: { id: "linear", kind: "app", label: "Linear", connected: false, detail: "Not connected" },
   notion: { id: "notion", kind: "app", label: "Notion", connected: true, detail: "Connected as Northwind wiki" },
   mira: { id: "mira", kind: "crew", label: "Mira", detail: "Accounts, needs your answer" },
-  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, available" },
+  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, ready" },
   otto: { id: "otto", kind: "crew", label: "Otto", detail: "Finance operations, reconciling invoices" },
   atlas: { id: "atlas", kind: "project", label: "Atlas launch", detail: "14 chats" },
   renewals: { id: "renewals", kind: "project", label: "Renewals 2026", detail: "6 chats" },
@@ -105,24 +127,28 @@ export const TOKENS: Record<string, TokenRef> = {
 };
 
 export const PALETTE_GROUPS: { kind: TokenKind; label: string; ids: string[] }[] = [
-  { kind: "crew", label: "Crew", ids: ["mira", "scout", "otto"] },
+  { kind: "crew", label: "Agents", ids: ["mira", "scout", "otto"] },
   { kind: "file", label: "Files", ids: ["forecast", "notes", "deck"] },
   { kind: "project", label: "Projects", ids: ["atlas", "renewals"] },
   { kind: "app", label: "Apps", ids: ["stripe", "slack", "linear"] },
   { kind: "chat", label: "Chats", ids: ["chat1"] },
 ];
 
-export type Segment = { t: "text"; v: string } | { t: "token"; id: string };
+export type Segment = { t: "text"; v: string } | { t: "token"; id: string; leaving?: boolean };
 
-/** "Compare [Q3 Forecast.xlsx] with [Stripe] and ask [Mira] to flag renewal risk" */
+/**
+ * "Compare [Q3 Forecast.xlsx] with [Stripe], ask [Mira] to flag renewal risk and post a summary to #design in [Slack]".
+ * The person asks for the post, so the approval that follows has a cause the thread can name (Revision 2).
+ */
 export const DRAFT: Segment[] = [
   { t: "text", v: "Compare " },
   { t: "token", id: "forecast" },
   { t: "text", v: " with " },
   { t: "token", id: "stripe" },
-  { t: "text", v: " and ask " },
+  { t: "text", v: ", ask " },
   { t: "token", id: "mira" },
-  { t: "text", v: " to flag renewal risk" },
+  { t: "text", v: " to flag renewal risk and post a summary to #design in " },
+  { t: "token", id: "slack" },
 ];
 
 /* What an app token's panel says: the actions this message could take, in words. */
@@ -137,7 +163,8 @@ export interface AppAction {
 }
 
 export const POLICY_LABEL: Record<Policy, string> = { allow: "Allow", ask: "Ask", off: "Off" };
-export const POLICY_SENTENCE: Record<Policy, string> = { allow: "Allowed", ask: "Asks you first", off: "Off" };
+/* One set of words for a permission everywhere (the token panel, Customize, the approval): Allow, Ask, Off. */
+export const POLICY_SENTENCE: Record<Policy, string> = { allow: "Allow", ask: "Ask", off: "Off" };
 
 export interface AppInfo {
   id: string;
@@ -232,9 +259,7 @@ export const READS: { verb: string; object: string; where?: string; mark: string
 export const TRACE_SUMMARY = "Worked 12s, searched the web and read 3 sources";
 
 /** The live line's phases (M1), each held at least a second. */
-export const PRESENCE_WORDS = ["Reading Q3 Forecast.xlsx", "Checking Stripe subscriptions", "Comparing renewals with the forecast"];
-/** The glyph that leads each phase, in the presence colour: what kind of work it is. */
-export const PRESENCE_GLYPHS = ["research", "search", "sheet"];
+export const PRESENCE_WORDS = ["Reading Q3 Forecast.xlsx", "Searching Stripe subscriptions", "Comparing renewals with the forecast"];
 
 /** How the sent message's tokens resolved (M23). */
 export const RECEIPT = "Q3 Forecast.xlsx and Stripe added. Mira takes the renewal check. Posting to Slack asks you first.";
@@ -265,9 +290,10 @@ export const MODELS: ModelRow[] = [
   { id: "grok-4.7", name: "Grok 4.7", provider: "xai", line: "Live web results and current events" },
 ];
 
-export const EFFORT = ["Light", "Standard", "Deep"] as const;
+/* Revision 2: "Deep" sat one row from the Deep Field mode; effort says how hard to think in plain words. */
+export const EFFORT = ["Light", "Standard", "Thorough"] as const;
 export type Effort = (typeof EFFORT)[number];
-export const EFFORT_LINE: Record<Effort, string> = { Light: "Answers right away", Standard: "Thinks when it helps", Deep: "Thinks longer before answering" };
+export const EFFORT_LINE: Record<Effort, string> = { Light: "Answers right away", Standard: "Thinks when it helps", Thorough: "Thinks longer before answering" };
 
 /* ———————————————————————— Code ———————————————————————— */
 
@@ -278,7 +304,7 @@ export const CODE_SESSIONS: { title: string; where: string; state: SessionState;
   { title: "Postgres index for the search endpoint", where: "Cloud", state: "waiting", when: "12 min", line: "Needs your approval to migrate" },
   { title: "Pricing page copy pass", where: "This Mac", state: "done", when: "1 h", line: "Done 1 h ago, 3 files" },
   { title: "Upgrade Next to 15.5", where: "Cloud", state: "done", when: "3 h", line: "Pull request #489 open" },
-  { title: "Flaky upload test on CI", where: "Studio Mac", state: "failed", when: "Yesterday", line: "Failed yesterday on Studio Mac" },
+  { title: "Flaky upload test on CI", where: "Studio Mac", state: "failed", when: "Yesterday", line: "Stopped yesterday: 2 tests failed" },
 ];
 
 export const WORKSPACES = [
@@ -368,12 +394,12 @@ export const LIBRARY: LibItem[] = [
   { id: "l8", kind: "image", title: "Office floor plan.png", meta: "Image, from you", when: "3 Sep", size: "2.4 MB" },
 ];
 
-export const LIB_FILTERS = ["All", "Documents", "Decks", "Designs", "Files"] as const;
-export const LIB_FILTER_KINDS: Record<(typeof LIB_FILTERS)[number], LibKind[] | null> = {
+/** D-038 (revised): what Alevr makes is collected under "Made by Alevr"; what you gave it are Files. Cards and sentences name the real type. */
+export const MADE_BY = FEATURE_NAMES.artifacts.label; // "Made by Alevr", from the registry
+export const LIB_FILTERS = ["All", MADE_BY, "Files"] as const;
+export const LIB_FILTER_KINDS: Record<string, LibKind[] | null> = {
   All: null,
-  Documents: ["document"],
-  Decks: ["deck"],
-  Designs: ["design"],
+  [MADE_BY]: ["document", "deck", "design"],
   Files: ["sheet", "pdf", "image"],
 };
 export const LIB_STORAGE = { used: "2.1 GB", of: "10 GB", deleted: 3 };

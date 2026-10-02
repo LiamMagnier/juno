@@ -42,6 +42,7 @@ export type ReceiptIconKind =
   | "connectors"
   | "tools"
   | "write"
+  | "skill"
   | "warning"
   | "error"
   | "success";
@@ -55,6 +56,11 @@ const RECEIPT_RUNNING: Record<string, string> = {
   read_document: "Reading a document",
   inspect_image: "Looking closer at an image",
   run_code: "Running code",
+  // The pre-rework id of the same tool (SPEC §3.5); stored rows still carry it.
+  code_interpreter: "Running code",
+  check_run: "Checking on a run",
+  use_skill: "Reading a skill",
+  read_skill_file: "Reading a skill file",
   search_chats: "Searching your chats",
   current_time: "Checking the time",
   calculate: "Calculating",
@@ -118,6 +124,10 @@ const RECEIPT_DONE: Record<string, string> = {
   read_document: "Read a document",
   inspect_image: "Looked closer at an image",
   run_code: "Ran code",
+  code_interpreter: "Ran code",
+  check_run: "Checked on a run",
+  use_skill: "Read a skill",
+  read_skill_file: "Read a skill file",
   search_chats: "Searched your chats",
   current_time: "Checked the time",
   calculate: "Calculated",
@@ -180,6 +190,10 @@ const RECEIPT_ICON: Record<string, ReceiptIconKind> = {
   read_document: "file",
   inspect_image: "image",
   run_code: "code",
+  code_interpreter: "code",
+  check_run: "code",
+  use_skill: "skill",
+  read_skill_file: "skill",
   search_chats: "tools",
   current_time: "clock",
   calculate: "calculator",
@@ -319,7 +333,13 @@ export function receiptIconKindForCall(name: string | undefined): ReceiptIconKin
   return "connectors";
 }
 
-export type ReceiptStatus = "running" | "ok" | "failed" | "denied" | "waiting";
+/**
+ * `stopped` and `unknown` are the two ends a real run can have that are
+ * neither a success nor a failure (tool-run.ts): the person pressed Stop, or
+ * nobody saw the end. Each wears its own still mark and says nothing on the
+ * right; the label already carries the words.
+ */
+export type ReceiptStatus = "running" | "ok" | "failed" | "denied" | "waiting" | "stopped" | "unknown";
 
 /**
  * The right-aligned status word. Short, text-label size, never a pill.

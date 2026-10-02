@@ -14,10 +14,11 @@ import {
   type Segment,
   type TokenRef,
 } from "./fixtures";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 import { Icon } from "./icons";
 import { fromKeyboard, usePopoverKeys } from "./layers";
 import { AppMark, ModelMark, TokenMark } from "./marks";
-import { POP_IN, R, SPRING, T, useReduced } from "./motion";
+import { D, EASE_IN, POP_IN, R, SPRING, T, useReduced } from "./motion";
 
 /*
  * The composer (PRODUCT_REFOUNDATION §5): one field and four objects on one
@@ -39,6 +40,14 @@ import { POP_IN, R, SPRING, T, useReduced } from "./motion";
 
 /* ———————————————————————————— Tokens ———————————————————————————— */
 
+/**
+ * A token leaving by pointer (its panel's "Remove from message") yields in
+ * place: it fades on exit timing while its room in the sentence closes, then
+ * it is gone. Removed from the keyboard (Backspace, twice) it goes in the
+ * same frame: keyboard work never waits for an animation.
+ */
+const TOKEN_LEAVE = { opacity: 0, width: 0, paddingLeft: 0, paddingRight: 0, marginLeft: 0, marginRight: 0 };
+
 export function TokenChip({
   id,
   settle,
@@ -46,6 +55,7 @@ export function TokenChip({
   onPress,
   register,
   still,
+  leaving,
 }: {
   id: string;
   /** Set only on the token that was just chosen: its fill relaxes from the palette's highlight tone (C8). */
@@ -54,13 +64,19 @@ export function TokenChip({
   onPress?: (id: string) => void;
   register?: (id: string, el: HTMLSpanElement | null) => void;
   still?: boolean;
+  /** Removed by pointer: yielding its place. */
+  leaving?: boolean;
 }) {
   const token = TOKENS[id];
   const needs = token.kind === "app" && token.connected === false;
-  const kindWord = token.kind === "crew" ? "crew member" : token.kind === "app" ? "app" : token.kind;
+  const kindWord = token.kind === "crew" ? "agent" : token.kind === "app" ? "app" : token.kind;
   return (
-    <span
-      ref={(el) => register?.(id, el)}
+    <motion.span
+      ref={(el: HTMLSpanElement | null) => register?.(id, el)}
+      initial={false}
+      animate={leaving ? TOKEN_LEAVE : undefined}
+      transition={{ duration: D.exit, ease: EASE_IN }}
+      data-leaving={leaving ? "" : undefined}
       role={still ? undefined : "button"}
       tabIndex={still ? undefined : -1}
       aria-label={needs ? `${token.label}, ${kindWord}, not connected` : `${token.label}, ${kindWord}`}
@@ -81,7 +97,7 @@ export function TokenChip({
         <TokenMark token={token} size={16} />
       </span>
       <span className="jn-token__label">{token.label}</span>
-    </span>
+    </motion.span>
   );
 }
 
@@ -105,20 +121,25 @@ export function Sentence({
 }) {
   const lastToken = lastTokenIndex(segments);
   // The sentence never flies (C12, C18): a sent turn is drawn in its final place in the same frame.
+  // Tokens keep their identity by occurrence (not position), so one leaving never remounts the others.
+  const seen = new Map<string, number>();
   return (
     <div className="jn-sentence">
       {segments.map((s, i) => {
-        if (s.t === "text") return <React.Fragment key={i}>{s.v}</React.Fragment>;
+        if (s.t === "text") return <React.Fragment key={`t${i}`}>{s.v}</React.Fragment>;
+        const n = (seen.get(s.id) ?? 0) + 1;
+        seen.set(s.id, n);
         const isFresh = !!fresh && fresh.id === s.id && i === lastToken;
         return (
           <TokenChip
-            key={isFresh ? `${s.id}-${i}-${fresh?.key}` : `${s.id}-${i}`}
+            key={isFresh ? `${s.id}#${n}-${fresh?.key}` : `${s.id}#${n}`}
             id={s.id}
             settle={isFresh}
             selected={selected === s.id}
             onPress={onToken}
             register={register}
             still={still}
+            leaving={s.leaving}
           />
         );
       })}
@@ -162,7 +183,27 @@ type Action =
   | { type: "model"; open: boolean; kbd?: boolean }
   | { type: "plus"; open: boolean; kbd?: boolean }
   | { type: "focus"; on: boolean; kbd?: boolean }
+  | { type: "remove"; id: string }
+  | { type: "purge" }
   | { type: "reset"; segs: Segment[] };
+
+/** Take a token out of the sentence and close the gap: one space goes with it, and the text either side joins. */
+function dropToken(segs: Segment[], index: number): Segment[] {
+  const out = segs.slice();
+  out.splice(index, 1);
+  const prev = out[index - 1];
+  const next = out[index];
+  if (next && next.t === "text" && (!prev || (prev.t === "text" && /\s$/.test(prev.v)))) {
+    out[index] = { t: "text", v: next.v.replace(/^\s/, "") };
+  }
+  const merged: Segment[] = [];
+  for (const seg of out) {
+    const last = merged[merged.length - 1];
+    if (seg.t === "text" && last && last.t === "text") merged[merged.length - 1] = { t: "text", v: last.v + seg.v };
+    else if (!(seg.t === "text" && seg.v === "")) merged.push(seg);
+  }
+  return merged;
+}
 
 function appendText(segs: Segment[], c: string): Segment[] {
   const last = segs[segs.length - 1];
@@ -182,7 +223,7 @@ function reducer(s: State, a: Action): State {
       if (!last) return s;
       if (last.t === "token") {
         // The first press selects the token (a token is never deleted by surprise); the second removes it whole.
-        if (s.selected === last.id) return { ...s, segs: s.segs.slice(0, -1), selected: null, panel: null };
+        if (s.selected === last.id) return { ...s, segs: dropToken(s.segs, s.segs.length - 1), selected: null, panel: null };
         return { ...s, selected: last.id };
       }
       const v = last.v.slice(0, -1);
@@ -207,6 +248,19 @@ function reducer(s: State, a: Action): State {
       return { ...s, plus: a.open, panel: null, model: false, kbdLayer: !!a.kbd };
     case "focus":
       return { ...s, focus: a.on, kbd: a.on ? (a.kbd ?? s.kbd) : false };
+    case "remove": {
+      // By pointer: the token yields in place (marked leaving; purged after exit timing).
+      const segs = s.segs.map((seg) => (seg.t === "token" && seg.id === a.id && !seg.leaving ? { ...seg, leaving: true } : seg));
+      return { ...s, segs, panel: null, selected: null };
+    }
+    case "purge": {
+      let segs = s.segs;
+      for (let i = segs.length - 1; i >= 0; i--) {
+        const seg = segs[i];
+        if (seg.t === "token" && seg.leaving) segs = dropToken(segs, i);
+      }
+      return { ...s, segs };
+    }
     case "reset":
       return { ...s, segs: a.segs, query: null, panel: null, model: false, plus: false, selected: null, fresh: null };
   }
@@ -243,6 +297,8 @@ export interface ComposerApi {
   openPlus: (open: boolean, kbd?: boolean) => void;
   send: () => void;
   reset: (segs: Segment[]) => void;
+  /** As the token panel's "Remove from message": the token yields in place. */
+  removeToken: (id: string) => void;
 }
 
 export interface ComposerStill {
@@ -260,8 +316,9 @@ const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 export function Composer({
   initial = [],
-  placeholder = "Ask anything. @ adds files, apps or crew; / runs skills",
-  label = "Message Juno",
+  /* Revision 2: a placeholder is an invitation, not a syntax lesson; @ and / are taught by the + menu and the palette. */
+  placeholder = "Ask anything",
+  label = "Message Alevr",
   layoutId,
   still,
   context,
@@ -275,6 +332,10 @@ export function Composer({
   effortLabel,
   onType,
   fieldId,
+  onStop,
+  dictation,
+  onDictate,
+  voiceDisc = variant !== "code",
 }: {
   initial?: Segment[];
   placeholder?: string;
@@ -298,6 +359,13 @@ export function Composer({
   onType?: () => void;
   /** The field's id (the skip link's target). */
   fieldId?: string;
+  /** The disc is Stop while busy: pressing it stops at once (the parent owns `busy`). */
+  onStop?: () => void;
+  /** Dictating: the microphone's live input levels (five, 0..1), drawn by the mic itself. Null when off. */
+  dictation?: number[] | null;
+  onDictate?: () => void;
+  /** Empty, the disc starts a voice conversation (Chat). Code's empty disc is an unavailable Send: the microphone dictates. */
+  voiceDisc?: boolean;
 }) {
   const reduced = useReduced();
   const [s, dispatch] = React.useReducer(reducer, undefined, () => ({
@@ -401,6 +469,7 @@ export function Composer({
       openPlus: (open, kbd) => dispatch({ type: "plus", open, kbd }),
       send: () => send(),
       reset: (segs) => dispatch({ type: "reset", segs }),
+      removeToken: (id) => dispatch({ type: "remove", id }),
     };
   }, [apiRef, send, handleKey]);
 
@@ -463,8 +532,10 @@ export function Composer({
       const c = caretRef.current.getBoundingClientRect();
       const width = Math.min(372, vw - 24);
       const left = clampLeft(c.left - w.left - 20, width);
-      // The palette is born at the caret, so it always sits above the composer unless there is truly no room there.
-      const below = roomTop < 220 && roomBottom > roomTop;
+      // Revision 2: on the home the palette opens BELOW the composer (the greeting stays whole above it; the
+      // suggestions below are disposable and step aside); in the dock it opens above (the transcript is there).
+      // Either way it flips only when its side has clearly less room than the other.
+      const below = variant === "home" ? roomBottom >= Math.min(320, roomTop) : roomTop < 220 && roomBottom > roomTop;
       next.palette = { left, width, ...vert(below, below ? roomBottom : roomTop) };
       next.paletteOrigin = `${c.left - w.left - left}px ${below ? "0%" : "100%"}`;
     }
@@ -504,12 +575,28 @@ export function Composer({
   }, [paletteOpen, s.panel, s.model, s.plus, s.segs, s.query]);
 
   const closeLayer = React.useCallback(() => dispatch({ type: "escape" }), []);
+  const removeToken = React.useCallback((id: string) => dispatch({ type: "remove", id }), []);
+
+  // A token yielding its place is gone once its exit has played (or at once under reduced motion).
+  const leaving = s.segs.some((seg) => seg.t === "token" && seg.leaving);
+  React.useEffect(() => {
+    if (!leaving) return;
+    const t = window.setTimeout(() => dispatch({ type: "purge" }), reduced ? 0 : D.exit * 1000 + 20);
+    return () => window.clearTimeout(t);
+  }, [leaving, reduced]);
 
   const empty = s.segs.length === 0 && s.query === null;
-  const mode: "voice" | "send" | "stop" = busy ? "stop" : s.segs.length ? "send" : "voice";
+  const mode: "voice" | "send" | "stop" = busy ? "stop" : s.segs.length || !voiceDisc ? "send" : "voice";
+  const sendable = s.segs.length > 0;
+  // The model the person chose (MP2): the trigger says it, the popover closes, focus returns to the trigger.
+  const [model, setModel] = React.useState<{ id: string; label: string }>({ id: "auto", label: modelLabel });
+  const [effort, setEffort] = React.useState<Effort>("Standard");
+  const shownEffort = effortLabel ?? (effort === "Standard" ? undefined : effort);
+  // Any layer below the home composer covers the suggestions: they step out of the way in the same frame.
+  const layerBelow = variant === "home" && ((paletteOpen && !!anchor.palette && "top" in anchor.palette) || (s.model && anchor.modelBelow) || (s.plus && anchor.plusBelow) || (!!s.panel && anchor.panelBelow));
 
   return (
-    <div ref={wrapRef} className={["jn-composer-wrap", className].filter(Boolean).join(" ")} data-variant={variant}>
+    <div ref={wrapRef} className={["jn-composer-wrap", className].filter(Boolean).join(" ")} data-variant={variant} data-layer-below={layerBelow ? "" : undefined} data-draft={s.segs.length ? "" : undefined}>
       {/* The composer travels between the home and the dock by its position only (layout="position"): its height
           snaps, so the send disc never stretches into an oval on the way (C18). */}
       <motion.div
@@ -607,23 +694,34 @@ export function Composer({
             onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => dispatch({ type: "model", open: !s.model, kbd: fromKeyboard(e) })}
           >
-            <span className="jn-model__name">{modelLabel}</span>
-            {effortLabel ? <span className="jn-model__effort">{effortLabel}</span> : null}
+            <span className="jn-model__name">{model.label}</span>
+            {shownEffort ? <span className="jn-model__effort">{shownEffort}</span> : null}
             <Icon name="chevron-down" size={16} state={s.model ? "active" : "rest"} />
           </button>
-          <button type="button" className="jib jicon-trigger jtip" aria-label="Dictate" data-tip="Dictate" data-tip-side={variant === "home" ? undefined : "top"}>
-            <Icon name="mic" size={20} />
+          {/* Dictating, the mic draws the live input level in its own place (real levels, no decorative loop). */}
+          <button
+            type="button"
+            className="jib jicon-trigger jtip jn-crow__mic"
+            aria-label={dictation ? "Stop dictating" : "Dictate"}
+            aria-pressed={dictation ? true : undefined}
+            data-on={dictation ? "" : undefined}
+            data-tip={dictation ? "Stop dictating" : "Dictate"}
+            data-tip-side={variant === "home" ? undefined : "top"}
+            onClick={onDictate}
+          >
+            {dictation ? <Icon name="voice" size={20} levels={dictation} state="active" /> : <Icon name="mic" size={20} />}
           </button>
           <button
             type="button"
             className="jn-disc jicon-trigger jtip"
             data-mode={mode}
-            data-tip={mode === "stop" ? "Stop" : mode === "send" ? "Send" : "Talk with Juno"}
+            data-tip={mode === "stop" ? "Stop" : mode === "send" ? "Send" : "Talk with Alevr"}
             data-kbd={mode === "send" ? "↵" : mode === "stop" ? "esc" : undefined}
             data-tip-side={variant === "home" ? undefined : "top"}
             data-tip-align="end"
             aria-label={mode === "stop" ? "Stop response" : mode === "send" ? "Send message" : "Start a voice conversation"}
-            onClick={mode === "send" ? send : undefined}
+            aria-disabled={mode === "send" && !sendable ? true : undefined}
+            onClick={mode === "send" ? send : mode === "stop" ? onStop : undefined}
           >
             {/* One disc, three faces (C12, C13, C16). The glyphs overlap and swap in place: opacity with scale 0.8 to 1 on fast. */}
             <AnimatePresence initial={false} mode="popLayout">
@@ -658,11 +756,28 @@ export function Composer({
       </AnimatePresence>
       <AnimatePresence>
         {s.panel ? (
-          <AppPanel key={`panel-${s.panel}`} id={s.panel} style={anchor.panel} origin={anchor.panelOrigin} below={anchor.panelBelow} kbd={s.kbdLayer} onClose={closeLayer} />
+          <AppPanel key={`panel-${s.panel}`} id={s.panel} style={anchor.panel} origin={anchor.panelOrigin} below={anchor.panelBelow} kbd={s.kbdLayer} onClose={closeLayer} onRemove={removeToken} />
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
-        {s.model ? <ModelPopover key="model" style={anchor.model} origin={anchor.modelOrigin} below={anchor.modelBelow} kbd={s.kbdLayer} onClose={closeLayer} /> : null}
+        {s.model ? (
+          <ModelPopover
+            key="model"
+            style={anchor.model}
+            origin={anchor.modelOrigin}
+            below={anchor.modelBelow}
+            kbd={s.kbdLayer}
+            onClose={closeLayer}
+            chosen={model.id}
+            effort={effort}
+            onEffort={setEffort}
+            onChoose={(id, label) => {
+              setModel({ id, label });
+              closeLayer();
+              modelRef.current?.focus({ preventScroll: true });
+            }}
+          />
+        ) : null}
       </AnimatePresence>
       <AnimatePresence>
         {s.plus ? <PlusMenu key="plus" style={anchor.plus} origin={anchor.plusOrigin} below={anchor.plusBelow} kbd={s.kbdLayer} onClose={closeLayer} /> : null}
@@ -778,6 +893,7 @@ export function AppPanel({
   below = true,
   kbd = false,
   onClose,
+  onRemove,
 }: {
   id: string;
   style?: React.CSSProperties;
@@ -785,6 +901,8 @@ export function AppPanel({
   below?: boolean;
   kbd?: boolean;
   onClose?: () => void;
+  /** "Remove from message": the token yields in place; the app stays connected. */
+  onRemove?: (id: string) => void;
 }) {
   const reduced = useReduced();
   const ref = React.useRef<HTMLDivElement | null>(null);
@@ -835,7 +953,7 @@ export function AppPanel({
           </ul>
           <div className="jn-appanel__foot">
             <span className="jn-appanel__verbs">
-              <button type="button" className="jb jb--ghost jb--sm">
+              <button type="button" className="jb jb--ghost jb--sm" onClick={() => onRemove?.(id)}>
                 Remove from message
               </button>
               <button type="button" className="jb jb--ghost jb--sm">
@@ -849,7 +967,7 @@ export function AppPanel({
         </>
       ) : (
         <>
-          <p className="jn-appanel__lede">Connect {app.name} so Juno can read issues. Creating one will ask you first.</p>
+          <p className="jn-appanel__lede">Connect {app.name} so Alevr can read issues. Creating one will ask you first.</p>
           <div className="jn-appanel__foot">
             <span>Opens {app.name} to sign in</span>
             <button type="button" className="jb jb--primary jb--sm">
@@ -871,6 +989,10 @@ export function ModelPopover({
   className,
   kbd = false,
   onClose,
+  chosen: chosenProp,
+  onChoose,
+  effort: effortProp,
+  onEffort,
 }: {
   style?: React.CSSProperties;
   origin?: string;
@@ -879,12 +1001,30 @@ export function ModelPopover({
   /** Opened from the keyboard: appears in the same frame, focus on the chosen model. */
   kbd?: boolean;
   onClose?: () => void;
+  /** The model in use (controlled by the composer); uncontrolled in the galleries. */
+  chosen?: string;
+  /** A model was chosen: the composer names it on the trigger and closes the popover. */
+  onChoose?: (id: string, label: string) => void;
+  effort?: Effort;
+  onEffort?: (e: Effort) => void;
 }) {
   const reduced = useReduced();
   const ref = React.useRef<HTMLDivElement | null>(null);
   usePopoverKeys(ref, !!onClose, onClose ?? noop, kbd, "[data-layer-trigger]");
-  const [effort, setEffort] = React.useState<Effort>("Standard");
-  const [chosen, setChosen] = React.useState("auto");
+  const [effortLocal, setEffortLocal] = React.useState<Effort>(effortProp ?? "Standard");
+  const effort = effortProp ?? effortLocal;
+  const setEffort = (e: Effort) => (onEffort ? onEffort(e) : setEffortLocal(e));
+  const [chosenLocal, setChosenLocal] = React.useState(chosenProp ?? "auto");
+  const chosen = chosenProp ?? chosenLocal;
+  // The check is drawn (its stroke animating in) only on the row the person just chose; opening the
+  // popover shows the current choice already checked, at rest (Revision 2: it drew itself on every open).
+  const [fresh, setFresh] = React.useState<string | null>(null);
+  const choose = (id: string, label: string) => {
+    setFresh(id);
+    if (onChoose) onChoose(id, label);
+    else setChosenLocal(id);
+  };
+  const check = (id: string) => (chosen === id ? <Icon name="check" size={16} state={fresh === id ? "active" : "rest"} /> : null);
   return (
     <motion.div
       ref={ref}
@@ -899,7 +1039,7 @@ export function ModelPopover({
       transition={reduced ? R : POP_IN}
     >
       <div role="radiogroup" aria-label="Model" className="jn-modelpop__list">
-        <button type="button" role="radio" aria-checked={chosen === "auto"} className="jn-pop__row jn-pop__row--tall jicon-trigger" onClick={() => setChosen("auto")}>
+        <button type="button" role="radio" aria-checked={chosen === "auto"} className="jn-pop__row jn-pop__row--tall jicon-trigger" onClick={() => choose("auto", "Auto")}>
           <span className="jn-pop__mark jn-pop__mark--ink">
             <Icon name="auto" size={20} />
           </span>
@@ -908,11 +1048,11 @@ export function ModelPopover({
             <span className="jn-pop__line">Picks the right model for each message</span>
           </span>
           <span className="jn-pop__check" aria-hidden="true">
-            {chosen === "auto" ? <Icon name="check" size={16} state="active" /> : null}
+            {check("auto")}
           </span>
         </button>
         {MODELS.map((m) => (
-          <button key={m.id} type="button" role="radio" aria-checked={chosen === m.id} className="jn-pop__row jn-pop__row--tall" onClick={() => setChosen(m.id)}>
+          <button key={m.id} type="button" role="radio" aria-checked={chosen === m.id} className="jn-pop__row jn-pop__row--tall" onClick={() => choose(m.id, m.name)}>
             <span className="jn-pop__mark jn-pop__mark--ink">
               <ModelMark provider={m.provider} className="jn-modelmark" />
             </span>
@@ -921,7 +1061,7 @@ export function ModelPopover({
               <span className="jn-pop__line">{m.line}</span>
             </span>
             <span className="jn-pop__check" aria-hidden="true">
-              {chosen === m.id ? <Icon name="check" size={16} state="active" /> : null}
+              {check(m.id)}
             </span>
           </button>
         ))}
@@ -936,7 +1076,7 @@ export function ModelPopover({
       </div>
       <div className="jn-pop__sep" />
       <button type="button" className="jn-pop__row jicon-trigger">
-        <span className="jn-pop__text">All models…</span>
+        <span className="jn-pop__text">All models</span>
         <Icon name="chevron-right" size={16} className="ink-3" />
       </button>
     </motion.div>
@@ -945,12 +1085,14 @@ export function ModelPopover({
 
 /* ———————————————————————————— The + menu ———————————————————————————— */
 
-const PLUS_ITEMS: { icon: string; label: string; hint?: string }[] = [
+const PLUS_ITEMS: { icon: string; label: string; hint?: string; line?: string; aria?: string }[] = [
   { icon: "attach", label: "Add photos and files", hint: "⌘U" },
   { icon: "screenshot", label: "Take a screenshot" },
   { icon: "library", label: "Add from Library" },
-  { icon: "at", label: "Mention a file or app", hint: "@" },
+  { icon: "at", label: "Mention a file, app or agent", hint: "@" },
   { icon: "skill", label: "Run a skill", hint: "/" },
+  /* D-038: the deep-research mode is Deep Field, always with its descriptor, and its own glyph (the set's deep-field). */
+  { icon: "deep-field", label: FEATURE_NAMES.research.label, line: FEATURE_NAMES.research.description, aria: FEATURE_NAMES.research.accessibleLabel },
 ];
 
 /** What + offers: things to add to the message, then the two ways to name context in the sentence. */
@@ -985,13 +1127,14 @@ export function PlusMenu({
     >
       {PLUS_ITEMS.map((it, i) => (
         <React.Fragment key={it.label}>
-          {i === 3 ? <div className="jn-pop__sep" role="separator" /> : null}
-          <button type="button" role="menuitem" className="jn-pop__row jicon-trigger" onClick={onClose}>
+          {i === 3 || i === 5 ? <div className="jn-pop__sep" role="separator" /> : null}
+          <button type="button" role="menuitem" className="jn-pop__row jicon-trigger" onClick={onClose} aria-label={it.aria}>
             <span className="jn-pop__mark jn-pop__mark--ink">
               <Icon name={it.icon} size={16} />
             </span>
             <span className="jn-pop__text">{it.label}</span>
             {it.hint ? <kbd className="jn-pop__detail">{it.hint}</kbd> : null}
+            {it.line ? <span className="jn-pop__detail">{it.line}</span> : null}
           </button>
         </React.Fragment>
       ))}

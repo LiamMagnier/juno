@@ -22,6 +22,7 @@ import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
 import type { ClientActionApproval } from "@/lib/action-approval";
+import { composeApprovalCallbacks } from "@/lib/tools/approval";
 import { customAccessToken, isCustomConnectorId } from "@/lib/custom-connectors";
 
 /*
@@ -272,6 +273,14 @@ export interface ToolExecution {
   images?: readonly ToolResultImage[];
   /** Optional structured receipt for an agent configuration tool call. */
   agentChange?: import("@/types/chat").ClientAgentChange;
+  /**
+   * The typed outcome, when the executor knows more than `ok` (a cancelled
+   * run, an outcome lost to a restart). Absent → `ok ? succeeded : failed`.
+   */
+  status?: import("@/lib/tools/types").ToolOutcomeStatus;
+  error?: { code: import("@/lib/tools/types").ToolErrorCode };
+  /** Execution tools: the run behind the call (design §6.4). */
+  run?: import("@/lib/tools/types").ToolRunRecord;
 }
 
 export interface McpToolset {
@@ -291,10 +300,13 @@ export interface McpToolset {
     toolName: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-    callId?: string
+    callId?: string,
+    /** What the dispatcher adds (src/lib/tools/dispatch.ts); absent for older callers. */
+    opts?: import("@/lib/tools/types").ToolExecuteOptions
   ): Promise<ToolExecution>;
   close(): Promise<void>;
 }
+
 
 /**
  * Provider wire shape: the tool minus Juno-side metadata.
@@ -497,7 +509,7 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
      * of that same budget, so it cannot reopen the gap it closes — and it lands
      * inside the envelope, describing the block it belongs to.
      */
-    async execute(toolName, args, signal, callId) {
+    async execute(toolName, args, signal, callId, opts) {
       const route = routing.get(toolName);
       // An unroutable name never reached a connector, so there is nothing to
       // audit: this is the model hallucinating a tool, not a call happening.
@@ -560,7 +572,7 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
           derivedFromUntrusted: true,
         },
         signal,
-        onApprovalRequest: ctx.onApprovalRequest,
+        onApprovalRequest: composeApprovalCallbacks(ctx.onApprovalRequest, opts?.onApprovalRequest),
         unattended: ctx.unattended,
       });
 
@@ -578,6 +590,9 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         return toolExecution(label, authorization.result, !authorization.failed);
       }
 
+      // Authorised: the dispatcher's row turns to running and the tool's timer
+      // starts now, never during the approval wait above.
+      opts?.onAuthorized?.();
       const startedAt = Date.now();
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);

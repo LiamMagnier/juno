@@ -306,6 +306,14 @@
     "ClientToolDetail.resultChars": "native",
     "ClientToolDetail.status": "native",
     "ClientToolDetail.durationMs": "native",
+    "ClientToolDetail.callId": { "status": "planned", "note": "The Alevr call id that pairs a live update with its row (src/lib/tools/call-ids.ts). Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.phase": { "status": "planned", "note": "Live only: queued / awaiting_approval / running from the dispatcher; never read back from a persisted row. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.timeoutMs": { "status": "planned", "note": "The running call's bound, for 'up to 2 min'. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.progress": { "status": "planned", "note": "Live only: a running call's last lines and byte counts, at most once a second. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.outcome": { "status": "planned", "note": "The typed outcome beside the legacy status, outcome_unknown included. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.errorCode": { "status": "planned", "note": "Why a call did not succeed (invalid_args, unknown_tool, timeout, cancelled…). Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.run": { "status": "planned", "note": "Execution tools: the run record (context, exit code, produced files) filled by the execution lane. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
+    "ClientToolDetail.cached": { "status": "planned", "note": "A repeated identical call answered from the turn's cache; nothing ran twice. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
 
     "ClientMemoryReceipt.id": "native",
     "ClientMemoryReceipt.content": "native",
@@ -428,6 +436,30 @@
     },
     "ClientActivityEvent.fact": {
       "note": "The rework's typed timeline: a fact the run established."
+    },
+    "ClientToolDetail.callId": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.phase": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.timeoutMs": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.outcome": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.errorCode": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.cached": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.run": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
+    },
+    "ClientToolDetail.progress": {
+      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
     }
   },
   "swift": {
