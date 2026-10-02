@@ -275,7 +275,7 @@
   .alv-hero { height: auto; }
   .alv-hero-pin { position: relative; height: auto; overflow: hidden; padding-bottom: 32px; }
   .alv-hero-copy { position: relative; }
-  .alv-hero-construction { top: 300px; }
+  .alv-hero-construction { top: 600px; }
   .alv-hero-stage { position: relative; margin-top: 72px; transform: none; }
   .alv-hero-stage > div { transform: none; }
   .alv-hero-veil { display: none; }

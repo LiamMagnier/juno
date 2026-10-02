@@ -53,7 +53,12 @@ function Placed({ agent, progress, still }: { agent: Agent; progress: MotionValu
 
 export function OrbitScene() {
   const ref = React.useRef<HTMLDivElement>(null);
-  const reduce = useReducedMotion();
+  // The server cannot know the reader's motion setting; branch only after mount
+  // so the first client render matches the HTML.
+  const prefersReduced = useReducedMotion();
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  const reduce = mounted && !!prefersReduced;
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "center center"] });
   const draw = useTransform(scrollYProgress, (v) => Math.min(1, Math.max(0, v * 1.25)));
   return (
@@ -67,7 +72,7 @@ export function OrbitScene() {
         <div className="alv-orbit-you">
           <span className="alv-you-disc"><span className="alv-avatar" style={{ width: 44, height: 44, fontSize: 14 }}>You</span></span>
         </div>
-        {AGENTS.map((a) => <Placed key={a.name} agent={a} progress={draw} still={!!reduce} />)}
+        {AGENTS.map((a) => <Placed key={a.name} agent={a} progress={draw} still={reduce} />)}
       </div>
     </LazyMotion>
   );
