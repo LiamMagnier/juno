@@ -8,7 +8,9 @@
  * - YOUR light and ALEVR'S light, each with an amplitude (how bright) and a
  *   lift (how far it spreads along the edge and blooms out). Each follows its
  *   OWN audio — the microphone and the reply as heard — so talking over Alevr
- *   shows two voices, not one blended line.
+ *   shows two voices, not one blended line. Brightness follows the syllable
+ *   (45 ms attack, 150 ms release); the extent follows the phrase (80 / 300
+ *   ms), so the light articulates without its shape twitching.
  * - A rest pose for whoever holds the floor: a faint, still light at the
  *   bottom of the composer. It does not breathe. Silence is perfectly still,
  *   and a still frame is never redrawn.
@@ -136,8 +138,12 @@ export function gateLevel(raw: number): number {
 /* ———————————————————————————— state ———————————————————————————— */
 
 export interface GlowState {
+  /** Brightness envelopes: they follow the syllables. */
   envYou: number;
   envAlevr: number;
+  /** Extent envelopes: slower, they follow the phrase, so the light's shape stays calm. */
+  liftYou: number;
+  liftAlevr: number;
   /** Rest weights: who holds the floor, muted, thinking. */
   wYou: number;
   wAlevr: number;
@@ -150,7 +156,7 @@ export interface GlowState {
 }
 
 export function createGlowState(): GlowState {
-  return { envYou: 0, envAlevr: 0, wYou: 0, wAlevr: 0, wMuted: 0, wThink: 0, on: 0, thinkT: -1 };
+  return { envYou: 0, envAlevr: 0, liftYou: 0, liftAlevr: 0, wYou: 0, wAlevr: 0, wMuted: 0, wThink: 0, on: 0, thinkT: -1 };
 }
 
 /** Exponential approach that lands on the target within `dur` (≈95% at dur, snapped below eps). */
@@ -161,8 +167,8 @@ function approach(value: number, target: number, dt: number, dur: number): numbe
 }
 
 /** An envelope: fast attack, slower release, snapped to exactly 0 in silence. */
-function envelope(value: number, target: number, dt: number): number {
-  const tau = target > value ? 0.045 : 0.15;
+function envelope(value: number, target: number, dt: number, attack = 0.045, release = 0.15): number {
+  const tau = target > value ? attack : release;
   const next = target + (value - target) * Math.exp(-dt / tau);
   if (target === 0 && next < 0.004) return 0;
   return Math.abs(next - target) < 1e-4 ? target : next;
@@ -186,6 +192,8 @@ export function stepGlow(state: GlowState, input: GlowInput, dtIn: number): Glow
   const alevrTarget = reduced || mode === "off" ? 0 : gateLevel(input.alevr);
   state.envYou = envelope(state.envYou, youTarget, dt);
   state.envAlevr = envelope(state.envAlevr, alevrTarget, dt);
+  state.liftYou = envelope(state.liftYou, youTarget, dt, 0.08, 0.3);
+  state.liftAlevr = envelope(state.liftAlevr, alevrTarget, dt, 0.08, 0.3);
 
   if (mode === "thinking") state.thinkT = state.thinkT < 0 ? 0 : state.thinkT + dt;
   else if (state.wThink === 0) state.thinkT = -1;
@@ -193,11 +201,11 @@ export function stepGlow(state: GlowState, input: GlowInput, dtIn: number): Glow
   return state;
 }
 
-function voiceFrame(rest: number, env: number, on: number, reduced: boolean): GlowVoiceFrame {
+function voiceFrame(rest: number, env: number, lift: number, on: number, reduced: boolean): GlowVoiceFrame {
   if (reduced) return { amp: on * rest * STATIC_AMP, lift: rest * STATIC_LIFT };
   const restAmp = REST_AMP * rest;
   const shaped = env > 0 ? Math.pow(env, 0.8) : 0;
-  return { amp: on * (restAmp + (1 - restAmp) * shaped), lift: env };
+  return { amp: on * (restAmp + (1 - restAmp) * shaped), lift };
 }
 
 /**
@@ -229,8 +237,8 @@ export function handoffBeams(t: number): [GlowBeamFrame, GlowBeamFrame] {
 /** The frame the renderer draws for `state`. */
 export function glowFrame(state: GlowState, reduced: boolean): GlowFrame {
   const on = state.on;
-  const you = voiceFrame(state.wYou, state.envYou, on, reduced);
-  const alevr = voiceFrame(state.wAlevr, state.envAlevr, on, reduced);
+  const you = voiceFrame(state.wYou, state.envYou, state.liftYou, on, reduced);
+  const alevr = voiceFrame(state.wAlevr, state.envAlevr, state.liftAlevr, on, reduced);
   let beams: [GlowBeamFrame, GlowBeamFrame];
   if (state.wThink === 0) {
     beams = [

@@ -237,8 +237,11 @@ void main() {
     acc.rgb = min(acc.rgb, vec3(acc.a));
   }
   if (acc.a > 0.004) {
+    // Dither half a step either way so soft gradients do not band; keep the
+    // colour premultiplied (never brighter than its alpha).
     float n = (hash(gl_FragCoord.xy) - 0.5) / 255.0;
-    acc = clamp(acc + vec4(n, n, n, uAdditive > 0.5 ? n : n * 0.5), 0.0, 1.0);
+    acc = clamp(acc + vec4(n), 0.0, 1.0);
+    acc.rgb = min(acc.rgb, vec3(acc.a));
   }
   gl_FragColor = acc;
 }
