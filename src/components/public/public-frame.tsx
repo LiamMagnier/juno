@@ -3,11 +3,14 @@ import { ContinuumMark } from "@/components/brand/continuum-mark";
 import Link from "next/link";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { BrandTone } from "@/components/brand/brand-tone";
+import { Construction } from "@/components/home/construction";
+import "@/components/home/alv-base.css";
 
-export function PublicBrand({ height = 26 }: { height?: number }) {
+export function PublicBrand({ height = 26, tone, className = "" }: { height?: number; tone?: BrandTone; className?: string }) {
   return (
-    <Link href="/" aria-label={`${PRODUCT_NAME} home`} className="inline-flex min-h-11 items-center rounded-lg">
-      <AlevrLockup height={height} decorative />
+    <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={`inline-flex min-h-11 items-center rounded-lg ${className}`}>
+      <AlevrLockup height={height} tone={tone} decorative />
     </Link>
   );
 }
@@ -17,19 +20,23 @@ export function PublicFrame({ children, className = "" }: { children: React.Reac
   return <div className={`alevr-public min-h-dvh bg-background text-foreground ${className}`}>{children}</div>;
 }
 
+/**
+ * Recovery and status pages (404, offline, gone links, computer entry). The
+ * construction sits behind the message as it does behind the homepage hero, so
+ * an error still looks like Alevr; the copy and the way back stay first.
+ */
 export function PublicState({ title, description, code, children }: { title: string; description: string; code?: string; children?: React.ReactNode }) {
   return (
-    <PublicFrame className="alevr-public-state">
+    <PublicFrame className="alevr-public-state alv">
       <header className="alevr-access-header"><PublicBrand /><PublicThemeToggle /></header>
-      <main className="alevr-state-layout">
-        <div className="alevr-state-identifier" aria-hidden="true">
-          {code ? <span>{code}</span> : <ContinuumMark size={132} />}
-        </div>
-        <div className="alevr-state-copy">
+      <main className="alv-state">
+        <div className="alv-state-construction" aria-hidden="true"><Construction ticks={false} /></div>
+        <div className="alv-state-copy">
+          <div className="alv-state-identifier alv-enter" aria-hidden="true">{code ? <span>{code}</span> : <ContinuumMark size={56} />}</div>
           {code && <p className="sr-only">Error {code}</p>}
-          <h1 className="font-serif">{title}</h1>
-          <p className="mt-6 max-w-md text-pretty text-body-lg leading-relaxed text-muted-foreground">{description}</p>
-          {children && <div className="alevr-state-actions mt-9 flex flex-wrap items-center gap-3">{children}</div>}
+          <h1 className="alv-display alv-enter" style={{ ["--i" as string]: 1 }}>{title}</h1>
+          <p className="alv-lede alv-enter" style={{ ["--i" as string]: 2 }}>{description}</p>
+          {children && <div className="alv-state-actions alv-enter" style={{ ["--i" as string]: 3 }}>{children}</div>}
         </div>
       </main>
       <footer className="alevr-state-footer text-ui text-muted-foreground"><span>Go further.</span><Link href="/" className="inline-flex min-h-11 items-center rounded-lg hover:text-foreground">Alevr home</Link></footer>

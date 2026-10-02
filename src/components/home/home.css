@@ -1,73 +1,4 @@
-/*
- * Alevr homepage. One theme family (follows the site theme), one accent
- * (presence blue, used only for trajectories and the one live object in a
- * frame), one radius ladder: control 8, field 10, card 12, window 16, slab 28.
- * Product replicas use the V3 hexes from docs/rework/brand/BRAND_IDENTITY.md
- * so they read as the app, not as a marketing approximation.
- */
-.alv {
-  --alv-ink: hsl(var(--foreground));
-  --alv-sub: hsl(var(--muted-foreground));
-  --alv-line: hsl(var(--foreground) / .12);
-  --alv-hair: hsl(var(--foreground) / .07);
-  --alv-presence: #2d49c9;
-  --alv-presence-soft: rgb(45 73 201 / .1);
-  --alv-frame: #f3f4f5;
-  --alv-panel: #fcfcfd;
-  --alv-surface: #ffffff;
-  --alv-card: #f5f6f7;
-  --alv-well: #eff0f1;
-  --alv-bubble: #eff0f1;
-  --alv-attention: #8f5406;
-  --alv-add: #1b7a3a;
-  --alv-del: #b3261e;
-  --alv-shadow: 0 1px 1px rgb(25 27 30 / .04), 0 24px 64px -24px rgb(25 27 30 / .22), 0 64px 120px -48px rgb(25 27 30 / .18);
-  --alv-ease: cubic-bezier(.16, 1, .3, 1);
-  --alv-ease-out: cubic-bezier(.33, 1, .68, 1);
-  --alv-gutter: 64px;
-  --alv-max: 1312px;
-  background: hsl(var(--background));
-  color: var(--alv-ink);
-}
-.dark .alv {
-  --alv-line: hsl(var(--foreground) / .14);
-  --alv-hair: hsl(var(--foreground) / .08);
-  --alv-presence: #97a6e6;
-  --alv-presence-soft: rgb(151 166 230 / .12);
-  --alv-frame: #111213;
-  --alv-panel: #18191b;
-  --alv-surface: #222326;
-  --alv-card: #1f2023;
-  --alv-well: #2d2e31;
-  --alv-bubble: #252629;
-  --alv-attention: #d6a865;
-  --alv-add: #74c68a;
-  --alv-del: #f0928a;
-  --alv-shadow: 0 1px 1px rgb(0 0 0 / .3), 0 24px 64px -24px rgb(0 0 0 / .6), 0 64px 120px -48px rgb(0 0 0 / .5);
-}
-
-.alv-col { width: 100%; max-width: calc(var(--alv-max) + var(--alv-gutter) * 2); margin: 0 auto; padding-left: var(--alv-gutter); padding-right: var(--alv-gutter); }
-
-/* Type */
-.alv-display { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; letter-spacing: -.035em; line-height: .98; font-optical-sizing: auto; }
-.alv-h2 { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; font-size: clamp(40px, 5.2vw, 76px); line-height: 1.02; letter-spacing: -.032em; text-wrap: balance; }
-.alv-h3 { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; font-size: clamp(24px, 2.2vw, 30px); line-height: 1.15; letter-spacing: -.015em; }
-.alv-lede { font-size: 18px; line-height: 28px; color: var(--alv-sub); max-width: 34em; text-wrap: pretty; }
-.alv-body { font-size: 15px; line-height: 24px; color: var(--alv-sub); text-wrap: pretty; }
-.alv-annot { font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; line-height: 16px; letter-spacing: .02em; color: var(--alv-sub); font-variant-numeric: tabular-nums; }
-.alv-caption { font-size: 13px; line-height: 20px; color: var(--alv-sub); }
-
-/* Actions */
-.alv-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.alv-link { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--alv-ink); text-decoration: none; border-radius: 6px; }
-.alv-link svg { transition: transform 220ms var(--alv-ease); }
-.alv-link:hover svg { transform: translateX(3px); }
-.alv-link:focus-visible { outline: 2px solid var(--alv-ink); outline-offset: 4px; }
-.alv-ghost-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--alv-line); background: transparent; color: var(--alv-sub); font-size: 13px; cursor: pointer; transition: color 120ms, background-color 120ms, transform 70ms; }
-.alv-ghost-btn:hover { color: var(--alv-ink); background: hsl(var(--foreground) / .04); }
-.alv-ghost-btn:active { transform: scale(.97); }
-.alv-ghost-btn:focus-visible { outline: 2px solid var(--alv-ink); outline-offset: 2px; }
-
+/* Alevr homepage sections. Tokens, type and the construction live in alv-base.css. */
 /* ───────────────────────── Hero ───────────────────────── */
 .alv-hero { position: relative; height: 240vh; }
 .alv-hero-pin { position: sticky; top: 0; height: 100dvh; overflow: hidden; }
@@ -82,23 +13,6 @@
 .alv-hero-stage { transform: translateY(72vh); }
 .alv-hero-stage > div { width: 100%; max-width: 1180px; transform-origin: 50% 0; transform: scale(.9); }
 .alv-hero-veil { position: absolute; inset: auto 0 0 0; height: 30vh; background: linear-gradient(to bottom, transparent, hsl(var(--background))); z-index: 1; pointer-events: none; }
-
-/* The construction: hairline orbits, one trajectory. */
-.alv-orbit { fill: none; stroke: var(--alv-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.alv-orbit-faint { stroke: var(--alv-hair); }
-.alv-axis { stroke: var(--alv-hair); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.alv-trajectory { fill: none; stroke: var(--alv-presence); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linecap: round; }
-.alv-node { fill: var(--alv-presence); }
-.alv-node-ring { fill: none; stroke: var(--alv-presence); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .35; }
-.alv-tick { fill: var(--alv-sub); font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .02em; }
-@media (prefers-reduced-motion: no-preference) {
-  .alv-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: alv-draw 2200ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 110ms + 200ms); }
-  .alv-fade-late { opacity: 0; animation: alv-fade 900ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 110ms + 1300ms); }
-  .alv-enter { opacity: 0; transform: translateY(24px); animation: alv-enter 1000ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
-}
-@keyframes alv-draw { to { stroke-dashoffset: 0; } }
-@keyframes alv-fade { to { opacity: 1; } }
-@keyframes alv-enter { to { opacity: 1; transform: none; } }
 
 /* ───────────────────── Product window replica ───────────────────── */
 .alv-window { position: relative; display: grid; grid-template-columns: 236px minmax(0, 1fr); height: min(720px, calc(100dvh - 168px)); min-height: 560px; border-radius: 16px; background: var(--alv-frame); box-shadow: var(--alv-shadow); outline: 1px solid var(--alv-hair); overflow: hidden; text-align: left; font-size: 13px; color: var(--alv-ink); }

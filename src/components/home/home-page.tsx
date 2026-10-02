@@ -14,6 +14,7 @@ import { Bento } from "./bento";
 import { Aleph } from "./aleph";
 import { Construction } from "./construction";
 import "@/components/landing/overview.css";
+import "./alv-base.css";
 import "./home.css";
 
 /**

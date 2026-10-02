@@ -6,6 +6,8 @@ import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingPhoneMenu } from "@/components/landing/phone-menu";
 import { LandingColumn } from "@/components/landing/section";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+// The chrome sits on the site column; every page that renders it needs the column.
+import "./overview.css";
 
 /**
  * The public site's chrome: one bar and one footer for every page a signed-out

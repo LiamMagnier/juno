@@ -9,6 +9,8 @@ import { downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app
 import { staggerDelay } from "@/lib/motion";
 import { formatBytes } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { Construction } from "@/components/home/construction";
+import "@/components/home/alv-base.css";
 
 /**
  * The download page's body, fed the release feed by the route (app/download)
@@ -38,7 +40,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
   const blocked = Boolean(mac?.available && mac.notarized === false);
 
   return (
-    <div className="alevr-public relative min-h-dvh bg-background text-foreground">
+    <div className="alevr-public alv relative min-h-dvh bg-background text-foreground">
       <SiteHeader />
 
       <main>
@@ -176,8 +178,9 @@ function OtherCell({
  * server-only, and this page is also rendered by the feed tests.
  */
 function MacStage() {
-  return <div className="relative h-full min-h-80 overflow-hidden rounded-menu bg-muted" aria-hidden="true">
-    <Image src="/brand/public-aperture.webp" alt="" fill priority sizes="(max-width:767px) 100vw, 40vw" className="object-cover" />
+  return <div className="alv-download-stage" aria-hidden="true">
+    <div className="alv-download-construction"><Construction /></div>
+    <Image src="/brand/app-icon-mac.png" alt="" width={168} height={168} priority className="alv-download-icon" />
   </div>;
 }
 

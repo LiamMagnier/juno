@@ -1,0 +1,138 @@
+/*
+ * Alevr public foundation (homepage, access, recovery). One theme family (follows the site theme), one accent
+ * (presence blue, used only for trajectories and the one live object in a
+ * frame), one radius ladder: control 8, field 10, card 12, window 16, slab 28.
+ * Product replicas use the V3 hexes from docs/rework/brand/BRAND_IDENTITY.md
+ * so they read as the app, not as a marketing approximation.
+ */
+.alv {
+  --alv-ink: hsl(var(--foreground));
+  --alv-sub: hsl(var(--muted-foreground));
+  --alv-line: hsl(var(--foreground) / .12);
+  --alv-hair: hsl(var(--foreground) / .07);
+  --alv-presence: #2d49c9;
+  --alv-presence-soft: rgb(45 73 201 / .1);
+  --alv-frame: #f3f4f5;
+  --alv-panel: #fcfcfd;
+  --alv-surface: #ffffff;
+  --alv-card: #f5f6f7;
+  --alv-well: #eff0f1;
+  --alv-bubble: #eff0f1;
+  --alv-attention: #8f5406;
+  --alv-add: #1b7a3a;
+  --alv-del: #b3261e;
+  --alv-shadow: 0 1px 1px rgb(25 27 30 / .04), 0 24px 64px -24px rgb(25 27 30 / .22), 0 64px 120px -48px rgb(25 27 30 / .18);
+  --alv-ease: cubic-bezier(.16, 1, .3, 1);
+  --alv-ease-out: cubic-bezier(.33, 1, .68, 1);
+  --alv-gutter: 64px;
+  --alv-max: 1312px;
+  background: hsl(var(--background));
+  color: var(--alv-ink);
+}
+.dark .alv {
+  --alv-line: hsl(var(--foreground) / .14);
+  --alv-hair: hsl(var(--foreground) / .08);
+  --alv-presence: #97a6e6;
+  --alv-presence-soft: rgb(151 166 230 / .12);
+  --alv-frame: #111213;
+  --alv-panel: #18191b;
+  --alv-surface: #222326;
+  --alv-card: #1f2023;
+  --alv-well: #2d2e31;
+  --alv-bubble: #252629;
+  --alv-attention: #d6a865;
+  --alv-add: #74c68a;
+  --alv-del: #f0928a;
+  --alv-shadow: 0 1px 1px rgb(0 0 0 / .3), 0 24px 64px -24px rgb(0 0 0 / .6), 0 64px 120px -48px rgb(0 0 0 / .5);
+}
+
+.alv-col { width: 100%; max-width: calc(var(--alv-max) + var(--alv-gutter) * 2); margin: 0 auto; padding-left: var(--alv-gutter); padding-right: var(--alv-gutter); }
+
+/* Type */
+.alv-display { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; letter-spacing: -.035em; line-height: .98; font-optical-sizing: auto; }
+.alv-h2 { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; font-size: clamp(40px, 5.2vw, 76px); line-height: 1.02; letter-spacing: -.032em; text-wrap: balance; }
+.alv-h3 { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; font-size: clamp(24px, 2.2vw, 30px); line-height: 1.15; letter-spacing: -.015em; }
+.alv-lede { font-size: 18px; line-height: 28px; color: var(--alv-sub); max-width: 34em; text-wrap: pretty; }
+.alv-body { font-size: 15px; line-height: 24px; color: var(--alv-sub); text-wrap: pretty; }
+.alv-annot { font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; line-height: 16px; letter-spacing: .02em; color: var(--alv-sub); font-variant-numeric: tabular-nums; }
+.alv-caption { font-size: 13px; line-height: 20px; color: var(--alv-sub); }
+
+/* Actions */
+.alv-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.alv-link { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--alv-ink); text-decoration: none; border-radius: 6px; }
+.alv-link svg { transition: transform 220ms var(--alv-ease); }
+.alv-link:hover svg { transform: translateX(3px); }
+.alv-link:focus-visible { outline: 2px solid var(--alv-ink); outline-offset: 4px; }
+.alv-ghost-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--alv-line); background: transparent; color: var(--alv-sub); font-size: 13px; cursor: pointer; transition: color 120ms, background-color 120ms, transform 70ms; }
+.alv-ghost-btn:hover { color: var(--alv-ink); background: hsl(var(--foreground) / .04); }
+.alv-ghost-btn:active { transform: scale(.97); }
+.alv-ghost-btn:focus-visible { outline: 2px solid var(--alv-ink); outline-offset: 2px; }
+
+/* The construction: hairline orbits, one trajectory. */
+.alv-orbit { fill: none; stroke: var(--alv-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.alv-orbit-faint { stroke: var(--alv-hair); }
+.alv-axis { stroke: var(--alv-hair); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.alv-trajectory { fill: none; stroke: var(--alv-presence); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.alv-node { fill: var(--alv-presence); }
+.alv-node-ring { fill: none; stroke: var(--alv-presence); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .35; }
+.alv-tick { fill: var(--alv-sub); font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .02em; }
+@media (prefers-reduced-motion: no-preference) {
+  .alv-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: alv-draw 2200ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 110ms + 200ms); }
+  .alv-fade-late { opacity: 0; animation: alv-fade 900ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 110ms + 1300ms); }
+  .alv-enter { opacity: 0; transform: translateY(24px); animation: alv-enter 1000ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
+}
+@keyframes alv-draw { to { stroke-dashoffset: 0; } }
+@keyframes alv-fade { to { opacity: 1; } }
+@keyframes alv-enter { to { opacity: 1; transform: none; } }
+
+
+/* ───────────────────── Access (sign in, sign up, recovery) ───────────────────── */
+.alv-access { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 13fr); min-height: 100dvh; }
+.alv-access-panel { position: sticky; top: 0; height: calc(100dvh - 24px); margin: 12px 0 12px 12px; border-radius: 24px; background: #111213; color: #e8e9eb; overflow: hidden; isolation: isolate; display: flex; flex-direction: column; justify-content: space-between; padding: 24px 40px 48px;
+  --alv-line: rgb(255 255 255 / .13); --alv-hair: rgb(255 255 255 / .07); --alv-presence: #97a6e6; --alv-sub: #95979c; }
+.alv-access-panel::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(70% 50% at 80% 10%, rgb(151 166 230 / .13), transparent 70%); }
+.alv-access-panel > a:focus-visible { outline-color: #e8e9eb; }
+.alv-access-construction { position: absolute; left: 50%; top: 46%; width: 190%; aspect-ratio: 3 / 2; translate: -50% -50%; z-index: -1; pointer-events: none; }
+.alv-access-construction svg { width: 100%; height: 100%; overflow: visible; }
+.alv-access-promise .alv-display { font-size: clamp(56px, 5.6vw, 88px); }
+.alv-access-promise p:last-child { margin-top: 16px; font-size: 16px; line-height: 24px; color: #b4b6ba; max-width: 24em; }
+.alv-access-main { display: flex; flex-direction: column; min-height: 100dvh; padding: 0 56px; }
+.alv-access-head { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 24px 0; }
+.alv-access-phone-brand { display: none; }
+.alv-access-main .alevr-auth-form { margin: auto; padding: 40px 0; }
+.alv-access-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 24px; padding: 16px 0 20px; border-top: 1px solid hsl(var(--border)); }
+@media (prefers-reduced-motion: no-preference) {
+  .alv-access-promise { animation: alv-enter 1000ms var(--alv-ease) 500ms both; }
+  .alv-access-main .alevr-auth-form { animation: alv-enter 800ms var(--alv-ease) 120ms both; }
+}
+@media (max-width: 1023px) {
+  .alv-access { grid-template-columns: minmax(0, 1fr); }
+  .alv-access-panel { display: none; }
+  .alv-access-phone-brand { display: inline-flex; margin-right: auto; }
+  .alv-access-main { padding: 0 24px; }
+  .alv-access-head { justify-content: space-between; padding: 12px 0; }
+  .alv-access-foot { justify-content: center; text-align: center; }
+}
+
+/* ───────────────────── Recovery states ───────────────────── */
+.alv-state { position: relative; flex: 1; display: grid; place-items: center; overflow: hidden; padding: 48px 24px 96px; }
+.alv-state-construction { position: absolute; left: 50%; top: 74%; width: max(1300px, 110vw); aspect-ratio: 3 / 2; translate: -50% -50%; z-index: 0; pointer-events: none; }
+.alv-state-construction svg { width: 100%; height: 100%; overflow: visible; }
+.alv-state-copy { position: relative; z-index: 1; display: grid; justify-items: center; text-align: center; max-width: 640px; }
+.alv-state-identifier { font-family: var(--font-serif), Newsreader, serif; font-size: 15px; line-height: 20px; letter-spacing: .02em; color: var(--alv-sub); font-variant-numeric: tabular-nums; margin-bottom: 20px; }
+.alv-state-identifier span { display: inline-block; padding: 0 0 2px; border-bottom: 1px solid var(--alv-line); }
+.alv-state-copy h1 { font-size: clamp(44px, 5.4vw, 72px); line-height: 1.02; }
+.alv-state-copy .alv-lede { margin-top: 20px; }
+.alv-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 36px; }
+.alv-state-actions :is(a, button) { min-height: 48px; }
+
+/* ───────────────────── Download stage ───────────────────── */
+.alv-download-stage { position: relative; height: 100%; min-height: 320px; border-radius: 24px; background: #111213; overflow: hidden; isolation: isolate; display: grid; place-items: center;
+  --alv-line: rgb(255 255 255 / .13); --alv-hair: rgb(255 255 255 / .07); --alv-presence: #97a6e6; --alv-sub: #95979c; }
+.alv-download-stage::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(55% 45% at 50% 50%, rgb(151 166 230 / .12), transparent 70%); }
+.alv-download-construction { position: absolute; left: 50%; top: 50%; width: 220%; aspect-ratio: 3 / 2; translate: -50% -50%; z-index: -1; }
+.alv-download-construction svg { width: 100%; height: 100%; overflow: visible; }
+.alv-download-icon { width: clamp(112px, 12vw, 168px); height: auto; filter: drop-shadow(0 24px 40px rgb(0 0 0 / .5)); }
+@media (prefers-reduced-motion: no-preference) {
+  .alv-download-icon { animation: alv-enter 1100ms var(--alv-ease) 400ms both; }
+}
