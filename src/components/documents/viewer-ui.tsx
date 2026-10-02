@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Loader2, MessageCircleQuestion, Sparkles } from "@/components/ui/icons";
+import { Info, Loader2, MessageCircleQuestion } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -53,7 +53,7 @@ export function SelectionActions({
         <>
           <span aria-hidden className="h-4 w-px bg-border/70" />
           <Button type="button" variant="ghost" size="sm" onClick={onExplain} className={ACTION}>
-            <Sparkles className="size-3.5" aria-hidden />
+            <Info className="size-3.5" aria-hidden />
             Explain
           </Button>
         </>

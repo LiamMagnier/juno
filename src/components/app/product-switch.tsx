@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion, type MotionValue } from "framer-motion";
-import { Sparkles } from "@/components/ui/icons";
+import { Lock } from "@/components/ui/icons";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
 import { Kbd } from "@/components/ui/kbd";
@@ -314,10 +314,10 @@ function Segment({
               />
             </motion.span>
           )}
-          {/* A locked surface is SHOWN with a sparkle in place of its mark, so a
+          {/* A locked surface is SHOWN with a lock in place of its mark, so a
               gated cell is exactly as wide as an open one. */}
           {locked ? (
-            <Sparkles className="relative size-4 shrink-0" aria-hidden="true" />
+            <Lock className="relative size-4 shrink-0" aria-hidden="true" />
           ) : (
             <SidebarMotionIcon kind={product.kind} className="relative size-4 shrink-0" />
           )}
@@ -375,10 +375,10 @@ function RailItem({
               rhythm from the products down to the footer — which the comment
               claimed while the box passed no size, letting SidebarMotionIcon
               fall back to its own `size-4` (16px) directly above nav glyphs at
-              18. `[&_svg]:size-4.5` is what makes the sentence true. */}
-          <span className="flex size-5 items-center justify-center [&_svg]:size-4.5">
+              18. `[&_svg]:size-4` is what makes the sentence true. */}
+          <span className="flex size-5 items-center justify-center [&_svg]:size-4">
             {locked ? (
-              <Sparkles aria-hidden="true" />
+              <Lock aria-hidden="true" />
             ) : (
               <SidebarMotionIcon kind={product.kind} />
             )}

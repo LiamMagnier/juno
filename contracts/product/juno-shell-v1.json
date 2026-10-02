@@ -71,8 +71,9 @@
       "id": "customize",
       "label": "Customize",
       "href": "/code/customize",
-      "kind": "settings",
-      "icon": "AppIcons.settings"
+      "kind": "customize",
+      "icon": "SlidersHorizontal",
+      "nativeIcon": "settings"
     },
     {
       "id": "pulls",
@@ -113,8 +114,8 @@
       "id": "accountCustomize",
       "label": "Customize",
       "href": "/customize",
-      "kind": "settings",
-      "icon": "AppIcons.settings",
+      "kind": "customize",
+      "icon": "SlidersHorizontal",
       "nativeIcon": "settings"
     }
   ],
@@ -125,7 +126,8 @@
           "id": "new",
           "label": "New chat",
           "kind": "new",
-          "icon": "AppIcons.new"
+          "icon": "MessageSquarePlus",
+          "nativeIcon": "new"
         },
         {
           "id": "search",
@@ -181,8 +183,9 @@
         {
           "id": "new",
           "label": "New session",
-          "kind": "new",
-          "icon": "AppIcons.new"
+          "kind": "new-session",
+          "icon": "Plus",
+          "nativeIcon": "new"
         },
         {
           "id": "search",

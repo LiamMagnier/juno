@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import { Menu, Plus } from "@/components/ui/icons";
+import { Menu, MessageSquarePlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import { productOf } from "@/components/app/product-switch";
@@ -41,7 +41,7 @@ const SIDEBAR_MAX = 336;
  * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
  * starts.
  */
-const SIDEBAR_DEFAULT = 288;
+const SIDEBAR_DEFAULT = 260;
 const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /code is the one navigation the user cannot absorb as
@@ -636,14 +636,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               pays nothing for it. */}
           <VerifyEmailBanner />
 
-          {/* Mobile navigation stays out of a full-width toolbar: each action is
-              a self-contained circular surface, so the page background continues
-              through the top of the screen. */}
-          <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
+          {/* The phone's bar (the V3 gallery's MobileBar): plain 44 px icon
+              buttons in the third ink on the page itself, no bordered discs,
+              so the content's ground runs to the top of the screen. */}
+          <div className="relative z-40 flex shrink-0 items-center gap-1 px-2 pb-1 pt-[calc(0.5rem+env(safe-area-inset-top))] md:hidden">
             <Button
               variant="ghost"
               size="icon"
-              className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
             >
@@ -653,12 +653,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               title={mobileTitle}
               animate={inConversation && activeConversation?.titleSource === "ai"}
               className="min-w-0 flex-1 px-1"
-              textClassName="text-body-lg font-semibold tracking-tight text-foreground"
+              textClassName="text-body font-medium text-foreground"
             />
             <Button
               variant="ghost"
               size="icon"
-              className="group ml-auto size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              className="jicon-trigger ml-auto size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
               aria-label="Search chats and projects"
             >
@@ -667,14 +667,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => {
                 router.push("/chat");
                 window.dispatchEvent(new CustomEvent("juno:new-chat"));
               }}
               aria-label="New chat"
             >
-              <Plus className="size-5" />
+              <MessageSquarePlus className="size-5" />
             </Button>
           </div>
 
