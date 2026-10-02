@@ -614,6 +614,14 @@ const ORBIT_A = 9.375;
 const ORBIT_B = n3(ORBIT_A * 0.618);
 const ORBIT_TILT = -24;
 const ORBIT_FRONT = 0.9;
+/**
+ * The optical centre: the open break takes the right tip, so drawn about the
+ * grid's centre the ink would sit half a unit left and a third of a unit high
+ * (its box runs 3.12 to 19.87 by 5.48 to 17.87). The ellipse is centred where
+ * the ink is centred.
+ */
+const ORBIT_CX = 12.5;
+const ORBIT_CY = 12.33;
 /** The 16 px line in construction units (1.25 px at 16 is 1.875 keyline units). */
 const LINE16 = 1.667;
 /** ds/dt of an ellipse, units per degree of its parameter. */
@@ -633,8 +641,8 @@ const orbitArcs = (): string[] => {
   const closeFrom = ellWalk(ORBIT_A, ORBIT_B, 175, close / 2, -1);
   const closeTo = ellWalk(ORBIT_A, ORBIT_B, 175, close / 2, 1);
   return [
-    ellArc(12, 12, n3(ORBIT_A * ORBIT_FRONT), n3(ORBIT_B * ORBIT_FRONT), ORBIT_TILT, openTo, closeFrom),
-    ellArc(12, 12, ORBIT_A, ORBIT_B, ORBIT_TILT, closeTo, openFrom + 360),
+    ellArc(ORBIT_CX, ORBIT_CY, n3(ORBIT_A * ORBIT_FRONT), n3(ORBIT_B * ORBIT_FRONT), ORBIT_TILT, openTo, closeFrom),
+    ellArc(ORBIT_CX, ORBIT_CY, ORBIT_A, ORBIT_B, ORBIT_TILT, closeTo, openFrom + 360),
   ];
 };
 
@@ -812,6 +820,9 @@ export const ICONS = {
   }),
   orbit: I({
     group: "Navigation",
+    // Optical size: an open, tilted ellipse reads shorter and lighter than Code's brackets beside it. 1.08 is as far as
+    // the live area allows (the ink then spans 1.83 to 22.17 keyline units); at 16 px it stands 11.3 px to Code's 12.5.
+    optical: 1.08,
     elements: orbitArcs().map((d) => p(d)),
     motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
   }),
