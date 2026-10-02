@@ -84,6 +84,20 @@ test("compatibility needs both live round trips, each with a date and evidence",
   assert.equal(regenerated.models.find((m) => m.id === id)?.compatible, true);
 });
 
+test("a verified cell without its probe version never makes a model compatible", () => {
+  const id = record.models[0].id;
+  const unstamped = recordModelVerdict(
+    recordModelVerdict(record, id, "roundTrip", { verdict: "verified", date: "2026-10-02", evidence: "probe:run_1" }),
+    id,
+    "runCodeE2E",
+    { verdict: "verified", date: "2026-10-02", evidence: "ToolRun cl_1" },
+  );
+  assert.equal(unstamped.models[0].compatible, false);
+  assert.ok(validateCoverage(unstamped, catalog()).some((p) => /without the probe version/.test(p)));
+  const forged = { ...unstamped, models: unstamped.models.map((m, i) => (i === 0 ? { ...m, compatible: true } : m)) };
+  assert.ok(validateCoverage(forged, catalog()).some((p) => /marked compatible without verified/.test(p)));
+});
+
 test("the checker catches a forged compatible flag and a missing model", () => {
   const forged = { ...record, models: record.models.map((m, i) => (i === 0 ? { ...m, compatible: true } : m)) };
   assert.ok(validateCoverage(forged, catalog()).some((p) => /marked compatible without verified/.test(p)));

@@ -200,6 +200,14 @@ export interface ToolRunView {
   finishedLater: boolean;
   /** Where the evidence came from; the legacy row is the least specific. */
   source: "typed" | "legacy";
+  /**
+   * Why an `outcome_unknown` run's end is unknown, so the sentence under it is
+   * true: `lost` when the server said so (the host lost the run, the server
+   * restarted), `reply_ended` when the stream ended with the call still open,
+   * `not_recorded` for a name-only row that never carried an ending. Null for
+   * every other phase.
+   */
+  unknownBecause: "lost" | "reply_ended" | "not_recorded" | null;
   /** The redacted call detail, when the row carried one. */
   detail: ClientToolDetail | null;
 }
@@ -513,17 +521,25 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
     phaseFromStatus(str(detailRec?.outcome, 40), errorCode) ??
     phaseFromStatus(str(detailRec?.phase, 40), errorCode);
   const typed = phase !== null || !!run;
+  let unknownBecause: ToolRunView["unknownBecause"] = phase === "outcome_unknown" ? "lost" : null;
   if (phase === null) {
     if (detail?.status === "ok") phase = "succeeded";
     else if (detail?.status === "failed") phase = "failed";
     else if (detail?.resultNote === "pending") phase = "running";
     // A stored row whose call never returned: the reply ended before the run
     // reported back. Nobody saw the end, so the end is unknown.
-    else if (detail?.resultNote === "unfinished") phase = "outcome_unknown";
+    else if (detail?.resultNote === "unfinished") {
+      phase = "outcome_unknown";
+      unknownBecause = "reply_ended";
+    }
     // No evidence either way: a name-only row (tool detail off) is never
     // updated when its call returns. Live, it is the call in flight; stored,
-    // its end is simply not known.
-    else phase = opts.live === false ? "outcome_unknown" : "running";
+    // its end was simply never written down, which is not the same claim as
+    // "the reply ended first".
+    else if (opts.live === false) {
+      phase = "outcome_unknown";
+      unknownBecause = detail ? "reply_ended" : "not_recorded";
+    } else phase = "running";
   }
   // A stored row that never reached an end: the stream is over, so the run is
   // not "still running", and whether it finished on the host is not known
@@ -531,6 +547,9 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
   // An approval nobody answered never let the run start: that is an expiry.
   if (opts.live === false && !isTerminalRunPhase(phase)) {
     phase = phase === "awaiting_approval" ? "expired" : "outcome_unknown";
+    // The reader inferred this from the stream ending, not from the server:
+    // "the server restarted" would be a claim nobody made.
+    if (phase === "outcome_unknown") unknownBecause = "reply_ended";
   }
 
   const exitCode = int(run?.exitCode);
@@ -584,6 +603,7 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
     // `finishedLate` is the execution runtime's spelling (ExecRunFacts).
     finishedLater: run?.finishedLater === true || run?.finishedLate === true,
     source: typed ? "typed" : "legacy",
+    unknownBecause,
     detail,
   };
 }
@@ -635,6 +655,7 @@ export const RUN_CONTEXT_LABEL = {
 export const RUN_REASON_LABEL = {
   restarted: `The server restarted while this ran, so ${PRODUCT_NAME} can't tell whether it finished. It was not run again.`,
   replyEnded: `The reply ended before this run reported back, so ${PRODUCT_NAME} can't tell whether it finished. It was not run again.`,
+  notRecorded: `This run's ending wasn't recorded, so ${PRODUCT_NAME} can't tell whether it finished. It was not run again.`,
   stopped: "You stopped this run before it finished.",
   stoppedDiscarded: "You stopped this run. Files it made were not kept.",
   timedOut: "It was stopped at its time limit.",
@@ -682,6 +703,15 @@ function skillLabel(view: ToolRunView, running: boolean): string {
   }
   if (name) return running ? `Reading the ${name} skill` : `Read the ${name} skill`;
   return running ? "Reading a skill" : "Read a skill";
+}
+
+/**
+ * Why an unknown run is unknown. A view built by hand (a test, the gallery)
+ * may not carry `unknownBecause`; the record's provenance then decides, as it
+ * did before the field existed.
+ */
+function unknownKind(view: Pick<ToolRunView, "unknownBecause" | "source">): NonNullable<ToolRunView["unknownBecause"]> {
+  return view.unknownBecause ?? (view.source === "typed" ? "lost" : "reply_ended");
 }
 
 /** The receipt status the shared row wears for a phase. */
@@ -818,7 +848,12 @@ export function runReceiptParts(view: ToolRunView): RunReceiptParts {
         object: skillTool ? null : lang.noun,
         status: "unknown",
         durationMs: null,
-        reason: view.source === "typed" ? RUN_REASON_LABEL.restarted : RUN_REASON_LABEL.replyEnded,
+        reason:
+          unknownKind(view) === "lost"
+            ? RUN_REASON_LABEL.restarted
+            : unknownKind(view) === "not_recorded"
+              ? RUN_REASON_LABEL.notRecorded
+              : RUN_REASON_LABEL.replyEnded,
       };
     case "denied":
       return { ...base, label: RUN_PHASE_LABEL.declined, status: "denied", durationMs: null };
@@ -851,9 +886,11 @@ export function runSummaryLine(view: ToolRunView): string {
     case "failed":
       return [parts.label, parts.figure].filter(Boolean).join(" · ");
     case "outcome_unknown":
-      return view.source === "typed"
+      return unknownKind(view) === "lost"
         ? `${RUN_PHASE_LABEL.unknown}, the server restarted while this ran`
-        : `${RUN_PHASE_LABEL.unknown}, the reply ended before this run reported back`;
+        : unknownKind(view) === "not_recorded"
+          ? `${RUN_PHASE_LABEL.unknown}, how this run ended was not recorded`
+          : `${RUN_PHASE_LABEL.unknown}, the reply ended before this run reported back`;
     case "awaiting_approval":
       return RUN_PHASE_LABEL.waiting;
     default:

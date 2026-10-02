@@ -208,10 +208,16 @@ function isCell(value: unknown): value is CoverageCell {
   );
 }
 
-/** The rule, as code: both live round trips verified. */
+/**
+ * The rule, as code: both live round trips verified, each stamped with the
+ * probe version that produced it. A verified cell with no version is not
+ * evidence of the current probe (an older record, or a hand edit) and does
+ * not count: a missing field must never be the thing that makes a model
+ * compatible.
+ */
 export function isCompatible(verdicts: Record<ModelCapabilityKey, CoverageCell>): boolean {
   const ok = (cell: CoverageCell | undefined) =>
-    cell?.verdict === "verified" && (cell.probeVersion ?? COVERAGE_PROBE_VERSION) >= COVERAGE_PROBE_VERSION;
+    cell?.verdict === "verified" && typeof cell.probeVersion === "number" && cell.probeVersion >= COVERAGE_PROBE_VERSION;
   return ok(verdicts.roundTrip) && ok(verdicts.runCodeE2E);
 }
 
@@ -325,6 +331,9 @@ export function validateCoverage(coverage: ToolRuntimeCoverage, catalog: readonl
         problems.push(`${model.id} has no vision, so toolImages must be not_applicable.`);
       }
       if (cell.verdict === "unsupported" && !cell.evidence) problems.push(`${model.id} ${key} is unsupported without evidence.`);
+      if ((key === "roundTrip" || key === "runCodeE2E") && cell.verdict === "verified" && typeof cell.probeVersion !== "number") {
+        problems.push(`${model.id} ${key} is verified without the probe version that produced it.`);
+      }
     }
     if (model.compatible !== isCompatible(model.verdicts)) {
       problems.push(

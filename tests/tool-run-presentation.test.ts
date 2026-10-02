@@ -221,6 +221,20 @@ test("a name-only row is running while live and unknown once stored", () => {
   const bare: ClientActivityEvent = { id: "b", kind: "tool", title: "Using Code", detail: "run_code", createdAt: "x" };
   assert.equal(view(bare, true).phase, "running");
   assert.equal(view(bare, false).phase, "outcome_unknown");
+  // It never carried an ending; that is not the claim "the reply ended first".
+  assert.equal(runSummaryLine(view(bare, false)), "Outcome unknown, how this run ended was not recorded");
+});
+
+test("an unknown outcome says who knows it is unknown: the server, or only the stream's end", () => {
+  // The server said so: the host lost the run.
+  assert.equal(runSummaryLine(view(F.contractOutcomeUnknown)), "Outcome unknown, the server restarted while this ran");
+  // A typed row still running when the stream ended: the reader inferred the
+  // unknown, so it does not claim a restart nobody reported.
+  const stuck = view({ id: "s", kind: "tool", title: "Using Code", detail: "run_code", createdAt: "x", call: { tool: "run_code", status: "running", args: { language: "python" } } } as unknown as ClientActivityEvent, false);
+  assert.equal(stuck.phase, "outcome_unknown");
+  assert.equal(stuck.source, "typed");
+  assert.equal(runSummaryLine(stuck), "Outcome unknown, the reply ended before this run reported back");
+  assert.match(runReceiptParts(stuck).reason ?? "", /^The reply ended before this run reported back/);
 });
 
 test("one live mark: the latest run that has not ended, and none once the turn is over", () => {
