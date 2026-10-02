@@ -95,13 +95,14 @@ test("the Needs you toggle is a full touch target in the phone drawer", () => {
   assert.ok(classes.includes("coarse:h-11"), "a coarse pointer gets the panel's 44px target");
 });
 
-test("More holds only what earns no row of its own", () => {
+test("the sidebar has no More row; the archive is in the account menu", () => {
   /*
-   * Shell contract v2: what used to sit in More (Assistants, Skills,
-   * Automations, Connections, Pull requests) left it. The row is Archived and
-   * holds only the archive dialog, in both products. Permissions stays out,
-   * as the owner asked. The old destinations are kept for links and the
-   * palette (`legacyDestinations`), so none of them becomes unreachable.
+   * Shell contract v2 emptied More (Assistants, Skills, Automations,
+   * Connections and Pull requests left it), and the V3 shell then dropped the
+   * row: all it still held was the archive dialog, which the account menu now
+   * opens, in both products. Permissions stays out, as the owner asked. The
+   * old destinations are kept for links and the palette
+   * (`legacyDestinations`), so none of them becomes unreachable.
    */
   const contract = JSON.parse(
     readFileSync(new URL("../contracts/product/juno-shell-v1.json", import.meta.url), "utf8")
@@ -109,17 +110,14 @@ test("More holds only what earns no row of its own", () => {
     sidebar: Record<"chat" | "code", { more: { label: string; items: unknown[]; archived: { label: string } } }>;
     legacyDestinations: string[];
   };
-  const more = sidebarFunction("MoreFlyout");
-  const hrefs = [...more.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(hrefs, [], "More links to no page of its own");
-  assert.match(more, /= isCode\s*\?\s*\[\]\s*:\s*\[\];/, "both products' item lists are empty");
+  const sidebar = withoutComments(SIDEBAR);
+  assert.ok(!/function MoreFlyout\b/.test(sidebar), "no More flyout in the sidebar");
+  assert.ok(!sidebar.includes('"/permissions"'), "Permissions is not in the sidebar");
   for (const product of ["chat", "code"] as const) {
-    assert.deepEqual(contract.sidebar[product].more.items, [], `${product}: the contract's More is empty too`);
-    assert.equal(contract.sidebar[product].more.label, "Archived");
+    assert.deepEqual(contract.sidebar[product].more.items, [], `${product}: the contract's More is empty`);
   }
-  assert.ok(more.includes(">\n          Archived\n"), "the row says Archived");
-  assert.ok(!more.includes('"/permissions"'), "Permissions is not in More");
-  assert.ok(more.includes("Archived chats") && more.includes("Archived sessions"), "Archived stays in both products");
+  assert.match(sidebar, /archivedLabel=\{isCode \? "Archived sessions" : "Archived chats"\}/, "Archived stays in both products");
+  assert.match(withoutComments(USER_MENU), /<MenuRow onSelect=\{onOpenArchived\}/, "the account menu draws the archive row");
 
   // Every page that left More is still a palette row, so it stays reachable.
   const palette = readFileSync(new URL("../src/components/app/command-palette.tsx", import.meta.url), "utf8");
@@ -166,7 +164,11 @@ test("everything that leaves the panel from a menu closes the phone drawer", () 
    */
   const menu = withoutComments(USER_MENU);
   // Each row from its tag to its label, which every row carries.
-  const rows = [...menu.matchAll(/<MenuRow\b[\s\S]*?label="[^"]*"/g)].map((m) => m[0]);
+  // The archive row is the exception: it opens a dialog that the sidebar
+  // inside the drawer owns, so closing the drawer would unmount it.
+  const rows = [...menu.matchAll(/<MenuRow\b[\s\S]*?label=(?:"[^"]*"|\{[^}]*\})/g)]
+    .map((m) => m[0])
+    .filter((row) => !row.includes("onSelect={onOpenArchived}"));
   assert.ok(rows.length >= 4, "the account menu draws its rows with MenuRow");
   for (const row of rows) {
     assert.match(row, /onSelect=\{(leave|\(\) => \{\s*leave\(\);)/, `row closes the drawer: ${row.slice(0, 80)}`);

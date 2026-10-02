@@ -209,16 +209,6 @@ function perProduct(node: ts.Expression | undefined, where: string): PerProduct 
   throw new Error(`${where}: cannot read a label from \`${bare.getText()}\``);
 }
 
-/** The `kind` of the `<SidebarMotionIcon>` an element's `icon` prop draws. */
-function motionKind(element: ts.JsxOpeningLikeElement): string | undefined {
-  const icon = attribute(element, "icon");
-  if (!icon) return undefined;
-  const glyph = [icon, ...descendants(icon)].find(
-    (node): node is ts.JsxSelfClosingElement => ts.isJsxSelfClosingElement(node) && tagName(node) === "SidebarMotionIcon",
-  );
-  return glyph ? stringOf(attribute(glyph, "kind")) : undefined;
-}
-
 /** The products an element is drawn for, from the `isCode` guards above it. */
 function productsFor(node: ts.Node, boundary: ts.Node): ProductID[] {
   let chat = true;
@@ -327,7 +317,17 @@ test("the products are the switch's, in its order, with its plan gate", () => {
 // ── The sidebar ─────────────────────────────────────────────────────────────
 
 const APP_SIDEBAR = functionNamed(SIDEBAR, "AppSidebar");
-const MORE_FLYOUT = functionNamed(SIDEBAR, "MoreFlyout");
+const USER_MENU_FILE = sourceFile("src/components/app/user-menu.tsx");
+
+/** The per-product `kind` of the `<SidebarMotionIcon>` an element's `icon` prop draws. */
+function motionKinds(element: ts.JsxOpeningLikeElement): PerProduct | undefined {
+  const icon = attribute(element, "icon");
+  if (!icon) return undefined;
+  const glyph = [icon, ...descendants(icon)].find(
+    (node): node is ts.JsxSelfClosingElement => ts.isJsxSelfClosingElement(node) && tagName(node) === "SidebarMotionIcon",
+  );
+  return glyph ? perProduct(attribute(glyph, "kind"), "the row's glyph") : undefined;
+}
 
 test("the action rows are New chat and Search, in order, in both products", () => {
   const rows = elements(APP_SIDEBAR, "NavRow")
@@ -335,11 +335,11 @@ test("the action rows are New chat and Search, in order, in both products", () =
       const label = attribute(row, "label");
       return label !== undefined && (stringOf(label) !== undefined || ts.isConditionalExpression(unwrap(label)));
     })
-    .map((row) => ({ label: perProduct(attribute(row, "label"), "NavRow"), kind: motionKind(row) }));
+    .map((row) => ({ label: perProduct(attribute(row, "label"), "NavRow"), kind: motionKinds(row) }));
   for (const product of PRODUCT_IDS) {
     const actions = CONTRACT.sidebar[product].actions;
     assert.deepEqual(
-      rows.map((row) => ({ label: row.label[product], kind: row.kind })),
+      rows.map((row) => ({ label: row.label[product], kind: row.kind?.[product] })),
       actions.map(({ label, kind }) => ({ label, kind })),
       `${product}'s action rows`,
     );
@@ -364,53 +364,31 @@ test("each product's destination rows are the contract's, in order", () => {
   }
 });
 
-test("each product's More holds the contract's items, gated by the contract's plans, then its archive", () => {
-  const rows = rowsByProduct(MORE_FLYOUT);
+test("each product's archive opens from the account menu, with the contract's label and glyph", () => {
+  /*
+   * The web has no More row (the V3 shell): with no destinations left in it,
+   * the row was only the archive, which now sits in the account menu. The
+   * contract keeps its `more` block for the native shells; on the web its
+   * items stay empty and its archive is the account menu's row.
+   */
   for (const product of PRODUCT_IDS) {
-    const more = CONTRACT.sidebar[product].more;
-    const drawn = rows[product].map((row) => ({
-      href: stringOf(property(row, "href")),
-      kind: stringOf(property(row, "kind")),
-      label: stringOf(property(row, "label")),
-      // No gate on a row is the web saying every plan may open it.
-      minPlan: stringOf(property(row, "minPlan")) ?? "FREE",
-    }));
-    const expected = more.items.map((item) => {
-      const destination = destinationByID.get(item.destination);
-      assert.ok(destination, `destination ${item.destination}`);
-      return { href: destination.href, kind: destination.kind, label: destination.label, minPlan: item.minPlan };
-    });
-    assert.deepEqual(drawn, expected, `${product}'s More items`);
-    assertKindWearsIcon(more, `sidebar.${product}.more`);
+    assert.deepEqual(CONTRACT.sidebar[product].more.items, [], `${product}: More holds no destination`);
   }
-
-  // The trigger: "More", on the overflow mark.
-  const trigger = elements(MORE_FLYOUT, "SidebarMotionIcon").map((glyph) => stringOf(attribute(glyph, "kind")));
-  const texts = descendants(MORE_FLYOUT)
-    .filter(ts.isJsxText)
-    .map((text) => text.text.trim())
-    .filter(Boolean);
-  for (const product of PRODUCT_IDS) {
-    const more = CONTRACT.sidebar[product].more;
-    assert.ok(trigger.includes(more.kind), `More draws SidebarMotionIcon "${more.kind}"`);
-    assert.ok(texts.includes(more.label), `More is labelled "${more.label}"`);
+  const menus = elements(APP_SIDEBAR, "UserMenu");
+  assert.ok(menus.length >= 2, "the expanded and the rail account menus");
+  for (const menu of menus) {
+    assert.match(attribute(menu, "onOpenArchived")?.getText() ?? "", /setArchivedOpen\(true\)/, "each account menu opens the archive");
+    const labels = perProduct(attribute(menu, "archivedLabel"), "the archive row");
+    for (const product of PRODUCT_IDS) {
+      assert.equal(labels[product], CONTRACT.sidebar[product].more.archived.label, `${product}'s archive row`);
+    }
   }
-
-  // The archive: the one row under the separator, which opens a dialog.
-  const archive = elements(MORE_FLYOUT, "DropdownMenuItem").find(
-    (item) => attribute(item, "onSelect")?.getText() === "onOpenArchived",
-  );
-  assert.ok(archive && ts.isJsxOpeningElement(archive), "More has an archive row");
-  const archiveRow = archive.parent as ts.JsxElement;
-  const glyph = descendants(archiveRow).find(ts.isJsxSelfClosingElement);
-  const label = descendants(archiveRow).find(
-    (node): node is ts.ConditionalExpression => ts.isConditionalExpression(node),
-  );
-  const labels = perProduct(label, "the archive row");
+  const archiveRow = elements(USER_MENU_FILE, "MenuRow").find((row) => attribute(row, "onSelect")?.getText() === "onOpenArchived");
+  assert.ok(archiveRow, "the account menu has an archive row");
+  const icon = attribute(archiveRow, "icon")!;
+  const glyph = [icon, ...descendants(icon)].find(ts.isJsxSelfClosingElement);
   for (const product of PRODUCT_IDS) {
-    const archived = CONTRACT.sidebar[product].more.archived;
-    assert.equal(labels[product], archived.label, `${product}'s archive row`);
-    assert.equal(glyph && tagName(glyph), archived.icon, `${product}'s archive glyph`);
+    assert.equal(glyph && tagName(glyph), CONTRACT.sidebar[product].more.archived.icon, `${product}'s archive glyph`);
   }
 });
 
@@ -429,6 +407,12 @@ test("the list's section headings are the contract's, in order, per product", ()
     ...elements(APP_SIDEBAR, "Section").map((node) => ({
       node,
       label: perProduct(attribute(node, "label"), "Section"),
+    })),
+    // Orbit's head is a destination (it opens the roster), not a Section:
+    // the Orbit glyph and `BRAND.orbit.label`, linking to /agents.
+    ...elements(APP_SIDEBAR, "OrbitGlyph").map((node) => ({
+      node,
+      label: { chat: BrandNames.BRAND.orbit.label, code: BrandNames.BRAND.orbit.label },
     })),
   ].sort((a, b) => a.node.getStart() - b.node.getStart());
 

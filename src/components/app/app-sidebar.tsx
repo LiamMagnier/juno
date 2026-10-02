@@ -60,7 +60,7 @@ import { StatusDot, statusLabel, statusSentence, statusTone } from "@/components
 import { RUN_STATE_META, isBlockedOnYou, runState } from "@/lib/code-runs";
 import { codeRunTone, newestPerConversation, workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
-import { staggerDelay, transition } from "@/lib/motion";
+import { spring, staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
@@ -230,6 +230,8 @@ type AttentionItem = {
   /** What it is about (the task or the chat). */
   what: string;
   agent?: ClientAgent;
+  /** The chat behind a run's ask, so its row keeps the chat's own menu. */
+  conversation?: ClientConversation;
   conversationId: string | null;
 };
 
@@ -737,6 +739,7 @@ export function AppSidebar({
         who: isCode ? BRAND.code.title : PRODUCT_NAME,
         ask: isCode ? (rowSignals.get(c.id)?.label ?? AGENT_STATE_NAMES.needsAnswer) : askWords(workRuns.byConversation.get(c.id)?.status),
         what: c.title || (c.kind === "code" ? "Untitled session" : "New chat"),
+        conversation: c,
         conversationId: c.id,
       });
     }
@@ -932,9 +935,10 @@ export function AppSidebar({
         {/*
          * THE HEAD (the V3 gallery's shell, D-033): the Alevr lockup on the
          * left, the Continuum mark beside the outlined wordmark, its mark on
-         * the glyph column's 16 px edge; the bell and the collapse control on
-         * the right, quiet (the third ink), 32 px targets. The row is 48 px,
-         * so its centre line meets the content header's across the frame.
+         * the glyph column's 18 px edge (where every nav glyph starts); the
+         * bell and the collapse control on the right, quiet (the third ink),
+         * 32 px targets. The row is 44 px, 8 px down, so its centre line is
+         * y = 30, the gallery's, and meets the inset panel's header line.
          *
          * Collapsed to the rail, the mark alone is the way home, and the bell
          * and the expand control stack under it on the glyph column.
@@ -949,7 +953,7 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn("flex items-center", collapsed ? "flex-col gap-1 px-2.5 pt-2" : "h-12 gap-0.5 pl-4 pr-2 max-md:pl-4")}
+          className={cn("flex items-center", collapsed ? "flex-col gap-1 px-2.5 pt-2" : "mt-2 h-11 gap-0.5 pl-[18px] pr-2")}
         >
           <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex-1")}>
             <Link
@@ -1271,14 +1275,9 @@ export function AppSidebar({
                         had stopped to ask them something. It sits OUTSIDE the
                         fold's own condition because the fold unmounts at zero,
                         and "nothing is waiting any more" is the other half of
-                        what this has to say. */}
-                    <p role="status" className="sr-only">
-                      {attention.length === 0
-                        ? "Nothing is waiting on you."
-                        : attention.length === 1
-                          ? `${attention[0].who}: ${attention[0].ask.toLowerCase()}.`
-                          : `${attention.length} things are waiting on you.`}
-                    </p>
+                        what this has to say. It is drawn LAST in the list (see its
+                        note at the end) so the first section's `first:mt-0`
+                        still finds that section. */}
 
                     {attention.length > 0 && (
                       <NeedsYouFold
@@ -1287,6 +1286,7 @@ export function AppSidebar({
                         onToggle={() => setNeedsYouOnly((v) => !v)}
                         activeConversationId={activeConversationId}
                         onNavigate={() => setSidebarOpen(false)}
+                        rowProps={rowProps}
                       />
                     )}
 
@@ -1479,6 +1479,18 @@ export function AppSidebar({
                         </p>
                       )
                     )}
+                    {/* The Needs you live region (its note is at the top of
+                        this list). Last, not first: as the first child it
+                        took `first:mt-0` from whichever section opens the
+                        list, which then sat 40 px under the navigation
+                        instead of the column's 20. */}
+                    <p role="status" className="sr-only">
+                      {attention.length === 0
+                        ? "Nothing is waiting on you."
+                        : attention.length === 1
+                          ? `${attention[0].who}: ${attention[0].ask.toLowerCase()}.`
+                          : `${attention.length} things are waiting on you.`}
+                    </p>
                   </>
                 )}
               </motion.div>
@@ -1652,13 +1664,17 @@ function NeedsYouFold({
   onToggle,
   activeConversationId,
   onNavigate,
+  rowProps,
 }: {
   items: AttentionItem[];
   only: boolean;
   onToggle: () => void;
   activeConversationId: string | null;
   onNavigate: () => void;
+  /** The conversation rows' shared verbs, so a waiting chat keeps its menu. */
+  rowProps: RowSharedProps;
 }) {
+  const reduceMotion = useReducedMotion();
   return (
     // No bottom margin: whatever follows opens with its own `mt-5`.
     <div>
@@ -1685,10 +1701,29 @@ function NeedsYouFold({
         </TooltipTrigger>
         <TooltipContent side="right">{only ? "Show everything" : "Show only these"}</TooltipContent>
       </Tooltip>
+      {/* S7: a new row fades in on `base`, a resolved one leaves on `exit`,
+          and the rest close the gap on `spring.layout`. Rows present when
+          the fold mounts do not animate in. */}
       <div className="pt-1">
-        {items.map((item) => (
-          <AttentionRow key={item.key} item={item} active={item.conversationId != null && item.conversationId === activeConversationId} onNavigate={onNavigate} />
-        ))}
+        <AnimatePresence initial={false}>
+          {items.map((item) => (
+            <motion.div
+              key={item.key}
+              layout={reduceMotion ? false : "position"}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: reduceMotion ? { duration: 0 } : transition.base }}
+              exit={{ opacity: 0, transition: reduceMotion ? { duration: 0 } : transition.exit }}
+              transition={reduceMotion ? { duration: 0 } : spring.layout}
+            >
+              <AttentionRow
+                item={item}
+                active={item.conversationId != null && item.conversationId === activeConversationId}
+                onNavigate={onNavigate}
+                rowProps={rowProps}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -1698,32 +1733,54 @@ function NeedsYouFold({
  * One attention row: who (the agent's shipped face, or the Continuum for
  * Alevr's own runs), what they need in the attention words, and what it is
  * about. Two lines, so neither the name nor the ask is ever truncated away;
- * 44 px tall, a touch target at every width.
+ * 44 px tall, a touch target at every width. A chat's row keeps the chat's
+ * own menu (rename, pin, project, share, archive, delete), because the list
+ * rows it stands in for are not drawn while it waits.
  */
-function AttentionRow({ item, active, onNavigate }: { item: AttentionItem; active: boolean; onNavigate: () => void }) {
+function AttentionRow({
+  item,
+  active,
+  onNavigate,
+  rowProps,
+}: {
+  item: AttentionItem;
+  active: boolean;
+  onNavigate: () => void;
+  rowProps: RowSharedProps;
+}) {
+  const conversation = item.conversation;
+  if (conversation && rowProps.renamingId === conversation.id) {
+    return <ConversationRow conversation={conversation} active={active} {...rowProps} />;
+  }
   return (
-    <Link
-      href={item.href}
-      onClick={onNavigate}
-      prefetch={false}
-      aria-current={active ? "page" : undefined}
-      aria-label={`${item.who}. ${item.ask}: ${item.what}`}
+    <div
+      data-active={active ? "" : undefined}
       data-conversation-row={item.conversationId ?? undefined}
-      className={cn("group flex min-h-11 items-center gap-2.5 rounded-control px-2 py-1", LIST_ROW_TRANSITION, listRowClass(active))}
+      className={cn("group relative flex min-h-11 items-center rounded-control pl-2 pr-1", LIST_ROW_TRANSITION, listRowClass(active))}
     >
-      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-        {item.agent ? <AgentFace avatar={item.agent.avatar} state={item.agent.state} size="xs" /> : <ContinuumMark size={10} tight tone="current" />}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span translate="no" className="truncate text-nav text-foreground">
-          {item.who}
+      <Link
+        href={item.href}
+        onClick={onNavigate}
+        prefetch={false}
+        aria-current={active ? "page" : undefined}
+        aria-label={`${item.who}. ${item.ask}: ${item.what}`}
+        className={cn("flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-1.5", conversation && "coarse:pr-10")}
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+          {item.agent ? <AgentFace avatar={item.agent.avatar} state={item.agent.state} size="xs" /> : <ContinuumMark size={10} tight tone="current" />}
         </span>
-        <span className="truncate text-caption text-muted-foreground">
-          <span className="text-[hsl(var(--attention))]">{item.ask}</span>
-          <span>{`: ${item.what}`}</span>
+        <span className={cn("flex min-w-0 flex-1 flex-col", conversation && KEBAB_ROOM)}>
+          <span translate="no" className="truncate text-nav text-foreground">
+            {item.who}
+          </span>
+          <span className="truncate text-caption text-muted-foreground">
+            <span className="text-[hsl(var(--attention))]">{item.ask}</span>
+            <span>{`: ${item.what}`}</span>
+          </span>
         </span>
-      </span>
-    </Link>
+      </Link>
+      {conversation && <ConversationMenu conversation={conversation} active={active} {...rowProps} />}
+    </div>
   );
 }
 
@@ -2243,45 +2300,7 @@ function ConversationRow({
   const needsReader = signal?.tone === "attention" || signal?.tone === "bad";
   const trailingMark = conversation.pinned && !nested;
 
-  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
-    const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
-    onUpdate(conversation.id, optimistic);
-    const res = await fetch(`/api/conversations/${conversation.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data.titleSource == null ? data : { ...data, titleSource: undefined }),
-    });
-    if (!res.ok) toast.error("Update failed.");
-  };
-
-  const remove = () => {
-    onRequestConfirm({
-      title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
-      description: isCodeSession
-        ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
-      confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
-      onConfirm: async () => {
-        onRemove(conversation.id);
-        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => null);
-        if (!res?.ok) {
-          // The row comes back: the chat still exists, and a list that went on
-          // leaving it out would say otherwise until the next reload.
-          onRestore(conversation);
-          toast.error("Delete failed.");
-          return;
-        }
-        if (active) {
-          // Back to the product this row belonged to, not always to Chat: a
-          // reader who deletes the Code session they are inside should land on
-          // Code's own landing, with the column they were using still under
-          // their pointer.
-          router.push(isCodeSession ? "/code" : "/chat");
-          if (!isCodeSession) window.dispatchEvent(new CustomEvent("juno:new-chat"));
-        }
-      },
-    });
-  };
+  const { patch } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
 
   if (renaming) {
     return (
@@ -2367,96 +2386,191 @@ function ConversationRow({
           </span>
         )}
       </Link>
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              {/* Named from the row's own conversation, like every other
-                  string on it: a screen reader landing on a Code row heard
-                  "Conversation options" while the rename field, the delete
-                  dialog and the archive toast it opens all said "session". */}
-              <Pressable
-                kind="icon"
-                /* Out of the flow, over the row's right end, so at rest the
-                   title runs the full width of the row instead of stopping
-                   28px short for a control that is invisible. */
-                className={cn(KEBAB_CLASS, "absolute inset-y-0 right-1 my-auto")}
-                aria-label={isCodeSession ? "Session options" : "Conversation options"}
-              >
-                <SidebarMotionIcon kind="more" className="size-3.5" />
-              </Pressable>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent>Options</TooltipContent>
-        </Tooltip>
-        {/* ONE hairline, and it is the one before Delete.
-            This menu carried three, which cut seven rows into four groups —
-            Rename/Pin, the project submenu, Share/Archive, Delete — and a
-            four-part menu of seven verbs reads as a settings panel. The
-            reference set (ChatGPT's chat menu, Claude's, Linear's) all do the
-            same thing: the actions are one list, and the rule exists to put a
-            beat in front of the row that cannot be undone. */}
-        <DropdownMenuContent align="end" className={MENU_W}>
-          <DropdownMenuItem onSelect={() => setRenaming(conversation.id)}>
-            <ActionIcons.edit className="size-4" /> Rename
-          </DropdownMenuItem>
-          {/* The verb's own glyph: a pin to pin, a struck pin to unpin. It was
-              the same pin for both, filled in the accent when the row was
-              already pinned — a state mark sitting on an action, and the one
-              accent-coloured glyph in a menu of muted ones. */}
-          <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
-            {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            {conversation.pinned ? "Unpin" : "Pin"}
-          </DropdownMenuItem>
-          {/* A project is Chat's filing and a Code session has its own — the
-              repository or workspace it runs in — so this submenu would offer
-              to file a session into a folder the Code column never draws. */}
-          {!isCodeSession && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <AppIcons.projects className="size-4" /> Add to project
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className={MENU_W}>
-                <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-                  {conversation.projectId == null ? <StatusIcons.success className="size-4 text-primary" /> : <span className="size-4" />}
-                  No project
-                </DropdownMenuItem>
-                {projects.map((p) => (
-                  <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                    {conversation.projectId === p.id ? <StatusIcons.success className="size-4 text-primary" /> : <AppIcons.projects className="size-4" />}
-                    <span dir="auto" className="truncate">
-                      {p.name}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => {
-                    onNavigate();
-                    router.push("/projects");
-                  }}
-                >
-                  <Plus className="size-4" /> New project…
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
-          <DropdownMenuItem onSelect={() => onShare(conversation.id)}>
-            <ActionIcons.share className="size-4" /> Share
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onArchive(conversation)}>
-            <Archive className="size-4" /> Archive
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={remove} variant="destructive">
-            <ActionIcons.delete className="size-4" /> Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <ConversationMenu
+        conversation={conversation}
+        active={active}
+        setRenaming={setRenaming}
+        projects={projects}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+        onRestore={onRestore}
+        onNavigate={onNavigate}
+        onRequestConfirm={onRequestConfirm}
+        onShare={onShare}
+        onArchive={onArchive}
+      />
     </div>
   );
 }
 
+
+
+/**
+ * What a conversation's own menu changes, shared by its list row and by its
+ * Needs you row, so a chat that is waiting on the reader keeps every verb.
+ */
+function useConversationActions({
+  conversation,
+  active,
+  onUpdate,
+  onRemove,
+  onRestore,
+  onRequestConfirm,
+}: Pick<RowSharedProps, "onUpdate" | "onRemove" | "onRestore" | "onRequestConfirm"> & {
+  conversation: ClientConversation;
+  active: boolean;
+}) {
+  const router = useRouter();
+  const isCodeSession = conversation.kind === "code";
+  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
+    const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
+    onUpdate(conversation.id, optimistic);
+    const res = await fetch(`/api/conversations/${conversation.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data.titleSource == null ? data : { ...data, titleSource: undefined }),
+    });
+    if (!res.ok) toast.error("Update failed.");
+  };
+
+  const remove = () => {
+    onRequestConfirm({
+      title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
+      description: isCodeSession
+        ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
+        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
+      confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
+      onConfirm: async () => {
+        onRemove(conversation.id);
+        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => null);
+        if (!res?.ok) {
+          // The row comes back: the chat still exists, and a list that went on
+          // leaving it out would say otherwise until the next reload.
+          onRestore(conversation);
+          toast.error("Delete failed.");
+          return;
+        }
+        if (active) {
+          // Back to the product this row belonged to, not always to Chat: a
+          // reader who deletes the Code session they are inside should land on
+          // Code's own landing, with the column they were using still under
+          // their pointer.
+          router.push(isCodeSession ? "/code" : "/chat");
+          if (!isCodeSession) window.dispatchEvent(new CustomEvent("juno:new-chat"));
+        }
+      },
+    });
+  };
+
+  return { patch, remove };
+}
+
+/** A conversation's kebab and its menu: Rename, Pin, Add to project, Share, Archive, Delete. */
+function ConversationMenu({
+  conversation,
+  active,
+  setRenaming,
+  projects,
+  onUpdate,
+  onRemove,
+  onRestore,
+  onNavigate,
+  onRequestConfirm,
+  onShare,
+  onArchive,
+}: Omit<RowSharedProps, "renamingId"> & { conversation: ClientConversation; active: boolean }) {
+  const router = useRouter();
+  const isCodeSession = conversation.kind === "code";
+  const { patch, remove } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            {/* Named from the row's own conversation, like every other
+                string on it: a screen reader landing on a Code row heard
+                "Conversation options" while the rename field, the delete
+                dialog and the archive toast it opens all said "session". */}
+            <Pressable
+              kind="icon"
+              /* Out of the flow, over the row's right end, so at rest the
+                 title runs the full width of the row instead of stopping
+                 28px short for a control that is invisible. */
+              className={cn(KEBAB_CLASS, "absolute inset-y-0 right-1 my-auto")}
+              aria-label={isCodeSession ? "Session options" : "Conversation options"}
+            >
+              <SidebarMotionIcon kind="more" className="size-3.5" />
+            </Pressable>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Options</TooltipContent>
+      </Tooltip>
+      {/* ONE hairline, and it is the one before Delete.
+          This menu carried three, which cut seven rows into four groups —
+          Rename/Pin, the project submenu, Share/Archive, Delete — and a
+          four-part menu of seven verbs reads as a settings panel. The
+          reference set (ChatGPT's chat menu, Claude's, Linear's) all do the
+          same thing: the actions are one list, and the rule exists to put a
+          beat in front of the row that cannot be undone. */}
+      <DropdownMenuContent align="end" className={MENU_W}>
+        <DropdownMenuItem onSelect={() => setRenaming(conversation.id)}>
+          <ActionIcons.edit className="size-4" /> Rename
+        </DropdownMenuItem>
+        {/* The verb's own glyph: a pin to pin, a struck pin to unpin. It was
+            the same pin for both, filled in the accent when the row was
+            already pinned — a state mark sitting on an action, and the one
+            accent-coloured glyph in a menu of muted ones. */}
+        <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
+          {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          {conversation.pinned ? "Unpin" : "Pin"}
+        </DropdownMenuItem>
+        {/* A project is Chat's filing and a Code session has its own — the
+            repository or workspace it runs in — so this submenu would offer
+            to file a session into a folder the Code column never draws. */}
+        {!isCodeSession && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <AppIcons.projects className="size-4" /> Add to project
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className={MENU_W}>
+              <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
+                {conversation.projectId == null ? <StatusIcons.success className="size-4 text-primary" /> : <span className="size-4" />}
+                No project
+              </DropdownMenuItem>
+              {projects.map((p) => (
+                <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
+                  {conversation.projectId === p.id ? <StatusIcons.success className="size-4 text-primary" /> : <AppIcons.projects className="size-4" />}
+                  <span dir="auto" className="truncate">
+                    {p.name}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  onNavigate();
+                  router.push("/projects");
+                }}
+              >
+                <Plus className="size-4" /> New project…
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
+        <DropdownMenuItem onSelect={() => onShare(conversation.id)}>
+          <ActionIcons.share className="size-4" /> Share
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onArchive(conversation)}>
+          <Archive className="size-4" /> Archive
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={remove} variant="destructive">
+          <ActionIcons.delete className="size-4" /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /**
  * One agent in the sidebar (S8): its shipped face at 20 px, still; its name;
@@ -2466,7 +2580,9 @@ function ConversationRow({
  */
 function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: boolean; onNavigate: () => void }) {
   const sentence = localStateSentence(agent);
-  const word = agent.state === "idle" ? null : AGENT_STATE_LABEL[agent.state];
+  // Waiting says the same words as its Needs you row ("Needs your approval"
+  // when the task stopped for an approval), so one ask never reads two ways.
+  const word = agent.state === "idle" ? null : agent.state === "waiting" ? askWords(agent.task?.status) : AGENT_STATE_LABEL[agent.state];
   return (
     <div
       data-active={active ? "" : undefined}
