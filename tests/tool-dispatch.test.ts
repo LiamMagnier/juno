@@ -392,3 +392,29 @@ test("the outcome shape the dispatcher records is the one specs return", () => {
   };
   assert.equal(outcome.run?.context, "hosted_sandbox");
 });
+
+test("a write in between makes earlier answers stale: list, create, list lists again", async () => {
+  let lists = 0;
+  const list: FakeTool = {
+    resolved: { name: "gh__list", origin: "connector", title: "GitHub", risk: "read", parallelSafe: true, timeoutMs: 5_000, dedupe: true },
+    run: async (_args, _signal, opts) => {
+      opts?.onAuthorized?.();
+      lists += 1;
+      return ok(`list ${lists}`);
+    },
+  };
+  const create: FakeTool = {
+    resolved: { name: "gh__create", origin: "connector", title: "GitHub", risk: "external", parallelSafe: false, timeoutMs: 5_000, dedupe: true },
+    run: async (_args, _signal, opts) => {
+      opts?.onAuthorized?.();
+      return ok("created");
+    },
+  };
+  const loop = createToolLoop(fakeToolset([list, create]));
+  const first = await drain(loop.run([call("gh__list", "{}", 0)], undefined));
+  const repeat = await drain(loop.run([call("gh__list", "{}", 0, 1)], undefined));
+  await drain(loop.run([call("gh__create", '{"title":"x"}', 0, 2)], undefined));
+  const after = await drain(loop.run([call("gh__list", "{}", 0, 3)], undefined));
+  assert.deepEqual([first, repeat, after].map((r) => r.results[0].text), ["list 1", "list 1", "list 2"]);
+  assert.equal(lists, 2);
+});

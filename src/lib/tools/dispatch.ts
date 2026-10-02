@@ -328,6 +328,10 @@ async function runCall(
   if (entry.dedupeKey) inflight.set(entry.dedupeKey, new Promise<void>((resolve) => (release = resolve)));
   try {
     const outcome = await execute(entry, signal, ctx, channel, server);
+    // A call that may change state (a write, or a run that shares a
+    // workspace) makes every earlier answer stale: "list, create, list" must
+    // list again, not replay the first list.
+    if (!(entry.tool.parallelSafe && entry.tool.risk === "read")) ctx.cache.clear();
     if (entry.dedupeKey && outcome.status === "succeeded") ctx.cache.set(entry.dedupeKey, outcome);
     return finish(outcome);
   } finally {
