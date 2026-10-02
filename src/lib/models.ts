@@ -1,6 +1,7 @@
 import type { Plan } from "@prisma/client";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { DISCOVERED, UNAVAILABLE } from "@/lib/models.generated";
+import type { ModelToolCapabilities } from "@/lib/model-tools";
 
 // Canonical model id is "provider:providerModel" (e.g. "anthropic:claude-opus-4-8").
 export type ModelId = string;
@@ -109,6 +110,13 @@ export interface ModelInfo {
   /** Wire protocol. "responses" = OpenAI Responses API (gpt-*-pro line and
    *  Responses-only Codex snapshots aren't served on /chat/completions). */
   api?: "chat" | "responses";
+  /**
+   * An override of the tool capabilities `toolCapabilitiesFor` resolves for
+   * this model, for the rare catalog entry its lab row gets wrong. Read the
+   * capabilities through `toolCapabilitiesFor(model)`, never from here: this is
+   * a partial override and absent on almost every entry.
+   */
+  tools?: Partial<ModelToolCapabilities>;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry

@@ -15,6 +15,8 @@
  * broken.
  */
 
+import type { ChatFinishReason, ClientActivityEvent, ClientSource } from "@/types/chat";
+
 /**
  * What to do with the `reasoningParts` column.
  *
@@ -156,4 +158,38 @@ export function versionSnapshot<Sources>(
     completionTokens: stale.completionTokens,
     ...(stale.sources !== null ? { sources: stale.sources } : {}),
   };
+}
+
+/**
+ * What a finished chat turn persists, before encryption (SPEC §12.4 WS4).
+ *
+ * The pure end of the turn pipeline: `TurnStream.finish()`'s answer and
+ * activity plus what the accumulator gathered become the one assistant record
+ * the route writes at the terminal state (INV-13), and the same record the
+ * end-to-end tests read back through `serializeActivity` and `buildRunView`.
+ */
+export interface AssistantTurnRecordInput {
+  /** `TurnStream.finish().answer`: the answer rounds plus every preserved block. */
+  answer: string;
+  /** `TurnStream.finish().activity`, in emission order. */
+  activity: ClientActivityEvent[];
+  reasoning: string;
+  reasoningParts: readonly string[];
+  sources: readonly ClientSource[];
+  model: string;
+  finishReason: ChatFinishReason;
+}
+
+export interface AssistantTurnRecord {
+  content: string;
+  reasoning: string | null;
+  reasoningParts: string[];
+  activity: ClientActivityEvent[];
+  sources: ClientSource[];
+  model: string;
+  finishReason: ChatFinishReason;
+}
+
+export function assistantTurnRecord(_input: AssistantTurnRecordInput): AssistantTurnRecord {
+  throw new Error("not implemented: WS4");
 }
