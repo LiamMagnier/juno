@@ -216,13 +216,14 @@ export function CodeSessionBanner({
               lightness and the border ~4%, so the badge vanished and only the
               12px glyph inside it survived. Same recipe as the PR chip below, so
               the banner's two coral elements are one object. */}
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/45 bg-primary/20">
+          {/* Where it runs, as a quiet glyph (CODE_SYSTEM.md: no badges around state). */}
+          <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
             {resolving ? (
-              <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
+              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
             ) : isCloud ? (
-              <CodeIcons.cloud className="size-3 text-primary" aria-hidden="true" />
+              <CodeIcons.cloud className="size-4" aria-hidden="true" />
             ) : (
-              <AppIcons.projects className="size-3 text-primary" aria-hidden="true" />
+              <AppIcons.projects className="size-4" aria-hidden="true" />
             )}
           </span>
 
@@ -267,7 +268,7 @@ export function CodeSessionBanner({
                 aria-expanded={reviewOpen}
                 aria-label={`${reviewOpen ? "Close" : "Open"} the changes: ${churn.added} added, ${churn.removed} removed`}
                 className={cn(
-                  "pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 font-mono text-caption tabular-nums hover:bg-accent @[40rem]/split:px-2.5",
+                  "pressable inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control px-2 font-mono text-caption tabular-nums hover:bg-accent",
                   reviewOpen && "border-border bg-secondary",
                 )}
               >
@@ -377,7 +378,7 @@ export function CodeSessionBanner({
                   href={prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/20 px-2 py-1 text-caption font-medium text-primary hover:border-primary/60 hover:bg-primary/30 motion-safe:animate-fade-in @[40rem]/split:px-2.5"
+                  className="pressable control-neu inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control border px-2.5 text-caption font-medium text-foreground motion-safe:animate-fade-in"
                 >
                   <AppIcons.pulls className="size-3.5" aria-hidden="true" />
                   <ChipLabel>View pull request</ChipLabel>
