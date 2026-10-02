@@ -83,11 +83,13 @@ function objectProblem(
   schema: { properties: Record<string, PortableProperty>; required?: string[] },
   prefix: string,
 ): string | null {
-  for (const field of schema.required ?? []) {
-    if (args[field] === undefined || args[field] === null) return missingFieldText(`${prefix}${field}`);
-  }
+  // An undeclared key first: `{"query": …}` for a tool that takes `q` is a
+  // misnamed field, and naming the real parameters is the useful correction.
   for (const key of Object.keys(args)) {
     if (!Object.hasOwn(schema.properties, key)) return unknownKeyText(`${prefix}${key}`, Object.keys(schema.properties));
+  }
+  for (const field of schema.required ?? []) {
+    if (args[field] === undefined || args[field] === null) return missingFieldText(`${prefix}${field}`);
   }
   for (const [field, property] of Object.entries(schema.properties)) {
     const value = args[field];
