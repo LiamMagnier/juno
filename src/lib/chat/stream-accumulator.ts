@@ -17,6 +17,7 @@ import { appendReasoningDelta, emptyReasoning, type ReasoningState } from "@/lib
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import type { ChatFinishReason, ClientSource } from "@/types/chat";
 import type { LlmEvent } from "@/types/llm";
+import type { ToolErrorCode, ToolOutcomeStatus, ToolProgress, ToolRunRecord } from "@/lib/tools/types";
 
 export type StreamEffect =
   | {
@@ -36,6 +37,17 @@ export type StreamEffect =
    * owns the pairing too — and gets one activity row per call out of it.
    */
   | { kind: "tool_call"; server: string; name: string; callId: string; args?: string }
+  /** The dispatcher's queued / awaiting_approval / running act for a call. */
+  | {
+      kind: "tool_status";
+      server: string;
+      name: string;
+      callId: string;
+      status: "queued" | "awaiting_approval" | "running";
+      timeoutMs?: number;
+    }
+  /** A running call's latest output. */
+  | { kind: "tool_progress"; server: string; name: string; callId: string; progress: ToolProgress }
   | {
       kind: "tool_result";
       server: string;
@@ -45,6 +57,10 @@ export type StreamEffect =
       result: string;
       ok: boolean;
       durationMs?: number;
+      status?: ToolOutcomeStatus;
+      errorCode?: ToolErrorCode;
+      run?: ToolRunRecord;
+      cached?: boolean;
     }
   | {
       kind: "sources";
@@ -178,9 +194,22 @@ export class GenerationAccumulator {
         // Results are no longer swallowed. They carry the only record of what a
         // connector actually answered, and dropping them here is what used to
         // make "Using Linear" the entire truth the panel could tell.
-        return event.phase === "call"
-          ? { kind: "tool_call", server: event.server, name: event.name, callId: event.callId, args: event.args }
-          : {
+        switch (event.phase) {
+          case "call":
+            return { kind: "tool_call", server: event.server, name: event.name, callId: event.callId, args: event.args };
+          case "status":
+            return {
+              kind: "tool_status",
+              server: event.server,
+              name: event.name,
+              callId: event.callId,
+              status: event.status,
+              ...(event.timeoutMs === undefined ? {} : { timeoutMs: event.timeoutMs }),
+            };
+          case "progress":
+            return { kind: "tool_progress", server: event.server, name: event.name, callId: event.callId, progress: event.progress };
+          case "result":
+            return {
               kind: "tool_result",
               server: event.server,
               name: event.name,
@@ -189,7 +218,13 @@ export class GenerationAccumulator {
               result: event.result,
               ok: event.ok,
               durationMs: event.durationMs,
+              ...(event.status ? { status: event.status } : {}),
+              ...(event.error ? { errorCode: event.error.code } : {}),
+              ...(event.run ? { run: event.run } : {}),
+              ...(event.cached ? { cached: true } : {}),
             };
+        }
+        return { kind: "none" };
       }
       case "sources": {
         const added = this.seedSources(event.sources);
