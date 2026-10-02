@@ -1579,33 +1579,59 @@
     box-shadow: none;
     transition: border-color var(--dur-fast) var(--ease-out-soft);
   }
-  /* Text and controls inside a Voice glow host sit above the glow's layers
-     (the package stacks them at z-index 1-4). */
-  .voice-glow-content,
-  .voice-glow-host > :not(.sr-only) {
-    position: relative;
-    z-index: 5;
+  /*
+   * THE VOICE LIGHT (voice-composer-glow.tsx, voice-glow-renderer.ts).
+   *
+   * The light is drawn on a canvas laid over the composer and reaching 44px
+   * past it; inside the composer it is zero apart from a 2.5px rim, so the
+   * surface, its 1px edge and every word stay crisp and nothing needs lifting
+   * above it. These are its tokens, read off the glow's own element so a
+   * `.dark` subtree resolves its own (RATIONALE.md has the contrast table).
+   *
+   *   you        ember, oklch(0.575 0.150 50) / (0.781 0.120 54): your voice
+   *   alevr      presence ink, the brand's one live colour: the assistant
+   *   muted      graphite, held still
+   *   -light     the falloff outside the edge: lighter and more chromatic than
+   *              the line, so on ivory it reads as light, not as a shadow
+   *   -core      the lit edge at a peak on charcoal, where light can be brighter
+   */
+  .voice-glow {
+    --voice-glow-dark: 0;
+    --voice-glow-you: #bc5806;
+    --voice-glow-you-light: #f69147;
+    --voice-glow-you-core: #bc5806;
+    --voice-glow-alevr: #2d49c9;
+    --voice-glow-alevr-light: #6782f2;
+    --voice-glow-alevr-core: #2d49c9;
+    --voice-glow-muted: #9a9ca0;
   }
-  /* Protect the call icons at speech peaks, with an opaque fallback for
-     browsers that cannot blur the glow beneath their glass backing. */
-  .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]) {
-    background-color: hsl(var(--card));
-    color: hsl(var(--foreground));
+  .dark .voice-glow {
+    --voice-glow-dark: 1;
+    --voice-glow-you: #f3a26b;
+    --voice-glow-you-light: #fba962;
+    --voice-glow-you-core: #fdcfa6;
+    --voice-glow-alevr: #97a6e6;
+    --voice-glow-alevr-light: #90a6f7;
+    --voice-glow-alevr-core: #ced7fb;
+    --voice-glow-muted: #84868a;
   }
-  .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]):is(:hover, :focus-visible, [data-state="open"]) {
-    background-color: hsl(var(--accent));
+  .voice-glow-canvas {
+    position: absolute;
+    left: -44px;
+    top: -44px;
+    width: calc(100% + 88px);
+    height: calc(100% + 88px);
+    pointer-events: none;
   }
-  @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
-    .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]) {
-      background-color: hsl(var(--card) / .78);
-      -webkit-backdrop-filter: blur(12px) saturate(1.15);
-      backdrop-filter: blur(12px) saturate(1.15);
-      box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .08);
-    }
-    .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]):is(:hover, :focus-visible, [data-state="open"]) {
-      background-color: hsl(var(--accent) / .92);
-    }
+  /* No WebGL: the edge takes the speaker's tone, solid and still. */
+  .voice-glow[data-voice-glow-fallback] > :first-child {
+    transition: border-color var(--dur-base) var(--ease-out-soft);
   }
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="you"] > :first-child { border-color: var(--voice-glow-you); }
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="alevr"] > :first-child,
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="thinking"] > :first-child { border-color: var(--voice-glow-alevr); }
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="muted"] > :first-child { border-color: var(--voice-glow-muted); }
+  .voice-glow[data-voice-glow-fallback] > .voice-glow-canvas { display: none; }
   .composer-surface:focus-within {
     border-color: hsl(var(--foreground) / .3);
     box-shadow: none;

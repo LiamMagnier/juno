@@ -1,90 +1,96 @@
 "use client";
 
 import * as React from "react";
-import { VoiceBeam } from "voice-glow";
 
-import { junoVoicePalette, useEffectTheme, type VoiceGlowTone } from "@/components/effects/use-effect-theme";
 import type { VoiceCallParts } from "@/components/voice/realtime-voice";
+import { useStreamLevel } from "@/components/voice/voice-glow-audio";
+import type { GlowMode } from "@/components/voice/voice-glow-engine";
+import { VoiceGlowStageContext, type VoiceGlowProps } from "@/components/voice/voice-glow-stage";
+import { VoiceGlowSurface } from "@/components/voice/voice-glow-surface";
 
 /**
- * JUNO'S VOICE GLOW (Libraries.dev Voice, `voice-glow`), the one light every
- * voice surface draws: a band along the composer's bottom edge that rises and
- * blooms with the voice, then gathers into one travelling beam while the reply
- * is thought through. The same object the library's chat-input demo draws,
- * tuned to Juno instead of left at the stock rainbow:
+ * THE VOICE LIGHT: the one light every voice surface draws (the composer in a
+ * call, dictation, the call bar), drawn by Alevr's own renderer rather than a
+ * recoloured stock effect.
  *
- * - STATE, NOT DECORATION. The composer shows no meter and no status line in
- *   a call: the glow IS the state. Its `tone` picks the light (`junoVoicePalette`):
- *   warm dawn while you talk, cool dusk while Juno talks, both gathered into a
- *   travelling beam while Juno thinks, a still grey when muted.
- * - STRENGTH. Fuller on the dark ground, a notch softer on cream paper, where
- *   the same light reads louder.
- * - INPUT. A live `stream`, analysed (never played) into a level plus low /
- *   mid / high bands so the lobes articulate: dictation's microphone, or in a
- *   call whoever holds the floor — your microphone, then Juno's output as it
- *   is HEARD. Otherwise a per-frame `level` getter (never React state).
- *   Thinking and muted have no stream and use the getter.
- * - STATE. `processing` for the thinking gap; `paused` freezes the light on its
- *   last frame (connecting, ended, closing) instead of fading it out mid-word.
+ * The composer's edge is the object you speak into, so the light lives ON
+ * that edge and OUTSIDE it, never as a haze over the field: the 1px V3 edge
+ * takes the speaker's tone where it is lit, a soft falloff blooms outward
+ * from it, and the text and controls stay exactly as crisp as at rest.
  *
- * Decorative: every surface keeps an accessible status and a visible control state,
- * and the package keeps its own reduced-motion handling. The glow auto-detects
- * the child's radius, so it follows the composer's corners exactly.
+ * - STATE IS THE LIGHT, with no meter and no status label. Ember while you
+ *   speak, presence ink while Alevr speaks, the Continuum handoff (a beam
+ *   from your end to Alevr's, ember to presence) while it thinks, still
+ *   graphite when muted. The call's live region says each state in words.
+ * - EACH VOICE IS ITS OWN AUDIO. In a call, your microphone and Alevr's
+ *   output as heard (`levels`, from the realtime hook's split envelopes), so
+ *   talking over Alevr shows both. Otherwise one live `stream` (dictation's
+ *   microphone) or a per-frame `level` getter, given to whoever `tone` names.
+ * - SILENCE IS STILL. A faint, unmoving light marks whose floor it is; it
+ *   never breathes, and a still frame is never redrawn.
+ * - `processing` is the thinking gap; `paused` (connecting, reconnecting,
+ *   ended, a closing dictation) takes the light away on the exit rung.
+ *
+ * Reduced motion: static tone states, 120 ms fades. Reduced transparency: a
+ * solid, crisp edge and no falloff. Decorative throughout (`aria-hidden`).
  */
-export function JunoVoiceGlow({
+export function JunoVoiceGlow(props: VoiceGlowProps) {
+  const stage = React.useContext(VoiceGlowStageContext);
+  if (stage?.render) return <>{stage.render(props)}</>;
+  return <AlevrVoiceGlow {...props} />;
+}
+
+/** The props' state → the light's model: who holds the floor. */
+export function glowModeFor({ paused, processing, tone }: Pick<VoiceGlowProps, "paused" | "processing" | "tone">): GlowMode {
+  if (paused) return "off";
+  if (processing || tone === "thinking") return "thinking";
+  if (tone === "muted") return "muted";
+  if (tone === "juno") return "alevr";
+  return "you";
+}
+
+/** `sensitivity` was tuned as voice-glow's input gain, whose default is 3.1. */
+const SENSITIVITY_BASE = 3.1;
+
+function AlevrVoiceGlow({
   stream,
   level,
+  levels,
   sensitivity,
   processing = false,
   paused = false,
   tone = "you",
   className,
   children,
-}: {
-  stream?: MediaStream | null;
-  level?: () => number;
-  sensitivity?: number;
-  processing?: boolean;
-  paused?: boolean;
-  tone?: VoiceGlowTone;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const theme = useEffectTheme();
-  const palette = junoVoicePalette(theme, tone);
+}: VoiceGlowProps) {
+  const streamLevel = useStreamLevel(levels ? null : stream, (sensitivity ?? SENSITIVITY_BASE) / SENSITIVITY_BASE);
+  const single = streamLevel ?? level ?? null;
+  const you = levels ? (levels.you ?? null) : tone === "you" ? single : null;
+  const alevr = levels ? (levels.alevr ?? null) : tone === "juno" ? single : null;
+  const sources = React.useMemo(() => ({ you, alevr }), [you, alevr]);
   return (
-    <VoiceBeam
-      stream={stream ?? undefined}
-      level={level}
-      sensitivity={sensitivity}
-      processing={processing}
-      paused={paused}
-      theme={theme ?? "light"}
-      colors={palette.colors}
-      bandColors={palette.bandColors}
-      strength={theme === "dark" ? 0.95 : 0.8}
-      attack={0.06}
-      release={0.18}
-      idle={0.06}
-      className={className ?? "relative w-full rounded-composer"}
-    >
+    <VoiceGlowSurface mode={glowModeFor({ paused, processing, tone })} levels={sources} className={className}>
       {children}
-    </VoiceBeam>
+    </VoiceGlowSurface>
   );
 }
 
 /**
- * The glow on the composer during a call. Outside a call it renders its child
- * untouched, so the composer pays nothing for it.
+ * The light on the composer during a call. Outside a call it renders its
+ * child untouched, so the composer pays nothing for it.
  */
 export function VoiceComposerGlow({ call, children }: { call?: VoiceCallParts; children: React.ReactNode }) {
   if (!call) return <>{children}</>;
   return (
     <JunoVoiceGlow
       stream={call.stream}
+      levels={call.levels}
       sensitivity={call.sensitivity}
       level={call.level}
-      processing={call.processing} paused={call.paused} tone={call.tone}>
+      processing={call.processing}
+      paused={call.paused}
+      tone={call.tone}
+    >
       {children}
     </JunoVoiceGlow>
   );
