@@ -289,3 +289,30 @@ export async function lockdownEnabled(userId: string): Promise<boolean> {
   const settings = await prisma.settings.findUnique({ where: { userId }, select: { lockdownMode: true } });
   return !!settings?.lockdownMode;
 }
+
+/**
+ * Link a generation's produced files to the assistant message that answered
+ * it, once that message is persisted (the route does the same for the user's
+ * own files). Files a run produced are attached to the conversation at once;
+ * this adds the message link so they appear on the answer. Returns how many
+ * attachments were linked. L1 calls it where the route creates the assistant
+ * message.
+ */
+export async function linkRunOutputsToMessage(input: {
+  userId: string;
+  conversationId: string;
+  sessionId: string;
+  messageId: string;
+}): Promise<number> {
+  const runs = await prisma.toolRun.findMany({
+    where: { userId: input.userId, conversationId: input.conversationId, sessionId: input.sessionId },
+    select: { outputs: true },
+  });
+  const ids = runs.flatMap((run) => readOutputs(run).files.map((file) => file.attachmentId));
+  if (ids.length === 0) return 0;
+  const result = await prisma.attachment.updateMany({
+    where: { id: { in: ids }, userId: input.userId, conversationId: input.conversationId, origin: "tool_output", messageId: null },
+    data: { messageId: input.messageId },
+  });
+  return result.count;
+}
