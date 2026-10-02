@@ -18,6 +18,7 @@ import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
+import { HomeSuggestions } from "@/components/chat/home-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 /*
@@ -71,7 +72,8 @@ import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
-import { cleanForSpeech, stripMemoryTags } from "@/lib/message-content";
+import { stripMemoryTags } from "@/lib/message-content";
+import { speechForReply } from "@/lib/chat/tool-run-speech";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import { voicePhaseOf } from "@/lib/voice-phase";
@@ -83,6 +85,7 @@ import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
 import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
+import { announceReplyFinished } from "@/lib/ui-prefs";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -450,6 +453,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     },
     onDone: (_assistant, meta) => {
       const id = createdIdRef.current ?? conversationId;
+      // Settings › Notifications: a system notification and/or chime when the
+      // reply finished while the reader was in another tab or app.
+      if (meta?.finishReason !== "user_stopped") {
+        announceReplyFinished(meta?.title ?? "Open the chat to read it.");
+      }
       if (!privateMode && id && meta?.title) {
         updateConversation(id, { title: meta.title, lastMessageAt: new Date().toISOString() });
       }
@@ -1662,7 +1670,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       return;
     }
     setSpeakingId(id);
-    tts.speak(cleanForSpeech(text), settings.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
+    // The reply as speech, plus the files its runs made, named once when the
+    // reply did not already name them (lib/chat/tool-run-speech). Code and raw
+    // output are never read aloud.
+    const activity = chat.messages.find((m) => m.id === id)?.activity;
+    tts.speak(speechForReply(text, activity), settings.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
   };
 
   const sendFromComposer = React.useCallback(
@@ -2040,7 +2052,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 : voiceOpen
                   ? "Type while you talk…"
                   : agent
-                    ? `Message ${agent.name}…`
+                    ? `Message ${agent.name}`
                     : undefined
       }
       selectedProjectId={activeProjectId}
@@ -2490,7 +2502,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // edge while it is centred under them, and the two never line
                 // up. Both now take `.page-gutter`, so "the same" is a shared
                 // declaration rather than two copies of one number.
-                <div className="page-gutter mx-auto w-full max-w-3xl shrink-0 pb-2">
+                <div className="page-gutter mx-auto w-full transcript-column shrink-0 pb-2">
                   <FollowUpSuggestions
                     conversationId={currentConversationId}
                     onPick={(t) => void sendFromComposer(t, [])}
@@ -2516,23 +2528,22 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               </div>
             </div>
           ) : (
-            // Empty / greeting view. overflow-x-clip so the composer aura, which
-            // is wider than the column it sits in, can never put a horizontal
-            // scrollbar over dead space (it still scrolls vertically).
+            // Empty / greeting view (V3 home): the composer at the panel's
+            // optical centre, the greeting resting on it, at most three
+            // suggestions from real state hanging beneath (composer.css,
+            // `.chat-home`). overflow-x-clip so the composer aura can never put
+            // a horizontal scrollbar over dead space.
             <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
-              <div className="page-gutter mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center py-6 md:py-8">
-                {/*
-                  `isolate` bounds where the aura is allowed to fall. It paints
-                  on z-index -1, and the column below deliberately does NOT
-                  create a stacking context, so without a floor here the bloom
-                  would drop to whatever distant ancestor happens to establish
-                  one and could end up behind an unrelated background.
-                */}
-                <div className="relative isolate flex w-full flex-col items-center justify-center">
+              {/*
+                `isolate` bounds where the aura is allowed to fall: it paints on
+                z-index -1, so without a floor here the bloom would drop to
+                whatever distant ancestor establishes a stacking context.
+              */}
+              <div className="chat-home page-gutter relative isolate">
                   {/* Headers cross-fade — opacity only; scale was causing a jump. */}
                   <div
                     className={cn(
-                      "mb-6 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-8",
+                      "chat-home__greet grid w-full grid-cols-1 grid-rows-1 justify-items-center",
                       // The greeting's exit beat: up and out on title-out while
                       // the composer below holds still for its travel. Forwards
                       // fill, or the final frame would snap back before the swap
@@ -2576,13 +2587,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
                   <div
                     ref={emptyComposerRef}
-                    className="relative isolate w-full max-w-3xl"
+                    className="chat-home__composer relative isolate w-full"
                   >
                     {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
                     {composer}
                   </div>
-                </div>
+                  {/* At most three, from the person's own state; none when
+                      nothing real exists. A draft or a layer opened below the
+                      composer puts them away in the same frame. */}
+                  <div className="chat-home__suggest">
+                    {!agent && !privateMode && !chat.pendingClarification && handoff !== "leaving" ? (
+                      <HomeSuggestions onPickProject={(projectId) => handlePickProject(projectId)} />
+                    ) : null}
+                  </div>
               </div>
             </div>
           )}

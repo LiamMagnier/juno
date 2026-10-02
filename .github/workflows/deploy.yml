@@ -102,6 +102,8 @@ jobs:
         run: npm ci --prefix relay
 
       - name: Shared local gates (same command as Mac deploy and release)
+        env:
+          GATES_UNIT_TESTS_SHARDED: "1"
         run: bash scripts/local-gates.sh
 
       # Both halves of the capability manifest are generated from one JSON
@@ -184,6 +186,38 @@ jobs:
   #
   # A real service container rather than `continue-on-error`: a step that cannot
   # fail is not a gate, it is a green tick.
+  # The unit tests (tests/*.test.ts, ~900 files) were most of the gate's time on
+  # a 4-core runner: Node starts and transpiles one process per file. Four shards
+  # run in parallel; the gate job above runs the rest of the test chain.
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4]
+    concurrency:
+      group: gate-unit-${{ github.ref }}-${{ matrix.shard }}
+      cancel-in-progress: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate the i18n catalog
+        run: npm run i18n:extract
+      - name: Build the vendored runner core
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+      - name: Unit tests, shard ${{ matrix.shard }} of 4
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: npx tsx --test --test-shard=${{ matrix.shard }}/4 tests/*.test.ts
+
   migrations:
     runs-on: ubuntu-latest
     concurrency:
@@ -487,7 +521,7 @@ jobs:
           echo "All $checked Work orchestration sources and suites are present in dist/."
 
   build-and-deploy:
-    needs: [test, runner, migrations]
+    needs: [test, unit-tests, runner, migrations]
     # Pull requests run test, migrations and runner — but never a deploy. A
     # manual dispatch is production-capable only when launched from main; the
     # ref is checked explicitly because workflow_dispatch is otherwise allowed
@@ -545,6 +579,19 @@ jobs:
               missing=1
             fi
           done
+          # The server refuses to boot in production without these (src/lib/boot.ts
+          # asserts both keyrings). Missing here means a crash loop after upload
+          # and an automatic rollback ten minutes later; fail in seconds instead.
+          for name in TOKEN_ENCRYPTION_KEYS TOKEN_ENCRYPTION_PRIMARY; do
+            if ! printf '%s\n' "$PROD_ENV" | grep -Eq "^${name}=.+$"; then
+              echo "::error::PROD_ENV is missing ${name}; the app will not boot in production without it (copy it from the VM's ~/juno/.env)."
+              missing=1
+            fi
+          done
+          if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^DATA_ENCRYPTION_KEY(RING)?=.+$'; then
+            echo "::error::PROD_ENV is missing DATA_ENCRYPTION_KEY or DATA_ENCRYPTION_KEYRING; the app will not boot in production without one (copy it from the VM's ~/juno/.env)."
+            missing=1
+          fi
           if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_EMAIL=.+$' && \
              ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_TOKEN=.+$' && \
              ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_COOKIE=.+$'; then

@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
+import {
+  FINAL_ANSWER_OUTPUT_TOKENS,
+  NEXT_ROUND_OUTPUT_TOKENS,
+  WEB_SEARCH_ROUND_FEE_ESTIMATE_MICRO_USD,
+  createStreamBudgetGuard,
+  lastRequestFigures,
+  toolFeeEstimateFor,
+  usageDelta,
+} from "@/lib/chat-budget-guard";
 
 /*
  * The mid-stream ceiling: the point of it is that a user cannot be billed a
@@ -173,4 +181,79 @@ test("without a cache rate every prompt token is priced at the input rate", () =
   });
   g.enforce(); // 1,000 × 1 = 1,000, at the ceiling
   assert.equal(halts.length, 1);
+});
+
+// ── The mid-loop guard (SPEC §4.7) ──────────────────────────────────────────
+
+test("tool fees count toward the hard halt: a turn of paid searches cannot pass the ceiling unseen", () => {
+  let fees = 0;
+  const { g, halts } = guard({
+    usage: () => ({ promptTokens: 100, completionTokens: 10, outputChars: 0, reasoningChars: 0 }),
+    extraCostMicroUsd: () => fees,
+  });
+  g.enforce();
+  assert.equal(halts.length, 0);
+  assert.equal(g.projectedMicroUsd(), 200);
+  fees = 800; // 200 in tokens + 800 in fees = the ceiling
+  g.enforce();
+  assert.equal(halts.length, 1);
+  assert.equal(g.halted, true);
+});
+
+test("wouldExceedNextRound: projected + one more round + a final answer against the ceiling", () => {
+  const cacheRates = { input: 1, output: 10, cacheRead: 0.1 };
+  const { g } = guard({
+    ceilingMicroUsd: 100_000,
+    rates: cacheRates,
+    usage: () => ({ promptTokens: 10_000, completionTokens: 500, outputChars: 0, reasoningChars: 0 }),
+  });
+  // projected = 10,000 + 5,000 = 15,000.
+  const next = { lastRequestInputTokens: 20_000, cachedShare: 0.5, toolFeeEstimateMicroUsd: 8_000 };
+  // prompt = 20,000 × (0.5 × 1 + 0.5 × 0.1) = 11,000
+  // next round = 11,000 + 2,000 × 10 + 8,000 = 39,000; final = 11,000 + 1,500 × 10 = 26,000
+  assert.equal(15_000 + 39_000 + 26_000, 80_000);
+  assert.equal(g.wouldExceedNextRound(next), false);
+  const tight = guard({
+    ceilingMicroUsd: 80_000,
+    rates: cacheRates,
+    usage: () => ({ promptTokens: 10_000, completionTokens: 500, outputChars: 0, reasoningChars: 0 }),
+  });
+  assert.equal(tight.g.wouldExceedNextRound(next), true, "reaching the ceiling counts");
+  assert.equal(NEXT_ROUND_OUTPUT_TOKENS, 2_000);
+  assert.equal(FINAL_ANSWER_OUTPUT_TOKENS, 1_500);
+});
+
+test("wouldExceedNextRound is never true without a ceiling, and does not halt", () => {
+  const { g, halts } = guard({ ceilingMicroUsd: null });
+  assert.equal(g.wouldExceedNextRound({ lastRequestInputTokens: 1e9, cachedShare: 0, toolFeeEstimateMicroUsd: 1e9 }), false);
+  assert.equal(halts.length, 0);
+});
+
+test("the next round's tool fee is 8,000 µUSD when web_search is attached, else 0", () => {
+  assert.equal(toolFeeEstimateFor({ webSearchAttached: true }), WEB_SEARCH_ROUND_FEE_ESTIMATE_MICRO_USD);
+  assert.equal(WEB_SEARCH_ROUND_FEE_ESTIMATE_MICRO_USD, 8_000);
+  assert.equal(toolFeeEstimateFor({ webSearchAttached: false }), 0);
+});
+
+test("the last request's figures come from differencing cumulative usage", () => {
+  const previous = { input: 1_000, output: 100, cacheRead: 400 };
+  const current = { input: 3_500, output: 250, cacheRead: 2_000 };
+  assert.deepEqual(usageDelta(previous, current), { input: 2_500, output: 150, cacheRead: 1_600 });
+  assert.deepEqual(usageDelta(null, current), current, "the first request is the whole reading");
+  assert.deepEqual(usageDelta({ input: 5 }, { input: 3 }), { input: 0 }, "never below zero");
+
+  // OpenAI-style: the prompt count already includes the cache reads.
+  assert.deepEqual(lastRequestFigures(previous, current, { promptTokensIncludeCacheRead: true }), {
+    lastRequestInputTokens: 2_500,
+    cachedShare: 1_600 / 2_500,
+  });
+  // Anthropic: cache reads are outside it, and cache writes count too.
+  assert.deepEqual(
+    lastRequestFigures({ input: 10, cacheRead: 0 }, { input: 110, cacheRead: 300, cacheWrite5m: 100 }, { promptTokensIncludeCacheRead: false }),
+    { lastRequestInputTokens: 100 + 300 + 100, cachedShare: 300 / 500 }
+  );
+  assert.deepEqual(lastRequestFigures(current, current, { promptTokensIncludeCacheRead: true }), {
+    lastRequestInputTokens: 0,
+    cachedShare: 0,
+  });
 });

@@ -104,16 +104,16 @@ final class JunoDesignTokensTests: XCTestCase {
 
         // These literals track the Soft UI ladder (docs/design/SOFT_UI.md
         // §2.3): control 10 · field 12 · menu 14 · card 16 · popover 16 ·
-        // panel 20 · composer 20. When the web retunes, the paired token
+        // panel 20 · composer 22 (V3, docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
         // references above keep passing and only these numbers move — that
         // is this assertion doing its job, not failing at it.
         //
-        // 20 by way of the web's `rounded-composer`, never by way of
+        // 22 by way of the web's `rounded-composer`, never by way of
         // `--radius`: the rung once hardcoded 24 while claiming composer
         // parity, and `--radius` merely happened to sit nearby. See the note
         // on JunoRadius.composer.
         XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
-        XCTAssertEqual(JunoRadius.composer, 20)
+        XCTAssertEqual(JunoRadius.composer, 22)
     }
 
     /// The redesign's radius names (§8.4 plus errata 9) are the web's own
@@ -207,24 +207,36 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertNotEqual(JunoColorToken.surfaceLight, JunoColorToken.surfaceDark)
     }
 
-    /// The accent is the one token that must *not* differ. `--primary` is
-    /// `15 54% 46%` in both `:root` and `.dark` in `src/app/globals.css`; the
-    /// native palette used to brighten it in dark mode, which drifted the brand.
-    func testAccentIsTheSameCoralInBothAppearances() {
-        XCTAssertEqual(JunoColorToken.accentLight, JunoColorToken.accentDark)
+    /// The accent is the web's `--primary` in each appearance, never a native
+    /// retune of it. V3 lifts it on the charcoal: #2D49C9 on light, #97A6E6 on
+    /// dark — the same ultramarine hue, lighter and calmer, because the light
+    /// value is too dark to read on the dark ground (BRAND_IDENTITY.md: "dark
+    /// theme is layered charcoal with lifted/desaturated blue").
+    func testAccentIsTheWebsPrimaryInEachAppearance() {
         XCTAssertEqual(JunoColorToken.accentLight, JunoColorToken.coral)
+        XCTAssertEqual(JunoColorToken.accentLight, JunoGeneratedColors.primary.light)
+        XCTAssertEqual(JunoColorToken.accentDark, JunoGeneratedColors.primary.dark)
+
+        let light = JunoColorToken.accentLight.hsl
+        let dark = JunoColorToken.accentDark.hsl
+        XCTAssertEqual(light.h, dark.h, accuracy: 2, "one hue in both appearances")
+        XCTAssertGreaterThan(dark.l, light.l, "lifted on the charcoal")
+        XCTAssertLessThan(dark.s, light.s, "and desaturated, not brightened")
     }
 
-    /// Juno's neutrals are warm in both appearances — red is the highest channel
-    /// and blue the lowest. A neutral or blue-leaning grey is the single most
-    /// visible way the native app stops looking like Juno.
+    /// V3's neutrals are graphite in both appearances: all but colourless, and
+    /// where they lean at all they lean cool — blue is the highest channel and
+    /// red never exceeds it. A cream or warm grey is now the most visible way
+    /// the native app stops looking like the product (the round-3 palette
+    /// retired the warm paper and charcoal: #FCFCFD / #18191B grounds,
+    /// #191B1E / #E8E9EB ink).
     ///
     /// The list is deliberately exhaustive over the neutral ramp, including the
     /// light surfaces. It used to cover five tokens, and every one it skipped is
-    /// where the drift accumulated: `JunoSurfaces` had grown a second, *cool*
-    /// dark ground (blue highest) sitting beside `warmBlack`, and three
-    /// separate pure whites, none of which this test could see.
-    func testBrandNeutralsAreWarmInBothAppearances() {
+    /// where the drift accumulated: `JunoSurfaces` had grown a second dark
+    /// ground of the opposite temperature, and three separate pure whites,
+    /// none of which this test could see.
+    func testBrandNeutralsAreGraphiteInBothAppearances() {
         let tokens: [JunoColorToken] = [
             .canvasLight, .canvasDark,
             .surfaceLight, .surfaceDark,
@@ -248,8 +260,9 @@ final class JunoDesignTokensTests: XCTestCase {
             .selectedLight, .selectedDark,
         ]
         for token in tokens {
-            XCTAssertGreaterThan(token.red, token.blue, "expected a warm neutral")
-            XCTAssertGreaterThanOrEqual(token.green, token.blue)
+            let chroma = max(token.red, token.green, token.blue) - min(token.red, token.green, token.blue)
+            XCTAssertLessThanOrEqual(chroma, 0.04, "expected a graphite neutral, not a tint: \(token)")
+            XCTAssertGreaterThanOrEqual(token.blue, token.red, "expected a cool-leaning neutral, not a warm one: \(token)")
         }
     }
 
@@ -265,8 +278,8 @@ final class JunoDesignTokensTests: XCTestCase {
     }
 
     /// Elevation must read as lighter in dark mode, or cards vanish: canvas
-    /// (11.5%) < card (14%) < popover (16.5%), in HSL lightness, the unit the
-    /// web writes the ramp in (§8.1).
+    /// (10%) < card (14.1%) < popover (16.1%), in HSL lightness, the unit the
+    /// web writes the ramp in (§8.1; V3's layered charcoal).
     ///
     /// Measured on the ground the Mac paints. The phone keeps its 4% ground
     /// for now (see `JunoColorToken.canvasDark`), which satisfies the same
@@ -280,9 +293,9 @@ final class JunoDesignTokensTests: XCTestCase {
         let popover = lightness(.popoverDark)
         XCTAssertLessThan(canvas, card)
         XCTAssertLessThan(card, popover)
-        XCTAssertEqual(canvas, 0.115, accuracy: 0.001, "the Mac canvas is the web's warm charcoal")
-        XCTAssertEqual(card, 0.14, accuracy: 0.001)
-        XCTAssertEqual(popover, 0.165, accuracy: 0.001)
+        XCTAssertEqual(canvas, 0.100, accuracy: 0.001, "the Mac canvas is the web's charcoal, #18191B")
+        XCTAssertEqual(card, 0.141, accuracy: 0.001)
+        XCTAssertEqual(popover, 0.161, accuracy: 0.001)
     }
 
     /// The Mac canvas is `--background` itself: #FAF9F6 / #1F1D1C. The old

@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 820502d78627674e
+// tokens-digest: d1baf1aa9d9777fc
 //
 
 import CoreGraphics
@@ -234,20 +234,20 @@ public enum JunoGeneratedColors {
 
     /// `--primary`
     public static let primary = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882),
-        dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902)
+        light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199),
+        dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)
     )
 
     /// `--primary-foreground`
     public static let primaryForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
-        dark: JunoColorToken(unchecked: 0.0941, 0.098, 0.1059)
+        dark: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199)
     )
 
     /// `--primary-ink`
     public static let primaryInk = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882),
-        dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902)
+        light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199),
+        dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)
     )
 
     /// `--ring`
@@ -258,7 +258,7 @@ public enum JunoGeneratedColors {
 
     /// `--scrim`
     public static let scrim = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.0896, 0.0858, 0.0704, 0.36),
+        light: JunoColorToken(unchecked: 0.0896, 0.0858, 0.0704, 0.26),
         dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.55)
     )
 
@@ -401,43 +401,43 @@ public extension JunoAccent {
         switch self {
         case .coral:
             JunoGeneratedAccentPalette(
-                primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882), dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902)),
+                primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
-                onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.094, 0.098, 0.106)),
-                ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882), dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902))
+                onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199)),
+                ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163))
             )
         case .juniper:
             JunoGeneratedAccentPalette(
                 primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1736, 0.4464, 0.3191), dark: JunoColorToken(unchecked: 0.3468, 0.7332, 0.5529)),
-                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.371, 0.3626, 0.329), dark: JunoColorToken(unchecked: 0.82, 0.81, 0.78)),
+                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.063, 0.117, 0.09)),
                 ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1736, 0.4464, 0.3191), dark: JunoColorToken(unchecked: 0.3468, 0.7332, 0.5529))
             )
         case .teal:
             JunoGeneratedAccentPalette(
                 primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1165, 0.5135, 0.5135), dark: JunoColorToken(unchecked: 0.2058, 0.7079, 0.7742)),
-                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.371, 0.3626, 0.329), dark: JunoColorToken(unchecked: 0.82, 0.81, 0.78)),
+                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.106, 0.102, 0.094)),
                 ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1129, 0.4972, 0.4972), dark: JunoColorToken(unchecked: 0.2058, 0.7079, 0.7742))
             )
         case .violet:
             JunoGeneratedAccentPalette(
                 primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.4348, 0.364, 0.836), dark: JunoColorToken(unchecked: 0.576, 0.5186, 0.9014)),
-                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.371, 0.3626, 0.329), dark: JunoColorToken(unchecked: 0.82, 0.81, 0.78)),
+                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.106, 0.102, 0.094)),
                 ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.4348, 0.364, 0.836), dark: JunoColorToken(unchecked: 0.576, 0.5186, 0.9014))
             )
         case .amber:
             JunoGeneratedAccentPalette(
                 primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.8515, 0.6405, 0.2485), dark: JunoColorToken(unchecked: 0.9001, 0.702, 0.3599)),
-                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.371, 0.3626, 0.329), dark: JunoColorToken(unchecked: 0.82, 0.81, 0.78)),
+                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.168, 0.12, 0.072), dark: JunoColorToken(unchecked: 0.14, 0.1, 0.06)),
                 ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.5845, 0.4204, 0.1155), dark: JunoColorToken(unchecked: 0.9001, 0.702, 0.3599))
             )
         case .sage:
             JunoGeneratedAccentPalette(
                 primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.3485, 0.5015, 0.3485), dark: JunoColorToken(unchecked: 0.5203, 0.6997, 0.5203)),
-                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.371, 0.3626, 0.329), dark: JunoColorToken(unchecked: 0.82, 0.81, 0.78)),
+                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.106, 0.102, 0.094)),
                 ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.3362, 0.4838, 0.3362), dark: JunoColorToken(unchecked: 0.5203, 0.6997, 0.5203))
             )
@@ -491,15 +491,15 @@ public enum JunoGeneratedRadius {
     public static let sm: CGFloat = 4.0
     public static let xs: CGFloat = 6.0
     public static let md: CGFloat = 8.0
-    public static let control: CGFloat = 10.0
+    public static let control: CGFloat = 8.0
+    public static let field: CGFloat = 10.0
     public static let composerControl: CGFloat = 10.0
-    public static let field: CGFloat = 12.0
+    public static let card: CGFloat = 12.0
+    public static let popover: CGFloat = 12.0
+    public static let surface: CGFloat = 12.0
     public static let composerAction: CGFloat = 12.0
     public static let menu: CGFloat = 14.0
-    public static let card: CGFloat = 16.0
-    public static let popover: CGFloat = 16.0
-    public static let surface: CGFloat = 16.0
-    public static let panel: CGFloat = 20.0
+    public static let panel: CGFloat = 16.0
     public static let composer: CGFloat = 22.0
     public static let stage: CGFloat = 28.0
 }

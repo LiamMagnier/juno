@@ -105,7 +105,7 @@ export function AppPageHeader({
     // Full --border: this rule separates the header from the page body, so it
     // carries layout. The alpha came from a light-theme habit and now compounds
     // with a token that already dropped five points for the black ground.
-    <header className={cn("mb-6 border-b border-border pb-5", className)}>
+    <header className={cn("mb-7 @[40rem]/page:mb-8", className)}>
       {/* The whole row is conditional now, and so is each half of it. A page
           with neither a parent nor a section opens on its name — no leading
           row, and no 28px of empty chrome where one used to be. */}
@@ -134,37 +134,15 @@ export function AppPageHeader({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          {/* The `page-title` rung the comment here used to ask for now exists, so
-              this site names it instead of hand-writing its clamp: same size, and
-              the -0.02em it already carried is what the token sets, matching
-              `display`. Weight and tracking come from the token now — leaving
-              `leading-tight`/`tracking-*`/`font-semibold` beside it would be worse
-              than redundant, since Tailwind emits those groups AFTER font-size and
-              they would silently keep overriding the rung this is adopting. */}
-          {/* The display face (premium pass): every app page opens on its
-              name set in Newsreader, the same voice as the chat greeting and
-              the Code landing, so moving between Library, Projects and
-              Settings reads as one product with one editorial register. At
-              500, not the rung's 600: Newsreader's semibold at 32px is heavy
-              beside Inter controls, and the serif already carries the
-              contrast the weight used to. `leading-snug`-free: the rung's own
-              1.15 line box is what the skeleton below measures. */}
-          <h1 className="text-balance font-serif text-page-title font-medium">{heading}</h1>
-          {/* `text-body` (15px × 1.6) is the same 24px line box the
-              `text-sm leading-6` here used to build by hand, so nothing
-              reflows — it is now the rung the scale names rather than
-              Tailwind's stock size sitting one pixel under it on every page. */}
-          {lede && (
-            <p className="mt-1.5 max-w-prose text-pretty text-body text-muted-foreground">{lede}</p>
-          )}
-        </div>
+      {/* The page's action sits on its TITLE's line (design V3, revision 2),
+          not beside the lede's last line, where it floated below the title. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <h1 className="min-w-0 text-balance font-serif text-page-title font-normal">{heading}</h1>
         {/* max-w-full: on a phone the actions wrap to their own line, and a
-            row wider than that line (Admin's four tabs) used to push the page
-            sideways; clamped, it scrolls inside its own track. */}
-        {actions && <div className="flex max-w-full shrink-0 items-center gap-2.5">{actions}</div>}
+            row wider than that line (Admin's four tabs) scrolls inside its own track. */}
+        {actions && <div className="flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-0.5">{actions}</div>}
       </div>
+      {lede && <p className="mt-1.5 max-w-prose text-pretty text-body text-muted-foreground">{lede}</p>}
     </header>
   );
 }
@@ -241,7 +219,7 @@ export function AppPageHeaderSkeleton({
           </span>
         </div>
       )}
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
           <Skeleton className={cn("h-[1.15em] max-w-full text-page-title", headingWidth)} />
           {lede &&

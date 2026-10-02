@@ -18,8 +18,10 @@ import {
 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";
-import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
-import { JunoMark } from "@/components/brand/logo";
+import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
+import { ContinuumMark } from "@/components/brand/continuum-mark";
+import { JunoOrbit } from "@/components/ui/icons";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,7 +60,7 @@ import { StatusDot, statusLabel, statusSentence, statusTone } from "@/components
 import { RUN_STATE_META, isBlockedOnYou, runState } from "@/lib/code-runs";
 import { codeRunTone, newestPerConversation, workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
-import { staggerDelay, transition } from "@/lib/motion";
+import { spring, staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
@@ -70,7 +72,8 @@ import { NotificationsPopover } from "@/components/notifications/notifications-p
 import { useNotifications } from "@/components/notifications/use-notifications";
 import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
 import { unreadDetail } from "@/components/notifications/inbox-model";
-import { BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { AGENT_STATE_NAMES, BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -215,6 +218,29 @@ const INBOX_REQUEST_TTL_MS = 2_000;
  * names, which is the failure both of those modules exist to prevent.
  */
 type RowSignal = { tone: StatusTone; label: string; meaning: string };
+
+/** One thing waiting on the person, in the Needs you fold (see `attention`). */
+type AttentionItem = {
+  key: string;
+  href: string;
+  /** Who is asking: the agent's own name, or the product for its own runs. */
+  who: string;
+  /** What they need, in the attention words ("Needs your approval"). */
+  ask: string;
+  /** What it is about (the task or the chat). */
+  what: string;
+  agent?: ClientAgent;
+  /** The chat behind a run's ask, so its row keeps the chat's own menu. */
+  conversation?: ClientConversation;
+  conversationId: string | null;
+};
+
+/** A run's waiting status, in the words Orbit uses for it. */
+function askWords(status: string | undefined): string {
+  if (status === "waiting_approval") return "Needs your approval";
+  if (status === "host_offline") return "Waiting for your Mac";
+  return AGENT_STATE_NAMES.needsAnswer;
+}
 
 /**
  * The row kebab, once. `coarse:opacity-100` is not polish: reveal-on-hover is
@@ -679,6 +705,46 @@ export function AppSidebar({
    * question is not usefully filed under "you like this one".
    */
   const needsYouRows = React.useMemo(() => live.filter((c) => needsYouIds.has(c.id)), [live, needsYouIds]);
+  /*
+   * EVERY ATTENTION ITEM, ONE SHAPE (INTERACTION_SPEC S7, critique 1: "every
+   * attention item treated the same", "Needs you says what"). An agent that is
+   * waiting on the person and a chat or session whose run stopped to ask are
+   * the same row: who is asking, what they need in the attention words, and
+   * what it is about. An agent's ask in its own thread is one row, not two.
+   */
+  const attention = React.useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = [];
+    const covered = new Set<string>();
+    if (!isCode) {
+      for (const agent of agents) {
+        if (agent.state !== "waiting") continue;
+        const conversationId = agent.task?.conversationId ?? agent.conversationId ?? null;
+        if (conversationId) covered.add(conversationId);
+        items.push({
+          key: `agent:${agent.id}`,
+          href: conversationId ? `/chat/${conversationId}` : `/agents/${agent.id}`,
+          who: agent.name,
+          ask: askWords(agent.task?.status),
+          what: agent.task?.title?.trim() || agent.role || "a task",
+          agent,
+          conversationId,
+        });
+      }
+    }
+    for (const c of needsYouRows) {
+      if (covered.has(c.id)) continue;
+      items.push({
+        key: c.id,
+        href: `/chat/${c.id}`,
+        who: isCode ? BRAND.code.title : PRODUCT_NAME,
+        ask: isCode ? (rowSignals.get(c.id)?.label ?? AGENT_STATE_NAMES.needsAnswer) : askWords(workRuns.byConversation.get(c.id)?.status),
+        what: c.title || (c.kind === "code" ? "Untitled session" : "New chat"),
+        conversation: c,
+        conversationId: c.id,
+      });
+    }
+    return items;
+  }, [agents, isCode, needsYouRows, rowSignals, workRuns.byConversation]);
   const pinned = React.useMemo(() => live.filter((c) => c.pinned && !needsYouIds.has(c.id)), [live, needsYouIds]);
   // Project chats stay in Recents as well as under their project, because a
   // project is a workspace rather than a filing.
@@ -698,8 +764,8 @@ export function AppSidebar({
    * a filter that has hidden every row including its own control.
    */
   React.useEffect(() => {
-    if (needsYouRows.length === 0) setNeedsYouOnly(false);
-  }, [needsYouRows.length]);
+    if (attention.length === 0) setNeedsYouOnly(false);
+  }, [attention.length]);
 
   const newChat = () => {
     router.push("/chat");
@@ -859,164 +925,135 @@ export function AppSidebar({
           "flex h-full flex-col text-sidebar-foreground",
           // Desktop width rides the shell's --juno-sidebar-width (user-resizable);
           // keeping it on the inner column preserves the collapse clip-reveal.
-          // w-16 = 64px = app-shell's RAIL_WIDTH. Not the spec's 56: the
+          // w-[52px] = app-shell's RAIL_WIDTH: 36px targets in px-2. (Was 64:
           // product switch's rail items are 44px inside `px-2.5`, which is
           // exactly 64, and that control is signed off and not ours to resize.
-          collapsed ? "w-16" : "w-full md:w-[var(--juno-sidebar-width,288px)]"
+          collapsed ? "w-[52px]" : "w-full md:w-[var(--juno-sidebar-width,260px)]"
         )}
       >
-        {/* ── Collapse · Brand · Chat|Code ─────────────────────────────── */}
+        {/* ── Lockup · bell · collapse ─────────────────────────────────── */}
         {/*
-         * THE REFERENCE'S HEADER: three things on one centred 48px row, the
-         * collapse control, the wordmark, and the product switch.
+         * THE HEAD (the V3 gallery's shell, D-033): the Alevr lockup on the
+         * left, the Continuum mark beside the outlined wordmark, its mark on
+         * the glyph column's 18 px edge (where every nav glyph starts); the
+         * bell and the collapse control on the right, quiet (the third ink),
+         * 32 px targets. The row is 44 px, 8 px down, so its centre line is
+         * y = 30, the gallery's, and meets the inset panel's header line.
          *
-         * The switch used to be a full-width labelled pill on its own block
-         * below this row, roughly 72px of the column spent on a control
-         * pressed twice a session. Here it is 64×28 in space the header was
-         * already holding open, and the 72px goes to the list.
+         * Collapsed to the rail, the mark alone is the way home, and the bell
+         * and the expand control stack under it on the glyph column.
          *
-         * Collapse sits LEFT of the wordmark: with the switch on the right, two
-         * controls there would be a cluster whose halves do unrelated things
-         * (one hides this column, the other changes which product it lists).
-         * Split, each sits on the side of the thing it acts on.
+         * The bell carries unseen records in its INK, one step up from the
+         * third ink to the first: no dot, no count, no fill (INTERACTION_SPEC
+         * S10 as the gallery revised it). Its accessible name says how many.
          *
-         * THE TWO NUMBERS ARE THE COLUMN'S. `pl-2.5` (10) + a 32px button puts
-         * the collapse glyph's centre at 26px, the centre of every nav glyph
-         * below it (8 + 8 + half of a 20px box). `gap-1` then puts the wordmark
-         * at 10 + 32 + 4 = 46px, the label edge every row keeps. On a phone the
-         * button is not drawn, so the wordmark takes `max-md:pl-1.5` and starts
-         * on the glyphs' 16px edge instead.
-         *
-         * `layout="position"` HERE AND ON EVERY WRAPPER IN THIS COLUMN, never a
-         * bare `layout`. A bare `layout` animates SIZE as a `scale` on the
-         * wrapper, and nothing inside these wrappers is a layout node that
-         * framer could counter-scale — so the header, a 288px row, went to a
-         * 44px column by stretching the collapse glyph six times its width
-         * and squashing it to a third of its height for the first frames of
-         * the fold. None of the wrappers paints anything, so the size can
-         * change in one frame unseen; what the eye follows is where each mark
-         * goes, and that is what travels.
+         * `layout="position"` on every wrapper, never a bare `layout`: a bare
+         * one animates size as a scale on content framer cannot counter-scale.
          */}
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn("flex items-center", collapsed ? "flex-col gap-1 px-2.5 pt-2" : "h-12 gap-1 pl-2.5 pr-2")}
+          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-[18px] pr-2")}
         >
+          <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex-1")}>
+            {collapsed && onToggleCollapse ? (
+              /*
+               * THE RAIL'S HEAD IS ONE CONTROL. It used to stack the mark, the
+               * bell and an expand button, three 44px tiles before the first
+               * destination. Now the mark is the expand control: under the
+               * pointer it hands over to the panel glyph (the pattern people
+               * know from the references), and the bell lives by the avatar.
+               */
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onToggleCollapse}
+                    aria-label="Show sidebar"
+                    aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
+                    className="jicon-trigger group/head relative grid size-9 place-items-center rounded-control text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover coarse:size-11"
+                  >
+                    <span className="col-start-1 row-start-1 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-90 group-hover/head:opacity-0 group-focus-visible/head:opacity-0 motion-reduce:transition-none">
+                      <ContinuumMark size={14} tight tone="current" />
+                    </span>
+                    <span className="col-start-1 row-start-1 scale-90 text-muted-foreground opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-100 group-hover/head:text-foreground group-hover/head:opacity-100 group-focus-visible/head:opacity-100 motion-reduce:transition-none [&_svg]:size-4">
+                      <SidebarMotionIcon kind="panel-open" />
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="flex items-center gap-1.5">
+                  Show sidebar
+                  <Kbd>{`${mod}⇧S`}</Kbd>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+            <Link
+              href={isCode ? "/code" : "/chat"}
+              onClick={() => setSidebarOpen(false)}
+              aria-label={isCode ? `${BRAND.code.title} home` : `${PRODUCT_NAME} home`}
+              className={cn(
+                "flex items-center rounded-control text-foreground outline-offset-2",
+                collapsed ? "size-9 justify-center" : "h-9 w-fit"
+              )}
+            >
+              {collapsed ? (
+                <ContinuumMark size={14} tight tone="current" />
+              ) : (
+                <motion.span initial={revealOnMount} animate={{ opacity: 1 }} transition={transition.base} className="flex items-center">
+                  <AlevrLockup height={14} tone="current" decorative />
+                </motion.span>
+              )}
+            </Link>
+            )}
+          </motion.div>
+          {!collapsed && (
           <NotificationsPopover inbox={inbox} open={inboxOpen} onOpenChange={setInboxOpen} onNavigate={() => setSidebarOpen(false)}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={inboxDetail ? `Notifications, ${inboxDetail}` : "Notifications"}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={inboxDetail ? `Notifications, ${inboxDetail}` : "Notifications"}
+                className={cn(
+                  "jicon-trigger shrink-0 coarse:size-11",
+                  "size-8",
+                  (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
                 <SidebarMotionIcon kind="notifications" className="size-4" />
               </Button>
             </PopoverTrigger>
           </NotificationsPopover>
-          {onToggleCollapse && (
+          )}
+          {onToggleCollapse && !collapsed && (
             <motion.div layout="position" transition={layoutTransition} className="hidden shrink-0 md:flex">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className={cn("group hidden shrink-0 md:inline-flex", collapsed ? "size-11" : "size-8 coarse:size-11")}
+                    className={cn("jicon-trigger hidden shrink-0 text-muted-foreground hover:text-foreground md:inline-flex", "size-8 coarse:size-11")}
                     onClick={onToggleCollapse}
-                    aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
                     aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
                   >
                     <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side={collapsed ? "right" : "bottom"} className="flex items-center gap-1.5">
-                  {collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  {collapsed ? "Show sidebar" : "Hide sidebar"}
                   <Kbd>{`${mod}⇧S`}</Kbd>
                 </TooltipContent>
               </Tooltip>
             </motion.div>
           )}
-          <motion.div layout="position" transition={layoutTransition} className="min-w-0 flex-1">
-            <Link
-              href={isCode ? "/code" : "/chat"}
-              onClick={() => setSidebarOpen(false)}
-              aria-label={isCode ? `${BRAND.code.title} home` : `${PRODUCT_NAME} home`}
-              className={cn(
-                "group/brand flex items-center rounded-control",
-                collapsed ? "size-11 justify-center" : "h-9 max-md:pl-1.5"
-              )}
-            >
-              {/*
-               * THE WORDMARK IS TYPE, not a mark plus a word.
-               *
-               * The drawn glyph is gone from the expanded panel. A logo beside
-               * the name says the same thing twice in a column whose whole job
-               * is to be quiet, and it was the only drawn object above a list
-               * of text. Set instead — serif, 600 — the name is the one place
-               * in the interface that is allowed a voice, which is what the
-               * greeting's Newsreader is already doing forty pixels to the
-               * right of it.
-               *
-               * It names the PRODUCT you are in: "Juno" in Chat, "Juno Code" in
-               * Code. The switcher beside it says which one is selected; the
-               * wordmark says which one you are reading, and between them there
-               * is no moment where the column is ambiguous about it. "Code" is
-               * not dimmed — it is part of a name, not a qualifier on one.
-               *
-               * The mark survives at the RAIL, where 64px has no room for a
-               * word and the panel would otherwise lose its way home entirely.
-               *
-               * `text-title` (22px), and the rung was MEASURED off the
-               * reference rather than picked: Claude's wordmark sets a 14.86px
-               * cap beside a 16px collapse glyph, and Newsreader at 22/600
-               * gives 15.0. At `text-body-lg` the cap was 11.4 — a word
-               * visibly smaller than the icon next to it, which is what the
-               * panel looked like and what was reported. The rung carries its
-               * own 600 and -0.012em, so neither is written here.
-               *
-               * `translate-y-[3px]` is the one number in this block that is
-               * not on a ladder, and it is a TYPE correction, not a layout
-               * one. `items-center` centres the line box; Newsreader's
-               * ascender (0.735em) overshoots its cap (0.67em), so centring
-               * the box leaves the ink 3.4px high — the word floats above the
-               * glyph it sits beside. Three pixels puts the two ink boxes on
-               * one centre and keeps the text on whole pixels.
-               *
-               * No `layout` on it: the expanded wordmark and the rail's mark
-               * are different elements that mount and unmount, and a
-               * framer-owned `transform` would overwrite the nudge. It only
-               * fades in as the panel opens (`revealOnMount`), and opacity is
-               * all framer writes.
-               *
-               * `truncate` rather than a hard clip: at SIDEBAR_MIN (224px)
-               * "Juno Code" wants 5px more than the row can give it, and an
-               * ellipsis is a legible short name where a slice through the
-               * last glyph is a rendering bug.
-               */}
-              {collapsed ? (
-                <JunoMark className="size-5 shrink-0" />
-              ) : (
-                <motion.span
-                  initial={revealOnMount}
-                  animate={{ opacity: 1 }}
-                  transition={transition.base}
-                  className="truncate font-serif text-title text-foreground translate-y-[3px]"
-                >
-                  {PRODUCT_NAME}
-                </motion.span>
-              )}
-            </Link>
-          </motion.div>
-          {/* The product switch moved OUT of this row to its own labelled
-              row below (see ProductSwitch): the header is collapse and the
-              wordmark, and the wordmark is "Juno" in both products because
-              the switch under it now says which one is down. */}
           {/* The drawer's own close, drawn only below md. No tooltip: the
-              drawer's focus scope skips links when it opens, so this is the
-              control that takes focus, and a tooltip on it opened on every
-              open, measured mid-slide and left hanging over New chat. An X
-              needs no caption, and the button names itself for a screen
-              reader. */}
+              drawer's focus scope moves here when it opens, and a tooltip
+              measured mid-slide would hang over New chat. */}
           {!collapsed && (
             <Button
               variant="ghost"
               size="icon-sm"
-              className="group size-8 shrink-0 md:hidden coarse:size-11"
+              className="jicon-trigger size-8 shrink-0 text-muted-foreground md:hidden coarse:size-11"
               onClick={() => setSidebarOpen(false)}
               aria-label="Close menu"
             >
@@ -1085,7 +1122,7 @@ export function AppSidebar({
             row people press most, as in both references. `pt-1` is all the air
             the header needs: its 48px row already centres 32px controls, so
             the first row starts 12px under the collapse button. */}
-        <div className={cn(collapsed ? "space-y-1 px-2.5 pt-2" : "px-2 pt-1")}>
+        <div className={cn(collapsed ? "flex flex-col items-center gap-0.5 px-2 pt-1" : "px-2 pt-1")}>
           <NavRow
             collapsed={collapsed}
             href={isCode ? "/code" : undefined}
@@ -1093,8 +1130,9 @@ export function AppSidebar({
             /* Plain, like every sibling. The 22px tinted tile that used to sit
                behind this glyph was the only chip in the panel, and it is what
                made the one row people press most read as the chunkiest. */
-            icon={<SidebarMotionIcon kind="new" />}
+            icon={<SidebarMotionIcon kind={isCode ? "new-session" : "new"} />}
             label={isCode ? "New session" : FEATURE_NAMES.newChat.label}
+            moves
             trailing={isCode ? undefined : <Kbd>{`${mod}⇧O`}</Kbd>}
             layoutId="nav-new"
             transition={layoutTransition}
@@ -1165,18 +1203,18 @@ export function AppSidebar({
             "isolate",
             // No top padding when expanded: this is the same run of rows as
             // New chat and Search above it (see the note there).
-            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1 px-2.5 pt-2" : "px-2"
+            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar flex flex-col items-center gap-0.5 px-2 pt-0.5" : "px-2"
           )}
           aria-label="Primary"
         >
           {(isCode
             ? ([
-                { href: "/code/customize", kind: "settings", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
+                { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
               ] as const)
             : ([
                 { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: !!pathname?.startsWith("/projects") },
                 { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" || pathname === "/artifacts" },
-                { href: "/customize", kind: "settings", label: FEATURE_NAMES.customize.label, active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
+                { href: "/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
               ] as const)
           ).map((item) => (
             <NavRow
@@ -1187,19 +1225,12 @@ export function AppSidebar({
               onClick={() => setSidebarOpen(false)}
               icon={<SidebarMotionIcon kind={item.kind} />}
               label={item.label}
+              moves
               layoutId={`nav-${item.kind}`}
               transition={layoutTransition}
               reveal={revealOnMount}
             />
           ))}
-          <MoreFlyout
-            collapsed={collapsed}
-            product={product}
-            onNavigate={() => setSidebarOpen(false)}
-            onOpenArchived={() => setArchivedOpen(true)}
-            transition={layoutTransition}
-            reveal={revealOnMount}
-          />
         </nav>
 
         {/* ── Lists ────────────────────────────────────────────────────── */}
@@ -1278,20 +1309,17 @@ export function AppSidebar({
                         had stopped to ask them something. It sits OUTSIDE the
                         fold's own condition because the fold unmounts at zero,
                         and "nothing is waiting any more" is the other half of
-                        what this has to say. */}
-                    <p role="status" className="sr-only">
-                      {needsYouRows.length === 0
-                        ? "Nothing is waiting on you."
-                        : `${needsYouRows.length} ${needsYouRows.length === 1 ? "run is" : "runs are"} waiting on you.`}
-                    </p>
+                        what this has to say. It is drawn LAST in the list (see its
+                        note at the end) so the first section's `first:mt-0`
+                        still finds that section. */}
 
-                    {needsYouRows.length > 0 && (
+                    {attention.length > 0 && (
                       <NeedsYouFold
-                        rows={needsYouRows}
-                        signals={rowSignals}
+                        items={attention}
                         only={needsYouOnly}
                         onToggle={() => setNeedsYouOnly((v) => !v)}
                         activeConversationId={activeConversationId}
+                        onNavigate={() => setSidebarOpen(false)}
                         rowProps={rowProps}
                       />
                     )}
@@ -1303,12 +1331,30 @@ export function AppSidebar({
                         its one trailing signal is the toned dot while it
                         needs you. Absent until there is an agent: an empty
                         heading is a promise the column cannot keep. */}
-                    {!isCode && !needsYouOnly && agents.length > 0 && (
-                      <Section
-                        label={BRAND.orbit.label}
-                        isCollapsed={sectionCollapsed.agents}
-                        onToggleCollapse={() => toggleSection("agents")}
-                        action={
+                    {/* ORBIT (Alevr Orbit, "Your agents"): always reachable in
+                        Chat, so a person with no agents yet still has the
+                        place and Create agent. The head is the destination
+                        (S8: it opens the roster); each row is the agent's
+                        shipped face, its name and its state in words on the
+                        right, in the third ink. Ready says nothing, and the
+                        ask is coloured once, in Needs you. */}
+                    {!isCode && !needsYouOnly && (
+                      <section className="group/section mt-5 first:mt-0" aria-label={`${BRAND.orbit.label}, ${BRAND.orbit.description.toLowerCase()}`}>
+                        <div className="flex items-center">
+                          <Link
+                            href="/agents"
+                            onClick={() => setSidebarOpen(false)}
+                            prefetch={false}
+                            aria-current={pathname === "/agents" ? "page" : undefined}
+                            aria-label={`${BRAND.orbit.label}, ${BRAND.orbit.description.toLowerCase()}`}
+                            className={cn(
+                              "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-control px-2 text-label transition-colors duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+                              pathname === "/agents" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <JunoOrbit aria-hidden="true" className="size-4" motion="none" />
+                            <span className="min-w-0 truncate">{BRAND.orbit.label}</span>
+                          </Link>
                           <SectionAction
                             label={FEATURE_NAMES.createAgent.label}
                             onClick={() => {
@@ -1317,22 +1363,25 @@ export function AppSidebar({
                             }}
                             always
                           >
-                            <Plus className="size-3.5" />
+                            <Plus className="size-4" />
                           </SectionAction>
-                        }
-                      >
-                        {agents.map((agent) => (
-                          <AgentRow
-                            key={agent.id}
-                            agent={agent}
-                            active={
-                              pathname === `/agents/${agent.id}` ||
-                              (agent.conversationId !== null && agent.conversationId === activeConversationId)
-                            }
-                            onNavigate={() => setSidebarOpen(false)}
-                          />
-                        ))}
-                      </Section>
+                        </div>
+                        {agents.length > 0 && (
+                          <div className="pt-1">
+                            {agents.map((agent) => (
+                              <AgentRow
+                                key={agent.id}
+                                agent={agent}
+                                active={
+                                  pathname === `/agents/${agent.id}` ||
+                                  (agent.conversationId !== null && agent.conversationId === activeConversationId)
+                                }
+                                onNavigate={() => setSidebarOpen(false)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </section>
                     )}
 
                     {projectsError && !isCode && !needsYouOnly && (
@@ -1362,7 +1411,7 @@ export function AppSidebar({
                             }}
                             always
                           >
-                            <Plus className="size-3.5" />
+                            <Plus className="size-4" />
                           </SectionAction>
                         }
                       >
@@ -1464,6 +1513,18 @@ export function AppSidebar({
                         </p>
                       )
                     )}
+                    {/* The Needs you live region (its note is at the top of
+                        this list). Last, not first: as the first child it
+                        took `first:mt-0` from whichever section opens the
+                        list, which then sat 40 px under the navigation
+                        instead of the column's 20. */}
+                    <p role="status" className="sr-only">
+                      {attention.length === 0
+                        ? "Nothing is waiting on you."
+                        : attention.length === 1
+                          ? `${attention[0].who}: ${attention[0].ask.toLowerCase()}.`
+                          : `${attention.length} things are waiting on you.`}
+                    </p>
                   </>
                 )}
               </motion.div>
@@ -1488,12 +1549,36 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn(collapsed ? "flex justify-center px-2.5 pb-2 pt-1" : "px-2 pb-2 pt-1")}
+          className={cn(collapsed ? "flex flex-col items-center gap-1 px-2 pb-3 pt-1" : "px-2 pb-2 pt-1")}
         >
+          {collapsed && (
+            <NotificationsPopover inbox={inbox} open={inboxOpen} onOpenChange={setInboxOpen} onNavigate={() => setSidebarOpen(false)}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={inboxDetail ? `Notifications, ${inboxDetail}` : "Notifications"}
+                      className={cn(
+                        "jicon-trigger size-9 shrink-0 rounded-control hover:bg-sidebar-hover coarse:size-11",
+                        (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-sidebar-foreground hover:text-foreground"
+                      )}
+                    >
+                      <SidebarMotionIcon kind="notifications" className="size-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="right">{inboxDetail ? `Notifications · ${inboxDetail}` : "Notifications"}</TooltipContent>
+              </Tooltip>
+            </NotificationsPopover>
+          )}
           {collapsed ? (
-            <UserMenu compact />
+            <UserMenu compact onOpenArchived={() => setArchivedOpen(true)} archivedLabel={isCode ? "Archived sessions" : "Archived chats"} />
           ) : (
             <UserMenu
+              onOpenArchived={() => setArchivedOpen(true)}
+              archivedLabel={isCode ? "Archived sessions" : "Archived chats"}
               trigger={
                 <button
                   type="button"
@@ -1520,7 +1605,7 @@ export function AppSidebar({
                         must not eat. */}
                     <span className="flex min-w-0 items-baseline text-caption text-muted-foreground">
                       <span translate="no" className="truncate">
-                        {plan.name}
+                        {`${plan.name} plan`}
                       </span>
                       {usageNote && (
                         <span className={cn("shrink-0 whitespace-pre", usageNote.tone)}>
@@ -1536,7 +1621,7 @@ export function AppSidebar({
                       which read as the row itself turning over. */}
                   <ChevronsUpDown
                     aria-hidden
-                    className="size-3.5 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-data-[state=open]:text-foreground motion-reduce:transition-none"
+                    className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-data-[state=open]:text-foreground motion-reduce:transition-none"
                   />
                 </button>
               }
@@ -1630,24 +1715,24 @@ export function AppSidebar({
  * (docs/design/PREMIUM_AUDIT.md rule 6).
  */
 function NeedsYouFold({
-  rows,
-  signals,
+  items,
   only,
   onToggle,
   activeConversationId,
+  onNavigate,
   rowProps,
 }: {
-  rows: ClientConversation[];
-  signals: Map<string, RowSignal>;
+  items: AttentionItem[];
   only: boolean;
   onToggle: () => void;
   activeConversationId: string | null;
+  onNavigate: () => void;
+  /** The conversation rows' shared verbs, so a waiting chat keeps its menu. */
   rowProps: RowSharedProps;
 }) {
+  const reduceMotion = useReducedMotion();
   return (
-    // No bottom margin: whatever follows (Pinned projects, Pinned chats,
-    // Recent) opens with its own `mt-5`, and two margins meeting would double
-    // the break between this fold and the list it heads.
+    // No bottom margin: whatever follows opens with its own `mt-5`.
     <div>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -1656,38 +1741,101 @@ function NeedsYouFold({
             onClick={onToggle}
             aria-pressed={only}
             className={cn(
-              // A section heading's geometry: `h-7` on the 16px text edge, so
-              // this reads as the first fold rather than as a banner over the
-              // list. `coarse:h-11` because this panel IS the phone drawer
-              // (AppShell renders it inside SheetContent), and a 28px toggle
-              // would be the one control there under the 44px every other row
-              // guarantees.
               "flex h-7 w-full select-none items-center rounded-control px-2 text-left text-label transition-colors duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
-              // On, it is the panel's one selected state: while it is pressed
-              // the column shows these rows and nothing else, which is the same
-              // fact a selected destination states. Off, it is a heading, and
-              // only its ink answers the pointer.
               only ? "sidebar-row-selected text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
             <span className="min-w-0 truncate">{FEATURE_NAMES.needsYou.label}</span>
-            <span className="shrink-0 whitespace-pre tabular-nums">
-              {" · "}
-              {rows.length}
-            </span>
+            {/* A count only past three rows (S7): below that the rows are the count. */}
+            {items.length > 3 && (
+              <span className="shrink-0 whitespace-pre tabular-nums">
+                {" · "}
+                {items.length}
+              </span>
+            )}
           </button>
         </TooltipTrigger>
         <TooltipContent side="right">{only ? "Show everything" : "Show only these"}</TooltipContent>
       </Tooltip>
-      {rows.map((c) => (
-        <ConversationRow
-          key={c.id}
-          conversation={c}
-          active={c.id === activeConversationId}
-          signal={signals.get(c.id)}
-          {...rowProps}
-        />
-      ))}
+      {/* S7: a new row fades in on `base`, a resolved one leaves on `exit`,
+          and the rest close the gap on `spring.layout`. Rows present when
+          the fold mounts do not animate in. */}
+      <div className="pt-1">
+        <AnimatePresence initial={false}>
+          {items.map((item) => (
+            <motion.div
+              key={item.key}
+              layout={reduceMotion ? false : "position"}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: reduceMotion ? { duration: 0 } : transition.base }}
+              exit={{ opacity: 0, transition: reduceMotion ? { duration: 0 } : transition.exit }}
+              transition={reduceMotion ? { duration: 0 } : spring.layout}
+            >
+              <AttentionRow
+                item={item}
+                active={item.conversationId != null && item.conversationId === activeConversationId}
+                onNavigate={onNavigate}
+                rowProps={rowProps}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One attention row: who (the agent's shipped face, or the Continuum for
+ * Alevr's own runs), what they need in the attention words, and what it is
+ * about. Two lines, so neither the name nor the ask is ever truncated away;
+ * 44 px tall, a touch target at every width. A chat's row keeps the chat's
+ * own menu (rename, pin, project, share, archive, delete), because the list
+ * rows it stands in for are not drawn while it waits.
+ */
+function AttentionRow({
+  item,
+  active,
+  onNavigate,
+  rowProps,
+}: {
+  item: AttentionItem;
+  active: boolean;
+  onNavigate: () => void;
+  rowProps: RowSharedProps;
+}) {
+  const conversation = item.conversation;
+  if (conversation && rowProps.renamingId === conversation.id) {
+    return <ConversationRow conversation={conversation} active={active} {...rowProps} />;
+  }
+  return (
+    <div
+      data-active={active ? "" : undefined}
+      data-conversation-row={item.conversationId ?? undefined}
+      className={cn("group relative flex min-h-11 items-center rounded-control pl-2 pr-1", LIST_ROW_TRANSITION, listRowClass(active))}
+    >
+      <Link
+        href={item.href}
+        onClick={onNavigate}
+        prefetch={false}
+        aria-current={active ? "page" : undefined}
+        aria-label={`${item.who}. ${item.ask}: ${item.what}`}
+        className={cn("flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-1.5", conversation && "coarse:pr-10")}
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+          {item.agent ? <AgentFace avatar={item.agent.avatar} state={item.agent.state} size="xs" /> : <ContinuumMark size={10} tight tone="current" />}
+        </span>
+        <span className={cn("flex min-w-0 flex-1 flex-col", conversation && KEBAB_ROOM)}>
+          <span translate="no" className="truncate text-nav text-foreground">
+            {item.who}
+          </span>
+          <span className="truncate text-caption text-muted-foreground">
+            <span className="text-[hsl(var(--attention))]">{item.ask}</span>
+            <span>{`: ${item.what}`}</span>
+          </span>
+        </span>
+      </Link>
+      {conversation && <ConversationMenu conversation={conversation} active={active} {...rowProps} />}
     </div>
   );
 }
@@ -1710,11 +1858,18 @@ function NavRow({
   layoutId,
   transition: t,
   reveal = false,
+  moves = false,
 }: {
   href?: string;
   onClick?: () => void;
   icon: React.ReactNode;
   label: string;
+  /**
+   * A low-frequency destination (New chat, Projects, Library, Customize): its
+   * glyph may articulate under a fine pointer (INTERACTION_SPEC I-7). Every
+   * other row's glyph holds still.
+   */
+  moves?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
   trailing?: React.ReactNode;
   /**
@@ -1746,6 +1901,7 @@ function NavRow({
   const router = useRouter();
   const cls = cn(
     navRowClass(collapsed, !!active),
+    moves ? "jicon-trigger jicon-hover" : "jicon-trigger jicon-quiet",
     // While its popover is open the row wears the selected fill, as the More
     // trigger and the account row do for theirs.
     Trigger && "sidebar-row-selected-on-open data-[state=open]:text-foreground"
@@ -1754,57 +1910,13 @@ function NavRow({
   const inner = (
     <>
       {/*
-       * THE SELECTION FILL TRAVELS. It is one element with a shared
-       * `layoutId`, so moving from Library to Projects slides it down the
-       * column instead of switching off in one row and on in another.
-       *
-       * This is the same mechanism — and the same `layoutId` idea — as the
-       * product switch's thumb directly above, which is the point: the panel
-       * had two ways of saying "this one is selected", a travelling thumb in
-       * the switcher and a hard cut everywhere else. Now it has one.
-       *
-       * It is a FILL, which is the only thing rule 10 of
-       * docs/design/PREMIUM_AUDIT.md lets chrome animate, and the row's text
-       * and glyph do not move at all — only the ink behind them.
-       *
-       * It rides the column's `layoutTransition`, the frame's own symmetric
-       * curve with nothing to overshoot: this is a position correcting itself,
-       * not an object with momentum. Under reduced motion that is
-       * `{ duration: 0 }`, so it jumps, which is the correct behaviour rather
-       * than a degraded one.
-       *
-       * IT PAINTS AT BOTH WIDTHS. This used to be `active && !collapsed`, so
-       * the rail — the width where a row has NO LABEL and the mark is the only
-       * thing saying where you are — was the one place selection had no fill at
-       * all: an active destination there differed from an inactive one by the
-       * step from `--sidebar-foreground` to `--foreground` on an 18px glyph,
-       * and by nothing else at all. The same element spans both widths now, so
-       * collapsing the panel slides the fill from the 208px row into the 44px
-       * square rather than cutting between two states.
-       *
-       * The colour comes from `.sidebar-row-selected` (globals.css), which the
-       * conversation and project rows below draw too: one selected state for
-       * the whole panel, in one place.
-       *
-       * `-z-10` IS ONLY MEANINGFUL INSIDE A STACKING CONTEXT, and the one it
-       * resolves against is the `isolate` on the `<nav>` that holds these rows
-       * (see the long note there for what happened when there wasn't one, and
-       * for why it is on the container rather than on each row). Two things
-       * follow for anyone editing this: a row that draws this fill has to live
-       * inside that `<nav>` (New chat and Search above it do NOT, which is
-       * safe only because neither is ever `active`), and nothing between the
-       * two may take a background of its own.
+       * SELECTION IS TONAL AND IMMEDIATE (INTERACTION_SPEC S1, F0): the row
+       * takes the panel's selected fill (`.sidebar-row-selected`) and its
+       * ink steps up on the `fast` rung; nothing travels and the glyph never
+       * moves for it. It is the same fill the conversation rows draw, so the
+       * column has one selected state at both widths.
        */}
-      {active && (
-        <motion.span
-          layoutId="sidebar-nav-active"
-          transition={t}
-          aria-hidden
-          data-nav-fill
-          className="sidebar-row-selected absolute inset-0 -z-10 rounded-control"
-        />
-      )}
-      {/* A `size-5` BOX holding a `size-4.5` GLYPH, and the two numbers are
+      {/* A `size-5` BOX holding a `size-4` GLYPH (the V3 shell: 16 px icons in a 20 px lead slot), and the two numbers are
           doing different jobs.
 
           The box is layout: 20px at `gap-2.5` is what puts every label in
@@ -1822,7 +1934,7 @@ function NavRow({
           on, cross-faded on the `fast` rung. The ink change and the glyph's
           one gesture (sidebar-motion-icon.tsx) are the whole of the row's
           hover, with the fill behind them. */}
-      <span className="relative flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground group-data-[state=open]:text-foreground [&_svg]:size-4.5">
+      <span className="relative flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground group-data-[state=open]:text-foreground [&_svg]:size-4">
         {icon}
         {/* The rail's signal, on the glyph's top-right corner, where the bell
             and the other marks leave the box empty. Later in the tree than
@@ -1943,13 +2055,16 @@ function navRowClass(collapsed: boolean, active: boolean) {
     "group relative flex h-8 w-full items-center rounded-control font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
     // The rail: a 44px target around the glyph, so every icon is one tap and
     // the row's tooltip names it.
-    collapsed ? "size-11 justify-center px-0" : "gap-2.5 px-2 coarse:h-11",
+    // The rail: 36px targets on a 52px column (44 under a coarse pointer).
+    // The old 44px tiles made every glyph sit in a slab of grey when hovered
+    // or selected, which is what read as "too big".
+    collapsed ? "size-9 justify-center px-0 coarse:size-11" : "gap-2.5 px-2 coarse:h-11",
     // NO `bg-` on the active row: its fill is the travelling `motion.span`
     // inside it (see NavRow). Painting it here too would leave a hard-edged
     // copy of the fill sitting under the one that slides, so the old row's ink
     // would blink off before the new row's arrived.
     active
-      ? "text-foreground"
+      ? "sidebar-row-selected text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground"
   );
 }
@@ -1981,164 +2096,6 @@ function listRowClass(active: boolean) {
  */
 const LIST_ROW_TRANSITION =
   "transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none";
-
-/**
- * More: the destinations that do not earn a top-level row, in a
- * `.surface-float` flyout to the right of the sidebar (ChatGPT's "More").
- * The same flyout from the rail, where the trigger is an icon with a tooltip.
- * Archived chats lives here too — it opens the dialog rather than a route.
- *
- * THE FLYOUT IS CUT FROM THE MENU RECIPE (`menu-recipe.ts`), like every other
- * floating list in the product. It was the last one that was not: a 16px
- * popover shell at `p-1.5`, 15px rows with 18px glyphs and its own hairline,
- * so opening it beside a row's kebab gave two different objects for one idea
- * — the exact drift the recipe exists to end (PREMIUM_AUDIT.md §2c). Its rows
- * are destinations, but inside a floating list they are read the way a menu
- * is read — scanned, not browsed — so they take the menu's 13px row and 16px
- * glyph, and the sidebar's 18px destination rung stays in the sidebar.
- *
- * AND IT IS A MENU, not a popover wearing `role="menu"`. It announced itself
- * as a menu and then behaved like a list of tab stops: no arrow keys, no
- * typeahead, no Home/End, focus left on the trigger. On the Radix
- * DropdownMenu primitive it gets all of that and the row highlight
- * (`data-highlighted`) that plays each glyph's gesture, with the same items,
- * the same shell and the same placement to the right of the column.
- */
-function MoreFlyout({
-  collapsed,
-  product,
-  onNavigate,
-  onOpenArchived,
-  transition: t,
-  reveal = false,
-}: {
-  collapsed: boolean;
-  product: ProductSurface;
-  onNavigate: () => void;
-  onOpenArchived: () => void;
-  /** The column's layout transition, so Archived slides with the rows around it. */
-  transition: object;
-  /** Where the label fades in from when it mounts, as NavRow's does. */
-  reveal?: { opacity: number } | false;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const isCode = product === "code";
-  /*
-   * WHAT IS LEFT IN MORE: the things you make or set up once and then use from
-   * somewhere else. Chat's are Assistants, Skills and Automations, each a list
-   * of your own things; Code's is Connections, the connectors a session reaches
-   * GitHub and the rest through. Archived sits under a hairline in both,
-   * because it opens a dialog rather than a page.
-   *
-   * What left, and where it went. Permissions: its Mac list moves to Settings
-   * (Devices), and the `/permissions` routes stay for the palette and the old
-   * links. Connections left Chat's list: it is in Settings > Connectors and in
-   * the composer's "+", which is where a chat reaches for one. Pull requests
-   * left Code's list for a top-level row. `/tasks` redirects to Automations.
-   */
-  const items: Array<{ href: string; kind: SidebarMotionIconKind; label: string; active: boolean; minPlan?: string }> = isCode
-    ? []
-    : [];
-  const anyActive = items.some((item) => item.active);
-  /*
-   * Archived is selected when the page you are on lives inside it, and while its
-   * flyout is open. Both used to resolve to `text-foreground` and nothing
-   * else: this trigger is not a `NavRow`, so it never had the travelling fill,
-   * and `navRowClass`'s active branch deliberately paints no background (the
-   * fill NavRow draws is an element, not a class). The result was the one row
-   * in the panel that could be the current destination while looking exactly
-   * like the four inactive ones around it — and, with the flyout open, a menu
-   * hanging off a trigger that had gone pale the moment the pointer left it.
-   */
-  const selected = open || anyActive;
-  // `navRowClass(collapsed, selected)` FIRST, then the fill. The order is the
-  // point: the active branch of that recipe drops `hover:bg-sidebar-hover`,
-  // so the selected fill has nothing competing with it — bolt the fill onto the
-  // inactive recipe instead and the trigger goes pale the moment the pointer
-  // reaches the menu it opened. `aria-haspopup` and `aria-expanded` come from
-  // the DropdownMenuTrigger around it.
-  const trigger = (
-    <button
-      type="button"
-      aria-label={collapsed ? "Archived" : undefined}
-      data-active={selected ? "" : undefined}
-      className={cn(navRowClass(collapsed, selected), selected && "sidebar-row-selected")}
-    >
-      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
-        <SidebarMotionIcon kind="more" />
-      </span>
-      {!collapsed && (
-        <motion.span
-          initial={reveal}
-          animate={{ opacity: 1 }}
-          transition={transition.base}
-          className="min-w-0 flex-1 truncate text-left text-nav"
-        >
-          Archived
-        </motion.span>
-      )}
-    </button>
-  );
-  // The rows' ink and fill are DropdownMenuItem's (the recipe's row, the
-  // muted glyph that lights with it, `focus:bg-accent` on the highlight);
-  // this only keeps the label in full ink at rest, as the flyout always had it.
-  const itemClass = "text-foreground motion-reduce:transition-none";
-  // `modal={false}`: the flyout was a non-modal Popover before it moved onto
-  // DropdownMenu for arrow-key navigation, and the sidebar around it has to
-  // stay live — scrolling the recents or clicking another row while it is
-  // open must not first be swallowed by a modal's pointer lock.
-  return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <motion.div layout="position" transition={t} className={cn(collapsed && "flex justify-center")}>
-        {collapsed ? (
-          // The menu trigger OUTSIDE the tooltip trigger, so `data-state` on
-          // the button is the menu's (ICONS_AND_MOTION.md §2.3).
-          <Tooltip>
-            <DropdownMenuTrigger asChild>
-              <TooltipTrigger asChild>{trigger}</TooltipTrigger>
-            </DropdownMenuTrigger>
-            <TooltipContent side="right">Archived</TooltipContent>
-          </Tooltip>
-        ) : (
-          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        )}
-      </motion.div>
-      {/* The menu shell is DropdownMenuContent's own (`menu-recipe.ts`): the
-          same `rounded-menu p-1` material, pop-in and `origin-popper` the
-          popover was dressed in to look like it. */}
-      <DropdownMenuContent
-        side="right"
-        align="start"
-        sideOffset={12}
-        collisionPadding={16}
-        aria-label="Archived"
-        className={MENU_W}
-      >
-        {items.map((item) => (
-          <DropdownMenuItem
-            key={item.href}
-            asChild
-            onSelect={onNavigate}
-            // The page you are on: the highlighted row's fill held still, and
-            // its glyph in full ink. Not a heavier weight — a label that
-            // re-measures when it is chosen visibly re-truncates.
-            className={cn(itemClass, item.active && "bg-accent")}
-          >
-            <Link href={item.href} aria-current={item.active ? "page" : undefined}>
-              <SidebarMotionIcon kind={item.kind} className={cn("size-4", item.active && "text-foreground")} />
-              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            </Link>
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onOpenArchived} className={itemClass}>
-          <Archive className="size-4" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate">{isCode ? "Archived sessions" : "Archived chats"}</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -2402,45 +2359,7 @@ function ConversationRow({
   const needsReader = signal?.tone === "attention" || signal?.tone === "bad";
   const trailingMark = conversation.pinned && !nested;
 
-  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
-    const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
-    onUpdate(conversation.id, optimistic);
-    const res = await fetch(`/api/conversations/${conversation.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data.titleSource == null ? data : { ...data, titleSource: undefined }),
-    });
-    if (!res.ok) toast.error("Update failed.");
-  };
-
-  const remove = () => {
-    onRequestConfirm({
-      title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
-      description: isCodeSession
-        ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
-      confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
-      onConfirm: async () => {
-        onRemove(conversation.id);
-        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => null);
-        if (!res?.ok) {
-          // The row comes back: the chat still exists, and a list that went on
-          // leaving it out would say otherwise until the next reload.
-          onRestore(conversation);
-          toast.error("Delete failed.");
-          return;
-        }
-        if (active) {
-          // Back to the product this row belonged to, not always to Chat: a
-          // reader who deletes the Code session they are inside should land on
-          // Code's own landing, with the column they were using still under
-          // their pointer.
-          router.push(isCodeSession ? "/code" : "/chat");
-          if (!isCodeSession) window.dispatchEvent(new CustomEvent("juno:new-chat"));
-        }
-      },
-    });
-  };
+  const { patch } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
 
   if (renaming) {
     return (
@@ -2526,132 +2445,228 @@ function ConversationRow({
           </span>
         )}
       </Link>
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              {/* Named from the row's own conversation, like every other
-                  string on it: a screen reader landing on a Code row heard
-                  "Conversation options" while the rename field, the delete
-                  dialog and the archive toast it opens all said "session". */}
-              <Pressable
-                kind="icon"
-                /* Out of the flow, over the row's right end, so at rest the
-                   title runs the full width of the row instead of stopping
-                   28px short for a control that is invisible. */
-                className={cn(KEBAB_CLASS, "absolute inset-y-0 right-1 my-auto")}
-                aria-label={isCodeSession ? "Session options" : "Conversation options"}
-              >
-                <SidebarMotionIcon kind="more" className="size-3.5" />
-              </Pressable>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent>Options</TooltipContent>
-        </Tooltip>
-        {/* ONE hairline, and it is the one before Delete.
-            This menu carried three, which cut seven rows into four groups —
-            Rename/Pin, the project submenu, Share/Archive, Delete — and a
-            four-part menu of seven verbs reads as a settings panel. The
-            reference set (ChatGPT's chat menu, Claude's, Linear's) all do the
-            same thing: the actions are one list, and the rule exists to put a
-            beat in front of the row that cannot be undone. */}
-        <DropdownMenuContent align="end" className={MENU_W}>
-          <DropdownMenuItem onSelect={() => setRenaming(conversation.id)}>
-            <ActionIcons.edit className="size-4" /> Rename
-          </DropdownMenuItem>
-          {/* The verb's own glyph: a pin to pin, a struck pin to unpin. It was
-              the same pin for both, filled in the accent when the row was
-              already pinned — a state mark sitting on an action, and the one
-              accent-coloured glyph in a menu of muted ones. */}
-          <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
-            {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            {conversation.pinned ? "Unpin" : "Pin"}
-          </DropdownMenuItem>
-          {/* A project is Chat's filing and a Code session has its own — the
-              repository or workspace it runs in — so this submenu would offer
-              to file a session into a folder the Code column never draws. */}
-          {!isCodeSession && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <AppIcons.projects className="size-4" /> Add to project
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className={MENU_W}>
-                <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-                  {conversation.projectId == null ? <StatusIcons.success className="size-4 text-primary" /> : <span className="size-4" />}
-                  No project
-                </DropdownMenuItem>
-                {projects.map((p) => (
-                  <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                    {conversation.projectId === p.id ? <StatusIcons.success className="size-4 text-primary" /> : <AppIcons.projects className="size-4" />}
-                    <span dir="auto" className="truncate">
-                      {p.name}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => {
-                    onNavigate();
-                    router.push("/projects");
-                  }}
-                >
-                  <Plus className="size-4" /> New project…
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
-          <DropdownMenuItem onSelect={() => onShare(conversation.id)}>
-            <ActionIcons.share className="size-4" /> Share
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onArchive(conversation)}>
-            <Archive className="size-4" /> Archive
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={remove} variant="destructive">
-            <ActionIcons.delete className="size-4" /> Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <ConversationMenu
+        conversation={conversation}
+        active={active}
+        setRenaming={setRenaming}
+        projects={projects}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+        onRestore={onRestore}
+        onNavigate={onNavigate}
+        onRequestConfirm={onRequestConfirm}
+        onShare={onShare}
+        onArchive={onArchive}
+      />
     </div>
   );
 }
 
 
+
 /**
- * One agent in the sidebar: its face at 20px, its name, and the toned dot
- * while it needs you — the same one-trailing-signal rule the conversation rows
- * follow. The face is decorative here (the name is printed beside it); its
- * state is in the row's title and the dot.
+ * What a conversation's own menu changes, shared by its list row and by its
+ * Needs you row, so a chat that is waiting on the reader keeps every verb.
+ */
+function useConversationActions({
+  conversation,
+  active,
+  onUpdate,
+  onRemove,
+  onRestore,
+  onRequestConfirm,
+}: Pick<RowSharedProps, "onUpdate" | "onRemove" | "onRestore" | "onRequestConfirm"> & {
+  conversation: ClientConversation;
+  active: boolean;
+}) {
+  const router = useRouter();
+  const isCodeSession = conversation.kind === "code";
+  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
+    const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
+    onUpdate(conversation.id, optimistic);
+    const res = await fetch(`/api/conversations/${conversation.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data.titleSource == null ? data : { ...data, titleSource: undefined }),
+    });
+    if (!res.ok) toast.error("Update failed.");
+  };
+
+  const remove = () => {
+    onRequestConfirm({
+      title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
+      description: isCodeSession
+        ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
+        : `This permanently removes the conversation and its messages. Anything ${PRODUCT_NAME} made in it stays in your Library. This can't be undone.`,
+      confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
+      onConfirm: async () => {
+        onRemove(conversation.id);
+        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => null);
+        if (!res?.ok) {
+          // The row comes back: the chat still exists, and a list that went on
+          // leaving it out would say otherwise until the next reload.
+          onRestore(conversation);
+          toast.error("Delete failed.");
+          return;
+        }
+        if (active) {
+          // Back to the product this row belonged to, not always to Chat: a
+          // reader who deletes the Code session they are inside should land on
+          // Code's own landing, with the column they were using still under
+          // their pointer.
+          router.push(isCodeSession ? "/code" : "/chat");
+          if (!isCodeSession) window.dispatchEvent(new CustomEvent("juno:new-chat"));
+        }
+      },
+    });
+  };
+
+  return { patch, remove };
+}
+
+/** A conversation's kebab and its menu: Rename, Pin, Add to project, Share, Archive, Delete. */
+function ConversationMenu({
+  conversation,
+  active,
+  setRenaming,
+  projects,
+  onUpdate,
+  onRemove,
+  onRestore,
+  onNavigate,
+  onRequestConfirm,
+  onShare,
+  onArchive,
+}: Omit<RowSharedProps, "renamingId"> & { conversation: ClientConversation; active: boolean }) {
+  const router = useRouter();
+  const isCodeSession = conversation.kind === "code";
+  const { patch, remove } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            {/* Named from the row's own conversation, like every other
+                string on it: a screen reader landing on a Code row heard
+                "Conversation options" while the rename field, the delete
+                dialog and the archive toast it opens all said "session". */}
+            <Pressable
+              kind="icon"
+              /* Out of the flow, over the row's right end, so at rest the
+                 title runs the full width of the row instead of stopping
+                 28px short for a control that is invisible. */
+              className={cn(KEBAB_CLASS, "absolute inset-y-0 right-1 my-auto")}
+              aria-label={isCodeSession ? "Session options" : "Conversation options"}
+            >
+              <SidebarMotionIcon kind="more" className="size-3.5" />
+            </Pressable>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Options</TooltipContent>
+      </Tooltip>
+      {/* ONE hairline, and it is the one before Delete.
+          This menu carried three, which cut seven rows into four groups —
+          Rename/Pin, the project submenu, Share/Archive, Delete — and a
+          four-part menu of seven verbs reads as a settings panel. The
+          reference set (ChatGPT's chat menu, Claude's, Linear's) all do the
+          same thing: the actions are one list, and the rule exists to put a
+          beat in front of the row that cannot be undone. */}
+      <DropdownMenuContent align="end" className={MENU_W}>
+        <DropdownMenuItem onSelect={() => setRenaming(conversation.id)}>
+          <ActionIcons.edit className="size-4" /> Rename
+        </DropdownMenuItem>
+        {/* The verb's own glyph: a pin to pin, a struck pin to unpin. It was
+            the same pin for both, filled in the accent when the row was
+            already pinned — a state mark sitting on an action, and the one
+            accent-coloured glyph in a menu of muted ones. */}
+        <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
+          {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          {conversation.pinned ? "Unpin" : "Pin"}
+        </DropdownMenuItem>
+        {/* A project is Chat's filing and a Code session has its own — the
+            repository or workspace it runs in — so this submenu would offer
+            to file a session into a folder the Code column never draws. */}
+        {!isCodeSession && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <AppIcons.projects className="size-4" /> Add to project
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className={MENU_W}>
+              <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
+                {conversation.projectId == null ? <StatusIcons.success className="size-4 text-primary" /> : <span className="size-4" />}
+                No project
+              </DropdownMenuItem>
+              {projects.map((p) => (
+                <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
+                  {conversation.projectId === p.id ? <StatusIcons.success className="size-4 text-primary" /> : <AppIcons.projects className="size-4" />}
+                  <span dir="auto" className="truncate">
+                    {p.name}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  onNavigate();
+                  router.push("/projects");
+                }}
+              >
+                <Plus className="size-4" /> New project…
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
+        <DropdownMenuItem onSelect={() => onShare(conversation.id)}>
+          <ActionIcons.share className="size-4" /> Share
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onArchive(conversation)}>
+          <Archive className="size-4" /> Archive
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={remove} variant="destructive">
+          <ActionIcons.delete className="size-4" /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * One agent in the sidebar (S8): its shipped face at 20 px, still; its name;
+ * and its state in words on the right, in the third ink. Ready is the rest
+ * state and says nothing. The words carry the state; the face never loops here
+ * and the row never turns amber (the ask is coloured once, in Needs you).
  */
 function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: boolean; onNavigate: () => void }) {
   const sentence = localStateSentence(agent);
+  // Waiting says the same words as its Needs you row ("Needs your approval"
+  // when the task stopped for an approval), so one ask never reads two ways.
+  const word = agent.state === "idle" ? null : agent.state === "waiting" ? askWords(agent.task?.status) : AGENT_STATE_LABEL[agent.state];
   return (
     <div
       data-active={active ? "" : undefined}
-      className={cn(
-        "group relative flex h-8 items-center rounded-control pl-2 pr-2 coarse:h-11",
-        LIST_ROW_TRANSITION,
-        listRowClass(active)
-      )}
+      className={cn("group relative flex h-8 items-center rounded-control pl-2 pr-2 coarse:h-11", LIST_ROW_TRANSITION, listRowClass(active))}
     >
       <Link
         href={agent.conversationId ? `/chat/${agent.conversationId}` : `/agents/${agent.id}`}
         onClick={onNavigate}
         prefetch={false}
         aria-current={active ? "page" : undefined}
-        aria-label={`${agent.name}. ${sentence}`}
+        aria-label={`${agent.name}, ${(word ?? AGENT_STATE_LABEL.idle).toLowerCase()}. ${sentence}`}
         className="flex min-w-0 flex-1 items-center gap-2.5 text-nav font-normal"
         title={sentence}
       >
         <span className="flex size-5 shrink-0 items-center justify-center">
           <AgentFace avatar={agent.avatar} state={agent.state} size="xs" />
         </span>
-        {/* An agent waiting on you is set in full ink at medium weight, not
-            marked with a coloured dot (owner directive, 2026-09-26); its
-            face's eyes and the row's name say the rest. */}
-        <span className={cn("min-w-0 flex-1 truncate", agent.state === "waiting" && "font-medium text-foreground")}>
+        <span translate="no" className="min-w-0 flex-1 truncate">
           {agent.name}
         </span>
+        {word && (
+          <span aria-hidden="true" className="shrink-0 text-caption text-muted-foreground transition-opacity duration-fast ease-out-soft motion-reduce:transition-none">
+            {word}
+          </span>
+        )}
       </Link>
     </div>
   );
@@ -2719,7 +2734,7 @@ function ProjectRow({
           {/* The one glyph that survives in a list row, because its closed →
               open folder crossfade is the single glyph morph in this panel
               that carries meaning. */}
-          <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
+          <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4">
             <SidebarMotionIcon kind="projects" />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />

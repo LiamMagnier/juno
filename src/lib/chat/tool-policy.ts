@@ -37,11 +37,13 @@ export const INSPECT_IMAGE_TOOL_ID = "inspect_image";
 
 /** Registry id of the sandboxed Python tool (`src/lib/agent/code.ts`). */
 export const CODE_INTERPRETER_TOOL_ID = "code_interpreter";
+export const RUN_CODE_TOOL_ID = "run_code";
 
 /** An explicit empty allowlist: no runtime tool at all. */
 export const NO_RUNTIME_TOOLS: readonly string[] = Object.freeze([]);
 
 export interface RuntimeToolToggles {
+  /** Read for the skill layer's grant; it attaches no runtime tool (see the header). */
   webSearch: boolean;
   /**
    * This turn's history carries at least one indexed document.
@@ -60,12 +62,15 @@ export interface RuntimeToolToggles {
    */
   images?: boolean;
   /**
-   * A file is attached AND a remote sandbox exists to run code against it.
+   * A file is attached AND a remote sandbox exists to run code against it AND
+   * the turn is entitled to an execution tool — above all, the model's tool
+   * calling has been VERIFIED by the round-trip probe (src/lib/tools/
+   * entitlements.ts decides; the route passes the verdict here).
    *
-   * Both halves, and the second is a safety condition rather than a
-   * convenience: with no sandbox configured the only backend available is a
-   * child process on this host, which must never run model-written code. The
-   * tool is simply not offered instead.
+   * The sandbox half is a safety condition rather than a convenience: with no
+   * sandbox configured the only backend available is a child process on this
+   * host, which must never run model-written code. The tool is simply not
+   * offered instead, and the turn is told plainly that code cannot run.
    */
   code?: boolean;
 }
@@ -77,7 +82,6 @@ export interface RuntimeToolToggles {
  */
 export function chatRuntimeToolAllowlist(toggles: RuntimeToolToggles): string[] {
   const allowed: string[] = [];
-  if (toggles.webSearch) allowed.push(BROWSER_TOOL_ID);
   if (toggles.documents) allowed.push(READ_DOCUMENT_TOOL_ID);
   if (toggles.images) allowed.push(INSPECT_IMAGE_TOOL_ID);
   if (toggles.code) allowed.push(CODE_INTERPRETER_TOOL_ID);

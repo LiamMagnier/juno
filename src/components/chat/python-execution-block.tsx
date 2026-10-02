@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Download,
   FileCode2,
-  Loader2,
   Terminal,
   XCircle,
 } from "@/components/ui/icons";
@@ -15,6 +14,7 @@ import { DataTableBlock } from "@/components/chat/data-table-block";
 import { DataChartBlock } from "@/components/chat/data-chart-block";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { LiveLine } from "@/components/chat/live-line";
 
 interface PythonExecutionBlockProps {
   code: string;
@@ -68,10 +68,7 @@ export function PythonExecutionBlock({
 
         <span className="flex shrink-0 items-center gap-2">
           {status === "running" ? (
-            <span className="flex items-center gap-1.5 font-medium text-primary" aria-live="polite">
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              Running…
-            </span>
+            <LiveLine text="Running Python" phase="working" size={16} immediate />
           ) : isSuccess ? (
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <CheckCircle2 className="size-3.5" aria-hidden="true" /> Done

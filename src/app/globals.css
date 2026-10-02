@@ -1,5 +1,11 @@
 @import "../components/agents/agents.css";
 @import "../components/agents/agent-face.css";
+/* The Continuum mark and its thinking treatment: loaded here, like the agent
+   sheets, so a component module carries no CSS import (the unit tests render
+   those components under tsx, which cannot load a stylesheet). */
+@import "../components/brand/brand.css";
+@import "../components/brand/thinking-mark.css";
+@import "../components/chat/composer.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -72,7 +78,7 @@
     --faint-foreground: 217.500 3.704% 42.353%;
     --attention: 34.161 91.946% 29.216%;
     --user-bubble: 210.000 6.667% 94.118%;
-    --material-opacity: .70;
+    --material-opacity: .86;
     --background: 240.000 20.000% 99.020%;
     --foreground: 216.000 9.091% 10.784%;
 
@@ -85,9 +91,11 @@
     --popover: 0.000 0.000% 100.000%;
     --popover-foreground: 216.000 9.091% 10.784%;
 
-    --primary: 229.231 63.415% 48.235%;
+    /* Graphite is the primary control (BRAND_IDENTITY.md: "Graphite is the
+       primary active control treatment"); ultramarine is presence only. */
+    --primary: 216 9% 11%;
     --primary-foreground: 0 0% 100%;
-    --primary-ink: 229.231 63.415% 48.235%;
+    --primary-ink: 216 9% 11%;
 
     --secondary: 210.000 6.667% 94.118%;
     /* The slider knob — a light disc in BOTH themes, which no existing token
@@ -263,7 +271,7 @@
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
        popover 16 · panel 20); this is the one value CSS-side recipes read. */
-    --radius: 16px;
+    --radius: 12px;
 
     /* ---- Motion tokens ------------------------------------------------------
        One vocabulary, mirrored as ease-* / duration-* in tailwind.config.ts.
@@ -375,6 +383,21 @@
        run finishing while they were reading something else. Long enough to be
        noticed without reading as a page transition. */
     --dur-emphasis: 560ms;
+    /* Run UI: one loop family. Every loop period is a multiple of the beat. */
+    --loop-beat: 1.2s;
+    --loop: 2.4s;
+    --loop-calm: 4.8s;
+    /* Travel, always multiplied by --motion-shift (0 under reduced motion). */
+    --shift-row: 4px;
+    --shift-label: 0.4em;
+    --shift-dock: 24px;
+    --stagger-row: 30ms;
+    --stagger-fav: 50ms;
+    /* CSS springs from the framer presets (scale/translate only; never opacity or colour). */
+    --spring-standard-dur: 250ms;
+    --spring-standard: linear(0, 0.078, 0.235, 0.404, 0.555, 0.679, 0.775, 0.845, 0.895, 0.931, 0.955, 0.972, 0.982, 0.989, 0.994, 0.996, 1);
+    --spring-pop-dur: 370ms;
+    --spring-pop: linear(0, 0.094, 0.289, 0.502, 0.686, 0.826, 0.922, 0.981, 1.013, 1.026, 1.028, 1.024, 1.018, 1.013, 1.008, 1.004, 1);
 
     /* Dot/ASCII signature atom. */
     --dot-size: 5px;
@@ -450,7 +473,7 @@
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
        behind; warm ink from the same family as --shadow-* follows. */
-    --scrim: 48 12% 8% / 0.36;
+    --scrim: 48 12% 8% / 0.26;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
        up its answer instead of picking a number.
@@ -461,6 +484,9 @@
        with the dialog's own panel and resolved on DOM order. Radix portals both
        to <body>, so which one wins was an accident of mount order. The menu has
        to clear the surface that opened it. */
+    /* The right-column shell in sheet mode: over the transcript, under the
+       sidebar, the aura, popovers and dialogs. The column itself is in flow. */
+    --z-panel: 30;
     /* The ambient aura: over the interface, under anything that takes input.
        It TIES with the floating sidebar and the mobile top bar (both z-40) and
        wins on DOM order, because the layer is portalled last into <body>. That
@@ -545,9 +571,9 @@
     --popover: 225.000 4.878% 16.078%;
     --popover-foreground: 220.000 6.977% 91.569%;
 
-    --primary: 228.608 61.240% 74.706%;
-    --primary-foreground: 220.000 5.882% 10.000%;
-    --primary-ink: 228.608 61.240% 74.706%;
+    --primary: 220 7% 91%;
+    --primary-foreground: 216 9% 11%;
+    --primary-ink: 220 7% 91%;
 
     --secondary: 225.000 4.255% 18.431%;
     /* See --knob above: light in this theme too, deliberately. */
@@ -677,9 +703,11 @@
   /*
    * Palette accents — swappable at runtime via [data-accent] on <html>.
    *
-   * The accent drives --primary and --ring. All other tokens (card, popover,
-   * border, input, muted, foreground) stay on their neutral ramps so text and
-   * surfaces do not shift tint when the user picks a different colour.
+   * The accent drives --primary. --ring is set per block but is the same
+   * neutral graphite in every one: keyboard focus never takes the accent's
+   * hue (JunoAccentTests holds the apps to that). All other tokens (card,
+   * popover, border, input, muted, foreground) stay on their neutral ramps so
+   * text and surfaces do not shift tint when the user picks a different colour.
    *
    * Contrast targets:
    *   Light mode: ≥ 4.5:1 against --background (50 22% 96%) for body text,
@@ -687,23 +715,28 @@
    *   Dark mode:  ≥ 4.5:1 against --background (30 7% 9%) for body text,
    *               ≥ 3.0:1 for large text/icons.
    */
-  :root[data-accent="coral"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
-  .dark[data-accent="coral"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
+  /* "coral" is the id every account stores by default; it now names Graphite,
+     the brand's primary control, and inherits the base values above. The
+     presence blue it used to paint every button with is Ultramarine. */
+  :root[data-accent="coral"] { --primary: 216 9% 11%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 216 9% 11%; }
+  .dark[data-accent="coral"] { --primary: 220 7% 91%; --ring: 220 7% 91%; --primary-foreground: 216 9% 11%; --primary-ink: 220 7% 91%; }
+  :root[data-accent="ultramarine"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
+  .dark[data-accent="ultramarine"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
 
-  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
-  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 45 10% 80%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
+  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 220 9% 11%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
+  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 220 7% 91%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
 
-  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
-  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
+  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
+  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 220 7% 91%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
 
-  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
-  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
+  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 220 9% 11%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
+  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 220 7% 91%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
 
-  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 48 6% 35%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
-  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 45 10% 80%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
+  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 220 9% 11%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
+  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 220 7% 91%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
 
-  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
-  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
+  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
+  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 220 7% 91%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
 
   * {
     border-color: hsl(var(--border));
@@ -1119,15 +1152,53 @@
      utilities after them at equal specificity, so a `bg-*`, `border-*` or
      `shadow-*` utility on the same element silently wins. Pair them with
      layout utilities only. */
+  /* Grouped content is the brand's QUIET CARD (BRAND_IDENTITY.md "Card
+     #f5f6f7 / #1f2023 — quiet grouped content"): a tonal fill and a faint
+     hairline, no drop shadow at rest. `-lg` is the same card with a soft
+     throw, for the rare thing that genuinely sits above its page. The white
+     raised KEY (segmented thumbs, active tabs, avatars) is `.surface-key`. */
   .surface-raised,
   .surface-raised-lg {
+    background-color: hsl(var(--muted));
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--foreground) / .06);
+    box-shadow: none;
+  }
+  .dark .surface-raised,
+  .dark .surface-raised-lg {
+    border-color: hsl(0 0% 100% / .06);
+  }
+  .surface-raised-lg {
+    box-shadow: var(--shadow-raised-lg);
+  }
+  .surface-key {
     background-color: hsl(var(--card));
     color: hsl(var(--card-foreground));
     border: 1px solid hsl(var(--border) / .8);
     box-shadow: var(--shadow-raised);
   }
-  .surface-raised-lg {
-    box-shadow: var(--shadow-raised-lg);
+  /* Interactive cards lift: any link or button drawn as a raised card rises
+     one pixel and takes the larger throw under the pointer, so every grid in
+     the product (projects, library, agents, apps) answers hover the same way.
+     Reduced motion keeps the shadow and drops the travel. */
+  @media (hover: hover) {
+    a.surface-raised,
+    button.surface-raised {
+      transition:
+        transform var(--dur-base) var(--ease-out-soft),
+        box-shadow var(--dur-base) var(--ease-out-soft),
+        border-color var(--dur-fast) var(--ease-out-soft),
+        background-color var(--dur-fast) var(--ease-out-soft);
+    }
+    a.surface-raised:hover,
+    button.surface-raised:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-raised-lg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    a.surface-raised:hover,
+    button.surface-raised:hover { transform: none; }
   }
   .surface-inset {
     background-color: hsl(var(--background));
@@ -1189,11 +1260,17 @@
      other control sits on. No tinted glow — a halo under the send button is
      the one thing that made the composer look like an AI demo. Hover
      brightens; pressing dips into the pressed recipe. */
+  /* The primary key carries the one lift in a control row: a top highlight
+     and a contact shadow tinted from its own colour, so it reads as a solid
+     key rather than a flat swatch. */
   .control-primary {
     color: hsl(var(--primary-foreground));
     border: 1px solid hsl(var(--primary));
     background-color: hsl(var(--primary));
-    box-shadow: none;
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.16),
+      0 1px 2px hsl(var(--primary) / 0.22),
+      0 3px 8px -3px hsl(var(--primary) / 0.32);
     transition:
       transform        var(--dur-press) var(--ease-out-soft),
       background-color var(--dur-fast)  var(--ease-out-soft),
@@ -1292,84 +1369,6 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .juno-mark-popping { animation: none; }
-  }
-
-  /*
-   * AN APP MENTIONED INSIDE THE DRAFT — "…look on my @GitHub and…".
-   *
-   * Painted by the mirror behind the textarea (`composerMirrorClass`), and
-   * bound by one rule that decides every value here: IT MUST NOT MOVE A
-   * SINGLE CHARACTER. The caret the reader is typing with belongs to the
-   * textarea, which is laying out the same string in plain text; anything this
-   * token adds to an advance puts the caret off the letter it is under for the
-   * whole rest of the line.
-   *
-   * So: no font-weight (500 is wider than 400), no letter-spacing, no
-   * horizontal padding. The padding is a `box-shadow` SPREAD, which paints
-   * outside the box without occupying any, and the app's logo is absolutely
-   * positioned over the "@" — a glyph about as wide as the mark that replaces
-   * it, and the one character in the token that carries no information once
-   * the logo is there.
-   *
-   * Vertical padding is safe (an inline box's height does not feed back into
-   * the line box) and is what stops the fill hugging the x-height.
-   *
-   * NEUTRAL, not accent. The draft is foreground ink on the composer's card;
-   * a mention is the same ink on the accent fill — the product's quietest
-   * "this is a thing, not a word". An accent-coloured token here would put the
-   * loudest colour in the app inside the sentence you are writing.
-   */
-  .composer-mention {
-    border-radius: 5px;
-    padding-block: 0.08em;
-    background-color: hsl(var(--accent));
-    box-shadow: 0 0 0 2px hsl(var(--accent));
-    color: hsl(var(--foreground));
-    /* A mention that wraps gets two rounded ends, not one box cut in half. */
-    -webkit-box-decoration-break: clone;
-    box-decoration-break: clone;
-  }
-  .composer-mention__at {
-    position: relative;
-    color: transparent;
-  }
-  .composer-mention__logo {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    display: block;
-    line-height: 0;
-    color: hsl(var(--foreground));
-    /* `text-indent` IS INHERITED, and the mirror sets one whenever a mark is
-       laid into the head of the field. This box is absolutely positioned, so
-       it is a block container of its own: without this it indents its own only
-       child — the logo — by the width of those marks, and the app's mark lands
-       a hundred and eighty pixels away in the middle of another word. */
-    text-indent: 0;
-  }
-  .composer-mention__logo svg {
-    width: 0.95em;
-    height: 0.95em;
-  }
-
-  /*
-   * The textarea while the mirror is painting.
-   *
-   * `color: transparent` hands the text to the layer behind, and the two
-   * properties under it are what stop that from breaking the field. A caret
-   * inherits `color`, so it has to be named back; and a selection painted at
-   * full opacity by the textarea on top would hide the very text the mirror is
-   * drawing, so it goes translucent — which is what a selection over live text
-   * looks like anyway.
-   */
-  .composer-field--mirrored {
-    color: transparent;
-    caret-color: hsl(var(--foreground));
-  }
-  .composer-field--mirrored::selection {
-    background-color: hsl(var(--primary) / 0.28);
-    color: transparent;
   }
 
   /*
@@ -1573,45 +1572,117 @@
     border: 0;
   }
 
+  /*
+   * The composer (V3, D-030): the surface and one crisp hairline, no shadow.
+   * A pointer's focus darkens the edge in the same frame; the keyboard's
+   * focus (C1, `data-kbd-focus`) turns it into ONE 2px ring in the presence
+   * ink: the edge itself, switched at once, plus a pseudo-element whose
+   * opacity arrives on fast, so only opacity moves.
+   */
+  /*
+   * The composer is the one object on the page that asks to be touched, so it
+   * is the one lifted surface: a hairline edge plus a soft two-layer shadow
+   * (contact + ambient), tinted from the foreground rather than pure black.
+   * Focus deepens the lift instead of darkening the edge. Dark mode drops the
+   * shadow (it reads as dirt on charcoal) for a faint top highlight.
+   */
   .composer-surface {
     background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--foreground) / 0.14);
     box-shadow: none;
-    transition: border-color var(--dur-fast) var(--ease-out-soft);
+    transition:
+      box-shadow var(--dur-base) var(--ease-out-soft),
+      border-color var(--dur-fast) var(--ease-out-soft);
   }
-  /* Text and controls inside a Voice glow host sit above the glow's layers
-     (the package stacks them at z-index 1-4). */
-  .voice-glow-content,
-  .voice-glow-host > :not(.sr-only) {
-    position: relative;
-    z-index: 5;
+  .dark .composer-surface {
+    border-color: hsl(0 0% 100% / 0.1);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
   }
-  /* Protect the call icons at speech peaks, with an opaque fallback for
-     browsers that cannot blur the glow beneath their glass backing. */
-  .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]) {
-    background-color: hsl(var(--card));
-    color: hsl(var(--foreground));
+  .composer-surface::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: calc(22px + 2px);
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.86);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease-out-soft);
   }
-  .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]):is(:hover, :focus-visible, [data-state="open"]) {
-    background-color: hsl(var(--accent));
+  /*
+   * THE VOICE LIGHT (voice-composer-glow.tsx, voice-glow-renderer.ts).
+   *
+   * The light is drawn on a canvas laid over the composer and reaching 44px
+   * past it; inside the composer it is zero apart from a 2.5px rim, so the
+   * surface, its 1px edge and every word stay crisp and nothing needs lifting
+   * above it. These are its tokens, read off the glow's own element so a
+   * `.dark` subtree resolves its own (RATIONALE.md has the contrast table).
+   *
+   *   you        ember, oklch(0.575 0.150 50) / (0.781 0.120 54): your voice
+   *   alevr      presence ink, the brand's one live colour: the assistant
+   *   muted      graphite, held still
+   *   -light     the falloff outside the edge: lighter and more chromatic than
+   *              the line, so on ivory it reads as light, not as a shadow
+   *   -core      the lit edge at a peak on charcoal, where light can be brighter
+   */
+  .voice-glow {
+    --voice-glow-dark: 0;
+    --voice-glow-you: #bc5806;
+    --voice-glow-you-light: #f69147;
+    --voice-glow-you-core: #bc5806;
+    --voice-glow-alevr: #2d49c9;
+    --voice-glow-alevr-light: #6782f2;
+    --voice-glow-alevr-core: #2d49c9;
+    --voice-glow-muted: #9a9ca0;
   }
-  @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
-    .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]) {
-      background-color: hsl(var(--card) / .78);
-      -webkit-backdrop-filter: blur(12px) saturate(1.15);
-      backdrop-filter: blur(12px) saturate(1.15);
-      box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .08);
-    }
-    .voice-glow-host .voice-call-controls button:not([aria-pressed="true"]):is(:hover, :focus-visible, [data-state="open"]) {
-      background-color: hsl(var(--accent) / .92);
-    }
+  .dark .voice-glow {
+    --voice-glow-dark: 1;
+    --voice-glow-you: #f3a26b;
+    --voice-glow-you-light: #fba962;
+    --voice-glow-you-core: #fdcfa6;
+    --voice-glow-alevr: #97a6e6;
+    --voice-glow-alevr-light: #90a6f7;
+    --voice-glow-alevr-core: #ced7fb;
+    --voice-glow-muted: #84868a;
   }
+  .voice-glow-canvas {
+    position: absolute;
+    left: -44px;
+    top: -44px;
+    width: calc(100% + 88px);
+    height: calc(100% + 88px);
+    pointer-events: none;
+  }
+  /* No WebGL: the edge takes the speaker's tone, solid and still. */
+  .voice-glow[data-voice-glow-fallback] > :first-child {
+    transition: border-color var(--dur-base) var(--ease-out-soft);
+  }
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="you"] > :first-child { border-color: var(--voice-glow-you); }
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="alevr"] > :first-child,
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="thinking"] > :first-child { border-color: var(--voice-glow-alevr); }
+  .voice-glow[data-voice-glow-fallback][data-voice-glow="muted"] > :first-child { border-color: var(--voice-glow-muted); }
+  .voice-glow[data-voice-glow-fallback] > .voice-glow-canvas { display: none; }
+  /* BRAND_IDENTITY.md: "a crisp edge and surface define it, with no drop
+     shadow." Focus is the edge stepping up, not a lift. */
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / .3);
-    box-shadow: none;
+    border-color: hsl(var(--foreground) / 0.24);
+  }
+  .dark .composer-surface:focus-within {
+    border-color: hsl(0 0% 100% / 0.2);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05);
+  }
+  .composer-surface[data-kbd-focus],
+  .dark .composer-surface[data-kbd-focus] {
+    border-color: hsl(var(--primary) / 0.86);
+  }
+  .composer-surface[data-kbd-focus]::after {
+    opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {
-    .composer-surface { transition: none; }
+    .composer-surface, .composer-surface::after { transition: none; }
+  }
+  /* Increase Contrast: the edge is a full line, not a tint (§1.7). */
+  @media (prefers-contrast: more) {
+    .composer-surface { border-color: hsl(var(--foreground) / 0.45); }
   }
 
   /*
@@ -3008,10 +3079,14 @@
   }
   .prose-juno.prose-juno > :is(h3, h4, h5, h6):not(:first-child) { margin-top: 1.6em; }
   .prose-juno.prose-juno > :is(h3, h4, h5, h6) + * { margin-top: 0.45em; }
+  /* Each heading a clear step above the 16px body (critique 1: the old h5 at
+     17px read as bold body). `##` is the heading models reach for most, so it
+     lands on 19px, the gallery thread's section heading; `###` keeps a whole
+     2px step over the body as well. */
   .prose-juno h3 { font-size: 1.375em; }
-  .prose-juno h4 { font-size: 1.2em; }
-  .prose-juno h5 { font-size: 1.0625em; }
-  .prose-juno h6 { font-size: 1em; }
+  .prose-juno h4 { font-size: 1.1875em; line-height: 1.37; }
+  .prose-juno h5 { font-size: 1.125em; line-height: 1.4; }
+  .prose-juno h6 { font-size: 1em; color: hsl(var(--foreground) / .75); }
   /* Kills the UA's 1em block margins so the rhythm rule above is the only
      thing spacing blocks. It must NOT be the thing that spaces them: see the
      specificity note there. */
@@ -3044,7 +3119,9 @@
   }
   .prose-juno ul { list-style: disc; }
   .prose-juno ol { list-style: decimal; }
-  .prose-juno li { margin: 0.2em 0; }
+  /* Real bullets on a hanging indent: wrapped lines align with the first
+     word, and items breathe a little apart (6px at the reading rung). */
+  .prose-juno li { margin: 0.375em 0; padding-left: 0.15em; }
   .prose-juno li > ul, .prose-juno li > ol { margin-top: 0.2em; }
   /* A quote is set apart by a hairline and indent, in the muted ink: 2px of
      neutral rule, not a coloured callout bar. */
@@ -3766,14 +3843,19 @@
   .stream-progress {
     overflow: hidden;
   }
+  /* One muted ink and one loop family (SPEC §7.13): the sweep is foreground at 0.4 on --loop,
+     not a coral decoration on its own 1.4 s clock. It is mounted only while a reply streams, and
+     it pauses while the page is hidden (`data-paused`, set by StreamProgress). */
   .stream-progress::before {
     content: "";
     position: absolute;
     inset: 0;
     width: 40%;
-    background: linear-gradient(90deg, transparent, hsl(var(--primary) / .9), transparent);
-    animation: stream-progress 1.4s var(--ease-in-out) infinite;
+    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / .4), transparent);
+    animation: stream-progress var(--loop) var(--ease-in-out) infinite;
   }
+  .stream-progress[data-paused]::before { animation-play-state: paused; }
+  @starting-style { .stream-progress { opacity: 0; } }
   @keyframes stream-progress {
     from { transform: translateX(-100%); }
     to { transform: translateX(350%); }
@@ -3782,7 +3864,7 @@
     .stream-progress::before {
       width: 100%;
       animation: none;
-      background: hsl(var(--primary) / .5);
+      background: hsl(var(--foreground) / .25);
     }
   }
   .app-page-scroll {
@@ -4013,6 +4095,171 @@
   }
   .research-tab-body { @apply min-w-0 pt-6; }
 }
+/*
+ * THE RUN UI AND THE RIGHT-COLUMN SHELL (docs/chat-rework/SPEC.md §7.9, §8.2).
+ *
+ * Landed verbatim from the spec. One loop family (--loop, --loop-beat,
+ * --loop-calm), opacity-only loops, travel multiplied by --motion-shift, and a
+ * `data-loop="off"` state that shows each phase's static signature for every
+ * element that does not own the one loop on screen. The reduced-motion rules
+ * are unlayered, at the end of this file, beside the other decorative loops.
+ */
+@layer components {
+  /* ── Run glyph (Concept A) ───────────────────────────────────────────── */
+  .run-glyph {
+    --dot: 4px; --gap: 3px;
+    display: inline-grid; grid-template-columns: repeat(3, var(--dot)); gap: var(--gap);
+    direction: ltr;   /* an icon: under dir="rtl" the grid must not mirror, or the gather moves outward */
+    flex-shrink: 0; color: hsl(var(--foreground));
+    transition: color var(--dur-base) var(--ease-out-soft);
+  }
+  .run-glyph[data-size="sm"] { --dot: 3px; --gap: 2.5px; }
+  .run-glyph[data-swapping] { color: transparent; transition: color var(--dur-fast) var(--ease-in); }
+  .run-glyph > i {
+    position: relative; inline-size: var(--dot); block-size: var(--dot); border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.25);
+    transition: translate var(--dur-slow) var(--ease-out-strong), scale var(--dur-slow) var(--ease-out-strong),
+      opacity var(--dur-base) var(--ease-out-soft), background-color var(--dur-base) var(--ease-out-soft);
+  }
+  .run-glyph > i::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: 0;
+    animation: var(--lit-name, none) var(--lit-period, var(--loop)) linear infinite;
+    animation-delay: calc(var(--loop-phase, 0ms) + var(--lit-delay, 0ms));
+  }
+  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i { --lit-name: run-lit; --lit-delay: calc(var(--s) * 266ms); }
+  .run-glyph[data-phase="searching"] > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--c) * 200ms); }
+  .run-glyph[data-phase="reading"]   > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--r) * 200ms); }
+  .run-glyph[data-phase="tool"]      > i { --lit-name: run-lit; --lit-period: var(--loop-beat); --lit-delay: calc(var(--s) * 150ms); }
+  .run-glyph[data-phase="tool"]      > i[data-centre]::after { animation: none; opacity: 0.6; }
+  .run-glyph[data-phase="writing"]   > i[data-r="2"] { --lit-name: run-lit-type; --lit-delay: calc(var(--c) * 200ms); }
+  .run-glyph[data-calm] > i { --lit-period: var(--loop-calm); }
+  .run-glyph[data-phase="waiting"] > i[data-centre] { background: hsl(var(--primary)); }
+  .run-glyph[data-phase="failed"]  > i[data-centre] { background: hsl(var(--warning)); }
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) {
+    opacity: 0; scale: 0.4;
+    translate: calc((1 - var(--c)) * 7px * var(--motion-shift, 1)) calc((1 - var(--r)) * 7px * var(--motion-shift, 1));
+  }
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
+    scale: 1.5; background: hsl(var(--muted-foreground) / 0.45);
+  }
+  .run-glyph[data-offscreen] > i::after,
+  .run-glyph[data-offscreen] { animation-play-state: paused; }
+  /* Not the loop owner (§7.9.1): the phase's static signature, exactly as under reduced motion. */
+  .run-glyph[data-loop="off"] > i::after { animation: none; }
+  .run-glyph[data-loop="off"]:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
+  .run-glyph[data-loop="off"][data-phase="searching"] > i[data-c="1"]::after,
+  .run-glyph[data-loop="off"][data-phase="reading"]   > i[data-r="1"]::after,
+  .run-glyph[data-loop="off"][data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
+  .run-glyph[data-loop="off"][data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
+  /* paused (Research): resting grid only */
+  .run-glyph[data-phase="paused"] > i::after { animation: none; opacity: 0; }
+  @keyframes run-lit      { 0% { opacity: 0 } 6% { opacity: 1 } 30% { opacity: .3 } 42%, 100% { opacity: 0 } }
+  @keyframes run-lit-bar  { 0% { opacity: 0 } 8% { opacity: 1 } 28% { opacity: .25 } 40%, 100% { opacity: 0 } }
+  @keyframes run-lit-type { 0% { opacity: 0 } 4% { opacity: 1 } 60% { opacity: .7 } 80%, 100% { opacity: 0 } }
+
+  /* ── Compositor-only shimmer for the live label ─────────────────────── */
+  .run-sweep { position: relative; display: inline-block; max-inline-size: 100%; overflow: hidden; contain: paint; vertical-align: bottom; }
+  .run-sweep__text { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: hsl(var(--muted-foreground)); }
+  .run-sweep__window {
+    position: absolute; inset: 0; pointer-events: none; user-select: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
+            mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
+    animation: run-sweep-window var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms);
+  }
+  .run-sweep__text--hi { color: hsl(var(--foreground)); animation: run-sweep-counter var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms); }
+  .run-sweep:dir(rtl) :is(.run-sweep__window, .run-sweep__text--hi) { animation-direction: reverse; }
+  .run-sweep:is([data-settled="true"], [data-calm], [data-loop="off"]) .run-sweep__window { display: none; }
+  .run-sweep[data-loop="off"] .run-sweep__text--hi { animation: none; }
+  .run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }
+  @keyframes run-sweep-window  { 0% { transform: translateX(-65%); } 75%, 100% { transform: translateX(65%); } }
+  @keyframes run-sweep-counter { 0% { transform: translateX(65%); } 75%, 100% { transform: translateX(-65%); } }
+
+  /* ── Phase-label swap (mount-only entrance) ─────────────────────────── */
+  .run-label { display: grid; min-inline-size: 0; }
+  .run-label__item {
+    grid-area: 1 / 1; min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    transition: opacity var(--dur-base) var(--ease-out-soft) 40ms, translate var(--dur-base) var(--ease-out-soft) 40ms;
+  }
+  @starting-style { .run-label__item { opacity: 0; translate: 0 calc(var(--shift-label) * var(--motion-shift, 1)); } }
+  .run-label__item[data-leaving] {
+    opacity: 0; translate: 0 calc(var(--shift-label) * -1 * var(--motion-shift, 1));
+    transition-duration: var(--dur-fast); transition-timing-function: var(--ease-in); transition-delay: 0ms;
+  }
+
+  /* ── Height-auto disclosure (peek, whole-block collapse; the inline timeline uses <Collapse>) ─ */
+  .run-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--dur-base) var(--ease-in-out); }
+  .run-collapse[data-open="true"] { grid-template-rows: 1fr; }
+  .run-collapse > .run-collapse__inner { min-block-size: 0; overflow: hidden;
+    transition: opacity var(--dur-fast) var(--ease-out-soft), visibility 0s linear var(--dur-base); }
+  .run-collapse:not([data-open="true"]) > .run-collapse__inner { opacity: 0; visibility: hidden; }
+  .run-collapse[data-open="true"] > .run-collapse__inner { transition-delay: 0s; }
+  /* JS toggles `inert` on .run-collapse__inner together with data-open (§7.8). */
+
+  /* ── The 2-slot peek (rem: follows the reader text size) ─────────────── */
+  /* The 0.5rem above the slots is a margin, not padding: the clip edge is then the list's own top,
+     so the step sliding out above the two slots is hidden whole rather than leaving a sliver. */
+  .run-peek { block-size: 3.5rem; margin-block-start: 0.5rem; overflow: clip; }
+  .run-peek__list { display: flex; flex-direction: column; justify-content: flex-end; block-size: 3.5rem;
+    transition: translate var(--dur-base) var(--ease-out-soft); }
+  .run-peek__slot { block-size: 1.75rem; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
+
+  /* ── Step rows: entrance plays once, on insertion only ──────────────── */
+  .run-step { transition: opacity var(--dur-base) var(--ease-out-soft), translate var(--dur-base) var(--ease-out-soft);
+    transition-delay: calc(min(var(--i, 0), 4) * var(--stagger-row)); }
+  @starting-style { .run-step:not([data-instant]) { opacity: 0; translate: 0 calc(var(--shift-row) * var(--motion-shift, 1)); } }
+  .run-step[data-settled] { transition-delay: 0ms; }
+
+  /* ── Running marker (panel rows; peek rows are always data-loop="off"): a ring, never the icon ─ */
+  .run-marker { position: relative; }
+  .run-marker[data-state="running"]::before {
+    content: ""; position: absolute; inset: -3px; border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px hsl(var(--foreground) / 0.5);   /* static geometry; opacity/scale move */
+    animation: run-breathe var(--loop) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms);
+  }
+  /* A running marker that does not own the loop is a static open ring. */
+  .run-marker[data-state="running"]:is([data-loop="off"], [data-offscreen])::before { animation: none; opacity: 0.8; scale: 1; }
+  .run-marker[data-state="waiting"]::before { content: ""; position: absolute; inset: -3px; border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px hsl(var(--primary)); }
+  @keyframes run-breathe { 0%, 100% { opacity: 0.45; scale: calc(1 - 0.2 * var(--motion-shift, 1)); } 50% { opacity: 1; scale: 1; } }
+
+  /* ── Favicon stack ──────────────────────────────────────────────────── */
+  .run-favs { display: inline-flex; align-items: center; }
+  /* The separation ring matches the ground the stack sits on: the transcript sets
+     --fav-ring: var(--background); the panel and cards set var(--card). */
+  .run-fav { position: relative; display: grid; place-items: center; inline-size: 16px; block-size: 16px;
+    border-radius: 999px; overflow: hidden; background: hsl(var(--secondary)); box-shadow: 0 0 0 1.5px hsl(var(--fav-ring, var(--background)));
+    margin-inline-start: -4px;
+    transition: opacity var(--dur-base) var(--ease-out-soft), scale var(--spring-pop-dur) var(--spring-pop);
+    transition-delay: calc(min(var(--i, 0), 2) * var(--stagger-fav)); }
+  .run-fav:first-child { margin-inline-start: 0; }
+  @starting-style { .run-fav { opacity: 0; scale: var(--motion-scale-from, 0.6); } }
+  .run-fav > img { inline-size: 100%; block-size: 100%; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
+  .run-fav > img[data-loaded] { opacity: 1; }
+
+  /* ── Clock ──────────────────────────────────────────────────────────── */
+  .run-clock { min-inline-size: 5ch; text-align: end; font-variant-numeric: tabular-nums; }
+
+  /* ── Right-column shell (§8.2): content stays mounted through the exit ─ */
+  /* --dir flips physical x travel under RTL, so the panel always enters from the outer edge. */
+  .right-shell { --dir: 1; }
+  .right-shell:dir(rtl) { --dir: -1; }
+  .right-shell {
+    transition-property: translate, opacity, display;
+    transition-duration: var(--dur-slow), var(--dur-base), var(--dur-slow);
+    transition-timing-function: var(--ease-drawer), var(--ease-out-soft), linear;
+    transition-behavior: allow-discrete;
+  }
+  .right-shell:not([data-open]) {
+    display: none; opacity: 0; translate: calc(var(--shift-dock) * var(--motion-shift, 1) * var(--dir)) 0;
+    transition-duration: var(--dur-exit), var(--dur-exit), var(--dur-exit);
+    transition-timing-function: var(--ease-in), var(--ease-in), linear;
+  }
+  @starting-style { .right-shell[data-open] { opacity: 0; translate: calc(var(--shift-dock) * var(--motion-shift, 1) * var(--dir)) 0; } }
+  .right-shell[data-resizing] { transition: none; }
+  .right-shell__scroller { scrollbar-gutter: stable; overscroll-behavior: contain; }
+  .right-shell[data-mode="sheet"]:not([data-open]) { translate: 0 calc(100% * var(--motion-shift, 1)); }
+  @starting-style { .right-shell[data-mode="sheet"][data-open] { translate: 0 calc(40px * var(--motion-shift, 1)); } }
+}
 @media (prefers-reduced-motion: no-preference) {
   /* On the ladder: the exit rung and the soft decelerate, where this had a raw
      180ms and the `ease-out` keyword — the only bare keyword easing left. */
@@ -4030,6 +4277,8 @@
   body:has([data-print-document]) > :not(:has([data-print-document])) { display: none; }
   html:has([data-print-document]), body:has([data-print-document]) { height: auto; overflow: visible !important; }
 }
+/* A printed report has no hover: every outside link carries its address. */
+@media print { [data-print-document] a[href^="http"]::after { content: " (" attr(href) ")"; } }
 
 /*
  * ——— TIER C: THE DECORATIVE LOOPS, STOPPED ———
@@ -4212,3 +4461,122 @@
     .surface-float { background-color: hsl(var(--popover)); }
   }
 }
+
+/*
+ * The run UI's loops under the preference (SPEC §7.9). Unlayered, for the
+ * reason the kill list above is: an in-layer media rule loses to the layered
+ * loops it is meant to stop.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .run-sweep__window { display: none; }
+  .run-glyph > i::after { animation: none; }
+  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
+  .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
+  .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
+  .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
+  .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
+  /* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
+  .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
+                [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
+    animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
+  .run-glyph > i { transition-duration: var(--dur-fast); }
+  /* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
+    scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
+  .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
+    animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
+  .run-step, .run-fav { transition-delay: 0ms !important; }
+  .run-peek__list { transition: none; }
+  /* Instant collapse, but the content still fades (motion audit: "instant + content fade"). */
+  .run-collapse { transition: none; }
+}
+@keyframes run-breathe-opacity { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (forced-colors: active) {
+  .run-sweep__window { display: none; }
+  .run-glyph > i { forced-color-adjust: none; background: GrayText; }
+  .run-glyph > i::after { background: CanvasText; }
+  .run-glyph[data-phase="waiting"] > i[data-centre] { background: Highlight; }
+  .run-glyph[data-phase="failed"]  > i[data-centre] { background: Mark; }
+  /* box-shadow is removed in forced colours: draw the rings with outline. */
+  .run-marker::before { box-shadow: none; outline: 1.5px solid CanvasText; outline-offset: -1.5px; }
+  .run-marker[data-state="waiting"]::before { outline-color: Highlight; }
+}
+
+/*
+ * ——— Interface preferences (Settings › Appearance, Capabilities) ———
+ *
+ * Per-device choices mirrored onto <html> by lib/ui-prefs.ts (and before
+ * paint by its boot script). Absent attribute = the default, so nothing here
+ * runs for a reader who never changed a thing.
+ */
+@layer base {
+  :root { --transcript-max: 48rem; }
+  html[data-transcript-width="narrow"] { --transcript-max: 40rem; }
+  html[data-transcript-width="wide"] { --transcript-max: 62rem; }
+
+  html[data-chat-font="system"] .prose-juno,
+  html[data-chat-font="system"] .chat-font-scope { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html[data-chat-font="serif"] .prose-juno,
+  html[data-chat-font="serif"] .chat-font-scope { font-family: var(--font-serif), Georgia, serif; }
+  html[data-chat-font="mono"] .prose-juno,
+  html[data-chat-font="mono"] .chat-font-scope { font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.94em; }
+
+  html[data-code-wrap="true"] .prose-juno pre,
+  html[data-code-wrap="true"] .prose-juno pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  /* Reduced motion chosen in the app, for readers whose OS setting is off. */
+  html[data-motion="reduced"] *,
+  html[data-motion="reduced"] *::before,
+  html[data-motion="reduced"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer utilities {
+  /* The transcript and composer column: one width, set by the reader. */
+  .transcript-column { max-width: var(--transcript-max); }
+}
+
+/*
+ * The same rules for the dev galleries' "Simulate reduced motion" toggle,
+ * which sets data-motion="reduce" on the gallery root: the browser pane cannot
+ * emulate the media query. The two copies must stay identical but for the
+ * prefix, and the root overrides must match the reduced `:root` block in the
+ * base layer (tests/run-css-reduced.test.ts).
+ */
+[data-motion="reduce"] {
+  --motion-shift: 0;
+  --motion-scale-from: 1;
+  --ease-out-strong: var(--ease-out-soft);
+  --ease-out-expo: var(--ease-out-soft);
+  --ease-spring: var(--ease-out-soft);
+  --ease-drawer: var(--ease-out-soft);
+  --dur-slow: var(--dur-base);
+}
+[data-motion="reduce"] .run-sweep__window { display: none; }
+[data-motion="reduce"] .run-glyph > i::after { animation: none; }
+[data-motion="reduce"] .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
+[data-motion="reduce"] .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
+[data-motion="reduce"] .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
+[data-motion="reduce"] .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
+[data-motion="reduce"] .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
+/* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
+[data-motion="reduce"] .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
+              [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
+  animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
+[data-motion="reduce"] .run-glyph > i { transition-duration: var(--dur-fast); }
+/* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
+[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
+[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
+  scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
+[data-motion="reduce"] .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
+  animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
+[data-motion="reduce"] .run-step, [data-motion="reduce"] .run-fav { transition-delay: 0ms !important; }
+[data-motion="reduce"] .run-peek__list { transition: none; }
+/* Instant collapse, but the content still fades (motion audit: "instant + content fade"). */
+[data-motion="reduce"] .run-collapse { transition: none; }
+

@@ -1,22 +1,36 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { driveResearchInBackground, readResearchRun, researchEngine } from "@/lib/research/run";
+import {
+  driveResearchInBackground,
+  readResearchRun,
+  researchEngine,
+  reviseResearchPlanInBackground,
+} from "@/lib/research/run";
+import { RESEARCH_REFUSAL_COPY } from "@/lib/research/entitlement";
 import {
   RESEARCH_CONTROL_MESSAGE,
   decidePlanSchema,
+  errorCodeForControlReason,
   statusForControlReason,
 } from "@/app/api/research/protocol";
 
 export const runtime = "nodejs";
 
 /**
- * Confirming — or rejecting — the plan before the expensive stages run.
+ * The scope card's three answers (SPEC §9.4): Start, discard, or revise.
  *
  * This is the gate the in-request pipeline never had. It planned, searched and
- * read in one breath, so the first thing a user saw was the bill. A run started
- * from the research surface stops at `awaiting_plan_confirmation` and does not
- * spend another cent until this route is called, and the queries the user edits
- * here are the queries that actually get issued.
+ * read in one breath, so the first thing a user saw was the bill. A run waits
+ * at `awaiting_plan_confirmation` and does not spend another cent until this
+ * route is called.
+ *
+ * - `confirm`: the questions as the reader left them become the objectives,
+ *   the answers become constraints, and the envelope is computed NOW from
+ *   that scope and frozen. The drive is nudged under the run's stable owner,
+ *   which the gate's own drive released (B1).
+ * - `revise`: the run stays at the gate, busy, while the planner reruns with
+ *   the edits in the background — five per run, then 429.
+ * - `cancel`: the plan is discarded, with no push (B19).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -34,13 +48,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     queries: parsed.data.queries,
     constraints: parsed.data.constraints,
     pinnedSources: parsed.data.pinnedSources,
+    questions: parsed.data.questions,
+    answers: parsed.data.answers,
   });
   if (!decided.ok) {
+    const refusal = decided.refusal;
     return NextResponse.json(
       {
-        error: decided.reason,
-        message: decided.reason ? RESEARCH_CONTROL_MESSAGE[decided.reason] : "That did not apply.",
+        error: errorCodeForControlReason(decided.reason),
+        message: refusal
+          ? RESEARCH_REFUSAL_COPY.reasons[refusal.reason]
+          : decided.reason
+            ? RESEARCH_CONTROL_MESSAGE[decided.reason]
+            : "That did not apply.",
         state: decided.state,
+        ...(refusal ? { refusal: { reason: refusal.reason, params: refusal.params } } : {}),
       },
       { status: statusForControlReason(decided.reason) }
     );
@@ -51,6 +73,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // search the draft queries the user had just edited away.
   if (parsed.data.decision === "confirm") {
     driveResearchInBackground({ runId: id, userId: user.id });
+  } else if (parsed.data.decision === "revise") {
+    reviseResearchPlanInBackground({ runId: id, userId: user.id });
   }
 
   const view = await readResearchRun({ runId: id, userId: user.id, after: 0 });

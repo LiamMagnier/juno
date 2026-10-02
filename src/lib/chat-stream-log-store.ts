@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe, encryptMessageText } from "@/lib/message-crypto";
-import type { StreamLogRow } from "@/lib/chat/stream-log";
+import { TERMINAL_FRAME_KINDS, type StreamLogRow } from "@/lib/chat/stream-log";
 import type { ReplayEventRow } from "@/lib/chat/stream-replay";
 
 /**
@@ -105,7 +105,8 @@ export async function sweepChatStreamEvents(
 
   const finished = await prisma.chatStreamEvent.findMany({
     where: {
-      kind: { in: ["done", "error"] },
+      // The same list the replay ends on, `handoff` included (SPEC §2.3).
+      kind: { in: [...TERMINAL_FRAME_KINDS] },
       createdAt: { lt: new Date(now.getTime() - STREAM_LOG_TERMINAL_RETENTION_MS) },
     },
     distinct: ["generationId"],

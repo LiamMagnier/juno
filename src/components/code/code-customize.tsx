@@ -295,17 +295,9 @@ export function CodeCustomize() {
                     <span className="flex items-center gap-2 text-ui text-muted-foreground">
                       {devices && (
                         <>
-                          {/* One mark, and it is state rather than decoration
-                              (PREMIUM_AUDIT.md §3 rule 6). The word beside it
-                              carries the same fact, because a dot is nothing to
-                              a screen reader. */}
-                          <span
-                            className={cn("size-1.5 shrink-0 rounded-full", online ? "bg-success" : "bg-warning")}
-                            aria-hidden="true"
-                          />
                           <span>
                             {owner?.name ?? "No Mac"}
-                            {online ? "" : " · asleep"}
+                            {online ? "" : ", asleep"}
                           </span>
                         </>
                       )}

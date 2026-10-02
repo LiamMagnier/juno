@@ -37,10 +37,13 @@ export function DictationSwap({
   onCancel,
   /** The transcript, and whether the reader asked for it to be sent. */
   onClose,
+  draft,
   className,
   children,
 }: {
   active: boolean;
+  /** The composer's current draft, shown ahead of the live words. */
+  draft?: string;
   onCancel: () => void;
   onClose: (transcript: string, sendNow: boolean) => void;
   className?: string;
@@ -53,6 +56,7 @@ export function DictationSwap({
             stream and a recognition session for its whole life. */}
         {active && (
           <ComposerDictation
+            draft={draft}
             onCancel={onCancel}
             onStop={(transcript) => onClose(transcript, false)}
             onSend={(transcript) => onClose(transcript, true)}

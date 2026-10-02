@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Hand, Monitor, X } from "@/components/ui/icons";
+import { Monitor, X } from "@/components/ui/icons";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { formatLocalWhen, localStateSentence } from "@/components/agents/agent-bits";
@@ -164,7 +164,7 @@ export function AgentProfile({
           type="button"
           onClick={() => setStudio(true)}
           className="group flex flex-col items-center rounded-panel outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`Customize ${agent.name}`}
+          aria-label={`${agent.name}’s appearance`}
         >
           <AgentPresence
             avatar={agent.avatar}
@@ -175,10 +175,10 @@ export function AgentProfile({
             className="transition-transform duration-base ease-spring group-hover:scale-[1.04] group-active:scale-[0.98] motion-reduce:transform-none"
           />
           <span className="mt-3 text-caption text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100">
-            Customize
+            Appearance
           </span>
         </button>
-        <h2 className="mt-3 font-serif text-title italic leading-[1.15] text-foreground">{agent.name}</h2>
+        <h2 className="mt-3 font-serif text-title font-normal leading-[1.15] text-foreground">{agent.name}</h2>
         {agent.role.trim() ? <p className="mt-1 text-body text-muted-foreground">{agent.role.trim()}</p> : null}
         <p className="mt-4 max-w-xs text-ui text-muted-foreground">Change anything by telling {agent.name}.</p>
         <Button type="button" size="sm" className="mt-4 rounded-full px-5" onClick={message}>
@@ -190,9 +190,8 @@ export function AgentProfile({
         {needsYou || task ? (
           <Section title={needsYou ? AGENT_STATE_NAMES.needsAnswer : "Working on"}>
             <div className="flex items-start gap-3">
-              {needsYou ? <Hand className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /> : null}
               <div className="min-w-0 flex-1">
-                <p className={cn("text-body", needsYou ? "font-medium text-primary" : "text-foreground")}>
+                <p className={cn("text-body", needsYou ? "font-medium text-[hsl(var(--attention))]" : "text-foreground")}>
                   {task?.title ?? localStateSentence(agent, agent.state)}
                 </p>
                 <button

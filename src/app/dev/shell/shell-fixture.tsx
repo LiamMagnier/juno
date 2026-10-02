@@ -6,6 +6,9 @@ import { AppShell } from "@/components/app/app-shell";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import type { AppBootstrap } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
+import type { ClientAgent } from "@/lib/agents/types";
+import type { AgentState } from "@/lib/agents/domain";
+import { defaultAgentAvatar } from "@/lib/agents/avatar";
 
 /*
  * The fixture account. Dates are relative to now so the list reads the way a
@@ -92,6 +95,72 @@ const WORK_SESSIONS = [
     updatedAt: ago(0.2),
     currentStep: null,
   },
+  {
+    id: "w-2",
+    projectId: null,
+    conversationId: "c-3",
+    title: "Landlord reply",
+    titleSource: "ai",
+    goal: "Send the reply about the boiler",
+    status: "waiting_approval",
+    needsAttention: true,
+    requestedTarget: "automatic",
+    preferredHostId: null,
+    requestedModel: null,
+    reasoningEffort: null,
+    permissionPolicy: "ask",
+    pinned: false,
+    archived: false,
+    lastActivityAt: ago(0.4),
+    createdAt: ago(2),
+    updatedAt: ago(0.4),
+    currentStep: null,
+  },
+];
+
+/**
+ * Orbit's roster (the shipped faces): one agent waiting on the person, so the
+ * Needs you fold shows an agent's ask beside a chat's, and one in each other
+ * readable state.
+ */
+function agent(id: string, name: string, state: AgentState, task: string | null, conversationId: string | null = null): ClientAgent {
+  return {
+    id,
+    name,
+    role: "Operations",
+    avatar: defaultAgentAvatar(id),
+    style: "balanced",
+    instructions: "",
+    model: null,
+    reasoningEffort: null,
+    approvalMode: "ask",
+    connectorIds: [],
+    projectId: null,
+    conversationId,
+    status: "active",
+    proactive: false,
+    template: null,
+    lastReflectedAt: null,
+    sortOrder: 0,
+    createdAt: ago(200),
+    updatedAt: ago(1),
+    state,
+    stateSentence: task ? `Working on ${task}` : "Ready for something new",
+    task: task
+      ? { sessionId: `s-${id}`, title: task, status: state === "waiting" ? "waiting_approval" : "running", needsAttention: state === "waiting", lastActivityAt: ago(0.5), conversationId }
+      : null,
+    needsYou: state === "waiting" ? 1 : 0,
+    nextRoutine: null,
+  } as unknown as ClientAgent;
+}
+
+const AGENTS: ClientAgent[] = [
+  agent("mira", "Mira", "waiting", "post the renewal summary to #design", "c-mira"),
+  agent("otto", "Otto", "working", "reconciling August invoices"),
+  agent("rhea", "Rhea", "thinking", null),
+  agent("ines", "Ines", "blocked", "the Q3 forecast review"),
+  agent("tomas", "Tomas", "done", "the onboarding emails"),
+  agent("nori", "Nori", "idle", null),
 ];
 
 function bootstrap(nearCap: boolean, many: boolean): AppBootstrap {
@@ -165,6 +234,7 @@ function installFixtureFetch(): () => void {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = url.startsWith("http") ? new URL(url).pathname : url.split("?")[0];
     if (path === "/api/projects") return json({ projects: PROJECTS });
+    if (path === "/api/agents") return json({ agents: AGENTS });
     if (path === "/api/work/sessions") return json({ sessions: WORK_SESSIONS });
     if (path === "/api/code/tasks") return json({ tasks: [] });
     if (path === "/api/code/devices") return json({ devices: [] });
@@ -256,10 +326,10 @@ export function ShellFixture({
       <SelectConversation id="c-active" />
       <main className="min-h-dvh bg-background p-6">
         <div className="flex flex-wrap items-start gap-8">
-          <Frame label={`Chat, expanded (${width})`} width={collapsed ? 64 : width} open={width}>
+          <Frame label={`Chat, expanded (${width})`} width={collapsed ? 52 : width} open={width}>
             <AppSidebar product="chat" collapsed={collapsed} onToggleCollapse={() => setCollapsed((v) => !v)} />
           </Frame>
-          <Frame label="Rail (64)" width={64}>
+          <Frame label="Rail (52)" width={52}>
             <AppSidebar product="chat" collapsed onToggleCollapse={() => undefined} />
           </Frame>
           <Frame label={`Code, expanded (${width})`} width={width}>

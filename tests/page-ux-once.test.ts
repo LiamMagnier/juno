@@ -145,16 +145,16 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
   );
 });
 
-test("the settings loading page's header matches the real one: no back row and no lede", () => {
-  // `/settings` opens on its name alone. A skeleton that drew the nav row
-  // (44px, 56 on touch) or a lede line lifted the whole page when it landed.
+test("the settings loading page mirrors the full-window page: left column, then the pane", () => {
+  // Settings is a full window (the owner's ChatGPT reference): a left column
+  // with Back to app, search and the sections, and the pane beside it. The
+  // skeleton draws the same frame so nothing moves when the page lands.
   const loading = fs.readFileSync(SETTINGS_LOADING, "utf8");
   const page = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/settings/page.tsx"), "utf8");
-  assert.ok(/<AppPageHeader heading="Settings" \/>/.test(page), "the real header is the name alone");
-  const skeleton = loading.match(/<AppPageHeaderSkeleton[^>]*\/>/)?.[0] ?? "";
-  assert.ok(skeleton, "loading.tsx draws the shared header skeleton");
-  assert.ok(/lede=\{false\}/.test(skeleton), "no lede line");
-  assert.ok(!/\bnav\b/.test(skeleton), "no back or eyebrow row (nav defaults to off)");
+  assert.ok(/Back to app/.test(page), "the real page has a Back to app control");
+  assert.ok(/fixed inset-0 z-modal/.test(page) && /fixed inset-0 z-modal/.test(loading), "both cover the window");
+  assert.ok(/md:w-64/.test(page) && /md:w-64/.test(loading), "both draw the 16rem left column");
+  assert.ok(/max-w-\[44rem\]/.test(page) && /max-w-\[44rem\]/.test(loading), "both centre the pane at 44rem");
 });
 
 test("the settings loading page stands rows in the group's card in for rows in the group's card", () => {

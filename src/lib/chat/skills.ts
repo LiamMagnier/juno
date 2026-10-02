@@ -33,7 +33,11 @@ import {
   INSPECT_IMAGE_TOOL_ID,
   READ_DOCUMENT_TOOL_ID,
 } from "@/lib/chat/tool-policy";
+import { CHECK_RUN_TOOL_ID, RUN_CODE_TOOL_ID } from "@/lib/tools/types";
+import { bundleCompanionFiles, bundleHasScripts, type SkillBundleManifest } from "@/lib/skills/bundle-manifest";
 import {
+  SKILL_SELF_TOOLS,
+  canonicalSkillToolName,
   resolveSkillPermissions,
   selectSkillBySlug,
   skillRequestFrom,
@@ -56,16 +60,61 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * are provider-side capabilities with no registry entry, named here because a
  * skill has to be able to ask for them by some name and there was none.
  */
-export const CHAT_SKILL_TOOLS = {
-  /** Provider-side search (Claude `web_search`, Gemini grounding, Grok Live). */
+export const CHAT_SKILL_TOOLS: {
+  readonly webSearch: "web_search";
+  readonly webFetch: "web_fetch";
+  readonly documents: typeof READ_DOCUMENT_TOOL_ID;
+  readonly images: typeof INSPECT_IMAGE_TOOL_ID;
+  readonly canvas: "canvas";
+  readonly code: typeof RUN_CODE_TOOL_ID;
+  readonly chats: "search_chats";
+  readonly time: "current_time";
+  readonly calculate: "calculate";
+  readonly research: "suggest_research";
+  readonly browser: string;
+} = Object.defineProperty({
   webSearch: "web_search",
-  /** The hosted page reader. Rides the same toggle as search. */
-  browser: BROWSER_TOOL_ID,
+  webFetch: "web_fetch",
   documents: READ_DOCUMENT_TOOL_ID,
   images: INSPECT_IMAGE_TOOL_ID,
-  /** Writing an artifact into the side panel. */
   canvas: "canvas",
-} as const;
+  code: RUN_CODE_TOOL_ID,
+  chats: "search_chats",
+  time: "current_time",
+  calculate: "calculate",
+  research: "suggest_research",
+}, "browser", {
+  value: BROWSER_TOOL_ID,
+  enumerable: false,
+  writable: false,
+}) as unknown as {
+  readonly webSearch: "web_search";
+  readonly webFetch: "web_fetch";
+  readonly documents: typeof READ_DOCUMENT_TOOL_ID;
+  readonly images: typeof INSPECT_IMAGE_TOOL_ID;
+  readonly canvas: "canvas";
+  readonly code: typeof RUN_CODE_TOOL_ID;
+  readonly chats: "search_chats";
+  readonly time: "current_time";
+  readonly calculate: "calculate";
+  readonly research: "suggest_research";
+  readonly browser: string;
+};
+
+import { canonicalToolId } from "@/lib/tools/aliases";
+
+/**
+ * `Bash`, `python`, `run_command`… read as `run_code`; shared with Work runs
+ * (`src/lib/work/skills.ts`), re-exported here for the chat callers.
+ */
+export { canonicalSkillToolName };
+
+/** Requested tool names through the alias map, de-duplicated, in order (INV-23). */
+export function canonicalToolNames(names: readonly string[]): string[] {
+  return [...new Set(names.map(canonicalToolId))];
+}
+
+const SKILL_SELF_TOOL_SET: ReadonlySet<string> = new Set(SKILL_SELF_TOOLS);
 
 /** What this turn is actually carrying, read off the route's own decisions. */
 export interface ChatSkillCapabilities {
@@ -79,6 +128,23 @@ export interface ChatSkillCapabilities {
   images: boolean;
   /** Connector ids resolved for this turn — never the ones merely requested. */
   connectors: readonly string[];
+  /** `web_fetch` is attached. Absent: follows `webSearch`. */
+  webFetch?: boolean;
+  /**
+   * `run_code` is attached to this turn (a healthy no-network sandbox, a
+   * verified model, an entitled plan, not private, not in lockdown). Optional
+   * so a caller that predates the execution runtime grants no code. Absent
+   * means "not decided yet" (the chat route applies a skill before it settles
+   * execution): nothing is granted, and a shell request is explained to the
+   * model conditionally on its own tool list rather than as a flat refusal.
+   */
+  code?: boolean;
+  chats?: boolean;
+  time?: boolean;
+  calculate?: boolean;
+  research?: boolean;
+  /** `read_skill_file` is attached, so a skill's references can be read. */
+  skillFiles?: boolean;
 }
 
 /**
@@ -108,12 +174,16 @@ export interface ChatSkillCapabilities {
  */
 export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSkillGrantLayer {
   const tools: string[] = [];
-  if (capabilities.webSearch) {
-    tools.push(CHAT_SKILL_TOOLS.webSearch, CHAT_SKILL_TOOLS.browser);
-  }
+  if (capabilities.webSearch) tools.push(CHAT_SKILL_TOOLS.webSearch);
+  if (capabilities.webFetch ?? capabilities.webSearch) tools.push(CHAT_SKILL_TOOLS.webFetch);
   if (capabilities.documents) tools.push(CHAT_SKILL_TOOLS.documents);
   if (capabilities.images) tools.push(CHAT_SKILL_TOOLS.images);
   if (capabilities.canvas) tools.push(CHAT_SKILL_TOOLS.canvas);
+  if (capabilities.code) tools.push(CHAT_SKILL_TOOLS.code);
+  if (capabilities.chats) tools.push(CHAT_SKILL_TOOLS.chats);
+  if (capabilities.time) tools.push(CHAT_SKILL_TOOLS.time);
+  if (capabilities.calculate) tools.push(CHAT_SKILL_TOOLS.calculate);
+  if (capabilities.research) tools.push(CHAT_SKILL_TOOLS.research);
   return {
     tools,
     connectors: [...capabilities.connectors],
@@ -137,7 +207,12 @@ export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSk
  * `pending` row before it gets here (as the Work runner does), so this is a
  * status written by something newer, and an unknown verdict is not a clear one.
  */
-export type ChatSkillRefusal = SkillSelectionRefusal | "blocked" | "consent_required" | "unscanned";
+export type ChatSkillRefusal =
+  | SkillSelectionRefusal
+  | "blocked"
+  | "consent_required"
+  | "scripts_unreviewed"
+  | "unscanned";
 
 export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
   unknown_slug: "That skill does not exist on this account.",
@@ -154,6 +229,8 @@ export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
     `${PRODUCT_NAME}'s scanner refused this skill's current version, so it will not be applied to a message. Open the skill to see what it found.`,
   consent_required:
     "This skill's current version asks for more than the one you approved. Open the skill and review what changed before using it.",
+  scripts_unreviewed:
+    `This skill was imported with scripts that nobody has reviewed yet, so ${PRODUCT_NAME} didn't load it. Open the skill, read its files, and approve them to use it.`,
   unscanned: `${PRODUCT_NAME} could not confirm this skill's current version is safe to use, so it was not applied. Open the skill to check it.`,
 };
 
@@ -165,6 +242,12 @@ export interface ChatSkillVersionRow {
   requestedTools: readonly string[];
   securityStatus: string;
   requiresConsent: boolean;
+  /** What the version waits for (`securityScan.consentFor`): scripts, permissions, or both. */
+  consentFor?: readonly string[];
+  /** The version row's id, for the run record a script of this skill writes. */
+  versionId?: string;
+  /** The skill's kept folder, when it has one. */
+  bundle?: { digest: string; manifest: SkillBundleManifest } | null;
 }
 
 export interface ChatSkillApplication {
@@ -183,6 +266,14 @@ export interface ChatSkillApplication {
    */
   untrusted: boolean;
   resolved: ResolvedSkillPermissions;
+  /** The version row's id, when the loader read it. */
+  versionId?: string;
+  /**
+   * The kept folder. The skill tools provider mounts it read-only at
+   * `/skills/<slug>` when `run_code` is on the turn; its digest belongs on the
+   * `skill_applied` audit row (`contentHash`) and on every run of its scripts.
+   */
+  bundle: { digest: string; manifest: SkillBundleManifest } | null;
 }
 
 export type ChatSkillOutcome =
@@ -254,7 +345,14 @@ export function skillAppliedActivity(application: ChatSkillApplication): {
   };
 }
 
-function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
+/**
+ * @param undecidedCode the withheld names that mean `run_code` here (`Bash`,
+ *   `python`…), when the caller could not say whether the turn carries it (the
+ *   route decides execution after it applies the skill). The model can see its
+ *   own tool list, so it is told what to do in either case instead of being
+ *   told flatly that it cannot run anything while `run_code` sits in its tools.
+ */
+function withheldSentence(resolved: ResolvedSkillPermissions, undecidedCode: readonly string[] = []): string | null {
   const groups: [string, string[]][] = [
     ["tools", resolved.withheld.tools],
     ["connectors", resolved.withheld.connectors],
@@ -269,12 +367,72 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
       return `${label}: ${shown}${rest > 0 ? ` and ${rest} more` : ""}`;
     });
   if (parts.length === 0) return null;
+  const running =
+    undecidedCode.length > 0
+      ? `Where its method runs commands or programs (${undecidedCode.slice(0, WITHHELD_NAMES_SHOWN).join(", ")}), ` +
+        `use run_code if it is among your tools: it runs them in ${PRODUCT_NAME}'s sandbox, with no internet and no ` +
+        `access to the person's computer. If run_code is not among your tools, nothing can run here. `
+      : "";
   return (
     `This skill asked for things this conversation does not have (${parts.join("; ")}). ` +
-    `You do not have them and must not act as though you do. Many skills are written for an ` +
+    `You do not have them and must not act as though you do. ${running}Many skills are written for an ` +
     `agent with a shell and a filesystem; this is a chat turn. Follow the parts of the method ` +
     `that apply here, do the rest yourself, and say plainly which steps you could not carry out.`
   );
+}
+
+/** How many of a bundle's files are named to the model before the list is summarised. */
+const BUNDLE_FILES_NAMED = 40;
+
+/**
+ * What the model is told about a skill's kept folder: what is in it, where it
+ * is, and what it may do with it on THIS turn. Alevr speaking, so it goes after
+ * the envelope, never inside it.
+ */
+export function skillBundleNote(input: {
+  slug: string;
+  manifest: Pick<SkillBundleManifest, "files"> | null | undefined;
+  /**
+   * Whether `run_code` is on this turn. `"unknown"` when the caller cannot see
+   * the execution grant (the skill tools provider is opened separately from the
+   * execution one): the sentence is then conditional on the model's own tool
+   * list, which it can see, rather than a claim that might be false.
+   */
+  code: boolean | "unknown";
+  skillFiles: boolean;
+  /**
+   * The folder could not be mounted for this turn although code may run (the
+   * session already holds the most mounts one turn may), so its scripts are
+   * not at /skills/<slug> and the model must not be told they are.
+   */
+  mountRefused?: boolean;
+}): string | null {
+  const files = bundleCompanionFiles(input.manifest);
+  if (files.length === 0) return null;
+  const named = files
+    .slice(0, BUNDLE_FILES_NAMED)
+    .map((file) => `- ${file.path} (${file.kind}, ${file.size} bytes)`)
+    .join("\n");
+  const more = files.length > BUNDLE_FILES_NAMED ? `\n- and ${files.length - BUNDLE_FILES_NAMED} more` : "";
+  const scripts = files.some((file) => file.kind === "script");
+  const reading = input.skillFiles
+    ? `Read any of them with read_skill_file (skill: "${input.slug}", path as listed).`
+    : "You cannot open these files in this conversation.";
+  const mounted =
+    ` mounted read-only at /skills/${input.slug}/ in ${PRODUCT_NAME}'s sandbox: run them with run_code ` +
+    `(for example language "bash", code "python3 /skills/${input.slug}/<script> ..."), with the conversation's ` +
+    `files in /work/inputs and anything you write to /work returned as files. The sandbox has no internet and ` +
+    `no access to the person's computer, whatever the skill says it needs.`;
+  const running = !scripts
+    ? ""
+    : input.mountRefused && input.code !== false
+      ? ` Its scripts cannot run on this turn: more skills with files were loaded than one turn can mount, so this one's folder is not in the sandbox. Do those steps another way or say plainly that you could not.`
+      : input.code === true
+      ? ` Its scripts are${mounted}`
+      : input.code === "unknown"
+        ? ` If run_code is among your tools, its scripts are${mounted} If it is not, its scripts cannot run here: do those steps another way or say plainly that you could not.`
+        : ` Its scripts cannot run in this conversation (no code execution here), so do those steps another way or say plainly that you could not.`;
+  return `This skill keeps these files:\n${named}${more}\n${reading}${running}`;
 }
 
 /**
@@ -286,11 +444,12 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
  * the head row said `enabled`. Only then is the permission intersection run and
  * the block built — so nothing below the refusals can ever have produced text.
  *
- * `via` is always `"slash"`. Chat has no automatic selection (see
- * `docs/skills-audit.md` §4.3), and the provenance sentence
- * `skillSystemSuffix` writes turns on that distinction: telling the model the
- * user invoked a skill they never named is how a turn follows somebody else's
- * method and reports success.
+ * `via` is always `"slash"`: this is the path for a skill the person armed.
+ * A skill the model finds for itself arrives through the `use_skill` tool
+ * (`src/lib/skills/workflow.ts`), which says so with `"automatic"`. The
+ * provenance sentence `skillSystemSuffix` writes turns on that distinction:
+ * telling the model the user invoked a skill they never named is how a turn
+ * follows somebody else's method and reports success.
  */
 export function applyChatSkill(input: {
   slug: string;
@@ -311,12 +470,26 @@ export function applyChatSkill(input: {
   if (row.securityStatus !== "clear" && row.securityStatus !== "warning") {
     return { applied: false, reason: "unscanned" };
   }
-  if (row.requiresConsent) return { applied: false, reason: "consent_required" };
+  if (row.requiresConsent) {
+    return { applied: false, reason: row.consentFor?.includes("scripts") ? "scripts_unreviewed" : "consent_required" };
+  }
 
-  const resolved = resolveSkillPermissions({
-    request: skillRequestFrom({ contract: row.contract, requestedTools: [...row.requestedTools] }),
+  const granted = resolveSkillPermissions({
+    request: skillRequestFrom({ contract: row.contract, requestedTools: row.requestedTools.map(canonicalSkillToolName) }),
     granted: [chatSkillGrantLayer(input.capabilities)],
   });
+  // Granted under the names this product uses (`Bash` is granted as
+  // `run_code`), but what was WITHHELD is reported in the skill's own words:
+  // "it asked for Bash" is the sentence the model and the reader can match to
+  // the skill's text.
+  const withheldCanonical = new Set(granted.withheld.tools);
+  const resolved: ResolvedSkillPermissions = {
+    ...granted,
+    withheld: {
+      ...granted.withheld,
+      tools: [...new Set(row.requestedTools.filter((tool) => withheldCanonical.has(canonicalSkillToolName(tool))))],
+    },
+  };
 
   const block = skillSystemSuffix({
     slug: selection.candidate.slug,
@@ -327,7 +500,14 @@ export function applyChatSkill(input: {
     wrapUntrusted: input.wrapUntrusted,
   });
 
-  const note = withheldSentence(resolved);
+  // `code` absent: the caller applies the skill before it knows whether the
+  // turn runs code. A shell request is then withheld as `run_code` (it was not
+  // granted) but explained conditionally, never as a flat "you cannot".
+  const undecidedCode =
+    input.capabilities.code === undefined
+      ? resolved.withheld.tools.filter((tool) => canonicalSkillToolName(tool) === RUN_CODE_TOOL_ID)
+      : [];
+  const note = withheldSentence(resolved, undecidedCode);
   return {
     applied: true,
     application: {
@@ -336,10 +516,15 @@ export function applyChatSkill(input: {
       // The note goes AFTER the envelope, never inside it. It is Juno speaking
       // about the skill, and text inside the markers is by construction not an
       // instruction — a caveat written there would be one the model is told to
-      // disregard.
+      // disregard. What the skill's FILES are and whether its scripts can run
+      // here is said once, by the skill tools provider's prompt section
+      // (`skillsPromptSection`), which knows whether this turn reads files and
+      // runs code; saying it here as well could only disagree with it.
       systemSuffix: note ? `${block.systemSuffix}\n\n${note}` : block.systemSuffix,
       untrusted: block.untrusted,
       resolved,
+      ...(row.versionId ? { versionId: row.versionId } : {}),
+      bundle: row.bundle ?? null,
     },
   };
 }
@@ -367,10 +552,14 @@ export function narrowRuntimeToolsForSkill(
   application: ChatSkillApplication | null
 ): string[] {
   if (!application) return [...allowlist];
-  const requested = new Set([
-    ...application.resolved.tools,
-    ...application.resolved.withheld.tools,
-  ]);
+  const requested = new Set(
+    [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
+  );
   if (requested.size === 0) return [...allowlist];
-  return allowlist.filter((tool) => requested.has(tool));
+  // What the skill's own method implies, as in a Work run
+  // (`skillPermittedRunTools`): a folder with scripts asks to run them, and
+  // `check_run` only ever follows a run `run_code` started.
+  if (bundleHasScripts(application.bundle?.manifest)) requested.add(RUN_CODE_TOOL_ID);
+  if (requested.has(RUN_CODE_TOOL_ID)) requested.add(CHECK_RUN_TOOL_ID);
+  return allowlist.filter((tool) => SKILL_SELF_TOOL_SET.has(tool) || requested.has(canonicalSkillToolName(tool)));
 }

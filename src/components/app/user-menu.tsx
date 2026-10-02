@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { Keyboard, LogOut, ShieldCheck, Sparkles } from "@/components/ui/icons";
+import { Archive, ArrowUpCircle, Keyboard, LogOut, ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -107,10 +107,15 @@ export function UserAvatar({ className }: { className?: string }) {
 export function UserMenu({
   compact = false,
   trigger,
+  onOpenArchived,
+  archivedLabel = "Archived chats",
 }: {
   compact?: boolean;
   /** A caller-drawn trigger (the sidebar footer's account row). */
   trigger?: React.ReactNode;
+  /** Opens the archive (chats or sessions), which lives in this menu rather than as a row of its own in the sidebar. */
+  onOpenArchived?: () => void;
+  archivedLabel?: string;
 }) {
   const { user, quota, features, setSidebarOpen } = useApp();
   const plan = PLANS[quota.plan];
@@ -146,10 +151,10 @@ export function UserMenu({
           // TooltipTrigger's own `data-state` (closed / delayed-open) overrides
           // the dropdown's. `aria-expanded` is written by DropdownMenuTrigger
           // alone.
-          className="group size-11 rounded-control hover:bg-sidebar-hover aria-expanded:sidebar-row-selected"
+          className="group size-9 rounded-control hover:bg-sidebar-hover aria-expanded:sidebar-row-selected coarse:size-11"
           aria-label="Account menu"
         >
-          <UserAvatar className="size-8" />
+          <UserAvatar className="size-7" />
         </Pressable>
       ) : (
         <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-hover">
@@ -203,11 +208,9 @@ export function UserMenu({
                   primary action (FLAT_UI.md §2.4); a plan is a fact about the
                   account. Sans, like the rest of the menu's metadata: mono is
                   kept for keys and ids. */}
-              <span
-                translate="no"
-                className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-caption font-medium leading-none text-muted-foreground"
-              >
-                {plan.name}
+              {/* Words, not a pill: no badges anywhere (owner rule). */}
+              <span translate="no" className="shrink-0 text-caption text-muted-foreground">
+                {`${plan.name} plan`}
               </span>
             </div>
             <span translate="no" className="mt-0.5 block truncate text-caption text-muted-foreground">
@@ -254,8 +257,11 @@ export function UserMenu({
             icon={<AppIcons.settings className="size-4" />}
             label="Settings"
           />
+          {onOpenArchived && (
+            <MenuRow onSelect={onOpenArchived} icon={<Archive className="size-4" />} label={archivedLabel} />
+          )}
           {canUpgrade && (
-            <MenuRow href="/upgrade" onSelect={leave} icon={<Sparkles className="size-4" />} label="Upgrade plan" />
+            <MenuRow href="/upgrade" onSelect={leave} icon={<ArrowUpCircle className="size-4" />} label="Upgrade plan" />
           )}
           {features.isOwner && (
             <MenuRow

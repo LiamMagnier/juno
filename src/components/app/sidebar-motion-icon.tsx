@@ -1,8 +1,10 @@
 import {
   Folder,
-  FolderOpen,
+  MessageSquarePlus,
   PanelLeft,
   PanelLeftClose,
+  Plus,
+  SlidersHorizontal,
   type IconComponent,
 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
@@ -10,6 +12,10 @@ import { cn } from "@/lib/utils";
 
 export type SidebarMotionIconKind =
   | "new"
+  /** A new Code session: the plain plus (a session is not a chat bubble). */
+  | "new-session"
+  /** Customize: balanced adjustment sliders (NAMES_AND_ICONS: Context destinations). */
+  | "customize"
   | "home"
   /* No "work". A glyph in this union marks a DESTINATION — a row in the
      sidebar or its flyout — and Work stopped being one when it became
@@ -60,7 +66,9 @@ export type SidebarMotionIconKind =
  * in a navigation column.
  */
 const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
-  new: AppIcons.new,
+  new: MessageSquarePlus,
+  "new-session": Plus,
+  customize: SlidersHorizontal,
   home: AppIcons.home,
   code: AppIcons.code,
   design: AppIcons.design,
@@ -88,48 +96,12 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
 };
 
 /**
- * WHAT EACH MARK DOES UNDER THE POINTER is the glyph's own business.
- *
- * Every gesture is declared once, on the glyph, in icons.tsx
- * (docs/design/ICONS_AND_MOTION.md §1.3), and played by globals.css
- * (`svg.icon[data-motion]`) when the row around the mark is hovered or
- * keyboard-focused — never under `prefers-reduced-motion`. This file does not
- * assign gestures: a destination that moved here but sat still in the command
- * palette, the product switch or a page would be one registry mark behaving
- * two ways. So the plus turns (New), the gear turns (Settings, Customize), the
- * search glass tilts, the dismiss X turns and the artifact stack lifts because
- * THAT is what those glyphs do everywhere. Juno's own marks move a part of
- * themselves (`parts`): Chat's ball terminal pops out of the ring's gap,
- * Code's spark twinkles, Design's circle slides back from its square, and
- * Library's leaning volume straightens. The
- * destinations whose glyphs icons.tsx leaves still (Research, Assistants,
- * Connections, Automations, Permissions and the rest) stay still here too, as
- * the `.sidebar-motion-icon` note in globals.css settled.
- *
- * The only thing this table does is SILENCE a default that is wrong in the
- * sidebar:
- *
- *   folder, projects  their gesture is the closed → open cross-fade below, a
- *                     state change the label cannot say; the folder glyph's
- *                     default lift on top of it would be two gestures at once.
- *   panel toggle      its effect is the whole column moving.
- *   more              the overflow dots open a menu; they are not a place.
- *   conversation      a DOCUMENT, not a destination (PREMIUM_AUDIT.md rule 4).
+ * WHAT EACH MARK DOES UNDER THE POINTER is the family's business
+ * (src/components/ui/icons.tsx, MOTION IS OPT-IN): a glyph articulates only
+ * inside a row marked `.jicon-trigger.jicon-hover`, under a fine pointer. The
+ * sidebar opts in its four low-frequency destinations (New chat, Projects,
+ * Library, Customize); every other row, and every list, stays still.
  */
-const SILENT: Partial<Record<SidebarMotionIconKind, "none">> = {
-  projects: "none",
-  folder: "none",
-  "panel-open": "none",
-  "panel-close": "none",
-  conversation: "none",
-  more: "none",
-};
-
-/** The kinds whose gesture is a folder opening rather than a transform. Two
- *  glyphs are stacked and cross-fade on the row's hover (`.sidebar-motion-icon`
- *  in globals.css), so the shape reads as one folder changing state rather
- *  than as two icons swapping. */
-const OPENS_ON_HOVER: ReadonlySet<SidebarMotionIconKind> = new Set(["folder", "projects"]);
 
 /**
  * The default box, and why there has to be one.
@@ -156,27 +128,12 @@ export function SidebarMotionIcon({
   className?: string;
 }) {
   const Icon = ICONS[kind];
-  const opens = OPENS_ON_HOVER.has(kind);
-  // The size lands on the <svg> itself, not only on the wrapper: icons.tsx
-  // chooses the optical cut (the regular line, or the heavier drawing at 12px
-  // and under) from the size class ON the glyph, so a glyph sized only through
-  // its parent would be drawn for the wrong size.
-  const glyphCls = cn("sidebar-motion-icon__glyph", DEFAULT_GLYPH_SIZE, className);
-
+  // The folder's closed-to-open change is the family drawing's own hover swap
+  // now (drawings.ts, `folder`), played only where the row opts in
+  // (.jicon-hover), so one glyph is drawn rather than two stacked.
   return (
-    <span
-      aria-hidden="true"
-      className={cn("sidebar-motion-icon", `sidebar-motion-icon--${kind}`, DEFAULT_GLYPH_SIZE, className)}
-    >
-      <Icon focusable="false" motion={SILENT[kind]} className={glyphCls} />
-
-      {opens ? (
-        <FolderOpen
-          focusable="false"
-          motion="none"
-          className={cn(glyphCls, "sidebar-motion-icon__glyph--alternate absolute inset-0")}
-        />
-      ) : null}
+    <span aria-hidden="true" className={cn("sidebar-motion-icon", `sidebar-motion-icon--${kind}`, DEFAULT_GLYPH_SIZE, className)}>
+      <Icon focusable="false" className={cn("sidebar-motion-icon__glyph", DEFAULT_GLYPH_SIZE, className)} />
     </span>
   );
 }

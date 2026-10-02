@@ -4,10 +4,11 @@ import { IconGallery, type GalleryView } from "./gallery";
 import "../tokens.css";
 
 /**
- * Juno icons, design round 3 (dev only; 404s in production).
+ * Alevr icons, design round 3 (dev only; 404s in production). Technical paths keep juno/.
  *
  *   /dev/design/juno/icons                    the sheet (every icon, 16/20/24, hover, on, disabled)
  *   /dev/design/juno/icons?theme=dark         theme: light | dark (absent: the OS decides)
+ *   /dev/design/juno/icons?view=inventory     the brand's semantic inventory (NAMES_AND_ICONS.md), every label at 16 and 20, light beside dark
  *   /dev/design/juno/icons?view=proof         every icon at 16 px, light beside dark
  *   /dev/design/juno/icons?view=lab           the stroke lab: 1, 1.25 and 1.5 px at 16
  *   /dev/design/juno/icons?view=context       sidebar, composer, message actions, menu, files
@@ -18,9 +19,9 @@ import "../tokens.css";
  *   /dev/design/juno/icons?view=pixels&size=16&fit=0    every icon at one size on whole pixels (tools/pixels.mjs enlarges them); fit=0 skips grid fitting
  *   rm=1                                      the reduced-motion form
  */
-export const metadata = { title: "Juno icons" };
+export const metadata = { title: "Alevr icons" };
 
-const VIEWS: GalleryView[] = ["sheet", "proof", "lab", "context", "shell", "reel", "states", "focus", "pixels"];
+const VIEWS: GalleryView[] = ["sheet", "inventory", "proof", "lab", "context", "shell", "reel", "states", "focus", "pixels"];
 
 export default async function JunoIconsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   if (process.env.NODE_ENV === "production") notFound();

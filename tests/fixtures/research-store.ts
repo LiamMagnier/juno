@@ -93,17 +93,30 @@ export function memoryStore() {
       return { ...row };
     },
 
+    async releaseRun({ runId, userId, workerId }) {
+      const row = own(runId, userId);
+      if (!row || row.workerLeaseOwner !== workerId) return;
+      row.workerLeaseOwner = null;
+      row.workerLeaseUntil = null;
+    },
+
     async moveState({ runId, userId, from, to, patch }) {
       const row = own(runId, userId);
       if (!row || !from.includes(row.state as ResearchState)) return null;
       row.state = to;
+      if (patch && patch.budgetMicroUsd !== undefined) row.budgetMicroUsd = patch.budgetMicroUsd;
       if (patch?.plan) {
         row.planObject = { ...patch.plan };
         row.plan = row.planObject;
       }
       if (patch && "error" in patch) row.error = patch.error ?? null;
       if (patch && "report" in patch && patch.report !== undefined) row.report = patch.report;
-      if (RESEARCH_TERMINAL_STATES.includes(to as never)) row.finishedAt = new Date();
+      if (RESEARCH_TERMINAL_STATES.includes(to as never)) {
+        row.finishedAt = new Date();
+        // Mirrors TERMINAL_PATCH in run.ts: a finished run holds no lease.
+        row.workerLeaseOwner = null;
+        row.workerLeaseUntil = null;
+      }
       return { ...row };
     },
 

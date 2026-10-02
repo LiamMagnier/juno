@@ -4,7 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import { MotionConfig, motion, useReducedMotion } from "framer-motion";
 import { Pressable } from "@/components/ui/pressable";
-import { SETTINGS_SECTIONS, type SettingsSectionId } from "@/components/settings/settings-sections";
+import {
+  ALL_SETTINGS_SECTIONS,
+  SETTINGS_GROUPS,
+  SETTINGS_KEYWORDS,
+  type SettingsSectionId,
+  type SettingsSectionMeta,
+} from "@/components/settings/settings-sections";
+import { Search } from "@/components/ui/icons";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -65,6 +72,21 @@ export function SettingsRail({
 }) {
   const reduce = useReducedMotion() ?? false;
   const listRef = React.useRef<HTMLDivElement>(null);
+  const [query, setQuery] = React.useState("");
+  const q = query.trim().toLowerCase();
+  /** The rail in group order, filtered by the search field (label or keywords). */
+  const groups = React.useMemo(
+    () =>
+      SETTINGS_GROUPS.map((group) => ({
+        label: group.label,
+        sections: group.ids
+          .map((id) => ALL_SETTINGS_SECTIONS.find((s) => s.id === id))
+          .filter((s): s is SettingsSectionMeta => !!s)
+          .filter((s) => !q || s.label.toLowerCase().includes(q) || SETTINGS_KEYWORDS[s.id].includes(q)),
+      })).filter((group) => group.sections.length > 0),
+    [q]
+  );
+  const ordered = React.useMemo(() => groups.flatMap((g) => g.sections), [groups]);
   const [strip, setStrip] = React.useState(false);
   const [edges, setEdges] = React.useState({ start: false, end: false });
 
@@ -128,12 +150,12 @@ export function SettingsRail({
   // Arrow keys move between tabs and select in the same gesture: the ARIA
   // tabs pattern with automatic activation.
   const tabOption = useRadioGroup(
-    SETTINGS_SECTIONS,
-    SETTINGS_SECTIONS.findIndex((s) => s.id === active),
+    ordered,
+    ordered.findIndex((s) => s.id === active),
     (section) => onSelect?.(section.id)
   );
 
-  const content = (section: (typeof SETTINGS_SECTIONS)[number], selected: boolean) => (
+  const content = (section: SettingsSectionMeta, selected: boolean) => (
     <>
       {selected && (
         <motion.span
@@ -144,7 +166,7 @@ export function SettingsRail({
           // the corners true while it scales the fill between two chips of
           // different widths. `-inset-px` covers the row's border box.
           className="pointer-events-none absolute -inset-px bg-selected"
-          style={{ borderRadius: 10 }}
+          style={{ borderRadius: 8 }}
         />
       )}
       {/* The ink cross-fades on a wrapper, not on the glyph: a `transition-*`
@@ -162,33 +184,64 @@ export function SettingsRail({
     </>
   );
 
+  /** The search field and group heads exist only as a column; as a strip the
+   *  rail is one flat scroller, where a heading would be a stray word. */
+  const searchField = (
+    <div className="relative mb-3 @[16rem]/rail:hidden">
+      <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search settings"
+        aria-label="Search settings"
+        className="h-8 w-full rounded-control border border-transparent bg-foreground/[0.05] pl-8 pr-2.5 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground hover:bg-foreground/[0.07] focus:border-border focus:bg-background coarse:h-11 [&::-webkit-search-cancel-button]:hidden"
+      />
+    </div>
+  );
+  const groupLabel = (label: string) => (
+    <p className="px-2.5 pb-1 pt-3 text-caption font-medium text-muted-foreground first:pt-0 @[16rem]/rail:hidden" aria-hidden="true">
+      {label}
+    </p>
+  );
+  const noMatch = groups.length === 0 ? (
+    <p className="px-2.5 py-2 text-ui text-muted-foreground">No setting matches “{query.trim()}”.</p>
+  ) : null;
+
   if (hrefFor) {
     return (
       <MotionConfig reducedMotion="user">
         <nav aria-label="Settings sections">
+          {searchField}
           <div ref={listRef} onScroll={measure} className={listClass} style={listStyle}>
-            {SETTINGS_SECTIONS.map((section) => {
-              const selected = section.id === active;
-              return (
-                <Pressable
-                  key={section.id}
-                  asChild
-                  kind="row"
-                  selected={selected}
-                  className={cn(rowClass, selected && selectedRowClass)}
-                >
-                  <Link
-                    href={hrefFor(section.id)}
-                    replace
-                    scroll={false}
-                    data-active={selected}
-                    aria-current={selected ? "page" : undefined}
-                  >
-                    {content(section, selected)}
-                  </Link>
-                </Pressable>
-              );
-            })}
+            {groups.map((group) => (
+              <React.Fragment key={group.label}>
+                {groupLabel(group.label)}
+                {group.sections.map((section) => {
+                  const selected = section.id === active;
+                  return (
+                    <Pressable
+                      key={section.id}
+                      asChild
+                      kind="row"
+                      selected={selected}
+                      className={cn(rowClass, selected && selectedRowClass)}
+                    >
+                      <Link
+                        href={hrefFor(section.id)}
+                        replace
+                        scroll={false}
+                        data-active={selected}
+                        aria-current={selected ? "page" : undefined}
+                      >
+                        {content(section, selected)}
+                      </Link>
+                    </Pressable>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+            {noMatch}
           </div>
         </nav>
       </MotionConfig>
@@ -197,6 +250,7 @@ export function SettingsRail({
 
   return (
     <MotionConfig reducedMotion="user">
+      {searchField}
       <div
         ref={listRef}
         onScroll={measure}
@@ -206,27 +260,34 @@ export function SettingsRail({
         className={listClass}
         style={listStyle}
       >
-        {SETTINGS_SECTIONS.map((section, i) => {
-          const selected = section.id === active;
-          return (
-            <Pressable
-              key={section.id}
-              type="button"
-              kind="row"
-              role="tab"
-              id={settingsTabId(section.id)}
-              aria-selected={selected}
-              aria-controls={settingsPanelId(section.id)}
-              data-active={selected}
-              selected={selected}
-              onClick={() => onSelect?.(section.id)}
-              className={cn(rowClass, selected && selectedRowClass)}
-              {...tabOption(i)}
-            >
-              {content(section, selected)}
-            </Pressable>
-          );
-        })}
+        {groups.map((group) => (
+          <React.Fragment key={group.label}>
+            {groupLabel(group.label)}
+            {group.sections.map((section) => {
+              const i = ordered.indexOf(section);
+              const selected = section.id === active;
+              return (
+                <Pressable
+                  key={section.id}
+                  type="button"
+                  kind="row"
+                  role="tab"
+                  id={settingsTabId(section.id)}
+                  aria-selected={selected}
+                  aria-controls={settingsPanelId(section.id)}
+                  data-active={selected}
+                  selected={selected}
+                  onClick={() => onSelect?.(section.id)}
+                  className={cn(rowClass, selected && selectedRowClass)}
+                  {...tabOption(i)}
+                >
+                  {content(section, selected)}
+                </Pressable>
+              );
+            })}
+          </React.Fragment>
+        ))}
+        {noMatch}
       </div>
     </MotionConfig>
   );

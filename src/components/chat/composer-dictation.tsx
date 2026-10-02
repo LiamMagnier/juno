@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { encodeWav, type PcmTake } from "@/lib/wav";
 
 /**
  * Dictation — the composer, listening.
@@ -67,42 +68,28 @@ const EXIT_MS = 160;
  * which threw the words away. A stalled response body never rejects on its
  * own, so the deadline has to be explicit.
  */
-const STT_TIMEOUT_MS = 15_000;
+const STT_TIMEOUT_MS = 8_000;
 /** Restart backoff for a recognizer that keeps ending immediately. */
 const RESTART_BACKOFF_MS = [200, 500, 1200, 3000];
 
 type Phase = "active" | "stopping" | "cancelling" | "sending";
 
-/** First container the browser will actually record (Safari has no webm). */
-function pickRecorderMime(): string | undefined {
-  if (typeof MediaRecorder === "undefined") return undefined;
-  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((t) =>
-    MediaRecorder.isTypeSupported(t)
-  );
-}
-
-function extensionFor(mime: string): string {
-  const subtype = (mime.split(";")[0]?.split("/")[1] ?? "webm").toLowerCase();
-  return ({ mpeg: "mp3", "x-m4a": "m4a", "x-wav": "wav" } as Record<string, string>)[subtype] ?? subtype;
-}
 
 /**
  * Server transcription. Returns null when the route is unconfigured (501),
  * fails, or takes longer than a person will wait — the caller then ships the
  * Web Speech preview rather than dropping what was just said.
  */
-async function transcribeBlob(blob: Blob, signal: AbortSignal): Promise<string | null> {
+async function transcribeBlob(blob: Blob, signal: AbortSignal, timeoutMs = STT_TIMEOUT_MS): Promise<string | null> {
   const timeout = new AbortController();
   const onAbort = () => timeout.abort();
   signal.addEventListener("abort", onAbort);
-  const timer = setTimeout(() => timeout.abort(), STT_TIMEOUT_MS);
+  const timer = setTimeout(() => timeout.abort(), timeoutMs);
   try {
     const form = new FormData();
-    form.append("audio", blob, `dictation.${extensionFor(blob.type)}`);
-    // The browser locale is the best available hint for what the user speaks.
-    // Without it the model guesses from the first syllables and often picks
-    // English, which is exactly what mangles French dictation.
-    if (typeof navigator !== "undefined" && navigator.language) form.append("language", navigator.language);
+    // No language: the server's model detects it, mixed-language sentences
+    // included. A hint was what forced French dictation through English.
+    form.append("audio", blob, "dictation.wav");
     const res = await fetch("/api/voice/stt", { method: "POST", body: form, signal: timeout.signal });
     if (!res.ok) return null;
     const data = (await res.json()) as { text?: string };
@@ -151,10 +138,15 @@ const DictationMeter = React.forwardRef<HTMLSpanElement, { active: boolean; clas
 );
 
 export function ComposerDictation({
+  draft = "",
   onCancel,
   onStop,
   onSend,
 }: {
+  /** What was already typed. Shown ahead of the live words so the field does
+   *  not appear to empty when the microphone opens; it is not part of the
+   *  transcript handed back (the composer appends to its own draft). */
+  draft?: string;
   /** Discard everything and return to text mode. */
   onCancel: () => void;
   /** Finalize: hand the transcript to the composer textarea for editing. */
@@ -196,14 +188,17 @@ export function ComposerDictation({
    */
   const levelRef = React.useRef(0);
   const previewRef = React.useRef<HTMLDivElement | null>(null);
-  const recorderRef = React.useRef<MediaRecorder | null>(null);
-  const chunksRef = React.useRef<Blob[]>([]);
+  /** The take as 16 kHz mono PCM: WAV is the one container every STT provider accepts. */
+  const takeRef = React.useRef<PcmTake>({ chunks: [], sampleRate: 48000, samples: 0 });
+  /** The server's latest transcript of the take so far: the live text when server STT is on. */
+  const [liveText, setLiveText] = React.useState("");
   // Support is resolved by the hook's mount effect (declared before ours), so
   // by the time `ready` flips, `speech.supported` is trustworthy — no banner flash.
   const [ready, setReady] = React.useState(false);
   React.useEffect(() => setReady(true), []);
 
   const speech = useSpeechRecognition({
+    lang: typeof navigator !== "undefined" ? navigator.language : "en-US",
     onFinal: (text) => setFinals((f) => [...f, text]),
     onEnd: () => {
       // Chrome ends recognition after long silence, and also fires `no-speech`
@@ -231,10 +226,12 @@ export function ComposerDictation({
   const startRef = React.useRef<(() => void) | null>(null);
   startRef.current = speech.start;
 
+
   const transcript = React.useMemo(() => {
+    if (serverStt) return liveText.trim();
     const tail = speech.interim.trim();
     return [finals.join(" "), tail].filter(Boolean).join(" ").trim();
-  }, [finals, speech.interim]);
+  }, [serverStt, liveText, finals, speech.interim]);
   const transcriptRef = React.useRef(transcript);
   transcriptRef.current = transcript;
 
@@ -261,22 +258,6 @@ export function ComposerDictation({
       }
       setMicStream(stream);
 
-      // Capture the raw audio alongside the analyser so the final transcript can
-      // be produced by a real STT model instead of the browser's recognizer.
-      try {
-        const mimeType = pickRecorderMime();
-        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
-        };
-        recorder.start(250);
-        recorderRef.current = recorder;
-      } catch {
-        // No MediaRecorder (or no supported container) — the Web Speech
-        // transcript remains as the fallback.
-        recorderRef.current = null;
-      }
-
       const Ctor =
         window.AudioContext ??
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -289,7 +270,21 @@ export function ComposerDictation({
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.55;
-      ctx.createMediaStreamSource(stream).connect(analyser);
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      // Capture the raw samples alongside the analyser, for the server's
+      // transcription. ScriptProcessor is deprecated but runs everywhere with
+      // no worklet module to serve; its output is silent (nothing is written).
+      takeRef.current = { chunks: [], sampleRate: ctx.sampleRate, samples: 0 };
+      const capture = ctx.createScriptProcessor(4096, 1, 1);
+      capture.onaudioprocess = (event) => {
+        if (phaseRef.current !== "active") return;
+        const input = event.inputBuffer.getChannelData(0);
+        takeRef.current.chunks.push(new Float32Array(input));
+        takeRef.current.samples += input.length;
+      };
+      source.connect(capture);
+      capture.connect(ctx.destination);
 
       const bins = new Uint8Array(analyser.frequencyBinCount);
       const hzPerBin = ctx.sampleRate / analyser.fftSize;
@@ -337,11 +332,37 @@ export function ComposerDictation({
   const startSpeech = speech.start;
   const speechSupported = speech.supported;
   React.useEffect(() => {
-    if (speechSupported && !startedRef.current && phaseRef.current === "active") {
+    // With server transcription the browser recognizer is not started: it
+    // hears one fixed language, and the server detects whatever is spoken.
+    if (ready && !serverStt && speechSupported && !startedRef.current && phaseRef.current === "active") {
       startedRef.current = true;
       startSpeech();
     }
-  }, [speechSupported, startSpeech]);
+  }, [ready, serverStt, speechSupported, startSpeech]);
+
+  // ---- Live transcription: the take so far, re-cut every couple of seconds ----
+  React.useEffect(() => {
+    if (!serverStt) return;
+    let inFlight = false;
+    let sentSamples = 0;
+    const controller = new AbortController();
+    const tick = async () => {
+      const take = takeRef.current;
+      if (inFlight || phaseRef.current !== "active") return;
+      // At least 0.7 s of new audio, and something to say at all (≥ 0.6 s).
+      if (take.samples - sentSamples < take.sampleRate * 0.7 || take.samples < take.sampleRate * 0.6) return;
+      inFlight = true;
+      sentSamples = take.samples;
+      const text = await transcribeBlob(encodeWav(take), controller.signal, 10_000);
+      inFlight = false;
+      if (text !== null && phaseRef.current === "active") setLiveText(text);
+    };
+    const id = window.setInterval(() => void tick(), 1600);
+    return () => {
+      window.clearInterval(id);
+      controller.abort();
+    };
+  }, [serverStt]);
 
   // Keep the live preview pinned to the newest words.
   React.useEffect(() => {
@@ -349,22 +370,10 @@ export function ComposerDictation({
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript]);
 
-  /** Stop the recorder and resolve the captured audio (null if nothing usable). */
+  /** The take as a WAV blob, or null when nothing usable was captured. */
   const stopRecorder = React.useCallback((): Promise<Blob | null> => {
-    const recorder = recorderRef.current;
-    const collect = () =>
-      chunksRef.current.length
-        ? new Blob(chunksRef.current, { type: recorder?.mimeType || chunksRef.current[0].type || "audio/webm" })
-        : null;
-    if (!recorder || recorder.state === "inactive") return Promise.resolve(collect());
-    return new Promise((resolve) => {
-      recorder.onstop = () => resolve(collect());
-      try {
-        recorder.stop();
-      } catch {
-        resolve(collect());
-      }
-    });
+    const take = takeRef.current;
+    return Promise.resolve(take.samples > take.sampleRate * 0.3 ? encodeWav(take) : null);
   }, []);
 
   const finish = React.useCallback(
@@ -503,8 +512,9 @@ export function ComposerDictation({
           </p>
         ) : transcript ? (
           <p className="whitespace-pre-wrap text-foreground">
-            {finals.join(" ")}
-            {speech.interim.trim() && (
+            {draft.trim() && <span className="text-muted-foreground">{`${draft.trim()} `}</span>}
+            {serverStt ? liveText.trim() : finals.join(" ")}
+            {!serverStt && speech.interim.trim() && (
               <>
                 {finals.length ? " " : ""}
                 <span className="text-muted-foreground">{speech.interim.trim()}</span>
@@ -512,7 +522,16 @@ export function ComposerDictation({
             )}
           </p>
         ) : (
-          <p className="text-muted-foreground">Speak now.</p>
+          <p className="text-muted-foreground">
+            {draft.trim() ? (
+              <>
+                {`${draft.trim()} `}
+                <span className="opacity-60">…</span>
+              </>
+            ) : (
+              "Speak now, in any language."
+            )}
+          </p>
         )}
       </div>
 
@@ -556,17 +575,22 @@ export function ComposerDictation({
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={stop}
-            disabled={transcribing}
-            aria-label="Stop dictation and edit the text"
-          >
-            <Check className="size-4" />
-            Done
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={stop}
+                disabled={transcribing}
+                aria-label="Stop dictating and keep the text"
+                className={composerIconButtonClass}
+              >
+                <Check className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Stop and keep the text</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button

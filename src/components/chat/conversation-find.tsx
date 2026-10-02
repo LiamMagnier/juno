@@ -79,7 +79,7 @@ export function ConversationFind({
       role="search"
       aria-label="Find in conversation"
       // Settles in over the transcript rather than cutting in above it.
-      className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-2 motion-safe:animate-fade-in"
+      className="mx-auto flex w-full transcript-column items-center gap-2 px-4 py-2 motion-safe:animate-fade-in"
     >
       {/* No `bg-background` here. Utilities are emitted after the components
           layer, so it beat `.field-well`'s own fill and the well rendered at the

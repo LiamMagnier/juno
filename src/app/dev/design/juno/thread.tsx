@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CrewMark } from "./crew-bridge";
 import { ANSWER_CLOSE, ANSWER_INTRO, ANSWER_LIST, ANSWER_TABLE, MIRA, MIRA_PLAN, READS, SLACK_POST, TRACE_SUMMARY, type Segment } from "./fixtures";
 import { Sentence } from "./composer";
+import { ThinkingMark, type ThinkingState } from "./brand";
 import { Icon } from "./icons";
 import { SlackMark, StepMark } from "./marks";
 import { fromKeyboard, usePopoverKeys } from "./layers";
@@ -12,7 +13,7 @@ import { EASE_OUT, POP_IN, R, SPRING, T, TIMING, useReduced } from "./motion";
 import { face } from "./shell";
 
 /** A disclosure opening downward: out-soft from the first frame (both ends are not visible, so no ease-in). */
-const REVEAL = { duration: 0.24, ease: EASE_OUT };
+const REVEAL = { duration: 0.22, ease: EASE_OUT };
 
 /**
  * A box whose height follows its content on `base` (an approval collapsing to
@@ -52,31 +53,85 @@ export function AutoHeight({ children, className }: { children: React.ReactNode;
 /* ———————————————————————— The live line (M1) ———————————————————————— */
 
 /*
- * While Juno works before its first word, one line says what it is doing, and
- * after three seconds how long it has been. The words are in the second ink;
- * a glyph for the kind of work leads them in the presence colour (the one
- * colour that means "acting now"), so the line never reads as a blue link.
- * The changing words and the glyph are the whole signal: no caret, no dots,
- * no shimmer, no orb, no loop. A phase change cross-fades on fast (the glyph
- * with it); the first word of the answer replaces the line in the same frame.
+ * While Alevr works before its first word, one line says what it is doing,
+ * and after three seconds how long it has been. The words are in the second
+ * ink; the Continuum leads them (D-037): the ThinkingMark, stationary, hands
+ * a tone of the presence colour through its paths once when the work starts
+ * and once more for each real phase change (coalesced to one pass every
+ * 1.6 s), then holds a quiet pose. The words are never the blue: blue words
+ * read as a link. No caret, no dots, no shimmer, no orb, no spinner. A phase
+ * change cross-fades the words on fast; the first word of the answer
+ * replaces the line in the same frame. `who` names an agent doing the work
+ * (its face leads instead: the agent, not Alevr, is acting).
  */
-export function LiveLine({ text, seconds, who, glyph = "research", className }: { text: string; seconds?: number; who?: "mira"; glyph?: string; className?: string }) {
+/**
+ * A phase holds at least `phaseMinHold` (1 s) on screen (INTERACTION_SPEC M1):
+ * a newer phase that arrives sooner waits for the remainder; only the latest
+ * waiting phase is kept, so a burst never queues.
+ */
+function useHeld(text: string, hold: number = TIMING.phaseMinHold): string {
+  const [shown, setShown] = React.useState(text);
+  const since = React.useRef(0);
+  React.useEffect(() => {
+    if (!since.current) since.current = performance.now();
+  }, []);
+  React.useEffect(() => {
+    if (text === shown) return;
+    const wait = Math.max(0, since.current + hold - performance.now());
+    const t = window.setTimeout(() => {
+      since.current = performance.now();
+      setShown(text);
+    }, wait);
+    return () => window.clearTimeout(t);
+  }, [text, shown, hold]);
+  return shown;
+}
+
+export function LiveLine({
+  text,
+  detail,
+  seconds,
+  who,
+  className,
+  state = "active",
+}: {
+  text: string;
+  /** A count that changes inside the phase ("41 of 128 tests"): it updates in place, with no fade and no new pass. */
+  detail?: string;
+  seconds?: number;
+  who?: "mira";
+  className?: string;
+  /** "waiting" when the work is stopped on the person (Waiting for your answer): the mark is still. */
+  state?: ThinkingState;
+}) {
   const reduced = useReduced();
+  const phase = useHeld(text);
+  // Each real phase change asks the mark for one more pass (the mark absorbs those inside its window).
+  const [pulse, setPulse] = React.useState(0);
+  const first = React.useRef(true);
+  React.useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setPulse((p) => p + 1);
+  }, [phase]);
   return (
-    <div className={["jn-live", className].filter(Boolean).join(" ")} role="status" aria-live="polite">
+    <div className={["jn-live", className].filter(Boolean).join(" ")} role="status" aria-live="polite" data-state={state}>
       {who ? (
         <span className="jn-live__face">
           <CrewMark member={face(MIRA)} state="working" size={20} />
         </span>
       ) : (
         <span className="jn-live__glyph" aria-hidden="true">
-          <Icon name={glyph} size={16} />
+          <ThinkingMark size={20} state={state} pulse={pulse} />
         </span>
       )}
       <span className="jn-live__words">
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.span key={text} className="jn-live__text" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? T.instant : T.fast}>
-            {text}
+          <motion.span key={phase} className="jn-live__text" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? T.instant : T.fast}>
+            {phase}
+            {detail ? <span className="jn-live__detail num">, {detail}</span> : null}
           </motion.span>
         </AnimatePresence>
       </span>
@@ -153,9 +208,11 @@ function wordsOf(runs: Run[]): { w: string; b?: boolean }[] {
 const BLOCK_WORDS = BLOCKS.map((b) => (b.k === "table" ? 6 : wordsOf(b.runs).length));
 export const ANSWER_WORDS = BLOCK_WORDS.reduce((a, b) => a + b, 0);
 
-function Words({ runs, shown }: { runs: Run[]; shown: number }) {
+function Words({ runs, shown, streaming }: { runs: Run[]; shown: number; streaming: boolean }) {
   const words = wordsOf(runs);
-  if (shown >= words.length) {
+  // Plain text only once the whole answer has landed: a block that completes mid-stream keeps its spans,
+  // so its last words finish their fade instead of snapping to full ink (Revision 2).
+  if (!streaming && shown >= words.length) {
     return <>{runs.map((r, i) => (r.b ? <strong key={i}>{r.t}</strong> : <React.Fragment key={i}>{r.t}</React.Fragment>))}</>;
   }
   // Streaming: each word fades in where it will stay (160ms). No slide, no blur, no caret.
@@ -189,9 +246,10 @@ export function Answer({ revealed = Infinity }: { revealed?: number }) {
     const shown = Math.min(budget, n);
     budget -= n;
     if (b.k !== "li") flushList(`ul-${i}`);
-    if (b.k === "h") items.push(<h3 key={i}><Words runs={b.runs} shown={shown} /></h3>);
-    if (b.k === "p") items.push(<p key={i}><Words runs={b.runs} shown={shown} /></p>);
-    if (b.k === "li") listItems.push(<li key={i}><Words runs={b.runs} shown={shown} /></li>);
+    const streaming = revealed !== Infinity;
+    if (b.k === "h") items.push(<h3 key={i}><Words runs={b.runs} shown={shown} streaming={streaming} /></h3>);
+    if (b.k === "p") items.push(<p key={i}><Words runs={b.runs} shown={shown} streaming={streaming} /></p>);
+    if (b.k === "li") listItems.push(<li key={i}><Words runs={b.runs} shown={shown} streaming={streaming} /></li>);
     if (b.k === "table")
       items.push(
         <div key={i} className={revealed === Infinity ? "jn-tablewrap" : "jn-tablewrap jn-w"} role="region" aria-label="Table, 4 columns, 3 rows" tabIndex={0}>
@@ -234,7 +292,7 @@ export function Trace({ open: initialOpen = false, label = TRACE_SUMMARY, items 
   const [open, setOpen] = React.useState(initialOpen);
   const reduced = useReduced();
   return (
-    <div className="jn-trace" role="group" aria-label="Juno’s steps">
+    <div className="jn-trace" role="group" aria-label="Alevr’s steps">
       <button type="button" className="jn-trace__line jicon-trigger jicon-quiet" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span>{label}</span>
         <span className="jn-trace__chev" data-open={open ? "" : undefined}>
@@ -335,7 +393,8 @@ export function TaskCard({
   const [other, setOther] = React.useState(false);
   const waiting = !sent;
   const shared = handoff && !reduced;
-  // One story told three times the same way: the header, the question and the plan all say step 2 of 4 is waiting on you.
+  // One story, one wording (Revision 2): the header says where the work is (step 2 of 4 and what it does), the question
+  // carries the only attention words, and the plan counts what is done. "Waiting", "waits on you" are gone.
   return (
     <section className="jn-task" data-waiting={waiting ? "" : undefined} aria-label="Task: Mira is checking renewal usage for three accounts">
       <header className="jn-task__head">
@@ -348,7 +407,7 @@ export function TaskCard({
           </motion.p>
           <p className="jn-task__progress num">
             {waiting ? (
-              <>Waiting for your answer at step 2 of 4</>
+              <>Step 2 of 4, matching Stripe customers to accounts</>
             ) : (
               <>
                 <span className="jn-task__verb">Matching {sent} in Stripe</span>, step 2 of 4
@@ -417,13 +476,13 @@ export function TaskCard({
               >
                 <span className="jn-q__radio" aria-hidden="true" />
                 <span className="jn-q__text">
-                  <span>Something else…</span>
+                  <span>Something else</span>
                 </span>
               </button>
             </div>
             <div className="jn-q__actions">
-              <button type="button" className="jb jb--ghost jb--sm">
-                Skip
+              <button type="button" className="jb jb--ghost jb--sm" title="Mira leaves Halvorsen out of the check and carries on with the other two">
+                Skip Halvorsen
               </button>
               <button type="button" className="jb jb--primary jb--sm" aria-disabled={!choice && !other} onClick={() => choice && setSent(choice)}>
                 Continue
@@ -445,7 +504,7 @@ export function TaskCard({
           <Icon name="chevron-right" size={16} />
         </span>
         <span>Plan</span>
-        <span className="num">{waiting ? "1 of 4 steps done, step 2 waits on you" : "1 of 4 steps done, 6 min"}</span>
+        <span className="num">{waiting ? "1 of 4 steps done" : "1 of 4 steps done, 6 min"}</span>
       </button>
       <AnimatePresence initial={false}>
         {plan ? (
@@ -467,7 +526,7 @@ export function TaskCard({
                       <Icon name={st === "done" ? "check" : st === "waiting" ? "hand" : st === "active" ? "progress" : "circle"} size={16} value={st === "active" ? 0.4 : undefined} />
                     </span>
                     {step.title}
-                    {st === "waiting" ? <span className="jn-plan__note">Waiting for you</span> : null}
+                    {st === "waiting" ? <span className="jn-plan__note">Needs your answer</span> : null}
                   </li>
                 );
               })}
@@ -489,6 +548,19 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
   const [menuKbd, setMenuKbd] = React.useState(false);
   const [redirect, setRedirect] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const cardRef = React.useRef<HTMLElement | null>(null);
+  /*
+   * The card collapses to its receipt, but the room it took stays reserved for
+   * the rest of the turn (Revision 2, as INTERACTION_SPEC M18's spacer): in a
+   * thread scrolled to its end a shrinking last card would otherwise pull the
+   * whole transcript down by its height. The card's own box still eases to the
+   * receipt on base; only the empty room below it is kept.
+   */
+  const [hold, setHold] = React.useState<number | undefined>(undefined);
+  const decide = (o: "denied" | "posted" | "always") => {
+    setHold(cardRef.current?.offsetHeight);
+    setOutcome(o);
+  };
   const closeMenu = React.useCallback(() => setMenu(false), []);
   usePopoverKeys(menuRef, menu, closeMenu, menuKbd, ".jsplit__caret");
 
@@ -501,7 +573,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
 
   // The card's height follows its content (ask, then the one-line receipt), so it collapses on base instead of in one frame.
   const card = (
-    <section className="jn-approve" role="group" aria-labelledby="jn-approve-title" data-outcome={outcome ?? undefined}>
+    <section ref={cardRef} className="jn-approve" role="group" aria-labelledby="jn-approve-title" data-outcome={outcome ?? undefined}>
       <AutoHeight>
         <AnimatePresence mode="popLayout" initial={false}>
           {outcome ? (
@@ -518,10 +590,17 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               ) : (
                 <span>
                   Posted to #design <span className="ink-3 num">at 14:06</span>
-                  {outcome === "always" ? <span className="ink-3">. Juno posts to #design without asking from now on.</span> : null}
+                  {outcome === "always" ? <span className="ink-3">. Alevr posts to #design without asking from now on.</span> : null}
                 </span>
               )}
-              <button type="button" className="jb jb--link" onClick={() => setOutcome(null)}>
+              <button
+                type="button"
+                className="jb jb--link"
+                onClick={() => {
+                  setOutcome(null);
+                  setHold(undefined);
+                }}
+              >
                 Undo
               </button>
             </motion.p>
@@ -530,7 +609,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               <header className="jn-approve__head">
                 <SlackMark size={20} className="jn-approve__mark" />
                 <p id="jn-approve-title" className="jn-approve__title">
-                  <b className="jn-attn">Needs your approval:</b> Juno wants to post to #design
+                  <b className="jn-attn">Needs your approval:</b> post the summary to #design in Slack
                 </p>
               </header>
               <div className="jn-approve__payload">
@@ -539,11 +618,11 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                 </p>
                 <p className="jn-approve__msg">{SLACK_POST}</p>
               </div>
-              <p className="jn-approve__consequence">Visible to 42 people. Your Slack rule is to ask before posting.</p>
+              <p className="jn-approve__consequence">You asked for this post. 42 people see #design, and your Slack rule is to ask before posting.</p>
               {redirect ? (
                 <div className="jn-approve__redirect">
                   <label className="jfield">
-                    <input autoFocus placeholder="Tell Juno what to do instead" aria-label="Tell Juno what to do instead" />
+                    <input autoFocus placeholder="Tell Alevr what to do instead" aria-label="Tell Alevr what to do instead" />
                   </label>
                   <button type="button" className="jb jb--secondary jb--sm" onClick={() => setRedirect(false)}>
                     Cancel
@@ -552,11 +631,11 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               ) : (
                 <div className="jn-approve__actions">
                   {/* Two styles only: the quiet outline for the ways out, the ink for the verb. */}
-                  <button type="button" className="jb jb--secondary" onClick={() => setOutcome("denied")}>
+                  <button type="button" className="jb jb--secondary" onClick={() => decide("denied")}>
                     Not now
                   </button>
                   <span className="jsplit" data-armed={armed ? "" : undefined}>
-                    <button type="button" className="jb jb--primary jsplit__main" aria-disabled={!armed} onClick={() => armed && setOutcome("posted")}>
+                    <button type="button" className="jb jb--primary jsplit__main" aria-disabled={!armed} onClick={() => armed && decide("posted")}>
                       Post to #design
                     </button>
                     <button
@@ -587,37 +666,33 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                           exit={{ opacity: 0, transition: reduced ? R : T.exit }}
                           transition={reduced ? R : POP_IN}
                         >
+                          {/* Two actions, not a choice of mode: each one posts, and says what happens next time. */}
                           <button
                             type="button"
-                            role="menuitemradio"
-                            aria-checked="true"
+                            role="menuitem"
                             className="jn-pop__row jn-pop__row--tall"
                             onClick={() => {
                               setMenu(false);
-                              setOutcome("posted");
+                              decide("posted");
                             }}
                           >
                             <span className="jn-pop__stack">
                               <span>Post once</span>
-                              <span className="jn-pop__line">Juno asks again next time</span>
-                            </span>
-                            <span className="jn-pop__check">
-                              <Icon name="check" size={16} />
+                              <span className="jn-pop__line">Alevr asks again next time</span>
                             </span>
                           </button>
                           <button
                             type="button"
-                            role="menuitemradio"
-                            aria-checked="false"
+                            role="menuitem"
                             className="jn-pop__row jn-pop__row--tall"
                             onClick={() => {
                               setMenu(false);
-                              setOutcome("always");
+                              decide("always");
                             }}
                           >
                             <span className="jn-pop__stack">
-                              <span>Always allow in #design</span>
-                              <span className="jn-pop__line">Posts there without asking. Change it in Customize</span>
+                              <span>Post, and always allow in #design</span>
+                              <span className="jn-pop__line">Posts there without asking from now on. Change it in Customize</span>
                             </span>
                           </button>
                         </motion.div>
@@ -632,7 +707,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
                       onInstead?.();
                     }}
                   >
-                    Tell Juno what to do instead
+                    Tell Alevr what to do instead
                   </button>
                 </div>
               )}
@@ -642,10 +717,11 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
       </AutoHeight>
     </section>
   );
-  if (!animate) return card;
+  const held = <div className="jn-approve-hold" style={{ minHeight: hold }}>{card}</div>;
+  if (!animate) return held;
   return (
     <motion.div initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={reduced ? R : T.base}>
-      {card}
+      {held}
     </motion.div>
   );
 }

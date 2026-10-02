@@ -1,42 +1,25 @@
 "use client";
 
 import * as React from "react";
-import dynamic from "next/dynamic";
-import { ImageGenerationCanvas } from "@/components/aicss/image-generation";
-import { ThinkingState } from "@/components/aicss/thinking-state";
 import { Play } from "@/components/ui/icons";
+import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
 import { cn } from "@/lib/utils";
 
 /**
- * Media-generation work surface shown while /api/generate runs.
+ * Media-generation work surface shown while /api/generate runs
+ * (INTERACTION_SPEC M9).
  *
- * AIcss's "Image Generation", in AIcss's own composition: the canvas, then the
- * label under it. Nothing else.
+ * The box is reserved at the shape the result will take, on the quiet tone a
+ * card sits on, so nothing reflows when the picture lands. Inside it, the live
+ * line every working row in the transcript uses (live-line.tsx): the Continuum
+ * mark beside the truthful stage ("Creating image") and real seconds. No dot
+ * lattice, no pixel mosaic, no shimmer: the old lattice was the retired mark,
+ * and a mosaic that "reveals" an image the provider has not sent is a picture
+ * of progress rather than progress.
  *
- * WHAT WAS DELETED, AND WHY IT WAS ALL ONE MISTAKE. The block used to be a card
- * — border, shadow, 1.75rem radius — with a bordered footer strip carrying a
- * progress bar, a percentage and an mm:ss clock. Five chrome elements around one
- * unfinished picture:
- *
- *   - The clock counted up while nobody could act on the number. It made a
- *     20-second wait feel measured and a 60-second wait feel broken.
- *   - The percentage was fiction on every provider that reports no progress: the
- *     bar ran an indeterminate sweep that looks exactly like a determinate one.
- *   - The footer's own border cut the card in two, so the thing being made was
- *     the smaller half of its own container.
- *
- * The canvas is now the whole object, and the one moving thing on screen is the
- * label that says what is happening. The dot lattice is already Juno's mark, so
- * the placeholder looks like the app rather than like a loading state.
+ * Still no percentage and no bar: most providers report no progress, and an
+ * indeterminate sweep looks exactly like a determinate one.
  */
-
-/**
- * The Libraries.dev pixel mosaic (see effects/generation-mosaic.tsx), loaded
- * on demand because it brings three.js. The Juno lattice below stays as the
- * floor: it paints on the first frame and while the chunk loads, and it is
- * what a browser without WebGL keeps.
- */
-const GenerationMosaic = dynamic(() => import("@/components/effects/generation-mosaic"), { ssr: false });
 
 const STAGE_DETAILS: Record<"image" | "video", Record<string, string>> = {
   image: {
@@ -72,72 +55,45 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
   const { modality, stage } = progress;
   const isVideo = modality === "video";
   const detail = stageDetail(modality, stage);
+  const seconds = useLiveSeconds(true);
 
   /*
-   * The one number kept, and it is not a clock: renders genuinely can run past
+   * Said once the wait is long enough to doubt: renders genuinely can run past
    * a minute, and a reader who is not told that will assume a stall and leave.
-   * It appears only once the wait is already long enough to doubt, so it reads
-   * as reassurance rather than as a warning printed in advance. Per-modality
-   * thresholds because the doubt arrives at different times: a video is
-   * expected to take a while, an image is not — but slow image providers do
-   * crawl past 20s, and that placeholder used to just sit there shimmering
-   * with nothing to say for itself.
+   * Per-modality thresholds because the doubt arrives at different times: a
+   * video is expected to take a while, an image is not.
    */
-  const [longWait, setLongWait] = React.useState(false);
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => setLongWait(true), isVideo ? 15_000 : 20_000);
-    return () => window.clearTimeout(timer);
-  }, [isVideo]);
+  const longWait = seconds >= (isVideo ? 15 : 20);
 
   return (
     <div
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
       data-modality={modality}
       data-stage={stage}
       className={cn("w-full", isVideo ? "max-w-[min(100%,440px)]" : "max-w-[min(100%,288px)]")}
     >
-      <div className={cn("relative overflow-hidden rounded-field", isVideo ? "aspect-video" : "aspect-square")}>
-        {/* The lattice opens up from AIcss's 11px: their canvas is 208px, and a
-            pitch tuned for that reads as a texture rather than a field here. */}
-        <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
-        {!isVideo && <GenerationMosaic />}
+      <div
+        className={cn(
+          "relative flex flex-col justify-end overflow-hidden rounded-field bg-muted p-3",
+          isVideo ? "aspect-video" : "aspect-square"
+        )}
+      >
         {isVideo && (
           // The set's play mark in its house weight: it says "this will be a
-          // video", not "playing", so it is not the filled (on) cut. The class
-          // draws the disc around it (globals.css).
+          // video", not "playing". The class draws the disc around it.
           <div className="generation-media__play" aria-hidden="true">
             <Play className="generation-media__play-icon" motion="none" />
           </div>
         )}
-      </div>
-
-      {/* A live region announces its CONTENT, so the content has to be in the
-          tree. This stack was aria-hidden, with an aria-label on the region
-          standing in for it — and an attribute rewrite on a live region is
-          not a text mutation, so most screen readers said nothing at any
-          stage change, and the long-wait sentence was in neither place: the
-          one reassurance this component exists to give never reached the
-          reader it was written for. The hidden prefix names the work, because
-          the stage word alone ("Refining") means nothing spoken. */}
-      <div className="mt-2.5 flex flex-col gap-0.5">
+        {/* The line names the work for a screen reader too: the stage word
+            alone ("Refining") means nothing spoken. */}
         <span className="sr-only">{isVideo ? "Video" : "Image"} generation: </span>
-        {/* Keyed on the stage so a change fades rather than swapping under the
-            shine — one element, so the two animations cannot collide. `body`
-            is the sibling sentence's rung; the label sat on an arbitrary 14px
-            that is on no rung and that the lint rule's px-only regex never saw. */}
-        <ThinkingState key={detail} tone="strong" className="text-body motion-safe:animate-fade-in">
-          {detail}
-        </ThinkingState>
-        {longWait && (
-          <span className="text-body text-muted-foreground motion-safe:animate-fade-in">
-            {isVideo
-              ? "Longer clips can take a couple of minutes."
-              : "Still working. Detailed images can take a minute."}
-          </span>
-        )}
+        <LiveLine text={detail} phase="working" seconds={seconds} immediate />
       </div>
+      {longWait && (
+        <p className="mt-2 text-ui text-muted-foreground motion-safe:animate-fade-in" role="status" aria-live="polite">
+          {isVideo ? "Longer clips can take a couple of minutes." : "Still working. Detailed images can take a minute."}
+        </p>
+      )}
     </div>
   );
 }

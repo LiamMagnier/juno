@@ -1,6 +1,6 @@
 "use client";
 
-import { CustomizeNav } from "@/components/customize/customize-nav";
+import { CustomizeFrame } from "@/components/customize/customize-nav";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -19,7 +19,6 @@ import { AddCustomConnectorDialog } from "@/components/connections/add-custom-co
 import { CustomConnectorDialog } from "@/components/connections/custom-connector-dialog";
 import { beginCustomConnectorSignIn } from "@/components/connections/custom-connector-api";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
-import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -284,25 +283,11 @@ export default function ConnectionsPage() {
   const loading = connectors === null;
 
   return (
-    <AppPage measure="wide">
-      <CustomizeNav current="apps" />
+    <CustomizeFrame current="apps">
       {/* No count in the header. It carried a "{n} connected" badge directly
           above a toolbar whose "Connected" segment prints the same number —
           and the segment is the control that filters to them, so its copy of
           the integer is the one that earns its place. */}
-      <AppPageHeader
-        /* No eyebrow: it restated the sidebar row that opens this page, above
-           a title that already means the same thing. See the note in
-           app/(app)/library/page.tsx — same fix, same rule. */
-        heading="Customize"
-        lede={`Connect the apps ${PRODUCT_NAME} can work with.`}
-        actions={
-          <Button size="sm" className="gap-1.5" onClick={() => setAddMcpOpen(true)}>
-            <Plus className="size-4" />
-            Add MCP server
-          </Button>
-        }
-      />
 
       {error ? (
         <LoadError
@@ -326,6 +311,12 @@ export default function ConnectionsPage() {
         </div>
       ) : (
         <ConnectorDirectory
+          headerAction={
+            <Button variant="secondary" onClick={() => setAddMcpOpen(true)} className="h-11 shrink-0 rounded-full px-4">
+              <Plus className="size-4" aria-hidden="true" />
+              Add
+            </Button>
+          }
           connectors={connectors ?? []}
           composioConfigured={composioConfigured}
           canConfigureServer={features.isOwner}
@@ -349,7 +340,7 @@ export default function ConnectionsPage() {
       <StandingGrants />
 
       <p className="mt-8 text-caption text-muted-foreground">
-        {`Connected tools are available to the model when you enable them in a chat, and ${PRODUCT_NAME} asks before any tool that changes something. Provider permissions appear in App details when the provider returned them.`}
+        {`${PRODUCT_NAME} asks before anything that changes something in an app, unless you allowed it. Open an app to see who can use it and when it was last used.`}
       </p>
 
       <Dialog open={permissionTarget !== null} onOpenChange={(open) => !open && setPermissionTarget(null)}>
@@ -427,6 +418,6 @@ export default function ConnectionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AppPage>
+    </CustomizeFrame>
   );
 }

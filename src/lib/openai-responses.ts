@@ -11,7 +11,8 @@ import {
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
-import type { McpToolset } from "@/lib/mcp";
+import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
+import type { ToolCallInput } from "@/lib/tools/types";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/attachment-bytes";
@@ -188,6 +189,17 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
   return model.reasoning && reasoningCaps(model).canDisable;
 }
 
+/**
+ * The seam the scripted-transport tests replace: `responses.create` returning
+ * the streamed events. Production leaves it absent.
+ */
+export interface ResponsesTransport {
+  create(
+    params: OpenAI.Responses.ResponseCreateParamsStreaming,
+    options: { signal?: AbortSignal }
+  ): Promise<AsyncIterable<OpenAI.Responses.ResponseStreamEvent>>;
+}
+
 export async function* streamOpenAIResponses(
   model: ModelInfo,
   system: string,
@@ -196,12 +208,14 @@ export async function* streamOpenAIResponses(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   _webSearch?: boolean,
-  toolset?: McpToolset,
+  tools?: ToolLoop,
   dynamicContext?: string,
   cacheKey?: string,
   fastMode?: boolean,
-  proMode?: boolean
+  proMode?: boolean,
+  transport?: ResponsesTransport
 ): AsyncGenerator<LlmEvent> {
+  const toolset = tools?.toolset;
   const input = await toResponsesInput(
     history,
     model.vision,
@@ -233,7 +247,7 @@ export async function* streamOpenAIResponses(
 
   const hasTools = !!toolset && toolset.tools.length > 0;
   // Responses uses a flat function-tool shape (no nested `function` wrapper).
-  const tools: OpenAI.Responses.Tool[] | undefined = hasTools
+  const wireTools: OpenAI.Responses.Tool[] | undefined = hasTools
     ? toolset!.tools.map((t) => {
         const fn = (t as { function: { name: string; description?: string; parameters?: Record<string, unknown> } }).function;
         return {
@@ -299,7 +313,7 @@ export async function* streamOpenAIResponses(
   // round 2's first part from overwriting round 1's.
   let summaryPart = -1;
 
-  const c = client();
+  const c: ResponsesTransport = transport ?? { create: (body, options) => client().responses.create(body, options) };
   const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
@@ -336,8 +350,8 @@ export async function* streamOpenAIResponses(
         ...(wantsSummary ? { summary: "detailed" } : {}),
       } as OpenAI.Responses.ResponseCreateParams["reasoning"];
     }
-    if (tools) {
-      params.tools = tools;
+    if (wireTools) {
+      params.tools = wireTools;
       params.tool_choice = isFinalRound ? "none" : "auto";
     }
     // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
@@ -346,7 +360,7 @@ export async function* streamOpenAIResponses(
     // priority-eligible models, so relaying it straight through is safe.
     if (fastMode) params.service_tier = "priority";
 
-    const stream = await c.responses.create(params, { signal });
+    const stream = await c.create(params, { signal });
 
     const calls: Array<{ callId: string; name: string; args: string }> = [];
     /**
@@ -442,37 +456,50 @@ export async function* streamOpenAIResponses(
     }
     finishRaw = roundFinish;
 
-    if (hasTools && !isFinalRound && calls.length > 0) {
+    if (tools && hasTools && !isFinalRound && calls.length > 0) {
       // The round's own output first — reasoning items and the calls they
       // produced, verbatim and in order — then one output per call below.
       input.push(...replayItems);
-      for (const call of calls) {
-        const label = toolset!.labelFor(call.name);
-        // The Responses adapter has the whole argument JSON before it
-        // dispatches, so the arguments ride on the CALL — the row is complete
-        // in the panel while the connector is still being waited on.
-        yield { type: "tool", server: label, name: call.name, phase: "call", callId: call.callId, args: call.args };
-        let parsedArgs: Record<string, unknown> = {};
-        try {
-          parsedArgs = call.args ? JSON.parse(call.args) : {};
-        } catch {
-          parsedArgs = {};
-        }
-        const exec = await toolset!.execute(call.name, parsedArgs, signal);
-        // `function_call_output.output` is a string, so pixels follow it as a
-        // user turn carrying `input_image` parts — the documented way to show
-        // a Responses model an image a function produced.
-        const images = sendableToolImages(exec.images, model.vision);
+      const inputs: ToolCallInput[] = calls.map((call, index) => ({
+        name: call.name,
+        callId: tools.issueCallId(call.callId, round, index),
+        providerCallId: call.callId,
+        round,
+        index,
+        argsText: call.args,
+      }));
+      for (const call of inputs) {
+        // The whole argument JSON is here before the dispatch, so the
+        // arguments ride on the CALL.
+        yield {
+          type: "tool",
+          server: toolset!.labelFor(call.name),
+          name: call.name,
+          phase: "call",
+          callId: call.callId,
+          args: call.argsText,
+          ...(call.providerCallId && call.providerCallId !== call.callId ? { providerCallId: call.providerCallId } : {}),
+          round,
+          index: call.index,
+        };
+      }
+      const batch = yield* tools.run(inputs, signal, { nextIsFinal: round + 1 === maxRounds - 1 });
+      const imageTurns: InputItem[] = [];
+      for (const result of batch) {
+        // `function_call_output.output` is a string, so pixels follow the
+        // outputs as a user turn carrying `input_image` parts — the documented
+        // way to show a Responses model an image a function produced.
+        const images = sendableToolImages(result.images, model.vision);
         input.push({
           type: "function_call_output",
-          call_id: call.callId,
-          output: withheldImagesNote(exec.text, exec.images, images.length),
+          call_id: wireCallId(result),
+          output: withheldImagesNote(result.text, result.images, images.length),
         } as InputItem);
         if (images.length) {
-          input.push({
+          imageTurns.push({
             role: "user",
             content: [
-              { type: "input_text", text: toolImageIntro(call.name, images) },
+              { type: "input_text", text: toolImageIntro(result.name, images) },
               ...images.map((image) => ({
                 type: "input_image",
                 detail: "high",
@@ -481,17 +508,8 @@ export async function* streamOpenAIResponses(
             ],
           } as unknown as InputItem);
         }
-        yield {
-          type: "tool",
-          server: label,
-          name: call.name,
-          phase: "result",
-          callId: call.callId,
-          result: exec.body,
-          ok: exec.ok,
-          durationMs: exec.durationMs,
-        };
       }
+      input.push(...imageTurns);
       continue;
     }
     break;

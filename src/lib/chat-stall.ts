@@ -105,14 +105,38 @@ export interface StallWatchdog {
    * "Model stopped responding". The approval receipt has its own TTL
    * (ACTION_APPROVAL_TTL_MS), which is what bounds the wait now.
    *
-   * The next `touch()` — the tool result arriving, approved or refused — or an
-   * explicit `resume()` re-arms the idle window. No-op once stopped or stalled.
+   * Only `resume()` re-arms the idle window (INV-33). `touch()` does not: the
+   * dispatcher streams its own status events while a tool runs — `queued`,
+   * `running`, a second call's `awaiting_approval` — and every one of them
+   * touches the watchdog, so a touch that cleared the pause re-armed a
+   * two-minute clock under a `run_code` allowed 130 s, or under a person still
+   * reading an approval card. The turn stream reports how many calls are
+   * running or waiting, and the route pauses and resumes on that count. Each
+   * tool is bounded by its own `timeoutMs` meanwhile. No-op once stopped or
+   * stalled.
    */
   pause(): void;
-  /** Re-arm after `pause()` without waiting for the next event. */
+  /** Re-arm after `pause()`; the one way out of a pause. */
   resume(): void;
-  /** True between `pause()` and the next `touch()`/`resume()`. */
+  /** True between `pause()` and `resume()`. */
   readonly paused: boolean;
+  /**
+   * Suspend the clock while a TOOL is running, not the provider.
+   *
+   * Between a call's `running` act and its result the provider is not
+   * expected to send anything: the turn is waiting on the tool, which has its
+   * own bound (the dispatcher's per-tool timer, src/lib/tools/dispatch.ts). A
+   * 130-second run used to sit inside a 120-second idle window and be reported
+   * as a model that stopped responding.
+   *
+   * Holds are COUNTED (parallel calls each take one) and released only by the
+   * function returned here — never by `touch()`, which is what lets progress
+   * frames keep arriving without re-arming a clock that should stay off. When
+   * the last hold is released the idle window starts again.
+   */
+  hold(): () => void;
+  /** True while at least one hold is taken. */
+  readonly held: boolean;
 }
 
 /**
@@ -136,9 +160,10 @@ export function createStallWatchdog(
   let stopped = false;
   let started = false;
   let paused = false;
+  let holds = 0;
 
   const arm = (delay: number) => {
-    if (stopped || stalled) return;
+    if (stopped || stalled || holds > 0) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       stalled = true;
@@ -156,6 +181,9 @@ export function createStallWatchdog(
   return {
     touch: () => {
       started = true;
+      // An event clears an approval pause (the provider is talking again).
+      // Silence while a call runs or waits for a person is covered by a
+      // counted hold (trackToolActivity), which a touch never clears.
       paused = false;
       arm(idleMs);
     },
@@ -185,6 +213,66 @@ export function createStallWatchdog(
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;
+    },
+    hold() {
+      holds += 1;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        holds = Math.max(0, holds - 1);
+        if (holds === 0 && !paused) arm(started ? idleMs : startupMs);
+      };
+    },
+    get held() {
+      return holds > 0;
+    },
+  };
+}
+
+/**
+ * The route's reading of the tool acts for the watchdog: a hold from a call's
+ * `awaiting_approval` or `running` act to its result, one per call (INV-33).
+ * Every event still touches the watchdog — progress frames included — but
+ * while any call holds it, no silence counts against the provider.
+ *
+ * WHY THE APPROVAL WAIT HOLDS TOO. The broker's callback pauses the watchdog
+ * when a card goes out, but the pause is a flag that the next `touch()`
+ * clears — and the dispatcher's own `awaiting_approval` act is the very next
+ * event the route reads, and touches for. Without a hold, a person deciding
+ * for longer than the idle window had the turn killed as a stalled model. The
+ * hold is counted, so two calls waiting at once cannot release each other,
+ * and the receipt's TTL is what bounds the wait.
+ *
+ * Calls that never report either act (a native tool that does not know when
+ * it is authorised) take no hold: the idle window and the approval pause
+ * bound them exactly as before.
+ */
+export function trackToolActivity(watchdog: Pick<StallWatchdog, "hold">): {
+  observe(event: { type: string; phase?: string; status?: string; callId?: string }): void;
+  /** Release every hold still taken (the stream ended or threw). */
+  releaseAll(): void;
+  readonly active: number;
+} {
+  const releases = new Map<string, () => void>();
+  return {
+    observe(event) {
+      if (event.type !== "tool" || !event.callId) return;
+      if (event.phase === "status" && (event.status === "running" || event.status === "awaiting_approval")) {
+        if (!releases.has(event.callId)) releases.set(event.callId, watchdog.hold());
+      } else if (event.phase === "result") {
+        releases.get(event.callId)?.();
+        releases.delete(event.callId);
+      }
+    },
+    releaseAll() {
+      for (const release of releases.values()) release();
+      releases.clear();
+    },
+    get active() {
+      return releases.size;
     },
   };
 }

@@ -6,14 +6,10 @@ import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
 import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
-import {
-  type ActiveConnector,
-  type McpFunctionTool,
-  type McpToolset,
-  type McpToolsetContext,
-  type ToolExecution,
-} from "@/lib/mcp";
-import type { ToolAccess } from "@/lib/tool-access";
+import type { ActiveConnector, McpToolsetContext } from "@/lib/mcp";
+import { createToolLoop, type ToolLoop } from "@/lib/tools/loop";
+import { withNativeChatTools, type NativeChatTool } from "@/lib/tools/toolset";
+import type { ChatToolset, ToolSpec } from "@/lib/tools/types";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
 import { noteModelNotServed } from "@/lib/model-capability";
@@ -21,58 +17,22 @@ import { providerAdapterFor } from "@/lib/provider-routing";
 import { clampMaxTokens } from "@/lib/provider-limits";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
+import type { AdapterRequest } from "@/lib/llm/types";
+import { undispatchedToolsetReason } from "@/lib/llm/tool-round";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export { clampMaxTokens };
 
 /**
- * A tool the chat route builds for one turn and runs itself.
+ * A tool the chat route builds for one turn and runs itself. Defined beside the
+ * toolset it is composed into (src/lib/tools/toolset.ts); re-exported here
+ * because every native tool imports it from llm.ts.
  *
- * Not a registry tool, and deliberately so. `UnifiedAgentRegistry` tools run
- * through `executeToolCall`, which puts every call that is not a read in front
- * of the generic approval broker, and their `execute` sees only the arguments.
- * A native tool is a closure over the turn it belongs to (the account, the
- * conversation, the user message it answers) and decides for itself when a
- * person has to be asked. `start_task` (src/lib/chat/task-tool.ts) is the one
- * that exists.
+ * Not a registry tool, and deliberately so: a native tool is a closure over the
+ * turn it belongs to and decides for itself when a person has to be asked, so
+ * the registry and its generic broker never see its calls.
  */
-export interface NativeChatTool {
-  tool: McpFunctionTool;
-  /** The name the activity row and the thought-process panel show for it. */
-  label: string;
-  access: ToolAccess;
-  execute(args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolExecution>;
-}
-
-/**
- * The turn's toolset with the native tools added after everything it already
- * carries.
- *
- * Composed here rather than inside `openUnifiedAgentToolset`, so the registry
- * and its broker never see these calls, and so a toolset that failed to open
- * still leaves the native tools usable instead of taking them down with it.
- * Native tools are dispatched first by name; every other name falls through to
- * the toolset exactly as before.
- */
-function withNativeTools(base: McpToolset | undefined, native: readonly NativeChatTool[]): McpToolset | undefined {
-  if (native.length === 0) return base;
-  const byName = new Map(native.map((entry) => [entry.tool.function.name, entry]));
-  return {
-    tools: [...(base?.tools ?? []), ...native.map((entry) => entry.tool)],
-    labelFor: (toolName) => byName.get(toolName)?.label ?? base?.labelFor(toolName) ?? toolName,
-    accessFor: (toolName) => byName.get(toolName)?.access ?? base?.accessFor(toolName) ?? "unknown",
-    execute: (toolName, args, signal, callId) => {
-      const entry = byName.get(toolName);
-      if (entry) return entry.execute(args, signal);
-      if (base) return base.execute(toolName, args, signal, callId);
-      const text = `Unknown tool: ${toolName}`;
-      return Promise.resolve({ text, body: text, ok: false });
-    },
-    close: async () => {
-      if (base) await base.close();
-    },
-  };
-}
+export type { NativeChatTool };
 
 /** Provider-agnostic streaming: routes Anthropic to its native SDK, everything
  *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
@@ -129,6 +89,22 @@ export async function* streamChat(opts: {
    * decides whether a turn may carry one, and private turns never do.
    */
   nativeTools?: readonly NativeChatTool[];
+  /**
+   * Provider specs this turn may carry (the execution and skill lanes'
+   * `run_code`, `check_run`, `use_skill`, `read_skill_file`), already granted
+   * by the entitlement rows (src/lib/tools/entitlements.ts). They run behind
+   * the runtime broker like the registry tools. Ignored without `audit`.
+   */
+  toolSpecs?: readonly ToolSpec[];
+  /**
+   * A tool loop the caller built and owns (the tool round-trip probe, which
+   * offers its own pure test function). Used as-is: no registry, connector or
+   * native toolset is opened, and streamChat does not close it.
+   */
+  toolLoop?: ToolLoop;
+  toolset?: ChatToolset;
+  batch?: AdapterRequest["batch"];
+  responseSchema?: AdapterRequest["responseSchema"];
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
@@ -159,9 +135,12 @@ export async function* streamChat(opts: {
   );
   const active = opts.connectors ?? [];
 
-  // Open the Unified Agent Toolset (Python, Browser, Computer + active MCP connectors)
-  let toolset: McpToolset | undefined;
-  if (opts.audit) {
+  const undispatchedReason = undispatchedToolsetReason({ toolset: opts.toolset, batch: opts.batch, dispatches: true });
+  if (undispatchedReason) throw new Error(`[llm] refusing to run tools: ${undispatchedReason}`);
+
+  // Open the Unified Agent Toolset (registry tools, provider specs, connectors)
+  let toolset: ChatToolset | undefined;
+  if (opts.audit && !opts.toolLoop) {
     try {
       const agentContext: AgentExecutionContext = {
         userId: opts.audit.userId,
@@ -176,13 +155,22 @@ export async function* streamChat(opts: {
       toolset = await openUnifiedAgentToolset(active, agentContext, {
         // Never `undefined`: that is the registry's "all tools" value.
         allowedToolIds: opts.allowedTools ?? [...NO_RUNTIME_TOOLS],
+        specs: opts.toolSpecs,
       });
     } catch (err) {
       console.error("[llm] error opening unified agent toolset:", err);
       toolset = undefined;
     }
   }
-  toolset = withNativeTools(toolset, opts.nativeTools ?? []);
+  toolset = withNativeChatTools(toolset, opts.nativeTools ?? []);
+  /*
+   * ONE TOOL LOOP PER GENERATION, and every adapter runs its calls through it:
+   * the dispatcher parses, validates, times, cancels and answers every call
+   * the same way whichever provider made it (src/lib/tools/dispatch.ts), and
+   * the call ids it issues are stable across a replayed round.
+   */
+  const tools: ToolLoop | undefined =
+    opts.toolLoop ?? (toolset && toolset.tools.length > 0 ? createToolLoop(toolset) : undefined);
   try {
     const adapter = providerAdapterFor(model, proMode);
     // Every provider call in the product funnels through the switch below, so
@@ -197,15 +185,16 @@ export async function* streamChat(opts: {
     try {
       switch (adapter) {
         case "anthropic-native":
+          // yield* streamAnthropic(request)
           yield* streamAnthropic(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, fastMode, opts.systemStablePrefix
+            tools, dynamicContext, fastMode, opts.systemStablePrefix
           );
           return;
         case "gemini-native":
           yield* streamGemini(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, opts.requestContext
+            tools, dynamicContext, opts.requestContext
           );
           return;
         case "openai-responses":
@@ -213,15 +202,28 @@ export async function* streamChat(opts: {
           // /chat/completions; this branch preserves their reasoning controls.
           yield* streamOpenAIResponses(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, cacheKey, fastMode, proMode
+            tools, dynamicContext, cacheKey, fastMode, proMode
+          );
+          return;
+        case "xai-responses":
+          // Grok models with Responses-API capability route through the same
+          // adapter as openai-responses, pointed at xAI's base URL.
+          yield* streamOpenAIResponses(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            tools, dynamicContext, cacheKey, fastMode, proMode
           );
           return;
         case "openai-compatible":
           yield* streamOpenAICompat(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, cacheKey, fastMode
+            tools, dynamicContext, cacheKey, fastMode
           );
           return;
+        default: {
+          // TypeScript narrowing: if this compiles, every adapter has a case.
+          const _exhaustive: never = adapter;
+          throw new Error(`[llm] unhandled adapter: ${_exhaustive}`);
+        }
       }
     } catch (err) {
       bench(err);

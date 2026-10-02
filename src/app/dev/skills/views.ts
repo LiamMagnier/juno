@@ -14,6 +14,7 @@ export const SKILLS_GALLERY_VIEWS = [
   "detail",
   "detail-own",
   "detail-notices",
+  "detail-scripts",
   "composer",
 ] as const;
 

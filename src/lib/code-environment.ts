@@ -36,6 +36,12 @@ export interface CodePermission {
   mode: string;
   /** The same fact at sentence length — the chip's popover, the Customize row. */
   detail: string;
+  /**
+   * The line under the start composer, after the mode's name: what it allows,
+   * in a lower-case clause ("Asks first pauses for your approval…"). Revision 2
+   * of the Code design: a mode that is only named is unexplained.
+   */
+  line: string;
 }
 
 /**
@@ -55,11 +61,13 @@ export const CODE_PERMISSIONS: Record<CodeTarget, CodePermission> = {
     mode: "Asks first",
     detail:
       "Your Mac pauses and prompts for approval before applying high-impact changes or terminal commands.",
+    line: "on your Mac: it pauses for your approval before high-impact changes and terminal commands.",
   },
   cloud: {
     mode: "Full access",
     detail:
       "A cloud runner executes in a sandboxed CI environment and opens a pull request for you to review.",
+    line: "in the cloud: it works in a sandbox and opens a pull request for you to review.",
   },
 };
 

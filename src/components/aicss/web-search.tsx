@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ThinkingState } from "@/components/aicss/thinking-state";
+import { ThinkingMark } from "@/components/brand/thinking-mark";
 import { ArrowUp, CheckCircle2, ChevronUp, CircleDashed, Globe as GlobeGlyph, Search } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, truncate } from "@/lib/utils";
@@ -51,6 +52,8 @@ const BEGINS = ["0s", "-1.2s", "-2.4s", "-3.6s", "-4.8s", "-6s"];
  * icon, so under reduced motion it is the set's globe at the box's own size.
  */
 function Globe({ still }: { still?: boolean }) {
+  // Alevr retires decorative loops in the transcript (INTERACTION_SPEC §1.6):
+  // the row's words say it is fetching, so the globe is drawn still.
   if (still) return <GlobeGlyph className="size-3" />;
   const values = [MERIDIANS.L, MERIDIANS.ML, MERIDIANS.MR, MERIDIANS.R, MERIDIANS.L].join(";");
   return (
@@ -94,21 +97,6 @@ function Globe({ still }: { still?: boolean }) {
   );
 }
 
-/** Render-time reduced-motion, for the one decision CSS cannot make (see Globe). */
-function useReducedMotion() {
-  // Server render and first client render must agree, so this starts false and
-  // corrects in an effect rather than reading matchMedia during render.
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(query.matches);
-    const onChange = (event: MediaQueryListEvent) => setReduced(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
-
 export function WebSearchBlock({
   query,
   sites,
@@ -133,7 +121,6 @@ export function WebSearchBlock({
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const listId = React.useId();
-  const reducedMotion = useReducedMotion();
 
   const expanded = query ? open : true;
 
@@ -141,8 +128,14 @@ export function WebSearchBlock({
     <div className={cn("aicss-ws", className)}>
       {query && (
         <div className="aicss-ws-row">
-          {/* A label, not an action: the magnifier's hover tilt is off. */}
-          <Search className="size-3.5" motion="none" />
+          {/* While the search runs, the Continuum mark leads the words (the
+              one live presence, MOTION_AND_THINKING.md); settled, the
+              magnifier names what the row was. A label, not an action. */}
+          {settled ? (
+            <Search className="size-3.5" motion="none" />
+          ) : (
+            <ThinkingMark phase="working" size={16} eventKey={query ?? undefined} className="text-muted-foreground" />
+          )}
           <span className="aicss-ws-label">
             <ThinkingState settled={settled} tone="strong">
               {settled ? "Searched" : "Searching"} <span className="aicss-ws-quote">“{truncate(query, 72)}”</span>
@@ -193,7 +186,7 @@ export function WebSearchBlock({
                         <CircleDashed className="size-4" />
                       </span>
                       <span className="aicss-ws-globe">
-                        <Globe still={reducedMotion} />
+                        <Globe still />
                       </span>
                       <span className="aicss-ws-check">
                         <CheckCircle2 className="size-4" />

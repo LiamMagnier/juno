@@ -52,7 +52,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { junoGhostDrawing, junoGlyphDrawing } from "../src/components/ui/juno-glyph-paths.ts";
+import { junoGhostDrawing } from "../src/components/ui/juno-glyph-paths.ts";
+import { resolveCatalogIcon } from "../src/components/ui/juno-icons/catalog.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const phosphorDefs = join(root, "node_modules/@phosphor-icons/react/dist/defs");
@@ -72,6 +73,27 @@ const swiftIcons = join(root, "native/Packages/JunoNativeKit/Sources/JunoDesignS
  * a colour-scheme row) — each is Phosphor's own drawing for it, never an
  * invention, and never a sparkle or a brain standing in for "AI" (§10.2).
  */
+/**
+ * ALEVR SOURCES (2026-10-02). The web dropped Phosphor for Alevr's own V3
+ * family (src/components/ui/juno-icons). Every native symbol is now outlined
+ * from the SAME drawing the web export draws, so web and native cannot drift.
+ * The keys below keep their Phosphor spellings only because they name the
+ * stable native asset (`ph.<name>`) that JunoBrand.swift asks for; nothing is
+ * read from @phosphor-icons any more. `null` entries (no web export draws that
+ * concept today) take the Alevr drawing in ALEVR_FOR_UNMAPPED.
+ */
+const ALEVR_FOR_UNMAPPED = {
+  DotsThreeVertical: "more-vertical", ArrowsLeftRight: "repeat", Cards: "layers", CloudSlash: "offline",
+  ChartBar: "activity", Palette: "appearance", TextAlignLeft: "align-left", Bell: "bell", FolderPlus: "folder-plus",
+  Shield: "shield", Compass: "map", PuzzlePiece: "component", GitCommit: "commit", GitMerge: "fork", Record: "circle",
+  House: "grid", MinusCircle: "minus", FilePlus: "file-plus", FileDashed: "file", CalendarCheck: "calendar",
+  ClockCountdown: "timer", Hourglass: "timer", AppWindow: "app", UserCircle: "account", Brain: "reasoning",
+  ChartLine: "activity", ChartPie: "progress", ChartBarHorizontal: "list", Gauge: "progress", CurrencyDollar: "billing",
+  Equals: "menu", MapPin: "pin", CursorText: "type", Rows: "list", Power: "sign-out", Flag: "bookmark",
+  SpeakerX: "mute", CheckSquare: "check-circle", Graph: "workflow", Calculator: "sigma", Chats: "chats",
+  GithubLogo: "repo", Command: "shortcuts",
+};
+
 const PHOSPHOR = {
   // AppIcons — the destinations.
   TreeStructure: "Workflow",
@@ -322,13 +344,13 @@ const MIRRORED = new Set(["SidebarSimple"]);
 
 /** Juno's own marks: the drawing, and the cuts each ships. */
 const JUNO = {
-  "juno.chat": { drawing: (w) => junoGlyphDrawing("chat", w), cuts: ["regular", "bold", "fill"] },
-  "juno.code": { drawing: (w) => junoGlyphDrawing("code", w), cuts: ["regular", "bold", "fill"] },
-  "juno.design": { drawing: (w) => junoGlyphDrawing("design", w), cuts: ["regular", "bold", "fill"] },
-  "juno.library": { drawing: (w) => junoGlyphDrawing("library", w), cuts: ["regular", "bold", "fill"] },
-  "juno.agents": { drawing: (w) => junoGlyphDrawing("agents", w), cuts: ["regular", "bold", "fill"] },
+  "juno.chat": { drawing: (w) => alevrCut("chat", w), cuts: ["regular", "bold", "fill"] },
+  "juno.code": { drawing: (w) => alevrCut("code", w), cuts: ["regular", "bold", "fill"] },
+  "juno.design": { drawing: (w) => alevrCut("design", w), cuts: ["regular", "bold", "fill"] },
+  "juno.library": { drawing: (w) => alevrCut("library", w), cuts: ["regular", "bold", "fill"] },
+  "juno.agents": { drawing: (w) => alevrCut("orbit", w), cuts: ["regular", "bold", "fill"] },
   // The web's Send `fill` is the bold drawing again, so there is nothing to add.
-  "juno.send": { drawing: (w) => junoGlyphDrawing("send", w), cuts: ["regular", "bold"] },
+  "juno.send": { drawing: (w) => alevrCut("send", w), cuts: ["regular", "bold"] },
   "juno.ghost": { drawing: (w) => junoGhostDrawing(w), cuts: ["regular", "bold", "fill"] },
 };
 
@@ -349,47 +371,31 @@ const TARGETS = [
 // Sources
 // ---------------------------------------------------------------------------
 
-/** Reads one Phosphor icon's per-weight path data out of its `defs` module by
- *  evaluating it against a stub `React.createElement`. */
-function readPhosphor(name) {
-  const file = join(phosphorDefs, `${name}.es.js`);
-  if (!existsSync(file)) throw new Error(`no Phosphor icon '${name}' in @phosphor-icons/react`);
-  const src = readFileSync(file, "utf8");
-  const ns = src.match(/import \* as (\w+) from "react";/)?.[1];
-  const mapVar = src.match(/export \{\s*(\w+) as default\s*\}/)?.[1];
-  if (!ns || !mapVar) throw new Error(`unrecognised Phosphor module shape: ${name}`);
-  const body = src.replace(/import \* as \w+ from "react";/, "").replace(/export \{[\s\S]*?\};?\s*$/, "");
-  const stub = { Fragment: "fragment", createElement: (tag, props, ...children) => ({ tag, props, children }) };
-  const weights = new Function(ns, `${body}\nreturn ${mapVar};`)(stub);
-  const paths = (node, out = []) => {
-    if (!node || typeof node !== "object") return out;
-    if (node.tag === "path") {
-      if (node.props.opacity != null) throw new Error(`${name}: translucent path in a shipped weight`);
-      out.push(node.props.d);
-    } else if (node.tag !== "fragment") {
-      throw new Error(`${name}: unexpected <${node.tag}>`);
-    }
-    for (const child of node.children ?? []) paths(child, out);
-    return out;
-  };
-  return (weight) => {
-    const tree = weights.get(weight);
-    if (!tree) throw new Error(`${name} has no '${weight}' weight`);
-    return paths(tree);
-  };
+/** The Alevr drawing for a native cut: regular is the house line, bold a
+ *  heavier line of the same drawing, fill the drawing's "on" form (or bold
+ *  when it has none). The line is in 24-grid units. */
+function alevrCut(name, cut) {
+  const d = resolveCatalogIcon(name);
+  if (!d) throw new Error(`no Alevr drawing '${name}' in juno-icons`);
+  const base = { viewBox: d.viewBox, line: d.line, elements: d.elements };
+  if (cut === "regular") return base;
+  if (cut === "fill" && d.fill) return { ...base, elements: [...d.elements, ...d.fill] };
+  return { ...base, line: 2.1 };
+}
+
+/** The Alevr drawing name behind a native asset key. */
+function alevrNameFor(phName, web) {
+  const exportName = PHOSPHOR[phName];
+  if (exportName == null) return ALEVR_FOR_UNMAPPED[phName] ?? null;
+  return web.get(exportName) ?? null;
 }
 
 /** `export const Name = glyph(SomeIcon, …)` → { Name: "Some" }, following the
  *  file's import aliases and `export const A = B` re-exports. */
 function readWebExports() {
   const src = readFileSync(iconsModule, "utf8");
-  const aliases = new Map();
-  for (const [, from, to] of src.matchAll(/\b(\w+Icon) as (\w+)\b/g)) aliases.set(to, from);
   const exports = new Map();
-  for (const [, name, base] of src.matchAll(/export const (\w+) = glyph\((\w+),/g)) {
-    const real = aliases.get(base) ?? base;
-    exports.set(name, real.endsWith("Glyph") ? `juno:${real}` : real.replace(/Icon$/, ""));
-  }
+  for (const [, name, drawing] of src.matchAll(/export const (\w+) = glyph\("([\w-]+)"/g)) exports.set(name, drawing);
   for (const [, name, target] of src.matchAll(/export const (\w+) = (\w+);/g)) {
     if (exports.has(target)) exports.set(name, exports.get(target));
   }
@@ -471,7 +477,23 @@ function junoJobs() {
   for (const [base, { drawing, cuts }] of Object.entries(JUNO)) {
     for (const cut of cuts) jobs.push(outlineJob(cutName(base, cut), drawing(cut)));
   }
+  const web = readWebExports();
+  for (const name of Object.keys(PHOSPHOR)) {
+    const alevr = alevrNameFor(name, web);
+    if (!alevr) throw new Error(`ph.${name.toLowerCase()}: no Alevr drawing (add it to ALEVR_FOR_UNMAPPED)`);
+    const base = `ph.${name.toLowerCase()}`;
+    const cuts = FILLED.has(name) ? ["regular", "bold", "fill"] : ["regular", "bold"];
+    for (const cut of cuts) {
+      jobs.push(outlineJob(cutName(base, cut), alevrCut(alevr, cut)));
+      if (MIRRORED.has(name)) jobs.push(outlineJob(cutName(`${base}.mirrored`, cut), mirrorDrawing(alevrCut(alevr, cut))));
+    }
+  }
   return jobs;
+}
+
+/** A drawing flipped horizontally on its own grid (the web's mirrored glyphs). */
+function mirrorDrawing(d) {
+  return { ...d, elements: [{ tag: "g", attrs: { transform: `matrix(-1 0 0 1 ${d.viewBox} 0)` }, children: d.elements }] };
 }
 
 const digest = (job) => createHash("sha256").update(JSON.stringify(job)).digest("hex").slice(0, 16);
@@ -499,7 +521,7 @@ function outlineJuno() {
     if (!d) throw new Error(`outliner returned nothing for ${job.name}`);
     writeFileSync(
       join(junoSources, `${job.name}.svg`),
-      `<!-- ${job.name}: outlined from src/components/ui/juno-glyph-paths.ts by ` +
+      `<!-- ${job.name}: outlined from src/components/ui/juno-icons by ` +
         `\`node scripts/generate-native-icons.mjs --outline-juno\`. Do not edit. -->\n` +
         `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-source="${digest(job)}">\n` +
         `  <path d="${d}"/>\n</svg>\n`,
@@ -575,21 +597,9 @@ const symbolContents = (svg) =>
 /** Every symbol, by asset name → template source. */
 function buildSymbols() {
   const symbols = new Map();
-  for (const name of Object.keys(PHOSPHOR)) {
-    const weights = readPhosphor(name);
-    const base = `ph.${name.toLowerCase()}`;
-    const cuts = FILLED.has(name) ? ["regular", "bold", "fill"] : ["regular", "bold"];
-    for (const cut of cuts) {
-      const source = `Phosphor ${name}, ${cut} (@phosphor-icons/react, MIT)`;
-      symbols.set(cutName(base, cut), symbolTemplate(cutName(base, cut), source, weights(cut)));
-      if (MIRRORED.has(name)) {
-        const asset = cutName(`${base}.mirrored`, cut);
-        symbols.set(asset, symbolTemplate(asset, `${source}, mirrored`, weights(cut), { mirrored: true }));
-      }
-    }
-  }
   for (const job of junoJobs()) {
-    symbols.set(job.name, symbolTemplate(job.name, "Juno's own mark, juno-glyph-paths.ts", readJunoOutline(job)));
+    const source = job.name.startsWith("ph.") ? "Alevr V3 icon family, juno-icons (outlined)" : "Alevr's own mark, juno-icons (outlined)";
+    symbols.set(job.name, symbolTemplate(job.name, source, readJunoOutline(job), { mirrored: false }));
   }
   return symbols;
 }
@@ -599,12 +609,13 @@ function buildSymbols() {
 // ---------------------------------------------------------------------------
 
 const JUNO_EXPORTS = {
-  JunoChatGlyph: "juno.chat",
-  JunoCodeGlyph: "juno.code",
-  JunoDesignGlyph: "juno.design",
-  JunoLibraryGlyph: "juno.library",
-  JunoAgentsGlyph: "juno.agents",
-  JunoSendGlyph: "juno.send",
+  JunoChat: "juno.chat",
+  JunoCode: "juno.code",
+  JunoDesign: "juno.design",
+  JunoLibrary: "juno.library",
+  JunoAgents: "juno.agents",
+  JunoOrbit: "juno.agents",
+  Send: "juno.send",
 };
 
 function checkSources(symbols) {
@@ -614,10 +625,7 @@ function checkSources(symbols) {
   const web = readWebExports();
   for (const [name, exportName] of Object.entries(PHOSPHOR)) {
     if (exportName == null) continue;
-    const drawn = web.get(exportName);
-    if (drawn !== name) {
-      problems.push(`icons.tsx: ${exportName} draws ${drawn ?? "nothing"}, but PHOSPHOR ships ${name} for it`);
-    }
+    if (!web.get(exportName)) problems.push(`icons.tsx: ${exportName} (native ph.${name.toLowerCase()}) is no longer exported`);
   }
 
   // 2. Every JunoIcon case resolves to a shipped symbol with a bold cut, and
@@ -650,8 +658,19 @@ function checkSources(symbols) {
         problems.push(`app-icons.ts: ${group}.${key} is ${exportName}, which icons.tsx does not export`);
         continue;
       }
-      const expected = drawn.startsWith("juno:") ? JUNO_EXPORTS[drawn.slice(5)] : `ph.${drawn.toLowerCase()}`;
-      if (swift.get(key) !== expected) {
+      const ph = Object.entries(PHOSPHOR).find(([, e]) => e === exportName)?.[0];
+      const expected = JUNO_EXPORTS[exportName] ?? (ph ? `ph.${ph.toLowerCase()}` : null);
+      if (!expected) continue;
+      // Two native assets drawn from the same Alevr drawing are the same glyph.
+      const alevrOf = (asset) => {
+        const m = asset.match(/^ph\.([a-z0-9]+)/);
+        if (m) {
+          const ph = Object.keys(PHOSPHOR).find((n) => n.toLowerCase() === m[1]);
+          return ph ? alevrNameFor(ph, web) : null;
+        }
+        return { "juno.chat": "chat", "juno.code": "code", "juno.design": "design", "juno.library": "library", "juno.agents": "orbit", "juno.send": "send" }[asset] ?? null;
+      };
+      if (swift.get(key) !== expected && (alevrOf(swift.get(key)) == null || alevrOf(swift.get(key)) !== drawn)) {
         problems.push(`JunoIcon.${key} wears ${swift.get(key)}, but ${group}.${key} is ${exportName} (${expected})`);
       }
     }
@@ -725,12 +744,12 @@ function main() {
     process.exit(1);
   }
 
-  const phosphor = [...symbols.keys()].filter((k) => k.startsWith("ph.")).length;
+  const phosphor = [...symbols.keys()].filter((k) => k.startsWith("ph.")).length; // Alevr family glyphs (stable ph.* asset names)
   const juno = symbols.size - phosphor;
   console.log(
     check
-      ? `[native-icons] up to date — ${symbols.size} symbols (${phosphor} Phosphor, ${juno} Juno) in ${TARGETS.length} catalogs.`
-      : `Generated ${symbols.size} symbols (${phosphor} Phosphor, ${juno} Juno) into ${TARGETS.length} catalogs.`,
+      ? `[native-icons] up to date — ${symbols.size} symbols (${phosphor} Alevr family, ${juno} Alevr marks) in ${TARGETS.length} catalogs.`
+      : `Generated ${symbols.size} symbols (${phosphor} Alevr family, ${juno} Alevr marks) into ${TARGETS.length} catalogs.`,
   );
 }
 

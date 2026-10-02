@@ -4,6 +4,12 @@
  * Enforces strict provenance tracking and deterministic authorization gating.
  * Principle: The model may propose actions; the authorization layer decides whether they execute.
  * Untrusted external data (webpages, PDFs, MCP tools, repo files) CANNOT gain instruction authority.
+ *
+ * Wrapping untrusted text for a model is `wrapUntrusted` in
+ * src/lib/untrusted-content.ts, the one envelope every path uses. A second
+ * sanitizer used to live here, unused, with a different marker spelling; a
+ * second envelope nobody calls is how the one that is called stops being the
+ * only definition, so it was removed (SPEC §6.4 item 5).
  */
 
 import { createHash } from "node:crypto";
@@ -159,22 +165,4 @@ export function evaluateActionAuthorization(input: {
     expectedDigest,
     reason: "Authorized by matching cryptographic approval digest.",
   };
-}
-
-/**
- * Defangs and sanitizes untrusted input text before injecting into model context.
- */
-export function sanitizeUntrustedContent(content: string, source: string): string {
-  if (!content) return "";
-  // Strip control chars and normalize zero-width characters used in homoglyph injection
-  const normalized = content
-    .replace(/[\u200B-\u200D\uFEFF]/g, "") // remove zero-width spaces/joiners
-    .replace(/<<<JUNO_UNTRUSTED_BEGIN>>>/gi, "[UNTRUSTED_MARKER_DEFANGED]")
-    .replace(/<<<JUNO_UNTRUSTED_END>>>/gi, "[UNTRUSTED_MARKER_DEFANGED]");
-
-  return [
-    `<<<JUNO_UNTRUSTED_BEGIN source=${source}>>>`,
-    normalized,
-    `<<<JUNO_UNTRUSTED_END>>>`,
-  ].join("\n");
 }

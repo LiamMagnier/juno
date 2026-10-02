@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Button } from "@/components/ui/button";
+import { VerbButton } from "@/components/chat/decision";
 import type { WorkApprovalDecisionInput } from "@/components/work/work-transport";
 import type { WorkApprovalCard } from "@/components/work/work-decisions";
 import { ApprovalCard } from "@/components/work/approvals/approval-card";
@@ -84,22 +84,17 @@ export function ApprovalQueue({
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-5">
       {batchable.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2.5 rounded-field border border-warning/40 bg-warning/[0.08] px-3.5 py-2.5 motion-safe:animate-rise-in">
-          <p className="min-w-0 flex-1 text-ui leading-relaxed text-warning-foreground">
+        // One quiet line and the batch verb, in the decision family: no
+        // tinted banner, the words say it.
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="min-w-0 flex-1 text-ui leading-relaxed text-foreground/75">
             {batchable.length === live.length
               ? `${batchable.length} decisions are waiting, and they are all the same kind.`
               : `${batchable.length} of these ${live.length} can be answered together. The rest ask on their own.`}
           </p>
-          <Button
-            size="sm"
-            disabled={batching || busyId !== null}
-            onClick={() => onDecideAll(batchable)}
-            className="h-8 shrink-0"
-          >
-            {batchLabel(batchable)}
-          </Button>
+          <VerbButton label={batchLabel(batchable)} armed={!(batching || busyId !== null)} onClick={() => onDecideAll(batchable)} />
         </div>
       )}
 
@@ -140,7 +135,7 @@ function batchLabel(batchable: readonly WorkApprovalCard[]): string {
   const actions = new Set(batchable.map((approval) => approval.action));
   if (actions.size !== 1) return `Allow all ${batchable.length}`;
   const verb = actionVerb(batchable[0].action);
-  return `${verb.verb} — all ${batchable.length}`;
+  return `${verb.verb} all ${batchable.length}`;
 }
 
 /**

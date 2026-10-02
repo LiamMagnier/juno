@@ -3,7 +3,8 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { env, isServerSttConfigured } from "@/lib/env";
+import { env } from "@/lib/env";
+import { geminiTranscribe, sttProviders, type SttProvider } from "@/lib/stt";
 import { isOwnerEmail } from "@/lib/owner";
 
 export const runtime = "nodejs";
@@ -16,7 +17,8 @@ export async function POST(req: Request) {
   const plan = await getUserPlan(user.id);
   if (!PLANS[plan].voice) return NextResponse.json({ error: "Voice is not available on your plan." }, { status: 403 });
 
-  if (!isServerSttConfigured()) {
+  const providers = sttProviders();
+  if (providers.length === 0) {
     // Client falls back to the browser SpeechRecognition API.
     return NextResponse.json({ error: "Server STT not configured." }, { status: 501 });
   }
@@ -30,40 +32,50 @@ export async function POST(req: Request) {
   const file = form?.get("audio");
   if (!(file instanceof File)) return NextResponse.json({ error: "No audio provided." }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "Empty audio." }, { status: 400 });
-  // OpenAI's transcription endpoint caps uploads at 25 MB.
-  if (file.size > 25 * 1024 * 1024) return NextResponse.json({ error: "That clip is too long." }, { status: 413 });
+  // OpenAI's transcription endpoint caps uploads at 25 MB (Gemini's inline
+  // audio at 20 MB, about ten minutes of the 16 kHz WAV dictation records).
+  if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: "That clip is too long." }, { status: 413 });
 
   // An ISO-639-1 hint ("fr") is the single biggest accuracy win for non-English
   // speech: without it the model has to guess the language from the first
   // syllables and often settles on English, mangling French words.
   const language = normalizeLanguage(form?.get("language"));
 
-  try {
-    if (env.voice.sttProvider === "openai") {
-      const text = await openaiTranscribe(file, language, env.voice.sttModel, env.voice.openaiApiKey!);
-      return NextResponse.json({ text });
-    } else {
-      // Deepgram
-      const buf = await file.arrayBuffer();
-      const url = new URL("https://api.deepgram.com/v1/listen");
-      url.searchParams.set("smart_format", "true");
-      url.searchParams.set("punctuate", "true");
-      url.searchParams.set("model", "nova-3");
-      if (language) url.searchParams.set("language", language);
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { Authorization: `Token ${env.voice.deepgramApiKey}`, "Content-Type": file.type || "audio/webm" },
-        body: buf,
-      });
-      if (!res.ok) throw new Error(`Deepgram STT ${res.status}`);
-      const data = await res.json();
-      const text = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-      return NextResponse.json({ text });
+  // No language hint means the model detects it (dictation sends none). The
+  // configured provider runs first; Gemini catches its failures, so an
+  // exhausted OpenAI balance degrades to Gemini instead of to nothing.
+  let lastError: unknown = null;
+  for (const provider of providers) {
+    try {
+      const text = await transcribeWith(provider, file, language);
+      return NextResponse.json({ text, provider });
+    } catch (err) {
+      lastError = err;
+      console.error(`[stt] ${provider} failed`, err);
     }
-  } catch (err) {
-    console.error("[stt]", err);
-    return NextResponse.json({ error: "Transcription failed." }, { status: 502 });
   }
+  console.error("[stt] every provider failed", lastError);
+  return NextResponse.json({ error: "Transcription failed." }, { status: 502 });
+}
+
+async function transcribeWith(provider: SttProvider, file: File, language: string | undefined): Promise<string> {
+  if (provider === "gemini") return geminiTranscribe(file);
+  if (provider === "openai") return openaiTranscribe(file, language, env.voice.sttModel, env.voice.openaiApiKey!);
+  const buf = await file.arrayBuffer();
+  const url = new URL("https://api.deepgram.com/v1/listen");
+  url.searchParams.set("smart_format", "true");
+  url.searchParams.set("punctuate", "true");
+  url.searchParams.set("model", "nova-3");
+  // nova-3's "multi" detects and code-switches between its languages.
+  url.searchParams.set("language", language ?? "multi");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Token ${env.voice.deepgramApiKey}`, "Content-Type": file.type || "audio/wav" },
+    body: buf,
+  });
+  if (!res.ok) throw new Error(`Deepgram STT ${res.status}`);
+  const data = await res.json();
+  return data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
 }
 
 /** Accept "fr", "fr-FR", "FR-fr" → "fr". Anything else → undefined (auto-detect). */

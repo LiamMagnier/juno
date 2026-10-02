@@ -71,14 +71,19 @@ export function oversizeDocumentNote(fileName: string, byteLength: number, hasTe
  * moves between adapters cannot drift away from the truth.
  */
 export function providerReceivesDocumentBytes(
-  model: Pick<ModelInfo, "provider" | "api" | "vision">,
+  model: Pick<ModelInfo, "provider" | "api" | "vision"> & Partial<Pick<ModelInfo, "id" | "tools">>,
   proMode = false,
 ): boolean {
   const adapter = providerAdapterFor(model, proMode);
   if (adapter === "anthropic-native" || adapter === "gemini-native") return true;
   // Responses carries a PDF as `input_file`, which rides the same vision
-  // stack — a model without it gets nothing from the bytes.
+  // stack — a model without it gets nothing from the bytes. Every OpenAI
+  // model is served here now, so every vision GPT reads a scan itself.
   if (adapter === "openai-responses") return model.vision;
+  // xAI's Responses surface has not been shown to take `input_file` (no probe
+  // yet), so Grok keeps what it had on compat: the text layer, or the first
+  // pages as images when there is none.
+  if (adapter === "xai-responses") return false;
   // Chat Completions across thirteen different vendors: no document part that
   // can be relied on, so the text is genuinely all there is.
   return false;

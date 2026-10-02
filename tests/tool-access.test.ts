@@ -58,3 +58,21 @@ test("tokenizer splits snake, kebab and camel case", () => {
   assert.deepEqual(toolNameTokens("createEvent"), ["create", "event"]);
   assert.deepEqual(toolNameTokens("GitHub__createIssue"), ["git", "hub", "create", "issue"]);
 });
+
+test("a connector tool the chat runs in parallel is one both the hint and the name call a read", async () => {
+  // The chat contract's risk for a connector tool is the broker's, which is
+  // stricter than `classifyToolAccess`: a read hint alone is not enough to run
+  // it beside other calls (SPEC §3.4 item 7).
+  const { resolvedConnectorTool } = await import("@/lib/tools/connector-tools");
+  const route = { functionName: "gh__x", connectorId: "gh", connectorLabel: "GitHub" };
+  const agreed = resolvedConnectorTool({ ...route, toolName: "list_issues", annotations: { readOnlyHint: true } });
+  assert.equal(classifyToolAccess("list_issues", { readOnlyHint: true }), "read");
+  assert.deepEqual([agreed.risk, agreed.parallelSafe], ["read", true]);
+
+  const hintOnly = resolvedConnectorTool({ ...route, toolName: "issues", annotations: { readOnlyHint: true } });
+  assert.equal(classifyToolAccess("issues", { readOnlyHint: true }), "read");
+  assert.deepEqual([hintOnly.risk, hintOnly.parallelSafe], ["external", false]);
+
+  const nameOnly = resolvedConnectorTool({ ...route, toolName: "list_issues" });
+  assert.deepEqual([nameOnly.risk, nameOnly.parallelSafe], ["external", false]);
+});

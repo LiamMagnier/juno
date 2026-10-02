@@ -1,22 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Clock } from "@/components/ui/icons";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { Button } from "@/components/ui/button";
+import { ChevronRight } from "@/components/ui/icons";
 import { Collapse } from "@/components/ui/collapse";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
+import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton } from "@/components/chat/decision";
+import { TIMING } from "@/lib/interaction";
 import { Textarea } from "@/components/ui/textarea";
 import type { WorkRiskLevel } from "@/lib/work/domain";
 import type { WorkApprovalDecisionInput } from "@/components/work/work-transport";
 import type { WorkApprovalCard } from "@/components/work/work-decisions";
-import { RiskPill, actionLabel, workTimeAgo } from "@/components/work/work-vocabulary";
+import { actionLabel, workTimeAgo } from "@/components/work/work-vocabulary";
 import {
   actionVerb,
   mayStopAsking,
@@ -119,98 +112,66 @@ export function ApprovalCard({
 
   const trimmedAmendment = amendment.trim();
 
+  // Arming (INTERACTION_SPEC T6): for `approvalArm` after the card appears, or
+  // after the action it shows changes, the verb ignores activation.
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    setArmed(false);
+    const timer = window.setTimeout(() => setArmed(true), TIMING.approvalArm);
+    return () => window.clearTimeout(timer);
+  }, [approval.id, digest]);
+
   if (!answerable) {
+    // Settled: one quiet line, the receipt of what was decided.
     return (
-      <div className="rounded-field border border-border/60 bg-card px-3.5 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusIcons.security className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <RiskPill risk={approval.risk} />
-          <span className="ml-auto font-mono text-micro tabular-nums text-muted-foreground">
-            {workTimeAgo(approval.createdAt)}
-          </span>
-        </div>
-        <p className="mt-2 text-ui leading-relaxed text-foreground">{approval.summary}</p>
-        <p className="mt-1 text-ui text-muted-foreground">{actionLabel(approval.action)}</p>
-        <p className="mt-2.5 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-          <Clock className="size-3" aria-hidden="true" />
-          {describeDecision(approval, expired)}
-        </p>
-      </div>
+      <p className="flex flex-wrap items-baseline gap-x-2 text-ui leading-relaxed text-muted-foreground">
+        <span className="text-foreground/75">{approval.summary}</span>
+        <span>{describeDecision(approval, expired)}</span>
+      </p>
     );
   }
 
   return (
-    <div
-      // A pending approval is the only thing on the page that stops the run
-      // dead, and it competes with every other panel for the eye. The heavier
-      // border and the ring are the difference between a card that is read and
-      // one that is scrolled past — which, for the request holding the whole
-      // task, is the difference between a decision and a task that quietly
-      // never finishes.
-      className="rounded-field border border-warning/60 bg-warning/[0.12] px-3.5 py-3.5 ring-1 ring-warning/40"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusIcons.security className="size-4 shrink-0 text-warning" aria-hidden="true" />
-        <span className="font-mono text-micro text-warning-foreground">Your decision</span>
-        <RiskPill risk={approval.risk} />
-        <span className="ml-auto font-mono text-micro tabular-nums text-muted-foreground">
-          {workTimeAgo(approval.createdAt)}
-        </span>
-      </div>
+    // Listed exactly like a question (decision.tsx): the attention words, then
+    // what, then the payload as a quote and one button family. It sits inside
+    // the task card, so it draws no box of its own.
+    <div role="group" aria-label={`Needs your approval: ${approval.summary}`}>
+      <p className="text-body text-foreground">
+        <NeedsLead>Needs your approval:</NeedsLead> {approval.summary}
+      </p>
 
-      <p className="mt-2 text-body font-medium leading-relaxed text-foreground">{approval.summary}</p>
-
-      {/*
-        The preview — the thing the reader is actually deciding about, rendered
-        as what it is rather than as a table row. `target` above it because "to
-        finance@acme.com" changes the answer more than any word of the body.
-      */}
-      {body !== null && (
-        <div className="mt-2.5 rounded-field bg-warning/10 px-3 py-2.5">
+      {(body !== null || target !== null) && (
+        <div className="mt-2 pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
           {target !== null && (
-            <p className="font-mono text-micro text-muted-foreground">
-              <span className="text-warning-foreground">To</span> {target}
+            <p className="text-ui text-muted-foreground">
+              To <span className="text-foreground">{target}</span>
             </p>
           )}
-          <PreviewBody body={body} as={verb.bodyAs} className={target !== null ? "mt-1.5" : undefined} />
+          {body !== null && <PreviewBody body={body} as={verb.bodyAs} className={target !== null ? "mt-1" : undefined} />}
         </div>
       )}
-      {body === null && target !== null && (
-        <p className="mt-2 font-mono text-micro text-muted-foreground">
-          <span className="text-warning-foreground">To</span> {target}
-        </p>
-      )}
 
-      {/*
-        Everything the digest covers, on request. The count is in the label so
-        the reader knows whether it is worth the press, and the whole set is
-        rendered unedited — this is what the server will check the answer
-        against.
-      */}
+      <p className="mt-2 text-ui leading-relaxed text-foreground/75">{RISK_CONSEQUENCE[approval.risk]}</p>
+
       {parameters.length > 0 && (
         <>
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
+            type="button"
             onClick={() => setShowParameters((current) => !current)}
             aria-expanded={showParameters}
-            className="mt-2 h-7 gap-1.5 px-1.5 font-mono text-micro text-muted-foreground hover:text-foreground"
+            className="-ml-2 mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:min-h-11"
           >
-            <ChevronDown
+            <ChevronRight
               className={cn(
-                "size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                showParameters && "rotate-180"
+                "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                showParameters && "rotate-90"
               )}
               aria-hidden="true"
             />
-            {showParameters ? "Hide" : "Show"} {parameters.length}{" "}
-            {parameters.length === 1 ? "parameter" : "parameters"}
-          </Button>
-          {/* Unfolds under its toggle and folds back the same way; the gap
-              above the list is padding inside the fold, so a closed set
-              leaves none behind. */}
-          <Collapse open={showParameters} innerClassName="pt-1.5">
-            <dl className="space-y-1 rounded-field bg-warning/10 px-2.5 py-2">
+            Exactly what will be done
+          </button>
+          <Collapse open={showParameters} innerClassName="pt-1">
+            <dl className="space-y-1">
               {parameters.map(([key, value]) => (
                 <div key={key} className="flex gap-2 font-mono text-micro leading-relaxed">
                   <dt className="w-20 shrink-0 text-muted-foreground">{key}</dt>
@@ -222,28 +183,14 @@ export function ApprovalCard({
         </>
       )}
 
-      <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground">
-        {RISK_CONSEQUENCE[approval.risk]}
-      </p>
-
       {digest === null ? (
-        // The request arrived without the digest that proves which action is
-        // being authorised, so this browser has no way to answer it that the
-        // server would accept. Saying where it CAN be answered is the only
-        // useful thing left; a greyed-out button would not say even that.
-        <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground">
+        <p className="mt-2.5 text-ui leading-relaxed text-foreground">
           {`This request did not arrive with the signature ${PRODUCT_NAME} needs to accept an answer from the web. Decide it in the ${PRODUCT_NAME} app on the Mac that raised it.`}
         </p>
       ) : amending ? (
-        // The two faces of the answer — the buttons and the instruction field —
-        // each rise into place when the other hands over, rather than the card
-        // repainting under the press that switched them.
-        <div className="mt-3 motion-safe:animate-fade-in-up">
-          <label
-            htmlFor={`amend-${approval.id}`}
-            className="font-mono text-micro text-warning-foreground"
-          >
-            What should it do instead?
+        <div className="mt-3">
+          <label htmlFor={`amend-${approval.id}`} className="text-ui text-muted-foreground">
+            {`What should ${PRODUCT_NAME} do instead?`}
           </label>
           <Textarea
             id={`amend-${approval.id}`}
@@ -253,119 +200,67 @@ export function ApprovalCard({
             placeholder="Send it to the finance alias instead, and drop the last paragraph."
             className="mt-1.5"
           />
-          {/*
-            The honest sentence. Amend does not edit the pending action — it
-            cannot, because the signature covers the action as raised — so the
-            card says what will really happen rather than letting the control's
-            name imply an edit in place.
-          */}
+          {/* The honest sentence: the signature covers the action as raised,
+              so this refuses it and passes the instruction on. */}
           <p className="mt-1.5 text-ui leading-relaxed text-muted-foreground">
             {`${PRODUCT_NAME} will not do this one. It will be told what you want instead, and will carry on from there.`}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
+            <QuietButton
               disabled={busy}
               onClick={() => {
                 setAmending(false);
                 setAmendment("");
               }}
-              className="h-8"
             >
               Back
-            </Button>
-            <Button
-              size="sm"
-              disabled={busy || trimmedAmendment.length === 0}
+            </QuietButton>
+            <VerbButton
+              label="Send this instruction"
+              armed={trimmedAmendment.length > 0}
+              busy={busy}
               onClick={() => onDecide(approval, "denied", trimmedAmendment)}
-              className="h-8"
-            >
-              Send this instruction
-            </Button>
+            />
           </div>
         </div>
       ) : (
         <>
-          <div className="mt-3 flex flex-wrap items-center gap-2 motion-safe:animate-fade-in-up">
-            {/* Refuse first and given equal weight. The reader is being asked to
-                stop and think, and a row that leads with a primary-coloured
-                approve has already answered for them. */}
-            <Button
-              variant="destructive-outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => onDecide(approval, "denied")}
-              className="h-8"
-            >
-              Don’t
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => setAmending(true)}
-              className="h-8 gap-1.5"
-            >
-              <ActionIcons.edit className="size-3.5" aria-hidden="true" />
-              Change it
-            </Button>
-            {/*
-              The verb, and the one control on the card that is primary-coloured.
-              `aria-label` restates the summary because "Send" alone, read out of
-              context by a screen reader moving control to control, is not enough
-              to decide on.
-            */}
-            <Button
-              size="sm"
-              disabled={busy}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <QuietButton disabled={busy} onClick={() => onDecide(approval, "denied")}>
+              Not now
+            </QuietButton>
+            {/* The verb, the one filled control. Its accessible name restates
+                the summary: "Send" alone, read out of context, is not enough to
+                decide on. A standing permission waits behind its caret, with
+                its exact scope. */}
+            <VerbButton
+              label={verb.verb}
+              accessibleLabel={`${verb.verb}: ${approval.summary}`}
+              armed={armed}
+              busy={busy}
+              danger={approval.risk === "irreversible"}
               onClick={() => onDecide(approval, "allowed")}
-              aria-label={`${verb.verb}: ${approval.summary}`}
-              className="h-8"
-            >
-              {verb.verb}
-            </Button>
-
-            {mayStopAsking(approval.action, approval.risk) && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    className="group h-8 gap-1.5 text-muted-foreground"
-                  >
-                    More
-                    <ChevronDown
-                      className="size-3.5 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className={MENU_W_WIDE}>
-                  <DropdownMenuItem onSelect={() => onDecide(approval, "allowed_always")}>
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <span>{verb.verb}, and stop asking</span>
-                      {/*
-                        The exact scope, because a standing permission whose reach
-                        the reader has to guess is one they will regret. It is
-                        narrower than most products offer — this run, this action —
-                        and saying so is what makes it safe to offer at all.
-                      */}
-                      <span className="text-caption leading-relaxed text-muted-foreground">
-                        Covers “{actionLabel(approval.action)}” for the rest of this task only. It
-                        lapses when the task ends.
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+              menuLabel={`More ways to ${verb.verb.toLowerCase()}`}
+              alternatives={
+                mayStopAsking(approval.action, approval.risk)
+                  ? [
+                      { label: `${verb.verb} once`, line: `${PRODUCT_NAME} asks again next time.`, onSelect: () => onDecide(approval, "allowed") },
+                      {
+                        label: `${verb.verb}, and stop asking`,
+                        line: `Covers “${actionLabel(approval.action)}” for the rest of this task only. It lapses when the task ends.`,
+                        onSelect: () => onDecide(approval, "allowed_always"),
+                      },
+                    ]
+                  : undefined
+              }
+            />
+            <QuietButton disabled={busy} className="@[28rem]:ml-auto" onClick={() => setAmending(true)}>
+              {TELL_INSTEAD_LABEL}
+            </QuietButton>
           </div>
 
           {approval.expiresAt !== null && (
-            <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-              <Clock className="size-3" aria-hidden="true" />
+            <p className="mt-2.5 text-ui text-muted-foreground">
               {`Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`}
             </p>
           )}

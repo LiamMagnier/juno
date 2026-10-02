@@ -165,14 +165,17 @@ export const PlusMenuRow = React.forwardRef<
         if (toggle || keepOpen) event.preventDefault();
         onSelect?.();
       }}
-      className={cn(plusMenuRowClass, description && "items-start py-2", className)}
+      className={cn(plusMenuRowClass, className)}
       {...props}
     >
-      {leading ?? (icon ? <PlusMenuGlyph icon={icon} className={description ? "mt-0.5" : undefined} /> : null)}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{children}</span>
+      {leading ?? (icon ? <PlusMenuGlyph icon={icon} /> : null)}
+      {/* The description rides the label's line, muted, rather than a second
+          line: a two-line row in a list of one-line rows broke the rhythm of
+          the whole menu for the sake of two words. */}
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="truncate">{children}</span>
         {description && (
-          <span className="mt-0.5 block truncate text-caption font-normal text-muted-foreground">{description}</span>
+          <span className="truncate text-caption font-normal text-muted-foreground">{description}</span>
         )}
       </span>
       {detail && (
@@ -182,7 +185,24 @@ export const PlusMenuRow = React.forwardRef<
       )}
       {note ? (
         <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
-      ) : toggle || radio ? (
+      ) : toggle ? (
+        /* A toggle draws a switch: the state is legible at rest, off as well
+           as on, where a tick only ever said "on". */
+        <span
+          aria-hidden="true"
+          className={cn(
+            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            ticked ? "bg-primary" : "bg-foreground/15",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute left-0.5 top-0.5 size-3 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.2)] transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+              ticked && "translate-x-3",
+            )}
+          />
+        </span>
+      ) : radio ? (
         // A tick, not a Switch. This slot used to render the real `Switch`
         // component (aria-hidden, pointer-events-none) so that the menu and
         // the "@" palette would stop drawing two different toggles for one
@@ -219,6 +239,18 @@ export const PlusMenuRow = React.forwardRef<
   );
 });
 
+/**
+ * How the chat composer places the menu: outside its own box, never over the
+ * draft (critique 1, INTERACTION_SPEC C19). Chosen as the menu opens, from the
+ * trigger: the side with room (below on the home, above in the dock) and the
+ * offset that clears the composer's edge on that side.
+ */
+export interface PlusMenuLayer {
+  pick: (trigger: HTMLElement, need: number) => { side: "top" | "bottom"; sideOffset: number };
+  /** The side the menu is open on, or null when it is closed. */
+  onSide?: (side: "top" | "bottom" | null) => void;
+}
+
 export function PlusMenu({
   open,
   onOpenChange,
@@ -227,6 +259,7 @@ export function PlusMenu({
   tooltip,
   sections,
   className,
+  layer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -236,7 +269,16 @@ export function PlusMenu({
   tooltip: string;
   sections: PlusMenuSection[];
   className?: string;
+  layer?: PlusMenuLayer;
 }) {
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const [placed, setPlaced] = React.useState<{ side: "top" | "bottom"; sideOffset: number }>({ side: "top", sideOffset: 8 });
+  /** A menu opened from the keyboard appears in the same frame (F0); by pointer it pops from the trigger (F2). */
+  const [openedBy, setOpenedBy] = React.useState<"keyboard" | "pointer">("pointer");
+  const onSide = layer?.onSide;
+  React.useEffect(() => {
+    onSide?.(open ? placed.side : null);
+  }, [onSide, open, placed.side]);
   const [compact, setCompact] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -263,20 +305,27 @@ export function PlusMenu({
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
+      if (next && layer && triggerRef.current) setPlaced(layer.pick(triggerRef.current, 300));
       onOpenChange(next);
     }}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
+              ref={triggerRef}
               type="button"
               variant="ghost"
               size="icon-sm"
               aria-label={label}
               disabled={disabled}
-              className={cn(composerIconButtonClass, "group relative", className)}
+              data-opened-by={openedBy}
+              onPointerDown={() => setOpenedBy("pointer")}
+              onKeyDown={() => setOpenedBy("keyboard")}
+              className={cn(composerIconButtonClass, "composer-plus group relative", className)}
             >
-              <Plus aria-hidden="true" className="size-4" />
+              {/* The plus turns a quarter into a close mark while the menu is
+                  open (C19: base, in-out); from the keyboard it turns at once. */}
+              <Plus aria-hidden="true" className="composer-plus__glyph size-5" motion="none" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -285,9 +334,14 @@ export function PlusMenu({
 
       <DropdownMenuContent
         align="start"
-        side="top"
-        sideOffset={8}
+        side={layer ? placed.side : "top"}
+        sideOffset={layer ? placed.sideOffset : 8}
+        alignOffset={layer ? -4 : 0}
+        // The composer chose a side with room that clears its own box; letting
+        // Radix flip would put the menu back over the draft.
+        avoidCollisions={!layer}
         collisionPadding={16}
+        data-opened-by={openedBy}
         ref={menuRef}
         aria-label={compact && panel ? panel.label : "Add"}
         onKeyDown={(event) => { if (event.key === "ArrowLeft" && panelId && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); back(); } }}

@@ -4,6 +4,7 @@
  * `server-only` modules, hence --conditions=react-server (npm run test:skill-package).
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import JSZip from "jszip";
 
 async function main() {
@@ -123,6 +124,77 @@ async function main() {
     assert.equal(parsed.skill.instructions, "# Notes\n\nList decisions first.");
     assert.deepEqual(parsed.skill.allowedTools, ["web_search", "canvas"]);
     assert.equal(parsed.skill.license, "Apache-2.0");
+  });
+
+  // ── The folder, kept (docs/rework/TOOL_RUNTIME_DESIGN.md §6.8) ──────────
+
+  await check("quarterly-summary.zip imports with its folder kept: instructions, a reference and a script", async () => {
+    const read = await readSkillPackage(new Uint8Array(readFileSync("tests/fixtures/skills/quarterly-summary.zip")));
+    assert.ok(read.ok);
+    if (!read.ok) return;
+    assert.equal(read.candidates.length, 1);
+    const [candidate] = read.candidates;
+    assert.equal(candidate.skill.name, "quarterly-summary");
+    assert.ok(candidate.bundle, "the folder is kept");
+    assert.deepEqual(
+      candidate.bundle!.manifest.files.map((file) => [file.path, file.kind]),
+      [["SKILL.md", "instructions"], ["reference/style.md", "reference"], ["scripts/build.py", "script"]]
+    );
+    assert.deepEqual(candidate.companionFiles.sort(), ["reference/style.md", "scripts/build.py"]);
+  });
+
+  await check("a lone SKILL.md, and a folder with nothing beside it, keep no bundle", async () => {
+    const single = await readSkillPackage(enc(skill("weekly-report")));
+    assert.equal(single.ok && single.candidates[0].bundle, null);
+    const zip = new JSZip();
+    zip.file("solo/SKILL.md", skill("solo"));
+    const read = await readSkillPackage(await zip.generateAsync({ type: "uint8array" }));
+    assert.equal(read.ok && read.candidates[0].bundle, null);
+  });
+
+  await check("a symlink in a skill's folder refuses that skill with a readable reason, and only that skill", async () => {
+    const zip = new JSZip();
+    zip.file("good/SKILL.md", skill("good"));
+    zip.file("good/notes.md", "fine");
+    zip.file("linked/SKILL.md", skill("linked"));
+    zip.file("linked/secrets", "/home/someone/.ssh/id_rsa", { unixPermissions: 0o120777 });
+    const read = await readSkillPackage(await zip.generateAsync({ type: "uint8array", platform: "UNIX" }));
+    assert.ok(read.ok);
+    if (!read.ok) return;
+    assert.deepEqual(read.candidates.map((c) => c.skill.name), ["good"]);
+    assert.equal(read.problems.length, 1);
+    assert.equal(read.problems[0].path, "linked/SKILL.md");
+    assert.equal(read.problems[0].reason, "bundle");
+    assert.deepEqual(read.problems[0].bundle, { reason: "symlink", path: "secrets" });
+  });
+
+  await check("a path that leaves the archive refuses the whole archive, naming the entry", async () => {
+    for (const evil of ["report/../../evil.py", "/etc/cron.d/evil"]) {
+      const zip = new JSZip();
+      zip.file("report/SKILL.md", skill("report"));
+      zip.file(evil, "print('pwned')");
+      const read = await readSkillPackage(await zip.generateAsync({ type: "uint8array" }));
+      assert.ok(!read.ok, evil);
+      if (read.ok) return;
+      assert.equal(read.reason, "unsafe_path");
+      assert.equal(read.path, evil);
+    }
+  });
+
+  await check("an oversized file or too many files in a folder refuse that skill", async () => {
+    const big = new JSZip();
+    big.file("data/SKILL.md", skill("data"));
+    big.file("data/reference/huge.txt", "z".repeat(2 * 1024 * 1024 + 1));
+    const read = await readSkillPackage(await big.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+    assert.ok(read.ok);
+    if (read.ok) assert.deepEqual(read.problems[0]?.bundle, { reason: "file_too_large", path: "reference/huge.txt" });
+
+    const many = new JSZip();
+    many.file("lots/SKILL.md", skill("lots"));
+    for (let i = 0; i < 200; i++) many.file(`lots/reference/${i}.md`, "x");
+    const crowded = await readSkillPackage(await many.generateAsync({ type: "uint8array" }));
+    assert.ok(crowded.ok);
+    if (crowded.ok) assert.deepEqual(crowded.problems[0]?.bundle, { reason: "too_many_files" });
   });
 
   console.log(`\n${passed} skill package checks passed`);

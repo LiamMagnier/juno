@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/session";
-import { CodeComposer } from "@/components/code/code-composer";
+import { CodeLanding } from "@/components/code/code-landing";
 import { parseCodePrefill, type PrefillParams } from "@/lib/code-prefill";
 
 export const dynamic = "force-dynamic";
@@ -77,53 +77,8 @@ export const dynamic = "force-dynamic";
  * window on a click. Prefill, focus, wait.
  */
 export default async function CodePage({ searchParams }: { searchParams: Promise<PrefillParams> }) {
-  const user = await requireUser();
-  const firstName = user.name?.trim().split(/\s+/)[0];
+  await requireUser();
   const prefill = parseCodePrefill(await searchParams);
 
-  return (
-    // `overflow-x-clip` for the same reason the chat greeting has it: nothing
-    // in this column may put a horizontal scrollbar over dead space, and the
-    // composer's focus ring is wider than the box it belongs to.
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto overflow-x-clip">
-      {/*
-        ONE CENTRED BLOCK — the greeting and the field together, exactly as
-        `/chat` composes the same two objects.
-        
-        This page used to give the greeting a third of the column and pin the
-        composer to the floor, on an argument about where a line "lands". The
-        argument was fine and the result was not: at 900px the two objects
-        ended up 26% and 90% of the way down with six hundred pixels of
-        nothing between them, and the page read as two unrelated things at
-        opposite ends of a window rather than as a question and the place you
-        answer it.
-        
-        It also contradicted this file's own docblock, which says `/chat` is
-        "the same shape for the same reason" — it was not, and nobody noticed
-        because the two landings are never on screen at once. They are now the
-        same shape: `items-center justify-center`, the greeting, `mb-6
-        sm:mb-8`, the field. Switching products no longer moves the composer
-        two thirds of the way down the window.
-        
-        No `vh` anywhere, which was the one thing the old comment got right and
-        is kept: a page inside this shell does not have the window
-        (PREMIUM_AUDIT.md §3 rule 11), so the centring is the flex column's,
-        not the viewport's.
-      */}
-      <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">
-        <h1 className="mb-6 text-balance text-center font-serif text-display font-normal text-foreground motion-safe:animate-rise-in sm:mb-8">
-          What should we build
-          {firstName ? (
-            <>
-              , <span className="italic">{firstName}</span>
-            </>
-          ) : null}
-          ?
-        </h1>
-        <div className="w-full">
-          <CodeComposer prefill={prefill} />
-        </div>
-      </div>
-    </div>
-  );
+  return <CodeLanding prefill={prefill} />;
 }

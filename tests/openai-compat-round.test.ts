@@ -79,6 +79,12 @@ test("a fragment that never became a real call is not a call", () => {
   assert.deepEqual(finalizeToolCalls(acc), []);
 });
 
+test("a named call streamed with no id is still a call; the loop gives it an id (RC-13)", () => {
+  // Dropping it left the model's request unanswered while the turn carried on.
+  const calls = accumulate([{ index: 0, function: { name: "lookup", arguments: '{"q":"x"}' } }]);
+  assert.deepEqual(calls, [{ id: "", name: "lookup", args: '{"q":"x"}' }]);
+});
+
 test("having calls is the signal — finish_reason 'stop' still runs them", () => {
   // Several compat hosts report `stop` while emitting tool_calls. Gating the
   // loop on finish_reason === "tool_calls" dropped those calls and answered

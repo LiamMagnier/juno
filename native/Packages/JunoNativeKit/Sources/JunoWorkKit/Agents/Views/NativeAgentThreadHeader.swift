@@ -74,7 +74,7 @@ public struct NativeAgentThreadHeader: View {
 
     /// The roster's sentence, unless the thread knows a state the roster does
     /// not: then that state's own word.
-    public static func sentence(for agent: NativeAgent, state: JunoAgentState?) -> String {
+    public nonisolated static func sentence(for agent: NativeAgent, state: JunoAgentState?) -> String {
         guard let state, state != agent.state else {
             return NativeAgentFormat.stateSentence(for: agent)
         }

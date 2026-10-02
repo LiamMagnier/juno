@@ -1,4 +1,4 @@
-import type { GeminiContent, GeminiPart } from "@/lib/gemini-core";
+import type { GeminiContent, GeminiFunctionResponse, GeminiPart } from "@/lib/gemini-core";
 import type { ClientSource } from "@/types/chat";
 import type { LlmEvent } from "@/types/llm";
 
@@ -23,7 +23,8 @@ export interface GeminiChunkPart {
   thought?: boolean;
   /** Opaque Gemini 3 reasoning token — echoed back verbatim, never synthesised. */
   thoughtSignature?: string;
-  functionCall?: { name?: string; args?: Record<string, unknown> };
+  /** `id` is optional on Gemini's side; when the model sends one it is echoed on the response. */
+  functionCall?: { name?: string; args?: Record<string, unknown>; id?: string };
 }
 
 export interface GeminiChunk {
@@ -57,7 +58,7 @@ export interface GeminiRoundState {
   events: LlmEvent[];
   /** The assistant turn, in wire order, ready to be replayed verbatim. */
   assistantParts: GeminiPart[];
-  functionCalls: Array<{ name: string; args: Record<string, unknown> }>;
+  functionCalls: Array<{ name: string; args: Record<string, unknown>; id?: string }>;
   usage: GeminiRoundUsage;
   sawUsage: boolean;
   /** Any candidate or usage record at all — an empty stream is a provider fault. */
@@ -65,9 +66,11 @@ export interface GeminiRoundState {
   finishReason: string | null;
   /** Google's required search-attribution widget, when grounding ran. */
   searchEntryPoint: string | null;
+  round?: number;
+  webSearchQueries?: string[];
 }
 
-export function emptyGeminiRound(): GeminiRoundState {
+export function emptyGeminiRound(round: number = 0): GeminiRoundState {
   return {
     events: [],
     assistantParts: [],
@@ -77,6 +80,8 @@ export function emptyGeminiRound(): GeminiRoundState {
     sawSignal: false,
     finishReason: null,
     searchEntryPoint: null,
+    round,
+    webSearchQueries: [],
   };
 }
 
@@ -188,17 +193,36 @@ export function applyGeminiChunk(
     if (part.functionCall?.name) {
       const name = part.functionCall.name;
       const args = part.functionCall.args ?? {};
-      state.functionCalls.push({ name, args });
-      state.assistantParts.push({ functionCall: { name, args }, ...signature });
+      // The model's own id, when it gave one: dropping it (what this did)
+      // left the response unpaired and forced a random id per attempt.
+      const id = typeof part.functionCall.id === "string" && part.functionCall.id ? part.functionCall.id : undefined;
+      state.functionCalls.push({ name, args, ...(id ? { id } : {}) });
+      state.assistantParts.push({ functionCall: { name, args, ...(id ? { id } : {}) }, ...signature });
     } else if (part.text) {
       state.assistantParts.push(
         part.thought ? { thought: true, text: part.text, ...signature } : { text: part.text, ...signature },
       );
-      state.events.push(part.thought ? { type: "reasoning", text: part.text } : { type: "text", text: part.text });
+      state.events.push(
+        part.thought
+          ? { type: "reasoning", text: part.text, ...(state.round !== undefined ? { round: state.round } : {}) }
+          : { type: "text", text: part.text, ...(state.round !== undefined ? { round: state.round } : {}) }
+      );
     }
   }
 
   const grounding = candidate?.groundingMetadata;
+  const queries = (grounding as { webSearchQueries?: unknown })?.webSearchQueries;
+  if (Array.isArray(queries)) {
+    state.webSearchQueries ??= [];
+    for (const q of queries) {
+      if (typeof q === "string" && q.trim()) {
+        const query = q.trim();
+        if (!state.webSearchQueries.includes(query)) {
+          state.webSearchQueries.push(query);
+        }
+      }
+    }
+  }
   for (const chunk of grounding?.groundingChunks ?? []) {
     const web = chunk.web;
     if (web?.uri && !sources.has(web.uri)) {
@@ -228,7 +252,7 @@ export function applyGeminiChunk(
 export function appendGeminiToolRound(
   contents: GeminiContent[],
   assistantParts: GeminiPart[],
-  responses: Array<{ name: string; response: Record<string, unknown> }>,
+  responses: Array<GeminiFunctionResponse | { name: string; response: Record<string, unknown>; id?: string; parts?: Array<{ inlineData: { mimeType: string; data: string } }> }>,
   /**
    * Pixels a tool produced, with the line that introduces them.
    *
@@ -244,7 +268,14 @@ export function appendGeminiToolRound(
   contents.push({ role: "model", parts: assistantParts });
   contents.push({
     role: "user",
-    parts: responses.map((r) => ({ functionResponse: { name: r.name, response: r.response } })),
+    parts: responses.map((r) => ({
+      functionResponse: {
+        name: r.name,
+        response: r.response,
+        ...(r.id ? { id: r.id } : {}),
+        ...("parts" in r && r.parts ? { parts: r.parts } : {}),
+      },
+    })),
   });
   if (images?.parts.length) {
     contents.push({ role: "user", parts: [{ text: images.intro }, ...images.parts] });

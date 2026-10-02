@@ -53,6 +53,19 @@ export interface ReadDocumentParams {
   reason?: string;
 }
 
+/**
+ * What a successful call measured, for the tool record's figure (SPEC §3.8.3):
+ * files listed, headings outlined, matches found, or what a read returned.
+ */
+export interface ReadDocumentData {
+  file?: string;
+  files?: number;
+  items?: number;
+  matches?: number;
+  chars?: number;
+  pages?: number;
+}
+
 /** One read's ceiling. Generous — the point is not to ration the document. */
 const READ_MAX_CHARS = 60_000;
 
@@ -256,6 +269,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
         // document content, so it does not carry the envelope: wrapping it
         // would train the model to distrust its own tool's index.
         stdout: body,
+        data: { files: documents.length } satisfies ReadDocumentData,
       };
     }
 
@@ -286,6 +300,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
           // scan, a CSV. Saying which it is stops the model reporting an empty
           // outline as a missing document.
           stdout: `"${document.fileName}" has no headings to outline (it may be plain prose, a scan or a table). Read it with action 'read'.`,
+          data: { file: document.fileName, items: 0 } satisfies ReadDocumentData,
         };
       }
       return {
@@ -295,6 +310,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
           document.fileName,
           `Headings in "${document.fileName}", in order:\n${outline.map((line) => `- ${line}`).join("\n")}`,
         ),
+        data: { file: document.fileName, items: outline.length } satisfies ReadDocumentData,
       };
     }
 
@@ -318,6 +334,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
           // Stated as a fact about the index, not about the world: a scanned
           // page that OCR read poorly can hide a string that is really there.
           stdout: `No section of "${document.fileName}" contains "${query}". The document is indexed, so this is evidence of absence — but a scanned or low-quality page may not have been read perfectly.`,
+          data: { file: document.fileName, matches: 0 } satisfies ReadDocumentData,
         };
       }
       const rendered = matches
@@ -340,6 +357,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
           document.fileName,
           `${matches.length} match(es) for "${query}" in "${document.fileName}":\n\n${rendered}`,
         ),
+        data: { file: document.fileName, matches: matches.length } satisfies ReadDocumentData,
       };
     }
 
@@ -373,6 +391,12 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
       params.fromPage || params.toPage
         ? ` (pages ${params.fromPage ?? 1}–${params.toPage ?? "end"})`
         : "";
+    // A page count only when both ends of the range are known; otherwise the
+    // read is measured in characters (SPEC §3.8.3 figure).
+    const pagesRead =
+      typeof params.fromPage === "number" && typeof params.toPage === "number" && params.toPage >= params.fromPage
+        ? Math.floor(params.toPage) - Math.floor(params.fromPage) + 1
+        : null;
 
     await emit(
       "Read document",
@@ -386,6 +410,11 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
         document.fileName,
         `"${document.fileName}"${range}:\n\n${assembled.text}${continuation}`,
       ),
+      data: {
+        file: document.fileName,
+        chars: assembled.text.length,
+        ...(pagesRead ? { pages: pagesRead } : {}),
+      } satisfies ReadDocumentData,
     };
   },
 };

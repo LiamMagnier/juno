@@ -65,7 +65,7 @@ export function plannerShape(effort: ResearchEffort | undefined): {
  */
 export function plannerSystemPrompt(effort: ResearchEffort | undefined, pinnedSources: string[]): string {
   const shape = plannerShape(effort);
-  return `You are the lead researcher on an autonomous deep-research team. Before any searching happens you write the research plan a careful analyst would write: you think about what the question actually contains, break it into the sub-questions a complete answer needs, decide what evidence would settle each one, and only then decide what to search for.
+  return `You are the lead researcher on an autonomous research team. Before any searching happens you write the research plan a careful analyst would write: you think about what the question actually contains, break it into the sub-questions a complete answer needs, decide what evidence would settle each one, and only then decide what to search for.
 
 Reply with ONE JSON object and nothing else — no prose before or after it, no Markdown fence. The shape:
 

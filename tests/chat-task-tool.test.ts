@@ -428,9 +428,9 @@ test("the task tool keeps server-only modules out of its static graph", () => {
 
 test("streamChat offers native tools beside the toolset, never through the registry", () => {
   const llm = read("../src/lib/llm.ts");
-  assert.match(llm, /toolset = withNativeTools\(toolset, opts\.nativeTools \?\? \[\]\);/);
+  assert.match(llm, /toolset = withNativeChatTools\(toolset, opts\.nativeTools \?\? \[\]\);/);
   // After the toolset is opened, so a failed open still leaves them usable.
-  assert.ok(llm.indexOf("withNativeTools(toolset") > llm.indexOf("openUnifiedAgentToolset(active"));
+  assert.ok(llm.indexOf("withNativeChatTools(toolset") > llm.indexOf("openUnifiedAgentToolset(active"));
   const runtime = read("../src/lib/agent/runtime.ts");
   assert.doesNotMatch(runtime, /start_task/);
 });
@@ -504,4 +504,48 @@ test("the Work routes stay thin wrappers over the shared dispatch", () => {
   assert.match(runs, /startWorkRunForUser\(user, session, parsed\.data\)/);
   // The preflight-only door is the tool's alone.
   assert.doesNotMatch(runs, /preflightOnly/);
+});
+
+// ---------------------------------------------------------------------------
+// The chat rework (SPEC §3.8.10, §3.4 item 8)
+// ---------------------------------------------------------------------------
+
+test("FREE never carries the tool; an absent plan reads as not FREE while the route moves over", () => {
+  assert.equal(chatTaskToolEnabled({ ...OPEN, plan: "FREE" }), false);
+  assert.equal(chatTaskToolEnabled({ ...OPEN, plan: "PRO" }), true);
+  assert.equal(chatTaskToolEnabled({ ...OPEN }), true);
+});
+
+test("the receipt's status decides the refusal before the broker's sentence does", () => {
+  assert.equal(approvalRefusalReason("Something else entirely.", "denied"), "declined");
+  assert.equal(approvalRefusalReason("Something else entirely.", "expired"), "approval_expired");
+  assert.equal(approvalRefusalReason("Something else entirely.", "blocked"), "approval_blocked");
+  // A superseded or unknown status is not the user's choice.
+  assert.equal(approvalRefusalReason("Arguments or permissions changed after approval.", "superseded"), "approval_failed");
+});
+
+test("the declaration is the registry's start_task entry, so the two cannot drift", async () => {
+  const { startTaskSpec } = await import("@/lib/tools/specs/start-task");
+  assert.equal(START_TASK_TOOL.function.description, startTaskSpec.description);
+  assert.deepEqual(START_TASK_TOOL.function.parameters, startTaskSpec.input);
+  assert.deepEqual(
+    [startTaskSpec.risk, startTaskSpec.parallelSafe, startTaskSpec.timeoutMs, startTaskSpec.icon, startTaskSpec.broker],
+    ["external", false, 60_000, "task", "self"],
+  );
+});
+
+test("the approval waits on the turn signal with the per-call card; the timer starts after the yes", () => {
+  const source = read("../src/lib/chat/task-tool.ts");
+  assert.match(source, /const onApprovalRequest = opts\?\.onApprovalRequest \?\? ctx\.onApprovalRequest;/);
+  const authorize = source.indexOf("await store.authorizeExternalAction({");
+  const authorized = source.indexOf("opts?.onAuthorized?.();");
+  const timer = source.indexOf("const bounded = dispatchSignal(signal, opts?.timeoutMs);");
+  const dispatch = source.indexOf("dispatch.startWorkRunForUser(user, session, {");
+  assert.ok(authorize > 0 && authorized > authorize && timer > authorized && dispatch > timer, "authorise → onAuthorized → timer → dispatch");
+  // The broker waits on the turn signal, never on the timed one.
+  const call = source.slice(authorize, source.indexOf("});", authorize));
+  assert.match(call, /\n\s+signal,\n/);
+  assert.doesNotMatch(call, /bounded/);
+  // Outside content is read when the call happens: a page fetched two rounds ago counts.
+  assert.match(source, /const taint = ctx\.untrustedNow\?\.\(\) \?\? \{ untrusted: ctx\.untrustedContent, hostile: false \};/);
 });

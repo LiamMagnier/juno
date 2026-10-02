@@ -1,0 +1,1551 @@
+{
+  "$comment": "Tool runtime coverage (TOOL_RUNTIME_DESIGN.md §6.11). Generated and checked by scripts/generate-tool-runtime-coverage.ts from the model catalog; verdict cells are evidence and are carried over between regenerations. untested means nobody has exercised it. No model is compatible until roundTrip and runCodeE2E are both verified by a live run. No secrets.",
+  "version": 1,
+  "probeVersion": 2,
+  "verdicts": [
+    "verified",
+    "failed",
+    "untested",
+    "unsupported",
+    "not_applicable"
+  ],
+  "capabilities": [
+    {
+      "key": "roundTrip",
+      "summary": "Calls one function with valid JSON arguments, receives the result and states it (probe: multiply(a, b))."
+    },
+    {
+      "key": "parallel",
+      "summary": "Makes two independent calls in one response and handles both results."
+    },
+    {
+      "key": "toolImages",
+      "summary": "Reads an image returned inside a tool result. Not applicable to a model without vision."
+    },
+    {
+      "key": "runCodeE2E",
+      "summary": "Runs real Python through run_code in the sandbox, reads the output and answers from it (V1/V2)."
+    },
+    {
+      "key": "skillE2E",
+      "summary": "Finds a skill through use_skill, reads its reference, runs its script and attaches the artifact (V3)."
+    }
+  ],
+  "compatibility": "compatible = roundTrip verified AND runCodeE2E verified (probe version 2 or later). Nothing else, including the catalog's agenticTools flag, makes a model compatible.",
+  "models": [
+    {
+      "id": "anthropic:claude-fable-5-1",
+      "provider": "anthropic",
+      "adapter": "anthropic-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "anthropic:claude-opus-5-5",
+      "provider": "anthropic",
+      "adapter": "anthropic-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "anthropic:claude-sonnet-5",
+      "provider": "anthropic",
+      "adapter": "anthropic-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "anthropic:claude-haiku-4-5",
+      "provider": "anthropic",
+      "adapter": "anthropic-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-6-astra",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-6-sol",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-6-luna",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-5.6-terra",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-5.5-pro",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-5.4-mini",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-5.4-nano",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "openai:gpt-5.3-codex",
+      "provider": "openai",
+      "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "google:gemini-3.8-flash",
+      "provider": "google",
+      "adapter": "gemini-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "google:gemini-3.1-pro-preview",
+      "provider": "google",
+      "adapter": "gemini-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "google:gemini-3.5-flash-lite",
+      "provider": "google",
+      "adapter": "gemini-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "meta:muse-spark-1.3",
+      "provider": "meta",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "meta:muse-spark-1.3-contributor",
+      "provider": "meta",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-5.3",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-4.7-flash",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-4.7-flashx",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-4.6v-flashx",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-4.6v-flash",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "moonshot:kimi-k3",
+      "provider": "moonshot",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "moonshot:kimi-k2.7-code",
+      "provider": "moonshot",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "moonshot:kimi-k2.7-code-highspeed",
+      "provider": "moonshot",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "deepseek:deepseek-flash",
+      "provider": "deepseek",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "deepseek:deepseek-v4-pro",
+      "provider": "deepseek",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:mistral-medium-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": false,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:mistral-large-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:mistral-small-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:codestral-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:ministral-14b-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:ministral-8b-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mistral:ministral-3b-latest",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "xai:grok-4.7",
+      "provider": "xai",
+      "adapter": "xai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "xai:grok-4.1-fast",
+      "provider": "xai",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "xai:grok-build-0.1",
+      "provider": "xai",
+      "adapter": "xai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "xai:grok-4.20-multi-agent-0309",
+      "provider": "xai",
+      "adapter": "xai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "minimax:MiniMax-M3",
+      "provider": "minimax",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "minimax:MiniMax-M2.7-highspeed",
+      "provider": "minimax",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mimo:mimo-v2.6-pro",
+      "provider": "mimo",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mimo:mimo-v2.6-pro-ultraspeed",
+      "provider": "mimo",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mimo:mimo-v2.6-flash",
+      "provider": "mimo",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "mimo:mimo-v2.5",
+      "provider": "mimo",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-max",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.7-plus",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-flash",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen-long",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "longcat:LongCat-2.0",
+      "provider": "longcat",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    }
+  ],
+  "surfaces": [
+    {
+      "key": "chat_web",
+      "label": "Web chat"
+    },
+    {
+      "key": "orbit_thread",
+      "label": "Orbit agent thread"
+    },
+    {
+      "key": "orbit_task",
+      "label": "Orbit agent task (Work run)"
+    },
+    {
+      "key": "code_web",
+      "label": "Web Code activity"
+    },
+    {
+      "key": "voice_mode",
+      "label": "Voice-mode chat turn"
+    },
+    {
+      "key": "voice_realtime",
+      "label": "Realtime voice call (relay)"
+    },
+    {
+      "key": "native_macos",
+      "label": "macOS ChatKit"
+    },
+    {
+      "key": "native_ios",
+      "label": "iOS ChatKit"
+    }
+  ],
+  "runtimes": [
+    {
+      "key": "hosted_sandbox",
+      "label": "Alevr's sandbox (juno-exec)"
+    },
+    {
+      "key": "agent_computer",
+      "label": "An agent's computer"
+    },
+    {
+      "key": "task_container",
+      "label": "The task's container (Cloud Code)"
+    },
+    {
+      "key": "local_host",
+      "label": "Your Mac"
+    }
+  ],
+  "matrix": [
+    {
+      "surface": "chat_web",
+      "runtime": "hosted_sandbox",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "tests/tool-run-presentation.test.ts; /dev/tool-runs (chat rows, run strip, Thought process)",
+      "note": "No execution host or sandbox is configured anywhere yet, so no real run has been shown."
+    },
+    {
+      "surface": "chat_web",
+      "runtime": "agent_computer",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "chat_web",
+      "runtime": "task_container",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "chat_web",
+      "runtime": "local_host",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "orbit_thread",
+      "runtime": "hosted_sandbox",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "tests/tool-run-presentation.test.ts (threads use the chat transcript); /dev/tool-runs",
+      "note": "No execution host or sandbox is configured anywhere yet, so no real run has been shown."
+    },
+    {
+      "surface": "orbit_thread",
+      "runtime": "agent_computer",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "orbit_thread",
+      "runtime": "task_container",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "orbit_thread",
+      "runtime": "local_host",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "orbit_task",
+      "runtime": "hosted_sandbox",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "tests/tool-run-work-events.test.ts; /dev/tool-runs (Orbit task feed)",
+      "note": "No execution host or sandbox is configured anywhere yet, so no real run has been shown."
+    },
+    {
+      "surface": "orbit_task",
+      "runtime": "agent_computer",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "tests/tool-run-work-events.test.ts; /dev/tool-runs (Orbit task feed)",
+      "note": "Agent computers are disabled in production and their broker is not installed."
+    },
+    {
+      "surface": "orbit_task",
+      "runtime": "task_container",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "orbit_task",
+      "runtime": "local_host",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "tests/tool-run-work-events.test.ts; /dev/tool-runs (Orbit task feed)",
+      "note": "A local context only; a hosted run never implies access to the Mac."
+    },
+    {
+      "surface": "code_web",
+      "runtime": "hosted_sandbox",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "code_web",
+      "runtime": "agent_computer",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "code_web",
+      "runtime": "task_container",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "/dev/tool-runs (web Code activity); tests/tool-run-presentation.test.ts",
+      "note": "Cloud Code runs commands in its pinned container; no run_code acceptance run has been recorded here."
+    },
+    {
+      "surface": "code_web",
+      "runtime": "local_host",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "/dev/tool-runs (web Code activity); tests/tool-run-presentation.test.ts",
+      "note": "A local context only; a hosted run never implies access to the Mac."
+    },
+    {
+      "surface": "voice_mode",
+      "runtime": "hosted_sandbox",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "tests/tool-run-speech.test.ts",
+      "note": "No execution host or sandbox is configured anywhere yet, so no real run has been shown."
+    },
+    {
+      "surface": "voice_mode",
+      "runtime": "agent_computer",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "voice_mode",
+      "runtime": "task_container",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "voice_mode",
+      "runtime": "local_host",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "voice_realtime",
+      "runtime": "hosted_sandbox",
+      "verdict": "unsupported",
+      "presentation": "not_applicable",
+      "evidence": "relay/tests/voice-tool-limit.test.ts",
+      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+    },
+    {
+      "surface": "voice_realtime",
+      "runtime": "agent_computer",
+      "verdict": "unsupported",
+      "presentation": "not_applicable",
+      "evidence": "relay/tests/voice-tool-limit.test.ts",
+      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+    },
+    {
+      "surface": "voice_realtime",
+      "runtime": "task_container",
+      "verdict": "unsupported",
+      "presentation": "not_applicable",
+      "evidence": "relay/tests/voice-tool-limit.test.ts",
+      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+    },
+    {
+      "surface": "voice_realtime",
+      "runtime": "local_host",
+      "verdict": "unsupported",
+      "presentation": "not_applicable",
+      "evidence": "relay/tests/voice-tool-limit.test.ts",
+      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+    },
+    {
+      "surface": "native_macos",
+      "runtime": "hosted_sandbox",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "JunoChatKitTests.NativeToolRunTests (decoding, words, snapshots)",
+      "note": "No execution host or sandbox is configured anywhere yet, so no real run has been shown."
+    },
+    {
+      "surface": "native_macos",
+      "runtime": "agent_computer",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "native_macos",
+      "runtime": "task_container",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "native_macos",
+      "runtime": "local_host",
+      "verdict": "untested",
+      "presentation": "not_built",
+      "note": "A local context only; a hosted run never implies access to the Mac."
+    },
+    {
+      "surface": "native_ios",
+      "runtime": "hosted_sandbox",
+      "verdict": "untested",
+      "presentation": "fixture_tested",
+      "presentationEvidence": "JunoChatKitTests.NativeToolRunTests (decoding, words, compact snapshots)",
+      "note": "No execution host or sandbox is configured anywhere yet, so no real run has been shown."
+    },
+    {
+      "surface": "native_ios",
+      "runtime": "agent_computer",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "native_ios",
+      "runtime": "task_container",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    },
+    {
+      "surface": "native_ios",
+      "runtime": "local_host",
+      "verdict": "not_applicable",
+      "presentation": "not_applicable"
+    }
+  ]
+}

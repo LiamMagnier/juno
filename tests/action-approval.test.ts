@@ -4,11 +4,13 @@ import {
   ACTION_PERMISSION_POLICIES,
   actionArgsHash,
   actionPolicyDigest,
+  actionPreview,
   actionPreviewDetail,
   actionReceiptDigest,
   classifyExternalAction,
   decideActionPolicy,
   mayCreateStandingApproval,
+  singleLine,
   type ActionReceiptBinding,
   type ActionRiskClass,
 } from "@/lib/action-approval";
@@ -262,4 +264,48 @@ test("preview detail catches the credential spellings, and only those", () => {
     oauthProvider: "github",
     monkey: "yes",
   });
+});
+
+/*
+ * Juno's own tools (SPEC §3.3 items 1–2, INV-31). A first-party read never
+ * waits on a card: `always_ask` speaks of "a connected app", which Juno's own
+ * readers are not. `block` and lockdown still stop it, and the flag widens
+ * nothing but a read.
+ */
+test("Juno's own chat tools are exact reads, and a first-party read is allowed under every policy but block", () => {
+  for (const toolName of ["read_document", "inspect_image", "web_fetch", "web_search", "search_chats", "run_code"]) {
+    assert.equal(classifyExternalAction({ connectorId: "juno_runtime", toolName }).riskClass, "read_only", toolName);
+  }
+  // The retired page reader has no rule, so it stays unknown and asks.
+  assert.equal(classifyExternalAction({ connectorId: "juno_runtime", toolName: "browser_agent" }).riskClass, "unknown");
+
+  for (const policy of ACTION_PERMISSION_POLICIES) {
+    const outcome = decideActionPolicy({ policy, riskClass: "read_only", firstParty: true });
+    assert.equal(outcome, policy === "block" ? "block" : "allow", policy);
+    assert.equal(decideActionPolicy({ policy, riskClass: "read_only", firstParty: true, lockdown: true }), "block");
+    assert.equal(decideActionPolicy({ policy, riskClass: "read_only", firstParty: true, connectorBlocked: true }), "block");
+    // Not a read: the flag changes nothing.
+    for (const riskClass of ["reversible_write", "external_write", "destructive_or_sensitive", "unknown"] as const) {
+      assert.equal(
+        decideActionPolicy({ policy, riskClass, firstParty: true }),
+        decideActionPolicy({ policy, riskClass }),
+        `${policy} / ${riskClass}`,
+      );
+    }
+  }
+  // A connected app's read under always_ask still asks.
+  assert.equal(decideActionPolicy({ policy: "always_ask", riskClass: "read_only" }), "ask");
+});
+
+test("an approval preview is one line whatever the connector called itself", () => {
+  const preview = actionPreview({
+    connectorLabel: "Evil\nLabel\u0007",
+    toolName: "send_\r\nmail",
+    riskClass: "external_write",
+    args: {},
+  });
+  assert.doesNotMatch(preview, /[\u0000-\u001f\u007f]/);
+  assert.equal(preview, "Evil Label wants to send mail.");
+  assert.equal(singleLine("a\u2028b\t\tc"), "a b c");
+  assert.equal(singleLine("x".repeat(10), 5), "xxxx…");
 });

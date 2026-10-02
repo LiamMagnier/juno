@@ -5,18 +5,141 @@
  * streaming events, and automatic escalation across Chat, Work, Code, Research, and Voice.
  */
 
-import crypto from "node:crypto";
 import type {
   ToolDefinition,
   AgentExecutionContext,
   ToolExecutionResult,
   AgentMode,
 } from "@/lib/agent/types";
-import { browserTool } from "@/lib/agent/browser";
 import { runCodeTool } from "@/lib/agent/code";
 import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { composeApprovalCallbacks } from "@/lib/tools/approval";
+import {
+  portableSchemaProblem,
+  type ChatToolset,
+  type PortableSchema,
+  type ResolvedTool,
+  type ToolExecuteOptions,
+  type ToolOutcome,
+  type ToolRisk,
+  type ToolSpec,
+} from "@/lib/tools/types";
+import type { ClientActionApproval } from "@/lib/action-approval";
+
+/**
+ * What a registry dispatch knows about the call it serves.
+ *
+ * `callId` is REQUIRED, and it is the Alevr call id the dispatcher fixed
+ * (src/lib/tools/call-ids.ts). This used to be `crypto.randomUUID()` minted
+ * here, per attempt — which made the broker's idempotency key (`sessionId` +
+ * `callId`) different on every replay of the same call, so a reconnected
+ * stream asked again and could execute twice. The key is only worth having if
+ * it is stable.
+ */
+export interface RegistryCall {
+  callId: string;
+  /** Called once after authorisation, before the tool runs (the dispatcher starts its timer here). */
+  onAuthorized?: () => void;
+  /** Per-call approval callback, composed with the context's own. */
+  onApprovalRequest?: (approval: ClientActionApproval) => void;
+  /** Forward a running call's output (provider specs only). */
+  reportProgress?: ToolExecuteOptions["reportProgress"];
+  round?: number;
+}
+
+/**
+ * The bound on one registry dispatch once it is authorised, per tool. Generous
+ * on purpose: these tools had no bound at all before the dispatcher, and a
+ * budget tighter than their own internal limits would turn a slow success into
+ * a timeout. `code_interpreter` is its 120 s run plus transport.
+ */
+const REGISTRY_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  browser_agent: 30_000,
+  read_document: 120_000,
+  inspect_image: 60_000,
+  code_interpreter: 135_000,
+};
+const DEFAULT_REGISTRY_TIMEOUT_MS = 60_000;
+/** Connector calls: the SPEC's 60 s, started after any approval. */
+const CONNECTOR_TIMEOUT_MS = 60_000;
+/** The most of a spec's model-facing text a receipt keeps for a replay. */
+const RECEIPT_RESULT_CHARS = 30_000;
+
+function riskOf(riskClass: string): ToolRisk {
+  switch (riskClass) {
+    case "read_only":
+      return "read";
+    case "reversible_write":
+      return "write";
+    case "external_write":
+      return "external";
+    default:
+      return "destructive";
+  }
+}
+
+/**
+ * Whether a call can run beside others: a read that can NEVER ask a person.
+ *
+ * Every registry tool passes the broker, and the broker asks about a read too
+ * when the account chose "Always ask". Two approval cards at once is a shape
+ * neither the clients nor the stall watchdog were built for (its pause is a
+ * flag, not a count: the first result re-arms it while the second card is
+ * still waiting, and the turn is killed as a stalled model) — the reason
+ * connector reads are serialised too. And two of the registry reads
+ * (`read_document`, up to 64 MB per file, and `inspect_image`) load whole
+ * files into a web process on an 887 MB host: four at once is how it runs out
+ * of memory. So registry tools run one at a time, as they always did; only a
+ * pure provider spec (`broker: "none"`, a read) runs in parallel.
+ */
+function runsInParallel(risk: ToolRisk, declared: boolean, brokered: boolean): boolean {
+  return declared && risk === "read" && !brokered;
+}
+
+/** A registry tool as the dispatcher sees it. Its schema is validated strictly when it is portable. */
+export function resolvedRegistryTool(tool: ToolDefinition<unknown, unknown>): ResolvedTool {
+  const portable = portableSchemaProblem(tool.parameters) === null;
+  const risk = riskOf(tool.riskClass);
+  return {
+    name: tool.id,
+    origin: "alevr",
+    title: tool.name,
+    risk,
+    parallelSafe: runsInParallel(risk, true, true),
+    timeoutMs: REGISTRY_TIMEOUT_MS[tool.id] ?? DEFAULT_REGISTRY_TIMEOUT_MS,
+    dedupe: true,
+    ...(portable
+      ? { input: tool.parameters as unknown as PortableSchema }
+      : { inputSchema: tool.parameters as unknown as Record<string, unknown> }),
+  };
+}
+
+/**
+ * Whether a spec's calls pass the approval broker. Only a READ may opt out
+ * (`broker: "none"`): a spec that writes, reaches outside or runs code and
+ * declares itself unbrokered is brokered anyway, because a provider is never
+ * trusted to waive its own authorisation (`defineTool` refuses it too).
+ */
+export function specIsBrokered(spec: Pick<ToolSpec, "broker" | "risk">): boolean {
+  return spec.broker !== "none" || spec.risk !== "read";
+}
+
+/** A provider spec (run_code, use_skill…) as the dispatcher sees it. */
+export function resolvedSpecTool(spec: ToolSpec): ResolvedTool {
+  return {
+    name: spec.id,
+    origin: "alevr",
+    title: spec.title,
+    risk: spec.risk,
+    parallelSafe: runsInParallel(spec.risk, spec.parallelSafe, specIsBrokered(spec)),
+    timeoutMs: spec.timeoutMs,
+    dedupe: Boolean(spec.dedupe),
+    input: spec.input,
+  };
+}
+
 
 export class UnifiedAgentRegistry {
   private tools = new Map<string, ToolDefinition<unknown, unknown>>();
@@ -25,7 +148,6 @@ export class UnifiedAgentRegistry {
     // Deliberately no host-Python registration here. `sandbox/python.ts` uses a
     // child process and is retained only for local migration/tests; it is not a
     // tenant isolation boundary and must never be exposed by the hosted toolset.
-    this.registerTool(browserTool as unknown as ToolDefinition<unknown, unknown>);
     // Both read-only and both scoped to what the person attached to the
     // conversation they are running in (`agent/attachments.ts`). Registering
     // them here does not attach them to anything: `chatRuntimeToolAllowlist`
@@ -79,7 +201,8 @@ export class UnifiedAgentRegistry {
   public async executeToolCall(
     toolId: string,
     params: Record<string, unknown>,
-    context: AgentExecutionContext
+    context: AgentExecutionContext,
+    call: RegistryCall
   ): Promise<ToolExecutionResult<unknown>> {
     const tool = this.getTool(toolId);
     if (!tool) {
@@ -90,7 +213,7 @@ export class UnifiedAgentRegistry {
       };
     }
 
-    const callId = crypto.randomUUID();
+    const callId = call.callId;
     // Pass through the Universal Action Approval Broker
     let receiptId: string | null = null;
     try {
@@ -110,7 +233,7 @@ export class UnifiedAgentRegistry {
         // Without this a call the broker asks about waits for a card nobody
         // is shown, until the stall watchdog kills the turn. The route's
         // callback sends the card and pauses the watchdog.
-        onApprovalRequest: context.onApprovalRequest,
+        onApprovalRequest: composeApprovalCallbacks(context.onApprovalRequest, call.onApprovalRequest),
         provenance: {
           source: "agent_runtime",
           sourceKind: "runtime_tool",
@@ -157,6 +280,8 @@ export class UnifiedAgentRegistry {
       };
     }
 
+    // Authorised: the dispatcher's timer starts now, never during an approval.
+    call.onAuthorized?.();
     // Execute the tool
     const startTime = Date.now();
     try {
@@ -195,9 +320,111 @@ export class UnifiedAgentRegistry {
       };
     }
   }
+
+  /**
+   * Run a provider spec (`run_code`, `use_skill`…) behind the same broker the
+   * registry tools pass: `authorizeExternalAction` first (refusals and replays
+   * answered without running), `onAuthorized`, the spec, then the receipt
+   * settled on success and on failure. `broker: "none"` specs are pure and go
+   * straight to the run. Infrastructure failure fails closed.
+   */
+  public async executeSpec(
+    spec: ToolSpec,
+    params: Record<string, unknown>,
+    context: AgentExecutionContext,
+    call: RegistryCall
+  ): Promise<ToolOutcome> {
+    const signal = context.abortSignal ?? new AbortController().signal;
+    let receiptId: string | null = null;
+    if (specIsBrokered(spec)) {
+      try {
+        const { authorizeExternalAction } = await import("@/lib/action-approval-store");
+        const authorization = await authorizeExternalAction({
+          userId: context.userId,
+          surface: context.mode || "chat",
+          sessionId: context.sessionId,
+          conversationId: context.conversationId || null,
+          projectId: context.projectId || null,
+          connectorId: "juno_runtime",
+          connectorLabel: `${PRODUCT_NAME} Runtime`,
+          toolName: spec.id,
+          functionName: spec.id,
+          args: params,
+          callId: call.callId,
+          onApprovalRequest: composeApprovalCallbacks(context.onApprovalRequest, call.onApprovalRequest),
+          provenance: { source: "agent_runtime", sourceKind: "runtime_tool", derivedFromUntrusted: true },
+          signal,
+        });
+        if (authorization.kind === "refused") {
+          const text = `Action not permitted: ${authorization.reason}`;
+          return { status: "failed", text, body: text, error: { code: "not_permitted" } };
+        }
+        if (authorization.kind === "replay") {
+          return {
+            status: authorization.failed ? "failed" : "succeeded",
+            text: authorization.result,
+            body: authorization.result,
+            ...(authorization.failed ? { error: { code: "tool_error" as const } } : {}),
+          };
+        }
+        receiptId = authorization.receiptId;
+      } catch {
+        const text = "Could not safely verify permissions for this action, so it was not run.";
+        return { status: "failed", text, body: text, error: { code: "not_permitted" } };
+      }
+    }
+
+    call.onAuthorized?.();
+    try {
+      const outcome = await spec.execute(params, {
+        userId: context.userId,
+        surface: context.mode === "work" || context.mode === "voice" ? context.mode : "chat",
+        sessionId: context.sessionId,
+        conversationId: context.conversationId ?? null,
+        projectId: context.projectId ?? null,
+        callId: call.callId,
+        round: call.round ?? 0,
+        signal,
+        reportProgress: call.reportProgress ?? (() => {}),
+        onApprovalRequest: composeApprovalCallbacks(context.onApprovalRequest, call.onApprovalRequest),
+      });
+      // Settle the receipt (when the broker issued one) with what the model
+      // was given, so a replay of this call returns the same text. Kept whole
+      // or not at all: the text may end in an untrusted envelope's closing
+      // marker, and a replay of a CUT text would hand the model an envelope
+      // that never closes.
+      if (receiptId) {
+        const { completeExternalAction } = await import("@/lib/action-approval-store");
+        await completeExternalAction({
+          userId: context.userId,
+          receiptId,
+          ok: outcome.status === "succeeded",
+          result:
+            outcome.text.length <= RECEIPT_RESULT_CHARS
+              ? outcome.text
+              : `This call already ran (${outcome.status}); its result was too long to keep, so it is not repeated here. Do not run it again only to see the result.`,
+        });
+      }
+      return outcome;
+    } catch (err: unknown) {
+      if (receiptId) {
+        // Not the error's own message: a replay of this call hands the stored
+        // text to the model, and a thrown error's message (a database error,
+        // an internal path) is the server log's, not the model's.
+        const { completeExternalAction } = await import("@/lib/action-approval-store");
+        await completeExternalAction({
+          userId: context.userId,
+          receiptId,
+          ok: false,
+          result: "The tool failed with an internal error.",
+        });
+      }
+      throw err;
+    }
+  }
 }
 
-import type { ActiveConnector, McpToolset, McpFunctionTool, McpToolsetContext, ToolExecution } from "@/lib/mcp";
+import type { ActiveConnector, McpFunctionTool, McpToolsetContext, ToolExecution } from "@/lib/mcp";
 
 /**
  * Open a unified toolset containing both Native Unified Agent Tools (Python, Browser, Computer)
@@ -208,8 +435,14 @@ export async function openUnifiedAgentToolset(
   context: AgentExecutionContext,
   options?: {
     allowedToolIds?: string[];
+    /**
+     * Provider specs this turn carries (the execution and skill lanes'), already
+     * granted by the entitlement rows. Offered after the registry tools and run
+     * behind the same broker (`executeSpec`).
+     */
+    specs?: readonly ToolSpec[];
   }
-): Promise<McpToolset> {
+): Promise<ChatToolset> {
   const mcpContext: McpToolsetContext = {
     userId: context.userId,
     conversationId: context.conversationId,
@@ -243,9 +476,29 @@ export async function openUnifiedAgentToolset(
 
   const functionTools: McpFunctionTool[] = [...baseMcpToolset.tools];
   const registryMap = new Map<string, ToolDefinition<unknown, unknown>>();
+  const specMap = new Map<string, ToolSpec>();
+  const resolved = new Map<string, ResolvedTool>();
+  // Connector tools first, as before; their names are `<connector>__<tool>`,
+  // so they can never collide with a registry id or a spec id.
+  for (const t of baseMcpToolset.tools) {
+    const name = t.function.name;
+    resolved.set(name, {
+      name,
+      origin: "connector",
+      title: baseMcpToolset.labelFor(name),
+      risk: baseMcpToolset.accessFor(name) === "read" ? "read" : "external",
+      // Serialised: a connector read may still ask under a strict policy, and
+      // two approval cards at once is not a shape the clients were built for.
+      parallelSafe: false,
+      timeoutMs: CONNECTOR_TIMEOUT_MS,
+      dedupe: true,
+      inputSchema: t.function.parameters,
+    });
+  }
 
   for (const t of registryTools) {
     registryMap.set(t.id, t);
+    resolved.set(t.id, resolvedRegistryTool(t));
     functionTools.push({
       type: "function",
       function: {
@@ -256,11 +509,31 @@ export async function openUnifiedAgentToolset(
     });
   }
 
+  for (const spec of options?.specs ?? []) {
+    // A spec never shadows a registry tool or a connector tool.
+    if (resolved.has(spec.id)) continue;
+    specMap.set(spec.id, spec);
+    resolved.set(spec.id, resolvedSpecTool(spec));
+    functionTools.push({
+      type: "function",
+      function: { name: spec.id, description: spec.description, parameters: spec.input as unknown as Record<string, unknown> },
+    });
+  }
+
+  // Fallback call ids for a caller that supplies none: per toolset and
+  // ordinal, never random, so a replay of the same sequence keys the same
+  // receipts (the dispatcher always supplies the real one).
+  let fallbackOrdinal = 0;
+  const callIdFor = (toolName: string, callId?: string) => callId ?? `${context.sessionId}:${toolName}:${++fallbackOrdinal}`;
+
   return {
     tools: functionTools,
+    resolve: (toolName: string) => resolved.get(toolName),
     labelFor: (toolName: string) => {
       const reg = registryMap.get(toolName);
       if (reg) return reg.name;
+      const spec = specMap.get(toolName);
+      if (spec) return spec.title;
       return baseMcpToolset.labelFor(toolName);
     },
     accessFor: (toolName: string) => {
@@ -271,15 +544,57 @@ export async function openUnifiedAgentToolset(
         // since ToolAccess only has "read" | "write" | "unknown"
         return "write";
       }
+      const spec = specMap.get(toolName);
+      if (spec) return spec.risk === "read" ? "read" : "write";
       return baseMcpToolset.accessFor(toolName);
     },
-    execute: async (toolName: string, args: Record<string, unknown>, signal?: AbortSignal, callId?: string): Promise<ToolExecution> => {
+    execute: async (
+      toolName: string,
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      callId?: string,
+      opts?: ToolExecuteOptions
+    ): Promise<ToolExecution> => {
+      const spec = specMap.get(toolName);
+      if (spec) {
+        const outcome = await defaultAgentRegistry.executeSpec(
+          spec,
+          args,
+          { ...context, abortSignal: signal || context.abortSignal },
+          {
+            callId: callIdFor(toolName, callId),
+            onAuthorized: opts?.onAuthorized,
+            onApprovalRequest: opts?.onApprovalRequest,
+            reportProgress: opts?.reportProgress,
+            round: opts?.round,
+          }
+        );
+        return {
+          text: outcome.text,
+          body: outcome.body,
+          ok: outcome.status === "succeeded",
+          status: outcome.status,
+          ...(outcome.error ? { error: outcome.error } : {}),
+          ...(outcome.durationMs === undefined ? {} : { durationMs: outcome.durationMs }),
+          ...(outcome.images?.length ? { images: outcome.images } : {}),
+          ...(outcome.run ? { run: outcome.run } : {}),
+        };
+      }
       const reg = registryMap.get(toolName);
       if (reg) {
-        const result = await defaultAgentRegistry.executeToolCall(toolName, args, {
-          ...context,
-          abortSignal: signal || context.abortSignal,
-        });
+        const result = await defaultAgentRegistry.executeToolCall(
+          toolName,
+          args,
+          {
+            ...context,
+            abortSignal: signal || context.abortSignal,
+          },
+          {
+            callId: callIdFor(toolName, callId),
+            onAuthorized: opts?.onAuthorized,
+            onApprovalRequest: opts?.onApprovalRequest,
+          }
+        );
 
         // `stdout` is the full model-facing payload (for the browser tool, the
         // whole page inside its untrusted envelope). Never slice it here: a cut
@@ -296,7 +611,7 @@ export async function openUnifiedAgentToolset(
           ...(result.images?.length ? { images: result.images } : {}),
         };
       }
-      return baseMcpToolset.execute(toolName, args, signal, callId);
+      return baseMcpToolset.execute(toolName, args, signal, callId, opts);
     },
     close: async () => {
       await baseMcpToolset.close();

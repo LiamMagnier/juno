@@ -7,7 +7,10 @@
 // `anthropic` badge, so the product's own brand chip and the Anthropic provider
 // logo were literally the same colour. Every value below now matches globals.css.
 export const ACCENTS = [
-  { id: "coral", color: "hsl(15 54% 46%)" },
+  // "coral" is the stored default id; since the Alevr refoundation it is
+  // Graphite, the brand's primary control colour (globals.css base values).
+  { id: "coral", color: "hsl(216 9% 11%)" },
+  { id: "ultramarine", color: "hsl(229.231 63.415% 48.235%)" },
   { id: "juniper", color: "hsl(152 44% 31%)" },
   { id: "teal", color: "hsl(180 63% 31.5%)" },
   { id: "violet", color: "hsl(249 59% 60%)" },
@@ -15,7 +18,7 @@ export const ACCENTS = [
   { id: "sage", color: "hsl(120 18% 42.5%)" },
 ] as const;
 
-export const ACCENT_IDS = ["coral", "juniper", "teal", "violet", "amber", "sage"] as const;
+export const ACCENT_IDS = ["coral", "ultramarine", "juniper", "teal", "violet", "amber", "sage"] as const;
 
 export type AccentId = (typeof ACCENT_IDS)[number];
 

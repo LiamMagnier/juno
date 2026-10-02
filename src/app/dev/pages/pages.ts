@@ -11,6 +11,8 @@ export const PAGES = [
   "settings",
   "memory",
   "skills",
+  "instructions",
+  "code",
   "notifications",
   "search",
 ] as const;

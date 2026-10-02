@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, Plus } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { useUiPref } from "@/lib/ui-prefs";
 
 interface FollowUpSuggestionsProps {
   conversationId: string;
@@ -22,7 +23,10 @@ type FollowUpResponse = {
  * directly under the last message and any placeholder would shove the thread
  * (and the user's scroll position) on every turn.
  */
-export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowUpSuggestionsProps) {
+export function FollowUpSuggestions({ conversationId, onPick, visible: wanted }: FollowUpSuggestionsProps) {
+  // Settings › Capabilities › Follow-up suggestions: off means never fetched.
+  const [enabled] = useUiPref("followUps");
+  const visible = wanted && enabled;
   const [suggestions, setSuggestions] = React.useState<string[]>([]);
   // Per-pill, not global: each suggestion opens on its own.
   const [expanded, setExpanded] = React.useState<ReadonlySet<number>>(() => new Set());

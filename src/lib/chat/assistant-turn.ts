@@ -15,6 +15,10 @@
  * broken.
  */
 
+import { settleToolCallRecord } from "@/lib/chat/run-record";
+import { normalizeSources } from "@/lib/chat/source-registry";
+import type { ChatFinishReason, ClientActivityEvent, ClientSource } from "@/types/chat";
+
 /**
  * What to do with the `reasoningParts` column.
  *
@@ -155,5 +159,71 @@ export function versionSnapshot<Sources>(
     promptTokens: stale.promptTokens,
     completionTokens: stale.completionTokens,
     ...(stale.sources !== null ? { sources: stale.sources } : {}),
+  };
+}
+
+/**
+ * What a finished chat turn persists, before encryption (SPEC §12.4 WS4).
+ *
+ * The pure end of the turn pipeline: `TurnStream.finish()`'s answer and
+ * activity plus what the accumulator gathered become the one assistant record
+ * the route writes at the terminal state (INV-13), and the same record the
+ * end-to-end tests read back through `serializeActivity` and `buildRunView`.
+ */
+export interface AssistantTurnRecordInput {
+  /** `TurnStream.finish().answer`: the answer rounds plus every preserved block. */
+  answer: string;
+  /** `TurnStream.finish().activity`, in emission order. */
+  activity: ClientActivityEvent[];
+  reasoning: string;
+  reasoningParts: readonly string[];
+  sources: readonly ClientSource[];
+  model: string;
+  finishReason: ChatFinishReason;
+}
+
+export interface AssistantTurnRecord {
+  content: string;
+  reasoning: string | null;
+  reasoningParts: string[];
+  activity: ClientActivityEvent[];
+  sources: ClientSource[];
+  model: string;
+  finishReason: ChatFinishReason;
+}
+
+/**
+ * The row a persisted turn is, and must read back as.
+ *
+ * - `content` is the split answer (SPEC §2.8): every round's answer text plus
+ *   every preserved block, so memory, artifacts and the wizard survive
+ *   wherever the model wrote them (INV-12).
+ * - `activity` gets the read-time rewrites of SPEC §2.5 at write time too: a
+ *   persisted turn cannot still be running, so a call that never ended is
+ *   `cancelled`, an approval that never settled `expired`, and a detail still
+ *   `pending` is `unfinished`. The database then already says what a reload
+ *   shows. The events are copied, never mutated: the live log is the route's.
+ * - `sources` are normalised once more (INV-3), so a source that reached the
+ *   list by any other path cannot make a native build refuse the message.
+ */
+export function assistantTurnRecord(input: AssistantTurnRecordInput): AssistantTurnRecord {
+  const activity = input.activity.map((event): ClientActivityEvent => {
+    const call = event.call ? settleToolCallRecord(event.call) : undefined;
+    const pending = event.tool?.resultNote === "pending";
+    if (call === event.call && !pending) return event;
+    return {
+      ...event,
+      ...(call ? { call } : {}),
+      ...(pending && event.tool ? { tool: { ...event.tool, resultNote: "unfinished" as const } } : {}),
+    };
+  });
+  return {
+    content: input.answer,
+    reasoning: input.reasoning ? input.reasoning : null,
+    reasoningParts: [...input.reasoningParts],
+    activity,
+    sources: normalizeSources(input.sources),
+    model: input.model,
+    finishReason: input.finishReason,
   };
 }

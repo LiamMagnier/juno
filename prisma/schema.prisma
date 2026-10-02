@@ -164,6 +164,7 @@ model User {
   channelLinks                ChannelLink[]
   agentSpendLimits            AgentSpendLimit[]
   agentPayments               AgentPayment[]
+  toolRuns                    ToolRun[]
 
   @@index([image])
 }
@@ -646,6 +647,7 @@ model Conversation {
   memory                  ConversationMemory?
   shares                  Share[]
   voiceTranscriptSessions VoiceTranscriptSession[]
+  toolRuns                ToolRun[]
 
   @@unique([userId, clientRequestId])
   @@index([userId, lastMessageAt])
@@ -1669,6 +1671,11 @@ model ApiSpend {
   promptTokens     Int      @default(0)
   completionTokens Int      @default(0)
   costMicroUsd     Int // request cost in micro-USD (1e-6 $) — integer math only
+  // Grounded Google searches this row's request made, free and billable alike
+  // (the billable ones are priced into costMicroUsd). The deployment's
+  // month-to-date SUM decides how much of the monthly free quota is left
+  // (tools/metering.ts). Null on every row that did no grounding.
+  groundingQueries Int?
   // Set only by writers that can legitimately retry the same charge. The voice
   // relay reports a delta every few seconds and re-sends any post it could not
   // confirm, so without this a dropped acknowledgement would bill the same
@@ -2879,6 +2886,7 @@ model WorkRun {
   approvals WorkApproval[]
   io        WorkRunIO[]
   commands  WorkCommand[]
+  toolRuns  ToolRun[]
 
   @@unique([sessionId, attempt])
   @@unique([userId, idempotencyKey])
@@ -3336,6 +3344,17 @@ model WorkSkillVersion {
   securityScan     Json    @default("{}")
   permissionDigest String?
   requiresConsent  Boolean @default(false)
+
+  /// The skill's folder, kept (src/lib/skills/bundle.ts): scripts, references
+  /// and assets beside its SKILL.md, stored once as a content-addressed tar.
+  /// Null for a skill that is instructions only. `bundleDigest` is the tar's
+  /// sha256 and the name of the object; `bundleManifest` lists every file with
+  /// its size, sha256 and kind (instructions / reference / script / asset).
+  /// The scanner reads the scripts and an imported version with scripts waits
+  /// for consent, exactly as a widened permission surface does.
+  bundleKey      String?
+  bundleDigest   String?
+  bundleManifest Json?
 
   createdAt DateTime @default(now())
 
@@ -4439,4 +4458,78 @@ model AgentPayment {
   @@unique([userId, idempotencyKey])
   @@index([userId, agentId, createdAt])
   @@index([providerCardId])
+}
+
+/**
+ * One execution of model-written code (run_code) in a hosted sandbox.
+ *
+ * The record is the fact: a receipt, a "Ran Python" row, a file card or the
+ * model's own claim that something ran all come from this row, and there is
+ * no claim without one. Keyed by (sessionId, callId, argsDigest) so a replayed
+ * or re-dispatched call returns the stored outcome instead of running twice;
+ * the digest of the arguments is part of the key because some providers reuse
+ * call ids across responses, and a reused id with different code is a
+ * different call. The execution host's Idempotency-Key is a second guard.
+ *
+ * `code`, `stdoutTail` and `stderrTail` are field-encrypted like message text.
+ * The full output, when it was longer than the tails, is in object storage
+ * under `logKey`. Produced files are Attachment rows with origin
+ * "tool_output"; `outputs` lists their ids. Design:
+ * docs/rework/TOOL_RUNTIME_DESIGN.md §6.6. src/lib/exec/store.ts owns writes.
+ */
+model ToolRun {
+  id                String    @id @default(cuid())
+  userId            String
+  /// chat | work | voice
+  surface           String
+  /// The chat generation id, or the Work run id: one sandbox workspace each.
+  sessionId         String
+  callId            String
+  argsDigest        String
+  conversationId    String?
+  projectId         String?
+  workRunId         String?
+  /// run_code
+  tool              String    @default("run_code")
+  /// python | javascript | bash
+  language          String
+  /// hosted_sandbox | agent_computer | task_container | local_host
+  context           String    @default("hosted_sandbox")
+  skillVersionId    String?
+  skillBundleDigest String?
+  codeDigest        String
+  code              String    @db.Text
+  /// queued | running | succeeded | failed | timed_out | cancelled | outcome_unknown | refused
+  status            String    @default("queued")
+  exitCode          Int?
+  durationMs        Int?
+  stdoutBytes       Int?
+  stderrBytes       Int?
+  stdoutTail        String?   @db.Text
+  stderrTail        String?   @db.Text
+  /// Alevr's own short explanation of a non-success (never program output).
+  error             String?
+  logKey            String?
+  remoteRunId       String?
+  remoteSession     String?
+  inputs            Json      @default("[]")
+  outputs           Json      @default("[]")
+  /// Settled by the sweep after the turn that started it had ended.
+  finishedLate      Boolean   @default(false)
+  meteredAt         DateTime?
+  leaseUntil        DateTime?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workRun      WorkRun?      @relation(fields: [workRunId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sessionId, callId, argsDigest])
+  @@index([userId, createdAt])
+  @@index([status, leaseUntil])
+  @@index([conversationId])
+  @@index([workRunId])
 }

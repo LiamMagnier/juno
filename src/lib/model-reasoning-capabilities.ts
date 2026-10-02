@@ -1,6 +1,7 @@
 import type { ReasoningCaps, ReasoningTier } from "@/lib/model-metrics";
 import { reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
+import { providerAdapterFor } from "@/lib/provider-routing";
 
 export type ReasoningControlType = "none" | "automatic" | "on_off" | "enum" | "numeric_budget" | "adaptive";
 export type ReasoningVerificationMethod = "official_docs" | "live_probe" | "both";
@@ -68,12 +69,23 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
       apiSurface: "DashScope OpenAI-compatible chat",
     };
   }
-  const objectToggle = ["zhipu", "minimax", "mimo", "longcat"].includes(model.provider)
+  // GLM-5.3 always thinks and takes only the effort enum; the `thinking`
+  // object's off state is exactly what makes its requests fail.
+  const zhipuEffortOnly = model.provider === "zhipu" && caps.tiers.length > 0 && !caps.canDisable;
+  const objectToggle = (["zhipu", "minimax", "mimo", "longcat"].includes(model.provider) && !zhipuEffortOnly)
     || (model.provider === "moonshot" && !id.includes("k3"));
+  // The surface the request actually goes out on: every OpenAI model and
+  // Grok are served through Responses now, whatever `api` says.
+  const adapter = providerAdapterFor(model);
+  const responses = adapter === "openai-responses" || adapter === "xai-responses";
   return {
     controlType: caps.onOff ? "on_off" as const : caps.tiers.length ? "enum" as const : "automatic" as const,
-    parameter: objectToggle ? "thinking.type" : caps.tiers.length || caps.canDisable ? "reasoning_effort" : null,
-    apiSurface: model.api === "responses" ? "OpenAI Responses-compatible" : "OpenAI chat-compatible",
+    parameter: objectToggle
+      ? "thinking.type"
+      : caps.tiers.length || caps.canDisable
+        ? responses ? "reasoning.effort" : "reasoning_effort"
+        : null,
+    apiSurface: responses ? "OpenAI Responses-compatible" : "OpenAI chat-compatible",
   };
 }
 

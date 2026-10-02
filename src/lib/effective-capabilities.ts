@@ -54,7 +54,16 @@ export interface RequestedCapabilities {
   proMode?: boolean;
   vision?: boolean;
   connectors?: readonly string[];
+  /** Run code in the sandbox during the turn (`run_code`). */
+  codeExecution?: boolean;
 }
+
+/**
+ * What the live tool round-trip probe recorded for a model
+ * (contracts/capabilities/tool-runtime-coverage.json). Only `verified` lets a
+ * turn run code; an untested model is never treated as compatible.
+ */
+export type ToolCallingVerdict = "verified" | "failed" | "untested";
 
 /** What a given model, on a given plan, can actually do. */
 export interface ModelCapabilities {
@@ -68,6 +77,8 @@ export interface ModelCapabilities {
   proMode: boolean;
   vision: boolean;
   connectors: boolean;
+  /** The probe's verdict on this model's tool calling. Absent reads as untested. */
+  toolCalling?: ToolCallingVerdict;
 }
 
 export type DegradationKind =
@@ -84,7 +95,13 @@ export type DegradationKind =
   // and the surface that had to ask nobody could ask on. It is resolved outside
   // `resolveEffectiveCapabilities` — that function sees a model and a plan, not
   // which client is on the other end of the stream — so nothing here pushes it.
-  | "action_approval_unavailable";
+  | "action_approval_unavailable"
+  // Running code was asked for and nothing ran: no healthy sandbox, or the
+  // chat or plan does not allow it (private chats, lockdown, free plans).
+  | "code_execution_unavailable"
+  // Running code was asked for and the model was not offered the tools,
+  // because no live round trip has verified its tool calling.
+  | "tool_calling_unverified";
 
 export interface Degradation {
   kind: DegradationKind;
@@ -106,6 +123,7 @@ export interface EffectiveCapabilities {
   proMode: boolean;
   vision: boolean;
   connectors: boolean;
+  codeExecution: boolean;
   degradations: Degradation[];
 }
 
@@ -132,6 +150,13 @@ export function resolveEffectiveCapabilities(opts: {
   planAllowsConnectors?: boolean;
   /** The model originally requested, when it was substituted. */
   substitutedFrom?: { modelId: string; reason: string } | null;
+  /**
+   * Whether this turn may run code at all, before the model is considered: a
+   * configured, healthy sandbox, a plan that includes it, a chat that is not
+   * private and an account not in lockdown. `allowed: false` carries the
+   * sentence that says which.
+   */
+  codeExecutionGate?: { allowed: true } | { allowed: false; reason: string };
 }): EffectiveCapabilities {
   const { requested, actual } = opts;
   const planAllowsWebSearch = opts.planAllowsWebSearch ?? true;
@@ -229,6 +254,34 @@ export function resolveEffectiveCapabilities(opts: {
     });
   }
 
+  // Code execution. The model's evidence is checked first: an unverified
+  // model is not offered the tools even when a sandbox is up, and saying
+  // "the sandbox is down" to it would send the reader to the wrong fix.
+  let codeExecution = false;
+  if (requested.codeExecution) {
+    const gate = opts.codeExecutionGate ?? { allowed: false, reason: "No sandbox is configured for running code." };
+    if ((actual.toolCalling ?? "untested") !== "verified") {
+      degradations.push({
+        kind: "tool_calling_unverified",
+        requested: "on",
+        effective: "off",
+        reason:
+          actual.toolCalling === "failed"
+            ? `${actual.modelId} failed the tool-calling check, so it can't run code. Choose a model whose tool calling is verified.`
+            : `${actual.modelId}'s tool calling has not been verified yet, so it can't run code. Choose a model whose tool calling is verified.`,
+      });
+    } else if (!gate.allowed) {
+      degradations.push({
+        kind: "code_execution_unavailable",
+        requested: "on",
+        effective: "off",
+        reason: gate.reason,
+      });
+    } else {
+      codeExecution = true;
+    }
+  }
+
   return {
     version: CAPABILITY_MANIFEST_VERSION,
     modelId: actual.modelId,
@@ -239,6 +292,7 @@ export function resolveEffectiveCapabilities(opts: {
     proMode,
     vision,
     connectors,
+    codeExecution,
     degradations,
   };
 }

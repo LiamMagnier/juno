@@ -9,6 +9,7 @@ import { MODEL_LIST, RETIRED_MODELS, resolveModel, type ModelInfo } from "@/lib/
 import { nativeModelCatalog } from "@/lib/native-model-manifest";
 import { estimateCostUsd, fastModeMultiplier, tokenRate } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
+import { toolCapabilitiesFor } from "@/lib/model-tools";
 
 /*
  * The four models that landed on 2026-09-22 — Claude Opus 5.5, GPT-6 Sol,
@@ -39,26 +40,30 @@ const NEW_MODELS: Expected[] = [
     adapter: "anthropic-native",
     url: "https://api.anthropic.com/v1/messages",
   },
+  // Every OpenAI model is served through Responses (SPEC §5.2): GPT-6 Sol and
+  // Luna call tools on /chat/completions only at effort "none".
   {
     id: "openai:gpt-6-sol",
     providerModel: "gpt-6-sol",
     family: "gpt",
-    adapter: "openai-compatible",
-    url: "https://api.openai.com/v1/chat/completions",
+    adapter: "openai-responses",
+    url: "https://api.openai.com/v1/responses",
   },
   {
     id: "openai:gpt-6-luna",
     providerModel: "gpt-6-luna",
     family: "gpt-luna",
-    adapter: "openai-compatible",
-    url: "https://api.openai.com/v1/chat/completions",
+    adapter: "openai-responses",
+    url: "https://api.openai.com/v1/responses",
   },
+  // Grok searches only on xAI's Responses surface since Live Search was
+  // retired (SPEC §5.5).
   {
     id: "xai:grok-4.7",
     providerModel: "grok-4.7",
     family: "grok",
-    adapter: "openai-compatible",
-    url: "https://api.x.ai/v1/chat/completions",
+    adapter: "xai-responses",
+    url: "https://api.x.ai/v1/responses",
   },
 ];
 
@@ -100,6 +105,15 @@ test("each new model goes out on its provider's own transport, with the document
     assert.equal(request.adapter, expected.adapter);
     assert.equal(request.url, expected.url, `${expected.id} endpoint`);
     assert.equal(request.body.model, expected.providerModel, `${expected.id} body.model`);
+    if (expected.adapter !== "anthropic-native") assert.equal(request.body.store, false, `${expected.id} keeps nothing`);
+  }
+});
+
+test("each new model searches natively on the transport that serves it", () => {
+  for (const expected of NEW_MODELS) {
+    const resolved = model(expected.id);
+    assert.equal(resolved.webSearch, true, `${expected.id} advertises native search`);
+    assert.equal(toolCapabilitiesFor(resolved).supported, true, `${expected.id} takes function tools`);
   }
 });
 

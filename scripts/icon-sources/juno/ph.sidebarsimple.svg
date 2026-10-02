@@ -1,0 +1,4 @@
+<!-- ph.sidebarsimple: outlined from src/components/ui/juno-icons by `node scripts/generate-native-icons.mjs --outline-juno`. Do not edit. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-source="e23c148a8d9ef993">
+  <path d="M24,198.83L24,57.17C24,34.41 34.41,24 57.17,24L198.83,24C221.59,24 232,34.41 232,57.17L232,198.83C232,221.59 221.59,232 198.83,232L57.17,232C34.41,232 24,221.59 24,198.83ZM57.17,40C43.24,40 40,43.24 40,57.17L40,198.83C40,212.76 43.24,216 57.17,216L88,216L88,40ZM104,40L104,216L198.83,216C212.76,216 216,212.76 216,198.83L216,57.17C216,43.24 212.76,40 198.83,40Z"/>
+</svg>

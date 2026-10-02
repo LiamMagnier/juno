@@ -16,6 +16,8 @@ import {
   probeResponseLooksValid,
 } from "@/lib/model-capability-probe";
 import { classifyProviderError } from "@/lib/provider-error";
+import { providerAdapterFor } from "@/lib/provider-routing";
+import { runToolProbe, toolCallingVerdict, type ToolCallingVerdict, type ToolProbeEvidence } from "@/lib/model-tool-probe";
 
 /**
  * Bumped to 2 when the probe moved onto each model's OWN transport (native
@@ -203,7 +205,21 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
   }
 }
 
+/**
+ * The tool round-trip evidence already on a row, carried across a transport
+ * probe's write. The two probes answer different questions on different
+ * schedules (the transport probe daily, the billed tool probe by an operator),
+ * and a fresh "the id answers" must not erase "its tool calling was verified".
+ */
+async function keptToolEvidence(modelId: string): Promise<Record<string, unknown>> {
+  const row = await prisma.modelCapabilityProbe.findUnique({ where: { modelId }, select: { evidence: true } });
+  const tools = (row?.evidence as { tools?: unknown } | null | undefined)?.tools;
+  return tools && typeof tools === "object" ? { tools } : {};
+}
+
 export async function persistModelCapabilityProbe(snapshot: ModelCapabilitySnapshot): Promise<void> {
+  const kept = "tools" in snapshot.evidence ? {} : await keptToolEvidence(snapshot.modelId);
+  snapshot = { ...snapshot, evidence: { ...snapshot.evidence, ...kept } };
   await prisma.modelCapabilityProbe.upsert({
     where: { modelId: snapshot.modelId },
     create: {
@@ -224,6 +240,85 @@ export async function persistModelCapabilityProbe(snapshot: ModelCapabilitySnaps
       probeVersion: MODEL_CAPABILITY_PROBE_VERSION,
       checkedAt: new Date(snapshot.checkedAt),
       expiresAt: new Date(snapshot.expiresAt),
+    },
+  });
+}
+
+/**
+ * Whether this model's tool calling is verified, from the capability rows the
+ * route already loaded — through the adapter this turn will use (Pro mode
+ * moves an OpenAI model onto Responses, a different tool loop).
+ */
+export function modelToolCallingVerdict(
+  model: Pick<ModelInfo, "id" | "provider" | "api">,
+  probes: ReadonlyMap<string, Pick<ModelCapabilityProbe, "evidence">>,
+  now = new Date(),
+  opts: { proMode?: boolean } = {},
+): ToolCallingVerdict {
+  return toolCallingVerdict(probes.get(model.id)?.evidence ?? null, now, providerAdapterFor(model, !!opts.proMode));
+}
+
+/**
+ * Run the tool round-trip probe (model-tool-probe.ts) through the model's own
+ * adapter — the real `streamChat`, the real dispatcher. Billed: a few small
+ * requests per model. `null` when the provider has no key here: nothing was
+ * asked, so nothing may be recorded, and the model stays untested.
+ */
+export async function probeModelToolCalling(
+  model: ModelInfo,
+  now = new Date(),
+): Promise<{ evidence: ToolProbeEvidence; answered: boolean } | null> {
+  if (!providerApiKey(model.provider)) return null;
+  // Imported here, not at the top: llm.ts imports this module.
+  const { streamChat } = await import("@/lib/llm");
+  return runToolProbe({
+    adapter: providerAdapterFor(model),
+    vision: model.vision,
+    now,
+    stream: ({ system, prompt, tools, signal }) =>
+      streamChat({
+        model,
+        system,
+        history: [{ role: "USER", content: prompt, attachments: [] }],
+        maxTokens: 1_024,
+        signal,
+        toolLoop: tools,
+      }),
+  });
+}
+
+/**
+ * Store a tool probe's evidence under `evidence.tools`, beside the transport
+ * probe's. Only an ANSWERED probe is stored: a provider that never replied
+ * says nothing about tool calling. A model with no row yet gets one marked
+ * passed — it answered, so its id is callable.
+ */
+export async function persistToolProbeEvidence(model: ModelInfo, evidence: ToolProbeEvidence): Promise<void> {
+  const row = await prisma.modelCapabilityProbe.findUnique({ where: { modelId: model.id } });
+  if (row) {
+    const merged = { ...((row.evidence as Record<string, unknown> | null) ?? {}), tools: evidence };
+    await prisma.modelCapabilityProbe.update({
+      where: { modelId: model.id },
+      data: { evidence: merged as unknown as Prisma.InputJsonObject },
+    });
+    return;
+  }
+  const checkedAt = new Date(evidence.checkedAt);
+  await prisma.modelCapabilityProbe.create({
+    data: {
+      modelId: model.id,
+      provider: model.provider,
+      status: "passed",
+      detail: null,
+      evidence: {
+        probeVersion: MODEL_CAPABILITY_PROBE_VERSION,
+        providerModel: model.providerModel,
+        source: "tool_probe",
+        tools: evidence,
+      } as unknown as Prisma.InputJsonObject,
+      probeVersion: MODEL_CAPABILITY_PROBE_VERSION,
+      checkedAt,
+      expiresAt: new Date(checkedAt.getTime() + MODEL_CAPABILITY_TTL_MS),
     },
   });
 }

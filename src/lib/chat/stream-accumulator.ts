@@ -13,6 +13,8 @@
  * come back in the same order the branches produced them, and the caller does
  * exactly what it did before with each one.
  */
+import type { TextSegment } from "@/lib/chat/answer-split";
+import { SourceRegistry } from "@/lib/chat/source-registry";
 import { appendReasoningDelta, emptyReasoning, type ReasoningState } from "@/lib/reasoning-parts";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import type { ChatFinishReason, ClientSource } from "@/types/chat";
@@ -26,7 +28,7 @@ export type StreamEffect =
       /** True exactly once, on the first text delta — the "Writing…" activity. */
       startedWriting: boolean;
     }
-  | { kind: "reasoning"; text: string; part?: number }
+  | { kind: "reasoning"; text: string; part?: number; round: number }
   /**
    * The two acts of one connector call, paired by `callId`.
    *
@@ -40,14 +42,14 @@ export type StreamEffect =
   /** The dispatcher's queued / awaiting_approval / running act for a call. */
   | {
       kind: "tool_status";
-      server: string;
-      name: string;
+      server?: string;
+      name?: string;
       callId: string;
       status: "queued" | "awaiting_approval" | "running";
       timeoutMs?: number;
     }
   /** A running call's latest output. */
-  | { kind: "tool_progress"; server: string; name: string; callId: string; progress: ToolProgress }
+  | { kind: "tool_progress"; server?: string; name?: string; callId: string; progress: ToolProgress }
   | {
       kind: "tool_result";
       server: string;
@@ -111,12 +113,40 @@ export class GenerationAccumulator {
    */
   servedFast: boolean;
   writingStarted = false;
+  /**
+   * The turn's text as runs within model steps, in stream order (SPEC §2.8).
+   * `splitAnswer` decides from these which text is the answer and which was
+   * commentary; `text` above stays the glued stream for billing and the
+   * budget guard.
+   */
+  readonly textSegments: TextSegment[] = [];
+  /**
+   * The model step the next event belongs to when it does not say: the round
+   * of the last event that did, or one past the last `round_end`. Adapters
+   * stamp every event's `round` once converted (SPEC §2.9); this covers the
+   * ones that do not yet.
+   */
+  currentRound = 0;
+  /**
+   * The first model step of the provider request in flight: one past the last
+   * `round_end` that ended in client tool calls. A `round_end` with no client
+   * tools inside a turn is a step within the same request (a provider search
+   * inside the response, a `pause_turn` continuation), so when the request
+   * does end in client tools, every step since this one is demoted with it.
+   */
+  requestStartRound = 0;
 
-  private readonly sourceList: ClientSource[] = [];
-  private readonly sourceUrls = new Set<string>();
+  /**
+   * The turn's one list of sources (SPEC §2.11). The route passes the same
+   * registry the tools number against, so a citation [n] and the persisted
+   * `Message.sources` order are one list; without one the accumulator keeps
+   * its own, as before.
+   */
+  readonly sourceRegistry: SourceRegistry;
 
-  constructor(options: { requestedFastMode?: boolean } = {}) {
+  constructor(options: { requestedFastMode?: boolean; sources?: SourceRegistry } = {}) {
     this.servedFast = options.requestedFastMode ?? false;
+    this.sourceRegistry = options.sources ?? new SourceRegistry();
   }
 
   get reasoning(): string {
@@ -127,8 +157,9 @@ export class GenerationAccumulator {
     return this.reasoningState.parts;
   }
 
+  /** Every source so far, normalised (INV-3), in the order they were first seen. */
   get sources(): ClientSource[] {
-    return this.sourceList;
+    return [...this.sourceRegistry.all()];
   }
 
   get hasOutput(): boolean {
@@ -154,15 +185,10 @@ export class GenerationAccumulator {
    * Adds sources known before the stream starts — deep research resolves its
    * whole corpus up front, and the numbering the report cites must match.
    */
-  seedSources(sources: readonly ClientSource[]): ClientSource[] {
-    const added: ClientSource[] = [];
-    for (const source of sources) {
-      if (!source.url || this.sourceUrls.has(source.url)) continue;
-      this.sourceUrls.add(source.url);
-      this.sourceList.push(source);
-      added.push(source);
-    }
-    return added;
+  seedSources(sources: readonly ClientSource[], origin?: ClientSource["origin"]): ClientSource[] {
+    const before = this.sourceRegistry.all().length;
+    this.sourceRegistry.register(sources, { cited: false, ...(origin ? { origin } : {}) });
+    return this.sourceRegistry.all().slice(before);
   }
 
   /**
@@ -182,13 +208,37 @@ export class GenerationAccumulator {
         this.writingStarted = true;
         this.text += event.text;
         this.providerOutputChars += event.text.length;
+        const round = this.roundOf(event.round);
+        const phase = event.phase ?? null;
+        const last = this.textSegments[this.textSegments.length - 1];
+        if (last && last.round === round && last.phase === phase) last.text += event.text;
+        else this.textSegments.push({ round, phase, text: event.text, endedInTools: false });
         return { kind: "text", text: event.text, startedWriting };
       }
       case "reasoning": {
-        this.reasoningState = appendReasoningDelta(this.reasoningState, event.text, event.part);
+        const round = this.roundOf(event.round);
+        // `round` puts a blank line between two steps' thinking in the flat
+        // text, exactly where the client's fold of the same frames puts it.
+        this.reasoningState = appendReasoningDelta(this.reasoningState, event.text, event.part, round);
         // `part` rides the SSE so the panel can build steps AS THEY ARRIVE,
         // from the same boundaries the API gave the adapter.
-        return { kind: "reasoning", text: event.text, part: event.part };
+        return { kind: "reasoning", text: event.text, part: event.part, round };
+      }
+      case "round_end": {
+        // A request that ended in CLIENT tool calls demotes the undeclared text
+        // of every step it held; a provider search inside the response never
+        // does on its own (SPEC §2.8 rule 1). "Let me search. <search> Let me
+        // open that page. <web_fetch>" is one request that ended in a tool
+        // call, so both sentences are commentary.
+        if (event.tools > 0) {
+          const from = this.demotedRoundsFrom(event.round);
+          for (const segment of this.textSegments) {
+            if (segment.round >= from && segment.round <= event.round) segment.endedInTools = true;
+          }
+          this.requestStartRound = Math.max(this.requestStartRound, event.round + 1);
+        }
+        this.currentRound = Math.max(this.currentRound, event.round + 1);
+        return { kind: "none" };
       }
       case "tool": {
         // Results are no longer swallowed. They carry the only record of what a
@@ -200,14 +250,20 @@ export class GenerationAccumulator {
           case "status":
             return {
               kind: "tool_status",
-              server: event.server,
-              name: event.name,
               callId: event.callId,
               status: event.status,
+              ...(event.server !== undefined ? { server: event.server } : {}),
+              ...(event.name !== undefined ? { name: event.name } : {}),
               ...(event.timeoutMs === undefined ? {} : { timeoutMs: event.timeoutMs }),
             };
           case "progress":
-            return { kind: "tool_progress", server: event.server, name: event.name, callId: event.callId, progress: event.progress };
+            return {
+              kind: "tool_progress",
+              callId: event.callId,
+              progress: event.progress,
+              ...(event.server !== undefined ? { server: event.server } : {}),
+              ...(event.name !== undefined ? { name: event.name } : {}),
+            };
           case "result":
             return {
               kind: "tool_result",
@@ -227,8 +283,8 @@ export class GenerationAccumulator {
         return { kind: "none" };
       }
       case "sources": {
-        const added = this.seedSources(event.sources);
-        return { kind: "sources", added, all: this.sourceList };
+        const added = this.seedSources(event.sources, event.origin);
+        return { kind: "sources", added, all: this.sources };
       }
       case "usage": {
         this.usage = mergeUsage(this.usage, {
@@ -259,6 +315,24 @@ export class GenerationAccumulator {
       default:
         return { kind: "none" };
     }
+  }
+
+  /**
+   * The first step a client-tool `round_end` for `round` demotes: the start of
+   * the request in flight, or `round` itself when an adapter reports an
+   * earlier step than one already closed.
+   */
+  demotedRoundsFrom(round: number): number {
+    return Math.min(this.requestStartRound, round);
+  }
+
+  /** An event's own round when it has one (and from then on the current one), else the current. */
+  private roundOf(round: number | undefined): number {
+    if (typeof round === "number" && Number.isInteger(round) && round >= 0) {
+      this.currentRound = round;
+      return round;
+    }
+    return this.currentRound;
   }
 
   /** The raw counters `buildUsage` reconciles into a billable figure. */

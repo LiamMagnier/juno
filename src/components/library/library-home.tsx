@@ -3,97 +3,484 @@
 import * as React from "react";
 import Link from "next/link";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { FileText, LayoutGrid, List, Search, Upload } from "@/components/ui/icons";
-import { ArtifactLifecycleActions } from "@/components/artifacts/artifact-lifecycle-actions";
-import { FilePreview } from "@/components/chat/file-preview";
-import { DesignPoster } from "@/components/artifacts/artifact-preview";
+import { LayoutGrid, List, Loader2, Search, Trash2, Upload, X } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { FileVersionsDialog, RenameFileDialog } from "./library-dialogs";
+import { LibraryDropOverlay, useFileDrop } from "./library-drop-zone";
+import {
+  EntryRow,
+  EntryTile,
+  LibraryRowHead,
+  UploadTile,
+  entryFromFile,
+  entryFromMade,
+  type FileActions,
+  type LibraryEntry,
+} from "./library-items";
+import type { LibraryItem } from "./library-types";
 import { useLibrary } from "./use-library";
-import { LibraryNav } from "./library-nav";
-import { kindLabel, type LibraryItem } from "./library-types";
+import { useLibraryUploads } from "./use-library-uploads";
 import type { LibraryMadeItem } from "@/lib/library-made";
-import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { cn } from "@/lib/utils";
+import { PLANS } from "@/lib/plans";
+import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
+import { formatBytes } from "@/lib/utils";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { Pressable } from "@/components/ui/pressable";
 
-type Entry = { key: string; title: string; href: string; type: string; at: string; conversationId: string | null; file?: LibraryItem; made?: LibraryMadeItem };
-const TYPES: Record<string, string> = { MARKDOWN: "Document", DOCUMENT: "Document", SPREADSHEET: "Spreadsheet", PRESENTATION: "Presentation", DESIGN: "Design", HTML: "Site", REACT: "Component", CODE: "Code", MERMAID: "Diagram", SVG: "Graphic", PDF: "PDF", REPORT: "Report", SITE: "Site" };
+/*
+ * The Library: one place for what Alevr made and the files you gave it
+ * (PRODUCT_REFOUNDATION §10, design V3 Library scene, critique 1).
+ *
+ * One row of controls under the title: what to show as a quiet segmented
+ * row, then search and the view, together. Items are their previews. The
+ * page keeps every feature today's Library has: Upload (and drop anywhere on
+ * the page), storage used, Recently deleted, list and grid, the way back to
+ * the chat an item came from, and each file's problem in words. Selecting
+ * many files at once, sorting by name or size and filtering images live in
+ * the file manager (`?view=files`), one press away from the Files filter.
+ */
 
-/** Both kinds of owned output and the files the person gave Juno, in one index. */
-export function LibraryHome() {
-  const [query, setQuery] = React.useState("");
-  const [settledQuery, setSettledQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<"all" | "made" | "uploaded">("all");
-  const [view, setView] = React.useState<"grid" | "list">("grid");
-  const files = useLibrary({ q: settledQuery, kind: "all", sort: "newest", deleted: false });
-  const [made, setMade] = React.useState<LibraryMadeItem[] | null>(null);
+type Show = "all" | "made" | "files" | "media";
+type MediaKind = "all" | "image" | "video" | "audio";
+
+/** Pictures, video and sound: what the Media filter holds and Files leaves out. */
+function mediaKindOf(mimeType: string): Exclude<MediaKind, "all"> | null {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return null;
+}
+
+const VIEW_STORAGE_KEY = "juno-library-home-view";
+const SEARCH_DEBOUNCE_MS = 200;
+const PAGE = 48;
+
+interface MadePage {
+  items: LibraryMadeItem[];
+  nextCursor: string | null;
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = React.useState(value);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), ms);
+    return () => window.clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}
+
+/** Everything Alevr made, page by page, newest first; one request in flight per query. */
+function useMade(q: string, enabled: boolean) {
+  const [items, setItems] = React.useState<LibraryMadeItem[] | null>(null);
   const [cursor, setCursor] = React.useState<string | null>(null);
-  const [madeError, setMadeError] = React.useState(false);
+  const [error, setError] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [reloadKey, setReloadKey] = React.useState(0);
   const generation = React.useRef(0);
-  React.useEffect(() => { const timer = window.setTimeout(() => setSettledQuery(query.trim()), 200); return () => window.clearTimeout(timer); }, [query]);
+  const url = React.useCallback(
+    (after?: string | null) => `/api/library/made?limit=${PAGE}&q=${encodeURIComponent(q)}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`,
+    [q],
+  );
   React.useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     const token = ++generation.current;
-    setMade(null); setCursor(null); setMadeError(false); setLoadingMore(false);
-    fetch(`/api/library/made?limit=60&q=${encodeURIComponent(settledQuery)}`, { signal: controller.signal, cache: "no-store" })
-      .then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<{ items: LibraryMadeItem[]; nextCursor: string | null }>; })
-      .then((data) => { if (generation.current === token) { setMade(data.items); setCursor(data.nextCursor); } })
-      .catch(() => { if (!controller.signal.aborted && generation.current === token) setMadeError(true); });
+    setItems(null);
+    setCursor(null);
+    setError(false);
+    fetch(url(), { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        return (await response.json()) as MadePage;
+      })
+      .then((data) => {
+        if (generation.current !== token) return;
+        setItems(data.items);
+        setCursor(data.nextCursor);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && generation.current === token) setError(true);
+      });
     return () => controller.abort();
-  }, [settledQuery, reloadKey]);
-  const loadMore = async () => {
-    if (loadingMore) return;
-    setLoadingMore(true);
+  }, [url, enabled, reloadKey]);
+  const loadMore = React.useCallback(async () => {
+    if (!cursor || loadingMore) return;
     const token = generation.current;
+    setLoadingMore(true);
     try {
-      await Promise.all([
-        filter !== "made" && files.hasMore ? files.loadMore() : Promise.resolve(),
-        filter !== "uploaded" && cursor ? (async () => {
-          const response = await fetch(`/api/library/made?limit=60&q=${encodeURIComponent(settledQuery)}&cursor=${encodeURIComponent(cursor)}`, { cache: "no-store" });
-          if (!response.ok) throw new Error();
-          const data = await response.json() as { items: LibraryMadeItem[]; nextCursor: string | null };
-          if (token !== generation.current) return;
-          setMade((current) => [...new Map([...(current ?? []), ...data.items].map((item) => [`${item.kind}:${item.id}`, item])).values()]);
-          setCursor(data.nextCursor);
-        })() : Promise.resolve(),
-      ]);
-    } catch { if (token === generation.current) setMadeError(true); }
-    finally { if (token === generation.current) setLoadingMore(false); }
+      const response = await fetch(url(cursor), { cache: "no-store" });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as MadePage;
+      if (token !== generation.current) return;
+      setItems((current) => [...new Map([...(current ?? []), ...data.items].map((item) => [`${item.kind}:${item.id}`, item])).values()]);
+      setCursor(data.nextCursor);
+    } catch {
+      if (token === generation.current) setError(true);
+    } finally {
+      if (token === generation.current) setLoadingMore(false);
+    }
+  }, [cursor, loadingMore, url]);
+  const reload = React.useCallback(() => setReloadKey((key) => key + 1), []);
+  return { items, hasMore: cursor !== null, error, loadingMore, loadMore, reload };
+}
+
+/** How many things wait in Recently deleted: files and made things, read once. */
+function useDeletedCount() {
+  const [count, setCount] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const read = <T,>(url: string) =>
+      fetch(url, { signal: controller.signal, cache: "no-store" }).then((response) => (response.ok ? (response.json() as Promise<T>) : Promise.reject(new Error())));
+    Promise.all([read<{ total?: number }>("/api/library?includeDeleted=true&limit=1"), read<{ items?: unknown[] }>("/api/artifacts?deleted=1")])
+      .then(([files, artifacts]) => {
+        if (typeof files.total === "number" && Array.isArray(artifacts.items)) setCount(files.total + artifacts.items.length);
+      })
+      .catch(() => {
+        /* The link still works; it just carries no number. */
+      });
+    return () => controller.abort();
+  }, []);
+  return count;
+}
+
+export function LibraryHome() {
+  const { quota } = useApp();
+  const [show, setShow] = React.useState<Show>("all");
+  const [mediaKind, setMediaKind] = React.useState<MediaKind>("all");
+  /** Files and Media are both the uploaded files, split by type; neither shows made items. */
+  const filesOnly = show === "files" || show === "media";
+  const [view, setView] = React.useState<"grid" | "list">("grid");
+  const [query, setQuery] = React.useState("");
+  const q = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
+  const files = useLibrary({ q, kind: "all", sort: "newest", deleted: false });
+  const made = useMade(q, !filesOnly);
+  const deletedCount = useDeletedCount();
+  const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
+  const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
+  const fileInput = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VIEW_STORAGE_KEY);
+      if (saved === "grid" || saved === "list") setView(saved);
+    } catch {
+      /* Storage can be unavailable; the grid is the default. */
+    }
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("show");
+    if (wanted === "made" || wanted === "files" || wanted === "media") setShow(wanted);
+    if (params.get("upload") === "1") fileInput.current?.click();
+  }, []);
+  const changeView = (next: "grid" | "list") => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      /* The choice still holds for this visit. */
+    }
   };
-  const entries: Entry[] = [
-    ...(filter !== "made" ? (files.items ?? []).map((file) => ({ key: `file:${file.id}`, title: file.fileName, href: file.url, type: kindLabel(file), at: file.createdAt, conversationId: file.conversationId, file })) : []),
-    ...(filter !== "uploaded" ? (made ?? []).map((item) => ({ key: `${item.kind}:${item.id}`, title: item.title, href: item.href, type: TYPES[item.type] || item.type.toLowerCase(), at: item.updatedAt, conversationId: item.conversationId, made: item })) : []),
+
+  const { addUploaded } = files;
+  const uploads = useLibraryUploads({
+    maxBytes: PLANS[quota.plan].maxUploadMb * 1024 * 1024,
+    onUploaded: React.useCallback((attachment) => void addUploaded(attachment), [addUploaded]),
+  });
+  const { dragging, handlers } = useFileDrop({ onFiles: uploads.add, enabled: true });
+
+  const actions: FileActions = {
+    onRename: setRenameTarget,
+    onVersions: setVersionsTarget,
+    onDelete: (item) => files.deleteItems([item]),
+  };
+
+  const visibleFiles = (files.items ?? []).filter((file) => {
+    const kind = mediaKindOf(file.mimeType);
+    if (show === "files") return kind === null;
+    if (show === "media") return kind !== null && (mediaKind === "all" || kind === mediaKind);
+    return true;
+  });
+  const entries: LibraryEntry[] = [
+    ...(show !== "made" ? visibleFiles.map(entryFromFile) : []),
+    ...(!filesOnly ? (made.items ?? []).map(entryFromMade) : []),
   ].sort((a, b) => b.at.localeCompare(a.at) || a.key.localeCompare(b.key));
-  const pending = filter !== "uploaded" && made === null && !madeError || filter !== "made" && files.items === null && !files.error;
-  const error = filter !== "uploaded" && madeError || filter !== "made" && !!files.error;
-  const hasMore = filter !== "uploaded" && cursor !== null || filter !== "made" && files.hasMore;
-  const thumb = (entry: Entry) => entry.file ? <FilePreview item={entry.file} className="absolute inset-0" badge={false} /> : entry.made?.type === "DESIGN" ? <DesignPoster artifactId={entry.made.id} version={entry.made.version} alt={entry.title} /> : <div className="flex h-full flex-col justify-center gap-3 p-6 text-muted-foreground"><FileText className="size-7" aria-hidden="true" /><p className="line-clamp-3 font-serif text-title leading-tight text-foreground">{entry.title}</p><p className="text-caption">{entry.type}{entry.made ? ` · Version ${entry.made.version}` : ""}</p></div>;
-  return <AppPage measure="wide">
-    <LibraryNav current="all" />
-    <AppPageHeader heading={FEATURE_NAMES.library.label} lede={`What ${PRODUCT_NAME} made and what you gave it, newest first.`} actions={<><Button variant="ghost" size="sm" asChild><Link href="/library?view=trash">Recently deleted</Link></Button><Button variant="secondary" size="sm" asChild><Link href="/library?view=files&upload=1"><Upload className="size-4" />Upload</Link></Button></>} />
-    <div className="mb-6 flex flex-wrap items-center gap-3">
-      <SegmentedControl value={filter} onChange={setFilter} ariaLabel="Show items" options={[{ value: "all", label: "All" }, { value: "made", label: FEATURE_NAMES.artifacts.label }, { value: "uploaded", label: "Uploaded" }]} />
-      <label className="relative min-w-48 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the Library" aria-label="Search the Library" className="pl-9" /></label>
-      <SegmentedControl value={view} onChange={setView} ariaLabel="Library layout" options={[{ value: "grid", label: "Grid", icon: <LayoutGrid className="size-4" /> }, { value: "list", label: "List", icon: <List className="size-4" /> }]} />
-    </div>
-    {error ? <p role="alert" className="mb-6 text-ui text-destructive">Some Library items couldn’t load. <Button variant="ghost" size="sm" onClick={() => { setReloadKey((key) => key + 1); void files.reload(); }}>Retry</Button></p> : null}
-    {pending ? <p className="py-8 text-ui text-muted-foreground" role="status">Loading your Library…</p> : null}
-    {!pending && !error && entries.length === 0 ? <EmptyState icon={FileText} title={query ? `No matches for “${query.trim()}”` : "Your Library starts here"} description={query ? "Try another name or clear the search." : `Files you upload and documents, designs and deliverables ${PRODUCT_NAME} creates will appear here.`} action={query ? <Button variant="secondary" size="sm" onClick={() => setQuery("")}>Clear search</Button> : <Button variant="secondary" size="sm" asChild><Link href="/chat">Start a chat</Link></Button>} /> : null}
-    <ul className={cn(view === "grid" ? "grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3" : "divide-y divide-border")}>
-      {entries.map((entry) => <li key={entry.key} className={cn("min-w-0", view === "list" && "flex items-center gap-4 py-4")}>
-        {view === "grid" ? <a href={entry.href} className="relative mb-3 block aspect-[4/3] overflow-hidden rounded-xl bg-muted" aria-label={`Open ${entry.title}`}>{thumb(entry)}</a> : <FileText className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />}
-        <div className="min-w-0 flex-1"><a href={entry.href} className="line-clamp-2 text-ui font-medium text-foreground underline-offset-4 hover:underline">{entry.title}</a><p className="mt-1 text-caption text-muted-foreground">{entry.type} · {entry.file ? "Uploaded" : FEATURE_NAMES.artifacts.label} · {timeAgo(entry.at)}</p>
-          {entry.conversationId ? <Link href={`/chat/${encodeURIComponent(entry.conversationId)}`} className="mt-1 inline-block text-caption text-muted-foreground underline-offset-4 hover:underline">Open source chat</Link> : null}
-          {entry.made?.validated === false ? <p className="mt-2 text-caption text-warning-foreground">This deliverable has not passed validation.</p> : null}
+
+  const filesPending = show !== "made" && files.items === null && !files.error;
+  const madePending = !filesOnly && made.items === null && !made.error;
+  const pending = filesPending || madePending;
+  const failed = (show !== "made" && files.error) || (!filesOnly && made.error);
+  const hasMore = (show !== "made" && files.hasMore) || (!filesOnly && made.hasMore);
+  const loadingMore = files.loadingMore || made.loadingMore;
+  const pendingUploads = show === "made" ? [] : uploads.uploads;
+  const empty = !pending && !failed && entries.length === 0 && pendingUploads.length === 0;
+
+  const loadMoreRef = React.useRef<() => void>(() => {});
+  loadMoreRef.current = () => {
+    if (show !== "made" && files.hasMore) void files.loadMore();
+    if (!filesOnly && made.hasMore) void made.loadMore();
+  };
+
+  // The next page as the end of the list comes into view; the button stays for keyboards.
+  const sentinel = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasMore || loadingMore || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((seen) => {
+      if (seen.some((entry) => entry.isIntersecting)) loadMoreRef.current();
+    }, { rootMargin: "400px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, show, entries.length]);
+
+  const count = !hasMore && !pending ? entries.length : null;
+  const searching = query.trim() !== q || files.pending;
+
+  return (
+    <div className="relative h-full" {...handlers}>
+      <AppPage measure="wide">
+        <AppPageHeader heading={FEATURE_NAMES.library.label}
+          lede={`What ${PRODUCT_NAME} made and the files you gave it, newest first.`}
+          actions={
+            <>
+              <Button variant="ghost" size="sm" asChild className="font-normal text-muted-foreground hover:text-foreground">
+                <Link href="/library?view=trash">
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Recently deleted
+                  {deletedCount ? <span className="tabular-nums text-muted-foreground">{deletedCount}</span> : null}
+                </Link>
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => fileInput.current?.click()}>
+                <Upload className="size-4" aria-hidden="true" />
+                Upload
+              </Button>
+            </>
+          }
+        />
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          accept={ACCEPT_ATTRIBUTE}
+          onChange={(event) => {
+            if (event.target.files?.length) {
+              uploads.add(event.target.files);
+              if (show === "made") setShow("all");
+            }
+            event.target.value = "";
+          }}
+        />
+
+        {/* One row: what to show on the left; search and the view together on the right. */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <SegmentedControl
+            value={show}
+            onChange={setShow}
+            ariaLabel="Show"
+            columns="content"
+            className="rounded-field p-0.5"
+            optionClassName="h-7 rounded-md px-3 py-0 text-ui coarse:h-9"
+            options={[
+              { value: "all", label: "All" },
+              { value: "made", label: FEATURE_NAMES.artifacts.label },
+              { value: "files", label: "Files" },
+              { value: "media", label: "Media" },
+            ]}
+          />
+          <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
+            {show === "files" ? (
+              <Button variant="ghost" size="sm" asChild className="hidden font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
+                <Link href="/library?view=files">Manage files</Link>
+              </Button>
+            ) : null}
+            <label className="relative flex min-w-0 flex-1 items-center @[40rem]/page:w-56 @[40rem]/page:flex-none">
+              {searching ? (
+                <Loader2 className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground motion-safe:animate-spin" aria-hidden="true" />
+              ) : (
+                <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" aria-hidden="true" />
+              )}
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setQuery("");
+                }}
+                placeholder="Search the library"
+                aria-label="Search the library"
+                className="h-8 w-full min-w-0 rounded-field border border-border bg-background pl-8 pr-8 text-ui text-foreground outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/40 coarse:h-10 [&::-webkit-search-cancel-button]:hidden"
+              />
+              {query ? (
+                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-1 grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
+            </label>
+            <SegmentedControl
+              value={view}
+              onChange={changeView}
+              ariaLabel="View"
+              labelHidden
+              className="shrink-0 gap-0.5 rounded-field p-0.5"
+              optionClassName="size-7 rounded-md coarse:size-9"
+              options={[
+                { value: "grid", label: "Grid", icon: <LayoutGrid className="size-4" /> },
+                { value: "list", label: "List", icon: <List className="size-4" /> },
+              ]}
+            />
+          </div>
         </div>
-        {entry.made?.kind === "artifact" ? <ArtifactLifecycleActions id={entry.made.id} title={entry.title} version={entry.made.version} latest={entry.made.version} /> : entry.file ? <Link href={`/library?view=files&q=${encodeURIComponent(entry.title)}`} className="text-caption text-muted-foreground underline-offset-4 hover:underline">Manage file</Link> : null}
-      </li>)}
-    </ul>
-    {hasMore ? <div className="mt-8 flex justify-center"><Button variant="secondary" size="sm" disabled={loadingMore || pending} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more"}</Button></div> : null}
-  </AppPage>;
+
+        {show === "media" ? (
+          <div role="group" aria-label="Media type" className="-mt-3 mb-6 flex flex-wrap gap-1.5 motion-safe:animate-fade-in">
+            {([
+              ["all", "All media"],
+              ["image", "Images"],
+              ["video", "Videos"],
+              ["audio", "Audio"],
+            ] as const).map(([value, label]) => (
+              <Pressable
+                key={value}
+                kind="chip"
+                selected={mediaKind === value}
+                aria-pressed={mediaKind === value}
+                onClick={() => setMediaKind(value)}
+              >
+                {label}
+              </Pressable>
+            ))}
+          </div>
+        ) : null}
+
+        {failed ? (
+          <p role="alert" className="mb-6 flex flex-wrap items-center gap-2 text-ui text-muted-foreground">
+            Some of your Library couldn’t load. Nothing was changed.
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                made.reload();
+                void files.reload();
+              }}
+            >
+              Try again
+            </Button>
+          </p>
+        ) : null}
+
+        {pending ? (
+          <LibrarySkeleton view={view} />
+        ) : empty ? (
+          q ? (
+            <EmptyState
+              icon={Search}
+              title={`Nothing called “${q}”`}
+              description="Search looks at the names of your files and of what was made. Try a client, a month or a number."
+              action={
+                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
+                  Clear search
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Upload}
+              title={show === "files" ? "No files yet" : show === "media" ? "No media yet" : "Your Library starts here"}
+              description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them.`}
+              action={
+                <>
+                  <Button size="sm" variant="secondary" onClick={() => fileInput.current?.click()}>
+                    <Upload className="size-4" aria-hidden="true" />
+                    Upload files
+                  </Button>
+                  <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
+                    <Link href="/chat">Start a chat</Link>
+                  </Button>
+                </>
+              }
+            />
+          )
+        ) : view === "grid" ? (
+          <ul
+            aria-label={FEATURE_NAMES.library.label}
+            className="grid grid-cols-2 gap-x-3 gap-y-6 @[40rem]/page:grid-cols-[repeat(auto-fill,minmax(212px,1fr))] @[40rem]/page:gap-x-5 @[40rem]/page:gap-y-7"
+          >
+            {pendingUploads.map((upload) => (
+              <li key={upload.localId} className="min-w-0">
+                <UploadTile upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
+              </li>
+            ))}
+            {entries.map((entry) => (
+              <li key={entry.key} className="min-w-0 motion-safe:animate-fade-in">
+                <EntryTile entry={entry} actions={actions} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div role="table" aria-label={FEATURE_NAMES.library.label} className="-mx-2.5 flex flex-col">
+            <LibraryRowHead />
+            {pendingUploads.map((upload) => (
+              <div key={upload.localId} role="row" className="flex min-h-[52px] items-center gap-3 px-2.5 text-caption text-muted-foreground">
+                <span role="cell" className="min-w-0 flex-1 truncate text-ui text-foreground">
+                  {upload.fileName}
+                </span>
+                <span role="cell" className="tabular-nums">
+                  {upload.status === "failed" ? (upload.error ?? "Didn’t upload") : `Uploading, ${Math.round(upload.progress)}%`}
+                </span>
+              </div>
+            ))}
+            {entries.map((entry) => (
+              <EntryRow key={entry.key} entry={entry} actions={actions} />
+            ))}
+          </div>
+        )}
+
+        {hasMore && !pending ? (
+          <div ref={sentinel} className="mt-8 flex justify-center">
+            <Button variant="ghost" size="sm" className="text-muted-foreground" loading={loadingMore} onClick={() => loadMoreRef.current()}>
+              Load more
+            </Button>
+          </div>
+        ) : null}
+
+        {!pending && !empty ? (
+          <p className="mt-10 text-caption tabular-nums text-muted-foreground">
+            {count !== null ? `${count} ${count === 1 ? "item" : "items"}` : null}
+            {count !== null && files.storage ? ", " : null}
+            {files.storage ? `${formatBytes(files.storage.usedBytes)} of ${formatBytes(files.storage.quotaBytes)} used` : null}
+          </p>
+        ) : null}
+
+        <RenameFileDialog item={renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)} onRename={files.renameItem} />
+        <FileVersionsDialog item={versionsTarget} onOpenChange={(open) => !open && setVersionsTarget(null)} onRestored={() => void files.reload()} />
+      </AppPage>
+      <LibraryDropOverlay open={dragging} />
+    </div>
+  );
+}
+
+function LibrarySkeleton({ view }: { view: "grid" | "list" }) {
+  if (view === "list") {
+    return (
+      <div role="status" aria-label="Loading your Library" className="flex flex-col gap-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-10 w-full rounded-control" />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div role="status" aria-label="Loading your Library" className="grid grid-cols-2 gap-x-3 gap-y-6 @[40rem]/page:grid-cols-[repeat(auto-fill,minmax(212px,1fr))] @[40rem]/page:gap-x-5">
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+        <div key={i} className="flex flex-col gap-2.5">
+          <Skeleton className="aspect-[4/3] w-full rounded-control" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      ))}
+    </div>
+  );
 }

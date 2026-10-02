@@ -19,6 +19,14 @@ packages:
     path: ../../Packages/JunoCode
   JunoWork:
     path: ../../Packages/JunoWork
+  # Listed although no target links it directly. JunoCode and JunoWork both
+  # depend on it by path; a package that is only reached that way is a
+  # dependency to Xcode 26, which compiles it with `-suppress-warnings`, and
+  # with CI's `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES` that is a hard
+  # "conflicting options" error before a line of the app is compiled. Named
+  # here it is a root package like the other three and builds as strictly.
+  JunoScreenControl:
+    path: ../../Packages/JunoScreenControl
 targets:
   JunoDesktop:
     type: application

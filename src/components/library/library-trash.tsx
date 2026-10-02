@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { useLibrary } from "./use-library";
-import { LibraryNav } from "./library-nav";
+import { TypeGlyph } from "./library-items";
+import { kindLabel } from "./library-types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 interface TrashedArtifact { id: string; title: string; deletedAt: string; purgeAt: string }
 
@@ -34,13 +35,15 @@ export function LibraryTrash() {
     } catch { setError("Couldn’t restore this artifact. It remains in Recently deleted; try again."); }
     finally { setBusy(null); }
   };
-  return <AppPage measure="wide"><LibraryNav current="all" /><AppPageHeader heading="Recently deleted" lede="Restore files and artifacts to your Library." actions={<Button variant="secondary" size="sm" asChild><Link href="/library">Back to Library</Link></Button>} />
-    {error || files.error ? <p role="alert" className="mb-6 text-ui text-destructive">{error || "Couldn’t load deleted files."} <Button variant="ghost" size="sm" onClick={() => { void load(); void files.reload(); }}>Retry</Button></p> : null}
+  const when = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const row = "flex min-h-[60px] items-center justify-between gap-4 py-3 [&+&]:shadow-[0_-1px_0_hsl(var(--border))]";
+  return <AppPage measure="wide"><AppPageHeader heading="Recently deleted" backHref="/library" backLabel="Library" lede="Restore files and things you made to your Library. Each one is removed for good after its date." />
+    {error || files.error ? <p role="alert" className="mb-6 flex flex-wrap items-center gap-2 text-ui text-muted-foreground">{error || "Couldn’t load deleted files."} <Button variant="secondary" size="sm" onClick={() => { void load(); void files.reload(); }}>Try again</Button></p> : null}
     {artifacts === null && !error || files.items === null && !files.error ? <p role="status" className="text-ui text-muted-foreground">Loading Recently deleted…</p> : null}
-    <ul className="divide-y divide-border">{artifacts?.map((item) => <li key={item.id} className="flex items-center justify-between gap-4 py-4"><div><p className="text-ui font-medium">{item.title}</p><p className="mt-1 text-caption text-muted-foreground">Artifact · Eligible for permanent removal after {new Date(item.purgeAt).toLocaleDateString()}</p></div><Button variant="secondary" size="sm" disabled={busy !== null} onClick={() => void restoreArtifact(item.id)}>{busy === item.id ? "Restoring…" : "Restore"}</Button></li>)}
-      {files.items?.map((item) => <li key={`file:${item.id}`} className="flex items-center justify-between gap-4 py-4"><div><p className="text-ui font-medium">{item.fileName}</p><p className="mt-1 text-caption text-muted-foreground">Uploaded file{item.keptIn ? " · Still available where it is used" : ""}</p></div><Button variant="secondary" size="sm" onClick={() => void files.restoreItems([item])}>Restore</Button></li>)}
+    <ul className="flex flex-col">{artifacts?.map((item) => <li key={item.id} className={row}><div className="flex min-w-0 items-start gap-3"><TypeGlyph type="Document" className="mt-0.5 size-5" /><div className="min-w-0"><p className="truncate text-ui text-foreground">{item.title}</p><p className="mt-0.5 text-caption tabular-nums text-muted-foreground">{`Made by ${PRODUCT_NAME}. Removed for good after ${when(item.purgeAt)}`}</p></div></div><Button variant="secondary" size="sm" disabled={busy !== null} loading={busy === item.id} onClick={() => void restoreArtifact(item.id)}>Restore</Button></li>)}
+      {files.items?.map((item) => <li key={`file:${item.id}`} className={row}><div className="flex min-w-0 items-start gap-3"><TypeGlyph type={kindLabel(item)} className="mt-0.5 size-5" /><div className="min-w-0"><p className="truncate text-ui text-foreground">{item.fileName}</p><p className="mt-0.5 text-caption text-muted-foreground">{item.keptIn ? "Uploaded file, still available where it is used" : "Uploaded file"}</p></div></div><Button variant="secondary" size="sm" onClick={() => void files.restoreItems([item])}>Restore</Button></li>)}
     </ul>
     {artifacts?.length === 0 && files.items?.length === 0 && !error && !files.error ? <p className="py-8 text-ui text-muted-foreground">Nothing in Recently deleted.</p> : null}
-    {files.hasMore ? <Button variant="ghost" size="sm" disabled={files.loadingMore} className="mt-6" onClick={() => void files.loadMore()}>{files.loadingMore ? "Loading…" : "More deleted files"}</Button> : null}
+    {files.hasMore ? <Button variant="ghost" size="sm" disabled={files.loadingMore} className="mt-6 text-muted-foreground" onClick={() => void files.loadMore()}>{files.loadingMore ? "Loading…" : "More deleted files"}</Button> : null}
   </AppPage>;
 }

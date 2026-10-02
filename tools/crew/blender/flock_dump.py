@@ -20,5 +20,9 @@ for s, lst in C.CAST.items():
         for k, it in enumerate(v["items"]):
             items.append(dict(file=f"var_{base['id']}_{k}.png", title=it["title"], desc="same body, swapped colour, eyes and accessory"))
         data[f"{s}_variants"] = dict(name=base["name"], items=items)
+    sid = getattr(C, "STATES", {}).get(s)
+    if sid:
+        base = next(m for m in lst if m["id"] == sid)
+        data[f"{s}_states"] = dict(name=base["name"], items=[dict(file=f"state_{sid}_{k}.png", title=t) for k, t in enumerate(C.STATE_LABELS)])
 json.dump(data, open(out, "w"), indent=1)
 print("WROTE", out)

@@ -66,7 +66,7 @@
  * the two fighting the other in the cascade.
  */
 export const menuShellClass =
-  "surface-float overlay-glass z-popper origin-popper rounded-menu p-1 " +
+  "surface-float overlay-glass z-popper origin-popper rounded-menu p-1.5 " +
   "max-w-[calc(100vw-1rem)] " +
   "data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out";
 

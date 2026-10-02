@@ -349,6 +349,8 @@ export interface WorkerBrief {
    * has already run and been shown the same page of results for.
    */
   recentQueries?: string[];
+  /** "Today is …" — the run's frozen date line (SPEC §9.3). Absent on runs started before it. */
+  today?: string;
 }
 
 export interface WorkerLimits {
@@ -426,6 +428,10 @@ export interface ReviewRoundInput {
   pagesLeft: number;
   /** The previous review, so coverage cannot silently regress between rounds. */
   previous?: ResearchRoundReview;
+  /** "Today is …" — the run's frozen date line (SPEC §9.3). */
+  today?: string;
+  /** The run's lead model id, frozen on its envelope (§9.5.1). Absent: the strongest configured. */
+  leadModelId?: string;
   signal?: AbortSignal;
 }
 

@@ -9,6 +9,7 @@ import {
   type ReplayEventRow,
   type StreamReplayPort,
 } from "@/lib/chat/stream-replay";
+import { isTerminalFrameKind, TERMINAL_FRAME_KINDS } from "@/lib/chat/stream-log";
 
 /*
  * The read side of a resumable stream, and the rule that makes replaying it
@@ -103,6 +104,31 @@ test("an `error` frame is terminal too", async () => {
     sleep: clock.sleep,
   });
   assert.equal(endReason(events), "terminal");
+});
+
+test("a `handoff` frame is terminal in the replay (SPEC §2.3 rule 6)", async () => {
+  const clock = fakeClock();
+  const events = await drain(port([row(1, "meta"), row(2, "handoff"), row(3, "delta")], () => "running"), {
+    generationId: "gen_1",
+    after: 0,
+    now: clock.now,
+    sleep: clock.sleep,
+  });
+  assert.deepEqual(
+    events.map((event) => (event.type === "frame" ? event.kind : event.type === "end" ? `end:${event.reason}` : event.type)),
+    ["meta", "handoff", "end:terminal"]
+  );
+});
+
+test("the log, the replay and the sweep read one list of terminal kinds", () => {
+  assert.deepEqual([...TERMINAL_FRAME_KINDS], ["done", "error", "handoff"]);
+  for (const kind of TERMINAL_FRAME_KINDS) assert.equal(isTerminalFrameKind(kind), true, kind);
+  assert.equal(isTerminalFrameKind("delta"), false);
+  const replay = readFileSync(new URL("../src/lib/chat/stream-replay.ts", import.meta.url), "utf8");
+  assert.match(replay, /isTerminalFrameKind\(row\.kind\)/, "the replay uses the shared predicate");
+  assert.doesNotMatch(replay, /kind === "done" \|\| kind === "error"/, "no private copy of the list");
+  const store = readFileSync(new URL("../src/lib/chat-stream-log-store.ts", import.meta.url), "utf8");
+  assert.match(store, /kind: \{ in: \[\.\.\.TERMINAL_FRAME_KINDS\] \}/, "the sweep finds handoff logs too");
 });
 
 test("a running generation is waited on; frames that appear later still arrive", async () => {

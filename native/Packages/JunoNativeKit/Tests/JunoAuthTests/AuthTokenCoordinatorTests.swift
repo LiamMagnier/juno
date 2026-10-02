@@ -47,6 +47,8 @@ final class AuthTokenCoordinatorTests: XCTestCase {
             accountID: fixture.accountID
         )
         XCTAssertTrue(joined)
+        let refreshStarted = await waitForRefreshCalls(count: 1, client: fixture.client)
+        XCTAssertTrue(refreshStarted)
         await fixture.client.fail(with: .transient)
 
         for task in tasks {
@@ -72,6 +74,8 @@ final class AuthTokenCoordinatorTests: XCTestCase {
             accountID: fixture.accountID
         )
         XCTAssertTrue(joined)
+        let refreshStarted = await waitForRefreshCalls(count: 1, client: fixture.client)
+        XCTAssertTrue(refreshStarted)
         await fixture.client.fail(with: .refreshTokenReused)
 
         do {
@@ -96,6 +100,10 @@ final class AuthTokenCoordinatorTests: XCTestCase {
             accountID: fixture.accountID
         )
         XCTAssertTrue(joined)
+        // "During refresh" means the request is at the server: the rotation
+        // can no longer be called off, only its result refused.
+        let refreshStarted = await waitForRefreshCalls(count: 1, client: fixture.client)
+        XCTAssertTrue(refreshStarted)
 
         try await fixture.coordinator.revokeLocally(for: fixture.accountID)
         await fixture.client.succeed(with: refreshed)
@@ -131,6 +139,8 @@ final class AuthTokenCoordinatorTests: XCTestCase {
             accountID: fixture.accountID
         )
         XCTAssertTrue(joined)
+        let refreshStarted = await waitForRefreshCalls(count: 1, client: fixture.client)
+        XCTAssertTrue(refreshStarted)
         await fixture.client.succeed(with: refreshed)
 
         let token = try await task.value
@@ -228,26 +238,34 @@ final class AuthTokenCoordinatorTests: XCTestCase {
         coordinator: AuthTokenCoordinator,
         accountID: AccountID
     ) async -> Bool {
-        for _ in 0..<20_000 {
-            if await coordinator.refreshWaiterCount(for: accountID) == count {
-                return true
-            }
-            await Task.yield()
-        }
-        return false
+        await eventually { await coordinator.refreshWaiterCount(for: accountID) == count }
     }
 
     private func waitForRefreshCalls(
         count: Int,
         client: ControlledRefreshClient
     ) async -> Bool {
-        for _ in 0..<20_000 {
-            if await client.callCount == count {
-                return true
-            }
+        await eventually { await client.callCount == count }
+    }
+
+    /// Polls until `condition` holds, for at most `timeout` of wall time.
+    ///
+    /// Bounded by time rather than by a number of yields: these helpers used
+    /// to give up after 20,000 `Task.yield()`s, which a loaded runner can
+    /// spend before the tasks under test are even scheduled. The bound only
+    /// decides how long a broken precondition takes to *fail*; a test that
+    /// passes never waits for it.
+    private func eventually(
+        timeout: Duration = .seconds(10),
+        _ condition: () async -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            if await condition() { return true }
             await Task.yield()
         }
-        return false
+        return await condition()
     }
 }
 
@@ -258,6 +276,15 @@ private struct Fixture: Sendable {
     let coordinator: AuthTokenCoordinator
 }
 
+/// A fixed instant, answered slowly on purpose.
+///
+/// The refresh flight reads the clock between joining and reaching the
+/// server. Yielding here puts the flight *behind* the test, which is the order
+/// a loaded CI runner produces, and the one that used to strand these tests:
+/// a test that answered the refresh before the flight asked for it lost the
+/// answer, and the flight then waited for one forever (xctest parked in
+/// `XCTWaiter` until the job timed out). Every test has to hold in this order,
+/// so every run exercises it.
 private struct FixedClock: JunoClock {
     let nowValue: Date
 
@@ -265,7 +292,10 @@ private struct FixedClock: JunoClock {
         nowValue = now
     }
 
-    func now() async -> Date { nowValue }
+    func now() async -> Date {
+        for _ in 0..<200 { await Task.yield() }
+        return nowValue
+    }
 
     func sleep(for duration: Duration) async throws {}
 }
@@ -312,12 +342,25 @@ private actor MemoryTokenStore: AuthTokenStore {
     }
 }
 
+/// A refresh endpoint the test answers by hand.
+///
+/// An answer is never dropped. If the test answers before the flight has
+/// asked, the answer is kept for the request that arrives; it used to be
+/// discarded, and that request then waited forever. The tests still wait for
+/// the request before answering where the scenario needs it in flight, so
+/// this only turns a broken precondition into a failed assertion rather than
+/// a hung suite.
 private actor ControlledRefreshClient: AuthRefreshClient {
     private var continuation: CheckedContinuation<RefreshedTokens, any Error>?
+    private var earlyAnswer: Result<RefreshedTokens, any Error>?
     private(set) var callCount = 0
 
     func refresh(credential: RefreshCredential) async throws -> RefreshedTokens {
         callCount += 1
+        if let answer = earlyAnswer {
+            earlyAnswer = nil
+            return try answer.get()
+        }
         return try await withCheckedThrowingContinuation { continuation in
             guard self.continuation == nil else {
                 continuation.resume(throwing: TestHarnessError.overlappingRefreshCalls)
@@ -328,15 +371,20 @@ private actor ControlledRefreshClient: AuthRefreshClient {
     }
 
     func succeed(with tokens: RefreshedTokens) {
-        let continuation = continuation
-        self.continuation = nil
-        continuation?.resume(returning: tokens)
+        answer(.success(tokens))
     }
 
     func fail(with error: AuthRefreshFailure) {
-        let continuation = continuation
+        answer(.failure(error))
+    }
+
+    private func answer(_ result: Result<RefreshedTokens, any Error>) {
+        guard let continuation else {
+            earlyAnswer = result
+            return
+        }
         self.continuation = nil
-        continuation?.resume(throwing: error)
+        continuation.resume(with: result)
     }
 }
 

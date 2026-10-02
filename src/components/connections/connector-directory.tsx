@@ -1,23 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { KeyRound, Link2, Link2Off, Loader2, Plug, Plus, Search, SlidersHorizontal } from "@/components/ui/icons";
+import { ChevronRight, KeyRound, Loader2, Plug, Plus, Search } from "@/components/ui/icons";
+import { AppDetailSheet } from "@/components/connections/app-detail-sheet";
 import { motion, useReducedMotion } from "framer-motion";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
-import { Pressable } from "@/components/ui/pressable";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
-import { staggerDelay, transition } from "@/lib/motion";
+import { transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -144,310 +141,174 @@ function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
   return item.name.trim() || titleize(item.slug);
 }
 
-/** The house icon tile: an inset well the mark sits in. */
-function AppLogo({ item }: { item: DirectoryItem }) {
+/** The app's mark on a tone step: brand marks keep their own colours. */
+function AppLogo({ item }: { item: DirectoryItem; size?: "row" | "sheet" }) {
   return (
-    <span className="surface-inset flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-field text-muted-foreground">
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden text-muted-foreground",
+        "size-10 rounded-field border border-foreground/[0.07] bg-card dark:border-white/[0.08]",
+      )}
+    >
       {item.source === "custom" ? (
         <span className="text-ui font-semibold text-foreground" aria-hidden="true">
           {monogram(item.label)}
         </span>
       ) : item.source === "native" ? (
-        <ConnectorMark id={item.id} className="size-5" />
+        <ConnectorMark id={item.id} className="size-[22px]" />
       ) : item.logo ? (
-        // A bitmap logo carries its own padding, so it sits one rung larger than
-        // a stroked mark to end up optically the same size.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={item.logo} alt="" className="size-6 object-contain" loading="lazy" />
+        // eslint-disable-next-line @next/next/no-img-element -- a provider logo from the catalog; no optimiser route for third-party hosts
+        <img src={item.logo} alt="" className="size-[22px] object-contain" loading="lazy" />
       ) : (
-        // Muted like every other mark in the well: the accent is state and the
-        // primary action, and a Composio app that shipped no logo is neither.
-        <Plug className="size-5" />
+        <Plug className="size-[18px]" />
       )}
     </span>
   );
 }
-
-type TileState = "connected" | "connecting" | "available" | "setup" | "unavailable";
 
 /**
- * A connector's state AS WORDS (owner directive, 2026-09-26: this was a pip
- * and a word, the connected one green). Connecting and unavailable are muted
- * words; setup needed is the one state that asks for the reader, so it alone
- * keeps the warning ink and a small mark.
- *
- * Connected and available print nothing (premium pass): the tile already sits
- * under a "Connected" or "Available" heading, and its footer holds the switch
- * or the Connect button that says the same thing by what it offers. A word
- * that repeats the section heading on every tile is a label, not information.
+ * One app, one row (design V3 Customize scene): its mark, its name over one
+ * line, and on the right what it is (Connected, with the way into its
+ * details) or what you can do (Connect). A connected row is one button that
+ * opens the app's details; an available row is not a target itself, its
+ * Connect button is. States are words, never pips.
  */
-function TileStatus({ state }: { state: TileState }) {
-  if (state === "connected" || state === "available") return null;
-  const label: Record<TileState, string> = {
-    connected: "Connected",
-    connecting: "Connecting",
-    available: "Available",
-    setup: "Setup needed",
-    unavailable: "Unavailable",
-  };
-  const attention = state === "setup";
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 text-caption",
-        attention ? "font-medium text-warning-foreground" : "text-muted-foreground"
-      )}
-    >
-      {attention && <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />}
-      {label[state]}
-    </span>
-  );
-}
-
 function ConnectorTile({
   item,
   busy,
-  enabled,
-  onEnabledChange,
   onConnect,
-  onDisconnect,
-  onTest,
-  permissionsReady = true,
-  onManage,
+  onOpen,
   landed,
 }: {
   item: DirectoryItem;
   busy: boolean;
-  enabled: boolean;
-  onEnabledChange: (v: boolean) => void;
   onConnect: () => void;
-  onDisconnect: () => void;
-  onTest?: () => void;
-  permissionsReady?: boolean;
-  onManage?: () => void;
-  /** Just came back from signing in: flashed once. */
+  /** Open the details (connected apps, your servers) or a custom server's manager. */
+  onOpen?: () => void;
   landed?: boolean;
 }) {
-  const [detailsOpen, setDetailsOpen] = React.useState(false);
   const reduce = useReducedMotion() ?? false;
   const custom = item.source === "custom";
-  const unavailable = !item.configured;
-  // Composio hosts no OAuth app for this toolkit (verified live: e.g. twitter),
-  // so authorize() 400s with "Composio does not manage auth for toolkit …".
-  // Rendering a Connect button here bounced the user straight back to this page
-  // with a generic error — indistinguishable from a reload, and "try again"
-  // could never work. Say what is actually required instead.
-  const needsSetup = item.source === "composio" && item.managedAuth === false && !item.connected;
   const isUserMcp = item.source === "user_mcp";
-  // user_mcp's switch IS the server-side `enabled` column. The `enabled` prop
-  // is the localStorage "Use in chats" map for registry connectors only; using
-  // it here would reintroduce the two-switch split this feature removes.
-  const switchOn = isUserMcp ? (item.enabled ?? item.connected) : enabled;
-  const state: TileState = item.connected
-    ? "connected"
-    : item.connecting
-      ? "connecting"
-      : unavailable
-        ? "unavailable"
-        : needsSetup
-          ? "setup"
-          : "available";
+  const unavailable = !item.configured;
+  const needsSetup = item.source === "composio" && item.managedAuth === false && !item.connected;
+  const openable = Boolean(onOpen) && (item.connected || isUserMcp);
 
-  const description = custom
+  const line = custom
     ? item.connected
       ? item.toolCount != null
-        ? `${item.toolCount} ${item.toolCount === 1 ? "tool" : "tools"} · ${item.host}`
-        : item.host ?? ""
+        ? `${item.toolCount} ${item.toolCount === 1 ? "tool" : "tools"}, ${item.host}`
+        : (item.host ?? "")
       : item.connecting
         ? "Finishing sign-in…"
-        : `Sign in to finish adding · ${item.host}`
-    : item.connected
-    ? item.accountLabel && item.accountLabel !== item.label
-      ? item.accountLabel
-      : isUserMcp
-        ? item.url || item.description
-        : "Connected and ready"
+        : `Sign in to finish adding, ${item.host}`
     : item.connecting
       ? "Finishing connection…"
-      : unavailable
-        ? "Not set up on this server"
-        : needsSetup
-          ? "Needs its own OAuth app in Composio"
-          : isUserMcp
-            ? item.lastError || item.url || item.description
-            : item.noAuth
-              ? "Ready without sign-in"
-              : item.description;
+      : isUserMcp
+        ? item.lastError || item.url || item.description
+        : item.connected
+          ? item.accountLabel && item.accountLabel !== item.label
+            ? item.accountLabel
+            : item.capability || item.description
+          : unavailable
+            ? "Not set up on this server"
+            : needsSetup
+              ? "Needs its own sign-in app in Composio first"
+              : item.noAuth
+                ? "Ready without sign-in"
+                : item.capability || item.description;
+
+  const status = isUserMcp
+    ? item.enabled === false
+      ? "Off"
+      : item.status === "error"
+        ? "Couldn’t reach it"
+        : "On"
+    : item.connected
+      ? "Connected"
+      : null;
+
+  const body = (
+    <>
+      <AppLogo item={item} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-body font-medium leading-6 text-foreground">{item.label}</span>
+        <span className="truncate text-ui leading-5 text-muted-foreground">{line}</span>
+      </span>
+    </>
+  );
 
   return (
-    <article
-      className={cn(
-        // No hover state: the tile is not itself a target (its switch and its
-        // button are), and a card that shades or lifts under the pointer
-        // promises a click that goes nowhere.
-        "group relative isolate flex flex-wrap items-center gap-4 border-b border-border py-5",
-        unavailable && "text-muted-foreground"
-      )}
-      id={tileAnchor(item.id)}
-    >
+    <article id={tileAnchor(item.id)} className={cn("relative isolate", unavailable && "opacity-70")}>
       {landed ? (
-        // Where the connection the reader just made went: the selected tone,
-        // held for a beat and let go once on the emphasis rung (the skills
-        // library's landing flash). Opacity only, under the tile's content.
         <motion.span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 rounded-inherit bg-selected"
+          className="pointer-events-none absolute -inset-x-2.5 inset-y-0 -z-10 rounded-control bg-selected"
           initial={{ opacity: 1 }}
           animate={{ opacity: 0 }}
           transition={{ ...transition.emphasis, delay: reduce ? 0.6 : 1.1 }}
         />
       ) : null}
-      <div className="flex min-w-52 flex-1 items-start gap-3">
-        <AppLogo item={item} />
-        {/* Name over account (or the one-line description), both at the
-            body rung: the tile is a row in a grid, not a page header. */}
-        <div className="min-w-0 flex-1 self-center">
-          <h3 className="truncate text-ui font-medium leading-5 text-foreground"><button type="button" onClick={() => setDetailsOpen(true)} className="text-left hover:underline underline-offset-4" aria-haspopup="dialog">{item.label}</button></h3>
-          <p className="line-clamp-2 text-caption leading-4 text-muted-foreground">{description}</p>
-        </div>
-      </div>
-
-      <div className="flex min-h-8 w-full items-center justify-between gap-4 sm:w-auto sm:min-w-64">
-        <TileStatus state={state} />
-
-        {isUserMcp ? (
-          // One switch: the server's own `enabled`. Not a second "Use in chats"
-          // localStorage toggle (that was the split-brain this replaces). Test
-          // and Remove sit beside it.
-          <div className="flex w-full items-center justify-between gap-1.5">
-            <label className="flex cursor-pointer items-center gap-2 pr-1">
-              <Switch checked={switchOn} onCheckedChange={onEnabledChange} aria-label={`Enable ${item.label}`} />
-              <span className="whitespace-nowrap text-caption text-muted-foreground">{switchOn ? "On" : "Off"}</span>
-            </label>
-            <div className="flex items-center gap-0.5">
-              {onTest && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onTest}
-                  disabled={busy}
-                  className="h-7 gap-1.5 px-2 text-caption text-muted-foreground"
-                >
-                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
-                  Test
+      {openable ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-haspopup="dialog"
+          className="-mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-field px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/60 active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          {body}
+          <span className={cn("shrink-0 text-ui", status === "Couldn’t reach it" ? "text-foreground" : "text-muted-foreground")}>{status}</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>
+      ) : (
+        <div className="group/row -mx-3 flex min-h-[68px] items-center gap-3.5 rounded-field px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
+          {body}
+          {needsSetup ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button asChild variant="secondary" size="sm" className="h-7 shrink-0 rounded-full px-3">
+                  <a href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`} target="_blank" rel="noreferrer">
+                    Set up
+                    <ActionIcons.external className="size-3.5" />
+                  </a>
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onDisconnect}
-                disabled={busy}
-                aria-haspopup="dialog"
-                className="danger-hover h-7 gap-1.5 px-2 text-caption text-muted-foreground"
-              >
-                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2Off className="size-3.5" />}
-                Remove
-              </Button>
-            </div>
-          </div>
-        ) : item.connected ? (
-          <div className="flex w-full items-center justify-between gap-1.5">
-            {/* Only a linked app can be exposed to chats. A normal Switch with
-                a plain label — the toggle is a setting, not a hero. It leads
-                the footer now that the status word it followed is gone. */}
-            <label className="flex cursor-pointer items-center gap-2 pr-1">
-              <Switch checked={enabled} disabled={!permissionsReady || busy} onCheckedChange={onEnabledChange} aria-label={`Allow ${PRODUCT_NAME} to use ${item.label}`} />
-              <span className="whitespace-nowrap text-caption text-muted-foreground">{`Allow ${PRODUCT_NAME} to use`}</span>
-            </label>
-            {custom && onManage ? (
-              // A server's tools are chosen one by one, and signing out lives
-              // with them: one Manage door instead of a Disconnect that would
-              // leave the tool choices unreachable from here.
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onManage}
-                aria-haspopup="dialog"
-                className="h-7 gap-1.5 px-2 text-caption text-muted-foreground"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                Manage
+              </TooltipTrigger>
+              <TooltipContent className="max-w-60">
+                {`Composio has no shared sign-in app for ${item.label}. Add your own ${item.label} app credentials in the Composio dashboard, then connect it here.`}
+              </TooltipContent>
+            </Tooltip>
+          ) : unavailable ? null : item.connecting ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-ui text-muted-foreground">
+              <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
+              Connecting
+            </span>
+          ) : (
+            custom ? (
+              <Button size="sm" variant="secondary" disabled={busy} loading={busy} onClick={onConnect} className="h-7 shrink-0 rounded-full px-3 coarse:h-10">
+                <KeyRound className="size-3.5" aria-hidden="true" />
+                Sign in
               </Button>
             ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onDisconnect}
-                disabled={busy}
-                aria-haspopup="dialog"
-                className="danger-hover h-7 gap-1.5 px-2 text-caption text-muted-foreground"
-              >
-                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2Off className="size-3.5" />}
-                Disconnect
-              </Button>
-            )}
-          </div>
-        ) : needsSetup ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button asChild variant="secondary" size="sm" className="h-7 gap-1.5 px-2.5 text-caption">
-                <a
-                  href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Set up
-                  <ActionIcons.external className="size-3.5" />
-                </a>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-60">
-              Composio has no shared OAuth app for {item.label}. Add your own {item.label} app credentials in the
-              Composio dashboard, then connect it here.
-            </TooltipContent>
-          </Tooltip>
-        ) : custom ? (
-          <div className="flex w-full items-center justify-between gap-1.5">
-            {onManage ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onManage}
-                aria-haspopup="dialog"
-                className="h-7 gap-1.5 px-2 text-caption text-muted-foreground"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                Manage
-              </Button>
-            ) : (
-              <span />
-            )}
-            <Button size="sm" variant="secondary" disabled={busy} onClick={onConnect} className="h-7 gap-1.5 px-2.5 text-caption">
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
-              Sign in
-            </Button>
-          </div>
-        ) : (
-          <Button size="sm" variant="secondary" disabled={busy || unavailable} onClick={onConnect} className="ml-auto h-7 gap-1.5 px-2.5 text-caption">
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
-            Connect
-          </Button>
-        )}
-      </div>
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{item.label}</DialogTitle><DialogDescription>{item.capability || item.description}</DialogDescription></DialogHeader>
-          <div className="space-y-5 text-ui">
-            <section><h4 className="font-medium">Connection</h4><p className="mt-1 text-muted-foreground">{item.connected ? (item.accountLabel || "Connected") : "Not connected"}</p></section>
-            <section><h4 className="font-medium">Provider permissions</h4>
-              {item.providerScopes?.length ? <ul className="mt-2 space-y-1">{item.providerScopes.map((scope) => <li key={scope} className="break-all font-mono text-caption">{scope}</li>)}</ul> : <p className="mt-1 text-muted-foreground">{`This provider has not reported its exact permissions to ${PRODUCT_NAME}. Review access in the provider’s account settings.`}</p>}
-            </section>
-            {item.tools?.length ? <section><h4 className="font-medium">Tools from the last successful test</h4><ul className="mt-2 max-h-48 overflow-y-auto space-y-1">{item.tools.map((tool) => <li key={tool} className="break-all text-caption">{tool}</li>)}</ul></section> : null}
-            <p className="text-caption text-muted-foreground">{`${PRODUCT_NAME} checks your app switch and action approval policy before running a tool. Disconnecting removes ${PRODUCT_NAME}’s stored connection; revoke provider access in the provider’s account settings too.`}</p>
-            <Button variant="secondary" asChild><a href="/settings?section=connectors">Action approval policy</a></Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={busy}
+                    loading={busy}
+                    onClick={onConnect}
+                    aria-label={`Connect ${item.label}`}
+                    className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground coarse:size-11"
+                  >
+                    <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover/row:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Connect</TooltipContent>
+              </Tooltip>
+            )
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -455,42 +316,27 @@ function ConnectorTile({
 function TileGrid({
   items,
   busySlug,
-  enabled,
-  onEnabledChange,
   onConnect,
-  onDisconnect,
-  onTest,
-  onManage,
+  onOpen,
   landedId,
   trailing,
-  permissionsReady,
 }: {
   items: DirectoryItem[];
   busySlug: string | null;
-  enabled: Record<string, boolean>;
-  onEnabledChange: (id: string, v: boolean) => void;
   onConnect: (item: DirectoryItem) => void;
-  onDisconnect: (item: DirectoryItem) => void;
-  onTest?: (item: DirectoryItem) => void;
-  onManage?: (item: DirectoryItem) => void;
+  onOpen: (item: DirectoryItem) => void;
   landedId: string | null;
   trailing?: React.ReactNode;
-  permissionsReady?: boolean;
 }) {
   return (
-    <div className="divide-y-0">
+    <div className="grid grid-cols-1 gap-x-12 gap-y-1 @[40rem]/page:grid-cols-2">
       {items.map((item) => (
         <ConnectorTile
           key={item.key}
-          permissionsReady={permissionsReady}
           item={item}
           busy={busySlug === item.slug || item.connecting}
-          enabled={enabled[item.id] ?? true}
-          onEnabledChange={(v) => onEnabledChange(item.id, v)}
           onConnect={() => onConnect(item)}
-          onDisconnect={() => onDisconnect(item)}
-          onTest={onTest ? () => onTest(item) : undefined}
-          onManage={item.source === "custom" && onManage ? () => onManage(item) : undefined}
+          onOpen={() => onOpen(item)}
           landed={landedId === item.id}
         />
       ))}
@@ -499,7 +345,26 @@ function TileGrid({
   );
 }
 
+/** A Composio catalog entry as a directory row. */
+function catalogToItem(a: CatalogItem): DirectoryItem {
+  return {
+    key: `composio:${a.slug}`,
+    source: "composio",
+    id: a.id,
+    slug: a.slug,
+    label: appLabel(a),
+    description: a.noAuth ? "Ready without sign-in" : "Available to connect",
+    logo: a.logo,
+    connected: a.connected,
+    connecting: a.connecting,
+    configured: true,
+    noAuth: a.noAuth,
+    managedAuth: a.managedAuth,
+  };
+}
+
 export function ConnectorDirectory({
+  headerAction,
   connectors,
   composioConfigured,
   enabled,
@@ -515,6 +380,8 @@ export function ConnectorDirectory({
   onConnectCustom,
   landedId = null,
 }: {
+  /** Shown beside the search field (the page Add button). */
+  headerAction?: React.ReactNode;
   connectors: ConnectorStatus[];
   composioConfigured: boolean;
   /**
@@ -538,7 +405,9 @@ export function ConnectorDirectory({
   landedId?: string | null;
 }) {
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<Filter>("all");
+  // One list: Connected first, then the rest. (The All / Connected switch
+  // repeated the sections it sat above.)
+  const filter = "all" as Filter;
   const [category, setCategory] = React.useState<string | null>(null);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [apps, setApps] = React.useState<CatalogItem[]>([]);
@@ -675,24 +544,44 @@ export function ConnectorDirectory({
       apps
         // Drop Composio's copy of an app Juno integrates natively.
         .filter((a) => !NATIVE_EQUIVALENT[a.slug])
-        .map((a) => ({
-          key: `composio:${a.slug}`,
-          source: "composio" as const,
-          id: a.id,
-          slug: a.slug,
-          label: appLabel(a),
-          description: a.noAuth ? "Ready without sign-in" : "Available to connect",
-          logo: a.logo,
-          connected: a.connected,
-          connecting: a.connecting,
-          configured: true,
-          noAuth: a.noAuth,
-          managedAuth: a.managedAuth,
-        })),
+        .map((a) => catalogToItem(a)),
     [apps]
   );
 
   const q = query.trim().toLowerCase();
+
+  /**
+   * THE OVERVIEW IS SECTIONED (ChatGPT's Plugins page, the owner's reference):
+   * with no search and no category picked, the directory shows a few apps per
+   * category under a heading that opens the whole category, instead of one
+   * flat list of a thousand toolkits. Each section is the first page of that
+   * category, fetched in parallel once the category list is known.
+   */
+  const overview = !q && !activeCategory && filter === "all" && composioConfigured;
+  const sectionIds = React.useMemo(() => categories.slice(0, 6).map((c) => c.id).join(","), [categories]);
+  const [sections, setSections] = React.useState<{ category: Category; items: CatalogItem[] }[]>([]);
+  React.useEffect(() => {
+    if (!overview || !sectionIds) return;
+    const controller = new AbortController();
+    const picked = categories.slice(0, 6);
+    void Promise.all(
+      picked.map((category) =>
+        fetch(`/api/connectors/composio/catalog?category=${encodeURIComponent(category.id)}`, { signal: controller.signal })
+          .then((r) => (r.ok ? (r.json() as Promise<CatalogResponse>) : { items: [] }))
+          .then((data) => ({
+            category,
+            items: (data.items ?? []).filter((a) => !NATIVE_EQUIVALENT[a.slug] && !a.connected).slice(0, 6),
+          }))
+          .catch(() => ({ category, items: [] as CatalogItem[] }))
+      )
+    ).then((result) => {
+      if (!controller.signal.aborted) setSections(result.filter((section) => section.items.length > 0));
+    });
+    return () => controller.abort();
+    // `categories` is read through `sectionIds`, its stable key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overview, sectionIds]);
+
   const items = React.useMemo(() => {
     // Composio items arrive already searched and category-filtered by the API;
     // the native handful and user MCP rows are matched here so one keystroke
@@ -736,95 +625,66 @@ export function ConnectorDirectory({
   const connectedCount = [...userMcpItems, ...registryItems, ...composioItems].filter((i) => i.connected).length;
   const categoryLabel = categories.find((c) => c.id === activeCategory)?.label.toLowerCase();
 
-  const gridProps = {
-    permissionsReady,
-    busySlug,
-    enabled,
-    onEnabledChange,
-    onConnect: connect,
-    onDisconnect,
-    onTest: onTestUserMcp,
-    onManage: onManageCustom ? (item: DirectoryItem) => onManageCustom(item.id) : undefined,
-    landedId,
+  // The app whose details are open, by id, so the sheet follows the list
+  // (a test result, a disconnect) instead of holding a stale copy.
+  const [detailId, setDetailId] = React.useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  const allItems = [...userMcpItems, ...registryItems, ...composioItems];
+  const detail = detailId ? (allItems.find((item) => item.id === detailId) ?? null) : null;
+  const openItem = (item: DirectoryItem) => {
+    if (item.source === "custom") {
+      onManageCustom?.(item.id);
+      return;
+    }
+    setDetailId(item.id);
+    setSheetOpen(true);
   };
 
-  // Bring your own: always the last tile of Available, unfiltered or not,
-  // except while searching (it would read as a result).
+  const gridProps = { busySlug, onConnect: connect, onOpen: openItem, landedId };
+
+  // Bring your own: always the last row of More apps, except while searching (it would read as a result).
   const addTile = onAddCustom && !q ? <AddServerTile index={availableItems.length} onClick={onAddCustom} /> : null;
 
   const skeletons = loading
     ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
     : null;
 
+  const sectionLabel = "mb-3 flex items-baseline gap-2 text-title font-medium text-foreground";
+
   return (
     <section>
-      {/* Toolbar — the house row: filter, search, count. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedControl<Filter>
-          value={filter}
-          onChange={setFilter}
-          ariaLabel="Filter apps"
-          className="w-fit"
-          options={[
-            { value: "all", label: "All apps" },
-            { value: "connected", label: "Connected", count: connectedCount || undefined },
-          ]}
-        />
-        <label className="relative block w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      {/* ChatGPT's Plugins header: one large rounded search, the Add button
+          beside it, and no chip row; a category is opened from its section. */}
+      <div className="flex items-center gap-2">
+        <label className="relative block min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
+            type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search Gmail, Slack, GitHub…"
+            placeholder="Search apps"
             aria-label="Search apps"
-            className="pl-9"
+            className="h-11 rounded-full pl-11 text-body"
           />
         </label>
-        {!loading && (
-          <span className="ml-auto text-caption tabular-nums text-muted-foreground">
-            {items.length} {items.length === 1 ? "app" : "apps"}
-          </span>
-        )}
+        {headerAction}
       </div>
 
-      {/* Composio has ~1048 toolkits. Categories are the only thing standing
-          between the user and an endlessly-paged flat list, so they sit here
-          rather than behind a menu. Hidden on Connected — that tab is small
-          enough to read whole, and the API cannot filter it by category. */}
-      {filter === "all" && categories.length > 0 && (
-        <div
-          role="group"
-          aria-label="Filter by category"
-          // overflow-x forces the block axis to clip too, so the padding here is
-          // load-bearing: it is the room a focused chip's outline needs instead
-          // of having it shorn off flat against the scroll edge.
-          className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <Pressable kind="chip" size="lg" selected={!category} aria-pressed={!category} onClick={() => setCategory(null)}>
-            All categories
-          </Pressable>
-          {categories.map((c) => (
-            <Pressable
-              key={c.id}
-              kind="chip"
-              size="lg"
-              selected={category === c.id}
-              aria-pressed={category === c.id}
-              onClick={() => setCategory(category === c.id ? null : c.id)}
-              className="shrink-0 whitespace-nowrap"
-            >
-              {c.label}
-              {c.count !== undefined && (
-                <span className="text-micro tabular-nums opacity-70">{c.count}</span>
-              )}
-            </Pressable>
-          ))}
+      {activeCategory ? (
+        <div className="mt-8 flex items-center gap-2 motion-safe:animate-fade-in">
+          <button
+            type="button"
+            onClick={() => setCategory(null)}
+            aria-label="All apps"
+            className="pressable grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+          >
+            <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
+          </button>
+          <h2 className="text-title font-medium text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
         </div>
-      )}
+      ) : null}
 
       <div className="mt-6">
-        {/* Composio powers the long tail. Without it the native connectors still
-            work, so explain what's missing instead of showing an empty page. */}
         {!composioConfigured && canConfigureServer && <ComposioSetupCallout />}
 
         {error && (
@@ -845,26 +705,49 @@ export function ConnectorDirectory({
 
         {connectedItems.length > 0 && (
           <div>
-            <h2 className="text-heading">Connected</h2>
-            <p className="mb-4 text-ui text-muted-foreground">Linked and available to your chats.</p>
+            <h2 className={sectionLabel}>
+              Connected <span className="tabular-nums">{connectedCount}</span>
+            </h2>
             <TileGrid items={connectedItems} {...gridProps} />
           </div>
         )}
 
-        {(availableItems.length > 0 || loading || addTile) && filter !== "connected" && (
+        {overview && sections.length > 0 ? (
+          <>
+            {registryItems.some((i) => !i.connected) && (
+              <div className={cn(connectedItems.length > 0 && "mt-10")}>
+                <h2 className="mb-3 text-title font-medium text-foreground">Built in</h2>
+                <TileGrid items={registryItems.filter((i) => !i.connected)} {...gridProps} />
+              </div>
+            )}
+            {sections.map((section, sectionIndex) => (
+              <div
+                key={section.category.id}
+                className="mt-10 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                style={{ animationDelay: `${Math.min(sectionIndex, 5) * 60}ms` }}
+              >
+                <h2 className="mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setCategory(section.category.id)}
+                    className="group inline-flex items-center gap-1 text-title font-medium text-foreground"
+                  >
+                    {section.category.label}
+                    <ChevronRight
+                      aria-hidden="true"
+                      className="size-4 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+                    />
+                  </button>
+                </h2>
+                <TileGrid items={section.items.map(catalogToItem)} {...gridProps} />
+              </div>
+            ))}
+            {addTile && <div className="mt-10">{addTile}</div>}
+          </>
+        ) : (availableItems.length > 0 || loading || addTile) && (
           <div className={cn(connectedItems.length > 0 && "mt-8")}>
-            <h2 className="text-heading">Available</h2>
-            <p className="mb-4 text-ui text-muted-foreground">{`Connect an app to let ${PRODUCT_NAME} work inside it.`}</p>
-            <TileGrid
-              items={availableItems}
-              {...gridProps}
-              trailing={
-                <>
-                  {skeletons}
-                  {addTile}
-                </>
-              }
-            />
+            <h2 className={sectionLabel}>{connectedItems.length > 0 ? "More apps" : "Apps you can connect"}</h2>
+            <TileGrid items={availableItems} {...gridProps} trailing={<>{skeletons}{addTile}</>} />
           </div>
         )}
 
@@ -873,28 +756,16 @@ export function ConnectorDirectory({
             tone="empty"
             size="page"
             icon={Plug}
-            title={
-              filter === "connected"
-                ? "No connected apps yet"
-                : q || categoryLabel
-                  ? "Nothing here"
-                  : "No apps available"
-            }
+            title={q || categoryLabel ? "Nothing here" : "No apps available"}
             description={
-              filter === "connected"
-                ? "Connect one from All apps and it will show up here."
-                : q
-                  ? `No apps match “${query.trim()}”${categoryLabel ? ` in ${categoryLabel}` : ""}.`
-                  : categoryLabel
-                    ? `No apps in ${categoryLabel}.`
-                    : "The catalog came back empty."
+              q
+                ? `No apps match “${query.trim()}”${categoryLabel ? ` in ${categoryLabel}` : ""}.`
+                : categoryLabel
+                  ? `No apps in ${categoryLabel}.`
+                  : "The catalog came back empty."
             }
             action={
-              filter === "connected" ? (
-                <Button variant="outline" size="sm" onClick={() => setFilter("all")}>
-                  Browse all apps
-                </Button>
-              ) : q || category ? (
+              q || category ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -912,13 +783,45 @@ export function ConnectorDirectory({
 
         {cursor && !loading && !error && (
           <div className="flex justify-center pt-6">
-            <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>
-              {loadingMore && <Loader2 className="size-3.5 animate-spin" />}
+            <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={loadingMore} loading={loadingMore}>
               Load more apps
             </Button>
           </div>
         )}
       </div>
+
+      <AppDetailSheet
+        open={sheetOpen && detail !== null}
+        onOpenChange={setSheetOpen}
+        target={
+          detail
+            ? {
+                id: detail.id,
+                slug: detail.slug,
+                label: detail.label,
+                source: detail.source,
+                mark: <AppLogo item={detail} size="sheet" />,
+                accountLabel: detail.accountLabel,
+                connectedAt: connectors.find((c) => c.id === detail.id)?.connectedAt ?? null,
+                capability: detail.capability,
+                description: detail.description,
+                providerScopes: detail.providerScopes,
+                tools: detail.tools,
+                lastError: detail.lastError,
+              }
+            : null
+        }
+        allowed={detail?.source === "user_mcp" ? (detail.enabled ?? detail.connected) : detail ? (enabled[detail.id] ?? true) : true}
+        permissionsReady={detail?.source === "user_mcp" ? true : (permissionsReady ?? true)}
+        onAllowedChange={(value) => detail && onEnabledChange(detail.id, value)}
+        onDisconnect={() => {
+          if (!detail) return;
+          setSheetOpen(false);
+          onDisconnect(detail);
+        }}
+        onTest={detail?.source === "user_mcp" && onTestUserMcp ? () => onTestUserMcp(detail) : undefined}
+        testing={detail ? connectingId === detail.id : false}
+      />
     </section>
   );
 }
@@ -933,29 +836,20 @@ export function tileAnchor(id: string): string {
  * target, so it alone answers the pointer: the hairline firms up, the well
  * lifts a step, the plus turns a quarter. Pressing sinks it a touch.
  */
-function AddServerTile({ index, onClick }: { index: number; onClick: () => void }) {
+function AddServerTile({ index: _index, onClick }: { index: number; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-haspopup="dialog"
-      style={staggerDelay(index, "tight")}
-      className={cn(
-        "group flex min-h-[7.5rem] flex-col items-start justify-between gap-3 rounded-card border border-dashed border-border p-3.5 text-left",
-        "transition-[border-color,background-color,transform] duration-fast ease-out-soft",
-        "hover:border-solid hover:border-foreground/25 hover:bg-accent/50 active:scale-[0.99]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-      )}
+      className="group -mx-2.5 flex min-h-[60px] w-[calc(100%+1.25rem)] items-center gap-3.5 rounded-control px-2.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
     >
-      <span className="surface-inset flex size-10 items-center justify-center rounded-field text-muted-foreground transition-[transform,color] duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:text-foreground motion-reduce:group-hover:translate-y-0">
-        <Plus className="size-5 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:group-hover:rotate-0" />
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-dashed border-border text-muted-foreground group-hover:text-foreground">
+        <Plus className="size-4" aria-hidden="true" />
       </span>
-      <span className="min-w-0">
-        <span className="block text-ui font-medium leading-5 text-foreground">Add an MCP server</span>
-        <span className="block text-caption leading-4 text-muted-foreground">
-          Bring your own tools: any MCP server that signs in with OAuth.
-        </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="text-ui font-medium leading-5 text-foreground">Add an MCP server</span>
+        <span className="truncate text-ui leading-[18px] text-muted-foreground">Bring your own tools: any MCP server that signs in with OAuth.</span>
       </span>
     </button>
   );

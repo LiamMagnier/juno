@@ -164,3 +164,21 @@ test("the planner prompt scales its asks with the tier", () => {
   assert.match(plannerSystemPrompt(undefined, []), /Plan 3 to 5 objectives/);
   assert.match(plannerSystemPrompt("deep", ["https://example.org"]), /https:\/\/example\.org/);
 });
+
+test("the structured planner's reply is found by the same extractor, and never by the line parser (B5)", async () => {
+  const { parsePlannerOutput, looksLikeJson } = await import("@/lib/research/planner");
+  const reply = "```json\n" + JSON.stringify({
+    title: "Heat pumps",
+    approach: "Trials first.",
+    questions: [{ question: "How do heat pumps perform below freezing?", rationale: "Core.", evidence: { minSources: 2, primary: true } }],
+    clarifications: [],
+    sources: [],
+    queries: ["heat pump cold trial"],
+    scope: { breadth: "focused", freshness: "any", primarySources: false, quick: true },
+    language: "en",
+  }) + "\n```";
+  assert.ok(extractJsonObject(reply));
+  assert.equal(parsePlannerOutput(reply)?.questions.length, 1);
+  // What used to become "queries": a truncated object's lines.
+  assert.equal(looksLikeJson('{"questions": [{"question": "How do heat pumps'), true);
+});

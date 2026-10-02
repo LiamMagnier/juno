@@ -245,7 +245,9 @@ test("every field of a completed row survives the JSON round trip", () => {
   // The guard against `serializeActivity`'s whitelist quietly dropping a field:
   // a payload that streams live and vanishes on reload looks exactly like the
   // feature working right up until someone refreshes.
-  const full: Required<ClientToolDetail> = {
+  // `phase` and `progress` are the two live-only fields: claims about a call
+  // still running, which a persisted row's call is not (src/lib/tools/wire.ts).
+  const full: Omit<Required<ClientToolDetail>, "phase" | "progress"> = {
     server: "Linear",
     name: "linear__create_issue",
     args: '{\n  "title": "Fix"\n}',
@@ -257,9 +259,27 @@ test("every field of a completed row survives the JSON round trip", () => {
     resultChars: 26_318,
     status: "failed",
     durationMs: 412,
+    callId: "toolu_7",
+    timeoutMs: 60_000,
+    outcome: "failed",
+    errorCode: "tool_error",
+    run: {
+      runId: "run_1",
+      context: "hosted_sandbox",
+      language: "python",
+      status: "failed",
+      exitCode: 1,
+      durationMs: 900,
+      stdoutBytes: 10,
+      stderrBytes: 20,
+      files: [{ attachmentId: "att_1", name: "out.csv", mime: "text/csv", bytes: 12 }],
+    },
+    cached: true,
   };
 
   assert.deepEqual(readToolDetail(JSON.parse(JSON.stringify(full))), full);
+  const live: ClientToolDetail = { ...full, phase: "running", progress: { lines: [{ stream: "stdout", text: "step 2" }] } };
+  assert.deepEqual(readToolDetail(JSON.parse(JSON.stringify(live))), full);
 });
 
 test("a real streamed row round-trips unchanged", () => {
@@ -292,4 +312,26 @@ test("a row from a LATER build degrades one field, never the whole event", () =>
   });
 
   assert.deepEqual(detail, { server: "S", name: "t", result: "ok" });
+});
+
+// ------------------------------------------------------- the chat rework (§2.5)
+
+test("the run budget is 96,000 characters: a dozen page reads keep their detail", () => {
+  assert.equal(MAX_TOOL_DETAIL_CHARS_PER_RUN, 96_000);
+  const budget = fresh();
+  const rows: ClientToolDetail[] = [];
+  // A web turn: 16 reads, each a short argument and a full 4,000-character head.
+  for (let i = 0; i < 16; i++) {
+    const open = openToolDetail({ server: "Juno", name: "web_fetch", args: JSON.stringify({ url: `https://example.com/${i}` }) }, budget);
+    rows.push(closeToolDetail(open, { server: "Juno", name: "web_fetch", result: "p".repeat(10_000), ok: true }, budget));
+  }
+  assert.ok(rows.every((row) => row.result?.length === MAX_TOOL_RESULT_CHARS), "every read keeps its head");
+});
+
+test("the read side lives with the persisted run record and is re-exported unchanged", async () => {
+  const record = await import("@/lib/chat/run-record");
+  assert.equal(readToolDetail, record.readToolDetail);
+  const detail = await import("@/lib/chat/tool-detail");
+  assert.equal(detail.TOOL_RESULT_NOTES, record.TOOL_RESULT_NOTES);
+  assert.equal(detail.TOOL_ARGS_NOTES, record.TOOL_ARGS_NOTES);
 });

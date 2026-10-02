@@ -3,6 +3,15 @@ import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
+import type { ClientFeature } from "@/lib/chat/client-features";
+import type {
+  ChatSourceOrigin,
+  CommentaryItem,
+  ReasoningSegment,
+  RunFact,
+  RunNotice,
+  ToolCallRecord,
+} from "@/types/run";
 
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
@@ -130,6 +139,9 @@ export interface ClientSource {
    * Absent on older persisted rows, which correctly degrades to plain text.
    */
   cited?: boolean;
+  /** Where it came from (SPEC §2.4): written for every source that comes from an
+   *  `LlmEvent` `sources` or from a research completion. Absent on older rows. */
+  origin?: ChatSourceOrigin;
 }
 
 /** Metadata for one preserved prior version of a message (regenerate / edit-and-resend history). */
@@ -221,6 +233,66 @@ export interface ClientToolDetail {
    * figure-less shape.
    */
   durationMs?: number;
+
+  /*
+   * THE TOOL CONTRACT'S ADDITIONS (TOOL_RUNTIME_DESIGN §6.4). All optional and
+   * additive: a reader that predates them keeps the row it always drew from
+   * `status` and `resultNote`, and a shipped native build ignores the keys.
+   */
+  /** The Alevr call id (src/lib/tools/call-ids.ts): stable across a reconnect, so a live update pairs with its row. */
+  callId?: string;
+  /** Live only, while the call has no result: what the dispatcher is doing with it. Never persisted as current. */
+  phase?: "queued" | "awaiting_approval" | "running";
+  /** The call's bound once running, in ms — worth showing when it is long ("up to 2 min"). */
+  timeoutMs?: number;
+  /** Live only: a running call's latest output, at most one update a second. */
+  progress?: ClientToolProgress;
+  /**
+   * The typed outcome. `status` stays `ok`/`failed` for older readers;
+   * `outcome_unknown` means the process running it stopped before the result
+   * could be collected — reported as unknown, never as success, never re-run.
+   */
+  outcome?: "succeeded" | "failed" | "denied" | "expired" | "cancelled" | "outcome_unknown";
+  /** Why it did not succeed, as a code (`invalid_args`, `unknown_tool`, `timeout`, `cancelled`…). */
+  errorCode?: string;
+  /** Execution tools only: the run behind the call. */
+  run?: ClientToolRun;
+  /** Served from the turn's duplicate cache: nothing ran a second time. */
+  cached?: boolean;
+}
+
+/** A running call's latest output: the last lines, oldest first, and byte counts. No percentages. */
+export interface ClientToolProgress {
+  lines: ClientToolProgressLine[];
+  stdoutBytes?: number;
+  stderrBytes?: number;
+}
+
+export interface ClientToolProgressLine {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+/** The run behind an execution call, as the panel shows it (design §6.12). */
+export interface ClientToolRun {
+  runId: string;
+  /** Where it ran: "hosted_sandbox" ("Ran in Alevr's sandbox"), "agent_computer", "task_container", "local_host". */
+  context: string;
+  language?: string;
+  status: string;
+  exitCode?: number | null;
+  durationMs?: number;
+  stdoutBytes?: number;
+  stderrBytes?: number;
+  /** Files the run produced, already attached to the conversation. */
+  files: ClientToolRunFile[];
+}
+
+export interface ClientToolRunFile {
+  attachmentId: string;
+  name: string;
+  mime: string;
+  bytes: number;
 }
 
 /** Exact saved facts injected into one turn, with enough provenance for the
@@ -314,6 +386,25 @@ export interface ClientActivityEvent {
    * Shape and reader: src/lib/chat/context-tokens.ts.
    */
   contextReceipt?: ContextReceipt;
+  /** Juno Code only (already persisted, now typed). */
+  patch?: string;
+  exitCode?: number;
+
+  // ── added by the chat rework (SPEC §2.4); all optional, all additive ────────
+  /** Order within the generation. 1-based, assigned at first emission, never changed (INV-6). */
+  seq?: number;
+  /** The model step this event belongs to. Absent on turn-level rows. */
+  round?: number;
+  /** A tool call (Juno, connector or provider). Present on rows of kind tool | search | visit. */
+  call?: ToolCallRecord;
+  /** A reasoning segment starts at this point of the turn. kind "reasoning". */
+  segment?: ReasoningSegment;
+  /** Answer-channel text from a round that ended in tool calls. kind "reasoning". */
+  commentary?: CommentaryItem;
+  /** Typed turn fact for the Details tab. */
+  fact?: RunFact;
+  /** Typed notice. kind "warning" for the must-act codes, "context" otherwise. */
+  notice?: RunNotice;
 }
 
 /**
@@ -480,8 +571,28 @@ export type StreamChunk =
   | { type: "sources"; sources: ClientSource[] }
   /** `part` mirrors LlmEvent's: the ordinal of the discrete summary part this
    *  delta belongs to, or absent when the provider streams unbroken prose. */
-  | { type: "reasoning"; text: string; part?: number }
-  | { type: "delta"; text: string }
+  | {
+      type: "reasoning";
+      text: string;
+      part?: number;
+      /** `timeline` clients only: the model step this text belongs to. */
+      round?: number;
+    }
+  | {
+      type: "delta";
+      text: string;
+      /** `timeline` clients only: the model step this text belongs to. */
+      round?: number;
+      /** `timeline` clients only: the provider-declared phase (OpenAI Responses `phase`).
+       *  "commentary" = a preamble; "answer" = `final_answer`. Absent = undeclared. */
+      phase?: "commentary" | "answer";
+    }
+  /**
+   * Web only (`research_background`). Ends a chat request that started a
+   * research run. Terminal: the client stops reading and follows the run.
+   * Never sent to profile 1 (INV-1, INV-27).
+   */
+  | { type: "handoff"; to: "research"; runId: string; userMessageId: string | null }
   | { type: "progress"; stage: GenerationProgressStage; pct?: number; note?: string }
   | {
       type: "done";
@@ -537,4 +648,10 @@ export interface ChatRequestBody {
   clientMessageId?: string;
   /** Optional legacy spend-ledger override; native origins default to app. */
   client?: "web" | "app";
+  /** What this client renders (SPEC §2.2). Absent → the frozen profile-1 grammar. */
+  clientFeatures?: ClientFeature[];
+  /** IANA zone of the browser, e.g. "Europe/Paris". Used by current_time and research only. */
+  timeZone?: string;
+  /** Effective UI locale (<html lang>), BCP-47. Never used to format UI copy. */
+  locale?: string;
 }

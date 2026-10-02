@@ -30,9 +30,11 @@
  *   5. The run itself, which asks before risky steps (`balanced`).
  */
 
+import type { Plan } from "@prisma/client";
 import type { McpFunctionTool, ToolExecution } from "@/lib/mcp";
 import type { NativeChatTool } from "@/lib/llm";
-import { ACTION_PREVIEW_STRING_CHARS, type ClientActionApproval } from "@/lib/action-approval";
+import type { ToolExecuteOptions } from "@/lib/tools/types";
+import { ACTION_PREVIEW_STRING_CHARS, type ActionReceiptStatus, type ClientActionApproval } from "@/lib/action-approval";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
 import { DEFAULT_WORK_PERMISSION_POLICY, type WorkPermissionPolicy } from "@/lib/work/domain";
@@ -149,6 +151,12 @@ export interface TaskToolGate {
   lockdown: boolean;
   /** The plan includes at least one model that can drive a Work run. */
   planHasWorkModel: boolean;
+  /**
+   * The account's plan. FREE never carries the tool (DECISIONS §4c): Work
+   * refuses a FREE run anyway, so offering it only invites a refusal. Optional
+   * while the route is being moved over; absent is read as "not FREE".
+   */
+  plan?: Plan;
 }
 
 /**
@@ -176,7 +184,8 @@ export function chatTaskToolEnabled(gate: TaskToolGate): boolean {
     gate.functionToolsReachModel &&
     gate.skillPermits &&
     !gate.lockdown &&
-    gate.planHasWorkModel
+    gate.planHasWorkModel &&
+    gate.plan !== "FREE"
   );
 }
 
@@ -512,6 +521,7 @@ export interface StartTaskToolContext {
   /** The generation id: with the broker's idempotency key. */
   generationId: string;
   onApprovalRequest?: (approval: ClientActionApproval) => void;
+  untrustedNow?: () => { untrusted: boolean; hostile?: boolean };
   /** Called once per turn, with the session as it stands after its run was dispatched. */
   onStarted?: (session: ClientWorkSession) => void;
 }
@@ -527,15 +537,22 @@ export interface StartTaskToolContext {
  * away, and the retry answers `already_tried` rather than asking the person a
  * second time about the same message.
  */
+function dispatchSignal(signal?: AbortSignal, timeoutMs?: number): AbortSignal | undefined {
+  if (!timeoutMs && !signal) return undefined;
+  if (!timeoutMs) return signal;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
   let started: Extract<TaskOutcome, { status: "started" }> | null = null;
   let queue: Promise<unknown> = Promise.resolve();
 
-  const run = async (args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolExecution> => {
+  const run = async (args: Record<string, unknown>, signal?: AbortSignal, opts?: ToolExecuteOptions): Promise<ToolExecution> => {
     if (started) return describeTaskOutcome({ ...started, replay: true });
     let outcome: TaskOutcome;
     try {
-      outcome = await startTask(ctx, args, signal);
+      outcome = await startTask(ctx, args, signal, opts);
     } catch (err) {
       console.error("[chat:task] start_task failed", {
         conversationId: ctx.conversation.id,
@@ -558,8 +575,8 @@ export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
     tool: START_TASK_TOOL,
     label: TASK_TOOL_LABEL,
     access: "write",
-    execute(args, signal) {
-      const next = queue.then(() => run(args, signal));
+    execute(args, signal, opts) {
+      const next = queue.then(() => run(args, signal, opts));
       queue = next.catch(() => undefined);
       return next;
     },
@@ -569,7 +586,8 @@ export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
 async function startTask(
   ctx: StartTaskToolContext,
   rawArgs: Record<string, unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  opts?: ToolExecuteOptions,
 ): Promise<TaskOutcome> {
   const args = parseStartTaskArgs(rawArgs);
   if (!args) return taskRefusal("invalid_arguments");
@@ -725,7 +743,9 @@ async function startTask(
         return notStarted(taskRefusalFromResponse(preflight.status, preflight.body));
       }
 
-      if (ctx.untrustedContent || estimate.requiresConfirmation) {
+      const onApprovalRequest = opts?.onApprovalRequest ?? ctx.onApprovalRequest;
+      const taint = ctx.untrustedNow?.() ?? { untrusted: ctx.untrustedContent, hostile: false };
+      if (taint.untrusted || estimate.requiresConfirmation) {
         const authorization = await store.authorizeExternalAction({
           userId: user.id,
           surface: "chat",
@@ -745,10 +765,10 @@ async function startTask(
           provenance: {
             source: "chat_model",
             sourceKind: "task_handoff",
-            derivedFromUntrusted: ctx.untrustedContent,
+            derivedFromUntrusted: taint.untrusted,
           },
           signal,
-          onApprovalRequest: ctx.onApprovalRequest,
+          onApprovalRequest,
         });
         if (authorization.kind === "refused") {
           if (signal?.aborted) return notStarted(taskRefusal("stopped"));
@@ -763,7 +783,14 @@ async function startTask(
         receiptId = authorization.receiptId;
       }
 
+      opts?.onAuthorized?.();
+      const bounded = dispatchSignal(signal, opts?.timeoutMs);
+
       if (signal?.aborted) {
+        await settleReceipt(false, TASK_REFUSALS.stopped);
+        return notStarted(taskRefusal("stopped"));
+      }
+      if (bounded?.aborted) {
         await settleReceipt(false, TASK_REFUSALS.stopped);
         return notStarted(taskRefusal("stopped"));
       }
@@ -814,13 +841,17 @@ async function startTask(
 /**
  * Which of the tool's own refusals a broker refusal is.
  *
- * The broker answers with a sentence rather than a code (`Action denied.`,
- * `Action expired.`, a blocked reason), so it is read for the three outcomes a
- * person can tell apart. Anything else is the approval not going through for a
- * reason on Juno's side, which the model should not dress up as the user's
- * choice.
+ * The receipt's status decides when the broker gives one (SPEC §3.3 item 9):
+ * `denied`, `expired` and `blocked` are the three outcomes a person can tell
+ * apart. Without it the broker's sentence is read (`Action denied.`, `Action
+ * expired.`, a blocked reason). Anything else is the approval not going
+ * through for a reason on Juno's side, which the model should not dress up as
+ * the user's choice.
  */
-export function approvalRefusalReason(brokerReason: string): TaskRefusalReason {
+export function approvalRefusalReason(brokerReason: string, status?: ActionReceiptStatus): TaskRefusalReason {
+  if (status === "denied") return "declined";
+  if (status === "expired") return "approval_expired";
+  if (status === "blocked") return "approval_blocked";
   const reason = brokerReason.toLowerCase();
   if (reason.includes("denied")) return "declined";
   if (reason.includes("expired")) return "approval_expired";

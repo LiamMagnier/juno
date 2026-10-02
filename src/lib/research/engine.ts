@@ -49,6 +49,7 @@ import {
   PLANNER_OUTPUT_TOKENS,
   PLANNER_PROMPT_CHARS,
   REVISION_REPORT_CHARS,
+  RESEARCH_SNAPSHOT_CHARS,
   SEARCH_FEE_MICRO_USD,
   SYNTHESIS_OUTPUT_TOKENS,
   SYSTEM_PROMPT_CHARS,
@@ -59,7 +60,17 @@ import {
   MAX_WORKER_QUERIES,
   reviewEstimateMicroUsd,
   workerEstimateMicroUsd,
+  MAX_PLAN_REVISIONS,
+  MAX_STEERING_ENTRIES,
+  MAX_STEERING_CHARS,
+  MAX_RESEARCH_OBJECTIVES,
+  MAX_QUERY_CHARS,
+  MAX_PLAN_CONTEXT_CHARS,
+  budgetFromEnvelope,
+  nearestEffort,
+  planIsRevising,
   type ResearchClarification,
+  type ResearchPlanRevision,
   type ResearchEventKind,
   type ResearchModelRates,
   type ResearchObjectiveStatus,
@@ -103,6 +114,21 @@ import {
   type WorkerTools,
 } from "@/lib/research/agents/protocol";
 import { HostLimiter, isAbortError, runAll } from "@/lib/research/agents/scheduler";
+import { RESEARCH_LEASE_RENEW_MS, withHeartbeat } from "@/lib/research/lease-core";
+import {
+  contentLanguage,
+  isTinyScope,
+  languageName,
+  plannedResearch,
+  revisionForPlanner,
+  todayLine,
+  type PlannerDraft,
+} from "@/lib/research/planner";
+import type { ResearchBudgetRefusal } from "@/lib/research/envelope";
+import { RESEARCH_REFUSAL_COPY } from "@/lib/research/entitlement";
+import { estimateFor } from "@/lib/research/estimate";
+import { isUsableReport, parseWriterOutput } from "@/lib/research/report-structure";
+import type { ResearchEnvelope, ResearchEstimate, ResearchEstimateCaps, ResearchScope } from "@/types/research";
 
 /**
  * The durable research job.
@@ -161,6 +187,8 @@ export interface ResearchRunRow {
   workerLeaseOwner?: string | null;
   workerLeaseUntil?: Date | null;
   lastHeartbeatAt?: Date | null;
+  /** The completion message this run wrote (§9.6.3). Absent on stores that do not keep it. */
+  assistantMessageId?: string | null;
 }
 export interface ResearchSourceRow {
   id: string;
@@ -221,15 +249,22 @@ export interface ResearchStore {
     leaseMs?: number;
   }): Promise<ResearchRunRow | null>;
   /**
+   * Lets go of a lease this worker holds (B1). Optional: a store without
+   * leases has nothing to release. Conditional on the owner, so a release
+   * never frees a lease somebody else has since taken.
+   */
+  releaseRun?(input: { runId: string; userId: string; workerId: string }): Promise<void>;
+  /**
    * Conditional state write: moves the run only if it is still in one of
    * `from`. Returns the new row, or null when somebody else moved it first.
+   * `budgetMicroUsd` freezes the envelope's ceiling on the row at confirmation.
    */
   moveState(input: {
     runId: string;
     userId: string;
     from: readonly ResearchState[];
     to: ResearchState;
-    patch?: { plan?: ResearchPlan; error?: string | null; report?: string | null };
+    patch?: { plan?: ResearchPlan; error?: string | null; report?: string | null; budgetMicroUsd?: bigint | null };
   }): Promise<ResearchRunRow | null>;
   savePlan(input: { runId: string; userId: string; plan: ResearchPlan }): Promise<ResearchRunRow | null>;
   recordQueries(input: { runId: string; userId: string; queries: string[] }): Promise<void>;
@@ -566,7 +601,65 @@ export interface ResearchDeps {
       report: string;
       round: number;
     };
+    /**
+     * Share of the packed corpus budget to use: 1 on the first attempt, 0.7 on
+     * the one retry after an empty or unusable report (B6).
+     */
+    corpusScale?: number;
+    /** The writer's timebox: a quarter of the run's clock, at most six minutes. */
+    timeoutMs?: number;
   }): Promise<{ report: string; costMicroUsd: number }>;
+  /**
+   * The merged clarify-and-plan call (SPEC §9.5, B5): one structured reply
+   * with the questions, up to three optional clarifications, the searches,
+   * the source kinds and the scope. When wired it replaces `clarify` and
+   * `plan`, and a run never parks at `awaiting_clarification`.
+   */
+  draftPlan?(input: {
+    userId: string;
+    goal: string;
+    /** The conversation before the request, already wrapped as untrusted (B20). */
+    context?: string | null;
+    constraints: string[];
+    pinnedSources: string[];
+    /** `plan.today`. */
+    dateLine: string;
+    /** The explicit content language, as a name ("French"), when there is one. */
+    languageName?: string | null;
+    /** The reader's edits at the gate, for a revision. */
+    revision?: { questions: string[]; answers: Array<{ question: string; answer: string }> } | null;
+    /** The lead model the run was sized for, when it has been. */
+    leadModel?: string | null;
+    signal?: AbortSignal;
+  }): Promise<PlannerDraft>;
+  /**
+   * Sizes the run from its scope (SPEC §9.2): the server gathers the plan,
+   * the month, the rates, the roster and the counts and calls
+   * `researchBudgetFor`. `preview` sizes the card's estimate; `confirm` is the
+   * envelope that gets frozen. Optional: without it (the tests, and runs
+   * started before envelopes) a run keeps its legacy tier budget.
+   */
+  sizeRun?(input: {
+    run: ResearchRunRow;
+    plan: ResearchPlan;
+    scope: ResearchScope;
+    purpose: "preview" | "confirm";
+  }): Promise<ResearchEnvelope | ResearchBudgetRefusal>;
+  /**
+   * The web completion (SPEC §9.6.3): one assistant message, its report
+   * artifact, `lastMessageAt`, the run's pointer and its terminal state, in
+   * one transaction. Optional: without it (native, the tests) the run simply
+   * finishes. `raced` means another path finished the run first and nothing
+   * was written.
+   */
+  complete?(input: {
+    run: ResearchRunRow;
+    plan: ResearchPlan;
+    report: string;
+    sources: ResearchSourceRow[];
+    to: "completed" | "partially_completed";
+    error: string | null;
+  }): Promise<{ messageId: string | null; raced: boolean; sourceOrder?: string[] }>;
   /** Validates and, when safe, repairs a draft before the run becomes final. */
   validateReport?(input: {
     userId: string;
@@ -592,6 +685,8 @@ export interface ResearchDeps {
   /** Stable hash of fetched text, so a report stays auditable after the page changes. */
   hash(text: string): string;
   now(): Date;
+  /** How often a long stage renews its lease. 45 s in production; the tests shorten it (B3). */
+  heartbeatMs?: number;
 }
 
 export interface ResearchValidationResult {
@@ -820,7 +915,7 @@ const FETCH_PER_HOST = 2;
  * context holds, and the main-content extraction added alongside this means 12k
  * of a stripped page is worth more than 16k of one with the nav bar still in it.
  */
-export const SNAPSHOT_CHARS = 12_000;
+export const SNAPSHOT_CHARS = RESEARCH_SNAPSHOT_CHARS;
 /**
  * Below this, what a search engine handed back is a preview rather than a page,
  * and the source is worth opening properly. Set well under `SNAPSHOT_CHARS` so a
@@ -1197,21 +1292,45 @@ export interface StartRunInput {
   confirmation?: "auto" | "required";
   constraints?: string[];
   pinnedSources?: string[];
+  /*
+   * The rework's start facts (SPEC §9.3, §9.5), frozen on the plan.
+   */
+  /** The conversation before the request, wrapped as untrusted (B20). The goal stays the user's words. */
+  context?: string | null;
+  /** The requester's IANA zone and UI locale (§2.1). */
+  timeZone?: string | null;
+  locale?: string | null;
+  /** The explicit response-language setting, when it is not "auto" (D-1 option C). */
+  language?: string | null;
+  /** The chat's selected model, preferred as the lead when the plan's class allows it (§9.5.1). */
+  preferredModel?: string | null;
 }
+
+export type ControlReason =
+  | "not_found"
+  | "not_pausable"
+  | "not_paused"
+  | "already_finished"
+  | "not_awaiting_plan"
+  /** Answers arrived for a run that is not at the clarify gate. */
+  | "not_awaiting_clarification"
+  /** Finish or guidance for a run that is not working (it waits at a gate). */
+  | "not_running"
+  /** A sixth revision of one plan (§9.4). */
+  | "revise_limit"
+  /** Sizing refused the confirmed scope: see `refusal`. */
+  | "refused";
 
 export interface ControlResult {
   ok: boolean;
   /** Present whether or not the control applied, so a caller can report truth. */
   state: string;
   /** Set when `ok` is false: why the control did not apply. */
-  reason?:
-    | "not_found"
-    | "not_pausable"
-    | "not_paused"
-    | "already_finished"
-    | "not_awaiting_plan"
-    /** Answers arrived for a run that is not at the clarify gate. */
-    | "not_awaiting_clarification";
+  reason?: ControlReason;
+  /** With `reason: "refused"`: what sizing said. */
+  refusal?: ResearchBudgetRefusal;
+  /** Guidance was queued for the next round boundary (§9.4 steer). */
+  queued?: boolean;
 }
 
 export interface ResearchEngine {
@@ -1225,17 +1344,35 @@ export interface ResearchEngine {
     workerId?: string;
     /** Stop cleanly once the run enters this state, leaving it live. */
     until?: ResearchState;
+    /**
+     * Keep the lease when stopping at `until` (B2): the native hand-off
+     * renews it from the chat route while the chat model writes, so the run
+     * is never claimable in between. Every other stop releases it (B1).
+     */
+    holdLeaseAtUntil?: boolean;
   }): Promise<ResearchRunRow | null>;
   decidePlan(input: {
     runId: string;
     userId: string;
-    decision: "confirm" | "cancel";
+    decision: "confirm" | "cancel" | "revise";
     /** The plan as the user left it at the gate. See `ResearchPlan.steps`. */
     steps?: string[];
     queries?: string[];
     constraints?: string[];
     pinnedSources?: string[];
+    /** The questions as the reader left them on the card; a row without an id is new (§9.4). */
+    questions?: Array<{ id?: string; question: string }>;
+    /** Answers to the planner's optional questions, by id. */
+    answers?: Record<string, string>;
   }): Promise<ControlResult>;
+  /**
+   * Runs the planner again with the reader's edits, for a `revise` decision
+   * (§9.4). The card stays mounted while it runs; a revision whose run moved
+   * on (confirmed, cancelled) in the meantime is dropped.
+   */
+  revisePlan(input: { runId: string; userId: string; signal?: AbortSignal }): Promise<ControlResult>;
+  /** "Finish now": the engine writes with what it has at the next round boundary (§9.7). */
+  requestFinish(input: { runId: string; userId: string }): Promise<ControlResult>;
   /**
    * Answers to the clarify gate's questions, or a decision to skip them.
    *
@@ -1255,14 +1392,20 @@ export interface ResearchEngine {
     userId: string;
     constraint?: string;
     sourceUrl?: string;
+    /** Guidance for the next round boundary (§9.4, §9.7), queued on `plan.steering`. */
+    guidance?: string;
   }): Promise<ControlResult>;
   pause(input: { runId: string; userId: string }): Promise<ControlResult>;
   resume(input: { runId: string; userId: string }): Promise<ControlResult>;
-  cancel(input: { runId: string; userId: string }): Promise<ControlResult>;
+  /** `reason` is recorded on the event: "chat_stopped" when the chat that started it stopped (B2). */
+  cancel(input: { runId: string; userId: string; reason?: string }): Promise<ControlResult>;
 }
 
 export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
   const { store } = deps;
+  const heartbeatMs = deps.heartbeatMs ?? RESEARCH_LEASE_RENEW_MS;
+  /** A model stage, with the lease renewed underneath it (B3). */
+  const beat = <T>(fn: () => Promise<T>, heartbeat?: () => Promise<void>): Promise<T> => withHeartbeat(fn, heartbeat, heartbeatMs);
 
   const append = (runId: string, userId: string, events: readonly ResearchEventInput[]) =>
     store.appendEvents({ runId, userId, events });
@@ -1379,7 +1522,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
   const advance = async (
     run: ResearchRunRow,
     to: ResearchState,
-    patch?: { plan?: ResearchPlan; error?: string | null; report?: string | null },
+    patch?: { plan?: ResearchPlan; error?: string | null; report?: string | null; budgetMicroUsd?: bigint | null },
     extra: readonly ResearchEventInput[] = []
   ): Promise<ResearchRunRow | null> => {
     const from = run.state;
@@ -1423,6 +1566,25 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       patch: { error: detail.error ?? null, report: detail.report ?? run.report },
     });
     if (!moved) return null;
+    await announceFinish(run, from, to, detail);
+    return moved;
+  };
+
+  /**
+   * The events and the push that follow a terminal move, wherever it was
+   * written — `finish` above, or the web completion's own transaction.
+   *
+   * No push for a cancel (B19): a discarded plan or a stopped run is the
+   * person's own decision, and the old push told them "Research report
+   * complete" about a run that wrote nothing.
+   */
+  const announceFinish = async (
+    run: ResearchRunRow,
+    from: string,
+    to: ResearchTerminalState,
+    detail: { error?: string | null; reason?: string },
+    extra: readonly ResearchEventInput[] = []
+  ): Promise<void> => {
     await append(run.id, run.userId, [
       { kind: "state_changed", payload: { from, state: to } },
       {
@@ -1433,6 +1595,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
           ...(detail.error ? { error: detail.error } : {}),
         },
       },
+      ...extra,
     ]);
 
     // The inbox row and the push, through the one fan-out. Not for a cancel:
@@ -1473,8 +1636,6 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         )
         .catch(() => {});
     }
-
-    return moved;
   };
 
   /**
@@ -1500,14 +1661,42 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
    * with room for two is an overshoot no later check can undo. One read of the
    * live spend, then arithmetic.
    */
-  const affordableCount = async (run: ResearchRunRow, unit: number, wanted: number): Promise<number> => {
+  const affordableCount = async (run: ResearchRunRow, unit: number, wanted: number, reserveMicroUsd = 0): Promise<number> => {
     if (wanted <= 0) return 0;
     const fresh = await store.loadRun(run.id, run.userId);
     const spent = fresh?.costMicroUsd ?? run.costMicroUsd;
     const budget = fresh?.budgetMicroUsd ?? run.budgetMicroUsd;
     let n = wanted;
-    while (n > 0 && !budgetAllows(spent, budget, unit * n)) n -= 1;
+    while (n > 0 && !budgetAllows(spent, budget, unit * n + reserveMicroUsd)) n -= 1;
     return n;
+  };
+
+  /**
+   * What must stay unspent before another round goes out (B8): the writer's
+   * and the audit's reservations, frozen on the envelope. A round that eats
+   * into them leaves a run that gathered everything and cannot pay to write
+   * it — `partially_completed` with no report. A run without an envelope
+   * (started before them) reserves nothing here, exactly as before.
+   */
+  const writerReserve = (plan: ResearchPlan): number =>
+    plan.envelope ? plan.envelope.reserve.writerMicroUsd + plan.envelope.reserve.auditMicroUsd : 0;
+
+  /**
+   * Guidance queued since the last boundary becomes constraints now (§9.4):
+   * constraints already reach every worker brief, the lead's review and the
+   * writer, so this is the whole of "applied at the next round". Each entry
+   * is stamped with the round it took effect in, which the panel shows.
+   */
+  const applySteering = async (run: ResearchRunRow, round: number): Promise<ResearchRunRow> => {
+    const latest = (await store.loadRun(run.id, run.userId)) ?? run;
+    const plan = parsePlan(latest.plan);
+    const pending = (plan.steering ?? []).filter((entry) => entry.appliedAtRound === null);
+    if (pending.length === 0) return latest;
+    const constraints = [...plan.constraints, ...pending.map((entry) => entry.text.slice(0, MAX_CONSTRAINT_CHARS))].slice(-MAX_PLAN_CONSTRAINTS);
+    const steering = (plan.steering ?? []).map((entry) => (entry.appliedAtRound === null ? { ...entry, appliedAtRound: round } : entry));
+    const saved = await store.savePlan({ runId: latest.id, userId: latest.userId, plan: { ...plan, constraints, steering } });
+    await append(latest.id, latest.userId, pending.map((entry) => ({ kind: "steering_applied" as const, payload: { guidance: entry.text, round, appliedAt: latest.state } })));
+    return saved ?? latest;
   };
 
   const stopForBudget = async (run: ResearchRunRow, estimate: number): Promise<StepOutcome> => {
@@ -1523,13 +1712,23 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         },
       },
     ]);
-    const ended = await finish(run, to, {
-      reason: "budget_exhausted",
-      error:
-        to === "failed"
-          ? "The per-run budget was too small to gather anything."
-          : "Stopped at the per-run budget with the sources gathered so far.",
-    });
+    const error =
+      to === "failed"
+        ? "The per-run budget was too small to gather anything."
+        : "Stopped at the per-run budget with the sources gathered so far.";
+    // A run stopped with its report already written (the audit could not be
+    // paid for) still delivers it: `partially_completed` with a report is the
+    // same completion message, with the reader's "Stopped early" line (§9.6.3).
+    if (deps.complete && to === "partially_completed" && run.report?.trim()) {
+      const sources = citableSources(await store.listSources(run.id, run.userId));
+      const completed = await deps.complete({ run, plan: parsePlan(run.plan), report: run.report, sources, to, error });
+      if (completed.raced) return { kind: "raced" };
+      await announceFinish(run, run.state, to, { reason: "budget_exhausted", error }, [
+        { kind: "run_completed", payload: { messageId: completed.messageId, ...(completed.sourceOrder ? { sourceOrder: completed.sourceOrder } : {}) } },
+      ]);
+      return { kind: "finished", state: to };
+    }
+    const ended = await finish(run, to, { reason: "budget_exhausted", error });
     return ended ? { kind: "finished", state: to } : { kind: "raced" };
   };
 
@@ -1587,23 +1786,33 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * are kept alongside only so the UI can show an exchange rather than a list
    * of anonymous constraints, and so a resumed run knows it has already asked.
    */
-  const doClarifying = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doClarifying = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
     const skip = async (): Promise<StepOutcome> => {
       const moved = await advance(run, "planning");
       return moved ? { kind: "advanced", state: "planning" } : { kind: "raced" };
     };
-    if (!deps.clarify || plan.confirmation === "auto" || plan.clarifiedAt) return skip();
+    // The merged gate (§9.5): with the structured planner wired, its optional
+    // questions ride the scope card, and no run ever parks on a clarify form.
+    if (deps.draftPlan || !deps.clarify || plan.confirmation === "auto" || plan.clarifiedAt) return skip();
     if (!(await affordable(run, CLARIFY_ESTIMATE_MICRO_USD))) return skip();
 
     let drafted: { questions: ResearchClarification[]; costMicroUsd: number };
     try {
-      drafted = await deps.clarify({
-        userId: run.userId,
-        goal: run.goal,
-        effort: plan.effort ?? DEFAULT_RESEARCH_EFFORT,
-        signal,
-      });
+      drafted = await beat(
+        () =>
+          deps.clarify!({
+            userId: run.userId,
+            goal: run.goal,
+            effort: plan.effort ?? DEFAULT_RESEARCH_EFFORT,
+            signal,
+          }),
+        heartbeat
+      );
     } catch (error) {
       // A clarifier that fails must cost the run nothing but a few seconds.
       console.error("[research] clarify failed", { runId: run.id, error });
@@ -1631,19 +1840,199 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     return moved ? { kind: "blocked", state: "awaiting_clarification" } : { kind: "raced" };
   };
 
-  const doPlanning = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  // ── sizing and the structured planner (SPEC §9.2, §9.5) ─────────────────
+
+  /** The card's estimate caps for a run nothing sizes: its own tier's ceilings. */
+  const legacyEstimateCaps = (plan: ResearchPlan): ResearchEstimateCaps => {
+    const budget = planBudget(plan);
+    return {
+      maxWorkers: budget.workers,
+      maxRounds: budget.rounds,
+      maxPages: budget.pages,
+      maxMinutes: Math.max(1, Math.round(budget.wallClockMs / 60_000)),
+      secondsPerPage: 9,
+      fixedMinutes: 2,
+    };
+  };
+
+  /**
+   * The envelope frozen on the plan (§9.2, INV-22): the engine reads every
+   * limit from `plan.envelope`; `budget` and `effort` beside it are the
+   * previous build's copy — the envelope's own numbers under the nearest
+   * tier's name, which the DTO never shows.
+   */
+  const frozenWith = (plan: ResearchPlan, envelope: ResearchEnvelope): ResearchPlan => ({
+    ...plan,
+    envelope,
+    effort: nearestEffort(envelope),
+    budget: { ...budgetFromEnvelope(envelope), ...(plan.budget?.startedAt ? { startedAt: plan.budget.startedAt } : {}) },
+    estimateCaps: envelope.caps,
+  });
+
+  const sizeFor = async (
+    run: ResearchRunRow,
+    plan: ResearchPlan,
+    purpose: "preview" | "confirm"
+  ): Promise<ResearchEnvelope | ResearchBudgetRefusal | null> =>
+    deps.sizeRun && plan.scope ? deps.sizeRun({ run, plan, scope: plan.scope, purpose }) : null;
+
+  const isRefusal = (value: ResearchEnvelope | ResearchBudgetRefusal | null): value is ResearchBudgetRefusal =>
+    !!value && "refused" in value;
+
+  /** Ends a run sizing refused before any paid work: the reason is the refusal's. */
+  const refuseRun = async (run: ResearchRunRow, refusal: ResearchBudgetRefusal): Promise<StepOutcome> => {
+    await append(run.id, run.userId, [{ kind: "budget_exhausted", payload: { refusal: refusal.reason, params: refusal.params } }]);
+    const ended = await finish(run, "failed", {
+      reason: `refused_${refusal.reason}`,
+      error: REFUSAL_ERROR[refusal.reason],
+    });
+    return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+  };
+
+  /** One structured planner call, at the lead's rates when the catalogue knows them. */
+  const plannerEstimate = () =>
+    modelCallEstimateMicroUsd(PLANNER_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, PLANNER_OUTPUT_TOKENS, deps.modelRates?.lead);
+
+  /**
+   * PLANNING, merged (§9.5, DECISIONS R2): one call returns the questions,
+   * up to three optional clarifications, the searches and the scope. The
+   * reply is structured and validated; a reply that does not validate twice
+   * fails the run as `planner_invalid` — a truncated object is never searched
+   * as if it were a list of queries (B5).
+   *
+   * A web run then waits at the scope card with its estimate; a tiny scope
+   * (one question, at most three minutes, nothing to ask) and the native path
+   * (`confirmation: "auto"`) confirm on their own, sized and frozen here.
+   */
+  const doStructuredPlanning = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
+    const plan = parsePlan(run.plan);
+    const estimate = plannerEstimate();
+    if (!(await affordable(run, estimate))) return stopForBudget(run, estimate);
+    const dateLine = plan.today ?? todayLine(run.createdAt, plan.timeZone);
+    let drafted: PlannerDraft;
+    try {
+      drafted = await beat(
+        () =>
+          deps.draftPlan!({
+            userId: run.userId,
+            goal: run.goal,
+            context: plan.context ?? null,
+            constraints: plan.constraints,
+            pinnedSources: plan.pinnedSources,
+            dateLine,
+            languageName: plan.language ? languageName(plan.language) : null,
+            leadModel: plan.envelope?.leadModel ?? null,
+            signal,
+          }),
+        heartbeat
+      );
+    } catch (error) {
+      console.error("[research] planner failed", { runId: run.id, error });
+      drafted = { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
+    }
+    await bill(run, drafted.costMicroUsd, "plan");
+    if (!drafted.ok) {
+      const ended = await finish(run, "failed", {
+        reason: "planner_invalid",
+        error: "The research planner could not draft a plan for this question. Try again, or rephrase the goal.",
+      });
+      return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+    }
+
+    const planned = plannedResearch(drafted.output);
+    const now = deps.now().toISOString();
+    let next: ResearchPlan = {
+      ...plan,
+      ...(planned.title ? { title: planned.title } : {}),
+      ...(planned.approach ? { approach: planned.approach } : {}),
+      // The steps are the questions, so a client that still reads the
+      // pre-rework gate shows the plan a person is about to approve.
+      steps: planned.objectives.map((objective) => objective.question),
+      objectives: planned.objectives,
+      queries: planned.queries,
+      clarifications: planned.clarifications,
+      ...(planned.sourceKinds.length ? { sourceKinds: planned.sourceKinds } : {}),
+      scope: planned.scope,
+      language: contentLanguage({ explicit: plan.language, planner: planned.language, uiLocale: plan.locale }),
+      today: dateLine,
+      draftedAt: now,
+      issuedQueries: [],
+      followUpRound: 0,
+      coverage: [],
+      conflicts: [],
+    };
+
+    const auto = next.confirmation === "auto";
+    let sized: ResearchEnvelope | ResearchBudgetRefusal | null = null;
+    let tiny = false;
+    if (!auto) {
+      const preview = await sizeFor(run, next, "preview");
+      if (isRefusal(preview)) return refuseRun(run, preview);
+      const caps = preview ? preview.caps : legacyEstimateCaps(next);
+      const estimateLine: ResearchEstimate = preview ? preview.estimate : estimateFor(planned.scope, caps);
+      next = { ...next, estimateCaps: caps };
+      tiny = isTinyScope(planned.scope, estimateLine, planned.clarifications.length);
+      if (tiny) sized = preview;
+    }
+    if (auto || tiny) {
+      if (auto || !sized) sized = await sizeFor(run, next, "confirm");
+      if (isRefusal(sized)) return refuseRun(run, sized);
+      next = { ...(sized ? frozenWith(next, sized) : next), confirmedAt: now, confirmation: "auto" };
+    }
+
+    const drafted_ = {
+      queries: next.queries,
+      objectives: next.objectives.length,
+      steps: next.steps ?? [],
+      ...(next.approach ? { approach: next.approach } : {}),
+      ...(next.title ? { title: next.title } : {}),
+      clarifications: next.clarifications?.length ?? 0,
+    };
+    await store.savePlan({ runId: run.id, userId: run.userId, plan: next });
+    await store.recordQueries({ runId: run.id, userId: run.userId, queries: next.queries });
+    const reloaded = (await store.loadRun(run.id, run.userId)) ?? run;
+    if (planIsConfirmed(next)) {
+      const moved = await advance(
+        reloaded,
+        "investigating",
+        sized && !isRefusal(sized) ? { budgetMicroUsd: BigInt(sized.ceilingMicroUsd) } : undefined,
+        [
+          { kind: "plan_drafted", payload: drafted_ },
+          { kind: "plan_confirmed", payload: { by: "auto", ...(tiny ? { tiny: true } : {}) } },
+        ]
+      );
+      return moved ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
+    }
+    const moved = await advance(reloaded, "awaiting_plan_confirmation", undefined, [{ kind: "plan_drafted", payload: drafted_ }]);
+    return moved ? { kind: "blocked", state: "awaiting_plan_confirmation" } : { kind: "raced" };
+  };
+
+  const doPlanning = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
+    if (deps.draftPlan) return doStructuredPlanning(run, signal, heartbeat);
     const plan = parsePlan(run.plan);
     if (!(await affordable(run, PLAN_ESTIMATE_MICRO_USD))) {
       return stopForBudget(run, PLAN_ESTIMATE_MICRO_USD);
     }
-    const drafted = await deps.plan({
-      userId: run.userId,
-      goal: run.goal,
-      constraints: plan.constraints,
-      effort: plan.effort,
-      pinnedSources: plan.pinnedSources,
-      signal,
-    });
+    const drafted = await beat(
+      () =>
+        deps.plan({
+          userId: run.userId,
+          goal: run.goal,
+          constraints: plan.constraints,
+          effort: plan.effort,
+          pinnedSources: plan.pinnedSources,
+          signal,
+        }),
+      heartbeat
+    );
     await bill(run, drafted.costMicroUsd, "plan");
     /*
      * A RUN WITH NO PLAN IS NOT A RESEARCH RUN, so it stops here.
@@ -2750,6 +3139,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       plan = parsePlan(current.plan);
       await heartbeat?.();
 
+      // A round boundary: "Finish now" stops the rounds (§9.7), and guidance
+      // queued since the last boundary becomes constraints before the briefs
+      // are written (§9.4).
+      if (plan.finishRequestedAt) break;
+      if ((plan.steering ?? []).some((entry) => entry.appliedAtRound === null)) {
+        current = await applySteering(current, round);
+        plan = parsePlan(current.plan);
+      }
+
       if (investigationElapsedMs(plan, deps.now()) >= budget.wallClockMs) break;
       if (workerTokens.used >= budget.tokens) break;
 
@@ -2798,7 +3196,9 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const perWorkerEstimate = deps.modelRates?.worker
         ? workerEstimateMicroUsd(budget, deps.modelRates.worker)
         : budget.toolCallsPerWorker * Math.max(SEARCH_FEE_MICRO_USD, PAGE_FETCH_FEE_MICRO_USD) * VENDOR_ESTIMATE_MARGIN;
-      const affordableWorkers = await affordableCount(current, perWorkerEstimate, delegations.length);
+      // B8: the round is priced with the writer's and the audit's reservation
+      // held back, so investigation can never starve the report.
+      const affordableWorkers = await affordableCount(current, perWorkerEstimate, delegations.length, writerReserve(plan));
       if (affordableWorkers === 0) break;
       delegations = delegations.slice(0, affordableWorkers);
 
@@ -2836,7 +3236,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
 
       // Workers run in parallel up to the tier's width; the heartbeat keeps the
       // lease alive underneath them, since a round comfortably outlives it.
-      const pulse = setInterval(() => void heartbeat?.().catch(() => undefined), 45_000);
+      const pulse = setInterval(() => void heartbeat?.().catch(() => undefined), heartbeatMs);
       let settled: Awaited<ReturnType<typeof runAll<ResearchDelegation, WorkerResult>>>;
       try {
         settled = await runAll(
@@ -2862,6 +3262,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
                 constraints: plan.constraints,
                 visited,
                 recentQueries,
+                ...(plan.today ? { today: plan.today } : {}),
               },
               tools,
               limits: { maxToolCalls: budget.toolCallsPerWorker, wallClockMs: Math.max(30_000, roundDeadline - Date.now()) },
@@ -2988,13 +3389,18 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         roundsLeft: totalRounds - round,
         pagesLeft: Math.max(0, pageCeiling - shared.pagesRead),
         previous: latestPlan.rounds?.[latestPlan.rounds.length - 1]?.review,
+        ...(latestPlan.today ? { today: latestPlan.today } : {}),
+        ...(latestPlan.envelope?.leadModel ? { leadModelId: latestPlan.envelope.leadModel } : {}),
         signal,
       };
       const leadAffordable =
         !deps.modelRates?.lead || (await affordable(current, reviewEstimateMicroUsd(deps.modelRates.lead)));
       let review: ReviewRoundOutput;
       try {
-        review = deps.reviewRound && leadAffordable ? await deps.reviewRound(reviewInput) : fallbackReview(reviewInput);
+        review =
+          deps.reviewRound && leadAffordable
+            ? await beat(() => deps.reviewRound!(reviewInput), heartbeat)
+            : fallbackReview(reviewInput);
       } catch (error) {
         console.error("[research] round review failed", { runId: current.id, error });
         review = fallbackReview(reviewInput);
@@ -3125,7 +3531,13 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * plan can have plenty of sources and still miss one of its questions; the
    * controller must discover that while there is still budget to search.
    */
-  const doCoverage = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doCoverage = async (
+    runAtStart: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
+    // A round boundary: guidance queued since the last one takes effect now.
+    const run = await applySteering(runAtStart, (parsePlan(runAtStart.plan).rounds?.length ?? 0) + 1);
     const progress = await store.progress(run.id, run.userId);
     const plan = parsePlan(run.plan);
     await append(run.id, run.userId, [
@@ -3184,23 +3596,34 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
      */
     const roundLimit = Math.min(MAX_FOLLOW_UP_ROUNDS, Math.max(0, planBudget(plan).rounds - 1));
     let followUps = round < roundLimit ? computed.followUps.slice(0, availableSlots) : [];
+    // "Finish now" stops the rounds here (§9.7), and so does a follow-up sweep
+    // that would eat the writer's and the audit's reservation (B8).
+    if (plan.finishRequestedAt) followUps = [];
+    const reserve = writerReserve(plan);
+    if (followUps.length > 0 && reserve > 0 && !(await affordable(run, reserve + followUps.length * SEARCH_ESTIMATE_MICRO_USD))) {
+      followUps = [];
+    }
     if (
       deps.expandQueries &&
       followUps.length > 0 &&
       computed.gaps.length > 0 &&
-      (await affordable(run, EXPANSION_ESTIMATE_MICRO_USD))
+      (await affordable(run, EXPANSION_ESTIMATE_MICRO_USD + reserve))
     ) {
-      const expanded = await deps.expandQueries({
-        userId: run.userId,
-        goal: run.goal,
-        gaps: computed.gaps,
-        // The sweep's queries and then the workers', newest last, so the
-        // expander is told what the team actually tried and not only the
-        // seed list it was told about last round.
-        alreadyIssued: [...nextPlan.queries, ...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])],
-        limit: availableSlots,
-        signal,
-      });
+      const expanded = await beat(
+        () =>
+          deps.expandQueries!({
+            userId: run.userId,
+            goal: run.goal,
+            gaps: computed.gaps,
+            // The sweep's queries and then the workers', newest last, so the
+            // expander is told what the team actually tried and not only the
+            // seed list it was told about last round.
+            alreadyIssued: [...nextPlan.queries, ...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])],
+            limit: availableSlots,
+            signal,
+          }),
+        heartbeat
+      );
       await bill(run, expanded.costMicroUsd, "plan");
       const seen = new Set(nextPlan.queries.map((query) => query.toLowerCase()));
       const fresh = expanded.queries
@@ -3289,7 +3712,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     return doReading(freshAfterBrowse, signal, heartbeat);
   };
 
-  const doSynthesis = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doSynthesis = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     // No writer wired in: this is the chat path, where the route streams the
     // report through the user's own model. The job's work is done, and the run
     // waits at `synthesizing` for the caller that asked to be handed the
@@ -3315,23 +3742,73 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return stopForBudget(run, estimate);
     }
     const findings = store.listFindings ? await store.listFindings(run.id, run.userId) : [];
-    const written = await deps.synthesize({
-      userId: run.userId,
-      goal: run.goal,
-      plan,
-      sources,
-      findings,
-      signal,
-      ...(revision ? { revision } : {}),
-    });
-    await bill(run, written.costMicroUsd, "synthesis");
+    // The writer is timeboxed to a quarter of the run's clock, six minutes at
+    // most, and heartbeats the lease while it writes (B3, R8).
+    const timeoutMs = Math.max(60_000, Math.min(WRITER_TIMEBOX_MAX_MS, Math.floor(planBudget(plan).wallClockMs * 0.25)));
+    const write = async (corpusScale: number) => {
+      const written = await beat(
+        () =>
+          deps.synthesize!({
+            userId: run.userId,
+            goal: run.goal,
+            plan,
+            sources,
+            findings,
+            signal,
+            ...(revision ? { revision } : {}),
+            corpusScale,
+            timeoutMs,
+          }),
+        heartbeat
+      );
+      await bill(run, written.costMicroUsd, "synthesis");
+      return written;
+    };
+
+    let written = await write(1);
+    let parts = writerParts(written.report);
+    /*
+     * B6: an empty or unusable report is not a report. It used to advance
+     * with `report: ""`, skip the audit (nothing to check) and finish
+     * `completed` — a finished run with nothing in it. One retry on a corpus
+     * packed 30% smaller (the usual cause is a prompt the provider refused or
+     * cut short), then the run fails and says why. A revision keeps its
+     * audited draft instead, as it always has.
+     */
+    if (!revision && !isUsableReport(parts.report)) {
+      const fresh = (await store.loadRun(run.id, run.userId)) ?? run;
+      if (fresh.state !== "synthesizing") return { kind: "raced" };
+      const retryEstimate = Math.ceil(estimate * WRITER_RETRY_CORPUS_SCALE);
+      if (await affordable(fresh, retryEstimate)) {
+        await append(run.id, run.userId, [
+          { kind: "error", payload: { scope: "writer", recoverable: true, message: "The report came back empty; writing it again from a smaller corpus." } },
+        ]);
+        written = await write(WRITER_RETRY_CORPUS_SCALE);
+        parts = writerParts(written.report);
+      }
+      if (!isUsableReport(parts.report)) {
+        const latest = (await store.loadRun(run.id, run.userId)) ?? fresh;
+        const ended = await finish(latest, "failed", {
+          reason: "writer_empty",
+          error: "The report could not be written from the sources gathered.",
+        });
+        return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+      }
+    }
     const fresh = (await store.loadRun(run.id, run.userId)) ?? run;
     if (fresh.state !== "synthesizing") return { kind: "raced" };
-    // A failed rewrite must not erase the already audited report. Initial
-    // synthesis keeps its historical behavior (an empty writer result remains
-    // empty), while a revision falls back to the evidence-backed draft.
-    const report = written.report.trim() || revision?.report || "";
-    const moved = await advance(fresh, "validating_citations", { report }, [
+    // A failed rewrite must not erase the already audited report.
+    const report = parts.report.trim() || revision?.report || "";
+    const latestPlan = parsePlan(fresh.plan);
+    const planPatch =
+      parts.summary || parts.title
+        ? {
+            ...latestPlan,
+            ...(parts.summary ? { summary: parts.summary } : {}),
+            ...(parts.title ? { title: parts.title } : {}),
+          }
+        : undefined;
+    const moved = await advance(fresh, "validating_citations", { report, ...(planPatch ? { plan: planPatch } : {}) }, [
       {
         kind: "report_ready",
         payload: { chars: report.length, ...(revision ? { revisionRound } : {}) },
@@ -3349,7 +3826,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * revision branch below then gives the writer one chance to produce a clean
    * replacement before the run becomes terminal.
    */
-  const doValidation = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doValidation = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     // The identical list the writer numbered — see `citableSources`. Handing
     // the audit every row put an unread row at index 1 of most runs, and
     // every citation was then judged against a page with no passages.
@@ -3373,20 +3854,28 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
        * skipping the audit while reporting `completed` would tell the reader
        * every citation had been verified when none had.
        */
-      if (!(await affordable(run, CITATION_AUDIT_ESTIMATE_MICRO_USD))) {
-        return stopForBudget(run, CITATION_AUDIT_ESTIMATE_MICRO_USD);
+      // A run with an envelope reserved its audit at its own judge budget
+      // (B22); older runs keep the audit-wide reservation.
+      const auditPlan = parsePlan(run.plan);
+      const auditEstimate = auditPlan.envelope ? auditPlan.envelope.reserve.auditMicroUsd : CITATION_AUDIT_ESTIMATE_MICRO_USD;
+      if (!(await affordable(run, auditEstimate))) {
+        return stopForBudget(run, auditEstimate);
       }
       await append(run.id, run.userId, [{ kind: "citation_audit_started", payload: { sources: sources.length } }]);
       try {
-        validation = await deps.validateReport({
-          userId: run.userId,
-          runId: run.id,
-          goal: run.goal,
-          plan: parsePlan(run.plan),
-          report,
-          signal,
-          sources,
-        });
+        validation = await beat(
+          () =>
+            deps.validateReport!({
+              userId: run.userId,
+              runId: run.id,
+              goal: run.goal,
+              plan: parsePlan(run.plan),
+              report,
+              signal,
+              sources,
+            }),
+          heartbeat
+        );
         if (validation) {
           report = validation.report;
           // Same path every other stage bills through — `bill` → `addSpend`,
@@ -3490,18 +3979,38 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       );
       return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
     }
-    const to: ResearchTerminalState = dangling.length > 0 || auditDegraded ? "partially_completed" : "completed";
-    const ended = await finish(run, to, {
-      reason:
-        dangling.length > 0 ? "citations_unverified" : auditDegraded ? "citation_audit_degraded" : "completed",
-      report,
-      error:
-        dangling.length > 0
-          ? "Some citations in the report do not match a gathered source."
-          : auditDegraded
-            ? "Citation validation was unavailable; the report is usable but not fully verified."
-            : null,
-    });
+    const to = (dangling.length > 0 || auditDegraded ? "partially_completed" : "completed") as "completed" | "partially_completed";
+    const reason =
+      dangling.length > 0 ? "citations_unverified" : auditDegraded ? "citation_audit_degraded" : "completed";
+    const error =
+      dangling.length > 0
+        ? "Some citations in the report do not match a gathered source."
+        : auditDegraded
+          ? "Citation validation was unavailable; the report is usable but not fully verified."
+          : null;
+
+    /*
+     * The web completion (§9.6.3, INV-14): the message, its report artifact,
+     * the conversation's lastMessageAt, the run's pointer and this terminal
+     * move are one transaction, written by `complete`. The events follow it,
+     * and `run_completed` tells the panel which message now holds the report.
+     */
+    if (deps.complete && report.trim()) {
+      const completed = await deps.complete({ run, plan: parsePlan(run.plan), report, sources, to, error });
+      if (completed.raced) return { kind: "raced" };
+      await announceFinish(run, run.state, to, { reason, error }, [
+        {
+          kind: "run_completed",
+          payload: {
+            messageId: completed.messageId,
+            ...(completed.sourceOrder ? { sourceOrder: completed.sourceOrder } : {}),
+          },
+        },
+      ]);
+      return { kind: "finished", state: to };
+    }
+
+    const ended = await finish(run, to, { reason, report, error });
     return ended ? { kind: "finished", state: to } : { kind: "raced" };
   };
 
@@ -3530,24 +4039,160 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return moved ? { kind: "advanced", state: "clarifying" } : { kind: "raced" };
     }
     if (!isWorkingResearchState(run.state)) return { kind: "raced" };
+    // Every stage gets the heartbeat (B3): a model call that outlives the
+    // lease is a second driver running the same stage and billing it twice.
     switch (run.state) {
       case "clarifying":
-        return doClarifying(run, signal);
+        return doClarifying(run, signal, heartbeat);
       case "planning":
-        return doPlanning(run, signal);
+        return doPlanning(run, signal, heartbeat);
       case "investigating":
         return doInvestigating(run, signal, heartbeat);
       case "reviewing":
-        return doCoverage(run, signal);
+        return doCoverage(run, signal, heartbeat);
       case "synthesizing":
-        return doSynthesis(run, signal);
+        return doSynthesis(run, signal, heartbeat);
       case "validating_citations":
-        return doValidation(run, signal);
+        return doValidation(run, signal, heartbeat);
     }
+  };
+
+  /**
+   * The reader's questions as objectives: a row with an id (or the same text)
+   * keeps its objective and evidence contract; a reworded one keeps its id
+   * and is searched in its new words; a new one gets a fresh id. Order is the
+   * reader's, and so is importance.
+   */
+  const objectivesFromRows = (
+    goal: string,
+    existing: readonly ResearchPlan["objectives"][number][],
+    rows: ReadonlyArray<{ id?: string; question: string }>
+  ): { objectives: ResearchPlan["objectives"]; changed: boolean; newQuestions: string[] } => {
+    const byId = new Map(existing.map((objective) => [objective.id, objective]));
+    const byText = new Map(existing.map((objective) => [objective.question.trim().toLowerCase(), objective]));
+    const used = new Set<string>();
+    const objectives: ResearchPlan["objectives"] = [];
+    const newQuestions: string[] = [];
+    let serial = existing.length;
+    for (const row of rows) {
+      if (objectives.length >= MAX_RESEARCH_OBJECTIVES) break;
+      const text = row.question.replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
+      if (text.length < 3) continue;
+      let base = (row.id ? byId.get(row.id) : undefined) ?? byText.get(text.toLowerCase());
+      if (base && used.has(base.id)) base = undefined;
+      const importance = Math.max(0.5, 1 - objectives.length * 0.1);
+      if (base) {
+        used.add(base.id);
+        const reworded = base.question !== text;
+        if (reworded) newQuestions.push(text);
+        objectives.push(reworded ? { ...base, question: text, status: "open", importance } : { ...base, importance });
+        continue;
+      }
+      let id = `objective-${(serial += 1)}`;
+      while (byId.has(id) || used.has(id)) id = `objective-${(serial += 1)}`;
+      used.add(id);
+      const [fresh] = buildResearchObjectives(goal, [text]);
+      objectives.push({
+        ...fresh,
+        id,
+        importance,
+        evidenceRequirements: fresh.evidenceRequirements.map((requirement, i) => ({ ...requirement, id: `${id}-evidence-${i + 1}` })),
+      });
+      newQuestions.push(text);
+    }
+    const changed =
+      objectives.length !== existing.length ||
+      objectives.some((objective, i) => objective.id !== existing[i]?.id || objective.question !== existing[i]?.question);
+    return { objectives: objectives.length ? objectives : [...existing], changed: objectives.length ? changed : false, newQuestions };
+  };
+
+  /**
+   * CONFIRM at the scope card (§9.4): the answers become constraints (as the
+   * clarify gate's always did), the questions as the reader left them become
+   * the objectives, the scope follows the edit, and the envelope is computed
+   * NOW, from that scope, and frozen on the run with its ceiling. A refusal
+   * leaves the card where it is and says why.
+   */
+  const confirmScopedPlan = async (
+    run: ResearchRunRow,
+    current: ResearchPlan,
+    edits: {
+      questions?: Array<{ id?: string; question: string }>;
+      answers?: Record<string, string>;
+      steps?: string[];
+      queries?: string[];
+      constraints?: string[];
+      pinnedSources?: string[];
+      now: Date;
+    }
+  ): Promise<ControlResult> => {
+    const sameList = (a: readonly string[], b: readonly string[]) =>
+      a.length === b.length && a.every((value, i) => value.trim() === (b[i] ?? "").trim());
+    const asked = current.clarifications ?? [];
+    const known = new Set(asked.map((question) => question.id));
+    const clean = parseClarificationAnswers(edits.answers ?? {});
+    const answered: Record<string, string> = { ...(current.clarificationAnswers ?? {}) };
+    for (const [id, answer] of Object.entries(clean)) if (known.has(id)) answered[id] = answer;
+    const added = asked
+      .filter((question) => known.has(question.id) && clean[question.id])
+      .map((question) => `${question.question} ${clean[question.id]}`.slice(0, MAX_CONSTRAINT_CHARS));
+
+    // The reader's questions; from a pre-rework gate, its edited steps are the questions.
+    const currentQuestions = current.objectives.map((objective) => objective.question);
+    const rows =
+      edits.questions ??
+      (edits.steps && !sameList(edits.steps, currentQuestions) ? edits.steps.map((question) => ({ question })) : undefined);
+    let objectives = current.objectives;
+    let queries = edits.queries ?? current.queries;
+    let edited = edits.queries !== undefined && !sameList(edits.queries, current.queries);
+    if (rows) {
+      const rebuilt = objectivesFromRows(run.goal, current.objectives, rows);
+      if (rebuilt.changed) {
+        edited = true;
+        objectives = rebuilt.objectives;
+        const seen = new Set(queries.map((query) => query.toLowerCase()));
+        queries = [...queries, ...rebuilt.newQuestions.filter((question) => !seen.has(question.toLowerCase()))].slice(0, MAX_PLAN_QUERIES);
+      }
+    }
+    const nowIso = edits.now.toISOString();
+    const scope: ResearchScope = {
+      ...(current.scope ?? { breadth: "broad", freshness: "any", primarySources: false, quick: false }),
+      questions: Math.max(1, objectives.length),
+    };
+    let next: ResearchPlan = {
+      ...current,
+      objectives,
+      queries,
+      steps: objectives.map((objective) => objective.question),
+      scope,
+      constraints: [...(edits.constraints ?? current.constraints), ...added].slice(0, MAX_PLAN_CONSTRAINTS),
+      pinnedSources: (edits.pinnedSources ?? current.pinnedSources).slice(0, MAX_PINNED_SOURCES),
+      ...(Object.keys(answered).length ? { clarificationAnswers: answered } : {}),
+      clarifiedAt: nowIso,
+      confirmedAt: nowIso,
+      revising: false,
+      revisingAt: undefined,
+      pendingRevision: undefined,
+      ...(edited ? { issuedQueries: [], followUpRound: 0, coverage: [], conflicts: [] } : {}),
+    };
+    const sized = await sizeFor(run, next, "confirm");
+    if (isRefusal(sized)) return { ok: false, state: run.state, reason: "refused", refusal: sized };
+    if (sized) next = frozenWith(next, sized);
+    const saved = await store.savePlan({ runId: run.id, userId: run.userId, plan: next });
+    await store.recordQueries({ runId: run.id, userId: run.userId, queries: next.queries });
+    const moved = await advance(saved ?? run, "investigating", sized ? { budgetMicroUsd: BigInt(sized.ceilingMicroUsd) } : undefined, [
+      {
+        kind: "plan_confirmed",
+        payload: { by: "user", queries: next.queries, edited, questions: objectives.length, answered: added.length },
+      },
+    ]);
+    return moved ? { ok: true, state: "investigating" } : { ok: false, state: run.state, reason: "not_awaiting_plan" };
   };
 
   return {
     async start(input) {
+      const createdAt = deps.now();
+      const explicitLanguage = input.language?.trim();
       const plan: ResearchPlan = {
         ...EMPTY_PLAN,
         effort: input.effort ?? "standard",
@@ -3555,6 +4200,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         confirmation: input.confirmation ?? "required",
         constraints: (input.constraints ?? []).slice(0, MAX_PLAN_CONSTRAINTS),
         pinnedSources: (input.pinnedSources ?? []).slice(0, MAX_PINNED_SOURCES),
+        // Frozen at start (§9.3, §9.5): the date line every prompt carries, the
+        // requester's zone and locale, the conversation around the request as
+        // untrusted reference, and an explicit content language when set.
+        today: todayLine(createdAt, input.timeZone),
+        ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+        ...(input.locale ? { locale: input.locale } : {}),
+        ...(input.context?.trim() ? { context: input.context.slice(0, MAX_PLAN_CONTEXT_CHARS) } : {}),
+        ...(explicitLanguage && explicitLanguage !== "auto" ? { language: explicitLanguage } : {}),
+        ...(input.preferredModel ? { preferredLead: input.preferredModel } : {}),
       };
       const created = await store.createRun({
         userId: input.userId,
@@ -3576,10 +4230,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return created;
     },
 
-    async drive({ runId, userId, signal, until, workerId }) {
+    async drive({ runId, userId, signal, until, workerId, holdLeaseAtUntil }) {
       let run = await store.loadRun(runId, userId);
       if (!run) return null;
       let leaseAnnounced = false;
+      let holding = false;
       /**
        * Renews the lease from INSIDE a long stage.
        *
@@ -3595,6 +4250,22 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         if (!store.claimRun || !workerId) return;
         await store.claimRun({ runId, userId, workerId, leaseMs: RESEARCH_WORKER_LEASE_MS });
       };
+      /**
+       * Every non-terminal return lets the lease go (B1). A drive that stopped
+       * at the plan gate used to keep it for its full two minutes, so the
+       * nudge after "Start" — a different owner — could not claim the run, and
+       * the person watched a confirmed plan sit still until the PM2 sweep came
+       * round. The one exception is the native hand-off, whose caller renews
+       * the lease itself while the chat model writes (B2).
+       */
+      const leave = async (row: ResearchRunRow | null, reason: "until" | "other" = "other"): Promise<ResearchRunRow | null> => {
+        if (holding && workerId && store.releaseRun && !(reason === "until" && holdLeaseAtUntil)) {
+          await store.releaseRun({ runId, userId, workerId }).catch((error: unknown) => {
+            console.error("[research] lease release failed", { runId, error });
+          });
+        }
+        return row;
+      };
       for (let i = 0; i < MAX_STEPS; i += 1) {
         if (store.claimRun && workerId) {
           const claimed = await store.claimRun({
@@ -3603,7 +4274,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
             workerId,
             leaseMs: RESEARCH_WORKER_LEASE_MS,
           });
-          if (!claimed) return (await store.loadRun(runId, userId)) ?? run;
+          // Not claimable: somebody else holds it, or the run moved to a state
+          // no driver works in (a pause). Only a lease this drive held earlier
+          // is let go, and the release is conditional on the owner anyway.
+          if (!claimed) return leave((await store.loadRun(runId, userId)) ?? run);
+          holding = true;
           run = claimed;
           if (!leaseAnnounced) {
             await append(run.id, run.userId, [
@@ -3618,29 +4293,30 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
             leaseAnnounced = true;
           }
         }
-        if (signal?.aborted) return run;
-        if (until && run.state === until) return run;
+        if (signal?.aborted) return leave(run);
+        if (until && run.state === until) return leave(run, "until");
         const outcome = await step(run, signal, heartbeat);
         if (outcome.kind === "finished" || outcome.kind === "blocked") {
-          return (await store.loadRun(runId, userId)) ?? run;
+          return leave((await store.loadRun(runId, userId)) ?? run);
         }
         const fresh = await store.loadRun(runId, userId);
-        if (!fresh) return run;
+        if (!fresh) return leave(run);
         // A `raced` outcome is not an error: a pause or a cancel landing
         // mid-step is exactly what it looks like. Reload and let the loop
         // re-decide — the next pass sees `paused` or `cancelled` and stops.
-        if (outcome.kind === "raced" && fresh.state === run.state) return fresh;
+        if (outcome.kind === "raced" && fresh.state === run.state) return leave(fresh);
         run = fresh;
       }
       // MAX_STEPS reached. Something is cycling; stopping with what we have is
       // better than a job that bills forever.
-      return finish(run, "partially_completed", {
+      await finish(run, "partially_completed", {
         reason: "step_limit",
         error: "The run stopped making progress and was halted.",
-      }).then(() => store.loadRun(runId, userId));
+      });
+      return leave(await store.loadRun(runId, userId));
     },
 
-    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources }) {
+    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources, questions, answers }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };
       if (run.state !== "awaiting_plan_confirmation") {
@@ -3651,12 +4327,51 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         };
       }
       if (decision === "cancel") {
+        // No push (B19): discarding a plan is the person's own decision.
         const ended = await finish(run, "cancelled", { reason: "plan_rejected" });
         return ended
           ? { ok: true, state: "cancelled" }
           : { ok: false, state: run.state, reason: "already_finished" };
       }
       const current = parsePlan(run.plan);
+      const now = deps.now();
+
+      /*
+       * REVISE (§9.4): the run stays at the gate, busy, while the planner
+       * reruns with the reader's edits as input — the card never falls back to
+       * a skeleton. Five per run; each is a paid planner call. A revise while
+       * one is already in flight is the same request, not a second one.
+       */
+      if (decision === "revise") {
+        if (planIsRevising(current, now)) return { ok: true, state: run.state };
+        if ((current.revisions ?? 0) >= MAX_PLAN_REVISIONS) {
+          return { ok: false, state: run.state, reason: "revise_limit" };
+        }
+        const pendingRevision: ResearchPlanRevision = {
+          ...(questions?.length ? { questions: questions.map((q) => ({ ...(q.id ? { id: q.id } : {}), question: q.question })) } : {}),
+          ...(answers && Object.keys(answers).length ? { answers } : {}),
+        };
+        const next = parsePlan({
+          ...current,
+          revising: true,
+          revisingAt: now.toISOString(),
+          revisions: (current.revisions ?? 0) + 1,
+          ...(pendingRevision.questions || pendingRevision.answers ? { pendingRevision } : {}),
+        });
+        await store.savePlan({ runId, userId, plan: next });
+        await append(runId, userId, [
+          { kind: "plan_revision_requested", payload: { revision: next.revisions ?? 1, questions: questions?.length ?? null } },
+        ]);
+        return { ok: true, state: run.state };
+      }
+
+      const sameList = (a: readonly string[], b: readonly string[]) =>
+        a.length === b.length && a.every((value, i) => value.trim() === (b[i] ?? "").trim());
+
+      if (current.scope || questions || answers) {
+        return confirmScopedPlan(run, current, { questions, answers, steps, queries, constraints, pinnedSources, now });
+      }
+
       const editedQueries = queries ?? current.queries;
       const editedSteps = steps ?? current.steps ?? [];
       // An edit is a CHANGE, not a round trip. The gate posts the lists back
@@ -3664,8 +4379,6 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       // contract on an untouched plan threw away the planner's structured
       // objectives — the sub-questions, their rationale and their evidence
       // requirements — for the mechanical one-objective-per-line fallback.
-      const sameList = (a: readonly string[], b: readonly string[]) =>
-        a.length === b.length && a.every((value, i) => value.trim() === (b[i] ?? "").trim());
       const planEdit =
         (queries !== undefined && !sameList(queries, current.queries)) ||
         (steps !== undefined && !sameList(steps, current.steps ?? []));
@@ -3699,7 +4412,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           : {}),
         constraints: constraints ?? current.constraints,
         pinnedSources: pinnedSources ?? current.pinnedSources,
-        confirmedAt: deps.now().toISOString(),
+        confirmedAt: now.toISOString(),
       });
       const saved = await store.savePlan({ runId, userId, plan: edited });
       await store.recordQueries({ runId, userId, queries: edited.queries });
@@ -3712,6 +4425,100 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return moved
         ? { ok: true, state: "investigating" }
         : { ok: false, state: run.state, reason: "not_awaiting_plan" };
+    },
+
+    async revisePlan({ runId, userId, signal }) {
+      const run = await store.loadRun(runId, userId);
+      if (!run) return { ok: false, state: "", reason: "not_found" };
+      if (run.state !== "awaiting_plan_confirmation") return { ok: false, state: run.state, reason: "not_awaiting_plan" };
+      const plan = parsePlan(run.plan);
+      if (!plan.revising || !deps.draftPlan) return { ok: true, state: run.state };
+      const asked = plan.clarifications ?? [];
+      const revision = revisionForPlanner(plan.pendingRevision ?? {}, asked);
+      let drafted: PlannerDraft;
+      try {
+        drafted = await deps.draftPlan({
+          userId,
+          goal: run.goal,
+          context: plan.context ?? null,
+          constraints: plan.constraints,
+          pinnedSources: plan.pinnedSources,
+          dateLine: plan.today ?? todayLine(run.createdAt, plan.timeZone),
+          languageName: plan.language ? languageName(plan.language) : null,
+          revision,
+          leadModel: plan.envelope?.leadModel ?? null,
+          signal,
+        });
+      } catch (error) {
+        console.error("[research] plan revision failed", { runId, error });
+        drafted = { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
+      }
+      await bill(run, drafted.costMicroUsd, "plan");
+
+      // The person may have started, discarded or re-asked while the planner
+      // ran; whatever they did last wins, and this revision is dropped.
+      const latest = await store.loadRun(runId, userId);
+      if (!latest || latest.state !== "awaiting_plan_confirmation") {
+        return { ok: false, state: latest?.state ?? "", reason: "not_awaiting_plan" };
+      }
+      const latestPlan = parsePlan(latest.plan);
+      if (!latestPlan.revising) return { ok: true, state: latest.state };
+      const settled = { ...latestPlan, revising: false, revisingAt: undefined, pendingRevision: undefined };
+      if (!drafted.ok) {
+        await store.savePlan({ runId, userId, plan: settled });
+        await append(runId, userId, [
+          {
+            kind: "error",
+            payload: { scope: "planner", recoverable: true, message: "The plan could not be revised. The previous plan is still here." },
+          },
+        ]);
+        return { ok: true, state: latest.state };
+      }
+      const keepIds = (plan.pendingRevision?.questions ?? []).map((q) => q.id);
+      const planned = plannedResearch(drafted.output, { keepIds });
+      const known = new Set(asked.map((c) => c.id));
+      const kept = Object.fromEntries(Object.entries(plan.pendingRevision?.answers ?? {}).filter(([id]) => known.has(id)));
+      let next: ResearchPlan = {
+        ...settled,
+        ...(planned.title ? { title: planned.title } : {}),
+        ...(planned.approach ? { approach: planned.approach } : {}),
+        steps: planned.objectives.map((objective) => objective.question),
+        objectives: planned.objectives,
+        queries: planned.queries,
+        clarifications: planned.clarifications,
+        ...(planned.sourceKinds.length ? { sourceKinds: planned.sourceKinds } : {}),
+        scope: planned.scope,
+        ...(Object.keys(kept).length ? { clarificationAnswers: { ...(latestPlan.clarificationAnswers ?? {}), ...kept } } : {}),
+        draftedAt: deps.now().toISOString(),
+      };
+      const preview = await sizeFor(latest, next, "preview");
+      next = { ...next, estimateCaps: preview && !isRefusal(preview) ? preview.caps : legacyEstimateCaps(next) };
+      await store.savePlan({ runId, userId, plan: next });
+      await store.recordQueries({ runId, userId, queries: next.queries });
+      await append(runId, userId, [
+        {
+          kind: "plan_revised",
+          payload: { revision: next.revisions ?? 1, objectives: next.objectives.length, queries: next.queries.length, ...(next.title ? { title: next.title } : {}) },
+        },
+      ]);
+      return { ok: true, state: latest.state };
+    },
+
+    async requestFinish({ runId, userId }) {
+      const run = await store.loadRun(runId, userId);
+      if (!run) return { ok: false, state: "", reason: "not_found" };
+      if (isTerminalResearchState(run.state)) return { ok: false, state: run.state, reason: "already_finished" };
+      // Already writing: nothing left to stop (§9.4).
+      if (run.state === "synthesizing" || run.state === "validating_citations") return { ok: true, state: run.state };
+      if (!isWorkingResearchState(run.state) && run.state !== "paused" && run.state !== "accepted") {
+        return { ok: false, state: run.state, reason: "not_running" };
+      }
+      const plan = parsePlan(run.plan);
+      if (!plan.finishRequestedAt) {
+        await store.savePlan({ runId, userId, plan: { ...plan, finishRequestedAt: deps.now().toISOString() } });
+        await append(runId, userId, [{ kind: "finish_requested", payload: { state: run.state } }]);
+      }
+      return { ok: true, state: run.state };
     },
 
     /**
@@ -3770,13 +4577,31 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         ? { ok: true, state: "planning" }
         : { ok: false, state: reloaded.state, reason: "not_awaiting_clarification" };
     },
-    async steer({ runId, userId, constraint, sourceUrl }) {
+    async steer({ runId, userId, constraint, sourceUrl, guidance }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };
       if (isTerminalResearchState(run.state)) {
         return { ok: false, state: run.state, reason: "already_finished" };
       }
-      const plan = parsePlan(run.plan);
+      /*
+       * GUIDANCE (§9.4, §9.7) is queued, not applied: it lands on
+       * `plan.steering` and takes effect at the next round boundary, where it
+       * becomes a constraint every later brief, review and the writer read.
+       * Accepted while the run works or is paused — never at a gate, where
+       * the scope card is the place to change the plan.
+       */
+      if (guidance?.trim()) {
+        if (!isWorkingResearchState(run.state) && run.state !== "paused") {
+          return { ok: false, state: run.state, reason: "not_running" };
+        }
+        const queuedPlan = parsePlan(run.plan);
+        const entry = { text: guidance.replace(/\s+/g, " ").trim().slice(0, MAX_STEERING_CHARS), appliedAtRound: null, createdAt: deps.now().toISOString() };
+        const steering = [...(queuedPlan.steering ?? []), entry].slice(-MAX_STEERING_ENTRIES);
+        await store.savePlan({ runId, userId, plan: { ...queuedPlan, steering } });
+        await append(runId, userId, [{ kind: "steering_queued", payload: { guidance: entry.text, state: run.state } }]);
+        if (!constraint && !sourceUrl) return { ok: true, state: run.state, queued: true };
+      }
+      const plan = parsePlan((await store.loadRun(runId, userId))?.plan ?? run.plan);
       const next: ResearchPlan = parsePlan({
         ...plan,
         constraints: constraint ? [...plan.constraints, constraint] : plan.constraints,
@@ -3823,6 +4648,12 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           reason: isTerminalResearchState(run.state) ? "already_finished" : "not_pausable",
         };
       }
+      // When and from where (B12, B13): the clocks stop counting from here,
+      // and resume goes back to a gate, or to the writer, rather than into a
+      // paid stage the run had already left. Written after the move, onto the
+      // plan as it now stands, so a driver's last save is not overwritten.
+      const pausedPlan = parsePlan(moved.plan);
+      await store.savePlan({ runId, userId, plan: { ...pausedPlan, pausedAt: deps.now().toISOString(), pausedFrom: run.state } });
       await append(runId, userId, [
         { kind: "state_changed", payload: { from: run.state, state: "paused" } },
         { kind: "paused", payload: { actor: "user", from: run.state } },
@@ -3840,9 +4671,35 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           reason: isTerminalResearchState(run.state) ? "already_finished" : "not_paused",
         };
       }
+      const plan = parsePlan(run.plan);
       const progress = await store.progress(runId, userId);
-      const to = resumeStateFor(progress);
-      const moved = await store.moveState({ runId, userId, from: ["paused"], to });
+      const from = plan.pausedFrom;
+      const lastReview = plan.rounds?.[plan.rounds.length - 1]?.review;
+      // B12: back to the gate a person was reading, or to the writer when the
+      // run had finished investigating — never a paid re-plan over a plan a
+      // person had not yet approved, never another round after "Finish now".
+      const to: ResearchState =
+        from === "awaiting_clarification" && !plan.clarifiedAt
+          ? "awaiting_clarification"
+          : resumeStateFor({
+              ...progress,
+              planDrafted: !!plan.draftedAt && !planIsConfirmed(plan),
+              readyToWrite:
+                !!plan.finishRequestedAt ||
+                from === "synthesizing" ||
+                from === "validating_citations" ||
+                (from === "reviewing" && lastReview?.decision === "synthesize"),
+            });
+      // B13: the paused span stops counting against the investigation clock.
+      const pausedAt = plan.pausedAt ? Date.parse(plan.pausedAt) : NaN;
+      const pausedSpan = Number.isFinite(pausedAt) ? Math.max(0, deps.now().getTime() - pausedAt) : 0;
+      const resumedPlan: ResearchPlan = {
+        ...plan,
+        pausedMs: (plan.pausedMs ?? 0) + pausedSpan,
+        pausedAt: undefined,
+        pausedFrom: undefined,
+      };
+      const moved = await store.moveState({ runId, userId, from: ["paused"], to, patch: { plan: resumedPlan } });
       if (!moved) return { ok: false, state: run.state, reason: "not_paused" };
       await append(runId, userId, [
         { kind: "state_changed", payload: { from: "paused", state: to } },
@@ -3851,7 +4708,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return { ok: true, state: to };
     },
 
-    async cancel({ runId, userId }) {
+    async cancel({ runId, userId, reason }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };
       const progress = await store.progress(runId, userId);
@@ -3870,9 +4727,14 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         { kind: "state_changed", payload: { from: run.state, state: "cancelled" } },
         {
           kind: "cancelled",
-          payload: { actor: "user", from: run.state, sources: progress.sourceCount },
+          payload: {
+            actor: reason === "chat_stopped" ? "chat" : "user",
+            from: run.state,
+            sources: progress.sourceCount,
+            ...(reason ? { reason } : {}),
+          },
         },
-        { kind: "run_finished", payload: { state: "cancelled", reason: "cancelled" } },
+        { kind: "run_finished", payload: { state: "cancelled", reason: reason ?? "cancelled" } },
       ]);
       return { ok: true, state: "cancelled" };
     },
@@ -3886,6 +4748,26 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
  * the cost of the other mistake is a user watching a run they cannot interrupt.
  */
 const LIVE_PAUSABLE: ResearchState[] = RESEARCH_LIVE_STATES.filter((state) => isPausable(state));
+
+/** The writer's timebox ceiling (R8): a quarter of the run's clock, never more than this. */
+export const WRITER_TIMEBOX_MAX_MS = 6 * 60_000;
+/** The corpus share the one retry after an unusable report is packed to (B6). */
+export const WRITER_RETRY_CORPUS_SCALE = 0.7;
+
+/**
+ * The writer's reply as the run stores it: the report (what the audit checks
+ * and the reader reads), and beside it on the plan the summary and title the
+ * structured writer puts ahead of it (§9.6.3). A reply with no markers is all
+ * report, as every writer's was before.
+ */
+function writerParts(text: string): { summary: string; title: string; report: string } {
+  if (!/<!--\s*juno:(report|summary)/i.test(text)) return { summary: "", title: "", report: text.trim() };
+  const parsed = parseWriterOutput(text);
+  return { summary: parsed.summary, title: parsed.title, report: parsed.report };
+}
+
+/** The run's recorded error when sizing refuses it: the same lines the chat and the API show (§9.9). */
+const REFUSAL_ERROR: Record<ResearchBudgetRefusal["reason"], string> = RESEARCH_REFUSAL_COPY.reasons;
 
 /** Every live state — exactly the set a cancel must win from. */
 const RESEARCH_CANCELLABLE: ResearchState[] = [...RESEARCH_LIVE_STATES];

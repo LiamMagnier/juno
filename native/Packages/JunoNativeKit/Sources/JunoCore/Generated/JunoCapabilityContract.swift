@@ -7,9 +7,9 @@ import Foundation
 
 public enum JunoCapabilityContract {
     /// Bumped whenever a capability is added or its meaning changes.
-    public static let version = 3
+    public static let version = 4
     /// SHA-256 of the manifest this was generated from.
-    public static let digest = "8230f22d5bf8e81f3fcae5caac3db709006c032645807bcd29a82147c79f40c3"
+    public static let digest = "da64d228ecb760880164760d2cd81dbc8dc4e4b3d820263671d0ea76e4d39dab"
 }
 
 /// A thinking effort, lowest to highest.
@@ -48,6 +48,8 @@ public enum JunoCapability: String, Codable, CaseIterable, Sendable {
     case connectors = "connectors"
     /// Show a connector action that needs a person's decision and answer it with the receipt digest it was shown with. A client without this surface cannot complete a turn that reaches one, because the broker holds the tool call until somebody answers.
     case actionApproval = "actionApproval"
+    /// Run Python, JavaScript or a shell script in a sandbox with no internet during the turn, and see the real output, exit status and produced files. Offered only with a configured, healthy sandbox and a model whose tool calling has been verified.
+    case codeExecution = "codeExecution"
 }
 
 /// Why what ran differs from what was asked for.
@@ -72,6 +74,12 @@ public enum JunoDegradationKind: String, Codable, CaseIterable, Sendable {
     /// An action needed a person's approval and this client has nowhere to ask, so the action did not run.
     /// The one kind here that is a refusal rather than a lesser answer: the others still produce a reply, this one leaves a connector call unexecuted. A client that cannot render the approval has to say that the action was dropped, because the alternative it would otherwise fall into is a turn that reads as finished while the send, the delete or the calendar invite silently never happened.
     case actionApprovalUnavailable = "action_approval_unavailable"
+    /// Running code was asked for but the sandbox is not available, not configured, or not allowed for this chat or plan, so nothing ran.
+    /// The reply must say plainly that nothing ran rather than show code as if it had run.
+    case codeExecutionUnavailable = "code_execution_unavailable"
+    /// Running code was asked for but this model's tool calling has not been verified by a live round trip, so it was not offered.
+    /// Recorded per model in contracts/capabilities/tool-runtime-coverage.json. An untested model is never marked compatible.
+    case toolCallingUnverified = "tool_calling_unverified"
 }
 
 /// One difference between the requested and the effective execution.
@@ -104,6 +112,9 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
     public let fastMode: Bool
     public let vision: Bool
     public let connectors: Bool
+    /// v4: the turn may run code in the sandbox. Absent on an older server,
+    /// which reads as false: no older server could run code.
+    public let codeExecution: Bool
     public let degradations: [JunoDegradation]
 
     /// True when anything the user asked for did not happen.
@@ -118,6 +129,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         case fastMode
         case vision
         case connectors
+        case codeExecution
         case degradations
     }
 
@@ -130,6 +142,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         fastMode: Bool,
         vision: Bool,
         connectors: Bool,
+        codeExecution: Bool = false,
         degradations: [JunoDegradation]
     ) {
         self.version = version
@@ -140,6 +153,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         self.fastMode = fastMode
         self.vision = vision
         self.connectors = connectors
+        self.codeExecution = codeExecution
         self.degradations = degradations
     }
 
@@ -159,6 +173,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         fastMode = try container.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
         vision = try container.decodeIfPresent(Bool.self, forKey: .vision) ?? false
         connectors = try container.decodeIfPresent(Bool.self, forKey: .connectors) ?? false
+        codeExecution = try container.decodeIfPresent(Bool.self, forKey: .codeExecution) ?? false
         degradations =
             (try container.decodeIfPresent([LenientDegradation].self, forKey: .degradations) ?? [])
             .compactMap(\.value)

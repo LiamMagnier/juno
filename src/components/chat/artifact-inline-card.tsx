@@ -32,7 +32,9 @@ const SandboxFrame = nextDynamic(
   () => import("@/components/canvas/sandbox-frame").then((m) => m.SandboxFrame),
   { ssr: false },
 );
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { LiveLine } from "@/components/chat/live-line";
+import { TIMING } from "@/lib/interaction";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { DesignPoster } from "@/components/artifacts/artifact-preview";
 import { SuggestionBar } from "@/components/artifacts/suggestion-bar";
@@ -356,8 +358,31 @@ export function ArtifactInlineCard({
   // green "Live" / "Done" and the pulsing dot said "normal" as loudly as the
   // card could say anything (owner directive, 2026-09-26). An error keeps its
   // colour, the one state here that asks for the reader.
+  /*
+   * The finished-artifact confirmation (MOTION_AND_THINKING feature map): when
+   * the stored row arrives while the reader is watching (the id goes from
+   * absent to present in this mount), the status word says "Saved to Library"
+   * for `copiedHold`, then yields to the stable card. It is shown only on the
+   * real arrival of the row, never on a card loaded from history, and never
+   * as a toast.
+   */
+  const [justSaved, setJustSaved] = React.useState(false);
+  const hadId = React.useRef(!!artifactId);
+  React.useEffect(() => {
+    if (!artifactId || hadId.current) {
+      hadId.current = hadId.current || !!artifactId;
+      return;
+    }
+    hadId.current = true;
+    setJustSaved(true);
+    const timer = window.setTimeout(() => setJustSaved(false), TIMING.copiedHold);
+    return () => window.clearTimeout(timer);
+  }, [artifactId]);
+
   const status: { label: string; tone: string } | null = streaming
     ? { label: "Writing", tone: "text-muted-foreground" }
+    : justSaved && runStatus !== "error"
+      ? { label: `Saved to ${FEATURE_NAMES.library.label}`, tone: "text-foreground/75" }
     : runStatus === "error"
       ? { label: "Error", tone: "text-destructive" }
       : runStatus === "running" || runStatus === "loading"
@@ -418,7 +443,7 @@ export function ArtifactInlineCard({
           onOpen && !streaming && "group-hover/art:border-border group-hover/art:text-foreground"
         )}
       >
-        <Icon className={cn("size-4", streaming && "motion-safe:animate-icon-breathe")} aria-hidden />
+        <Icon className="size-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
         <span className={cn("block truncate text-ui font-medium leading-5", trashed && "text-muted-foreground")}>
@@ -631,14 +656,11 @@ export function ArtifactInlineCard({
           )}
         </div>
       ) : streaming ? (
-        <div className="grid min-h-[180px] place-items-center p-5">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <ThinkingDots className="text-primary" />
-            <div>
-              <p className="font-sans text-heading">Writing artifact</p>
-              <p className="pt-0.5 text-ui text-muted-foreground">The source will stream in here.</p>
-            </div>
-          </div>
+        // The live line every working row uses (live-line.tsx): the mark
+        // beside the truthful words, then the source streams in under it.
+        <div className="flex min-h-[180px] flex-col justify-center gap-1 p-5">
+          <LiveLine text={title?.trim() && title.trim() !== "Artifact" ? `Writing ${title.trim()}` : "Writing"} phase="working" />
+          <p className="pl-7 text-ui text-muted-foreground">The source will stream in here.</p>
         </div>
       ) : (
         /* A failure, not a placeholder. This was the same centred block on the

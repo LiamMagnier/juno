@@ -74,7 +74,8 @@ import Testing
     }
 
     @Test func theColumnSaysTheWebsWords() {
-        #expect(JunoShellChatSidebar.Action.allCases == [.new, .search, .notifications])
+        // Contract v2 moved Notifications out of the column into headerActions.
+        #expect(JunoShellChatSidebar.Action.allCases == [.new, .search])
         #expect(JunoShellChatSidebar.Action.new.label == "New chat")
         #expect(JunoShellChatSidebar.Heading.allCases.map(\.label) == [
             "Needs you", "Orbit", "Pinned projects", "Pinned chats", "Recent",
@@ -87,13 +88,15 @@ import Testing
     @Test func thePlusMenusRowsAreTheContractsInTitleCase() {
         #expect(JunoShellPlusMenu.chat == [
             [.files, .screenshot, .library],
+            [.mention, .skill],
+            [.research, .search, .memory],
             [.project, .connectors],
-            [.skill, .research, .search, .memory],
         ])
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
-            "Add Files or Photos", "Take a Screenshot", "Add from Library",
+            "Add Photos and Files", "Take a Screenshot", "Add from Library",
+            "Mention a File, App or Agent", "Run a Skill",
+            "Deep Field", "Web Search", "Memory",
             "Add to Project", "Apps",
-            "Use a Skill", "Deep Field", "Web Search", "Memory",
         ])
         #expect(JunoShellPlusMenu.label == "Add")
         // The paperclip the Mac drew as `.paperclip` is the registry's

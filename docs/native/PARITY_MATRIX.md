@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-297 routes: 183 native, 49 planned, 52 web only, 13 internal. 47 pages: on the Mac 36 native, 2 partial, 2 planned, 7 web only; on iOS 20 native, 6 partial, 14 planned, 7 web only.
+299 routes: 183 native, 51 planned, 52 web only, 13 internal. 47 pages: on the Mac 36 native, 2 partial, 2 planned, 7 web only; on iOS 20 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -35,8 +35,8 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
-| [Connections](#connections) | 2/2 | 2/2 | 15 | 1 | 4 | 2 |
-| [Skills](#skills) | 4/4 | 0/4 | 10 | 2 | 0 | 0 |
+| [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
+| [Skills](#skills) | 4/4 | 0/4 | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
@@ -281,6 +281,7 @@ Design is a type of artifact (register #73).
 |---|---|---|---|---|
 | `/api/connectors` | GET | Native | JunoChatKit |  |
 | `/api/connectors/[id]` | DELETE | Native | JunoChatKit |  |
+| `/api/connectors/usage` | GET | Planned |  | When each app was last used (tool, chat), for the app's details under Customize › Apps on the web. The apps do not show a last-used line yet. |
 | `/api/connectors/[id]/callback` | GET | Web only |  | The provider redirects the browser here; the apps start the flow at /api/connectors/{id}/connect in the browser. |
 | `/api/connectors/[id]/connect` | GET | Native | JunoDesktop, JunoMobile |  |
 | `/api/connectors/[id]/credentials` | POST | Planned |  | Key and token connectors (Apple Music and others) are connected on the web; the apps have no credential form yet. |
@@ -326,6 +327,7 @@ Design is a type of artifact (register #73).
 | `/api/work/skills/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/work/skills/[id]/versions` | GET, POST | Native | JunoWorkKit |  |
 | `/api/work/skills/[id]/versions/[version]/consent` | POST | Native | JunoWorkKit |  |
+| `/api/work/skills/[id]/versions/[version]/files` | GET | Planned |  | Reading a skill version's bundled files (skills as executable workflows, 2026-10-02); the Mac skill detail does not list them yet. |
 | `/api/work/skills/[id]/export` | GET | Planned |  | Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet. |
 
 <a id="assistants"></a>

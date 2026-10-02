@@ -2,7 +2,10 @@ import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-co
 import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/attachment-bytes";
 import { REASONING_TIERS, clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import { googleNativeBaseUrl, normalizeProviderKey, providerApiKey } from "@/lib/providers";
+import type { McpFunctionTool } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
+import { portableSchemaIssues, portableToGemini, sanitizeForGeminiJsonSchema } from "@/lib/tools/schema";
+import type { PortableSchema, ResolvedTool } from "@/lib/tools/types";
 import type { ReasoningEffort } from "@/types/chat";
 import type { ClientSource } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
@@ -19,8 +22,27 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 export type GeminiPart =
   | { text: string; thought?: boolean; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string } }
-  | { functionCall: { name: string; args: Record<string, unknown> }; thoughtSignature?: string }
-  | { functionResponse: { name: string; response: Record<string, unknown> } };
+  | { functionCall: { id?: string; name: string; args: Record<string, unknown> }; thoughtSignature?: string }
+  | { functionResponse: GeminiFunctionResponse };
+
+/**
+ * One tool result as Gemini takes it back (SPEC §5.3 items 1, 3, 4).
+ *
+ * `id` echoes the `functionCall.id` it answers, when Gemini sent one (RC-13).
+ * `response` is `{ result }` for a success and `{ error: { code, message } }`
+ * for a failure — Google's documented shape, so the model reads a failure as
+ * one. `parts` carries a tool's pictures as inline data on Gemini 3, which
+ * takes multimodal function responses; older models get them in a separate
+ * user turn instead.
+ */
+export interface GeminiFunctionResponse {
+  id?: string;
+  name: string;
+  response: Record<string, unknown>;
+  parts?: Array<{ inlineData: { mimeType: string; data: string } }>;
+}
+
+export const MAX_GEMINI_TOOL_ROUNDS = 6;
 
 export type GeminiContent = {
   role: "user" | "model";
@@ -28,7 +50,6 @@ export type GeminiContent = {
 };
 
 const BINARY_ATTACHMENT_LOOKBACK = 8;
-export const MAX_GEMINI_TOOL_ROUNDS = 6;
 
 export type AttachmentBytesFetcher = (storageKey: string) => Promise<{ bytes: Uint8Array }>;
 
@@ -351,32 +372,83 @@ export type GeminiTool =
   | { google_search: Record<string, never> };
 
 /**
+ * The turn's tools as Gemini function declarations (SPEC §5.3 item 2, RC-4).
+ *
+ * Two kinds of schema, two fields, never both on one declaration. Juno's own
+ * specs are in the portable subset, which Gemini's OpenAPI-flavoured
+ * `parameters` accepts as it is. A connector's schema is whatever its server
+ * wrote — `$schema`, `$ref`, `oneOf`, `additionalProperties` — and `parameters`
+ * rejects most of that, which failed the whole turn before the model saw a
+ * word; it goes to `parametersJsonSchema`, cut to Google's documented subset.
+ * A Juno spec that somehow left the subset takes the connector path rather than
+ * the 400.
+ */
+export function geminiFunctionDeclarations(toolset: {
+  tools: readonly McpFunctionTool[];
+  resolve?(name: string): Pick<ResolvedTool, "origin"> | undefined;
+}): Array<Record<string, unknown>> {
+  return toolset.tools.map((tool) => {
+    const { name, description, parameters } = tool.function;
+    const juno = toolset.resolve?.(name)?.origin === "juno" && portableSchemaIssues(parameters).length === 0;
+    return juno
+      ? { name, description: description ?? "", parameters: portableToGemini(parameters as unknown as PortableSchema) }
+      : { name, description: description ?? "", parametersJsonSchema: sanitizeForGeminiJsonSchema(parameters) };
+  });
+}
+
+/**
  * Which tools ride on one request.
  *
- * Two bugs lived here. (1) `tools` used to be gated on `!isFinalRound`, and a
- * turn with no function tools runs exactly ONE round — which is the final one —
- * so `{google_search:{}}` was never sent at all on the private-chat, memory,
- * scheduled-task and preflight paths, while the UI announced "Google Search
- * grounding" for a search that never happened. Rounds are for the FUNCTION-CALL
- * loop; a server-side tool resolves inside a single request and belongs on
- * every round. (2) Gemini 3 supports combining built-in tools with function
- * declarations; Gemini 2.5 and earlier reject the combination outright
- * ("doesn't support combining search tools with non-search tools in the same
- * generateContent request"), and `gemini-2.5-pro` is still selectable. On that
- * older line grounding wins, because the user asked for search explicitly.
+ * `google_search` is a SERVER-side tool that resolves inside one request, so it
+ * rides on every request that asked for search — including the single request
+ * of a turn with no function tools, where it used to be dropped because that
+ * request was also the final one.
+ *
+ * Gemini 3 combines built-in tools with function declarations; Gemini 2.5 and
+ * earlier reject the combination. There the FUNCTIONS win (SPEC §5.3 item 6):
+ * chat never asks for both on those models — they have no native search in
+ * the capability record and get Juno's `web_search` instead — and a caller that
+ * does ask keeps its tools rather than silently losing every one of them to
+ * the search (RC-4).
+ *
+ * The final request keeps its declarations and turns them off through
+ * `geminiToolConfig`: withholding them while the history holds `functionCall`
+ * parts risks `UNEXPECTED_TOOL_CALL`. `withholdDeclarations` is the fallback
+ * for a model that rejects mode `NONE` (probe P2).
  */
 export function geminiToolsPayload(input: {
   model: Pick<ModelInfo, "providerModel">;
   functionDeclarations?: Array<Record<string, unknown>>;
   webSearch?: boolean;
-  /** The forced-answer round: function declarations are withheld, search is not. */
+  withholdDeclarations?: boolean;
   isFinalRound?: boolean;
 }): GeminiTool[] {
-  const declarations = input.isFinalRound ? [] : input.functionDeclarations ?? [];
+  const withhold = input.withholdDeclarations || input.isFinalRound;
+  const declarations = withhold ? [] : input.functionDeclarations ?? [];
   const functionTools: GeminiTool[] = declarations.length > 0 ? [{ functionDeclarations: declarations }] : [];
   const searchTools: GeminiTool[] = input.webSearch ? [{ google_search: {} }] : [];
   if (functionTools.length === 0 || searchTools.length === 0) return [...functionTools, ...searchTools];
-  return isGemini3OrLater(input.model) ? [...functionTools, ...searchTools] : searchTools;
+  return isGemini3OrLater(input.model) ? [...functionTools, ...searchTools] : functionTools;
+}
+
+/**
+ * `toolConfig` for one request: mode `NONE` on the final request, which keeps
+ * the declarations the history refers to while forbidding a new call (SPEC
+ * §4.6). Absent otherwise — Google's default is `AUTO`.
+ */
+export function geminiToolConfig(input: { final: boolean; declarations: boolean }): Record<string, unknown> | undefined {
+  if (!input.final || !input.declarations) return undefined;
+  return { functionCallingConfig: { mode: "NONE" } };
+}
+
+/**
+ * Structured output for a tool-less call (SPEC §5.0 `responseSchema`): Gemini
+ * constrains the reply itself, so the schema goes into the generation config
+ * and the answer streams as JSON text.
+ */
+export function geminiStructuredConfig(schema: PortableSchema): Record<string, unknown> {
+  // The portable subset is JSON Schema already, which is what `responseJsonSchema` takes.
+  return { responseMimeType: "application/json", responseJsonSchema: JSON.parse(JSON.stringify(schema)) as Record<string, unknown> };
 }
 
 /** The exact JSON body the native adapter POSTs. Pure, so a test can pin it. */
@@ -385,6 +457,7 @@ export function geminiRequestBody(input: {
   generationConfig: Record<string, unknown>;
   system?: string;
   tools?: GeminiTool[];
+  toolConfig?: Record<string, unknown>;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {
     contents: input.contents,
@@ -392,6 +465,7 @@ export function geminiRequestBody(input: {
   };
   if (input.system?.trim()) body.systemInstruction = { parts: [{ text: input.system }] };
   if (input.tools && input.tools.length > 0) body.tools = input.tools;
+  if (input.toolConfig && input.tools?.some((tool) => "functionDeclarations" in tool)) body.toolConfig = input.toolConfig;
   return body;
 }
 

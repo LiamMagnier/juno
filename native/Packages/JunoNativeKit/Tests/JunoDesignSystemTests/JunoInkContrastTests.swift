@@ -122,8 +122,8 @@ final class JunoInkContrastTests: XCTestCase {
 
     /// The tertiary ink is the web's `text-muted-foreground/70`, composited
     /// over the ground it sits on — and it is **not** AA text. This pins the
-    /// number the accessibility rule is written against (errata: 2.89:1 on the
-    /// light canvas), so the rule "only non-essential text of 13pt and up;
+    /// number the accessibility rule is written against (errata: 2.87:1 on the
+    /// V3 light canvas; 2.89:1 on the warm one before it), so the rule "only non-essential text of 13pt and up;
     /// keycaps and timers take the secondary ink" is checked against the colour
     /// it describes rather than against a number someone once measured.
     func testTertiaryInkContrastIsTheDocumentedFloor() {
@@ -136,14 +136,15 @@ final class JunoInkContrastTests: XCTestCase {
             )
         }
         let light = contrast(composite(.tertiaryInkLight, over: .canvasLight), on: .canvasLight)
-        XCTAssertEqual(light, 2.89, accuracy: 0.01)
+        XCTAssertEqual(light, 2.87, accuracy: 0.01)
         XCTAssertLessThan(light, 4.5, "tertiary ink is not body text; the doc comment says so")
 
         #if os(macOS)
-        // On the Mac's charcoal it measures 4.25:1 — still under AA, so the
-        // same rule holds in both appearances.
+        // On the Mac's charcoal it measures 3.61:1 (4.25:1 on the warm
+        // charcoal before V3) — under AA, so the same rule holds in both
+        // appearances.
         let dark = contrast(composite(.tertiaryInkDark, over: .canvasDark), on: .canvasDark)
-        XCTAssertEqual(dark, 4.25, accuracy: 0.02)
+        XCTAssertEqual(dark, 3.61, accuracy: 0.02)
         XCTAssertLessThan(dark, 4.5)
         #endif
 

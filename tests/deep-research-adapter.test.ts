@@ -17,6 +17,8 @@ import {
   type ResearchSourceRow,
   type ResearchStore,
 } from "@/lib/research/engine";
+import { memoryStore as sharedMemoryStore } from "./fixtures/research-store";
+import { envelopeFor, plannerOutput } from "./fixtures/research-deps";
 
 /*
  * The chat adapter's contract with the durable research job.
@@ -416,4 +418,48 @@ test("web research parks before any search and runs the edited plan after approv
 
 test("web adapter requires review while native retains streaming compatibility", () => {
   assert.match(readFileSync("src/lib/deep-research.ts", "utf8"), /confirmation: opts.client === "web" \? "required" : "auto"/);
+});
+
+// ---------------------------------------------------------------------------
+// The native hand-off holds its lease and is sized by its envelope (§9.6.4)
+// ---------------------------------------------------------------------------
+
+test("a native run is planned, sized and frozen on its own, and hands over still holding its drive's lease (B2)", async () => {
+  const { store: fixtureStore, runs } = sharedMemoryStore();
+  const base = gatheringDeps(fixtureStore);
+  const envelope = envelopeFor({ ceilingMicroUsd: 3_000_000 });
+  const engine = createResearchEngine({
+    ...base,
+    async draftPlan() {
+      return { ok: true, output: plannerOutput(), costMicroUsd: 1_000 };
+    },
+    async sizeRun({ purpose }) {
+      assert.equal(purpose, "confirm", "a native run has no card to preview for");
+      return envelope;
+    },
+  });
+  const run = await engine.start({ userId: "user_1", goal: "What changed in the EU AI Act's final text?", conversationId: "conv_1", confirmation: "auto", budgetMicroUsd: null });
+  const owner = "research-chat:run:1700000000000";
+  const handedOver = await engine.drive({ runId: run.id, userId: run.userId, until: "synthesizing", workerId: owner, holdLeaseAtUntil: true });
+  assert.equal(handedOver?.state, "synthesizing");
+  assert.equal(runs.get(run.id)?.workerLeaseOwner, owner, "the PM2 worker cannot adopt a run the chat is writing");
+  assert.equal(handedOver?.budgetMicroUsd, BigInt(envelope.ceilingMicroUsd), "the envelope's ceiling replaces the fixed chat budget");
+  assert.ok(parsePlan(handedOver?.plan).envelope);
+});
+
+test("the adapter returns its drive owner, holds the lease at the hand-off and cancels when the chat stops", () => {
+  const source = readFileSync("src/lib/deep-research.ts", "utf8");
+  assert.match(source, /const driveOwner = researchChatOwner\(runId, Date\.now\(\)\);/);
+  assert.match(source, /workerId: driveOwner,\n\s+\/\/ Held at the hand-off \(B2\): the route renews it from here on\.\n\s+holdLeaseAtUntil: true,/);
+  assert.match(source, /engine\.cancel\(\{ runId, userId: opts\.userId, reason: "chat_stopped" \}\)/);
+  assert.doesNotMatch(source, /CHAT_RUN_BUDGET_MICRO_USD =/, "the fixed chat ceiling is gone");
+  assert.match(source, /driveOwner,\n\s+\};\n\}/);
+  // The goal is the person's words, never the clarification wrapper (B20).
+  assert.match(source, /const prompt = \(opts\.goal \?\? opts\.prompt\)\.trim\(\);/);
+});
+
+test("an error is narrated by what failed, and a page error keeps its line (B25)", () => {
+  const source = readFileSync("src/lib/deep-research.ts", "utf8");
+  assert.match(source, /ERROR_TITLE\[String\(payload\.scope \?\? payload\.stage \?\? ""\)\] \?\? "A source could not be read"/);
+  assert.match(source, /citation_audit: "The citation check could not run"/);
 });

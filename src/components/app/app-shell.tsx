@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import { Menu, Plus } from "@/components/ui/icons";
+import { Menu, MessageSquarePlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import { productOf } from "@/components/app/product-switch";
@@ -41,8 +41,8 @@ const SIDEBAR_MAX = 336;
  * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
  * starts.
  */
-const SIDEBAR_DEFAULT = 288;
-const RAIL_WIDTH = 64;
+const SIDEBAR_DEFAULT = 260;
+const RAIL_WIDTH = 52;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /code is the one navigation the user cannot absorb as
 // "the page is loading".
@@ -69,15 +69,24 @@ function clampWidth(w: number) {
  * a generation is running. While Stop is visible it is the signal, and this
  * stays dark: one "working" indicator per surface. chat-view decides and
  * dispatches `juno:streaming`; `.stream-progress` (globals.css) owns the sweep.
+ *
+ * Mounted only while streaming (SPEC §7.11): an always-mounted sweep at
+ * opacity 0 still ran its infinite animation on every page. It fades in with
+ * `@starting-style`, and pauses while the page is hidden.
  */
-function StreamProgress({ active }: { active: boolean }) {
+function StreamProgress() {
+  const [hidden, setHidden] = React.useState(false);
+  React.useEffect(() => {
+    const sync = () => setHidden(document.visibilityState === "hidden");
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
   return (
     <div
       aria-hidden
-      className={cn(
-        "stream-progress pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-base ease-out-soft",
-        active ? "opacity-100" : "opacity-0"
-      )}
+      data-paused={hidden ? "" : undefined}
+      className="stream-progress pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-base ease-out-soft"
     />
   );
 }
@@ -467,7 +476,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           Skip to content
         </a>
 
-        {/* At md–lg the rail keeps its 64px in flow and the expanded panel floats
+        {/* At md–lg the rail keeps its 52px in flow and the expanded panel floats
             over the content; a click anywhere outside it folds it back.
 
             IN FLOW, which is what the sentence above always said and what the
@@ -477,10 +486,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             place in the row is what lets the panel float out and fold home
             without the content under it moving at all. */}
         {floatingFrame && (
-          /* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
+          /* w-[52px] IS RAIL_WIDTH. Two more places spell the rail's width — this
              spacer and app-sidebar's collapsed column — and a mismatch leaves
              a seam of page showing through beside the rail at md–lg. */
-          <div aria-hidden className="hidden h-full w-16 shrink-0 bg-sidebar md:block" />
+          <div aria-hidden className="hidden h-full w-[52px] shrink-0 bg-sidebar md:block" />
         )}
         {/* The scrim fades out as well as in. It used to cut on close while the
             panel it belonged to was still folding away, so the page brightened
@@ -621,7 +630,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="app-main-canvas juno-content-panel relative flex min-w-0 flex-1 flex-col"
           style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
         >
-          <StreamProgress active={streaming} />
+          {streaming ? <StreamProgress /> : null}
 
           {/* No voice light over the column. The ambient aura that tinted the
               whole conversation during a call is retired: the call lives in
@@ -636,14 +645,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               pays nothing for it. */}
           <VerifyEmailBanner />
 
-          {/* Mobile navigation stays out of a full-width toolbar: each action is
-              a self-contained circular surface, so the page background continues
-              through the top of the screen. */}
-          <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
+          {/* The phone's bar (the V3 gallery's MobileBar): plain 44 px icon
+              buttons in the third ink on the page itself, no bordered discs,
+              so the content's ground runs to the top of the screen. */}
+          <div className="relative z-40 flex shrink-0 items-center gap-1 px-2 pb-1 pt-[calc(0.5rem+env(safe-area-inset-top))] md:hidden">
             <Button
               variant="ghost"
               size="icon"
-              className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
             >
@@ -653,12 +662,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               title={mobileTitle}
               animate={inConversation && activeConversation?.titleSource === "ai"}
               className="min-w-0 flex-1 px-1"
-              textClassName="text-body-lg font-semibold tracking-tight text-foreground"
+              textClassName="text-body font-medium text-foreground"
             />
             <Button
               variant="ghost"
               size="icon"
-              className="group ml-auto size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              className="jicon-trigger ml-auto size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
               aria-label="Search chats and projects"
             >
@@ -667,14 +676,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => {
                 router.push("/chat");
                 window.dispatchEvent(new CustomEvent("juno:new-chat"));
               }}
               aria-label="New chat"
             >
-              <Plus className="size-5" />
+              <MessageSquarePlus className="size-5" />
             </Button>
           </div>
 

@@ -18,10 +18,12 @@ import {
 } from "@/lib/user-mcp";
 import { safeMcpFetch, userMcpUrlProblem } from "@/lib/mcp-safe-fetch";
 import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
+import { flattenToolResult } from "@/lib/tools/connector-tools";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
 import type { ClientActionApproval } from "@/lib/action-approval";
+import { composeApprovalCallbacks } from "@/lib/tools/approval";
 import { customAccessToken, isCustomConnectorId } from "@/lib/custom-connectors";
 
 /*
@@ -213,6 +215,7 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
 export interface McpToolAnnotations {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
+  junoCanonical?: string;
 }
 
 export interface McpFunctionTool {
@@ -272,6 +275,14 @@ export interface ToolExecution {
   images?: readonly ToolResultImage[];
   /** Optional structured receipt for an agent configuration tool call. */
   agentChange?: import("@/types/chat").ClientAgentChange;
+  /**
+   * The typed outcome, when the executor knows more than `ok` (a cancelled
+   * run, an outcome lost to a restart). Absent → `ok ? succeeded : failed`.
+   */
+  status?: import("@/lib/tools/types").ToolOutcomeStatus;
+  error?: { code: import("@/lib/tools/types").ToolErrorCode };
+  /** Execution tools: the run behind the call (design §6.4). */
+  run?: import("@/lib/tools/types").ToolRunRecord;
 }
 
 export interface McpToolset {
@@ -291,10 +302,21 @@ export interface McpToolset {
     toolName: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-    callId?: string
+    callId?: string,
+    /** What the dispatcher adds (src/lib/tools/dispatch.ts); absent for older callers. */
+    opts?: import("@/lib/tools/types").ToolExecuteOptions
   ): Promise<ToolExecution>;
   close(): Promise<void>;
+  route?(toolName: string): import("@/lib/tools/connector-tools").ConnectorToolRoute | undefined;
 }
+
+export type { ToolExecuteOptions } from "@/lib/tools/types";
+
+export interface OpenMcpToolsetOptions {
+  connectTimeoutMs?: number;
+  onConnectorStatus?: (id: string, state: "ready" | import("@/types/run").ConnectorFailure) => void;
+}
+
 
 /**
  * Provider wire shape: the tool minus Juno-side metadata.
@@ -339,18 +361,10 @@ function uniqueToolName(base: string, taken: (name: string) => boolean): string 
  * the model is missing is measured in the text it was actually going to read.
  */
 function stringifyToolResult(res: unknown): TruncatedForModel {
-  const content = (res as { content?: unknown })?.content;
-  const text = Array.isArray(content)
-    ? content
-        .map((p) => {
-          const part = p as { type?: string; text?: string; resource?: unknown };
-          if (part?.type === "text") return part.text ?? "";
-          if (part?.type === "resource") return JSON.stringify(part.resource);
-          return JSON.stringify(part);
-        })
-        .join("\n")
-    : JSON.stringify(res);
-  return truncateConnectorResult(text);
+  // Image parts are pixels, not base64 in the text: a connector's chart must
+  // never count against (or ride inside) the text the cap measures.
+  const flattened = flattenToolResult(res);
+  return truncateConnectorResult(flattened.text);
 }
 
 /**
@@ -401,7 +415,11 @@ export interface McpToolsetContext {
  * OpenAI-style function tools. Tool names are namespaced `<connector>__<tool>`.
  * Always `close()` when the generation ends (best-effort in a finally).
  */
-export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetContext): Promise<McpToolset> {
+export async function openMcpToolset(
+  active: ActiveConnector[],
+  ctx: McpToolsetContext,
+  _opts?: OpenMcpToolsetOptions
+): Promise<McpToolset> {
   const clients = new Map<string, Client>();
   const tools: McpFunctionTool[] = [];
   const routing = new Map<
@@ -497,7 +515,7 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
      * of that same budget, so it cannot reopen the gap it closes — and it lands
      * inside the envelope, describing the block it belongs to.
      */
-    async execute(toolName, args, signal, callId) {
+    async execute(toolName, args, signal, callId, opts) {
       const route = routing.get(toolName);
       // An unroutable name never reached a connector, so there is nothing to
       // audit: this is the model hallucinating a tool, not a call happening.
@@ -560,7 +578,7 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
           derivedFromUntrusted: true,
         },
         signal,
-        onApprovalRequest: ctx.onApprovalRequest,
+        onApprovalRequest: composeApprovalCallbacks(ctx.onApprovalRequest, opts?.onApprovalRequest),
         unattended: ctx.unattended,
       });
 
@@ -578,6 +596,9 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         return toolExecution(label, authorization.result, !authorization.failed);
       }
 
+      // Authorised: the dispatcher's row turns to running and the tool's timer
+      // starts now, never during the approval wait above.
+      opts?.onAuthorized?.();
       const startedAt = Date.now();
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
@@ -605,8 +626,35 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         return toolExecution(label, `Tool error: ${detail}`, false, durationMs);
       }
     },
+    route(name) {
+      const r = routing.get(name);
+      if (!r) return undefined;
+      return {
+        functionName: name,
+        connectorId: r.connectorId,
+        connectorLabel: r.label,
+        toolName: r.toolName,
+        access: r.access,
+        annotations: r.annotations,
+      };
+    },
     async close() {
       await Promise.all([...clients.values()].map((c) => c.close().catch(() => {})));
     },
   };
+}
+
+export async function resolveConnectorsWithStatus(
+  userId: string,
+  ids: string[]
+): Promise<{ active: ActiveConnector[]; skipped: Array<{ id: string; label: string; reason: import("@/types/run").ConnectorFailure }> }> {
+  const active = await getActiveConnectors(userId, ids);
+  const activeIds = new Set(active.map((a) => a.id));
+  const skipped: Array<{ id: string; label: string; reason: import("@/types/run").ConnectorFailure }> = [];
+  for (const id of ids ?? []) {
+    if (!activeIds.has(id)) {
+      skipped.push({ id, label: id, reason: "misconfigured" });
+    }
+  }
+  return { active, skipped };
 }

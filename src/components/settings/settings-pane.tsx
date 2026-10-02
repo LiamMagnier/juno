@@ -5,7 +5,8 @@ import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer
 import { SettingsPaneHeader } from "@/components/settings/setting-row";
 import { settingsSection, type SettingsSectionId } from "@/components/settings/settings-sections";
 import { settingsPanelId, settingsTabId } from "@/components/settings/settings-rail";
-import { GeneralSection } from "@/components/settings/sections/general";
+import { AppearanceSection, GeneralSection } from "@/components/settings/sections/general";
+import { CapabilitiesSection, KeyboardSection, NotificationsSection } from "@/components/settings/sections/preferences";
 import { PersonalizationSection } from "@/components/settings/sections/personalization";
 import { MemorySection } from "@/components/settings/sections/memory";
 import { ModelsSection } from "@/components/settings/sections/models";
@@ -29,6 +30,10 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   data: DataPrivacySection,
   account: AccountSection,
   billing: BillingSection,
+  appearance: AppearanceSection,
+  notifications: NotificationsSection,
+  capabilities: CapabilitiesSection,
+  keyboard: KeyboardSection,
 };
 
 /**

@@ -341,7 +341,7 @@ function LiveDropZone() {
     >
       <div className="grid h-full grid-cols-2 gap-3 p-3">
         {["One", "Two", "Three", "Four"].map((label) => (
-          <div key={label} className="grid place-items-center rounded-card bg-secondary text-caption text-muted-foreground">
+          <div key={label} className="grid place-items-center rounded-sm bg-secondary text-caption text-muted-foreground">
             {label}
           </div>
         ))}

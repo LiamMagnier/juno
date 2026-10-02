@@ -1,8 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { MotionConfig } from "framer-motion";
-import nextDynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import {
   DEFAULT_SETTINGS_SECTION,
@@ -11,7 +9,6 @@ import {
   type SettingsSectionId,
 } from "@/components/settings/settings-sections";
 import { applyFontSize, readFontSize } from "@/components/settings/font-size";
-import type { SettingsOpenedVia } from "@/components/settings/settings-modal";
 
 /**
  * The settings modal's frame and dialog, fetched when it is first wanted
@@ -39,10 +36,27 @@ import type { SettingsOpenedVia } from "@/components/settings/settings-modal";
  * `AppShell`, not inside it, so the shell's own MotionConfig never reaches the
  * modal.
  */
-const SettingsModalImpl = nextDynamic(
-  () => import("@/components/settings/settings-modal").then((m) => m.SettingsModal),
-  { ssr: false }
-);
+
+const RETURN_KEY = "alevr:settings-return";
+
+function rememberReturnPath() {
+  try {
+    window.sessionStorage.setItem(RETURN_KEY, window.location.pathname + window.location.search);
+  } catch {
+    // Storage blocked: "Back to app" falls back to /chat.
+  }
+}
+
+/** Where "Back to app" goes: the page settings was opened from, else /chat. */
+export function readReturnPath(): string {
+  try {
+    const path = window.sessionStorage.getItem(RETURN_KEY);
+    if (path && path.startsWith("/") && !path.startsWith("/settings")) return path;
+  } catch {
+    // ignore
+  }
+  return "/chat";
+}
 
 export function SettingsModalLazy() {
   const router = useRouter();
@@ -53,38 +67,32 @@ export function SettingsModalLazy() {
     onSettingsPageRef.current = onSettingsPage;
   }, [onSettingsPage]);
 
-  const [open, setOpen] = React.useState(false);
-  const [wanted, setWanted] = React.useState(false);
-  const [section, setSection] = React.useState<SettingsSectionId>(DEFAULT_SETTINGS_SECTION);
-  const [via, setVia] = React.useState<SettingsOpenedVia>("pointer");
-
   // Text size is a device preference, applied as early as the shell can:
   // before the lazy chunk, which is where it used to wait. The first paint
   // still uses the default size until the root layout applies it pre-paint.
   React.useLayoutEffect(() => applyFontSize(readFontSize()), []);
 
   React.useEffect(() => {
-    const show = (next: SettingsSectionId, how: SettingsOpenedVia) => {
-      if (onSettingsPageRef.current) {
-        router.push(settingsHref(next));
-        return;
-      }
-      setSection(next);
-      setVia(how);
-      setWanted(true);
-      setOpen(true);
+    // Settings is a full window now (ChatGPT's model), not a dialog over the
+    // chat: every entry point navigates to /settings, remembering where the
+    // reader came from so "Back to app" returns there.
+    const show = (next: SettingsSectionId) => {
+      if (!onSettingsPageRef.current) rememberReturnPath();
+      router.push(settingsHref(next));
     };
-    const handleOpen = (e: Event) => show(resolveSettingsSection((e as CustomEvent<string>).detail), "pointer");
+    const handleOpen = (e: Event) => show(resolveSettingsSection((e as CustomEvent<string>).detail));
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== "," || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       // Claimed on /settings too, where it does nothing: the reader is
       // already in settings, and a shortcut let through here opened the
       // BROWSER's settings (Chrome and Firefox both bind ⌘,) in a new tab.
       e.preventDefault();
-      if (onSettingsPageRef.current) return;
-      setVia("keyboard");
-      setWanted(true);
-      setOpen((o) => !o);
+      if (onSettingsPageRef.current) {
+        router.push(readReturnPath());
+        return;
+      }
+      rememberReturnPath();
+      router.push(settingsHref(DEFAULT_SETTINGS_SECTION));
     };
     window.addEventListener("juno:settings", handleOpen);
     window.addEventListener("keydown", handleKey);
@@ -94,32 +102,16 @@ export function SettingsModalLazy() {
     };
   }, [router]);
 
-  // Any navigation closes it: the reader went somewhere else.
+  // Settings opens as a page; warm its route's chunk while idle.
   React.useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  // Warm the chunk once the browser has nothing better to do.
-  React.useEffect(() => {
-    const load = () => void import("@/components/settings/settings-modal");
+    const load = () => router.prefetch(settingsHref(DEFAULT_SETTINGS_SECTION));
     if (typeof window.requestIdleCallback === "function") {
       const id = window.requestIdleCallback(load, { timeout: 4000 });
       return () => window.cancelIdleCallback(id);
     }
     const id = window.setTimeout(load, 2000);
     return () => window.clearTimeout(id);
-  }, []);
+  }, [router]);
 
-  if (!wanted) return null;
-  return (
-    <MotionConfig reducedMotion="user">
-      <SettingsModalImpl
-        open={open}
-        onOpenChange={setOpen}
-        section={section}
-        onSectionChange={setSection}
-        via={via}
-      />
-    </MotionConfig>
-  );
+  return null;
 }

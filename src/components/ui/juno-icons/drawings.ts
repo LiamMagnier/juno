@@ -54,7 +54,7 @@ export type IconMove = {
   o?: [number, number];
   rest?: number;
   op?: number;
-  anim?: "swing" | "levels" | "wave" | "blink" | "draw" | "pop" | "nod" | "spin" | "hop";
+  anim?: "swing" | "levels" | "wave" | "blink" | "caret" | "draw" | "pop" | "nod" | "spin" | "hop";
   delay?: number;
 };
 
@@ -98,11 +98,13 @@ export type IconGroup =
   | "States"
   | "Files"
   | "Apps"
-  | "Crew and time"
+  | "Agents and time"
+  | "Work and evidence"
   | "Code"
   | "Library"
   | "Arrows"
-  | "Theme";
+  | "Theme"
+  | "System";
 
 export type IconDrawing = {
   viewBox: 24;
@@ -124,6 +126,8 @@ export type IconDrawing = {
   motion?: string;
   /** Drawn from a live value (progress): a control, not a symbol; the native projection skips it. */
   live?: true;
+  /** Optical size: multiplies the keyline for a glyph lighter than its neighbours (see KEYLINE). */
+  optical?: number;
 };
 
 /* —————————————————————————————— Numbers —————————————————————————————— */
@@ -360,10 +364,10 @@ export function koTight(d: string): IconElement {
 
 /**
  * Apply a point transform to an absolute path (M L H V C Q A Z). H and V become
- * L; arcs keep their radii (every arc here is circular) and flip their sweep
- * when the transform mirrors.
+ * L; arcs keep their radii (every arc here is circular), times `radii` when the
+ * transform scales (the keyline), and flip their sweep when it mirrors.
  */
-export function xform(d: string, f: (x: number, y: number) => [number, number], mirror = false): string {
+export function xform(d: string, f: (x: number, y: number) => [number, number], mirror = false, radii = 1): string {
   const tokens = d.match(/[MLHVCQAZ]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
   let i = 0;
   let cx = 0;
@@ -418,7 +422,7 @@ export function xform(d: string, f: (x: number, y: number) => [number, number], 
       const sweep = num();
       cx = num();
       cy = num();
-      out += `A${fmt(rx)} ${fmt(ry)} ${fmt(rotation)} ${large} ${mirror ? 1 - sweep : sweep} ${put(cx, cy)}`;
+      out += `A${fmt(rx * radii)} ${fmt(ry * radii)} ${fmt(rotation)} ${large} ${mirror ? 1 - sweep : sweep} ${put(cx, cy)}`;
     } else {
       i++;
     }
@@ -468,7 +472,6 @@ const CHEVRON = poly(9.375, 6.75, 14.625, 12, 9.375, 17.25);
 const ARROW_SHAFT = poly(4.5, 12, 19.5, 12);
 const ARROW_HEAD = head(19.5, 12, 0, 7.425);
 
-const BUBBLE = "M6.75 4.5H17.25A3 3 0 0 1 20.25 7.5V13.5A3 3 0 0 1 17.25 16.5H11.25L7.5 19.875V16.5H6.75A3 3 0 0 1 3.75 13.5V7.5A3 3 0 0 1 6.75 4.5Z";
 /**
  * The folder: continuous corners, and a tab whose shoulder is a soft S (a
  * bracketed join, the way Newsreader's serifs meet their stems) instead of a
@@ -494,7 +497,6 @@ function folderBody(x0: number, x1: number, yTab: number, yTop: number, y1: numb
 }
 const FOLDER = folderBody(3.75, 20.25, 5.25, 7.5, 18.75, 8.25);
 /** The open folder's back: up the left, over the tab, along the top, down to where the front leaf covers it. */
-const FOLDER_BACK = `M3.75 18.75V${fmt(5.25 + 2.655)}${corner(3.75, 5.25, 0, 1, 1, 0, 2.25)}${tabS(8.25, 5.25, 7.5)}H${fmt(18.75 - 2.655)}${corner(18.75, 7.5, -1, 0, 0, 1, 2.25)}V10.5`;
 /** The bell's shoulders are round, its waist straight, and its lip flares a little: cast, not extruded. */
 const BELL = "M4.875 16.5C6 15.6 6.75 14.4 6.75 12.75V10.5A5.25 5.25 0 0 1 17.25 10.5V12.75C17.25 14.4 18 15.6 19.125 16.5";
 const MIC = "M9 6.75A3 3 0 0 1 15 6.75V11.25A3 3 0 0 1 9 11.25Z";
@@ -504,19 +506,21 @@ const THUMB = "M7.5 10.5L10.6 4.45A1.8 1.8 0 0 1 14 5.55L13.4 9H18.35A1.9 1.9 0 
 /** The sleeve: one bar standing the house gap off the hand (a cuff that shares the hand's edge is everyone else's thumb). */
 const SLEEVE = poly(4.5, 11.25, 4.5, 18.75);
 /*
- * The crew: two members on one ground line, the nearer one shorter, wider and
- * smiling at you. D-029 retired the two-dot face and D-034 drew the crew with
- * graphic eyes; at icon size those are closed arcs (the content, eyes-shut
- * smile), set low and wide, the way the cuteness rules in D-033 place them.
- * Nothing in the glyph can read as a pair of staring dots.
+ * The crew: two agents on one ground line, the nearer one shorter and wider.
+ * Revision 2: the eyes are D-034's matte ovals (the Orbit board's Mira), drawn
+ * as two short upright strokes set low and wide (D-033's cuteness rules), not
+ * revision 1's closed arcs, which turned to a squiggle at 16 px. A stroke with
+ * round caps is an oval, never a staring dot (D-029 retired the two-dot face);
+ * the body is one soft gumdrop with a broad base, so it reads as a character,
+ * not a ghost.
  */
-const CREW_FRONT = gumdrop(9, 8.25, 20.25, 12.75);
-const CREW_BACK = gumdrop(15.375, 5.25, 20.25, 11.25);
-/** Closed eyes: two upper half circles, `apart` between their centres. */
-const smile = (cx: number, y: number, apart: number, r = 1.125): string => `${arc(cx - apart / 2, y, r, 180, 360)}${arc(cx + apart / 2, y, r, 180, 360)}`;
-const CREW_EYES = smile(9, 15, 5.25);
-const MEMBER = gumdrop(10.5, 5.625, 20.25, 14.25);
-const MEMBER_EYES = smile(10.5, 13.125, 6, 1.3);
+const CREW_FRONT = gumdrop(9.375, 7.875, 20.25, 13.5, 0.5);
+const CREW_BACK = gumdrop(15.75, 4.5, 20.25, 11.25, 0.5);
+/** Matte oval eyes: two upright strokes `apart` between them, from y0 to y1. */
+const ovals = (cx: number, y0: number, y1: number, apart: number): string => `${poly(cx - apart / 2, y0, cx - apart / 2, y1)}${poly(cx + apart / 2, y0, cx + apart / 2, y1)}`;
+const CREW_EYES = ovals(9.375, 14.25, 16.5, 4.5);
+const MEMBER = gumdrop(10.5, 5.25, 20.25, 14.25, 0.5);
+const MEMBER_EYES = ovals(10.5, 12.75, 15, 4.875);
 /** One hop: up a unit and a half and down, once (hello). */
 const hop = { anim: "hop" as const, y: -1.25 };
 /** The house plus, for a corner: arms `a` either side of (cx, cy). */
@@ -535,17 +539,6 @@ const HAND =
  * at 16 px a band made the pair read as "0lb". The two stand a house gap
  * apart at the top, so they never merge into one blob.
  */
-const SHELF_Y = 19.5;
-const LEAN = -12;
-const UPRIGHT = `M${P(3.75, SHELF_Y)}V${fmt(4.5 + 1.77)}${corner(3.75, 4.5, 0, 1, 1, 0, 1.5)}H${fmt(9 - 1.77)}${corner(9, 4.5, -1, 0, 0, 1, 1.5)}V${fmt(SHELF_Y)}`;
-const leanBook = (() => {
-  const q = (x: number, y: number) => rot(x, y, 15, SHELF_Y, LEAN);
-  const [ax, ay] = q(15, SHELF_Y);
-  const [bx, by] = q(20.25, SHELF_Y);
-  const [cx_, cy_] = q(20.25, SHELF_Y - 12);
-  const [dx, dy] = q(15, SHELF_Y - 12);
-  return roundPoly(1.5, ax, ay, bx, by, cx_, cy_, dx, dy);
-})();
 
 const PLUG = ["M7.5 9H16.5V12A4.5 4.5 0 0 1 7.5 12Z", poly(9.75, 9, 9.75, 4.5), poly(14.25, 9, 14.25, 4.5), poly(12, 16.5, 12, 20.25)];
 
@@ -559,138 +552,299 @@ const ENTER_HEAD = head(5.25, 15, 180, 4.773);
 const HANDS = poly(12, 8.25, 12, 12, 14.625, 13.5);
 /** The bell's parts, so the muted bell is the bell. */
 const BELL_PARTS = [BELL, poly(4.5, 16.5, 19.5, 16.5), poly(10.125, 19.5, 13.875, 19.5)];
-/**
- * Memory: two hemispheres with one fold each side. The bookmark it replaces
- * was a third "save" idea beside pin and star.
- */
-const BRAIN_L = "M12 5.25C10.9 4.1 8.4 4 7.6 6.2C5.4 6.3 4.3 8.6 5 10.4C3.6 11.6 3.8 14.4 5.6 15.2C5.7 17.6 8.2 19.2 10.1 18.4C10.8 19.3 11.6 19.5 12 19.5";
-const BRAIN_R = flipX(BRAIN_L);
-const BRAIN_FOLDS = ["M7.6 6.2C7.6 7.5 8.4 8.6 9.75 8.6", "M5.6 15.2C7 15.2 8.25 14.25 8.25 12.75"].flatMap((d) => [d, flipX(d)]);
 /** The pin's parts, so the unpin is the pin. */
 const PIN_PARTS = [poly(8.25, 3.75, 15.75, 3.75), PIN, poly(12, 13.5, 12, 20.25)];
 
-/* —————————————————————————————— Alevr's destinations —————————————————————————————— */
+/* —————————————————————————————— Alevr shapes (revision 1, the brand overlay) —————————————————————————————— */
 
 /**
- * Orbit, Alevr's agent workspace: two separated open arcs of one ellipse,
- * b = a / phi, the major axis rising 24 degrees, the two gaps at the ends of
- * the major axis so the arcs are in point symmetry (the Continuum's pairing).
- * A gap is the clear chord between the round caps. This is the brand glyph
- * (src/components/brand/brand-glyphs.ts, ORBIT_GLYPH) entered in the one
- * registry; tests/brand-icon-registry.test.ts holds the two to the same
- * drawing. Static: it is a place, never a spinner.
+ * An arc of the ellipse (cx, cy) with semi-axes a and b whose major axis is
+ * turned `phi` degrees (negative rises to the right), from parameter t0 to t1
+ * (degrees; increasing runs clockwise on screen).
  */
-function orbitArcs(a: number, chord: number): string[] {
-  const b = a / ((1 + Math.sqrt(5)) / 2);
-  const th = (-24 * Math.PI) / 180;
-  const at = (deg: number): [number, number] => {
-    const t = (deg * Math.PI) / 180;
-    const x = a * Math.cos(t);
-    const y = b * Math.sin(t);
-    return [12 + x * Math.cos(th) - y * Math.sin(th), 12 + x * Math.sin(th) + y * Math.cos(th)];
+export function ellArc(cx: number, cy: number, a: number, b: number, phi: number, t0: number, t1: number): string {
+  const f = (phi * Math.PI) / 180;
+  const at = (t: number): [number, number] => {
+    const r = (t * Math.PI) / 180;
+    const x = a * Math.cos(r);
+    const y = b * Math.sin(r);
+    return [n3(cx + x * Math.cos(f) - y * Math.sin(f)), n3(cy + x * Math.sin(f) + y * Math.cos(f))];
   };
-  const half = (g: number): number => {
-    let lo = 0;
-    let hi = 60;
-    for (let i = 0; i < 40; i++) {
-      const mid = (lo + hi) / 2;
-      const p0 = at(g - mid);
-      const q0 = at(g + mid);
-      if (Math.hypot(q0[0] - p0[0], q0[1] - p0[1]) < chord) lo = mid;
-      else hi = mid;
-    }
-    return hi;
-  };
-  return [0, 180].map((g) => {
-    const [x0, y0] = at(g + half(g));
-    const [x1, y1] = at(g + 180 - half(g + 180));
-    return `M${P(x0, y0)}A${fmt(a)} ${fmt(b)} -24 0 1 ${P(x1, y1)}`;
-  });
+  const [x0, y0] = at(t0);
+  const [x1, y1] = at(t1);
+  const large = Math.abs(t1 - t0) > 180 ? 1 : 0;
+  const sweep = t1 > t0 ? 1 : 0;
+  return `M${P(x0, y0)}A${fmt(a)} ${fmt(b)} ${fmt(phi)} ${large} ${sweep} ${P(x1, y1)}`;
 }
-/** 24 px: a = 9.375, a 2 unit clear gap (chord 2 + the 1.5 unit line). */
-const ORBIT_ARCS = orbitArcs(9.375, 3.5);
-/**
- * Below 18 px Orbit is drawn larger (a = 10.125) with a 1.5 px clear gap, so
- * the open, tilted ellipse stands as tall as Code's brackets beside it.
- */
-const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
 
-/** Code: opposed square brackets with continuous corners; the cursor stands inset between them. */
-const codeBracket = (top: number, bottom: number, arm: number, r: number): string =>
-  `M${fmt(arm)} ${fmt(top)}H${fmt(4.5 + r * 1.18)}${corner(4.5, top, 1, 0, 0, 1, r)}V${fmt(bottom - r * 1.18)}${corner(4.5, bottom, 0, -1, 1, 0, r)}H${fmt(arm)}`;
-const CODE_BRACKET = codeBracket(4.5, 19.5, 9.75, 2.25);
+/**
+ * Orbit, Alevr's agent workspace (revision 2, redrawn from the Orbit board's
+ * construction: "two separated elliptical arcs in equilibrium", a = 1,
+ * b = 0.618, the major axis rising 24 degrees). Revision 1 broke one ellipse
+ * at both tips into two equal arcs, each the other turned half a turn: the
+ * refresh glyph without its arrowheads. Now the arcs are unequal and step
+ * past each other the way the board's blades (and the Continuum's) do:
+ *   - the back arc runs over the top on the full ellipse (a = 9.375), from
+ *     just under the left tip round to the right tip;
+ *   - the front arc runs under, on the same ellipse at 0.9, so at both breaks
+ *     its end sits inside the back arc's (a step, not a gap in one line);
+ *   - the breaks are measured in arc length, not angle, against the 16 px line
+ *     (1.667 construction units): the open one, centred on the right tip,
+ *     clears 2.25 lines; the closing one, just under the left tip, 1.25. Each
+ *     stays open at 16 px on 1x, and the pair still reads as one orbit (a
+ *     wider open break read as a swoosh, a C, in the sidebar at 16 px).
+ * The minor axis is 11.6 units (13 on the keyline): the two arcs stay more than
+ * 8 px apart at 16 px. No rotational symmetry, no arrowhead, no start or end
+ * to chase: it cannot read as refresh, sync or a spinner, and it never moves.
+ */
+
+
+/**
+ * Code (revision 2, the Code board's construction): opposed square brackets
+ * and the cursor. Revision 1's brackets ran 5.25 units in from each side with
+ * 2.25 corners, so the pair closed into a box ("[I]" read as a frame or an ID
+ * card). Now each arm is 3 units with a 1.5 continuous corner (about a unit of
+ * it straight), the counter between the arms is 9 units wide, and the cursor
+ * is half the brackets' height, centred: the board's proportions.
+ */
+
+/** A simple person: head and shoulders, the house gap between them. */
+const HEAD = [12, 8.25, 3.75] as const;
+const SHOULDERS = "M4.875 20.25C4.875 17.1 8.1 15 12 15C15.9 15 19.125 17.1 19.125 20.25";
+
+/** A rectangle turned `deg` about (ox, oy), its corners rounded by r (roundPoly: a turned rectangle has no straight stems to fit). */
+const turnedRect = (x: number, y: number, w: number, h: number, r: number, deg: number, ox: number, oy: number): string => {
+  const q = (px: number, py: number) => rot(px, py, ox, oy, deg);
+  return roundPoly(r, ...q(x, y), ...q(x + w, y), ...q(x + w, y + h), ...q(x, y + h));
+};
+
+/**
+ * Memory: recall cards, held fanned. The one in front is upright and carries
+ * what is remembered; the one behind leans, its top and its side showing,
+ * the way the library's second volume leans (things you keep lean). Copy is
+ * two sheets offset, versions a cascade; neither leans.
+ */
+const MEM_FRONT = rr(3.75, 8.25, 11.25, 12.75, 2.25);
+/** Leaning right, as the library's second volume does (copy's second sheet sits up and left, square). */
+const MEM_BACK = flipX(turnedRect(5.25, 4.125, 11.25, 12.75, 2.1, -10, 10.875, 10.5));
+/** The back card leans further from its foot (its lower right corner) on hover. */
+const MEM_PIVOT: [number, number] = [17.25, 18];
+const MEM_LINES = [poly(6.75, 12.75, 12, 12.75), poly(6.75, 16.5, 9.75, 16.5)];
+
+/** Instructions: a ruled sheet (no fold: it is not a file) whose last line is set in. */
+const SHEET_RULED = rr(5.25, 3, 13.5, 18, 2.25);
+
+/** A small microphone for dictation, beside the insertion cursor. */
+const MIC_SMALL = "M6.75 6A3 3 0 0 1 12.75 6V10.5A3 3 0 0 1 6.75 10.5Z";
+/** The text cursor: a stem with two serifs (the I-beam), Newsreader's own construction at icon size. */
+const ibeam = (x: number, y0: number, y1: number, w = 3): string =>
+  `${poly(x, y0, x, y1)}${poly(x - w / 2, y0, x + w / 2, y0)}${poly(x - w / 2, y1, x + w / 2, y1)}`;
+
+/** Plan: a checked step. */
+const tick = (cy: number): string => poly(3.75, cy, 5.625, cy + 1.875, 9, cy - 1.5);
+
+/** Receipt: a slip with continuous top corners and a torn (folded) foot. */
+const SLIP = `M5.25 21V${fmt(3 + 2.655)}${corner(5.25, 3, 0, 1, 1, 0, 2.25)}H${fmt(18.75 - 2.655)}${corner(18.75, 3, -1, 0, 0, 1, 2.25)}V21L16.5 19.5L14.25 21L12 19.5L9.75 21L7.5 19.5Z`;
+
+/** Sources: a pair of pages, a house gap apart at the spine. */
+const LEAF = "M10.5 6.375C8.9 5.3 6.4 4.95 3.75 5.25V18.375C6.4 18.075 8.9 18.4 10.5 19.5Z";
+
+/** Citation: one typographic quotation mark, a filled head with a rising tail (Newsreader's 66). */
+const quote = (cx: number, cy: number): IconElement[] => [dot(cx, cy, 2.625), p(`M${P(cx - 2.625, cy)}C${P(cx - 2.625, cy - 3.6)} ${P(cx - 1.2, cy - 6.4)} ${P(cx + 1.5, cy - 8.1)}`)];
+
+/** The eye as it sits inside a frame (preview). */
+const ALMOND = "M6.75 12C8.25 9.75 10 8.625 12 8.625C14 8.625 15.75 9.75 17.25 12C15.75 14.25 14 15.375 12 15.375C10 15.375 8.25 14.25 6.75 12Z";
+
+/** Bookmark: a ribbon with continuous top corners and a notched foot. */
+const RIBBON = `M6.75 20.25V${fmt(3.75 + 2.655)}${corner(6.75, 3.75, 0, 1, 1, 0, 2.25)}H${fmt(17.25 - 2.655)}${corner(17.25, 3.75, -1, 0, 0, 1, 2.25)}V20.25L12 16.125Z`;
+
+/**
+ * Apps (revision 2): framed tiles set as one grid, three squares and one
+ * circle, the circle the app that joins. Revision 1's two tiles linked by a
+ * quarter path read as a flowchart at 16 px and sat a long way from every
+ * apps glyph people know. The tiles are 6.375 units with 3.75 between their
+ * lines, so they stay apart at 16 px on 1x (Lucide's grid keeps 4); the circle
+ * keeps its tile's optical size (r = 3.375, a little over half the tile).
+ */
+const TILE = 6.375;
+const TILES = [rr(3.75, 3.75, TILE, TILE, 2.25), rr(3.75, 13.875, TILE, TILE, 2.25), rr(13.875, 13.875, TILE, TILE, 2.25)];
+const APP_JOIN: [number, number, number] = [17.0625, 6.9375, 3.375];
+
+
+/**
+ * Deep Field (D-038, "Deep research", revision 2): one long look into a field.
+ * Two opposed corners of a viewfinder (four empty corners are the screenshot,
+ * beside it in the + menu) hold three points on one line of sight, receding:
+ * each point 0.68 the size of the one before and closer to it (5.8 then 4.8
+ * units apart), the near one low left, the far one high right, across the
+ * corners' diagonal. Revision 1 set four points on a spiral that read as
+ * scattered at 16 px; three in perspective read as depth, and at 16 px on 1x
+ * they land as 3, 2 and 1 pixel points.
+ */
+const FIELD_CORNERS = [
+  "M3.75 9.75V6.75A3 3 0 0 1 6.75 3.75H9.75",
+  "M20.25 14.25V17.25A3 3 0 0 1 17.25 20.25H14.25",
+];
+const FIELD_POINTS: [number, number, number][] = [
+  [8.625, 15.375, 1.875],
+  [12.75, 11.25, 1.275],
+  [16.125, 7.875, 0.825],
+];
 
 /* —————————————————————————————— The set —————————————————————————————— */
 
-const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => ({ viewBox: 24, line: 1.5, ...d });
+/* —————————————————————————————— The keyline (revision 2) —————————————————————————————— */
+
+/**
+ * THE KEYLINE. Every drawing below is authored on the construction grid
+ * described at the top (live area 3 to 21, stems on the 1.5 unit lattice, a
+ * 16.5 unit circle beside a 15 unit square) and projected to the family's
+ * keyline by one uniform scale about the centre: KEYLINE = 9/8. The live area
+ * becomes 1.875 to 22.125, the primary circle 18.56 units (19.5 with Phosphor's
+ * 18, Lucide's 20), the square 16.9, the page 13.5 x 20.25. Revision 1 drew
+ * the whole family about 15% under Lucide and Phosphor at the same nominal
+ * size (tools/rev2/bbox.mjs: a median of 0.86 of Lucide's extent, 0.92 of
+ * Phosphor's); at 16 px beside 14 px Inter the glyphs read about 11 px. The
+ * line does not scale (1.5 units from 18 px, 1.25 px at 16) and neither does
+ * the house gap (1.5 units), so the projection adds size, not weight. The
+ * renderer fits the projected stems to the device grid per size, keeping
+ * equal gaps equal (index.tsx, fitDrawing).
+ *
+ * `optical` on a drawing multiplies the keyline for glyphs whose silhouette
+ * is lighter than its neighbours' (play and pause, the chevrons, a check):
+ * optical size, the way a type designer lets an o overshoot an x.
+ */
+export const KEYLINE = 1.125;
+
+function keylineMove(m: IconMove | undefined, s: number, f: (x: number, y: number) => [number, number]): IconMove | undefined {
+  if (!m) return m;
+  const out: IconMove = { ...m };
+  if (m.x != null) out.x = n3(m.x * s);
+  if (m.y != null) out.y = n3(m.y * s);
+  if (m.o) out.o = f(m.o[0], m.o[1]);
+  return out;
+}
+
+function keylineEls(els: IconElement[], s: number, f: (x: number, y: number) => [number, number]): IconElement[] {
+  return els.map((el) => {
+    const a = { ...el.attrs };
+    if (el.tag === "g") return { ...el, attrs: a, children: keylineEls(el.children ?? [], s, f), hover: keylineMove(el.hover, s, f) };
+    if (el.tag === "path") a.d = xform(String(a.d), f, false, s);
+    else if (el.tag === "circle") {
+      [a.cx, a.cy] = f(Number(a.cx), Number(a.cy));
+      a.r = n3(Number(a.r) * s);
+    } else if (el.tag === "rect") {
+      [a.x, a.y] = f(Number(a.x ?? 0), Number(a.y ?? 0));
+      a.width = n3(Number(a.width ?? 0) * s);
+      a.height = n3(Number(a.height ?? 0) * s);
+      if (a.rx != null) a.rx = n3(Number(a.rx) * s);
+      if (a.ry != null) a.ry = n3(Number(a.ry) * s);
+    }
+    return { ...el, attrs: a };
+  });
+}
+
+/** A drawing on the construction grid, projected to the keyline (and its optical size). */
+export function keyline(d: IconDrawing): IconDrawing {
+  const s = KEYLINE * (d.optical ?? 1);
+  const f = (x: number, y: number): [number, number] => [n3(12 + (x - 12) * s), n3(12 + (y - 12) * s)];
+  const out: IconDrawing = { ...d, elements: keylineEls(d.elements, s, f) };
+  if (d.fill) out.fill = keylineEls(d.fill, s, f);
+  if (d.hover) out.hover = keylineMove(d.hover, s, f);
+  if (d.on?.kind === "turn" && d.on.o) out.on = { ...d.on, o: f(d.on.o[0], d.on.o[1]) };
+  if (d.small) out.small = { elements: d.small.elements && keylineEls(d.small.elements, s, f), fill: d.small.fill && keylineEls(d.small.fill, s, f) };
+  return out;
+}
+
+const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => keyline({ viewBox: 24, line: 1.5, ...d });
+
+/* Redrawn 2026-10-02 on Lucide's geometry (ISC), placed on the construction
+   grid so the keyline projects it back to the reference size, and drawn in the
+   house line. The owner rejected the earlier marks for these navigation glyphs. */
+const CHAT_BUBBLE = "M8.444 4.889L15.556 4.889A4.444 4.444 0 0 1 20 9.333L20 12.889A4.444 4.444 0 0 1 15.556 17.333L10.756 17.333L7.289 19.822A0.578 0.578 0 0 1 6.4 19.378L6.4 17.067A4.444 4.444 0 0 1 4 12.889L4 9.333A4.444 4.444 0 0 1 8.444 4.889Z";
+const NEW_CHAT_PEN = "M17.667 3.667A0.889 0.889 0 0 1 20.333 6.333L12.322 14.346A1.778 1.778 0 0 1 11.564 14.795L9.01 15.541A0.444 0.444 0 0 1 8.459 14.99L9.205 12.436A1.778 1.778 0 0 1 9.655 11.679Z";
+const FOLDER_SHUT = "M19.111 19.111A1.778 1.778 0 0 0 20.889 17.333L20.889 8.444A1.778 1.778 0 0 0 19.111 6.667L12.089 6.667A1.778 1.778 0 0 1 10.587 5.867L9.867 4.8A1.778 1.778 0 0 0 8.382 4L4.889 4A1.778 1.778 0 0 0 3.111 5.778L3.111 17.333A1.778 1.778 0 0 0 4.889 19.111Z";
+const LIBRARY_LEAN = "M19.467 18.133C19.644 18.578 19.378 19.111 18.933 19.289L17.244 19.911C16.8 20.089 16.267 19.822 16.089 19.378L11.2 5.867C11.022 5.422 11.289 4.889 11.733 4.711L13.422 4.089C13.867 3.911 14.4 4.178 14.578 4.622Z";
+const BELL_BODY = "M4.233 14.956A0.889 0.889 0 0 0 4.889 16.444L19.111 16.444A0.889 0.889 0 0 0 19.769 14.957C18.587 13.739 17.333 12.444 17.333 8.444A5.333 5.333 0 0 0 6.667 8.444C6.667 12.444 5.412 13.739 4.233 14.956";
+const ORBIT_ARC_A = "M19.414 7.097A8.889 8.889 0 0 1 10.459 20.756";
+const ORBIT_ARC_B = "M4.586 16.903A8.889 8.889 0 0 1 13.547 3.246";
+
 
 
 export const ICONS = {
   /* ——— Navigation ——— */
   chat: I({
     group: "Navigation",
-    elements: [p(BUBBLE)],
-    fill: [solid(BUBBLE)],
+    elements: [p(CHAT_BUBBLE)],
+    fill: [solid(CHAT_BUBBLE)],
     on: { kind: "fill" },
-    hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
+    hover: { s: 1.06, o: [6.4, 19.8], anim: "pop" },
     motion: "The bubble speaks: a small pop from the tail.",
   }),
-  /**
-   * Orbit has no "on" form: selection is tonal, on the row, never a filled or
-   * turned glyph, so the place never reads as a status or a spinner.
-   */
   orbit: I({
     group: "Navigation",
-    elements: ORBIT_ARCS.map((d) => p(d)),
-    small: { elements: ORBIT_ARCS_SMALL.map((d) => p(d)) },
+    elements: [p(ORBIT_ARC_A), p(ORBIT_ARC_B), c(12, 12, 2.667), c(18.222, 5.778, 1.778), c(5.778, 18.222, 1.778)],
     motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
   }),
   code: I({
     group: "Navigation",
-    elements: [g([p(CODE_BRACKET)], { x: -1 }), g([p(flipX(CODE_BRACKET))], { x: 1 }), p(poly(12, 8.25, 12, 15.75))],
-    motion: "Alevr Code: opposed brackets with the cursor inset between them. The brackets open a unit each way; the cursor holds still.",
+    elements: [
+      g([p("M17.333 15.556L20.889 12L17.333 8.444")], { x: 0.75 }),
+      g([p("M6.667 8.444L3.111 12L6.667 15.556")], { x: -0.75 }),
+      p("M14.222 4.889L9.778 19.111"),
+    ],
+    motion: "Alevr Code: angle brackets around a slash. The brackets step a unit apart.",
   }),
   "new-chat": I({
     group: "Navigation",
-    elements: [p(BUBBLE), ko(plusAt(18.75, 17.625, 2.625)), p(plusAt(18.75, 17.625, 2.625))],
-    hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
-    motion: "A new chat is the chat bubble with the house plus cut into its corner. It speaks: a small pop from the tail.",
+    elements: [
+      p("M12 4.444L8.444 4.444A4 4 0 0 0 4.444 8.444L4.444 15.556A4 4 0 0 0 8.444 19.556L15.556 19.556A4 4 0 0 0 19.556 15.556L19.556 12"),
+      g([p(NEW_CHAT_PEN)], { r: -8, o: [9, 15] }),
+    ],
+    motion: "A new chat is a page with a pen on it. The pen tips as if starting to write.",
   }),
   search: I({
     group: "Navigation",
-    elements: [c(10.125, 10.125, 6.375), p(poly(17.063, 17.063, 20.25, 20.25))],
-    hover: { r: -14, o: [10.125, 10.125] },
-    motion: "The handle stands a house gap off the lens (Juno's join). The lens tilts about its own centre, so only the handle swings.",
+    elements: [c(11.111, 11.111, 7.111), p("M20 20L16.142 16.142")],
+    hover: { r: -14, o: [11.111, 11.111] },
+    motion: "The lens tilts about its own centre, so only the handle swings.",
   }),
   folder: I({
     group: "Navigation",
-    elements: [p(FOLDER)],
-    fill: [solid(FOLDER)],
+    elements: [p(FOLDER_SHUT)],
+    fill: [solid(FOLDER_SHUT)],
     on: { kind: "fill" },
     hoverSwap: "folder-open",
     motion: "The folder opens (a cross-fade to its open drawing).",
   }),
   "folder-open": I({
     group: "Navigation",
-    elements: [p(FOLDER_BACK), g([p(roundPoly(1.2, 6.75, 10.5, 20.625, 10.5, 17.25, 18.75, 3.75, 18.75))], { y: -0.5 })],
-    motion: "The front leaf lifts half a unit.",
+    elements: [p("M6.667 13.778L8 11.2A1.778 1.778 0 0 1 9.547 10.222L19.111 10.222A1.778 1.778 0 0 1 20.836 12.444L19.467 17.778A1.778 1.778 0 0 1 17.733 19.111L4.889 19.111A1.778 1.778 0 0 1 3.111 17.333L3.111 5.778A1.778 1.778 0 0 1 4.889 4L8.356 4A1.778 1.778 0 0 1 9.858 4.8L10.578 5.867A1.778 1.778 0 0 0 12.062 6.667L17.333 6.667A1.778 1.778 0 0 1 19.111 8.444L19.111 10.222")],
+    motion: "The folder, open.",
   }),
   library: I({
     group: "Navigation",
-    elements: [p(poly(3, SHELF_Y, 21, SHELF_Y)), p(UPRIGHT), g([p(leanBook)], { r: -LEAN, o: [15, SHELF_Y], y: -1 })],
-    motion: "The leaning volume straightens and lifts, as a book comes off the shelf.",
+    elements: [
+      p(rr(4, 4, 7.111, 16, 0.889)),
+      p("M7.556 4L7.556 20"),
+      g([p(LIBRARY_LEAN)], { r: -6, o: [17.8, 19.6], y: -0.5 }),
+    ],
+    motion: "A volume on the shelf and one leaning on it. The leaning volume straightens and lifts.",
   }),
   customize: I({
     group: "Navigation",
     elements: [
-      p(poly(4.5, 7.5, 19.5, 7.5)),
-      p(poly(4.5, 16.5, 19.5, 16.5)),
-      { ...ko(rr(13.875, 4.875, 2.25, 5.25, 1.125)), hover: { x: -2.25 } },
-      g([solid(rr(13.875, 4.875, 2.25, 5.25, 1.125))], { x: -2.25 }),
-      { ...ko(rr(7.875, 13.875, 2.25, 5.25, 1.125)), hover: { x: 2.25 } },
-      g([solid(rr(7.875, 13.875, 2.25, 5.25, 1.125))], { x: 2.25 }),
+      p("M10.222 5.778L4 5.778"),
+      p("M20 5.778L13.778 5.778"),
+      p("M8.444 12L4 12"),
+      p("M20 12L12 12"),
+      p("M12 18.222L4 18.222"),
+      p("M20 18.222L15.556 18.222"),
+      g([p("M13.778 4L13.778 7.556")], { x: -1.5 }),
+      g([p("M8.444 10.222L8.444 13.778")], { x: 1.5 }),
+      g([p("M15.556 16.444L15.556 20")], { x: -1.5 }),
     ],
-    motion: "Two faders, their caps cut clear of the track by the house gap. The caps slide toward each other.",
+    motion: "Three faders. Their stops slide a step along the track.",
   }),
   crew: I({
     group: "Navigation",
@@ -701,19 +855,19 @@ export const ICONS = {
     ],
     fill: [g([solid(CREW_BACK)], { y: -0.75 }), { ...ko(CREW_FRONT), hover: hop }, g([solid(CREW_FRONT), koTight(CREW_EYES)], hop)],
     on: { kind: "fill" },
-    motion: "The one behind stands up; the one in front, eyes closed in a smile, hops once: hello.",
+    motion: "The one behind stands up; the one in front hops once: hello.",
   }),
   bell: I({
     group: "Navigation",
-    elements: BELL_PARTS.map((d) => p(d)),
-    fill: [solid(`${BELL}Z`), p(BELL_PARTS[1]), p(BELL_PARTS[2])],
-    on: { kind: "turn", deg: 14, o: [12, 4.5] },
-    hover: { r: 10, o: [12, 4.5], anim: "swing" },
+    elements: [p(BELL_BODY), p("M10.46 20A1.778 1.778 0 0 0 13.54 20")],
+    fill: [solid(BELL_BODY), p("M10.46 20A1.778 1.778 0 0 0 13.54 20")],
+    on: { kind: "turn", deg: 14, o: [12, 3.111] },
+    hover: { r: 10, o: [12, 3.111], anim: "swing" },
     motion: "One swing from the hanger, damped, then still. Active (something new): it holds the swing, tilted as it rings, at its usual weight. Never a fill or a dot.",
   }),
   sidebar: I({
     group: "Navigation",
-    elements: [p(FRAME), g([p(poly(9, 4.5, 9, 19.5))], { x: -1.5 })],
+    elements: [p(rr(4, 4, 16, 16, 1.778)), g([p("M9.333 4L9.333 20")], { x: -1 })],
     motion: "The divider slides toward the edge the panel hides into.",
   }),
   "panel-right": I({
@@ -769,6 +923,7 @@ export const ICONS = {
   }),
   attach: I({
     group: "Composer",
+    optical: 1.08,
     elements: [p(turn("M10.5 9V15A1.5 1.5 0 0 0 13.5 15V6.75A3 3 0 0 0 7.5 6.75V15.75A4.5 4.5 0 0 0 16.5 15.75V8.25", 40))],
     hover: { r: -10, o: [12, 12] },
     motion: "The clip tilts as if sliding onto a page.",
@@ -800,30 +955,30 @@ export const ICONS = {
     motion: "The tail winds back a little.",
   }),
   skill: I({
-    group: "Composer",
-    elements: [p(rr(4.5, 4.5, 15, 15, 3.75)), g([p(poly(13.5, 8.25, 10.5, 15.75))], { r: 16, o: [12, 12] })],
-    motion: "The slash leans in, like a key being struck.",
+    group: "Apps",
+    elements: page(g([p(poly(13.125, 10.875, 10.875, 17.625))], { r: 16, o: [12, 14.25] })),
+    motion: "A folded sheet you can use again, with the slash that runs it. The slash leans in, like a key being struck.",
   }),
   mic: I({
     group: "Composer",
     elements: [
-      p(MIC),
-      p("M6 11.25A6 6 0 0 0 18 11.25"),
-      p(poly(12, 17.25, 12, 20.25)),
-      g([p(poly(3, 7.5, 3, 10.5))], { rest: 0, op: 1 }),
-      g([p(poly(21, 7.5, 21, 10.5))], { rest: 0, op: 1, delay: 60 }),
+      p(rr(9.333, 3.111, 5.333, 11.556, 2.667)),
+      p("M18.222 10.222L18.222 12A6.222 6.222 0 0 1 5.778 12L5.778 10.222"),
+      p("M12 18.222L12 20.889"),
     ],
     on: { kind: "swap", to: "voice" },
-    motion: "Two level ticks appear beside it. Active: becomes the level meter.",
+    hover: { y: -0.75 },
+    motion: "The capsule lifts a little. Active: becomes the level meter.",
   }),
   voice: I({
     group: "Composer",
     elements: [
-      g([p(poly(4.5, 9.75, 4.5, 14.25))], { sy: 0.6, o: [4.5, 12], anim: "levels", delay: 0 }),
-      g([p(poly(8.25, 7.5, 8.25, 16.5))], { sy: 1.25, o: [8.25, 12], anim: "levels", delay: 30 }),
-      g([p(poly(12, 4.5, 12, 19.5))], { sy: 0.7, o: [12, 12], anim: "levels", delay: 60 }),
-      g([p(poly(15.75, 7.5, 15.75, 16.5))], { sy: 1.2, o: [15.75, 12], anim: "levels", delay: 90 }),
-      g([p(poly(19.5, 9.75, 19.5, 14.25))], { sy: 0.7, o: [19.5, 12], anim: "levels", delay: 120 }),
+      g([p("M3.111 10.222L3.111 12.889")], { sy: 0.6, o: [3.111, 11.556], anim: "levels", delay: 0 }),
+      g([p("M6.667 6.667L6.667 16.444")], { sy: 1.2, o: [6.667, 11.556], anim: "levels", delay: 30 }),
+      g([p("M10.222 4L10.222 20")], { sy: 0.7, o: [10.222, 12], anim: "levels", delay: 60 }),
+      g([p("M13.778 8.444L13.778 14.667")], { sy: 1.25, o: [13.778, 11.556], anim: "levels", delay: 90 }),
+      g([p("M17.333 5.778L17.333 17.333")], { sy: 0.75, o: [17.333, 11.556], anim: "levels", delay: 120 }),
+      g([p("M20.889 10.222L20.889 12.889")], { sy: 0.6, o: [20.889, 11.556], anim: "levels", delay: 150 }),
     ],
     motion: "One pass of levels runs across the bars, then they rest. With `levels`, the bars follow the input.",
   }),
@@ -851,10 +1006,10 @@ export const ICONS = {
   }),
   memory: I({
     group: "Composer",
-    elements: [p(BRAIN_L), p(BRAIN_R), p(poly(12, 5.25, 12, 19.5)), g(BRAIN_FOLDS.map((d) => p(d, { draw: true })), { anim: "draw" })],
-    fill: [solid(`${BRAIN_L}Z`), solid(`${BRAIN_R}Z`), koTight(poly(12, 6, 12, 18.75)), ...BRAIN_FOLDS.map((d) => koTight(d))],
+    elements: [g([p(MEM_BACK)], { r: 6, o: MEM_PIVOT }), ko(MEM_FRONT), p(MEM_FRONT), ...MEM_LINES.map((d) => p(d))],
+    fill: [g([p(MEM_BACK)], { r: 6, o: MEM_PIVOT }), ko(MEM_FRONT), solid(MEM_FRONT), ...MEM_LINES.map((d) => koTight(d))],
     on: { kind: "fill" },
-    motion: "What Juno remembers: two hemispheres, not a third save mark beside pin and star. The folds draw in, a memory forming (they stay at 16 px: without them the outline reads as a ball). Active (memory on): filled, its folds cut through.",
+    motion: "Layered recall cards, held fanned: what Alevr remembers (not a third save mark beside pin and star, not a brain). The card behind leans further back, as you look back through them. Active (memory on): the front card fills, its lines cut through.",
   }),
   research: I({
     group: "Composer",
@@ -913,6 +1068,7 @@ export const ICONS = {
   }),
   edit: I({
     group: "Message",
+    optical: 1.06,
     elements: [p(pencil(4.5, 19.5, -45, 19.4, 4.2, 4.2)), p(poly(...pt(...pt(4.5, 19.5, 15.4, -45), 2.1, 45), ...pt(...pt(4.5, 19.5, 15.4, -45), 2.1, 225)))],
     hover: { r: -7, o: [4.5, 19.5] },
     motion: "The pencil rocks on its tip.",
@@ -1041,6 +1197,7 @@ export const ICONS = {
   }),
   link: I({
     group: "Files",
+    optical: 1.06,
     elements: [
       g([p(turn("M9.75 16.5H7.5A4.5 4.5 0 0 1 7.5 7.5H9.75", -45))], { x: -0.53, y: 0.53 }),
       g([p(turn("M14.25 7.5H16.5A4.5 4.5 0 0 1 16.5 16.5H14.25", -45))], { x: 0.53, y: -0.53 }),
@@ -1073,6 +1230,7 @@ export const ICONS = {
   }),
   key: I({
     group: "Apps",
+    optical: 1.06,
     elements: [c(8.25, 15.75, 3.75), p(poly(10.9, 13.1, 19.5, 4.5)), p(poly(16.5, 7.5, 18.75, 9.75)), p(poly(14.25, 9.75, 15.75, 11.25))],
     hover: { r: -14, o: [8.25, 15.75] },
     motion: "The key turns.",
@@ -1088,12 +1246,12 @@ export const ICONS = {
 
   /* ——— Crew and time ——— */
   "add-member": I({
-    group: "Crew and time",
+    group: "Agents and time",
     elements: [g([p(MEMBER), p(MEMBER_EYES)], hop), ko(plusAt(18, 17.25)), p(plusAt(18, 17.25))],
     motion: "The new member hops once beside the corner plus.",
   }),
   routine: I({
-    group: "Crew and time",
+    group: "Agents and time",
     elements: [
       g([p(arc(12, 12, 8.25, -60, 240)), p(head(...pt(12, 12, 8.25, 240), -30, 3.75))], { r: 45, o: [12, 12] }),
       p(HANDS),
@@ -1101,23 +1259,25 @@ export const ICONS = {
     motion: "The loop comes round an eighth; the hands keep the time.",
   }),
   clock: I({
-    group: "Crew and time",
+    group: "Agents and time",
     elements: [c(12, 12, 8.25), g([p(poly(12, 12, 12, 6.75))], { r: 90, o: [12, 12] }), p(poly(12, 12, 15, 13.875))],
     motion: "The long hand moves a quarter hour.",
   }),
   calendar: I({
-    group: "Crew and time",
+    group: "Agents and time",
     elements: [p(rr(3.75, 5.25, 16.5, 15, 3)), p(poly(3.75, 10.5, 20.25, 10.5)), g([p(poly(8.25, 3, 8.25, 7.5)), p(poly(15.75, 3, 15.75, 7.5))], { y: -0.75 })],
     motion: "The rings lift, as a page turns.",
   }),
   pause: I({
-    group: "Crew and time",
+    group: "Agents and time",
+    optical: 1.1,
     elements: [p(poly(9, 6, 9, 18)), p(poly(15, 6, 15, 18))],
     on: { kind: "swap", to: "play" },
     motion: "Active: becomes play.",
   }),
   play: I({
-    group: "Crew and time",
+    group: "Agents and time",
+    optical: 1.1,
     elements: [p(PLAY)],
     hover: { x: 0.75 },
     on: { kind: "swap", to: "pause" },
@@ -1210,8 +1370,8 @@ export const ICONS = {
   }),
   browser: I({
     group: "Code",
-    elements: [p(FRAME), p(poly(3, 9, 21, 9)), g([p(poly(7.5, 13.5, 16.5, 13.5), { draw: true })], { anim: "draw", rest: 0, op: 1 })],
-    motion: "A line of the page loads.",
+    elements: [p(FRAME), p(poly(3, 9.75, 21, 9.75)), dot(6.375, 7.125, 0.9), dot(9, 7.125, 0.9), g([p(poly(7.5, 14.25, 16.5, 14.25), { draw: true })], { anim: "draw", rest: 0, op: 1 })],
+    motion: "A line of the page loads. (Two window points in the bar: without them a bar over a frame is billing's card stripe at 16 px.)",
   }),
   repo: I({
     group: "Code",
@@ -1261,8 +1421,13 @@ export const ICONS = {
   }),
   sort: I({
     group: "Library",
-    elements: [g([p(poly(8.25, 18.75, 8.25, 5.25)), p(head(8.25, 5.25, -90, 4.243))], { y: -1 }), g([p(poly(15.75, 5.25, 15.75, 18.75)), p(head(15.75, 18.75, 90, 4.243))], { y: 1 })],
-    motion: "The arrows pass each other.",
+    elements: [
+      g([p(poly(6.75, 4.5, 6.75, 19.5)), p(head(6.75, 19.5, 90, 4.243))], { y: 1 }),
+      p(poly(11.25, 6.75, 20.25, 6.75)),
+      p(poly(11.25, 12, 17.25, 12)),
+      p(poly(11.25, 17.25, 14.25, 17.25)),
+    ],
+    motion: "A direction beside ordered lines (filter's lines are centred, a funnel). The arrow steps the way it sorts.",
   }),
   download: I({
     group: "Library",
@@ -1363,8 +1528,13 @@ export const ICONS = {
   /* ——— Customize sections and account ——— */
   instructions: I({
     group: "Navigation",
-    elements: [p(poly(4.5, 6.75, 19.5, 6.75)), p(poly(4.5, 12, 19.5, 12)), g([p(poly(4.5, 17.25, 13.5, 17.25))], { sx: 1.3, o: [4.5, 17.25] })],
-    motion: "The last line writes itself a little further.",
+    elements: [
+      p(SHEET_RULED),
+      p(poly(8.25, 8.25, 15.75, 8.25)),
+      p(poly(8.25, 12, 15.75, 12)),
+      g([p(poly(10.5, 15.75, 15.75, 15.75))], { x: 0.75 }),
+    ],
+    motion: "A ruled sheet (no fold: it is not a file) whose last line is set in, an instruction under an instruction. The set-in line steps further in.",
   }),
   "sign-out": I({
     group: "Navigation",
@@ -1409,7 +1579,7 @@ export const ICONS = {
     motion: "None: a state (this chat or member is muted).",
   }),
   history: I({
-    group: "Crew and time",
+    group: "Agents and time",
     elements: [g([p(arc(12, 12, 8.25, 130, -150)), p(head(...pt(12, 12, 8.25, -150), 120, 4.5))], { r: -45, o: [12, 12] }), p(HANDS)],
     motion: "The arrow winds back an eighth: back in time (retry's arrow round routine's clock).",
   }),
@@ -1433,7 +1603,7 @@ export const ICONS = {
   }),
   "folder-plus": I({
     group: "Library",
-    elements: [p(FOLDER), p(poly(12, 10.5, 12, 15.75)), p(poly(9.375, 13.125, 14.625, 13.125))],
+    elements: [p(FOLDER), p(poly(12, 10.875, 12, 16.125)), p(poly(9.375, 13.5, 14.625, 13.5))],
     motion: "None: a menu verb (menus are quiet).",
   }),
   "folder-move": I({
@@ -1463,6 +1633,180 @@ export const ICONS = {
     hover: { r: 180, o: [12, 12] },
     motion: "The halves trade places: light and dark follow the system.",
   }),
+
+  /* ——— Alevr: the semantic inventory (NAMES_AND_ICONS.md), revision 1 ——— */
+  profile: I({
+    group: "Agents and time",
+    elements: [g([c(...HEAD)], { y: -0.75 }), p(SHOULDERS)],
+    motion: "The head lifts, a small nod up (account's motion, without the circle).",
+  }),
+  appearance: I({
+    group: "Agents and time",
+    elements: [g([p(rr(3.75, 3.75, 10.5, 10.5, 3))], { r: -12, o: [9, 9] }), koCircle(15, 15, 5.25), c(15, 15, 5.25)],
+    motion: "An abstract swatch of shapes (an agent's body is chosen from shapes). The squircle turns behind the circle.",
+  }),
+  apps: I({
+    group: "Apps",
+    elements: [...TILES.map((d) => p(d)), g([c(...APP_JOIN)], { x: 0.75, y: -0.75 })],
+    motion: "Framed tiles as one grid, the circle the app that joins. The circle lifts out of its place a unit, as an app being added.",
+  }),
+  dictation: I({
+    group: "Composer",
+    elements: [
+      p(MIC_SMALL),
+      p("M4.5 10.5A5.25 5.25 0 0 0 15 10.5"),
+      p(poly(9.75, 15.75, 9.75, 20.25)),
+      g([p(ibeam(18.75, 6, 18, 2.25))], { anim: "caret" }),
+    ],
+    motion: "The microphone beside the text cursor (speech becomes text, not a conversation). The cursor blinks once.",
+  }),
+  slash: I({
+    group: "Composer",
+    elements: [p(rr(4.5, 4.5, 15, 15, 3.75)), g([p(poly(13.5, 8.25, 10.5, 15.75))], { r: 16, o: [12, 12] })],
+    motion: "The slash key (the composer's command trigger). The slash leans in, like a key being struck.",
+  }),
+  rename: I({
+    group: "Message",
+    elements: [p(rr(3, 6.75, 18, 10.5, 2.25)), p(poly(6.75, 12, 9.75, 12)), ko(ibeam(14.25, 4.5, 19.5)), g([p(ibeam(14.25, 4.5, 19.5))], { anim: "caret" })],
+    motion: "A field with the text cursor standing in it, cut clear by the house gap. The cursor blinks once.",
+  }),
+  refresh: I({
+    group: "Message",
+    elements: [
+      g(
+        [
+          p(arc(12, 12, 7.5, -150, -20)),
+          p(head(...pt(12, 12, 7.5, -20), 70, 4.5)),
+          p(arc(12, 12, 7.5, 30, 160)),
+          p(head(...pt(12, 12, 7.5, 160), 250, 4.5)),
+        ],
+        { r: 45, o: [12, 12] },
+      ),
+    ],
+    motion: "Two paired arcs. They come round an eighth and hold; never a full turn (that is a spinner).",
+  }),
+  plan: I({
+    group: "Work and evidence",
+    elements: [
+      p(tick(6.75)),
+      p(poly(12, 6.75, 20.25, 6.75)),
+      p(tick(12)),
+      p(poly(12, 12, 20.25, 12)),
+      dot(6.375, 17.25, 1.5),
+      g([p(poly(12, 17.25, 17.25, 17.25), { draw: true })], { anim: "draw" }),
+    ],
+    motion: "Ordered steps: two done, one next. The next step's line writes itself in.",
+  }),
+  activity: I({
+    group: "Work and evidence",
+    elements: [
+      p(poly(3.75, 20.25, 20.25, 20.25)),
+      g([p(poly(6, 17.25, 6, 12))], { sy: 0.7, o: [6, 17.25], anim: "levels", delay: 0 }),
+      g([p(poly(9.75, 17.25, 9.75, 6))], { sy: 0.8, o: [9.75, 17.25], anim: "levels", delay: 40 }),
+      g([p(poly(14.25, 17.25, 14.25, 9.75))], { sy: 1.2, o: [14.25, 17.25], anim: "levels", delay: 80 }),
+      g([p(poly(18, 17.25, 18, 4.5))], { sy: 0.75, o: [18, 17.25], anim: "levels", delay: 120 }),
+    ],
+    motion: "Event lines standing on one baseline (a voice meter has none): what happened, when. One pass across them on hover.",
+  }),
+  receipt: I({
+    group: "Work and evidence",
+    elements: [p(SLIP), p(poly(9, 8.25, 15, 8.25)), p(poly(9, 12, 13.5, 12))],
+    hover: { y: -0.75 },
+    motion: "A slip with a torn foot, its lines the evidence. It feeds up, as a receipt prints.",
+  }),
+  versions: I({
+    group: "Work and evidence",
+    elements: [
+      g([p(rr(9.75, 3, 10.5, 12, 2.25))], { x: 0.75, y: -0.75 }),
+      { ...ko(rr(6.75, 6, 10.5, 12, 2.25)), hover: { x: 0.375, y: -0.375 } },
+      g([p(rr(6.75, 6, 10.5, 12, 2.25))], { x: 0.375, y: -0.375 }),
+      ko(rr(3.75, 9, 10.5, 12, 2.25)),
+      p(rr(3.75, 9, 10.5, 12, 2.25)),
+    ],
+    motion: "Three sheets in a cascade, each cut clear of the one in front by the house gap: the current one and the history behind it (copy is two sheets; memory stacks cards upward). They fan out.",
+  }),
+  "ask-first": I({
+    group: "Work and evidence",
+    elements: [
+      p(arc(12, 12, 8.25, 150, 480)),
+      g([p("M9.375 9.75A2.625 2.625 0 1 1 13.31 12.02C12.55 12.46 12 13.05 12 14.06"), dot(12, 16.875)], { r: 12, o: [12, 13.5] }),
+    ],
+    motion: "A question in an open contour (help's circle is closed): this waits for your answer. The question tilts.",
+  }),
+  blocked: I({
+    group: "Work and evidence",
+    elements: [c(12, 12, 8.25), p(poly(7.875, 12, 16.125, 12))],
+    motion: "None: a barred entry is a decision, read, not played.",
+  }),
+  sources: I({
+    group: "Work and evidence",
+    elements: [p(LEAF), p(flipX(LEAF))],
+    motion: "None. A pair of pages a house gap apart at the spine (a citation is the quote; sources are where it came from).",
+  }),
+  citation: I({
+    group: "Work and evidence",
+    elements: [...quote(7.875, 14.625), ...quote(16.125, 14.625)],
+    motion: "None. Newsreader's opening quotation mark, at icon size: filled heads, rising tails.",
+  }),
+  commit: I({
+    group: "Code",
+    elements: [p(poly(3, 12, 7.125, 12)), p(poly(16.875, 12, 21, 12)), g([c(12, 12, 3.375)], { s: 1.15, o: [12, 12], anim: "pop" })],
+    motion: "A node on its line, the line standing a house gap off it. The node settles once: saved.",
+  }),
+  review: I({
+    group: "Code",
+    elements: page(
+      p(poly(9, 11.25, 15, 11.25)),
+      p(poly(9, 15, 11.25, 15)),
+      ko(poly(13.875, 18, 15.75, 19.875, 20.25, 15.375)),
+      g([p(poly(13.875, 18, 15.75, 19.875, 20.25, 15.375), { draw: true })], { anim: "draw" }),
+    ),
+    motion: "An inspected sheet: the page with a check cut into its corner (the New convention's place). The check draws in.",
+  }),
+  preview: I({
+    group: "Code",
+    elements: [p(FRAME), p(ALMOND), g([dot(12, 12, 1.5)], { x: 0.75 })],
+    motion: "A view frame with an eye in it (the bare eye is show and hide). The pupil glances toward what it will show.",
+  }),
+  "file-audio": I({
+    group: "Files",
+    elements: page(p(poly(9, 13.5, 9, 16.5)), p(poly(12, 11.25, 12, 18.75)), p(poly(15, 12.75, 15, 17.25))),
+    motion: "None.",
+  }),
+  "file-video": I({
+    group: "Files",
+    elements: page(p(roundPoly(0.9, 9.75, 11.25, 15.375, 14.625, 9.75, 18))),
+    motion: "None.",
+  }),
+  bookmark: I({
+    group: "Library",
+    elements: [p(RIBBON)],
+    fill: [solid(RIBBON)],
+    on: { kind: "fill" },
+    motion: "None at rest. Active: filled, kept.",
+  }),
+  billing: I({
+    group: "System",
+    elements: [p(rr(3, 5.25, 18, 13.5, 2.25)), p(poly(3, 9.75, 21, 9.75)), p(poly(6.75, 14.25, 10.5, 14.25))],
+    motion: "None: a settings noun.",
+  }),
+  accessibility: I({
+    group: "System",
+    elements: [
+      c(12, 12, 8.25),
+      dot(12, 7.5, 1.5),
+      p("M7.5 10.125C9 10.6 10.5 10.875 12 10.875C13.5 10.875 15 10.6 16.5 10.125"),
+      p(poly(12, 10.875, 12, 13.875)),
+      p(poly(9.75, 17.25, 12, 13.875, 14.25, 17.25)),
+    ],
+    motion: "None: a settings noun.",
+  }),
+
+  "deep-field": I({
+    group: "Work and evidence",
+    elements: [...FIELD_CORNERS.map((d) => p(d)), ...FIELD_POINTS.map(([x, y, r]) => dot(x, y, r))],
+    motion: "Deep Field (D-038, deep research): two opposed viewfinder corners holding three points receding on one line of sight. None: a long look is still.",
+  }),
 } satisfies Record<string, IconDrawing>;
 
 /** Other names the screens use for the same drawing. */
@@ -1472,7 +1816,6 @@ export const ICON_ALIASES = {
   "sidebar-toggle": "sidebar",
   "panel-left": "sidebar",
   waveform: "voice",
-  slash: "skill",
   "needs-you": "hand",
   attention: "hand",
   error: "alert",
@@ -1481,19 +1824,16 @@ export const ICON_ALIASES = {
   slides: "deck",
   plug: "app",
   "person-add": "add-member",
-  preview: "eye",
   "globe-preview": "browser",
   web: "globe",
   "check-circle": "success",
   "branch-chat": "fork",
   settings2: "settings",
-  rename: "edit",
   move: "folder-move",
   "move-to": "folder-move",
   "new-project": "folder-plus",
   delete: "trash",
-  restore: "history",
-  versions: "history",
+  restore: "undo",
   recent: "history",
   duplicate: "copy",
   export: "download",
@@ -1507,6 +1847,39 @@ export const ICON_ALIASES = {
   publish: "globe",
   desktop: "computer",
   studio: "computer",
+  /* Alevr's semantic inventory (NAMES_AND_ICONS.md): the labels the brand names, resolved to one drawing each. */
+  agents: "crew",
+  "create-agent": "add-member",
+  person: "profile",
+  skills: "skill",
+  routines: "routine",
+  mention: "at",
+  add: "plus",
+  copied: "check",
+  approve: "check",
+  allow: "success",
+  permission: "lock",
+  ask: "ask-first",
+  block: "blocked",
+  notifications: "bell",
+  theme: "contrast",
+  loading: "progress",
+  open: "external",
+  back: "arrow-left",
+  forward: "arrow-right",
+  previous: "chevron-left",
+  next: "chevron-right",
+  cancel: "close",
+  volume: "read-aloud",
+  "mic-mute": "mic-off",
+  files: "folder",
+  audio: "file-audio",
+  video: "file-video",
+  card: "billing",
+  language: "globe",
+  /* D-038 revised: Folio is withdrawn; made things are named by their real type (deck, document, site) under "Made by Alevr". */
+  site: "browser",
+  "deep-research": "deep-field",
 } satisfies Record<string, string>;
 
 export function resolveIcon(name: string): IconDrawing | undefined {
@@ -1576,13 +1949,56 @@ export function nativeDrawing(name: string, cut: "regular" | "fill" = "regular",
   return { viewBox: 24, line: 1.5, elements: stillElements(els) };
 }
 
-/** Every symbol the native apps would ship: `juno.<name>`, and `juno.<name>.fill` where there is an on drawing (small cuts ride inside the same symbol as its small scale). */
+/**
+ * The native symbol prefix. Alevr's family is new geometry, so it gets its own
+ * namespace instead of reusing `juno.*`, which the generator already ships for
+ * the older marks in juno-glyph-paths.ts (juno.chat, juno.code, juno.library
+ * would otherwise collide). Existing `juno.*` symbols keep their names.
+ */
+export const NATIVE_PREFIX = "alevr";
+
+/** Every symbol the native apps would ship: `alevr.<name>`, and `alevr.<name>.fill` where there is an on drawing (small cuts ride inside the same symbol as its small scale). */
 export function nativeSymbolNames(): string[] {
   const out: string[] = [];
   for (const [name, d] of Object.entries(ICONS) as [string, IconDrawing][]) {
     if (d.live) continue;
-    out.push(`juno.${name}`);
-    if (d.fill) out.push(`juno.${name}.fill`);
+    out.push(`${NATIVE_PREFIX}.${name}`);
+    if (d.fill) out.push(`${NATIVE_PREFIX}.${name}.fill`);
+  }
+  return out;
+}
+
+/** One native symbol: its cuts as static drawings (`small` only where the icon has its own small cut). */
+export type NativeSymbol = {
+  symbol: string;
+  name: string;
+  regular: NativeDrawing;
+  fill?: NativeDrawing;
+  small?: NativeDrawing;
+  smallFill?: NativeDrawing;
+};
+
+/**
+ * The whole table the native generator needs, in one call: every static icon
+ * with its regular cut, its fill cut where it has an on drawing, and its small
+ * optical cut where it has one. Aliases are listed separately (`ICON_ALIASES`):
+ * a native call site resolves a label to the same symbol the web draws.
+ *
+ *   (the native generator reads nativeIconTable and ICON_ALIASES from the design lane drawings module)
+ *   for (const s of nativeIconTable()) outline(s.symbol, s.regular, s.small); // and s.fill
+ */
+export function nativeIconTable(): NativeSymbol[] {
+  const out: NativeSymbol[] = [];
+  for (const [name, d] of Object.entries(ICONS) as [string, IconDrawing][]) {
+    if (d.live) continue;
+    const regular = nativeDrawing(name, "regular");
+    if (!regular) continue;
+    const row: NativeSymbol = { symbol: `${NATIVE_PREFIX}.${name}`, name, regular };
+    const fill = nativeDrawing(name, "fill");
+    if (fill) row.fill = fill;
+    if (d.small?.elements) row.small = nativeDrawing(name, "regular", "small");
+    if (d.small?.fill && fill) row.smallFill = nativeDrawing(name, "fill", "small");
+    out.push(row);
   }
   return out;
 }

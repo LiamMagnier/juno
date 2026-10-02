@@ -22,10 +22,18 @@ import type { ChatFinishReason, ClientActivityEvent, ReasoningEffort } from "@/t
 export function plural(count: number, singular: string, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
+/**
+ * The name of the provider's own search, for the "Preparing web search" row.
+ *
+ * Grok's used to be "Grok Live Search" — the `search_parameters` extension xAI
+ * retired in January 2026 (410 since). Grok now searches with the `web_search`
+ * tool on Responses, as OpenAI models do, so both are named for what runs.
+ */
 export function searchToolLabel(provider: ModelInfo["provider"]) {
   if (provider === "anthropic") return "Claude web search";
   if (provider === "google") return "Google Search grounding";
-  if (provider === "xai") return "Grok Live Search";
+  if (provider === "xai") return "Grok web search";
+  if (provider === "openai") return "OpenAI web search";
   return "native web search";
 }
 

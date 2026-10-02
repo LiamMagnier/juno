@@ -462,6 +462,7 @@ export function ModelCatalogue({
   autoSelected,
   filter: modelFilter,
   onPick,
+  side = "top",
 }: {
   value: ModelId;
   /** The model `value` resolves to — computed once by stage one. */
@@ -470,6 +471,8 @@ export function ModelCatalogue({
   filter?: (model: ModelInfo) => boolean;
   /** Picking a row: stage one owns what that does (recents, close, upgrade). */
   onPick: (model: ModelInfo) => void;
+  /** The side stage one opened toward (the composer opens below on the home). */
+  side?: "top" | "bottom";
 }) {
   const { quota, models, settings } = useApp();
   const save = useSettingsSave();
@@ -751,7 +754,7 @@ export function ModelCatalogue({
         // conversation, where there is room for it, and keeps it tied to the
         // control that opened it rather than to a screen edge.
         align="end"
-        side="top"
+        side={side}
         sideOffset={8}
         collisionPadding={16}
         avoidCollisions

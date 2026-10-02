@@ -47,7 +47,7 @@ export async function deleteAccountPermanently(user: {
   // The reads are not best-effort. If one fails, the deletion stops with the
   // user row still in place and can be retried; carrying on would erase the
   // only record of objects that were never purged.
-  const [attachments, attachmentVersions, deliverableVersions, importObjects] = await Promise.all([
+  const [attachments, attachmentVersions, deliverableVersions, importObjects, toolRuns, skillBundles] = await Promise.all([
     prisma.attachment.findMany({
       where: { userId: user.id },
       select: { storageKey: true },
@@ -75,6 +75,21 @@ export async function deleteAccountPermanently(user: {
       where: { userId: user.id, status: { not: "deleted" } },
       select: { storageKey: true },
     }),
+    // Hosted code runs keep their full stdout/stderr, when it was longer than
+    // what the row holds, as two objects under one prefix per run
+    // (src/lib/exec/capture.ts). What the runs produced are attachments above.
+    prisma.toolRun.findMany({
+      where: { userId: user.id, logKey: { not: null } },
+      select: { logKey: true },
+    }),
+    // Skill folders (src/lib/skills/bundle.ts): one tar per distinct bundle,
+    // shared by the versions that carry it, so the set below deletes each once.
+    // A deleted skill's versions survive for the runs that used them and still
+    // point at their bundle.
+    prisma.workSkillVersion.findMany({
+      where: { skill: { userId: user.id }, bundleKey: { not: null } },
+      select: { bundleKey: true },
+    }),
   ]);
 
   const keys = new Set<string>();
@@ -87,6 +102,12 @@ export async function deleteAccountPermanently(user: {
     keys.add(thumbnailObjectKey(storageKey));
   }
   for (const { storageKey } of [...deliverableVersions, ...importObjects]) keys.add(storageKey);
+  for (const { logKey } of toolRuns) {
+    if (!logKey) continue;
+    keys.add(`${logKey}stdout.log`);
+    keys.add(`${logKey}stderr.log`);
+  }
+  for (const { bundleKey } of skillBundles) if (bundleKey) keys.add(bundleKey);
   // The avatar, stored as a /api/files/<key> URL on User.image.
   const avatarKey = user.image?.startsWith("/api/files/") ? user.image.slice("/api/files/".length) : null;
   if (avatarKey) keys.add(avatarKey);

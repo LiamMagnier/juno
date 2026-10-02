@@ -75,7 +75,13 @@ test("the library page keeps the e2e contract: an h1 that says library", () => {
   assert.match(LIBRARY_TRASH, /<AppPageHeader heading="Recently deleted"/);
   assert.match(LIBRARY_FILES, /heading=\{deletedView \? "Recently deleted" : "Uploaded files"\}/);
   assert.match(LIBRARY_HOME, /href="\/library\?view=trash"/);
-  assert.match(LIBRARY_HOME, /href="\/library\?view=files&upload=1"/);
+  // Upload happens in place (and by dropping anywhere on the page), with the
+  // same uploader and plan limit the file manager uses.
+  assert.match(LIBRARY_HOME, /useLibraryUploads\(/);
+  assert.match(LIBRARY_HOME, /useFileDrop\(\{ onFiles: uploads\.add/);
+  assert.match(LIBRARY_HOME, /accept=\{ACCEPT_ATTRIBUTE\}/);
+  // The file manager (bulk selection, name and size sorts) stays one press away.
+  assert.match(LIBRARY_HOME, /href="\/library\?view=files"/);
 });
 
 test("a sort the route does not offer falls back to newest, prototype keys included", () => {

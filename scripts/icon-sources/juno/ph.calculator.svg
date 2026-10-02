@@ -1,0 +1,4 @@
+<!-- ph.calculator: outlined from src/components/ui/juno-icons by `node scripts/generate-native-icons.mjs --outline-juno`. Do not edit. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-source="f7a36cfedf42f54c">
+  <path d="M199,47C199,51.42 195.42,55 191,55L82.08,55L138.65,122.88C141.12,125.85 141.12,130.15 138.65,133.12L82.08,201L191,201C195.42,201 199,204.58 199,209C199,213.42 195.42,217 191,217L65,217C58.22,217 54.51,209.09 58.86,203.88L122.09,128L58.86,52.12C54.51,46.91 58.22,39 65,39L191,39C195.42,39 199,42.58 199,47Z"/>
+</svg>

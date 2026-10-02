@@ -32,3 +32,11 @@ test("JunoAssistantConfig correctly structures assistant metadata and prompt con
   assert.equal(assistant.reasoningEffort, "high");
   assert.equal(assistant.isPinned, true);
 });
+
+test("an assistant's stored tool names are read through the alias map (INV-23)", async () => {
+  const { canonicalToolNames } = await import("../src/lib/chat/skills");
+  // Stored before the chat rework, never rewritten: `browser_agent` is `web_fetch` now.
+  const stored = ["python_interpreter", "browser_agent", "code_interpreter"];
+  assert.deepEqual(canonicalToolNames(stored), ["python_interpreter", "web_fetch", "run_code"]);
+  assert.deepEqual(stored, ["python_interpreter", "browser_agent", "code_interpreter"], "the stored list is left as it was");
+});

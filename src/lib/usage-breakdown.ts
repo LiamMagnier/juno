@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { usageModelLabel } from "@/lib/tools/metering";
 
 /**
  * The read side of the `ApiSpend` ledger.
@@ -119,6 +120,28 @@ function totalsFrom(row: {
 }
 
 /**
+ * Rows that share a label summed into one. Juno's tool fees are ledger rows
+ * `juno-tool:<id>` (SPEC §3.9); they are grouped under one "Tools" label rather
+ * than listed as models nobody chose.
+ */
+function foldModelTotals(rows: UsageModelTotals[]): UsageModelTotals[] {
+  const byModel = new Map<string, UsageModelTotals>();
+  for (const row of rows) {
+    const seen = byModel.get(row.model);
+    if (!seen) {
+      byModel.set(row.model, { ...row });
+      continue;
+    }
+    seen.requests += row.requests;
+    seen.promptTokens += row.promptTokens;
+    seen.completionTokens += row.completionTokens;
+    seen.totalTokens += row.totalTokens;
+    seen.costMicroUsd += row.costMicroUsd;
+  }
+  return [...byModel.values()];
+}
+
+/**
  * Aggregate one account's ledger over the trailing `days` days.
  *
  * `days` is clamped to a year: the daily series is rendered as a contribution
@@ -174,8 +197,7 @@ export async function getUsageBreakdown(
     .map((row) => ({ surface: row.kind, ...totalsFrom(row) }))
     .sort((a, b) => b.costMicroUsd - a.costMicroUsd || b.requests - a.requests);
 
-  const models = modelRows
-    .map((row) => ({ model: row.model, ...totalsFrom(row) }))
+  const models = foldModelTotals(modelRows.map((row) => ({ model: usageModelLabel(row.model), ...totalsFrom(row) })))
     .sort((a, b) => b.totalTokens - a.totalTokens || b.requests - a.requests)
     .slice(0, Math.max(1, modelLimit));
 

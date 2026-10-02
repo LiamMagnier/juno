@@ -38,93 +38,85 @@ follow Claude’s quiet visual direction while preserving Juno’s identity. Men
 opaque for legibility; the composer’s focus shadow stays subtle. Motion uses
 short fades and non-overshooting easing, respecting reduced-motion settings.
 
-## Backend
+## Backend (the rework, September 2026)
 
-**Clarify runs before planning.** A run started from the research surface goes
-`accepted → clarifying → awaiting_clarification → planning`. One small
-completion on the lead model reads the goal back and asks at most three things
-it does not say — which markets, which period, against what — and the run stops
-for the answers. This is the front half of ChatGPT's deep research, which Juno
-did not have: a one-line request under-determines a week of work, and a planner
-handed the ambiguity resolves it by guessing, a guess that then propagates into
-every sub-question and worker brief.
+**One feature, one gate, one completion path** (docs/chat-rework/DECISIONS.md R1–R3,
+SPEC §9). There are no depth levels. A web run goes
+`accepted → clarifying → planning → awaiting_plan_confirmation`, and the clarify
+step no longer parks the run: **one structured planner call** on the run's lead
+model (`src/lib/research/planner.ts`, prompt in `planner.prompt.ts`) returns the
+title, the approach, 1–8 questions with their evidence needs, up to three
+*optional* clarifications, the kinds of sources it will favour, the searches, the
+scope (breadth, freshness, primary sources, quick) and the request's language. It
+goes through `streamChat`'s `responseSchema` where the provider can hold a reply to
+a schema, is validated here in every case, is retried once with a note, and
+otherwise the run fails as `planner_invalid` — a truncated JSON object is never
+searched line by line (B5).
 
-The gate can never stop a run, only improve one. It skips outright on the chat
-path (`confirmation: "auto"`, where the per-send toggle is the interaction), on
-the `quick` tier, when no clarifier is wired, when the budget cannot cover the
-call, and when the clarifier returns nothing or throws. Answering is optional:
-an empty submission to `POST /api/research/[id]/clarify` is valid and means
-"research it as I wrote it". Answers are folded into `plan.constraints` as
-"question — answer", which the brief expansion, the planner and every worker
-brief already read, so an answer shapes the whole run with no new code path
-downstream; `clarifications` and `clarificationAnswers` are kept alongside only
-so the UI can show an exchange and a resumed run knows it has already asked.
-Answers whose id the run did not ask are dropped.
+**Sizing.** `researchBudgetFor` (`envelope.ts`, pure) turns the scope into an
+envelope — workers, rounds, tool calls, pages, results per query, tokens, clocks,
+judge calls, the writer's and the audit's reservations, the lead model, what
+limited it, and the estimate caps — under
+`min(plan cap, share × month, month left − €0.25, owner override)`. Below the
+minimum viable run the lead steps down a class, else the run is refused with a
+line from `RESEARCH_REFUSAL_COPY`. The card shows the preview's estimate and
+recomputes it as questions are edited (`estimate.ts`); **Start** sizes again from
+the edited scope and freezes the envelope on `plan.envelope` and its ceiling on
+`ResearchRun.budgetMicroUsd`. For the previous build, `plan.budget` and
+`plan.effort` carry the same limits under the nearest tier's name (INV-22); the
+API returns `effort: null` for every scoped run. A tiny scope (one question, three
+minutes at most, nothing to ask) starts on its own.
 
-Web chat starts a durable run with confirmation required. Planning stops at
-`awaiting_plan_confirmation`, with no search before approval. The ordinary chat
-stream persists an application-authored plan acknowledgement without invoking or
-billing a synthesis model. The authenticated plan endpoint commits edits before
-starting the worker. Native clients retain their existing automatic confirmation
-and selected-model streaming path.
+**The card** takes `revise` (the planner reruns with the reader's edits; the card
+stays busy; five per run), `confirm` (answers become constraints, the questions
+as left become the objectives) and `cancel` (no push).
 
-The existing engine performs bounded parallel searches and reads, source
-ranking/deduplication, evidence coverage review, follow-up rounds, synthesis and
-citation validation against stored source snapshots. Worker leases, durable stage
-transitions, cancellation and run budgets remain enforced. Web reports are written
-by the configured research model; this is not the chat model selector. Research
-failure does not silently produce an answer from model knowledge.
+**Working.** Every drive releases its lease on a non-terminal return, so the
+nudge after Start never waits for a lapsed lease (B1), and every model stage runs
+inside a 45-second heartbeat (B3). Each round is priced with the writer's and the
+audit's reservation held back (B8). Guidance from "Guide the research" is queued on
+`plan.steering` and becomes a constraint at the next round boundary; "Finish now"
+stops the rounds at the next boundary. Pausing records when and from where, and
+resume goes back to the card or the writer rather than into a paid stage the run
+had left, with paused time off every clock (B12, B13). Every research prompt
+carries the run's date line, and the goal is the person's own words with the
+conversation before it as untrusted context (B20).
+
+**Writing.** The writer's corpus is packed to half the lead's context, at most
+120k tokens — findings first, the passages they quote, each question's best, then
+the rest — with every source keeping its number (B7). The writer is timeboxed and,
+for a scoped run, writes the summary and the report in one call, each section
+behind a `<!-- juno:section=… -->` marker, headings in the run's language, no
+sources list (`corpus.prompt.ts`, `report-structure.ts`). An empty or unusable
+report is retried once on a smaller corpus and then fails as `writer_empty` (B6).
+The citation audit's cap is the run's own judge budget, and a claim the cap
+stopped before any verdict is `unverified`: nothing unverified is rewritten, so no
+paid revision follows (B4, B22).
+
+**Completion.** A finished web run is one assistant message (`completion.ts`):
+the summary and the report renumbered so `[1]` is the first source cited, the
+report as a `research-report-{runId}` artifact, the sources cited-then-read with
+`origin: "research"`, and one `research` fact — written with the conversation's
+`lastMessageAt`, `ResearchRun.assistantMessageId` and the terminal state in one
+transaction. A deleted conversation gets no message. The chat route answers
+regenerate over such a message with 409 (`isResearchCompletionMessage`). Export is
+`export.ts`: Markdown with the model's own sources stripped and an appendix built
+from the rows, named after the report's title.
+
+**Money.** Every engine-side call and every search is `kind: "research"`; a search
+is billed at each keyed engine's price over the engines that answered. The usage
+windows leave research out; the month keeps it (`spend-windows.ts`).
+
+**Native.** Profile-1 `deepResearch` requests keep the in-chat path — automatic
+confirmation, the selected model streaming the report — now planned and sized like
+every run, holding the drive's lease through the hand-off under an owner the route
+renews (`keepResearchLeaseAlive`), and cancelled when the chat stops
+(`cancelResearchRun`, B2, B17).
 
 Completed reports and their numbered source references are loaded as untrusted,
-owner-scoped context for subsequent chat questions. The report itself remains in
-the durable research record. Preferred URLs are priorities, not a domain allowlist.
-Connected private apps and uploaded files are not advertised as research sources.
-No new schema or credentials are required.
-
-## The plan (September 2026)
-
-Planning is two model calls on the research team's capable-but-cheap model
-(`researchPlannerModel`, Claude Haiku when configured): the brief expansion,
-then a **structured plan** (`src/lib/research/plan-format.ts`). The planner no
-longer answers with two headings of prose and search strings; it answers with
-one JSON object the parser bounds and the engine stores on `ResearchRun.plan`:
-
-- `approach` — one paragraph to the person who asked: how the question will be
-  attacked, which sources carry weight, how conflicting evidence is judged.
-- `objectives[]` — the sub-questions a complete answer needs, each with a
-  `rationale`, an `importance`, an **evidence contract** (`evidenceRequirements`:
-  preferred source types, minimum independent sources, whether a primary record
-  is required, a freshness rule) and its own `queries`.
-- `steps` — the schedule, in the order the work will run.
-- `successCriteria` — the planner's bar for done.
-- `risks` — where evidence is expected to be thin, disputed or stale.
-
-`queries` on the plan are taken from the objectives in turn — every
-sub-question's first search before any sub-question's second, so the query cap
-costs no sub-question all of its searches — and the sweep still has its list;
-the objectives, not the queries, are what the
-coverage matrix, the delegation briefs and the lead's review key on. The brief,
-approach and success criteria are persisted and handed to every worker and to
-the lead (`researchBriefText`), so a worker knows how its evidence will be
-judged. A reply that is not the structured shape falls back to the legacy
-two-heading parser. If that yields nothing either, the decomposition is
-attempted a second time and then the RUN FAILS — it does not fall back to
-`fallbackResearchQueries`, which is the goal with suffixes bolted on and the
-reason a run could come back having searched one sentence a dozen ways. Those
-templates now seed the sweep of a legacy plan only.
-
-The clarify gate (`ClarifyGate`) renders each question with its rationale, a
-free-text field and example answers that fill the field rather than select an
-option; Skip is a full button beside Start, and the primary action is never
-disabled on an empty form.
-
-The plan gate (`PlanReview`) renders the plan in that order — approach, questions
-with evidence chips, the editable schedule, criteria, risks, then the searches
-one disclosure down — and the console's Plan tab renders the same `PlanOutline`.
-Confirming an **unchanged** plan keeps the structured objectives; only a real
-edit to the steps or queries rebuilds them (`decidePlan`). The chat activity
-feed narrates `plan_drafted` ("Planned the research: N questions to answer",
-with the approach) and `plan_confirmed`.
+owner-scoped context for subsequent chat questions. Preferred URLs are priorities,
+not a domain allowlist. Connected private apps and uploaded files are not
+advertised as research sources.
 
 ## The research team (September 2026)
 
@@ -155,8 +147,6 @@ The timeline draws one lane per researcher (`worker_spawned`, `worker_tool_call`
 `worker_finished`) and the lead's verdict (`round_reviewed`); the chat activity
 feed narrates the same events.
 
-**Depth is derived, not chosen.** `researchEffortFor` (`src/lib/research/auto-effort.ts`)
-maps the model's cost tier and the thinking effort of the turn to a tier: a
-frontier model at max thinking is `max`, a mid model at high is `deep`, a small
-model with thinking off is `quick`. The composer's research chip shows the derived
-depth, and the chat route derives the same value server-side.
+**Depth is not chosen.** The tiers (`RESEARCH_TIERS`) and `researchEffortFor`
+(`auto-effort.ts`) remain only for the frozen native request, which still sends
+`researchEffort`; every run is sized by its envelope.

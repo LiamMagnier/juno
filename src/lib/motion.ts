@@ -270,6 +270,31 @@ export function staggerDelay(
 }
 
 // ---------------------------------------------------------------------------
+// Run pacing
+// ---------------------------------------------------------------------------
+
+/**
+ * The timing rules of the run line's phase label (SPEC §7.3), in one place so
+ * the chat line and a Research row pace the same way.
+ *
+ * Nothing shows before `glyphDelayMs` and no label before `showDelayMs`, so a
+ * fast answer never flashes "Thinking"; a shown label stays `minVisibleMs`,
+ * changes are `dwellMs` apart and the newest phase wins. A run goes calm after
+ * `calmAfterMs` of continuous work and counts as stalled after
+ * `stalledAfterMs` without a frame. `textHoldMs`/`textHoldChars` bound how long
+ * a round's first text is held back in case a tool call follows it.
+ *
+ * Plain numbers, not tokens: they are pacing, not animation, and none of them
+ * is projected to the native design tokens.
+ */
+export const RUN_PACING = {
+  glyphDelayMs: 150, showDelayMs: 400, minVisibleMs: 600, dwellMs: 700,
+  sameSubjectSwapMs: 1_500, coalesceWindowMs: 1_000, timerAfterMs: 3_000,
+  calmAfterMs: 20_000, stalledAfterMs: 30_000, counterThrottleMs: 500,
+  textHoldMs: 600, textHoldChars: 280, escalateAfterMs: 120_000, escalateAgainAfterMs: 600_000,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Reduced motion
 // ---------------------------------------------------------------------------
 

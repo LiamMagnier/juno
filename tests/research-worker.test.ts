@@ -157,3 +157,21 @@ test("the loop elides old page digests as soon as the context cap is reached", a
   await runWorkerLoop(loopInput(tools), adapter, { label: "test" });
   assert.deepEqual(elides.slice(0, 7), [1, 2, 3, 4, 5, 5, 5]);
 });
+
+test("the PM2 worker adopts only working runs, never a plan waiting at the card (B1)", () => {
+  const worker = readFileSync("scripts/research-worker.ts", "utf8");
+  assert.match(worker, /state: \{ in: \["accepted", \.\.\.RESEARCH_WORKING_STATES\] \}/);
+  // A drive that stopped at the gate released its lease; the gate itself is
+  // not a working state, so an unleased parked run is still not the worker's.
+  const domain = readFileSync("src/lib/research/domain.ts", "utf8");
+  const working = /export const RESEARCH_WORKING_STATES = \[([\s\S]*?)\] as const;/.exec(domain)?.[1] ?? "";
+  assert.ok(working.length > 0);
+  assert.doesNotMatch(working, /awaiting_plan_confirmation/);
+});
+
+test("every worker brief carries the run's date line (§9.3)", () => {
+  const worker = readFileSync("src/lib/research/agents/worker.ts", "utf8");
+  assert.match(worker, /\.\.\.\(brief\.today \? \[brief\.today\] : \[\]\),\n\s+`Research goal:/);
+  const lead = readFileSync("src/lib/research/agents/lead.ts", "utf8");
+  assert.match(lead, /input\.today \?\? "",\n\s+`Research goal:/);
+});

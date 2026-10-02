@@ -1,6 +1,7 @@
 import type { Plan } from "@prisma/client";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { DISCOVERED, UNAVAILABLE } from "@/lib/models.generated";
+import { labHasNativeSearch, providerSearchAvailable, type ModelToolCapabilities } from "@/lib/model-tools";
 
 // Canonical model id is "provider:providerModel" (e.g. "anthropic:claude-opus-4-8").
 export type ModelId = string;
@@ -109,6 +110,13 @@ export interface ModelInfo {
   /** Wire protocol. "responses" = OpenAI Responses API (gpt-*-pro line and
    *  Responses-only Codex snapshots aren't served on /chat/completions). */
   api?: "chat" | "responses";
+  /**
+   * An override of the tool capabilities `toolCapabilitiesFor` resolves for
+   * this model, for the rare catalog entry its lab row gets wrong. Read the
+   * capabilities through `toolCapabilitiesFor(model)`, never from here: this is
+   * a partial override and absent on almost every entry.
+   */
+  tools?: Partial<ModelToolCapabilities>;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -199,11 +207,30 @@ export function hasRetired(model: Pick<ModelInfo, "retiresOn">, today: string = 
   return model.retiresOn != null && model.retiresOn < today;
 }
 
-// Providers whose chat models can search the web natively (their own tool /
-// grounding — no third-party search service).
-const WEB_SEARCH_PROVIDERS = new Set<Provider>(["anthropic", "google", "xai"]);
+/**
+ * Whether a lab's chat models search the web natively on Juno's transport
+ * (their own tool or grounding — no third-party search service).
+ *
+ * Read from the tool capability table rather than a list of its own, which is
+ * what left every OpenAI model without search after Responses gained a hosted
+ * tool (RC-2). A model in hand, a discovered one included, is read through
+ * `modelSearchesNatively`, which also sees the per-model exceptions (the
+ * retiring OpenAI snapshots, an unconfirmed Grok slug).
+ */
 export function providerSupportsWebSearch(p: Provider): boolean {
-  return WEB_SEARCH_PROVIDERS.has(p);
+  return labHasNativeSearch(p);
+}
+
+/**
+ * `ModelInfo.webSearch` for one model: its provider's own search can serve it
+ * on Juno's transport (SPEC §5.6; `providerSearchAvailable` has the rule).
+ *
+ * The same answer on the server and in the browser, because the composer reads
+ * this flag from the client bundle. A deployment switch such as
+ * `OPENAI_RESPONSES=0` is applied where the server decides, never here.
+ */
+export function modelSearchesNatively(model: Pick<ModelInfo, "provider" | "id" | "api">): boolean {
+  return providerSearchAvailable(model);
 }
 
 interface ModelDef {
@@ -261,7 +288,7 @@ function def(d: ModelDef): ModelInfo {
     agenticTools: d.agenticTools ?? (modality === "chat" ? guessAgenticTools(d.id) : false),
     cost: d.cost ?? guessCost(d.id),
     modality,
-    webSearch: modality === "chat" ? providerSupportsWebSearch(d.provider) : false,
+    webSearch: modality === "chat" ? modelSearchesNatively({ provider: d.provider, id: `${d.provider}:${d.id}`, api: d.api }) : false,
     status: d.status,
     family: d.family,
     deprecationNote: d.deprecationNote,
@@ -471,7 +498,7 @@ const CURATED: ModelInfo[] = [
   // DeepSeek points the unversioned alias at the current Flash generation the
   // way `deepseek-chat` used to work, and the version appears only in the
   // product name. Getting this wrong is a 404 on every message.
-  def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", cost: 1, contextWindow: 1_048_576, description: "Sparse MoE on a 552B backbone: a 1M window, 384K of output, and the cheapest frontier tier there is." }),
+  def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", cost: 1, contextWindow: 1_048_576, reasoning: true, description: "Sparse MoE on a 552B backbone: a 1M window, 384K of output, and the cheapest frontier tier there is." }),
   def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "legacy", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default: near-Pro reasoning at a third of the cost." }),
   def({ provider: "deepseek", id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship: hardest reasoning and complex agent tasks." }),
   def({ provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", family: "v4-flash", status: "deprecated", released: "2024-12", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash.", deprecationNote: "Retires Jul 24, 2026. Use DeepSeek V4 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-v4-flash" }),
@@ -656,7 +683,7 @@ const DISCOVERED_MODELS: ModelInfo[] = DISCOVERED.filter(
   agenticTools: guessAgenticTools(d.id),
   cost: guessCost(d.id),
   modality: "chat",
-  webSearch: providerSupportsWebSearch(d.provider),
+  webSearch: modelSearchesNatively({ provider: d.provider, id: `${d.provider}:${d.id}` }),
   status: "current",
   family: d.id, // its own family — never competes with curated "current" slots
   legacy: false,
@@ -976,7 +1003,7 @@ export function resolveModel(id: string): ModelInfo | null {
     agenticTools: guessAgenticTools(migrated.providerModel),
     cost: guessCost(migrated.providerModel),
     modality: "chat",
-    webSearch: providerSupportsWebSearch(migrated.provider),
+    webSearch: modelSearchesNatively({ provider: migrated.provider, id: canonical }),
     status: "current",
     legacy: false,
   };

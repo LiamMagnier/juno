@@ -92,7 +92,8 @@ const ImageEditOverlay = nextDynamic(
   () => import("@/components/chat/image-edit-overlay").then((m) => m.ImageEditOverlay),
   { ssr: false },
 );
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
+import { TIMING } from "@/lib/interaction";
 import { AgentFace } from "@/components/agents/agent-face";
 import { useAgentThread } from "@/components/agents/agent-thread-context";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
@@ -109,23 +110,13 @@ import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, Gene
 import { resolveArtifactTag } from "@/lib/chat-client-state";
 import { cardSuggestion, isTrashed, placeholderCount } from "@/lib/artifact-card-state";
 
-function formatStreamElapsed(totalSec: number): string {
-  if (totalSec < 60) return `${totalSec}s`;
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}m ${s}s`;
-}
-
 /**
- * The quiet line in the transcript while the assistant works with nothing
- * visible yet: the dots, one word, the elapsed time.
+ * The line in the reply slot while the assistant works with nothing visible
+ * yet (INTERACTION_SPEC M1): the Continuum mark, the truthful phase in words,
+ * and real seconds once the wait passes three. Drawn by `LiveLine`, the one
+ * component every live row in the transcript uses (live-line.tsx).
  *
- * It is set at the reply's own size (`text-reading`, the rung `.prose-juno`
- * uses) in muted ink, so when the first token lands the line is replaced by
- * text of the same size rather than shrinking two pixels and changing ink.
- * It used to be `text-body-lg`, a size above the answer that replaced it.
- *
- * The copy is one word until the wait is long enough to need explaining. The
+ * The copy is the phase until the wait is long enough to need explaining. The
  * two later rungs say why nothing has happened and that leaving is safe,
  * because on hidden-reasoning models the wait before the first token runs to
  * minutes, and a line that only ever says "Thinking" starts to read as hung.
@@ -153,17 +144,8 @@ function StreamStatus({
   /** What `beginDropRecovery` already wrote onto the turn, shown verbatim. */
   recoveryNote?: string;
 }) {
-  const startRef = React.useRef(Date.now());
-  const [elapsedSec, setElapsedSec] = React.useState(0);
-  React.useEffect(() => {
-    startRef.current = Date.now();
-    setElapsedSec(0);
-    const timer = window.setInterval(
-      () => setElapsedSec(Math.floor((Date.now() - startRef.current) / 1000)),
-      1000
-    );
-    return () => window.clearInterval(timer);
-  }, [status]);
+  // One clock for the whole wait: a phase change is not a new wait.
+  const elapsedSec = useLiveSeconds(!recovering);
 
   const writing = status === "writing";
   const checking = status === "checking";
@@ -184,54 +166,28 @@ function StreamStatus({
     statusCopy = "Still thinking. This can take a few minutes.";
   }
 
-  const showClock = !writing && !checking && !submitting && elapsedSec > 0;
-  // In an agent's thread the agent is the one thinking: its face, not the orb,
-  // and the sentence names it.
+  // Only the model reasoning is "thinking"; everything else is work with a
+  // name (MOTION_AND_THINKING.md: the mark follows the truthful row).
+  const reasoning = !recovering && !label && !writing && !checking && !submitting;
+  const showClock = !recovering && !writing && !checking && !submitting;
+  // In an agent's thread the agent is the one thinking: its face leads, not
+  // the mark, and the sentence names it.
   const agentThread = useAgentThread();
   if (agentThread && !recovering && !label && statusCopy === "Thinking") statusCopy = `${agentThread.name} is thinking`;
   if (agentThread && !recovering && !label && writing) statusCopy = `${agentThread.name} is writing`;
 
   return (
-    <div className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
-      {agentThread ? (
-        <AgentFace avatar={agentThread.avatar} state={recovering ? "blocked" : writing || label || checking ? "working" : "thinking"} size={28} />
-      ) : (
-      <PhaseOrb
-        state={
-          recovering || submitting
-            ? "connecting"
-            : label || checking
-              ? "working"
-              : writing
-                ? "composing"
-                : "breathing"
+    <div className="flex min-h-10 items-center py-1.5">
+      <LiveLine
+        text={statusCopy}
+        phase={reasoning ? "thinking" : "working"}
+        seconds={showClock ? elapsedSec : null}
+        lead={
+          agentThread ? (
+            <AgentFace avatar={agentThread.avatar} state={recovering ? "blocked" : writing || label || checking ? "working" : "thinking"} size={20} />
+          ) : undefined
         }
       />
-      )}
-      {/* Plain muted text beside the dots; the dots are the one moving thing
-          in this row. The sentence used to shimmer as well, which put two
-          animations on one line and a fifth "working" signal on the reply
-          (the run strip, the tail mask and the shell sweep were the others). */}
-      <span className="flex min-w-0 items-baseline text-reading text-muted-foreground">
-        {/* The live region is the sentence and nothing else. The clock used to
-            tick INSIDE it, and role="status" is atomic, so a screen reader
-            re-announced the sentence and "41 seconds" once a second for the
-            whole pre-first-token wait, which the copy above expects to run
-            for minutes. The keyed child still announces a copy change exactly
-            once, and fades in once as it does; the clock is a sibling the tree
-            cannot see, kept because the panel's own Elapsed is only visible
-            when the panel is open. */}
-        <span role="status" className="min-w-0 truncate">
-          <span key={statusCopy} className="duration-fast motion-safe:animate-fade-in">
-            {statusCopy}
-          </span>
-        </span>
-        {showClock && (
-          <span aria-hidden="true" className="ml-1 shrink-0 whitespace-nowrap tabular-nums">
-            · {formatStreamElapsed(elapsedSec)}
-          </span>
-        )}
-      </span>
     </div>
   );
 }
@@ -1150,18 +1106,28 @@ export const MessageItem = React.memo(function MessageItem({
     return () => window.removeEventListener("juno:edit-last-user-message", handler);
   }, [editOnRequest, canEdit, view.content]);
 
+  // Copy -> check, held for `copiedHold` (INTERACTION_SPEC M11). The check is
+  // drawn only once the clipboard write actually succeeded (MOTION_AND_THINKING:
+  // a local confirmation verifies success); a refusal says so in the tooltip.
+  // A second copy restarts the hold; unmount clears it.
+  const copyTimer = React.useRef<number | null>(null);
+  const [copyFailed, setCopyFailed] = React.useState(false);
+  React.useEffect(() => () => {
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+  }, []);
   const copy = async () => {
     // Stripped, not raw: the stored reply ends in the memory tags the model
     // wrote, and copying an answer must not paste the user's profile with it.
-    await navigator.clipboard.writeText(stripMemoryTags(view.content).trimEnd()).catch(() => {});
-    setCopied(true);
-    // The button is its own receipt — the glyph swaps to a check and the
-    // tooltip reads "Copied" — so no toast: a corner notification for an act
-    // completed under the cursor is a second voice saying the same thing.
-    // Two seconds of dwell: long enough to be seen after the eye has moved
-    // back to the text, short enough that the control is itself again before
-    // anyone wants it twice.
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await navigator.clipboard.writeText(stripMemoryTags(view.content).trimEnd()).then(() => true, () => false);
+    // The button is its own receipt (the glyph swaps to a check and the
+    // tooltip reads "Copied"), so no toast.
+    setCopied(ok);
+    setCopyFailed(!ok);
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => {
+      setCopied(false);
+      setCopyFailed(false);
+    }, TIMING.copiedHold);
   };
 
   if (isUser) {
@@ -1259,7 +1225,7 @@ export const MessageItem = React.memo(function MessageItem({
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
             <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
-              <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
+              <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
               </IconAction>
               {canEdit && (
@@ -1387,6 +1353,9 @@ export const MessageItem = React.memo(function MessageItem({
             // For a source step's citation chip only — see ActivityTimeline.
             sources={sources}
             streaming={message.streaming}
+            // So the run strip does not draw a file twice: once the reply is
+            // saved, its runs' files are this message's own attachments below.
+            attachments={message.attachments}
             // Threaded down to the panel's Notice block. Resolved here, once, so
             // the inline finish row below and the panel cannot word it differently.
             finishNote={finishNote}
@@ -1625,7 +1594,7 @@ export const MessageItem = React.memo(function MessageItem({
                 // The copy glyph cross-fades into a check and back rather than
                 // swapping in a frame — the confirmation is the entire feedback
                 // now that copying raises no toast.
-                <IconAction label={copied ? "Copied" : "Copy"} onClick={copy} shortcut={isLast && !copied ? `${mod}⇧C` : undefined}>
+                <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy} shortcut={isLast && !copied ? `${mod}⇧C` : undefined}>
                   <CopyGlyph copied={copied} />
                 </IconAction>
               )}

@@ -1,778 +1,449 @@
-import { Icon as RefoundationIcon } from "@/components/ui/juno-icons";
 /**
- * Juno's icon set. The ONLY module in the web app that may import a glyph
- * library — every component, page, menu and dialog draws its icons from here.
+ * Alevr's icon set. The ONLY module in the web app that call sites import a
+ * glyph from: every component, page, menu and dialog draws its icons here.
  *
- * WHY ONE FILE. The previous set was Lucide imported directly at 176 call
- * sites, with a CSS stroke ladder (`svg.lucide.size-4 { stroke-width: 2.25 }`)
- * trying to hold one optical weight across sizes. It could not: a glyph sized by
- * its parent never matched the ladder, hand-drawn SVGs sat beside Lucide marks
- * at different weights, and three components passed their own `strokeWidth`.
- * The result was the thing a reader notices without being able to name — a
- * column of icons that are nearly, but not quite, the same weight.
+ * EVERY GLYPH IS ALEVR'S OWN. The drawings are the V3 family in
+ * `src/components/ui/juno-icons/` (drawings.ts, ported from the design lane,
+ * plus extra.ts, the production additions drawn in the same grammar): a 24
+ * unit construction grid with the live area 3 to 21, key stems on a 1.5 unit
+ * lattice, one optical line (1.25 px at 16, 1.5 px from 18), round caps and
+ * joins, continuous corners, the 1.5 unit house gap where a part stands in
+ * front of another, and the house plus cut into the corner for "New". The
+ * renderer fits every drawing to the device pixel grid for the size it is
+ * painted at. No third-party glyph library is imported anywhere: the Phosphor
+ * set this module used to wrap is gone (third-party BRAND marks, the provider
+ * and connector logos, are their own assets and are not drawn here).
  *
- * THE GEOMETRY. Every glyph is drawn on Phosphor's 256-unit grid (MIT), whose
- * weights are separate drawings rather than one path with a thicker stroke, so
- * corners, counters and terminals stay designed at every weight. The house
- * weight is `regular` — a 16-unit line, i.e. 1px at 16px and 1.25px at 20px,
- * the same light, even line Claude and ChatGPT draw their chrome with.
+ * NAMES ARE STABLE. The exports keep the spellings the codebase already used
+ * (`ChevronDown`, `Loader2`, `Settings`), so moving to the family touched this
+ * file, not the call sites. Each export names the drawing it shows; changing a
+ * concept's drawing is a one-line change here and reaches every surface.
  *
- * OPTICAL SIZING. Below ~14px a 1px line starts to disappear, so glyphs at 12px
- * and under draw the `bold` cut (1.125px at 12px). That is decided here from the
- * size the call site asks for, so a call site never picks a weight to fix a
- * size problem.
+ * OPTICAL SIZE comes from where the glyph is painted, not from a prop. A call
+ * site sizes a glyph with a class (`size-4`) or its parent does
+ * (`[&_svg]:size-4.5`); the icon draws its first frame from the class it can
+ * read and then measures itself, so the line, the small cut and the hinting
+ * are always those of its real size.
  *
- * OWNING THE SET. Names are Juno's, not the upstream library's. They keep the
- * spellings the codebase already used (`ChevronDown`, `Loader2`, `Settings`) so
- * the migration touched imports, not call sites. Replacing any mark with a
- * bespoke Juno drawing — on the same 256 grid, 16-unit line, round caps — is a
- * one-line change in this file and reaches every surface at once. Five marks
- * already are Juno's own (`juno-glyphs.tsx`): `JunoChat`, `JunoCode`,
- * `JunoDesign`, `JunoLibrary` and `Send`, the places and the verb the product
- * is known by.
+ * MOTION IS OPT-IN (INTERACTION_SPEC I-7, MOTION_AND_THINKING's feature map).
+ * A glyph moves only inside a control marked `.jicon-trigger.jicon-hover` (or
+ * a `.jicon-hover` region), only under a fine pointer, never on keyboard
+ * focus, and only for low-frequency destinations: the sidebar's New chat,
+ * Projects, Library and Customize. Lists, menus, the composer and the message
+ * actions stay still. An icon-only button marked `.jicon-trigger` gets the
+ * press dip (0.97, 70 ms). The old per-glyph `motion` prop is accepted and
+ * ignored.
  *
- * MOTION. Each glyph can carry one hover articulation (`data-motion`), played
- * by `globals.css` when the interactive element around it is hovered or
- * focused: arrows nudge the way they point, a plus turns, a gear turns, a pen
- * tilts. The vocabulary is small on purpose and every entry says something
- * about the action (see `IconMotion`). State indicators — carets, spinners,
- * status marks — carry none.
+ * STATE. `weight="fill"`, `fill="currentColor"` or a `fill-*` class ask for the
+ * "on" drawing (a pinned pin, a filled square); a drawing without one stays
+ * outlined rather than borrowing another state.
  *
- * Server-component safe: built on the SSR entry, no context, no hooks.
+ * Server-component safe: this module has no hooks; the renderer it draws with
+ * is a client component.
  */
-import type { ComponentPropsWithoutRef, ComponentType, JSX, Ref } from "react";
+import type { ComponentPropsWithoutRef, JSX, Ref } from "react";
 
-import type { IconProps as PhosphorIconProps, IconWeight } from "@phosphor-icons/react/dist/lib/types";
-import {
-  AlignBottomIcon,
-  AlignCenterHorizontalIcon,
-  AlignCenterVerticalIcon,
-  AlignLeftIcon,
-  AlignRightIcon,
-  AlignTopIcon,
-  ArchiveIcon,
-  ArrowClockwiseIcon,
-  ArrowCounterClockwiseIcon,
-  ArrowDownIcon,
-  ArrowElbowDownRightIcon,
-  ArrowLeftIcon,
-  ArrowLineDownIcon,
-  ArrowLineUpIcon,
-  ArrowRightIcon,
-  ArrowSquareOutIcon,
-  ArrowsInSimpleIcon,
-  ArrowsOutLineHorizontalIcon,
-  ArrowsInLineVerticalIcon,
-  ArrowsOutLineVerticalIcon,
-  ArrowsOutSimpleIcon,
-  ArrowUpIcon,
-  ArrowUpRightIcon,
-  ArrowUDownLeftIcon,
-  ArrowUUpLeftIcon,
-  ArrowUUpRightIcon,
-  BellSimpleIcon,
-  BrainIcon,
-  BinocularsIcon,
-  BookmarkSimpleIcon,
-  BookOpenIcon,
-  BoundingBoxIcon,
-  BoxArrowUpIcon,
-  BracketsCurlyIcon,
-  BriefcaseIcon,
-  BroadcastIcon,
-  CalendarDotsIcon,
-  CameraIcon,
-  CaretDownIcon,
-  CaretLeftIcon,
-  CaretRightIcon,
-  CaretUpDownIcon,
-  CaretUpIcon,
-  ChatCenteredDotsIcon,
-  ChatCircleDotsIcon,
-  ChatCircleIcon,
-  ChatIcon,
-  ChatsIcon,
-  ChatTextIcon,
-  CheckCircleIcon,
-  CheckIcon,
-  CircleDashedIcon,
-  CircleIcon,
-  CircleNotchIcon,
-  CalculatorIcon,
-  ClockCounterClockwiseIcon,
-  ClockIcon,
-  CloudArrowUpIcon,
-  CloudIcon,
-  CodeIcon,
-  CoinsIcon,
-  ColumnsIcon,
-  ConfettiIcon,
-  CopyIcon,
-  CpuIcon,
-  CreditCardIcon,
-  CropIcon,
-  CrosshairIcon,
-  CubeIcon,
-  CursorIcon,
-  DatabaseIcon,
-  DeviceMobileIcon,
-  DeviceTabletIcon,
-  DiamondsFourIcon,
-  DotsSixVerticalIcon,
-  DotsThreeIcon,
-  DownloadSimpleIcon,
-  EnvelopeSimpleIcon,
-  EraserIcon,
-  EyeIcon,
-  EyeSlashIcon,
-  FileArrowUpIcon,
-  FileCodeIcon,
-  FileMagnifyingGlassIcon,
-  FilePlusIcon,
-  FileTextIcon,
-  FileXlsIcon,
-  FilmStripIcon,
-  FingerprintIcon,
-  FireIcon,
-  FloppyDiskIcon,
-  FolderIcon,
-  FolderLockIcon,
-  FolderOpenIcon,
-  FolderSimpleIcon,
-  FolderSimplePlusIcon,
-  FrameCornersIcon,
-  GearSixIcon,
-  GitBranchIcon,
-  GitDiffIcon,
-  GitForkIcon,
-  GitPullRequestIcon,
-  GlobeSimpleIcon,
-  GraduationCapIcon,
-  HandIcon,
-  ImageBrokenIcon,
-  ImageIcon as PhImageIcon,
-  ImageSquareIcon,
-  InfoIcon,
-  KanbanIcon,
-  KeyboardIcon,
-  KeyIcon,
-  LaptopIcon,
-  LayoutIcon,
-  LightningIcon,
-  LineSegmentIcon,
-  LinkSimpleBreakIcon,
-  LinkSimpleIcon,
-  ListBulletsIcon,
-  ListChecksIcon,
-  ListDashesIcon,
-  ListIcon,
-  ListMagnifyingGlassIcon,
-  ListPlusIcon,
-  LockSimpleIcon,
-  LockSimpleOpenIcon,
-  MagnifyingGlassIcon,
-  MapTrifoldIcon,
-  MegaphoneIcon,
-  MicrophoneIcon,
-  MicrophoneSlashIcon,
-  MinusIcon,
-  MonitorArrowUpIcon,
-  MonitorIcon,
-  MoonIcon,
-  MusicNotesIcon,
-  NotePencilIcon,
-  PackageIcon,
-  PaperclipIcon,
-  PauseCircleIcon,
-  PauseIcon,
-  PencilSimpleIcon,
-  PencilSimpleLineIcon,
-  PenNibIcon,
-  PhoneDisconnectIcon,
-  PlayCircleIcon,
-  PlayIcon,
-  PlugIcon,
-  PlusIcon,
-  PresentationIcon,
-  PrinterIcon,
-  ProhibitIcon,
-  ProhibitInsetIcon,
-  PulseIcon,
-  PushPinIcon,
-  PushPinSlashIcon,
-  QuestionIcon,
-  QuotesIcon,
-  ReceiptIcon,
-  RepeatIcon,
-  RobotIcon,
-  ScanIcon,
-  ScreencastIcon,
-  ScrollIcon,
-  SealCheckIcon,
-  SelectionIcon,
-  ShapesIcon,
-  ShareNetworkIcon,
-  ShieldCheckIcon,
-  ShieldSlashIcon,
-  ShieldWarningIcon,
-  SidebarSimpleIcon,
-  SigmaIcon,
-  SignOutIcon,
-  SkipBackIcon,
-  SlidersHorizontalIcon,
-  SparkleIcon,
-  SpeakerHighIcon,
-  SquareIcon,
-  SquaresFourIcon,
-  StackIcon,
-  StackSimpleIcon,
-  StarIcon,
-  StopCircleIcon,
-  SunIcon,
-  TableIcon,
-  TargetIcon,
-  TerminalWindowIcon,
-  TextTIcon,
-  ThumbsDownIcon,
-  ThumbsUpIcon,
-  TimerIcon,
-  TrashIcon,
-  TrayIcon,
-  TreeStructureIcon,
-  UploadSimpleIcon,
-  UserGearIcon,
-  UserIcon,
-  UsersIcon,
-  VideoCameraIcon,
-  WarningCircleIcon,
-  WarningIcon,
-  WaveformIcon,
-  WifiSlashIcon,
-  WrenchIcon,
-  XCircleIcon,
-  XIcon,
-} from "@phosphor-icons/react/dist/ssr";
-
-import {
-  JunoChatGlyph,
-  JunoCodeGlyph,
-  JunoDesignGlyph,
-  JunoLibraryGlyph,
-  JunoAgentsGlyph,
-  JunoSendGlyph,
-} from "@/components/ui/juno-glyphs";
-import {
-  JunoCallSettingsGlyph,
-  JunoEndCallGlyph,
-  JunoMicGlyph,
-  JunoMicOffGlyph,
-  JunoStopGlyph,
-} from "@/components/ui/juno-call-glyphs";
+import { Icon as AlevrIcon } from "@/components/ui/juno-icons";
+import { resolveCatalogIcon } from "@/components/ui/juno-icons/catalog";
 import { cn } from "@/lib/utils";
 
-/**
- * The hover articulations `globals.css` knows how to play. Each one names what
- * the action DOES, which is the only reason a glyph is allowed to move:
- *
- * - `nudge-r` / `nudge-l` / `nudge-u` / `nudge-d` / `nudge-ne` — the glyph
- *   points somewhere and the action goes there (forward, back, upload,
- *   download, out of Juno).
- * - `turn` — a quarter turn on a spring: plus (make one more), close.
- * - `spin` — a gear or a sun turning: configuration, appearance.
- * - `cw` / `ccw` — half a turn in the arrow's own direction: refresh, undo.
- * - `tilt` — a tool picked up: pen, magnifier, pin, microphone, wrench.
- * - `lift` — an object picked up off the page: copy, archive, trash, a stack.
- * - `pop` — a small spring swell for marks you set: star, sparkle, bookmark.
- * - `parts` — Juno's own marks move one PART of the drawing instead of the
- *   whole glyph: Chat's ball terminal pops out of the gap, Code's spark
- *   twinkles, Design's circle slides back from the square, Library's leaning
- *   volume straightens and lifts off the shelf.
- */
-export type IconMotion =
-  | "nudge-r"
-  | "nudge-l"
-  | "nudge-u"
-  | "nudge-d"
-  | "nudge-ne"
-  | "turn"
-  | "spin"
-  | "cw"
-  | "ccw"
-  | "tilt"
-  | "lift"
-  | "pop"
-  | "parts";
+/** Kept for call sites written against the previous set; the family has one weight and an "on" drawing. */
+export type IconWeight = "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
 
-export type { IconWeight };
+/** Kept for call sites written against the previous set. Motion is the family's (see the header). */
+export type IconMotion = "nudge-r" | "nudge-l" | "nudge-u" | "nudge-d" | "nudge-ne" | "turn" | "spin" | "cw" | "ccw" | "tilt" | "lift" | "pop" | "parts";
 
 export type IconProps = Omit<ComponentPropsWithoutRef<"svg">, "fill" | "strokeWidth"> & {
   ref?: Ref<SVGSVGElement>;
-  /** Pixel size of the box. Defaults to 24 so an unsized glyph keeps the box
-   *  the previous set gave it; `size-*` / `h-*` classes override it. */
+  /** Pixel size of the box when no class sizes it. Defaults to 24, the box the previous set gave an unsized glyph. */
   size?: number | string;
-  /** Overrides the optical choice. `fill` is the selected / "on" drawing. */
+  /** `fill` asks for the drawing's "on" form. Other weights are accepted and drawn in the family's one line. */
   weight?: IconWeight;
-  /** Kept for call sites written against the previous set: ≥ 2.5 asks for the
-   *  heavier cut, ≤ 1.25 for the lighter one. The line itself is never
-   *  stretched — a thicker stroke on a filled outline would blunt the drawing. */
+  /** Accepted for old call sites; the family's line is optical and never stretched. */
   strokeWidth?: number | string;
   absoluteStrokeWidth?: boolean;
-  /** `fill="currentColor"` asked the previous set for a solid shape; any
-   *  non-`none` value selects the `fill` weight. */
+  /** Any non-`none` value asks for the "on" form, as `weight="fill"` does. */
   fill?: string;
-  /** Overrides the glyph's default hover articulation. `"none"` turns it off. */
+  /** Accepted for old call sites and ignored: motion is opt-in on the control (see the header). */
   motion?: IconMotion | "none";
+  /** Draws the glyph mirrored left to right. */
   mirrored?: boolean;
   alt?: string;
 };
 
-/** The type of anything this module exports. Use it wherever a component
- *  takes an icon as a prop (`icon: IconComponent`). */
+/** The type of anything this module exports. Use it wherever a component takes an icon as a prop. */
 export type IconComponent = ((props: IconProps) => JSX.Element) & { displayName?: string };
 
-const SMALL_BOX = /(?:^|\s)(?:size|h)-(?:2|2\.5|3)(?=\s|$)/;
 const FILLED = /(?:^|\s)(?:[\w-]+:)*fill-(?!none(?:\s|$))[a-z]/;
-const HEAVY_STROKE = /(?:^|\s)stroke-\[(?:2\.[5-9]|[3-9])/;
+const PX: Record<string, number> = { "2": 8, "2.5": 10, "3": 12, "3.5": 14, "4": 16, "4.5": 18, "5": 20, "5.5": 22, "6": 24, "7": 28, "8": 32, "9": 36, "10": 40, "11": 44, "12": 48 };
 
-function toNumber(value: number | string | undefined): number | undefined {
+/** The size a class asks for (`size-4`, `h-5 w-5`, `size-[18px]`), ignoring variant-prefixed classes. */
+function classSize(className: string | undefined): number | undefined {
+  if (!className) return undefined;
+  for (const token of className.split(/\s+/)) {
+    if (token.includes(":")) continue;
+    const m = /^(?:size|h|w)-(?:(\d+(?:\.\d+)?)|\[(\d+(?:\.\d+)?)px\])$/.exec(token);
+    if (!m) continue;
+    if (m[2]) return Number(m[2]);
+    const px = PX[m[1]];
+    if (px) return px;
+  }
+  return undefined;
+}
+
+function numeric(value: number | string | undefined): number | undefined {
   if (value == null) return undefined;
   const n = typeof value === "number" ? value : Number.parseFloat(value);
   return Number.isFinite(n) ? n : undefined;
 }
 
-function opticalWeight({
-  className,
-  size,
-  strokeWidth,
-  fill,
-}: Pick<IconProps, "className" | "size" | "strokeWidth" | "fill">): IconWeight {
-  if ((fill && fill !== "none" && fill !== "transparent") || (className && FILLED.test(className))) {
-    return "fill";
-  }
-  const stroke = toNumber(strokeWidth);
-  if ((stroke != null && stroke >= 2.5) || (className && HEAVY_STROKE.test(className))) return "bold";
-  if (stroke != null && stroke <= 1.25) return "light";
-  const px = typeof size === "number" ? size : undefined;
-  if (px != null && px <= 13) return "bold";
-  if (className && SMALL_BOX.test(className)) return "bold";
-  return "regular";
-}
-
-/** Anything drawn on the 256 grid with Phosphor's prop shape: a Phosphor icon,
- *  or one of Juno's own drawings in `juno-glyphs.tsx`. */
-type GlyphBase = ComponentType<PhosphorIconProps>;
-
-const HOUSE_ICON_NAMES: Record<string, string> = {
-  "chat": "chat",
-  "juno-chat": "chat",
-  "juno-code": "code",
-  "juno-library": "library",
-  "juno-agents": "crew",
-  "juno-orbit": "orbit",
-  "juno-design": "design",
-  "send": "send",
-  "search": "search",
-  "settings": "settings",
-  "plus": "plus",
-  "bell": "bell",
-  "mic": "mic",
-  "mic-off": "mic-off",
-  "copy": "copy",
-  "check": "check",
-  "x": "close",
-  "trash": "trash",
-  "download": "download",
-  "upload": "upload",
-  "folder": "folder",
-  "folder-open": "folder-open",
-  "paperclip": "attach",
-  "chevron-down": "chevron-down",
-  "chevron-up": "chevron-up",
-  "chevron-left": "chevron-left",
-  "chevron-right": "chevron-right",
-  "arrow-up": "arrow-up",
-  "arrow-down": "arrow-down",
-  "arrow-left": "arrow-left",
-  "arrow-right": "arrow-right",
-  "panel-left": "sidebar",
-  "panel-left-close": "sidebar",
-  "sparkles": "skill",
-  "square": "stop",
-  "audio-lines": "voice",
-  "ellipsis": "more",
-  "more-horizontal": "more",
-  "globe": "globe",
-  "external-link": "external",
-  "file": "document",
-  "file-text": "document",
-  "image": "image",
-  "link": "link",
-  "history": "history",
-  "pin": "pin",
-  "star": "star",
-  "users": "crew",
-  "shield": "shield",
-  "git-branch": "branch",
-  "git-pull-request": "pull-request",
-  "code": "code",
-  "code-2": "code"
-};
-
-function glyph(
-  Base: GlyphBase,
-  name: string,
-  defaults: { motion?: IconMotion; mirrored?: boolean } = {},
-): IconComponent {
-  function JunoIcon({
+function glyph(name: string, displayName: string): IconComponent {
+  const drawing = resolveCatalogIcon(name);
+  const canFill = drawing?.on?.kind === "fill";
+  function AlevrGlyph({
+    ref: _ref,
     className,
-    size = 24,
+    size,
     weight,
-    strokeWidth,
+    strokeWidth: _strokeWidth,
     absoluteStrokeWidth: _absoluteStrokeWidth,
     fill,
-    motion,
+    motion: _motion,
     mirrored,
+    alt,
+    style,
     ...rest
   }: IconProps) {
-    const labelled = rest["aria-label"] != null || rest["aria-labelledby"] != null || rest.alt != null;
-    const articulation = motion === "none" ? undefined : (motion ?? defaults.motion);
-    const houseName = HOUSE_ICON_NAMES[name];
-    if (houseName) {
-      return <RefoundationIcon name={houseName} size={typeof size === "number" ? size : 24} className={cn("icon", className)} aria-hidden={labelled ? undefined : true} aria-label={rest["aria-label"]} aria-labelledby={rest["aria-labelledby"]} role={labelled ? "img" : undefined} />;
-    }
+    const labelled = rest["aria-label"] != null || rest["aria-labelledby"] != null || alt != null;
+    const on = canFill && (weight === "fill" || (fill != null && fill !== "none" && fill !== "transparent") || (className != null && FILLED.test(className)));
+    const px = classSize(className) ?? numeric(size) ?? 24;
     return (
-      <Base
-        size={size}
-        weight={weight ?? opticalWeight({ className, size, strokeWidth, fill })}
-        mirrored={mirrored ?? defaults.mirrored}
-        aria-hidden={labelled ? undefined : true}
-        role={labelled ? "img" : undefined}
-        focusable="false"
-        data-icon={name}
-        data-motion={articulation}
+      <AlevrIcon
+        name={name}
+        size={px}
+        autoSize
+        state={on ? "active" : "rest"}
         className={cn("icon", className)}
+        style={mirrored ? { ...style, scale: "-1 1" } : style}
+        data-glyph={displayName}
         {...rest}
+        role={labelled ? "img" : undefined}
+        aria-hidden={labelled ? undefined : true}
+        aria-label={rest["aria-label"] ?? alt}
       />
     );
   }
-  JunoIcon.displayName = name;
-  return JunoIcon;
+  AlevrGlyph.displayName = displayName;
+  return AlevrGlyph;
 }
 
 // ---------------------------------------------------------------------------
-// Juno's own marks — the places the product is known by. Drawn for Juno in
-// juno-glyphs.tsx on the same grid and line as the rest of the set; Chat, Code
-// and Design carry the two motifs of the logo (the open ring with its ball
-// terminal, and the four-point spark). `Send` below is the verb.
+// Alevr's places. Orbit and Code also exist as brand glyphs
+// (src/components/brand/orbit-glyph.tsx, code-glyph.tsx) for the product
+// switch and the Orbit section head; these are the same constructions in the
+// icon registry for menus, the palette and pages.
 // ---------------------------------------------------------------------------
 
-/** Chat: the logo's bubble as a line. Its `fill` weight is the logo itself —
- *  the solid bubble with the spark cut out — for the selected state. */
-// The voice call's own controls (juno-call-glyphs.tsx), on the same grid and
-// line: a capsule mic with no stand, one clean slash, two offset rails, a soft
-// solid square, and the receiver laid flat as one outline.
-export const CallMic = glyph(JunoMicGlyph, "call-mic");
-export const CallMicOff = glyph(JunoMicOffGlyph, "call-mic-off");
-export const CallSettings = glyph(JunoCallSettingsGlyph, "call-settings");
-export const CallStop = glyph(JunoStopGlyph, "call-stop");
-export const CallEnd = glyph(JunoEndCallGlyph, "call-end");
-export const JunoChat = glyph(JunoChatGlyph, "juno-chat", { motion: "parts" });
-/** Code: the spark between two chevrons, where `</>` puts a slash. */
-export const JunoCode = glyph(JunoCodeGlyph, "juno-code", { motion: "parts" });
-/** Design: a square in front of a circle, stacked like cut paper. */
-export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "parts" });
-/** Library: two volumes on a shelf, the right one leaning toward the left, one
- *  band each. It replaced Phosphor's Books, whose six bands hatched into grey
- *  at 18px. Under the pointer the leaning volume straightens and lifts, the
- *  way a book comes off a shelf. */
-export const JunoLibrary = glyph(JunoLibraryGlyph, "juno-library", { motion: "parts" });
-/** Agents: a face whose eyes glance up and over on hover (docs/design/AGENTS.md). */
-export const JunoAgents = glyph(JunoAgentsGlyph, "juno-agents", { motion: "parts" });
-/** Orbit, the destination where your agents live (Alevr Orbit): two open arcs
- *  of one ellipse, drawn by the house registry (`orbit`). Static: it never
- *  moves under the pointer and has no selected form. An individual agent keeps
- *  `JunoAgents`. (The 256-grid base is only a fallback; the house name wins.) */
-export const JunoOrbit = glyph(JunoAgentsGlyph, "juno-orbit");
+export const JunoChat = glyph("chat", "JunoChat");
+export const JunoCode = glyph("code", "JunoCode");
+export const JunoDesign = glyph("design", "JunoDesign");
+export const JunoLibrary = glyph("library", "JunoLibrary");
+/** Agents (Alevr Orbit): two agents on one ground line. An individual agent in a run is `Bot`. */
+export const JunoAgents = glyph("crew", "JunoAgents");
+/** Orbit, where your agents live: two open arcs of one ellipse. Static, never a spinner. */
+export const JunoOrbit = glyph("orbit", "JunoOrbit");
+
+// The voice call's controls.
+export const CallMic = glyph("mic", "CallMic");
+export const CallMicOff = glyph("mic-off", "CallMicOff");
+export const CallSettings = glyph("customize", "CallSettings");
+export const CallStop = glyph("stop", "CallStop");
+export const CallEnd = glyph("end-call", "CallEnd");
 
 // ---------------------------------------------------------------------------
-// Direction & navigation
+// Direction and navigation. Carets are state marks (open, closed, sort
+// order); their rotation belongs to the call site.
 // ---------------------------------------------------------------------------
 
-/** Carets are state indicators (open / closed, sort order) and never move on
- *  hover — a disclosure that twitches before it is pressed says it did
- *  something it has not done. Their rotation belongs to the call site. */
-export const ChevronDown = glyph(CaretDownIcon, "chevron-down");
-export const ChevronUp = glyph(CaretUpIcon, "chevron-up");
-export const ChevronLeft = glyph(CaretLeftIcon, "chevron-left");
-export const ChevronRight = glyph(CaretRightIcon, "chevron-right");
-/** Both ways at once: a row that opens a menu (the sidebar's account row)
- *  without claiming which direction it opens in. Still a state mark, so it
- *  carries no hover gesture either. */
-export const ChevronsUpDown = glyph(CaretUpDownIcon, "chevrons-up-down");
+export const ChevronDown = glyph("chevron-down", "ChevronDown");
+export const ChevronUp = glyph("chevron-up", "ChevronUp");
+export const ChevronLeft = glyph("chevron-left", "ChevronLeft");
+export const ChevronRight = glyph("chevron-right", "ChevronRight");
+/** Both ways at once: a row that opens a menu (the sidebar's account row). */
+export const ChevronsUpDown = glyph("chevrons-up-down", "ChevronsUpDown");
 
-export const ArrowLeft = glyph(ArrowLeftIcon, "arrow-left", { motion: "nudge-l" });
-export const ArrowRight = glyph(ArrowRightIcon, "arrow-right", { motion: "nudge-r" });
-export const ArrowUp = glyph(ArrowUpIcon, "arrow-up", { motion: "nudge-u" });
-export const ArrowDown = glyph(ArrowDownIcon, "arrow-down", { motion: "nudge-d" });
-export const ArrowUpRight = glyph(ArrowUpRightIcon, "arrow-up-right", { motion: "nudge-ne" });
-export const ArrowUpToLine = glyph(ArrowLineUpIcon, "arrow-up-to-line", { motion: "nudge-u" });
-export const ArrowDownToLine = glyph(ArrowLineDownIcon, "arrow-down-to-line", { motion: "nudge-d" });
-export const CornerDownRight = glyph(ArrowElbowDownRightIcon, "corner-down-right", { motion: "nudge-r" });
-export const ExternalLink = glyph(ArrowSquareOutIcon, "external-link", { motion: "nudge-ne" });
-export const LogOut = glyph(SignOutIcon, "log-out", { motion: "nudge-r" });
-export const Undo2 = glyph(ArrowUUpLeftIcon, "undo", { motion: "nudge-l" });
-export const Redo2 = glyph(ArrowUUpRightIcon, "redo", { motion: "nudge-r" });
-export const RefreshCw = glyph(ArrowClockwiseIcon, "refresh", { motion: "cw" });
-export const RotateCcw = glyph(ArrowCounterClockwiseIcon, "rotate-ccw", { motion: "ccw" });
-export const Repeat = glyph(RepeatIcon, "repeat", { motion: "cw" });
-export const History = glyph(ClockCounterClockwiseIcon, "history");
-export const Maximize2 = glyph(ArrowsOutSimpleIcon, "maximize");
-export const Minimize2 = glyph(ArrowsInSimpleIcon, "minimize");
-/** Expand / collapse a clamped block (a long code fence): the two-way arrow
- *  off a rule, opening and closing along the axis the block grows on. */
-export const UnfoldVertical = glyph(ArrowsOutLineVerticalIcon, "unfold-vertical");
-export const FoldVertical = glyph(ArrowsInLineVerticalIcon, "fold-vertical");
-/** Soft-wrap long lines: the return arrow, the mark editors use for "wrap". */
-export const WrapText = glyph(ArrowUDownLeftIcon, "wrap-text");
-export const Menu = glyph(ListIcon, "menu");
-export const MoreHorizontal = glyph(DotsThreeIcon, "more");
-export const GripVertical = glyph(DotsSixVerticalIcon, "grip");
-export const PanelLeft = glyph(SidebarSimpleIcon, "panel-left");
-export const PanelLeftOpen = glyph(SidebarSimpleIcon, "panel-left-open");
-export const PanelLeftClose = glyph(SidebarSimpleIcon, "panel-left-close");
-export const SidebarOpen = glyph(SidebarSimpleIcon, "sidebar-open");
-export const SidebarClose = glyph(SidebarSimpleIcon, "sidebar-close");
-export const PanelRightOpen = glyph(SidebarSimpleIcon, "panel-right-open", { mirrored: true });
-export const PanelRightClose = glyph(SidebarSimpleIcon, "panel-right-close", { mirrored: true });
+export const ArrowLeft = glyph("arrow-left", "ArrowLeft");
+export const ArrowRight = glyph("arrow-right", "ArrowRight");
+export const ArrowUp = glyph("arrow-up", "ArrowUp");
+export const ArrowDown = glyph("arrow-down", "ArrowDown");
+/** Mention and return-key glyphs used by the redesigned composer. */
+export const AtSign = glyph("at", "AtSign");
+export const CornerDownLeft = glyph("enter", "CornerDownLeft");
+export const ArrowUpRight = glyph("arrow-up-right", "ArrowUpRight");
+export const ArrowUpToLine = glyph("arrow-up-line", "ArrowUpToLine");
+export const ArrowDownToLine = glyph("arrow-down-line", "ArrowDownToLine");
+export const CornerDownRight = glyph("corner-down-right", "CornerDownRight");
+export const ExternalLink = glyph("external", "ExternalLink");
+export const LogOut = glyph("sign-out", "LogOut");
+export const Undo2 = glyph("undo", "Undo2");
+export const Redo2 = glyph("redo", "Redo2");
+export const RefreshCw = glyph("refresh", "RefreshCw");
+export const RotateCcw = glyph("retry", "RotateCcw");
+export const Repeat = glyph("repeat", "Repeat");
+export const History = glyph("history", "History");
+export const Maximize2 = glyph("expand", "Maximize2");
+export const Minimize2 = glyph("collapse", "Minimize2");
+/** Expand or collapse a clamped block (a long code fence): chevrons leaving or closing on a rule. */
+export const UnfoldVertical = glyph("unfold", "UnfoldVertical");
+export const FoldVertical = glyph("fold", "FoldVertical");
+/** Soft-wrap long lines: the return arrow. */
+export const WrapText = glyph("enter", "WrapText");
+export const Menu = glyph("menu", "Menu");
+export const MoreHorizontal = glyph("more", "MoreHorizontal");
+export const GripVertical = glyph("grip", "GripVertical");
+export const PanelLeft = glyph("sidebar", "PanelLeft");
+export const PanelLeftOpen = glyph("sidebar", "PanelLeftOpen");
+export const PanelLeftClose = glyph("sidebar", "PanelLeftClose");
+export const SidebarOpen = glyph("sidebar", "SidebarOpen");
+export const SidebarClose = glyph("sidebar", "SidebarClose");
+export const PanelRightOpen = glyph("panel-right", "PanelRightOpen");
+export const PanelRightClose = glyph("panel-right", "PanelRightClose");
 export const PanelRight = PanelRightOpen;
 
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
-export const Plus = glyph(PlusIcon, "plus", { motion: "turn" });
-export const Minus = glyph(MinusIcon, "minus");
-export const X = glyph(XIcon, "x", { motion: "turn" });
-export const Check = glyph(CheckIcon, "check");
-export const Copy = glyph(CopyIcon, "copy", { motion: "lift" });
-export const Trash2 = glyph(TrashIcon, "trash", { motion: "lift" });
-export const Archive = glyph(ArchiveIcon, "archive", { motion: "lift" });
-export const ArchiveRestore = glyph(BoxArrowUpIcon, "archive-restore", { motion: "nudge-u" });
-export const Download = glyph(DownloadSimpleIcon, "download", { motion: "nudge-d" });
-export const Upload = glyph(UploadSimpleIcon, "upload", { motion: "nudge-u" });
-export const UploadCloud = glyph(CloudArrowUpIcon, "upload-cloud", { motion: "nudge-u" });
-export const FileUp = glyph(FileArrowUpIcon, "file-up", { motion: "nudge-u" });
-export const Save = glyph(FloppyDiskIcon, "save");
-/** Juno's own send mark (juno-glyphs.tsx): an up arrow whose head has the
- *  spark's concave flanks. Every "send this" in the product draws it — the
- *  composer's send circle, Ask Juno, steering a run, sending a voice draft. */
-export const Send = glyph(JunoSendGlyph, "send", { motion: "nudge-u" });
-export const Share2 = glyph(ShareNetworkIcon, "share");
-export const Printer = glyph(PrinterIcon, "printer");
-export const Search = glyph(MagnifyingGlassIcon, "search", { motion: "tilt" });
-export const SearchX = glyph(MagnifyingGlassIcon, "search-empty");
-export const TextSearch = glyph(ListMagnifyingGlassIcon, "text-search", { motion: "tilt" });
-export const FileSearch = glyph(FileMagnifyingGlassIcon, "file-search", { motion: "tilt" });
-export const Pencil = glyph(PencilSimpleIcon, "pencil", { motion: "tilt" });
-export const Edit3 = glyph(PencilSimpleLineIcon, "edit", { motion: "tilt" });
-export const SquarePen = glyph(NotePencilIcon, "square-pen", { motion: "tilt" });
-export const NotebookPen = glyph(NotePencilIcon, "notebook-pen", { motion: "tilt" });
-export const PenTool = glyph(PenNibIcon, "pen-tool", { motion: "tilt" });
-export const Eraser = glyph(EraserIcon, "eraser", { motion: "tilt" });
-export const Pin = glyph(PushPinIcon, "pin", { motion: "tilt" });
-export const PinOff = glyph(PushPinSlashIcon, "pin-off");
-export const Star = glyph(StarIcon, "star", { motion: "pop" });
-export const BookmarkPlus = glyph(BookmarkSimpleIcon, "bookmark", { motion: "pop" });
-export const ThumbsUp = glyph(ThumbsUpIcon, "thumbs-up", { motion: "tilt" });
-export const ThumbsDown = glyph(ThumbsDownIcon, "thumbs-down", { motion: "tilt" });
-export const Link2 = glyph(LinkSimpleIcon, "link", { motion: "tilt" });
-export const Link2Off = glyph(LinkSimpleBreakIcon, "link-off");
-export const Crop = glyph(CropIcon, "crop");
-export const Scan = glyph(ScanIcon, "scan");
-export const ListPlus = glyph(ListPlusIcon, "list-plus");
-export const ListMinus = glyph(ListDashesIcon, "list-minus");
+export const Plus = glyph("plus", "Plus");
+export const Minus = glyph("minus", "Minus");
+export const X = glyph("close", "X");
+export const Check = glyph("check", "Check");
+export const Copy = glyph("copy", "Copy");
+export const Trash2 = glyph("trash", "Trash2");
+export const Archive = glyph("archive", "Archive");
+export const ArchiveRestore = glyph("unarchive", "ArchiveRestore");
+export const Download = glyph("download", "Download");
+export const Upload = glyph("upload", "Upload");
+export const UploadCloud = glyph("cloud-upload", "UploadCloud");
+export const FileUp = glyph("file-upload", "FileUp");
+export const Save = glyph("save", "Save");
+/** Every "send this" in the product: the composer, Ask Alevr, steering a run, a voice draft. */
+export const Send = glyph("send", "Send");
+export const Share2 = glyph("share", "Share2");
+export const Printer = glyph("printer", "Printer");
+export const Search = glyph("search", "Search");
+export const SearchX = glyph("search", "SearchX");
+export const TextSearch = glyph("research", "TextSearch");
+export const FileSearch = glyph("research", "FileSearch");
+export const Pencil = glyph("edit", "Pencil");
+export const Edit3 = glyph("edit", "Edit3");
+export const SquarePen = glyph("edit", "SquarePen");
+/** Memory (what Alevr remembers): the layered recall cards. */
+export const NotebookPen = glyph("memory", "NotebookPen");
+export const PenTool = glyph("design", "PenTool");
+export const Eraser = glyph("eraser", "Eraser");
+export const Pin = glyph("pin", "Pin");
+export const PinOff = glyph("unpin", "PinOff");
+export const Star = glyph("star", "Star");
+export const BookmarkPlus = glyph("bookmark", "BookmarkPlus");
+export const ThumbsUp = glyph("thumbs-up", "ThumbsUp");
+export const ThumbsDown = glyph("thumbs-down", "ThumbsDown");
+export const Link2 = glyph("link", "Link2");
+export const Link2Off = glyph("link-off", "Link2Off");
+export const Crop = glyph("crop", "Crop");
+export const Scan = glyph("screenshot", "Scan");
+export const ListPlus = glyph("list-plus", "ListPlus");
+export const ListMinus = glyph("list-minus", "ListMinus");
+/** A plan above this one (Upgrade plan): an arrow rising in a circle. */
+export const ArrowUpCircle = glyph("upgrade", "ArrowUpCircle");
 
 // ---------------------------------------------------------------------------
-// Media & voice
+// Media and voice
 // ---------------------------------------------------------------------------
 
-export const Play = glyph(PlayIcon, "play", { motion: "pop" });
-export const PlayCircle = glyph(PlayCircleIcon, "play-circle", { motion: "pop" });
-export const Pause = glyph(PauseIcon, "pause");
-export const PauseCircle = glyph(PauseCircleIcon, "pause-circle");
-export const StopCircle = glyph(StopCircleIcon, "stop-circle");
-export const Square = glyph(SquareIcon, "square");
-export const SkipBack = glyph(SkipBackIcon, "skip-back", { motion: "nudge-l" });
-export const Mic = glyph(MicrophoneIcon, "mic", { motion: "tilt" });
-export const MicOff = glyph(MicrophoneSlashIcon, "mic-off");
-export const AudioLines = glyph(WaveformIcon, "audio-lines");
-export const Volume2 = glyph(SpeakerHighIcon, "volume");
-export const PhoneOff = glyph(PhoneDisconnectIcon, "phone-off");
-export const Radio = glyph(BroadcastIcon, "radio");
-export const Video = glyph(VideoCameraIcon, "video");
-export const Film = glyph(FilmStripIcon, "film");
-export const Camera = glyph(CameraIcon, "camera");
-export const Music2 = glyph(MusicNotesIcon, "music");
-export const Image = glyph(PhImageIcon, "image");
+export const Play = glyph("play", "Play");
+export const PlayCircle = glyph("run", "PlayCircle");
+export const Pause = glyph("pause", "Pause");
+export const PauseCircle = glyph("pause-circle", "PauseCircle");
+export const StopCircle = glyph("stop-circle", "StopCircle");
+/** A shape (the design editor's square, a stop control drawn with `fill-current`). */
+export const Square = glyph("square", "Square");
+export const SkipBack = glyph("skip-back", "SkipBack");
+export const Mic = glyph("mic", "Mic");
+export const MicOff = glyph("mic-off", "MicOff");
+export const AudioLines = glyph("voice", "AudioLines");
+export const Volume2 = glyph("read-aloud", "Volume2");
+export const PhoneOff = glyph("end-call", "PhoneOff");
+export const Radio = glyph("broadcast", "Radio");
+export const Video = glyph("video", "Video");
+export const Film = glyph("film", "Film");
+export const Camera = glyph("camera", "Camera");
+export const Music2 = glyph("music", "Music2");
+export const Image = glyph("image", "Image");
 /** Same glyph as `Image`, under the name that does not shadow `next/image`. */
 export const ImageIcon = Image;
-export const ImagePlus = glyph(ImageSquareIcon, "image-plus");
-export const ImageOff = glyph(ImageBrokenIcon, "image-off");
-export const MonitorUp = glyph(MonitorArrowUpIcon, "monitor-up", { motion: "nudge-u" });
-export const MonitorX = glyph(ScreencastIcon, "monitor-x");
+export const ImagePlus = glyph("image-plus", "ImagePlus");
+export const ImageOff = glyph("image-off", "ImageOff");
+export const MonitorUp = glyph("screen-share", "MonitorUp");
+export const MonitorX = glyph("screen-off", "MonitorX");
 
 // ---------------------------------------------------------------------------
-// Objects & places
+// Objects and places
 // ---------------------------------------------------------------------------
 
-export const MessageCircle = glyph(ChatCircleIcon, "message-circle");
-export const MessageCircleQuestion = glyph(ChatCircleDotsIcon, "message-circle-question");
-export const MessageSquare = glyph(ChatIcon, "message-square");
-export const MessageSquareText = glyph(ChatTextIcon, "message-square-text");
-export const MessageSquarePlus = glyph(ChatCenteredDotsIcon, "message-square-plus");
-export const MessagesSquare = glyph(ChatsIcon, "messages");
-export const TextQuote = glyph(QuotesIcon, "text-quote");
-export const Folder = glyph(FolderIcon, "folder", { motion: "lift" });
-export const FolderClosed = glyph(FolderIcon, "folder-closed", { motion: "lift" });
-export const FolderOpen = glyph(FolderOpenIcon, "folder-open");
-export const FolderCode = glyph(FolderSimpleIcon, "folder-code");
-export const FolderInput = glyph(FolderSimplePlusIcon, "folder-input");
-export const FolderLock = glyph(FolderLockIcon, "folder-lock");
-export const FolderKanban = glyph(KanbanIcon, "folder-kanban");
-export const FileText = glyph(FileTextIcon, "file-text");
-export const FilePlus = glyph(FilePlusIcon, "file-plus");
-export const Calculator = glyph(CalculatorIcon, "calculator");
-export const FileCode = glyph(FileCodeIcon, "file-code");
-export const FileCode2 = glyph(FileCodeIcon, "file-code-2");
-export const FileSpreadsheet = glyph(FileXlsIcon, "file-spreadsheet");
-export const Paperclip = glyph(PaperclipIcon, "paperclip", { motion: "tilt" });
-export const Inbox = glyph(TrayIcon, "inbox");
-/** Notifications: a plain bell. It tilts under the pointer the way a bell
- *  swings when it rings, the one thing a bell does. */
-export const Bell = glyph(BellSimpleIcon, "bell", { motion: "tilt" });
-export const Mail = glyph(EnvelopeSimpleIcon, "mail");
-export const MailWarning = glyph(EnvelopeSimpleIcon, "mail-warning");
-export const BookOpen = glyph(BookOpenIcon, "book-open");
-export const ScrollText = glyph(ScrollIcon, "scroll");
-export const ReceiptText = glyph(ReceiptIcon, "receipt");
-export const Layers = glyph(StackSimpleIcon, "layers", { motion: "lift" });
-export const Layers3 = glyph(StackIcon, "layers-3", { motion: "lift" });
-export const Boxes = glyph(PackageIcon, "boxes");
-export const Component = glyph(DiamondsFourIcon, "component");
-export const Shapes = glyph(ShapesIcon, "shapes");
-export const Frame = glyph(FrameCornersIcon, "frame");
-export const Group = glyph(BoundingBoxIcon, "group");
-export const SquareDashed = glyph(SelectionIcon, "square-dashed");
-export const SquareDashedMousePointer = glyph(SelectionIcon, "square-dashed-pointer");
-export const MousePointer2 = glyph(CursorIcon, "pointer");
-export const Crosshair = glyph(CrosshairIcon, "crosshair");
-export const Hand = glyph(HandIcon, "hand");
-export const Type = glyph(TextTIcon, "type");
-export const LayoutGrid = glyph(SquaresFourIcon, "layout-grid");
-export const LayoutTemplate = glyph(LayoutIcon, "layout-template");
-export const Columns2 = glyph(ColumnsIcon, "columns");
-export const List = glyph(ListBulletsIcon, "list");
-export const ListChecks = glyph(ListChecksIcon, "list-checks");
-export const ListTodo = glyph(ListChecksIcon, "list-todo");
-export const Table = glyph(TableIcon, "table");
-export const Table2 = glyph(TableIcon, "table-2");
-export const Presentation = glyph(PresentationIcon, "presentation");
-export const Map = glyph(MapTrifoldIcon, "map");
-export const Globe = glyph(GlobeSimpleIcon, "globe");
-export const Cloud = glyph(CloudIcon, "cloud");
-export const Database = glyph(DatabaseIcon, "database");
-export const Cpu = glyph(CpuIcon, "cpu");
-/** A cube: three faces and no inner detail. `SettingsIcons.models` draws it. */
-export const Cube = glyph(CubeIcon, "cube");
-export const Monitor = glyph(MonitorIcon, "monitor");
-export const Laptop = glyph(LaptopIcon, "laptop");
-export const Smartphone = glyph(DeviceMobileIcon, "smartphone");
-export const Tablet = glyph(DeviceTabletIcon, "tablet");
-export const Keyboard = glyph(KeyboardIcon, "keyboard");
-export const Terminal = glyph(TerminalWindowIcon, "terminal");
-export const Code2 = glyph(CodeIcon, "code");
-export const Braces = glyph(BracketsCurlyIcon, "braces");
-export const GitBranch = glyph(GitBranchIcon, "git-branch");
-export const GitFork = glyph(GitForkIcon, "git-fork");
-export const GitCompare = glyph(GitDiffIcon, "git-compare");
-export const GitPullRequest = glyph(GitPullRequestIcon, "git-pull-request");
-export const GitPullRequestDraft = glyph(GitPullRequestIcon, "git-pull-request-draft");
-export const Plug = glyph(PlugIcon, "plug");
-export const Wrench = glyph(WrenchIcon, "wrench", { motion: "tilt" });
-export const Settings = glyph(GearSixIcon, "settings", { motion: "spin" });
-export const Settings2 = glyph(SlidersHorizontalIcon, "settings-2");
-export const SlidersHorizontal = glyph(SlidersHorizontalIcon, "sliders");
-export const Workflow = glyph(TreeStructureIcon, "workflow");
-export const Bot = glyph(RobotIcon, "bot");
-/** A model's own reasoning: the resting mark of a thought-process row. */
-export const Brain = glyph(BrainIcon, "brain");
-export const Telescope = glyph(BinocularsIcon, "research");
-export const Sparkles = glyph(SparkleIcon, "sparkles", { motion: "pop" });
-export const Zap = glyph(LightningIcon, "zap", { motion: "pop" });
-export const Flame = glyph(FireIcon, "flame");
-export const PartyPopper = glyph(ConfettiIcon, "party", { motion: "pop" });
-export const Megaphone = glyph(MegaphoneIcon, "megaphone", { motion: "tilt" });
-export const GraduationCap = glyph(GraduationCapIcon, "graduation-cap");
-export const BriefcaseBusiness = glyph(BriefcaseIcon, "briefcase");
-export const Target = glyph(TargetIcon, "target");
-export const Coins = glyph(CoinsIcon, "coins");
-export const CreditCard = glyph(CreditCardIcon, "credit-card");
-export const Sigma = glyph(SigmaIcon, "sigma");
-export const Slash = glyph(LineSegmentIcon, "slash");
-export const Activity = glyph(PulseIcon, "activity");
-export const Timer = glyph(TimerIcon, "timer");
-export const Clock = glyph(ClockIcon, "clock");
-export const CalendarClock = glyph(CalendarDotsIcon, "calendar");
+export const MessageCircle = glyph("chat", "MessageCircle");
+export const MessageCircleQuestion = glyph("chat-question", "MessageCircleQuestion");
+export const MessageSquare = glyph("chat", "MessageSquare");
+export const MessageSquareText = glyph("chat", "MessageSquareText");
+export const MessageSquarePlus = glyph("new-chat", "MessageSquarePlus");
+export const MessagesSquare = glyph("chats", "MessagesSquare");
+export const TextQuote = glyph("citation", "TextQuote");
+export const Folder = glyph("folder", "Folder");
+export const FolderClosed = glyph("folder", "FolderClosed");
+export const FolderOpen = glyph("folder-open", "FolderOpen");
+export const FolderCode = glyph("folder-code", "FolderCode");
+export const FolderInput = glyph("folder-move", "FolderInput");
+export const FolderLock = glyph("folder-lock", "FolderLock");
+export const FolderKanban = glyph("grid", "FolderKanban");
+export const FileText = glyph("document", "FileText");
+export const FilePlus = glyph("file-plus", "FilePlus");
+export const Calculator = glyph("calculator", "Calculator");
+export const FileCode = glyph("file-code", "FileCode");
+export const FileCode2 = glyph("file-code", "FileCode2");
+export const FileSpreadsheet = glyph("sheet", "FileSpreadsheet");
+export const Paperclip = glyph("attach", "Paperclip");
+export const Inbox = glyph("inbox", "Inbox");
+/** Notifications: a plain bell. Unseen records lift its ink; never a dot, a count or a fill. */
+export const Bell = glyph("bell", "Bell");
+export const Mail = glyph("mail", "Mail");
+export const MailWarning = glyph("mail", "MailWarning");
+export const BookOpen = glyph("sources", "BookOpen");
+export const ScrollText = glyph("instructions", "ScrollText");
+export const ReceiptText = glyph("receipt", "ReceiptText");
+export const Layers = glyph("layers", "Layers");
+export const Layers3 = glyph("layers", "Layers3");
+export const Boxes = glyph("zip", "Boxes");
+export const Component = glyph("component", "Component");
+export const Shapes = glyph("appearance", "Shapes");
+export const Frame = glyph("frame", "Frame");
+export const Group = glyph("group", "Group");
+export const SquareDashed = glyph("selection", "SquareDashed");
+export const SquareDashedMousePointer = glyph("select-area", "SquareDashedMousePointer");
+export const MousePointer2 = glyph("pointer", "MousePointer2");
+export const Crosshair = glyph("crosshair", "Crosshair");
+export const Hand = glyph("hand", "Hand");
+export const Type = glyph("type", "Type");
+export const LayoutGrid = glyph("grid", "LayoutGrid");
+export const LayoutTemplate = glyph("layout", "LayoutTemplate");
+export const Columns2 = glyph("columns", "Columns2");
+export const List = glyph("list", "List");
+export const ListChecks = glyph("plan", "ListChecks");
+export const ListTodo = glyph("plan", "ListTodo");
+export const Table = glyph("sheet", "Table");
+export const Table2 = glyph("sheet", "Table2");
+export const Presentation = glyph("deck", "Presentation");
+export const Map = glyph("map", "Map");
+export const Globe = glyph("globe", "Globe");
+export const Cloud = glyph("cloud", "Cloud");
+export const Database = glyph("database", "Database");
+export const Cpu = glyph("computer", "Cpu");
+/** A model: three faces and no inner detail. `SettingsIcons.models` draws it. */
+export const Cube = glyph("cube", "Cube");
+export const Monitor = glyph("computer", "Monitor");
+export const Laptop = glyph("laptop", "Laptop");
+export const Smartphone = glyph("phone", "Smartphone");
+export const Tablet = glyph("tablet", "Tablet");
+export const Keyboard = glyph("keyboard", "Keyboard");
+export const Terminal = glyph("terminal", "Terminal");
+export const Code2 = glyph("code", "Code2");
+export const Braces = glyph("braces", "Braces");
+export const GitBranch = glyph("branch", "GitBranch");
+export const GitFork = glyph("fork", "GitFork");
+export const GitCompare = glyph("diff", "GitCompare");
+export const GitPullRequest = glyph("pull-request", "GitPullRequest");
+export const GitPullRequestDraft = glyph("pull-request", "GitPullRequestDraft");
+export const Plug = glyph("app", "Plug");
+/** A tool call's resting mark: what kind of work the row holds. */
+export const Wrench = glyph("wrench", "Wrench");
+export const Settings = glyph("settings", "Settings");
+export const Settings2 = glyph("customize", "Settings2");
+export const SlidersHorizontal = glyph("customize", "SlidersHorizontal");
+export const Workflow = glyph("workflow", "Workflow");
+/** One agent (a subagent in a run). */
+export const Bot = glyph("agent", "Bot");
+/** The resting mark of a model's reasoning row. The live one is the Continuum mark beside its phase words. */
+export const Brain = glyph("thought", "Brain");
+/** Deep Field (deep research). */
+export const Telescope = glyph("deep-field", "Telescope");
+/** Kept for old call sites: the family has no sparkle (a stock "AI" mark); a star stands in. */
+export const Sparkles = glyph("star", "Sparkles");
+export const Zap = glyph("bolt", "Zap");
+export const Flame = glyph("bolt", "Flame");
+export const PartyPopper = glyph("success", "PartyPopper");
+export const Megaphone = glyph("megaphone", "Megaphone");
+export const GraduationCap = glyph("learn", "GraduationCap");
+export const BriefcaseBusiness = glyph("folder", "BriefcaseBusiness");
+export const Target = glyph("target", "Target");
+export const Coins = glyph("coins", "Coins");
+export const CreditCard = glyph("billing", "CreditCard");
+export const Sigma = glyph("sigma", "Sigma");
+/** The design editor's line tool. */
+export const Slash = glyph("line", "Slash");
+export const Activity = glyph("activity", "Activity");
+export const Timer = glyph("timer", "Timer");
+export const Clock = glyph("clock", "Clock");
+export const CalendarClock = glyph("calendar", "CalendarClock");
 
 // ---------------------------------------------------------------------------
-// People, access & appearance
+// People, access and appearance
 // ---------------------------------------------------------------------------
 
-export const User = glyph(UserIcon, "user");
-export const Users = glyph(UsersIcon, "users");
-export const UserPen = glyph(UserGearIcon, "user-pen");
-export const KeyRound = glyph(KeyIcon, "key", { motion: "tilt" });
-export const Fingerprint = glyph(FingerprintIcon, "fingerprint");
-export const Lock = glyph(LockSimpleIcon, "lock");
-export const LockOpen = glyph(LockSimpleOpenIcon, "lock-open");
-export const ShieldCheck = glyph(ShieldCheckIcon, "shield-check");
-export const ShieldAlert = glyph(ShieldWarningIcon, "shield-alert");
-export const ShieldOff = glyph(ShieldSlashIcon, "shield-off");
-export const Eye = glyph(EyeIcon, "eye");
-export const EyeOff = glyph(EyeSlashIcon, "eye-off");
-export const Sun = glyph(SunIcon, "sun", { motion: "spin" });
-export const Moon = glyph(MoonIcon, "moon", { motion: "tilt" });
+export const User = glyph("profile", "User");
+/** People (accounts, members). An agent is `Bot`; your agents are `JunoAgents`. */
+export const Users = glyph("people", "Users");
+/** Personalization: you, adjusted. */
+export const UserPen = glyph("profile-edit", "UserPen");
+export const KeyRound = glyph("key", "KeyRound");
+export const Fingerprint = glyph("fingerprint", "Fingerprint");
+export const Lock = glyph("lock", "Lock");
+export const LockOpen = glyph("unlock", "LockOpen");
+export const ShieldCheck = glyph("shield", "ShieldCheck");
+export const ShieldAlert = glyph("shield-alert", "ShieldAlert");
+export const ShieldOff = glyph("shield-off", "ShieldOff");
+export const Eye = glyph("eye", "Eye");
+export const EyeOff = glyph("eye-off", "EyeOff");
+export const Sun = glyph("sun", "Sun");
+export const Moon = glyph("moon", "Moon");
 
 // ---------------------------------------------------------------------------
-// Status — never animated on hover; a status mark reports, it does not act.
+// Status: a status mark reports, it does not act.
 // ---------------------------------------------------------------------------
 
-/** The one spinner. Pair with `animate-spin`; the notch reads as progress where
- *  a full ring of dashes reads as a clock face at 14px. */
-export const Loader2 = glyph(CircleNotchIcon, "loader");
-export const Circle = glyph(CircleIcon, "circle");
-export const CircleDashed = glyph(CircleDashedIcon, "circle-dashed");
-export const CheckCircle2 = glyph(CheckCircleIcon, "check-circle");
-export const XCircle = glyph(XCircleIcon, "x-circle");
-export const AlertCircle = glyph(WarningCircleIcon, "alert-circle");
-export const AlertTriangle = glyph(WarningIcon, "alert-triangle");
-export const TriangleAlert = glyph(WarningIcon, "triangle-alert");
-export const Info = glyph(InfoIcon, "info");
-export const HelpCircle = glyph(QuestionIcon, "help");
-export const BadgeCheck = glyph(SealCheckIcon, "badge-check");
-export const Ban = glyph(ProhibitIcon, "ban");
-export const CircleSlash = glyph(ProhibitInsetIcon, "circle-slash");
-export const WifiOff = glyph(WifiSlashIcon, "wifi-off");
+/** The one spinner, for waits that have no phase words. Pair with `animate-spin`. */
+export const Loader2 = glyph("loader", "Loader2");
+export const Circle = glyph("circle", "Circle");
+export const CircleDashed = glyph("circle-dashed", "CircleDashed");
+export const CheckCircle2 = glyph("success", "CheckCircle2");
+export const XCircle = glyph("error-circle", "XCircle");
+export const AlertCircle = glyph("alert", "AlertCircle");
+export const AlertTriangle = glyph("warning", "AlertTriangle");
+export const TriangleAlert = glyph("warning", "TriangleAlert");
+export const Info = glyph("info", "Info");
+export const HelpCircle = glyph("help", "HelpCircle");
+export const BadgeCheck = glyph("verified", "BadgeCheck");
+export const Ban = glyph("ban", "Ban");
+export const CircleSlash = glyph("ban", "CircleSlash");
+export const WifiOff = glyph("offline", "WifiOff");
 
 // ---------------------------------------------------------------------------
 // Design editor alignment
 // ---------------------------------------------------------------------------
 
-export const AlignStartHorizontal = glyph(AlignTopIcon, "align-top");
-export const AlignCenterHorizontal = glyph(AlignCenterVerticalIcon, "align-middle");
-export const AlignEndHorizontal = glyph(AlignBottomIcon, "align-bottom");
-export const AlignStartVertical = glyph(AlignLeftIcon, "align-left");
-export const AlignCenterVertical = glyph(AlignCenterHorizontalIcon, "align-center");
-export const AlignEndVertical = glyph(AlignRightIcon, "align-right");
-export const AlignHorizontalDistributeCenter = glyph(ArrowsOutLineHorizontalIcon, "distribute-horizontal");
-export const AlignVerticalDistributeCenter = glyph(ArrowsOutLineVerticalIcon, "distribute-vertical");
+export const AlignStartHorizontal = glyph("align-top", "AlignStartHorizontal");
+export const AlignCenterHorizontal = glyph("align-middle", "AlignCenterHorizontal");
+export const AlignEndHorizontal = glyph("align-bottom", "AlignEndHorizontal");
+export const AlignStartVertical = glyph("align-left", "AlignStartVertical");
+export const AlignCenterVertical = glyph("align-center", "AlignCenterVertical");
+export const AlignEndVertical = glyph("align-right", "AlignEndVertical");
+export const AlignHorizontalDistributeCenter = glyph("distribute-horizontal", "AlignHorizontalDistributeCenter");
+export const AlignVerticalDistributeCenter = glyph("distribute-vertical", "AlignVerticalDistributeCenter");

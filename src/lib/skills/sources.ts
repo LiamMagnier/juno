@@ -26,8 +26,15 @@ import {
   type SkillLibrary,
   type SkillSourceChange,
 } from "@/lib/skills/library-contract";
-import { provenanceRecord, type GithubDiscovery, type GithubSkillCandidate } from "@/lib/skills/github";
+import {
+  PROVENANCE_FILES_KEY,
+  companionTreeDigest,
+  provenanceRecord,
+  type GithubDiscovery,
+  type GithubSkillCandidate,
+} from "@/lib/skills/github";
 import { titleFromSkillName } from "@/lib/skills/skill-md";
+import { canonicalToolId } from "@/lib/tools/aliases";
 import {
   permissionExpansion,
   permissionSurfaceOf,
@@ -234,11 +241,16 @@ export function partitionTools(names: readonly string[]): { carried: string[]; d
   const carried: string[] = [];
   const dropped: string[] = [];
   for (const name of names) {
-    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) carried.push(name);
-    else dropped.push(name);
+    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) {
+      const canonical = canonicalToolId(name);
+      if (!carried.includes(canonical)) carried.push(canonical);
+    } else dropped.push(name);
   }
   return { carried, dropped };
 }
+
+/** Stored tool names as the current names, so an old name never reads as a change (INV-23). */
+const canonicalTools = (names: readonly string[]) => names.map(canonicalToolId);
 
 /**
  * A fingerprint of instructions as they were read from upstream.
@@ -271,11 +283,15 @@ export function githubSkillContract(
   base: WorkSkillContract = emptySkillContract()
 ): { contract: WorkSkillContract; requestedTools: string[]; droppedTools: string[] } {
   const tools = partitionTools(candidate.skill.allowedTools);
+  const files = companionTreeDigest(candidate);
   const contract: WorkSkillContract = {
     ...base,
     provenance: {
       ...provenanceRecord(candidate.provenance),
       [PROVENANCE_DIGEST_KEY]: instructionsDigest(candidate.skill.instructions),
+      // The companion files' identity at this commit, when there are any, so
+      // an update check sees a changed script without fetching it.
+      ...(files ? { [PROVENANCE_FILES_KEY]: files } : {}),
       ...Object.fromEntries(
         Object.entries(candidate.skill.metadata).map(([key, value]) => [`skill.${key}`, value])
       ),
@@ -341,6 +357,8 @@ export interface InstalledSourceSkill {
   instructions: string;
   requestedTools: readonly string[];
   contract: WorkSkillContract;
+  /** sha256 of the installed version's kept folder, or null when it keeps none. */
+  bundleDigest?: string | null;
 }
 
 const sameList = (a: readonly string[], b: readonly string[]) => {
@@ -361,7 +379,43 @@ export function upstreamChanged(installed: InstalledSourceSkill, candidate: Gith
   const instructionsMoved = recorded
     ? recorded !== instructionsDigest(candidate.skill.instructions)
     : installed.instructions !== candidate.skill.instructions;
-  return instructionsMoved || !sameList(installed.requestedTools, partitionTools(candidate.skill.allowedTools).carried);
+  return (
+    instructionsMoved ||
+    upstreamFilesChanged(installed, candidate) ||
+    !sameList(canonicalTools(installed.requestedTools), partitionTools(candidate.skill.allowedTools).carried)
+  );
+}
+
+/**
+ * Whether the files beside the SKILL.md differ from the ones installed.
+ *
+ * A skill installed before folders were kept recorded no file identity; if
+ * upstream has files now, that is a change worth offering (taking it brings
+ * the scripts the instructions describe).
+ */
+export function upstreamFilesChanged(
+  installed: Pick<InstalledSourceSkill, "contract">,
+  candidate: Pick<GithubSkillCandidate, "companionEntries">
+): boolean {
+  const recorded = installed.contract.provenance[PROVENANCE_FILES_KEY] ?? "";
+  return recorded !== companionTreeDigest(candidate);
+}
+
+/**
+ * Whether the folder an update would store is not, byte for byte, the one
+ * installed: the sha256 of the fetched bundle against the installed version's.
+ *
+ * This, not `upstreamFilesChanged`, decides whether trust is withdrawn. The
+ * tree digest is a fast non-cryptographic change detector over paths and blob
+ * ids, and upstream controls both: a crafted file name can make a changed
+ * folder hash the same, which would keep the reader's "verified" on scripts
+ * nobody read, and a vouched-for skill's scripts run without asking.
+ */
+export function upstreamBundleChanged(
+  installed: Pick<InstalledSourceSkill, "bundleDigest">,
+  fetched: { digest: string } | null
+): boolean {
+  return (installed.bundleDigest ?? null) !== (fetched?.digest ?? null);
 }
 
 /**
@@ -373,7 +427,7 @@ export function upstreamWidensPermissions(installed: InstalledSourceSkill, candi
   const next = githubSkillContract(candidate, installed.contract);
   return (
     permissionExpansion(
-      permissionSurfaceOf({ requestedTools: installed.requestedTools, contract: installed.contract }),
+      permissionSurfaceOf({ requestedTools: canonicalTools(installed.requestedTools), contract: installed.contract }),
       permissionSurfaceOf({ requestedTools: next.requestedTools, contract: next.contract })
     ).length > 0
   );
@@ -544,3 +598,5 @@ export function switchBeforeBlockAfterMint(input: {
 export function trustAfterUpstreamChange(trust: string, instructionsChanged: boolean): string {
   return instructionsChanged ? ("untrusted" satisfies WorkSkillTrust) : trust;
 }
+// The caller passes "instructions or files changed": a script nobody here has
+// read is no more vouched for than a sentence nobody has read.

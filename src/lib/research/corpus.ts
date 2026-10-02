@@ -1,8 +1,19 @@
-import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import { SNAPSHOT_CHARS, type ResearchSourceRow } from "@/lib/research/engine";
 import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
 import type { ResearchPlan } from "@/lib/research/domain";
+import {
+  CITATION_RULES,
+  CONFLICTS_INTRO,
+  EVIDENCE_LEDGER_HEADER,
+  EVIDENCE_STATE_HEADER,
+  OPEN_QUESTIONS_INTRO,
+  SHORT_OBJECTIVES_INTRO,
+  SOURCE_MATERIAL_HEADER,
+  chatReportContract,
+  constraintsBlock,
+  reportWriterContract,
+} from "@/lib/research/corpus.prompt";
 
 /**
  * The synthesis contract and the numbered corpus.
@@ -65,8 +76,7 @@ function renderFindings(findings: ResearchCorpusFinding[]): string {
       ].join("\n")
     );
   }
-  return `\n# Evidence Ledger (${findings.length} sourced findings from the research team)
-Each finding is a claim tied to a verbatim quote from the numbered source it cites. Build the report from these first; the source material below is the full text behind them.
+  return `\n${EVIDENCE_LEDGER_HEADER(findings.length)}
 
 ${blocks.join("\n\n")}
 `;
@@ -118,7 +128,7 @@ function renderEvidenceState(plan: ResearchPlan, indexOf: ReadonlyMap<string, nu
   if (conflicts.length > 0) {
     sections.push(
       [
-        "Contradictions and duplicate sources the team flagged. Address each one in the Nuances section, citing both sides; a duplicate is one witness, not two:",
+        CONFLICTS_INTRO,
         wrapUntrusted(
           "lead review",
           conflicts
@@ -131,7 +141,7 @@ function renderEvidenceState(plan: ResearchPlan, indexOf: ReadonlyMap<string, nu
   if (short.length > 0) {
     sections.push(
       [
-        "Sub-questions the team could not fully answer. Say what is missing in Limitations & Open Questions rather than filling the gap from memory:",
+        SHORT_OBJECTIVES_INTRO,
         ...short.map((objective) => `- ${objective.question} (${objective.status.replace(/_/g, " ")})`),
       ].join("\n")
     );
@@ -139,12 +149,12 @@ function renderEvidenceState(plan: ResearchPlan, indexOf: ReadonlyMap<string, nu
   if (open.length > 0) {
     sections.push(
       [
-        "Questions the researchers could not settle from the pages they read:",
+        OPEN_QUESTIONS_INTRO,
         wrapUntrusted("worker notes", open.map((question) => `- ${question.replace(/\s+/g, " ")}`).join("\n")),
       ].join("\n")
     );
   }
-  return `\n# Evidence State (the research team's own review)\n${sections.join("\n\n")}\n`;
+  return `\n${EVIDENCE_STATE_HEADER}\n${sections.join("\n\n")}\n`;
 }
 
 /**
@@ -178,11 +188,25 @@ export function corpusFindings(
   return out;
 }
 
+export interface ResearchCorpusOptions {
+  /**
+   * `chat` (default): the native in-chat contract, where the user's own model
+   * writes the report (INV-11). `report`: the web writer's structured contract
+   * — summary, markers, one section per question, no sources list (§9.6.3).
+   */
+  contract?: "chat" | "report";
+  /** The run's date line, for the report contract (§9.3). */
+  dateLine?: string | null;
+  /** "Write in {language}." for the report contract (§9.5). */
+  languageLine?: string | null;
+}
+
 export function buildResearchCorpus(
   goal: string,
   plan: ResearchPlan,
   sources: ResearchCorpusSourceRow[],
-  findings: ResearchCorpusFinding[] = []
+  findings: ResearchCorpusFinding[] = [],
+  options: ResearchCorpusOptions = {}
 ): string {
   const indexOf = new Map<string, number>();
   const corpus = sources
@@ -196,35 +220,21 @@ export function buildResearchCorpus(
       return `[${i + 1}] ${title}\n${source.url}\n${wrapUntrusted(source.url, body)}`;
     })
     .join("\n\n");
-  const constraints = plan.constraints.length
-    ? `\nConstraints the user set for this research (these are the user's own instructions, and they apply to the whole report):\n${plan.constraints
-        .map((c) => `- ${c}`)
-        .join("\n")}\n`
-    : "";
-  return `# Autonomous Deep Research Mode
-The user requested an exhaustive, authoritative research investigation on: "${truncate(goal, 300)}".
-You are writing a comprehensive, publication-grade research REPORT, grounded strictly in the numbered source material below.
+  const header =
+    options.contract === "report"
+      ? reportWriterContract({
+          goal,
+          questions: plan.objectives.map((objective) => ({ id: objective.id, question: objective.question })),
+          dateLine: options.dateLine ?? plan.today ?? null,
+          languageLine: options.languageLine ?? null,
+        })
+      : chatReportContract(goal);
+  return `${header}
 
-# Report Structure:
-1. "# Title": Clear, professional title naming the topic.
-2. "## Executive Summary": High-level synthesis highlighting key findings, core thesis, and high-impact takeaways.
-3. "## Key Findings & Core Analysis": Detailed thematic sections (using "### Subheadings") breaking down the subject with quantitative data, benchmark comparisons, timelines, and technical details. Use Markdown comparison tables where appropriate.
-4. "## Nuances, Contradictions & Trade-Offs": Explicitly analyze conflicting claims or divergent evidence between sources.
-5. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
-6. "## Sources": Numbered list matching cited references as "[n] Title — URL".
-
-# Citation & Accuracy Rules:
-- Cite EVERY factual assertion, statistic, quote, and claim inline with bracketed numbers (e.g. [1], [2][4]) mapping directly to the numbered source list below.
-- Strict factual grounding: Do NOT fabricate details or cite numbers outside the numbered list.
-- When sources disagree or have different methodologies, explain the disagreement and cite each source.
-- Two sources repeating the same press release or mirror text are not independent corroboration.
-- Separate observed facts from inferences. Explain evidence strength without invented confidence percentages.
-- Distinguish publication dates from the dates events occurred. Prefer original studies and official records.
-- Do not treat absent evidence as evidence of absence. Failed fetches and unavailable sources remain limitations.
-- Keep the report proportionate to the question. Do not pad it to appear exhaustive.
-${constraints}
+${CITATION_RULES}
+${constraintsBlock(plan.constraints)}
 ${UNTRUSTED_CONTENT_RULE}
 ${renderFindings(findings)}${renderEvidenceState(plan, indexOf)}
-# Numbered Source Material:
+${SOURCE_MATERIAL_HEADER}
 ${corpus}`;
 }

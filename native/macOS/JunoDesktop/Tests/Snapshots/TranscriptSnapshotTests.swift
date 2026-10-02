@@ -39,6 +39,7 @@ struct TranscriptSnapshotTests {
             let url = try await TranscriptSnapshotRenderer.render(
                 fixture.view(),
                 name: fixture.name,
+                width: fixture.width ?? TranscriptSnapshotRenderer.columnWidth,
                 appearance: appearance,
                 into: directory
             )

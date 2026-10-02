@@ -79,7 +79,9 @@ final class GoalModelTests: XCTestCase {
         model = GoalScriptModel()
     }
 
-    override func tearDown() {
+    // Async, so it runs on the main actor with the rest of the @MainActor
+    // case; a synchronous override is nonisolated and cannot read `base`.
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: base)
     }
 

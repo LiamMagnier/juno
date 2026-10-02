@@ -1,16 +1,6 @@
 import "server-only";
 import { isDisallowedHost } from "./url-safety";
-import { fetchSafePublicUrl } from "./fetch-safe";
-import { isPotentialSpa, parseRetryAfterMs } from "./page-signals";
 import { fuseRankedLists, type EngineSpec, type SearchResult } from "./fusion";
-import {
-  extractPdfText,
-  looksLikePdf,
-  MAX_PDF_BYTES,
-  readBodyBounded,
-  responseIsPdf,
-  type PdfFailureReason,
-} from "./pdf-text";
 
 /*
  * `SearchResult`, `EngineSpec`, the RRF constant and the merge itself used to be
@@ -24,373 +14,23 @@ import {
  */
 export type { SearchResult } from "./fusion";
 
-/** One outbound link kept from a fetched page, for the bounded hop stage. */
-export interface PageLink {
-  href: string;
-  text: string;
-}
-
-export interface ExtractResult {
-  title: string;
-  text: string;
-  author?: string;
-  publishedAt?: Date;
-  /** Resolved, SSRF-filtered, de-duplicated — in the order the page listed them. */
-  links: PageLink[];
-  /**
-   * True when the HTML looks like a client-rendered shell — an empty framework
-   * root, a "please enable JavaScript" notice — so the text above is the
-   * loading screen rather than the page. Only the extractor sees the raw HTML,
-   * so only it can say; the research crawler uses this to decide whether a
-   * headless render is worth attempting.
-   */
-  shell?: boolean;
-}
-
-/**
- * Why a fetch produced no document.
- *
- * `extractUrlContent` returned a bare null for all of these, which meant the
- * research engine's READ loop could only `continue` — and a PDF, exactly the
- * primary-source class the planner is prompted to go looking for, vanished from
- * a run with nothing anywhere saying it had been seen and skipped. PDFs are now
- * read rather than skipped, but the ones that still cannot be (protected,
- * damaged, enormous) travel out by the same route for the same reason.
+/*
+ * The page extractor lives in `src/lib/web/extract.ts` (and its HTML half in
+ * `src/lib/web/html-text.ts`) since the chat rework: it reads no secret, and it
+ * is the part a test has to drive end to end against a real socket, which a
+ * `server-only` module cannot be. Re-exported here unchanged, so Research's
+ * crawler and every other caller keep importing it from where they always did.
  */
-export type ExtractFailure =
-  | { reason: "blocked_host" }
-  | { reason: "redirect_limit" }
-  /** `retryAfterMs` carries the server's own `Retry-After`, when it sent one, for a caller that may retry. */
-  | { reason: "http_error"; httpStatus: number; retryAfterMs?: number }
-  | { reason: "unsupported_content_type"; contentType: string }
-  | { reason: "response_too_large"; limitBytes: number }
-  | { reason: "empty_document" }
-  /*
-   * A PDF that was fetched and recognised but still yielded nothing. Separate
-   * from `unsupported_content_type` because that reason now means what it says —
-   * no parser exists for this type at all — and folding "this build cannot read
-   * PDFs" together with "this particular PDF is password-protected" would make
-   * the reason code useless the moment either answer changed.
-   *
-   * `no_text_layer` is deliberately absent: a scanned PDF parses perfectly and
-   * simply has no text, which is `empty_document`, the same answer a JS-rendered
-   * HTML page gets and the same sentence the timeline already prints for it.
-   */
-  | { reason: "pdf_unreadable"; detail: Exclude<PdfFailureReason, "no_text_layer"> }
-  | { reason: "fetch_failed"; detail: string };
-
-export type ExtractOutcome = { ok: true; page: ExtractResult } | { ok: false; failure: ExtractFailure };
-
-/**
- * Page chrome, removed before anything else looks at the body.
- *
- * The extractor stripped only script/style/iframe/svg/noscript, so a cookie
- * banner, a mega-menu and a footer sitemap all survived into the text — and
- * since the text is then truncated to a fixed budget, the chrome ate the FRONT
- * of it. A source whose stored snapshot is a navigation menu is a source the
- * coverage matrix scores as irrelevant and the report cannot cite.
- *
- * Non-greedy, so a nested `<nav>` inside a `<nav>` leaves a stray close tag
- * behind; that is harmless here because every remaining tag is dropped later,
- * and the alternative is an HTML parser this repo deliberately does not carry.
- */
-const CHROME_TAGS = ["nav", "header", "footer", "aside", "form", "dialog"];
-
-function stripChrome(html: string): string {
-  let out = html;
-  for (const tag of CHROME_TAGS) {
-    out = out.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, "gi"), " ");
-  }
-  return out;
-}
-
-/** Roughly how much visible text a `<main>`/`<article>` must hold to be believed. */
-const MAIN_REGION_MIN_CHARS = 600;
-
-function visibleLength(html: string): number {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
-}
-
-/**
- * The part of the document that is the document.
- *
- * Deliberately conservative: a `<main>` or `<article>` is trusted only when it
- * holds enough visible text to plausibly BE the page. Plenty of sites emit an
- * empty `<main>` and render into it client-side, and preferring that region
- * would turn a readable page into an empty one — strictly worse than the chrome
- * this is trying to avoid.
- */
-function mainRegion(html: string): string {
-  for (const tag of ["article", "main"]) {
-    const match = html.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
-    if (match && visibleLength(match[1]) >= MAIN_REGION_MIN_CHARS) return match[1];
-  }
-  return html;
-}
-
-/** Links kept per page. Beyond this the tail is site navigation, not citations. */
-const MAX_PAGE_LINKS = 120;
-
-function collectLinks(html: string, baseUrl?: string): PageLink[] {
-  if (!baseUrl) return [];
-  const out: PageLink[] = [];
-  const seen = new Set<string>();
-  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    let resolved: string;
-    try {
-      resolved = new URL(match[1], baseUrl).toString();
-    } catch {
-      continue;
-    }
-    // The same guard the fan-out applies to search results. A page is an
-    // untrusted party handing us URLs, and this is the one that reaches fetch().
-    if (isDisallowedHost(resolved)) continue;
-    if (seen.has(resolved)) continue;
-    seen.add(resolved);
-    const text = match[2]
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 200);
-    out.push({ href: resolved, text });
-    if (out.length >= MAX_PAGE_LINKS) break;
-  }
-  return out;
-}
-
-/**
- * Clean and convert raw HTML into readable structured markdown text.
- *
- * `baseUrl` is what turns the page's relative hrefs into followable links; omit
- * it and `links` comes back empty rather than full of unusable fragments.
- */
-export function htmlToCleanText(
-  html: string,
-  baseUrl?: string
-): { title?: string; text: string; author?: string; publishedAt?: Date; links: PageLink[] } {
-  try {
-    // Strip scripts, styles, iframes, and svg tags
-    const stripped = html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
-      .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
-      .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, "");
-
-    // Title and meta come from the WHOLE document: <title> and <meta> live in
-    // <head>, which the main-content pick below is about to throw away.
-    const titleMatch = stripped.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim().replace(/\s+/g, " ") : undefined;
-
-    const dateMatch = stripped.match(/<meta[^>]+(?:article:published_time|date|pubdate)[^>]+content=["']([^"']+)["']/i);
-    let publishedAt: Date | undefined;
-    if (dateMatch && dateMatch[1] && Number.isFinite(Date.parse(dateMatch[1]))) {
-      publishedAt = new Date(dateMatch[1]);
-    }
-
-    const authorMatch = stripped.match(/<meta[^>]+(?:author|article:author)[^>]+content=["']([^"']+)["']/i);
-    const author = authorMatch ? authorMatch[1].trim() : undefined;
-
-    const body = mainRegion(stripChrome(stripped));
-    // Links are read from the body region, not the raw document, for the same
-    // reason the text is: a footer sitemap would otherwise be the top 100 links
-    // on every page of the site and crowd out the ones the article cited.
-    const links = collectLinks(body, baseUrl);
-
-    // Convert standard tags to text equivalents
-    let clean = body
-      .replace(/<h[1-3][^>]*>(.*?)<\/h[1-3]>/gi, "\n\n## $1\n\n")
-      .replace(/<h[4-6][^>]*>(.*?)<\/h[4-6]>/gi, "\n\n### $1\n\n")
-      .replace(/<p[^>]*>/gi, "\n\n")
-      .replace(/<\/p>/gi, "")
-      .replace(/<li[^>]*>(.*?)<\/li>/gi, "\n- $1")
-      .replace(/<blockquote[^>]*>(.*?)<\/blockquote>/gi, "\n> $1\n")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<hr\s*\/?>/gi, "\n---\n")
-      .replace(/<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi, "[$2]($1)")
-      .replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**")
-      .replace(/<b[^>]*>(.*?)<\/b>/gi, "**$1**")
-      .replace(/<em[^>]*>(.*?)<\/em>/gi, "*$1*")
-      .replace(/<i[^>]*>(.*?)<\/i>/gi, "*$1*")
-      .replace(/<code[^>]*>(.*?)<\/code>/gi, "`$1`")
-      .replace(/<[^>]+>/g, " ");
-
-    // Decode HTML entities
-    clean = clean
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&mdash;/g, "—")
-      .replace(/&ndash;/g, "–")
-      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
-
-    // Normalize spacing
-    clean = clean
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line, i, arr) => line || (i > 0 && arr[i - 1]))
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-
-    return { title, text: clean, author, publishedAt, links };
-  } catch {
-    return { text: html.replace(/<[^>]+>/g, " ").trim(), links: [] };
-  }
-}
-
-/**
- * How much of one page is kept by default.
- *
- * Callers with a bigger appetite pass `maxChars`: the research corpus stores
- * pages in full (60k) because its workers grep them chunk by chunk, while a
- * chat-side fetch that lands the whole thing in one prompt keeps this cap.
- */
-const EXTRACT_CHARS = 16_000;
-/** The most any caller may ask for; bounds a hostile page's cost in memory. */
-const MAX_EXTRACT_CHARS = 200_000;
-/** HTML is untrusted network input; bound bytes before decoding/parsing it. */
-const MAX_HTML_BYTES = 4 * 1024 * 1024;
-
-/**
- * The PDF half of `extractUrlDocument`, kept separate only for length.
- *
- * Every exit is a typed outcome. This runs inside the research engine's READ
- * stage, where one thrown exception ends the round rather than one source, and a
- * PDF is an arbitrary binary chosen by a page we do not control — so the parser
- * is treated as something that will fail, not something that might.
- */
-async function extractPdfDocumentFrom(
-  res: Response,
-  url: string,
-  signal: AbortSignal | undefined,
-  maxChars: number
-): Promise<ExtractOutcome> {
-  const bytes = await readBodyBounded(res, MAX_PDF_BYTES);
-  if (!bytes) return { ok: false, failure: { reason: "pdf_unreadable", detail: "too_large" } };
-  // Checked here as well as inside the parser so a mislabelled HTML error page —
-  // a login wall served as application/pdf, which is common behind paywalls —
-  // never pays for the pdf.js import at all.
-  if (!looksLikePdf(bytes)) return { ok: false, failure: { reason: "pdf_unreadable", detail: "not_a_pdf" } };
-
-  const parsed = await extractPdfText(bytes, { maxChars, signal });
-  if (!parsed.ok) {
-    // A scan is a valid document that simply holds no text, which is exactly
-    // what `empty_document` already means for a JS-rendered HTML page — same
-    // situation, same reason code, and a sentence the timeline already prints.
-    if (parsed.reason === "no_text_layer") return { ok: false, failure: { reason: "empty_document" } };
-    return { ok: false, failure: { reason: "pdf_unreadable", detail: parsed.reason } };
-  }
-
-  // The same floor the HTML path applies: a document that yielded a line or two
-  // is a cover page, and storing it as a source makes a run look better read
-  // than it is.
-  if (parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document" } };
-
-  return {
-    ok: true,
-    page: {
-      title: parsed.title ?? url,
-      text: parsed.text,
-      author: parsed.author,
-      publishedAt: parsed.publishedAt,
-      // A PDF link annotation has a target but no anchor text, so `text` is left
-      // empty rather than filled with the URL again — the hop stage ranks on the
-      // href, and a fabricated label would read as the document's own words.
-      links: parsed.links.map((href) => ({ href, text: "" })),
-    },
-  };
-}
-
-/**
- * Universal page extractor with SSRF protection and clean markdown synthesis.
- *
- * Returns the REASON on failure rather than a bare null, so a caller can tell a
- * user "that file was password-protected" instead of quietly producing a report
- * that looks like it considered a document it never opened.
- *
- * The `Accept` header still asks for HTML first because that is what the vast
- * majority of results are; it ends in a wildcard at q=0.7, so a server with a
- * PDF still offers it and no header change was needed to start reading them.
- */
-export async function extractUrlDocument(
-  url: string,
-  signal?: AbortSignal,
-  opts: { maxChars?: number } = {}
-): Promise<ExtractOutcome> {
-  if (!url || isDisallowedHost(url)) return { ok: false, failure: { reason: "blocked_host" } };
-  const maxChars = Math.max(1, Math.min(MAX_EXTRACT_CHARS, opts.maxChars ?? EXTRACT_CHARS));
-
-  try {
-    const fetched = await fetchSafePublicUrl(url, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 JunoResearch/2.0",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    }, signal);
-    if (fetched.kind === "blocked") return { ok: false, failure: { reason: "blocked_host" } };
-    if (fetched.kind === "redirect_limit") return { ok: false, failure: { reason: "redirect_limit" } };
-    const { response: res, url: finalUrl } = fetched;
-
-    if (!res.ok) {
-      const retryAfterMs = parseRetryAfterMs(res.headers.get("retry-after"));
-      return {
-        ok: false,
-        failure: { reason: "http_error", httpStatus: res.status, ...(retryAfterMs !== null ? { retryAfterMs } : {}) },
-      };
-    }
-    const contentType = res.headers.get("content-type") ?? "";
-    const baseType = contentType.split(";")[0].trim().toLowerCase();
-
-    // The response URL, not the requested one — redirects are followed, and it is
-    // the landing address whose extension means anything.
-    if (responseIsPdf(baseType, finalUrl)) return await extractPdfDocumentFrom(res, finalUrl, signal, maxChars);
-
-    if (contentType && !contentType.includes("text/") && !contentType.includes("json") && !contentType.includes("xml")) {
-      // Everything this build genuinely has no parser for — images, archives,
-      // office documents. Naming the type is what lets the timeline say which.
-      return { ok: false, failure: { reason: "unsupported_content_type", contentType: baseType } };
-    }
-
-    const htmlBytes = await readBodyBounded(res, MAX_HTML_BYTES);
-    if (!htmlBytes) return { ok: false, failure: { reason: "response_too_large", limitBytes: MAX_HTML_BYTES } };
-    const html = new TextDecoder().decode(htmlBytes);
-    // The response URL, not the requested one: redirects are followed, and
-    // resolving a page's relative links against the pre-redirect address points
-    // the hop stage at URLs that do not exist.
-    const parsed = htmlToCleanText(html, finalUrl);
-    if (!parsed.text || parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document" } };
-
-    return {
-      ok: true,
-      page: {
-        title: parsed.title ?? url,
-        text: parsed.text.slice(0, maxChars),
-        author: parsed.author,
-        publishedAt: parsed.publishedAt,
-        links: parsed.links,
-        shell: isPotentialSpa(html, parsed.text.length),
-      },
-    };
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    if (!signal?.aborted) {
-      console.warn("[search-engine] fetch extraction failed for:", url, detail);
-    }
-    return { ok: false, failure: { reason: "fetch_failed", detail } };
-  }
-}
-
-/** The null-returning shape, for callers that only care whether a page arrived. */
-export async function extractUrlContent(url: string, signal?: AbortSignal): Promise<ExtractResult | null> {
-  const outcome = await extractUrlDocument(url, signal);
-  return outcome.ok ? outcome.page : null;
-}
+export {
+  extractUrlContent,
+  extractUrlDocument,
+  type ExtractFailure,
+  type ExtractOptions,
+  type ExtractOutcome,
+  type ExtractResult,
+  type PageLink,
+} from "@/lib/web/extract";
+export { htmlToCleanText } from "@/lib/web/html-text";
 
 /**
  * A provider answered, but not with results.
@@ -435,9 +75,41 @@ function statusForHttp(status: number): EngineStatus {
 }
 
 /**
+ * What one engine call may be asked beyond the query, for chat's single-engine
+ * profile (SPEC §6.3). Research passes none, so nothing it sends changes.
+ */
+export interface EngineCallOptions {
+  /** Only pages published within this period. Each engine spells it its own way. */
+  recency?: "day" | "week" | "month" | "year";
+  /**
+   * What Exa returns with each result: `text` (Research's corpus, up to 12k
+   * characters) or `highlights` (chat: one passage, so the snippet is not empty
+   * and the bill is the highlight, not the page).
+   */
+  exaContents?: "text" | "highlights";
+}
+
+/** One engine as the fan-out runs it: the fusion spec, plus the chat options. */
+interface Engine extends EngineSpec {
+  run(query: string, maxResults: number, signal?: AbortSignal, opts?: EngineCallOptions): Promise<SearchResult[]>;
+}
+
+const RECENCY_DAYS: Readonly<Record<NonNullable<EngineCallOptions["recency"]>, number>> = {
+  day: 1,
+  week: 7,
+  month: 31,
+  year: 366,
+};
+
+/**
  * Brave Search API
  */
-async function searchBrave(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+async function searchBrave(
+  query: string,
+  maxResults: number,
+  signal?: AbortSignal,
+  opts: EngineCallOptions = {},
+): Promise<SearchResult[]> {
   const key = process.env.BRAVE_SEARCH_API_KEY?.trim() || process.env.BRAVE_API_KEY?.trim();
   if (!key) return [];
 
@@ -447,6 +119,7 @@ async function searchBrave(query: string, maxResults: number, signal?: AbortSign
   // being held to for no reason. Asking for more is a 422, not more results.
   url.searchParams.set("count", String(Math.min(20, maxResults)));
   url.searchParams.set("result_filter", "web");
+  if (opts.recency) url.searchParams.set("freshness", `p${opts.recency[0]}`);
 
   const res = await fetch(url.toString(), {
     headers: {
@@ -472,7 +145,12 @@ async function searchBrave(query: string, maxResults: number, signal?: AbortSign
 /**
  * Serper Google Search API
  */
-async function searchSerper(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+async function searchSerper(
+  query: string,
+  maxResults: number,
+  signal?: AbortSignal,
+  opts: EngineCallOptions = {},
+): Promise<SearchResult[]> {
   const key = process.env.SERPER_API_KEY?.trim();
   if (!key) return [];
 
@@ -482,7 +160,7 @@ async function searchSerper(query: string, maxResults: number, signal?: AbortSig
       "X-API-KEY": key,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ q: query, num: maxResults }),
+    body: JSON.stringify({ q: query, num: maxResults, ...(opts.recency ? { tbs: `qdr:${opts.recency[0]}` } : {}) }),
     signal,
   });
 
@@ -502,7 +180,12 @@ async function searchSerper(query: string, maxResults: number, signal?: AbortSig
 /**
  * Exa Neural Search API
  */
-async function searchExa(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+async function searchExa(
+  query: string,
+  maxResults: number,
+  signal?: AbortSignal,
+  opts: EngineCallOptions = {},
+): Promise<SearchResult[]> {
   const key = process.env.EXA_API_KEY?.trim();
   if (!key) return [];
 
@@ -515,7 +198,15 @@ async function searchExa(query: string, maxResults: number, signal?: AbortSignal
     body: JSON.stringify({
       query,
       numResults: maxResults,
-      contents: { text: { maxCharacters: 12000 } },
+      // Chat asks for one highlight per result (priced per result, SPEC §3.9)
+      // instead of the page text, so its snippets are not empty.
+      contents:
+        opts.exaContents === "highlights"
+          ? { highlights: { highlightsPerUrl: 1, numSentences: 3 } }
+          : { text: { maxCharacters: 12000 } },
+      ...(opts.recency
+        ? { startPublishedDate: new Date(Date.now() - RECENCY_DAYS[opts.recency] * 86_400_000).toISOString() }
+        : {}),
     }),
     signal,
   });
@@ -527,7 +218,9 @@ async function searchExa(query: string, maxResults: number, signal?: AbortSignal
   return results.slice(0, maxResults).map((r: Record<string, unknown>) => ({
     title: (r.title as string) ?? (r.url as string),
     url: (r.url as string) ?? "",
-    snippet: ((r.text as string) ?? "").slice(0, 500),
+    snippet: (
+      (Array.isArray(r.highlights) && typeof r.highlights[0] === "string" ? r.highlights[0] : (r.text as string)) ?? ""
+    ).slice(0, 500),
     rawContent: r.text as string | undefined,
     publishedAt: r.publishedDate ? new Date(r.publishedDate as string) : undefined,
     author: r.author as string | undefined,
@@ -538,7 +231,12 @@ async function searchExa(query: string, maxResults: number, signal?: AbortSignal
 /**
  * Tavily Search API (High reliability AI search)
  */
-async function searchTavily(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+async function searchTavily(
+  query: string,
+  maxResults: number,
+  signal?: AbortSignal,
+  opts: EngineCallOptions = {},
+): Promise<SearchResult[]> {
   const key = process.env.TAVILY_API_KEY?.trim();
   if (!key) return [];
 
@@ -551,6 +249,7 @@ async function searchTavily(query: string, maxResults: number, signal?: AbortSig
       max_results: maxResults,
       search_depth: "basic",
       include_raw_content: true,
+      ...(opts.recency ? { time_range: opts.recency } : {}),
     }),
     signal,
   });
@@ -762,7 +461,7 @@ async function searchDuckDuckGo(query: string, maxResults: number, signal?: Abor
   }
 }
 
-const ENGINES: EngineSpec[] = [
+const ENGINES: Engine[] = [
   { name: "tavily", weight: 1, available: () => !!process.env.TAVILY_API_KEY?.trim(), run: searchTavily },
   { name: "serper", weight: 1, available: () => !!process.env.SERPER_API_KEY?.trim(), run: searchSerper },
   {
@@ -841,10 +540,11 @@ const sleep = (ms: number, signal: AbortSignal) =>
  * slow provider past the point where the merge would have proceeded without it.
  */
 async function runEngine(
-  engine: EngineSpec,
+  engine: Engine,
   query: string,
   perEngine: number,
-  parent?: AbortSignal
+  parent?: AbortSignal,
+  opts: EngineCallOptions = {},
 ): Promise<{ hits: SearchResult[]; report: EngineReport }> {
   const startedAt = Date.now();
   for (let attempt = 0; ; attempt += 1) {
@@ -858,7 +558,7 @@ async function runEngine(
     else parent?.addEventListener("abort", onAbort, { once: true });
 
     try {
-      const hits = await engine.run(query, perEngine, ctrl.signal);
+      const hits = await engine.run(query, perEngine, ctrl.signal, opts);
       return {
         hits,
         report: { name: engine.name, results: hits.length, status: hits.length > 0 ? "ok" : "empty" },
@@ -928,19 +628,32 @@ export async function searchWithEngineReport({
   query,
   count = 6,
   signal,
+  engines,
+  perEngineCount: perEngineOverride,
+  options,
 }: {
   query: string;
   count?: number;
   signal?: AbortSignal;
+  /**
+   * Which of the configured engines may run, by name. A filter over the one
+   * list, never a second list: chat asks for exactly one engine per attempt
+   * (SPEC §6.3), Research leaves it unset and fans out as before.
+   */
+  engines?: (name: string) => boolean;
+  /** Results asked of each engine; `perEngineCount(count)` when unset. Chat asks for exactly `count`. */
+  perEngineCount?: number;
+  /** Chat's per-call engine options (recency, Exa highlights). */
+  options?: EngineCallOptions;
 }): Promise<{ results: SearchResult[]; engines: EngineReport[]; providers: SearchProviderStatus }> {
   const providers = searchProviderStatus();
   if (!query.trim()) return { results: [], engines: [], providers };
 
-  const active = ENGINES.filter((engine) => engine.available());
+  const active = ENGINES.filter((engine) => engine.available() && (!engines || engines(engine.name)));
   if (active.length === 0) return { results: [], engines: [], providers };
 
-  const perEngine = perEngineCount(count);
-  const settled = await Promise.all(active.map((engine) => runEngine(engine, query, perEngine, signal)));
+  const perEngine = perEngineOverride ?? perEngineCount(count);
+  const settled = await Promise.all(active.map((engine) => runEngine(engine, query, perEngine, signal, options)));
 
   const results = fuseRankedLists(
     settled.map(({ hits }, i) => ({ engine: active[i], hits })),

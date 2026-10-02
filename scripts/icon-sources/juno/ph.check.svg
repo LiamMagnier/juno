@@ -1,0 +1,4 @@
+<!-- ph.check: outlined from src/components/ui/juno-icons by `node scripts/generate-native-icons.mjs --outline-juno`. Do not edit. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-source="fdd8e2a1ffb83166">
+  <path d="M214.21,58.93C217.56,61.8 217.95,66.85 215.08,70.21L107.08,196.2C104.04,199.74 98.64,199.95 95.35,196.65L41.34,142.66C38.22,139.54 38.22,134.47 41.34,131.35C44.46,128.22 49.53,128.22 52.65,131.35L100.55,179.23L202.93,59.8C205.8,56.44 210.85,56.05 214.21,58.93Z"/>
+</svg>

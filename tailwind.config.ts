@@ -159,16 +159,19 @@ const config: Config = {
         sm: "4px",
         micro: "2px", // heatmap cells, crop handles — anything under ~12px square
         xs: "6px", // chips, dots, tiny badges
-        control: "10px", // sm buttons, menu items, list rows, tooltips, kbd
+        // Alevr V3 ladder (docs/rework/brand/BRAND_IDENTITY.md): row 8, card 12,
+        // popover 14, composer 22. Concentric: card 12 − p-1 = row 8; menu 14 −
+        // p-1.5 = row 8; panel 16 − p-2 = row 8.
+        control: "8px", // sm buttons, menu items, list rows, tooltips, kbd
         // The general small-container rung: inputs, textareas, wells, segmented
         // thumbs, icon tiles, inline notes, the dashed box a short empty state
         // sits in.
-        field: "12px",
+        field: "10px",
         menu: "14px", // dropdown / select / tabs shells
-        card: "16px", // cards, toasts, tiles, popovers
-        popover: "16px", // alias of card — popovers, transcripts
-        surface: "16px", // alias of card — in-flow panels and section wells
-        panel: "20px", // dialogs, sheets (inner edge), the composer shell
+        card: "12px", // cards, toasts, tiles
+        popover: "12px", // alias of card — popovers, transcripts
+        surface: "12px", // alias of card — in-flow panels and section wells
+        panel: "16px", // dialogs, sheets (inner edge)
         // The composer is a raised soft card and takes the panel rung. It is
         // distinct through placement and material, not an oversized novelty
         // radius.
@@ -542,24 +545,13 @@ const config: Config = {
           "30%": { transform: "translateY(-4px)", opacity: "1" },
         },
         // A dark point travels through a still 3×3 matrix. Adjacent staggered
-        // peaks overlap just enough to leave a soft trail.
+        // peaks overlap just enough to leave a soft trail. Opacity only: the
+        // box-shadow stops it used to carry repainted every dot on every frame.
         "thinking-matrix": {
-          "0%, 100%": {
-            opacity: "0",
-            boxShadow: "0 0 0 hsl(var(--foreground) / 0)",
-          },
-          "8%": {
-            opacity: "0.28",
-            boxShadow: "0 0 2px hsl(var(--foreground) / 0.05)",
-          },
-          "15%": {
-            opacity: "0.95",
-            boxShadow: "0 0 5px hsl(var(--foreground) / 0.12)",
-          },
-          "30%": {
-            opacity: "0",
-            boxShadow: "0 0 0 hsl(var(--foreground) / 0)",
-          },
+          "0%, 100%": { opacity: "0" },
+          "8%": { opacity: "0.28" },
+          "15%": { opacity: "0.95" },
+          "30%": { opacity: "0" },
         },
         // The reduced-motion substitute for the matrix above, and it did not
         // exist. `thinking-dots.tsx` has always applied

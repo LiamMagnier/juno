@@ -48,7 +48,7 @@ export function AttachmentTile({
       <span aria-hidden className="absolute inset-x-0 top-0 bottom-12 overflow-hidden bg-secondary">
         <span
           className={cn(
-            "absolute inset-x-3.5 -bottom-px top-3 overflow-hidden rounded-t-xs border border-b-0 border-border/70 bg-card shadow-raised",
+            "absolute inset-x-3.5 -bottom-px top-3 overflow-hidden rounded-t-micro border border-b-0 border-border/70 bg-card shadow-raised",
             "transition-transform duration-base ease-out-soft group-hover/tile:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover/tile:translate-y-0",
           )}
         >
@@ -99,7 +99,7 @@ export function AttachmentTile({
 }
 
 /** A sent image: itself, at the transcript's thumbnail height, opening in the viewer. */
-function ImageTile({ attachment, onOpen }: { attachment: ClientAttachment; onOpen?: (attachment: ClientAttachment) => void }) {
+export function ImageTile({ attachment, onOpen }: { attachment: ClientAttachment; onOpen?: (attachment: ClientAttachment) => void }) {
   const image = (
     <Image
       src={attachment.url}

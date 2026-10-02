@@ -897,6 +897,14 @@ export function CodeComposer({
         captions under a composer pinned to the bottom of the page is the prose
         stack that was deliberately taken out of this surface.
       */}
+      {/* The mode, explained in one line (Code design, revision 2): what this
+          run may do without asking, set by where it runs. Only when the server
+          has no other news for this line. */}
+      {!cloudBlocked && !prefillMessage && (
+        <p aria-live="polite" className="mt-2.5 px-5 text-caption text-muted-foreground">
+          <span className="font-medium text-foreground/80">{CODE_PERMISSIONS[target].mode}</span> {CODE_PERMISSIONS[target].line}
+        </p>
+      )}
       {!cloudBlocked && prefillMessage && (
         <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
           <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />

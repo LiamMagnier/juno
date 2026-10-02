@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * the same lift as a photograph.
  */
 const avatarVariants = cva(
-  "surface-raised relative flex shrink-0 overflow-hidden rounded-full",
+  "surface-key relative flex shrink-0 overflow-hidden rounded-full",
   {
     variants: {
       size: {

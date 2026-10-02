@@ -6,6 +6,7 @@ import "@/components/ui/juno-icons/icons.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";
+import { UI_PREFS_BOOT_SCRIPT } from "@/lib/ui-prefs";
 import { THEME_COLOR } from "@/components/ui/theme-color";
 import { getInitialPreferences } from "@/lib/preferences";
 import { auth } from "@/lib/auth";
@@ -146,6 +147,13 @@ export default async function RootLayout({
           nonce={nonce}
           suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: FONT_SIZE_BOOT_SCRIPT }}
+        />
+        {/* The device's interface preferences (chat font, width, motion),
+            mirrored onto <html> before paint, for the same reason. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: UI_PREFS_BOOT_SCRIPT }}
         />
       </head>
       <body className="min-h-dvh antialiased">
