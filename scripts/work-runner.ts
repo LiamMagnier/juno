@@ -137,6 +137,9 @@ import {
 import { scanSkillVersion } from "@/lib/work/skill-security";
 import { skillIsAvailable } from "@/lib/skills/library-contract";
 import { AVAILABLE_SKILL_WHERE } from "@/lib/skills/sources";
+import { skillToolsFor } from "@/lib/skills/run-tools";
+import { skillPermittedRunTools } from "@/lib/work/skills";
+import { RUN_CODE_TOOL_ID } from "@/lib/tools/types";
 import { getMemoryProfile } from "@/lib/memory";
 import { workMemoryContext, workMemoryEnabled } from "@/lib/work/memory-context";
 import type { Prisma } from "@prisma/client";
@@ -1735,19 +1738,6 @@ async function fetchPinnedWebPage(
  * something; then the workspace and the shell last, which is where a model
  * that has run out of better ideas goes.
  */
-/**
- * The skill tools for a Work run: `use_skill` and `read_skill_file`, which let
- * the model discover a skill, read its referenced files and mount its bundle
- * (with `mountSkill("work", userId, runId, …)`) so `run_code` can run its scripts.
- *
- * THE CALL SITE FOR THE SKILL LANE (L3, rf/skill-workflows). Its
- * `skillToolsFor` (src/lib/skills/run-tools.ts) replaces this body; until it
- * lands a run carries no skill tools, which is the behaviour before the rework.
- */
-async function workSkillTools(_input: { runId: string; userId: string }): Promise<WorkToolDefinition[]> {
-  return [];
-}
-
 function buildTools(input: {
   runtime: WorkRuntime;
   runId: string;
@@ -1771,8 +1761,6 @@ function buildTools(input: {
    * the programs run on the separate execution host with no network.
    */
   exec: { deps: NonNullable<ReturnType<typeof workExecDeps>>; manifestLine: string | null } | null;
-  /** use_skill / read_skill_file for this run (L3's `skillToolsFor`); empty until that lands. */
-  skillTools: WorkToolDefinition[];
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -2153,7 +2141,6 @@ function buildTools(input: {
     // A sandbox on the execution host, not this worker: `withoutHostWorkspaceTools`
     // keeps these (they are not workspace tools) and strips the host ones below.
     ...(input.exec ? runtime.execTools({ ...input.exec.deps, manifestLine: input.exec.manifestLine }) : []),
-    ...input.skillTools,
     ...runtime.workspaceTools(),
   ]);
 }
@@ -2325,6 +2312,8 @@ interface AppliedSkill {
   injection: { severity: string; matchCount: number; signals: string[] } | null;
   /** The intersection of the version's request and the run's own toolset. */
   tools: string[];
+  /** The version's kept folder (its manifest), for what its method implies (`skillPermittedRunTools`). */
+  bundleManifest: unknown;
   /**
    * The `WorkRunIO` row that records which version actually ran, built by the
    * skills module rather than assembled here. `refId` is the version row's id
@@ -2587,6 +2576,7 @@ async function applySkill(input: {
       securityScan: true,
       permissionDigest: true,
       requiresConsent: true,
+      bundleManifest: true,
     },
   });
   const choice = selectSkillVersion({
@@ -2745,6 +2735,7 @@ async function applySkill(input: {
     untrusted: block.untrusted,
     injection,
     tools: resolved.tools,
+    bundleManifest: row.bundleManifest,
     domains: resolved.domains,
     reference: skillVersionRunReference({
       versionRowId: row.id,
@@ -3490,7 +3481,6 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     remoteComputer,
     disposers,
     exec: execDeps ? { deps: execDeps, manifestLine: await runtimeManifestSummary().catch(() => null) } : null,
-    skillTools: await workSkillTools({ runId: input.runId, userId: input.userId }),
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
@@ -3509,7 +3499,28 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // run's own toolset by the resolved list rather than building a list from
   // the skill's request, so a name the skill asked for and did not get simply
   // produces no tool.
-  const effectiveTools = skill ? runtime.narrowToPermittedTools(tools, skill.tools) : tools;
+  //
+  // `skillPermittedRunTools` adds what the skill's own method implies and never
+  // more than the run has: run_code (with check_run) for a folder of scripts.
+  const narrowedTools = skill
+    ? runtime.narrowToPermittedTools(tools, skillPermittedRunTools(skill.tools, skill.bundleManifest))
+    : tools;
+  // use_skill / read_skill_file (src/lib/skills/run-tools.ts), after the
+  // narrowing: they read only the skills' own files. The applied skill's pinned
+  // version is armed and, when run_code survived, mounted at /skills/<slug> for
+  // every run_code call of this run; other skills offered to the run can be
+  // loaded by name.
+  const skillRun = await skillToolsFor({
+    userId: input.userId,
+    runId: input.runId,
+    projectId: run.session.projectId ?? null,
+    appliedSlug: skill?.reference.detail.slug ?? null,
+    appliedVersion: skill?.reference.detail.version ?? null,
+    codeExecution: narrowedTools.some((tool) => tool.spec.name === RUN_CODE_TOOL_ID),
+  });
+  disposers.push(() => skillRun.close());
+  const effectiveTools: WorkToolDefinition[] = [...narrowedTools, ...skillRun.tools];
+  const systemSuffix = [skill?.systemSuffix, skillRun.promptSection].filter((part): part is string => !!part).join("\n\n");
   egressDomains.current = skill ? skill.domains : null;
 
   if (skill) {
@@ -3716,7 +3727,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // admitting there isn't one. That run keeps the old behaviour — tokens
     // counted, cost zero — which is now the exception rather than every run.
     ...(choice.info ? { pricing: pricingFor(choice.info) } : {}),
-    ...(skill ? { systemSuffix: skill.systemSuffix } : {}),
+    ...(systemSuffix ? { systemSuffix } : {}),
     // The thinking tier the reader chose, on every request this run makes.
     //
     // It used to stop at the column. `WorkSessionOptions` had no field for it
