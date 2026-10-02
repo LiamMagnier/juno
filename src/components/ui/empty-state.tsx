@@ -97,7 +97,7 @@ export function EmptyState({
             isError
               ? "bg-destructive/10 text-destructive"
               : page
-                ? "surface-raised text-muted-foreground"
+                ? "surface-key text-muted-foreground"
                 : "bg-secondary text-muted-foreground"
           )}
         >

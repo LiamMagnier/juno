@@ -664,7 +664,7 @@ function LibraryGridTile({
         />
         <div
           className={cn(
-            "absolute left-2.5 top-2.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 coarse:opacity-100",
+            "absolute left-3 top-3 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 coarse:opacity-100",
             !selected && !selecting && "opacity-0 group-focus-within/tile:opacity-100 group-hover/tile:opacity-100",
           )}
         >

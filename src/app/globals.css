@@ -91,9 +91,11 @@
     --popover: 0.000 0.000% 100.000%;
     --popover-foreground: 216.000 9.091% 10.784%;
 
-    --primary: 229.231 63.415% 48.235%;
+    /* Graphite is the primary control (BRAND_IDENTITY.md: "Graphite is the
+       primary active control treatment"); ultramarine is presence only. */
+    --primary: 216 9% 11%;
     --primary-foreground: 0 0% 100%;
-    --primary-ink: 229.231 63.415% 48.235%;
+    --primary-ink: 216 9% 11%;
 
     --secondary: 210.000 6.667% 94.118%;
     /* The slider knob — a light disc in BOTH themes, which no existing token
@@ -269,7 +271,7 @@
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
        popover 16 · panel 20); this is the one value CSS-side recipes read. */
-    --radius: 16px;
+    --radius: 12px;
 
     /* ---- Motion tokens ------------------------------------------------------
        One vocabulary, mirrored as ease-* / duration-* in tailwind.config.ts.
@@ -569,9 +571,9 @@
     --popover: 225.000 4.878% 16.078%;
     --popover-foreground: 220.000 6.977% 91.569%;
 
-    --primary: 228.608 61.240% 74.706%;
-    --primary-foreground: 220.000 5.882% 10.000%;
-    --primary-ink: 228.608 61.240% 74.706%;
+    --primary: 220 7% 91%;
+    --primary-foreground: 216 9% 11%;
+    --primary-ink: 220 7% 91%;
 
     --secondary: 225.000 4.255% 18.431%;
     /* See --knob above: light in this theme too, deliberately. */
@@ -713,8 +715,13 @@
    *   Dark mode:  ≥ 4.5:1 against --background (30 7% 9%) for body text,
    *               ≥ 3.0:1 for large text/icons.
    */
-  :root[data-accent="coral"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
-  .dark[data-accent="coral"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
+  /* "coral" is the id every account stores by default; it now names Graphite,
+     the brand's primary control, and inherits the base values above. The
+     presence blue it used to paint every button with is Ultramarine. */
+  :root[data-accent="coral"] { --primary: 216 9% 11%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 216 9% 11%; }
+  .dark[data-accent="coral"] { --primary: 220 7% 91%; --ring: 220 7% 91%; --primary-foreground: 216 9% 11%; --primary-ink: 220 7% 91%; }
+  :root[data-accent="ultramarine"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
+  .dark[data-accent="ultramarine"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
 
   :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 220 9% 11%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
   .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 220 7% 91%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
@@ -1145,15 +1152,30 @@
      utilities after them at equal specificity, so a `bg-*`, `border-*` or
      `shadow-*` utility on the same element silently wins. Pair them with
      layout utilities only. */
+  /* Grouped content is the brand's QUIET CARD (BRAND_IDENTITY.md "Card
+     #f5f6f7 / #1f2023 — quiet grouped content"): a tonal fill and a faint
+     hairline, no drop shadow at rest. `-lg` is the same card with a soft
+     throw, for the rare thing that genuinely sits above its page. The white
+     raised KEY (segmented thumbs, active tabs, avatars) is `.surface-key`. */
   .surface-raised,
   .surface-raised-lg {
+    background-color: hsl(var(--muted));
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--foreground) / .06);
+    box-shadow: none;
+  }
+  .dark .surface-raised,
+  .dark .surface-raised-lg {
+    border-color: hsl(0 0% 100% / .06);
+  }
+  .surface-raised-lg {
+    box-shadow: var(--shadow-raised-lg);
+  }
+  .surface-key {
     background-color: hsl(var(--card));
     color: hsl(var(--card-foreground));
     border: 1px solid hsl(var(--border) / .8);
     box-shadow: var(--shadow-raised);
-  }
-  .surface-raised-lg {
-    box-shadow: var(--shadow-raised-lg);
   }
   /* Interactive cards lift: any link or button drawn as a raised card rises
      one pixel and takes the larger throw under the pointer, so every grid in
@@ -1566,10 +1588,8 @@
    */
   .composer-surface {
     background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--foreground) / 0.1);
-    box-shadow:
-      0 1px 2px hsl(var(--foreground) / 0.04),
-      0 6px 24px -10px hsl(var(--foreground) / 0.12);
+    border: 1px solid hsl(var(--foreground) / 0.14);
+    box-shadow: none;
     transition:
       box-shadow var(--dur-base) var(--ease-out-soft),
       border-color var(--dur-fast) var(--ease-out-soft);
@@ -1641,11 +1661,10 @@
   .voice-glow[data-voice-glow-fallback][data-voice-glow="thinking"] > :first-child { border-color: var(--voice-glow-alevr); }
   .voice-glow[data-voice-glow-fallback][data-voice-glow="muted"] > :first-child { border-color: var(--voice-glow-muted); }
   .voice-glow[data-voice-glow-fallback] > .voice-glow-canvas { display: none; }
+  /* BRAND_IDENTITY.md: "a crisp edge and surface define it, with no drop
+     shadow." Focus is the edge stepping up, not a lift. */
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / 0.16);
-    box-shadow:
-      0 1px 2px hsl(var(--foreground) / 0.05),
-      0 12px 36px -12px hsl(var(--foreground) / 0.18);
+    border-color: hsl(var(--foreground) / 0.24);
   }
   .dark .composer-surface:focus-within {
     border-color: hsl(0 0% 100% / 0.2);

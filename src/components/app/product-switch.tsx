@@ -243,7 +243,7 @@ export function ProductSwitch({
      */
     <nav
       aria-label={`${PRODUCT_NAME} products`}
-      className="grid h-8 w-full shrink-0 grid-cols-2 gap-0.5 rounded-control bg-sidebar-accent/80 p-0.5 coarse:h-12"
+      className="grid h-8 w-full shrink-0 grid-cols-2 gap-0.5 rounded-field bg-sidebar-accent/80 p-0.5 coarse:h-12"
     >
       {PRODUCTS.map((product) => (
         <Segment
@@ -379,7 +379,7 @@ function RailItem({
               aria-hidden="true"
               transition={thumbTransition}
               className="product-switch-thumb absolute inset-0"
-              style={{ borderRadius: 10 }}
+              style={{ borderRadius: 8 }}
             />
           )}
           {/* Byte-identical to NavRow's glyph box, so the rail is one optical

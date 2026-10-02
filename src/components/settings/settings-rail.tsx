@@ -166,7 +166,7 @@ export function SettingsRail({
           // the corners true while it scales the fill between two chips of
           // different widths. `-inset-px` covers the row's border box.
           className="pointer-events-none absolute -inset-px bg-selected"
-          style={{ borderRadius: 10 }}
+          style={{ borderRadius: 8 }}
         />
       )}
       {/* The ink cross-fades on a wrapper, not on the glyph: a `transition-*`

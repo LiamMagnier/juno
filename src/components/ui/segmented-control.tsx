@@ -188,14 +188,14 @@ export function SegmentedControl<T extends string>({
                 // so framer can keep the corners true while it scales the box
                 // between two segments of different widths.
                 className="absolute inset-0"
-                style={{ borderRadius: 10 }}
+                style={{ borderRadius: 8 }}
               >
                 {/* Carriage / body: framer's layout projection owns the outer
                     transform, so the deformation needs a node of its own. */}
                 <motion.span
                   aria-hidden="true"
-                  style={{ ...thumbSquash, borderRadius: 10 }}
-                  className="surface-raised block size-full rounded-control"
+                  style={{ ...thumbSquash, borderRadius: 8 }}
+                  className="surface-key block size-full rounded-control"
                 />
               </motion.span>
             )}

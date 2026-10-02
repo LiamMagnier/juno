@@ -106,7 +106,7 @@ const TabsTrigger = React.forwardRef<
         // faint wash below the thumb's own contrast: it says "you can press
         // here", not "a second selected state".
         "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border border-transparent px-3 py-1 text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
-        thumb === null && "data-[state=active]:surface-raised data-[state=active]:border-border/60",
+        thumb === null && "data-[state=active]:surface-key data-[state=active]:border-border/60",
         className
       )}
       {...props}
@@ -123,8 +123,8 @@ const TabsTrigger = React.forwardRef<
               // The raised key. The radius rides `style` so framer keeps the
               // corners true while it scales the box between two triggers of
               // different widths.
-              className="surface-raised pointer-events-none absolute -inset-px -z-10 border-border/60"
-              style={{ borderRadius: 10 }}
+              className="surface-key pointer-events-none absolute -inset-px -z-10 border-border/60"
+              style={{ borderRadius: 8 }}
             />
           )}
           {children}

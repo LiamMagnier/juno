@@ -24,7 +24,8 @@ import { ChevronRight } from "@/components/ui/icons";
 
 /** The accents' names, for their swatches' accessible names (they used to announce the raw id). */
 const ACCENT_NAMES: { id: (typeof ACCENTS)[number]["id"]; label: string }[] = [
-  { id: "coral", label: "Coral" },
+  { id: "coral", label: "Graphite" },
+  { id: "ultramarine", label: "Ultramarine" },
   { id: "juniper", label: "Juniper" },
   { id: "teal", label: "Teal" },
   { id: "violet", label: "Violet" },
@@ -216,7 +217,7 @@ export function AppearanceSection() {
         </SettingBlock>
         <SettingRow
           label="Accent color"
-          description="Buttons, selection and focus."
+          description="Buttons, switches and selection. Graphite is the Alevr default."
           wide
           status={saves.status("accent")}
           control={
