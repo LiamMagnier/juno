@@ -26,30 +26,12 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Link2Off } from "@/components/ui/icons";
+import { PublicState } from "@/components/public/public-frame";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export function ShareGone() {
-  return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-4 py-16 text-center text-foreground">
-      <div className="w-full max-w-md">
-        <EmptyState
-          icon={Link2Off}
-          title="This page isn’t shared any more"
-          description="Whoever shared it has taken it down, so there’s nothing to show here right now."
-          action={
-            <>
-              <Button asChild size="sm">
-                <Link href="/">{`Open ${PRODUCT_NAME}`}</Link>
-              </Button>
-              <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
-                <Link href="/sign-up">Create your own account</Link>
-              </Button>
-            </>
-          }
-        />
-      </div>
-    </main>
-  );
+  return <PublicState title="This page isn’t shared any more" description="Whoever shared it has taken it down, so there’s nothing to show here right now.">
+    <Button asChild><Link href="/">{`Open ${PRODUCT_NAME}`}</Link></Button>
+    <Button asChild variant="secondary"><Link href="/sign-up">Create your own account</Link></Button>
+  </PublicState>;
 }

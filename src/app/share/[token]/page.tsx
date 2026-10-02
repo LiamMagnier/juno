@@ -3,8 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AppPage } from "@/components/ui/app-page";
-import { JunoMark } from "@/components/brand/logo";
-import { Plate } from "@/components/landing/plate";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
@@ -48,7 +47,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 // Never cache a share render: revocation must kill the link on the next request.
 export const dynamic = "force-dynamic";
 
-const SHARE_DESCRIPTION = `Shared from ${PRODUCT_NAME} — a thoughtful AI assistant for chat, code, and creativity.`;
+const SHARE_DESCRIPTION = `Shared from ${PRODUCT_NAME}. Conversation. Agents. Code.`;
 
 const GONE_METADATA: Metadata = { title: "Not shared any more", robots: { index: false, follow: false } };
 
@@ -124,22 +123,22 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
 
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
-    <div className={cn("flex flex-col bg-background text-foreground", artifact ? "h-dvh overflow-hidden" : "min-h-dvh")}>
+    <div className={cn("alevr-public flex flex-col bg-background text-foreground", artifact ? "h-dvh overflow-hidden" : "min-h-dvh")}>
       {/* A slim bar on the card rung with a hairline — no glass, because what
           scrolls under it is a reading surface (SOFT_UI.md §1.4). The one
           primary action on the page lives here, where it is always reachable. */}
       <header className="sticky top-0 z-toolbar shrink-0 border-b border-border/60 bg-card">
-        <AppPage scroll={false} measure="reading" contentClassName="flex h-12 items-center gap-3 py-0">
+        <AppPage scroll={false} measure="reading" contentClassName="flex min-h-16 flex-wrap items-center gap-3 py-3">
           <Link
             href="/"
             aria-label={PRODUCT_NAME}
             className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
           >
-            <JunoMark className="size-6" />
+            <AlevrLockup height={24} decorative />
           </Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-ui font-medium">{title}</h1>
-            <p className="truncate font-mono text-caption text-muted-foreground">{subject.dateLine}</p>
+          <div className="min-w-0 flex-1 basis-32">
+            <h1 className="truncate font-serif text-title font-medium">{title}</h1>
+            <p className="truncate text-caption text-muted-foreground">{subject.dateLine}</p>
           </div>
           <Button size="sm" asChild>
             <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
@@ -154,19 +153,12 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
             {/* The end of a shared conversation is where a reader decides what
                 Juno is: one quiet invitation on the front door's own art. */}
-            <aside className="stage mt-14 rounded-stage">
-              <Plate name="horizon" dim sizes="(min-width: 768px) 720px, 100vw" imageClassName="object-[50%_65%]" />
-              <div className="relative m-3 flex flex-col gap-4 rounded-panel bg-card/85 p-5 backdrop-blur-xl sm:m-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-serif text-title font-medium text-foreground">{`Made with ${PRODUCT_NAME}`}</p>
-                  <p className="mt-1 text-body text-muted-foreground">
-                    Every frontier model in one calm place, with the cost of each answer in plain sight.
-                  </p>
-                </div>
-                <Button asChild className="shrink-0">
-                  <Link href="/sign-up">{`Start with ${PRODUCT_NAME}`}</Link>
-                </Button>
+            <aside className="mt-14 flex flex-col gap-6 border-t border-border py-8 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-serif text-title font-medium">Go further.</p>
+                <p className="mt-2 max-w-sm text-body text-muted-foreground">A calm place to think, make something, and carry your work forward.</p>
               </div>
+              <Button asChild className="shrink-0"><Link href="/sign-up">{`Start with ${PRODUCT_NAME}`}</Link></Button>
             </aside>
           </AppPage>
         ) : artifact ? (
@@ -202,9 +194,9 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           measure="reading"
           contentClassName="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
         >
-          <span className="inline-flex items-center gap-2 font-mono text-caption text-muted-foreground">
-            <JunoMark className="size-4" />
-            {`Made with ${PRODUCT_NAME}`}
+          <span className="inline-flex items-center gap-2 text-caption text-muted-foreground">
+            <AlevrLockup height={20} decorative />
+            <span className="sr-only">{`Made with ${PRODUCT_NAME}`}</span>
           </span>
           {/* The visitor's two ways out, grouped so justify-between keeps them
               together at the end rather than spacing Report into the middle. */}

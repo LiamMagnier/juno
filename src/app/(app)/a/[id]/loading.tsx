@@ -22,16 +22,16 @@ export default function ArtifactLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" role="status" aria-label="Loading">
+    <div className="alevr-public flex h-full min-h-0 flex-col overflow-hidden" role="status" aria-label="Loading">
       {/* The header both windows open with (artifact-read-view.tsx and
           design-workspace.tsx): the back control, the name, the version, then
           the one action at the far end. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Skeleton className="size-8 shrink-0" />
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-3">
+        <Skeleton className="size-11 shrink-0" />
         <Skeleton className="h-4 w-44 max-w-full rounded-sm" />
         <Skeleton className="h-3 w-8 rounded-sm" />
         <div className="flex-1" />
-        <Skeleton className="h-7 w-24 rounded-control" />
+        <Skeleton className="h-11 w-24 rounded-control" />
       </div>
 
       <div className="min-h-0 flex-1 bg-muted/40" />

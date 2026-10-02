@@ -1,8 +1,8 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { staggerDelay } from "@/lib/motion";
-import { HeroStage } from "@/components/landing/hero-stage";
 import { LabMarquee, MODELS_FLOOR, TOTAL_LABS } from "@/components/landing/lab-marquee";
 import { Metering } from "@/components/landing/metering";
 import { Platforms } from "@/components/landing/platforms";
@@ -53,7 +53,7 @@ export function LandingPage({ nonce }: { nonce?: string }) {
     // on this block would sit over the hero's backdrop where it runs up behind
     // the bar. `relative` is only an anchor for the bar's scroll sentinel (see
     // LandingHeader); with no z-index it opens no stacking context.
-    <div className="relative min-h-dvh text-foreground">
+    <div className="alevr-public relative min-h-dvh text-foreground">
       <SiteHeader onLanding />
 
       <main>
@@ -64,23 +64,23 @@ export function LandingPage({ nonce }: { nonce?: string }) {
             stage rather than over the paint, so it never fights the picture
             for contrast. */}
         <section className="relative">
-          <LandingColumn contentClassName="flex flex-col items-center pb-10 pt-12 text-center sm:pb-14 sm:pt-20">
+          <LandingColumn contentClassName="grid items-center gap-10 pb-10 pt-12 sm:pb-14 sm:pt-20 lg:grid-cols-2 lg:gap-16">
+            <div>
             <h1
               style={staggerDelay(0, "loose")}
               className={`max-w-[20ch] text-balance pb-1 font-serif lg:max-w-none text-hero font-medium tracking-tight ${HERO_ENTER}`}
             >
-              Choose the best AI <span className="italic text-primary">for the work.</span>
+              Go further.
             </h1>
             <p
               style={staggerDelay(1, "loose")}
               className={`mt-5 max-w-[34rem] text-pretty text-body-lg text-muted-foreground ${HERO_ENTER}`}
             >
-              Compare frontier models in one conversation, see what every answer costs, and pick up on web, Mac or
-              iPhone.
+              A calm place to think, make something, and carry your work forward. Conversation. Agents. Code.
             </p>
             <div
               style={staggerDelay(2, "loose")}
-              className={`mt-8 flex flex-wrap items-center justify-center gap-3 ${HERO_ENTER}`}
+              className={`mt-8 flex flex-wrap items-center gap-3 ${HERO_ENTER}`}
             >
               <Button asChild size="lg">
                 <Link href="/sign-up">
@@ -92,10 +92,12 @@ export function LandingPage({ nonce }: { nonce?: string }) {
                 <Link href="/download">Download for Mac</Link>
               </Button>
             </div>
+            </div>
+            <div style={staggerDelay(3, "loose")} className={`relative aspect-[4/3] overflow-hidden rounded-menu bg-[#18191b] lg:aspect-[4/5] ${HERO_ENTER}`} aria-hidden="true">
+              <Image src="/brand/auth-continuation.webp" alt="" fill priority unoptimized sizes="(max-width:1023px) 100vw, 50vw" className="object-cover object-[50%_28%]" />
+            </div>
           </LandingColumn>
-          <div style={staggerDelay(3, "loose")} className={`mx-auto w-full max-w-[80rem] px-3 sm:px-6 ${HERO_ENTER}`}>
-            <HeroStage />
-          </div>
+
         </section>
 
         {/* Under the hero, never inside it: who is in the picker. */}

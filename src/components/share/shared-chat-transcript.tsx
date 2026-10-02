@@ -1,6 +1,5 @@
 import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
-import { EmptyState } from "@/components/ui/empty-state";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
 import { QuotedSelection } from "@/components/chat/quoted-selection";
 import { parseQuotedMessage } from "@/lib/quote-context";
@@ -81,11 +80,7 @@ export function SharedChatTranscript({ messages, artifacts }: { messages: Shared
 
   if (messages.length === 0) {
     return (
-      <EmptyState
-        size="page"
-        title="Nothing here yet"
-        description="This conversation had no messages when it was shared."
-      />
+      <div className="py-16 text-center"><h2 className="font-serif text-title">Nothing here yet</h2><p className="mt-3 text-body text-muted-foreground">This conversation had no messages when it was shared.</p></div>
     );
   }
 

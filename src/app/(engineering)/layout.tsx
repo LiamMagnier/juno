@@ -17,7 +17,7 @@ import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
  */
 export default function EngineeringLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div lang="en" className="relative min-h-dvh bg-background text-foreground">
+    <div lang="en" className="alevr-public relative min-h-dvh bg-background text-foreground">
       <SiteHeader />
       <AppPage scroll={false} measure="wide" contentClassName="pb-20 pt-10 sm:pt-14">
         {children}

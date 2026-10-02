@@ -11,26 +11,25 @@
  */
 
 import Link from "next/link";
-import { SearchX } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { ARTIFACTS_HOME } from "@/lib/artifact-links";
 
 export default function ArtifactNotFound() {
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center px-4 py-10">
+    <div className="alevr-public flex h-full min-h-0 flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <EmptyState
-          icon={SearchX}
-          title="This artifact isn’t here"
-          description="It may have been deleted, or it may belong to a conversation on another account. Your other artifacts are untouched."
-          action={
-            <Button asChild size="sm">
+        <div className="alevr-public-state text-center">
+          <AlevrLockup height={24} className="mb-8" />
+          <h1 className="font-serif text-display font-medium">This artifact isn’t here</h1>
+          <p className="mt-5 text-body leading-relaxed text-muted-foreground">It may have been deleted, or it may belong to a conversation on another account. Your other artifacts are untouched.</p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Button asChild size="lg">
               <Link href={ARTIFACTS_HOME}>All artifacts</Link>
             </Button>
-          }
-        />
+          </div>
+        </div>
       </div>
     </div>
   );

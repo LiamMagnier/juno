@@ -1,7 +1,7 @@
+import { PublicThemeToggle } from "@/components/public/theme-toggle";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { JunoMark } from "@/components/brand/logo";
-import { AsciiWordmark } from "@/components/signature/dot-matrix";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingPhoneMenu } from "@/components/landing/phone-menu";
 import { LandingColumn } from "@/components/landing/section";
@@ -74,9 +74,8 @@ export function SiteHeader({ onLanding = false }: { onLanding?: boolean }) {
   return (
     <LandingHeader>
       <LandingColumn contentClassName="flex items-center justify-between gap-3 py-2.5">
-        <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={LOGO_LOCKUP}>
-          <JunoMark className="size-7" />
-          <AsciiWordmark />
+        <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={`${LOGO_LOCKUP} min-h-11`}>
+          <AlevrLockup height={26} decorative />
         </Link>
         <nav aria-label="Sections" className="hidden items-center gap-0.5 md:flex">
           {links.map(({ href, label }) => (
@@ -86,8 +85,9 @@ export function SiteHeader({ onLanding = false }: { onLanding?: boolean }) {
           ))}
         </nav>
         <div className="flex items-center gap-2">
+          <PublicThemeToggle />
           <nav aria-label="Account" className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm">
+            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
               <Link href="/sign-in">Sign in</Link>
             </Button>
             <Button asChild size="sm">
@@ -109,11 +109,10 @@ export function SiteFooter() {
         <div className="flex flex-col justify-between gap-10 sm:flex-row">
           <div>
             <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={LOGO_LOCKUP}>
-              <JunoMark className="size-6" />
-              <AsciiWordmark />
+              <AlevrLockup height={24} decorative />
             </Link>
             <p className="mt-3 max-w-xs text-body text-muted-foreground">
-              Every frontier model, one honest subscription. Operated from France.
+              Conversation. Agents. Code. Go further.
             </p>
           </div>
           <nav aria-label="Footer" className="grid grid-cols-2 gap-x-12 gap-y-6 text-body sm:grid-cols-3">
@@ -147,7 +146,7 @@ export function SiteFooter() {
           </nav>
         </div>
         <p className="mt-10 border-t border-border/60 pt-6 text-caption text-muted-foreground">
-          © {new Date().getFullYear()}{` ${PRODUCT_NAME}. Every frontier model, one honest subscription.`}
+          © {new Date().getFullYear()}{` ${PRODUCT_NAME}. Go further.`}
         </p>
       </LandingColumn>
     </footer>

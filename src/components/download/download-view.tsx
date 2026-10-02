@@ -2,8 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, ChevronDown, Globe, Monitor, Smartphone } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { ProductShot, hasProductShot } from "@/components/landing/product-shot";
-import { Plate } from "@/components/landing/plate";
 import { LandingColumn } from "@/components/landing/section";
 import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -41,7 +39,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
   const blocked = Boolean(mac?.available && mac.notarized === false);
 
   return (
-    <div className="relative min-h-dvh bg-background text-foreground">
+    <div className="alevr-public relative min-h-dvh bg-background text-foreground">
       <SiteHeader />
 
       <main>
@@ -91,20 +89,13 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
 
         <LandingColumn contentClassName="py-16 sm:py-24">
           <h2 className="font-serif text-display font-medium tracking-tight">Also on your other devices</h2>
-          <div className="mt-8 grid gap-4 lg:grid-cols-12">
-            <div className="stage flex min-h-72 flex-col justify-end rounded-stage lg:col-span-7 lg:row-span-2">
-              <Plate name="path" dim sizes="(min-width: 1024px) 700px, 100vw" imageClassName="object-[50%_65%]" />
-              <div className="relative m-3 flex flex-col gap-4 rounded-panel bg-card/85 p-5 backdrop-blur-xl sm:m-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-                <div className="flex items-start gap-3.5">
-                  <Smartphone className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
-                  <div>
-                    <h3 className="text-heading">iPhone and iPad</h3>
-                    <p className="mt-1 text-body text-muted-foreground">Voice, camera and your projects, synced.</p>
-                  </div>
-                </div>
-                <PlatformAction download={ios} fallback="On the App Store soon" />
-              </div>
-            </div>
+          <div className="mt-8 grid gap-4 lg:grid-cols-3">
+            <OtherCell
+              icon={Smartphone}
+              title="iPhone and iPad"
+              body="Voice, camera and your projects, synced."
+              action={<PlatformAction download={ios} fallback="On the App Store soon" />}
+            />
 
             <OtherCell
               icon={Globe}
@@ -170,7 +161,7 @@ function OtherCell({
   action: React.ReactNode;
 }) {
   return (
-    <div className="surface-raised flex flex-col justify-between gap-5 rounded-stage p-6 lg:col-span-5">
+    <div className="surface-raised flex flex-col justify-between gap-5 rounded-menu p-6">
       <div className="flex items-start gap-3.5">
         <Icon className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
         <div>
@@ -184,45 +175,14 @@ function OtherCell({
 }
 
 /**
- * The Mac app on the valley plate: the real window when the snapshot render
- * exists, otherwise the app's own icon, large, the way a store page shows it.
+ * The same authored photograph as the public front door and sign-in.
  * No live chat preview here: that needs the model registry, which is
  * server-only, and this page is also rendered by the feed tests.
  */
-const MAC_SHOT = "mac-code-empty";
-
 function MacStage() {
-  const shot = hasProductShot(MAC_SHOT);
-  return (
-    <div className="stage rounded-stage">
-      <Plate name="valley" priority sizes="(min-width: 1280px) 1200px, 100vw" imageClassName="object-[30%_50%] sm:object-center" />
-      {shot ? (
-        <div className="relative px-2 py-6 sm:px-[5%] sm:py-[4%]">
-          <div className="scroll-settle mx-auto max-w-[66rem]">
-            <ProductShot
-              name={MAC_SHOT}
-              alt={`${PRODUCT_NAME} for Mac: ${PRODUCT_NAME} Code ready to start a session in a project`}
-              width={3072}
-              height={1992}
-              priority
-              sizes="(min-width: 1280px) 1060px, 96vw"
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="relative flex min-h-[22rem] items-center justify-center sm:min-h-[30rem]">
-          <Image
-            src="/brand/app-icon-mac.png"
-            alt={`The ${PRODUCT_NAME} app icon`}
-            width={512}
-            height={512}
-            priority
-            className="scroll-settle size-36 drop-shadow-2xl sm:size-48"
-          />
-        </div>
-      )}
-    </div>
-  );
+  return <div className="relative aspect-[4/3] overflow-hidden rounded-menu bg-[#18191b]" aria-hidden="true">
+    <Image src="/brand/auth-continuation.webp" alt="" fill unoptimized sizes="(max-width:1023px) 100vw, 60vw" className="object-cover object-[50%_28%]" />
+  </div>;
 }
 
 function PlatformAction({ download, fallback }: { download?: AppDownload; fallback: string }) {

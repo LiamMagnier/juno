@@ -22,6 +22,7 @@
  * changes under it.
  */
 
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import * as React from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight, MessagesSquare } from "@/components/ui/icons";
@@ -83,13 +84,13 @@ export function ArtifactReadView({
   const { previous, next } = adjacentVersions(versions, version);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="alevr-public flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {/* `@container/window`: the row collapses by its own width, not the
           window's (PREMIUM rule 11) — beside the app sidebar the header is
           what the sidebar leaves. Under 36rem "Open in chat" keeps its mark
           and its name stays in the accessible label and the tooltip, so the
           title keeps the room it needs to say what this is. */}
-      <header className="@container/window flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
+      <header className="@container/window flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-3">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button asChild variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground hover:text-foreground">
@@ -101,10 +102,12 @@ export function ArtifactReadView({
           <TooltipContent side="bottom">All artifacts</TooltipContent>
         </Tooltip>
 
+        <Link href="/" aria-label="Alevr home" className="hidden shrink-0 rounded-lg px-2 @[48rem]/window:inline-flex"><AlevrLockup height={22} decorative /></Link>
+
         {/* The type word first, in muted ink, then the title: "App · Pricing
             table". The noun is what tells a reader arriving from a link what
             kind of thing they are looking at; the title alone does not. */}
-        <h1 className="min-w-0 truncate px-1.5 text-heading" title={`${noun} · ${title}`}>
+        <h1 className="min-w-0 truncate px-1.5 font-serif text-title font-medium" title={`${noun} · ${title}`}>
           <span className="text-muted-foreground">{noun} · </span>
           {title}
         </h1>
