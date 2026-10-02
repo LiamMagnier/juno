@@ -56,6 +56,8 @@ LANGUAGES = {"python": ("main.py", ["python3", "/juno/program/main.py"]),
              "bash": ("main.sh", ["bash", "/juno/program/main.sh"])}
 MANIFEST_COMMAND = ["python3", "/opt/juno/manifest.py"]
 TERMINAL = {"succeeded", "failed", "timed_out", "cancelled", "lost"}
+CHMOD = shutil.which("chmod", path="/usr/bin:/bin") or "/bin/chmod"
+RM = shutil.which("rm", path="/usr/bin:/bin") or "/bin/rm"
 
 LIMITS = {
     "maxCodeBytes": 256 * 1024,
@@ -64,6 +66,8 @@ LIMITS = {
     "minTimeoutMs": 1000,
     "maxLogBytes": 16 * 1024 * 1024,      # per stream, on disk
     "maxEventBytes": 2 * 1024 * 1024,     # per run, in memory for the SSE feed
+    "maxEventBytesTotal": 128 * 1024 * 1024,  # all runs together (the unit has MemoryMax=512M)
+    "eventRetentionSeconds": 120,         # a finished run's live feed is dropped after this; /output keeps the log
     "maxFiles": 20,
     "maxFileBytes": 25 * 1024 * 1024,
     "maxFilesTotalBytes": 50 * 1024 * 1024,
@@ -71,10 +75,21 @@ LIMITS = {
     "maxSessionInputBytes": 64 * 1024 * 1024,
     "maxSkillBytes": 5 * 1024 * 1024,
     "maxSkillFiles": 200,
+    "maxSkillEntries": 400,               # files and folders together
     "maxSkills": 8,
     "perAccountConcurrent": 2,
+    "perAccountPending": 8,               # queued + running, so one account cannot fill the host queue
     "hostConcurrent": 4,
     "hostPending": 64,
+    # The session workspaces share one size-capped filesystem. Below this much free
+    # space (or inodes) new runs are refused and the watchdog stops the program
+    # whose session holds the most, then clears that session's working files.
+    "diskReserveFraction": 0.10,
+    "diskReserveMinBytes": 1024 * 1024 * 1024,
+    "diskReserveMaxBytes": 4 * 1024 * 1024 * 1024,
+    "inodeReserveFraction": 0.05,
+    "inodeReserveMax": 100000,
+    "usageWalkMaxEntries": 200000,
     "sessionIdleSeconds": 30 * 60,
     "runRetentionSeconds": 30 * 60,
     "tailBytes": 8 * 1024,
@@ -253,6 +268,9 @@ class Run:
         self.events_truncated = False
         self.cancel_requested = False
         self.timed_out = False
+        self.disk_exceeded = False
+        self.stopping = False      # a stop loop is killing the container
+        self.call_done = False     # the broker call (docker run) has returned
         self.call = None
 
     def record(self):
@@ -277,6 +295,8 @@ class Service:
         self.host_active = 0
         self.pending = 0
         self.slot = threading.Condition(self.lock)
+        self.event_lock = threading.Lock()
+        self.event_bytes_total = 0
         self.manifest = None
         self.manifest_lock = threading.Lock()
         self.started_runs = 0      # how many containers this process started (tests)
@@ -347,6 +367,91 @@ class Service:
             raise Refused(404, "no_session", "Unknown session")
         return root
 
+    def claim_session(self, session, account):
+        """A workspace belongs to the account whose run first used it.
+
+        Session ids are chosen by the web side; this keeps two accounts from ever
+        sharing one /work (reading each other's inputs, or planting files that a
+        later run would report as its own output) whatever ids it sends."""
+        marker = os.path.join(self.sessions_root, session, ".account")
+        try:
+            with open(marker, "x", encoding="utf-8") as file:
+                file.write(account)
+            return
+        except FileExistsError:
+            pass
+        with open(marker, encoding="utf-8") as file:
+            owner = file.read().strip()
+        if not hmac.compare_digest(owner, account):
+            raise Refused(409, "session_account_mismatch", "This session belongs to another account")
+
+    # ── the shared workspace disk ──
+    def disk_ok(self):
+        """Whether the workspace filesystem still has its reserve of space and inodes."""
+        try:
+            info = os.statvfs(self.sessions_root)
+        except OSError:
+            return True
+        total = info.f_blocks * info.f_frsize
+        free = info.f_bavail * info.f_frsize
+        reserve = min(LIMITS["diskReserveMaxBytes"], max(LIMITS["diskReserveMinBytes"], int(total * LIMITS["diskReserveFraction"])))
+        if free < reserve:
+            return False
+        if info.f_files > 0:
+            inode_reserve = min(LIMITS["inodeReserveMax"], int(info.f_files * LIMITS["inodeReserveFraction"]))
+            if info.f_favail < inode_reserve:
+                return False
+        return True
+
+    def session_usage(self, session):
+        """Bytes a session's workspace occupies. A folder that cannot be read (a
+        program chmod-ed it shut) or a tree too large to count is reported as
+        unbounded: whatever it hides is not allowed to make another session look
+        like the culprit."""
+        root = os.path.join(self.sessions_root, session, "work")
+        total, seen, stack = 0, 0, [root]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                return float("inf")
+            for entry in entries:
+                seen += 1
+                if seen > LIMITS["usageWalkMaxEntries"]:
+                    return float("inf")
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                if directory == root and entry.name == "inputs":
+                    continue
+                total += getattr(info, "st_blocks", 0) * 512 or info.st_size
+                if stat.S_ISDIR(info.st_mode):
+                    stack.append(entry.path)
+        return total
+
+    def watch_disk(self):
+        """One watchdog pass (every second in serve()). Below the reserve, stop every
+        program of the session holding the most; its working files are cleared when
+        they have stopped. Returns that session, or None."""
+        if self.disk_ok():
+            return None
+        with self.lock:
+            running = [run for run in self.runs.values() if run.status == "running" and not run.internal and not run.disk_exceeded]
+        if not running:
+            return None
+        usage = {}
+        for run in running:
+            if run.session not in usage:
+                usage[run.session] = self.session_usage(run.session)
+        worst = max(usage, key=lambda session: usage[session])
+        for run in running:
+            if run.session == worst:
+                run.disk_exceeded = True
+                self._stop(run)
+        return worst
+
     def touch_session(self, session):
         marker = os.path.join(self.sessions_root, session, ".active")
         with open(marker, "w", encoding="utf-8") as file:
@@ -360,6 +465,8 @@ class Service:
             raise Refused(411, "length_required", "Content-Length is required")
         if length > LIMITS["maxInputBytes"]:
             raise Refused(413, "input_too_large", "Input file exceeds 32 MB")
+        if not self.disk_ok():
+            raise Refused(503, "disk_full", "The sandbox's workspace disk is nearly full; try again shortly")
         root = self.session_dir(session)
         inputs = os.path.join(root, "inputs")
         used = sum(entry.stat(follow_symlinks=False).st_size for entry in os.scandir(inputs) if entry.is_file(follow_symlinks=False) and entry.name != name)
@@ -407,9 +514,16 @@ class Service:
         os.makedirs(staging, mode=0o755)
         files = 0
         total = 0
+        entries = 0
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
-                for member in archive.getmembers():
+                # Member by member, checking the limits before reading on: getmembers()
+                # would first decompress the whole stream, which for a small gzip
+                # declaring a multi-gigabyte member is minutes of CPU for nothing.
+                for member in archive:
+                    entries += 1
+                    if entries > LIMITS["maxSkillEntries"]:
+                        raise Refused(413, "bundle_too_large", "Bundle has too many entries")
                     name = member.name
                     parts = [part for part in name.split("/") if part not in ("", ".")]
                     if name.startswith("/") or ".." in parts or not parts or "\\" in name or any(ord(c) < 32 for c in name):
@@ -451,12 +565,51 @@ class Service:
         return {"slug": slug, "sha256": digest, "files": files, "reused": False}
 
     def _remove_tree(self, path):
-        for directory, subdirectories, _ in os.walk(path):
+        """Remove a service-made tree (a session, a skill bundle).
+
+        The sandbox runs with this service's uid, so a program can chmod its own
+        folders to 000: unlistable, and so beyond os.walk and shutil.rmtree, which
+        left them (and everything in them) on the shared workspace disk for good.
+        `chmod -R u+rwx` reopens every folder before it is read (it never follows a
+        symlink met while traversing, and `path` itself is always a real directory
+        the service created), and `rm -rf` handles any depth. Python's own walk is
+        the fallback. No program of the session may be running while this runs."""
+        if os.path.islink(path):
+            os.unlink(path)
+            return
+        if not os.path.isdir(path):
+            return
+        for argv in ([CHMOD, "-R", "u+rwx", "--", path], [RM, "-rf", "--", path]):
             try:
-                os.chmod(directory, 0o755)
+                subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        if os.path.lexists(path):
+            for directory, subdirectories, _ in os.walk(path):
+                try:
+                    os.chmod(directory, 0o755)
+                except OSError:
+                    pass
+            shutil.rmtree(path, ignore_errors=True)
+
+    def _clear_work(self, session):
+        """Empty a session's working folder (not its inputs): after a run filled the disk."""
+        work = os.path.join(self.sessions_root, session, "work")
+        try:
+            entries = list(os.scandir(work))
+        except OSError:
+            return
+        for entry in entries:
+            if entry.name == "inputs":
+                continue
+            path = os.path.join(work, entry.name)
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    self._remove_tree(path)
+                else:
+                    os.unlink(path)
             except OSError:
                 pass
-        shutil.rmtree(path, ignore_errors=True)
 
     def delete_session(self, session):
         root = self.session_dir(session, create=False)
@@ -511,30 +664,43 @@ class Service:
                 run = self.runs.get(entry["runId"])
                 if run:
                     return run, True
+            if not self.disk_ok():
+                raise Refused(503, "disk_full", "The sandbox's workspace disk is nearly full; try again shortly")
+            if self.pending + self.host_active >= LIMITS["hostPending"] + LIMITS["hostConcurrent"]:
+                raise Refused(503, "busy", "The execution service is at capacity")
+            active = sum(1 for other in self.runs.values() if other.account == account and other.status in ("queued", "running"))
+            if active >= LIMITS["perAccountPending"]:
+                raise Refused(429, "account_busy", "This account already has %d runs waiting or running" % active)
             root = self.session_dir(session)
+            self.claim_session(session, account)
             for slug in skills:
                 if not os.path.isdir(os.path.join(root, "skills", slug)):
                     raise Refused(409, "skill_not_mounted", "Skill bundle not uploaded: " + slug)
-            if self.pending + self.host_active >= LIMITS["hostPending"] + LIMITS["hostConcurrent"]:
-                raise Refused(503, "busy", "The execution service is at capacity")
             run = Run({"id": "r_" + secrets.token_hex(12), "session": session, "account": account, "language": language,
                        "codeDigest": sha256(code.encode()), "status": "queued", "exitCode": None, "createdAt": now(),
                        "startedAt": None, "finishedAt": None, "timeoutMs": timeout_ms, "stdoutBytes": 0, "stderrBytes": 0,
                        "stdoutTruncated": False, "stderrTruncated": False, "files": [], "skippedFiles": [], "error": None,
                        "skills": sorted(set(skills)), "idempotencyKeyDigest": key_digest, "bodyDigest": body_digest,
                        "internal": False})
-            program_dir = os.path.join(root, "programs", run.id)
-            os.makedirs(program_dir, mode=0o755)
-            filename = LANGUAGES[language][0]
-            with open(os.path.join(program_dir, filename), "w", encoding="utf-8") as file:
-                file.write(code)
-            os.chmod(os.path.join(program_dir, filename), 0o444)
-            self.runs[run.id] = run
-            self._persist(run)
-            temporary = idem_path + ".tmp"
-            with open(temporary, "w", encoding="utf-8") as file:
-                json.dump({"runId": run.id, "bodyDigest": body_digest}, file)
-            os.replace(temporary, idem_path)
+            try:
+                program_dir = os.path.join(root, "programs", run.id)
+                os.makedirs(program_dir, mode=0o755)
+                filename = LANGUAGES[language][0]
+                with open(os.path.join(program_dir, filename), "w", encoding="utf-8") as file:
+                    file.write(code)
+                os.chmod(os.path.join(program_dir, filename), 0o444)
+                self.runs[run.id] = run
+                self._persist(run)
+                temporary = idem_path + ".tmp"
+                with open(temporary, "w", encoding="utf-8") as file:
+                    json.dump({"runId": run.id, "bodyDigest": body_digest}, file)
+                os.replace(temporary, idem_path)
+            except OSError:
+                # Nothing was started: a record left "queued" would never run and
+                # would keep its session from ever being swept.
+                self.runs.pop(run.id, None)
+                shutil.rmtree(self._run_dir(run.id), ignore_errors=True)
+                raise Refused(503, "host_error", "The run could not be recorded; nothing was started")
             self.pending += 1
         threading.Thread(target=self._execute, args=(run,), daemon=True).start()
         return run, False
@@ -578,16 +744,35 @@ class Service:
         return argv + [policy["image"]] + command
 
     def _append_event(self, run, stream, text):
+        size = len(text)
         with run.cond:
-            if run.event_bytes + len(text) > LIMITS["maxEventBytes"]:
-                if not run.events_truncated:
-                    run.events_truncated = True
-                    run.events.append((len(run.events) + 1, "notice", "[live output stopped here; the full log is kept]"))
+            if run.events_truncated:
+                return
+            with self.event_lock:
+                over = run.event_bytes + size > LIMITS["maxEventBytes"] or self.event_bytes_total + size > LIMITS["maxEventBytesTotal"]
+                if not over:
+                    self.event_bytes_total += size
+            if over:
+                run.events_truncated = True
+                run.events.append((len(run.events) + 1, "notice", "[live output stopped here; the full log is kept]"))
                 run.cond.notify_all()
                 return
-            run.event_bytes += len(text)
+            run.event_bytes += size
             run.events.append((len(run.events) + 1, stream, text))
             run.cond.notify_all()
+
+    def _drop_events(self, run):
+        """Free a finished run's live feed (the full log stays readable through /output)."""
+        with run.cond:
+            if not run.events:
+                return
+            freed = run.event_bytes
+            run.events = []
+            run.event_bytes = 0
+            run.events_truncated = True
+            run.cond.notify_all()
+        with self.event_lock:
+            self.event_bytes_total = max(0, self.event_bytes_total - freed)
 
     def _execute(self, run, command=None):
         if not self._acquire_slot(run):
@@ -595,23 +780,36 @@ class Service:
                 self.pending -= 1
             self._finish(run, "cancelled", None, None)
             return
-        directory = self._run_dir(run.id)
-        os.makedirs(directory, mode=0o750, exist_ok=True)
-        logs = {"stdout": open(os.path.join(directory, "stdout.log"), "wb"),
-                "stderr": open(os.path.join(directory, "stderr.log"), "wb")}
+        if run.cancel_requested:
+            # Stopped between taking the slot and starting: nothing is started.
+            self._release_slot(run)
+            self._finish(run, "cancelled", None, None)
+            return
         root = os.path.join(self.sessions_root, run.session)
-        before = walk_regular_files(os.path.join(root, "work"))
+        logs = {}
         timer = None
+        before = {}
+        exit_code, refused = None, None
+        phase = "prepare"
         try:
+            directory = self._run_dir(run.id)
+            os.makedirs(directory, mode=0o750, exist_ok=True)
+            logs = {"stdout": open(os.path.join(directory, "stdout.log"), "wb"),
+                    "stderr": open(os.path.join(directory, "stderr.log"), "wb")}
+            before = walk_regular_files(os.path.join(root, "work"))
             with run.cond:
                 run.status = "running"
                 run.startedAt = now()
                 run.cond.notify_all()
             self._persist(run)
             argv = self.run_argv(run, command or LANGUAGES[run.language][1], program=command is None)
+            phase = "broker"
             run.call = BrokerCall(self.config["broker"], argv)
             if not run.internal:
                 self.started_runs += 1
+            if run.cancel_requested:
+                # Stop arrived while the status was flipping to running.
+                self._stop(run)
             timer = threading.Timer(run.timeoutMs / 1000.0, self._timeout, args=(run,))
             timer.daemon = True
             timer.start()
@@ -620,24 +818,36 @@ class Service:
                 setattr(run, key, getattr(run, key) + len(chunk))
                 written = logs[stream].tell()
                 if written < LIMITS["maxLogBytes"]:
-                    logs[stream].write(chunk[: LIMITS["maxLogBytes"] - written])
+                    try:
+                        logs[stream].write(chunk[: LIMITS["maxLogBytes"] - written])
+                    except OSError:
+                        setattr(run, stream + "Truncated", True)
                 if getattr(run, key) > LIMITS["maxLogBytes"]:
                     setattr(run, stream + "Truncated", True)
                 self._append_event(run, stream, chunk.decode("utf-8", "replace"))
             exit_code, refused = run.call.exit_code, run.call.refused
         except OSError as error:
-            exit_code, refused = None, "broker unavailable: " + str(error)
+            # Before the broker call nothing was started (a full disk, say); after
+            # it, the broker went away. Neither is reported with host paths.
+            exit_code = None
+            refused = ("broker unavailable: " if phase == "broker" else "the run could not be prepared: ") + type(error).__name__
         finally:
+            run.call_done = True
             if timer:
                 timer.cancel()
             for file in logs.values():
-                file.close()
+                try:
+                    file.close()
+                except OSError:
+                    pass
             self._release_slot(run)
         if refused:
             self._finish(run, "failed", None, "The sandbox refused to start: " + refused[:300])
             return
         if run.cancel_requested:
             status = "cancelled"
+        elif run.disk_exceeded:
+            status = "failed"
         elif run.timed_out:
             status = "timed_out"
         elif exit_code == 0:
@@ -645,13 +855,21 @@ class Service:
         else:
             status = "failed"
         error = None
-        if exit_code in (125, 126, 127) and run.stdoutBytes == 0 and status == "failed":
+        if run.disk_exceeded and status == "failed":
+            error = ("The program was stopped because the sandbox's disk was filling up, and this session's working "
+                     "files were cleared. Write less data (or delete what you no longer need) and run it again.")
+        elif exit_code in (125, 126, 127) and run.stdoutBytes == 0 and status == "failed":
             error = "The sandbox could not start the program (docker exit %d)." % exit_code
         elif exit_code == 137 and status == "failed":
             error = "The program was killed (exit 137): it most likely ran out of memory (%d MB)." % self.config["policy"]["memoryMb"]
-        if status in ("succeeded", "failed", "timed_out"):
+        if status in ("succeeded", "failed", "timed_out") and not run.disk_exceeded:
             self._collect_files(run, root, before)
         self._finish(run, status, exit_code, error)
+        if run.disk_exceeded:
+            with self.lock:
+                others = [other for other in self.runs.values() if other.session == run.session and other.status not in TERMINAL]
+            if not others:
+                self._clear_work(run.session)
 
     def _collect_files(self, run, root, before):
         after = walk_regular_files(os.path.join(root, "work"))
@@ -698,13 +916,38 @@ class Service:
     def _timeout(self, run):
         if run.status == "running":
             run.timed_out = True
-            self._kill(run)
+            self._stop(run)
 
     def _kill(self, run):
         try:
             broker_run(self.config["broker"], ["kill", "juno-exec-" + run.id])
         except OSError:
             pass
+
+    def _stop(self, run):
+        """Kill the run's container, and keep at it until `docker run` returns.
+
+        One `docker kill` is not enough: sent before `docker run` has created the
+        container (Stop right after the start, or a short time limit on a busy
+        host), the broker refuses it as an unknown container, and the program then
+        ran on to its time limit after Stop, or with no limit at all after a
+        timeout, holding a slot. So the kill repeats, backing off, until the
+        broker call has ended."""
+        with run.cond:
+            if run.stopping:
+                return
+            run.stopping = True
+        thread = threading.Thread(target=self._stop_loop, args=(run,), daemon=True)
+        thread.start()
+
+    def _stop_loop(self, run):
+        delay = 0.2
+        while not run.call_done and run.status not in TERMINAL:
+            self._kill(run)
+            deadline = now() + delay
+            while not run.call_done and now() < deadline:
+                time.sleep(0.05)
+            delay = min(delay * 2, 5.0)
 
     def cancel(self, run_id):
         run = self.get(run_id)
@@ -713,7 +956,7 @@ class Service:
             with self.slot:
                 self.slot.notify_all()
         elif run.status == "running":
-            self._kill(run)
+            self._stop(run)
         return run
 
     def get(self, run_id):
@@ -811,6 +1054,10 @@ class Service:
             old_runs = [run for run in self.runs.values() if run.status in TERMINAL and (run.finishedAt or 0) < cutoff_run]
             for run in old_runs:
                 del self.runs[run.id]
+            cutoff_events = now() - LIMITS["eventRetentionSeconds"]
+            quiet = [run for run in self.runs.values() if run.status in TERMINAL and run.events and (run.finishedAt or 0) < cutoff_events]
+        for run in old_runs + quiet:
+            self._drop_events(run)
         for run in old_runs:
             shutil.rmtree(self._run_dir(run.id), ignore_errors=True)
             if run.idempotencyKeyDigest:
@@ -833,6 +1080,17 @@ class Service:
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 
 
+def redacted_path(raw):
+    """The request path for the journal: ids kept, file names replaced."""
+    parts = raw.split("?", 1)[0].split("/")
+    # /v1/sessions/<s>/inputs/<name>  and  /v1/runs/<id>/files/<path...>
+    if len(parts) > 5 and parts[2] == "sessions" and parts[4] == "inputs":
+        parts = parts[:5] + ["<name>"]
+    elif len(parts) > 5 and parts[2] == "runs" and parts[4] == "files":
+        parts = parts[:5] + ["<path>"]
+    return "/".join(parts)[:160]
+
+
 def make_handler(service, token):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -840,8 +1098,9 @@ def make_handler(service, token):
         sys_version = ""
 
         def log_message(self, format, *args):
-            # Ids, sizes and verdicts only; never bodies, code or file contents.
-            sys.stderr.write("juno-exec %s %s\n" % (self.command, self.path.split("?")[0][:120]))
+            # Ids, sizes and verdicts only; never bodies, code, file contents or
+            # file names (an input's or a produced file's name is the user's).
+            sys.stderr.write("juno-exec %s %s\n" % (self.command, redacted_path(self.path)))
 
         def send_json(self, status, payload):
             data = json.dumps(payload).encode()
@@ -1064,7 +1323,18 @@ def serve(config):
             except Exception as error:  # the sweep must never take the service down
                 sys.stderr.write("juno-exec sweep failed: %s\n" % type(error).__name__)
 
+    def disk_watchdog():
+        while True:
+            time.sleep(1)
+            try:
+                culprit = service.watch_disk()
+                if culprit:
+                    sys.stderr.write("juno-exec workspace disk below its reserve; stopped the runs of one session\n")
+            except Exception as error:
+                sys.stderr.write("juno-exec disk watchdog failed: %s\n" % type(error).__name__)
+
     threading.Thread(target=sweeper, daemon=True).start()
+    threading.Thread(target=disk_watchdog, daemon=True).start()
     sys.stderr.write("juno-exec listening on %s:%d\n" % (config["host"], config["port"]))
     server.serve_forever()
 

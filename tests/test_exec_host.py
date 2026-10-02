@@ -61,6 +61,7 @@ class FakeDocker:
     def __init__(self, policy):
         self.policy = policy
         self.running = {}
+        self.kills = []
         self.validated = []
         self.lock = threading.Lock()
 
@@ -72,19 +73,34 @@ class FakeDocker:
 
 class FakeBrokerCall:
     docker = None
+    # Seconds between `docker run` being called and the container existing, as on a
+    # busy host or with gVisor. A kill sent in that window finds no container.
+    start_delay = 0.0
 
     def __init__(self, transport, argv):
         self.argv = argv
         self.exit_code = None
         self.refused = None
         self.process = None
+        self.ready = None
         try:
             FakeBrokerCall.docker.call(argv)
         except (ValueError, IndexError, KeyError) as error:
             self.refused = "exec broker refused request: " + str(error)
             return
         if argv[0] == "run":
+            if FakeBrokerCall.start_delay:
+                self.ready = threading.Event()
+                threading.Thread(target=self._delayed_start, daemon=True).start()
+            else:
+                self._start()
+
+    def _delayed_start(self):
+        time.sleep(FakeBrokerCall.start_delay)
+        try:
             self._start()
+        finally:
+            self.ready.set()
 
     def _mounts(self):
         mounts = {}
@@ -117,6 +133,8 @@ class FakeBrokerCall:
             FakeBrokerCall.docker.running[name] = self.process
 
     def frames(self):
+        if self.ready is not None:
+            self.ready.wait()
         if self.refused or not self.process:
             if not self.refused:
                 self.exit_code = 0
@@ -143,8 +161,12 @@ def fake_broker_run(transport, argv):
     if call.refused:
         return None, "", call.refused
     if argv[0] == "kill":
+        FakeBrokerCall.docker.kills.append(argv[1])
         process = FakeBrokerCall.docker.running.get(argv[1])
-        if process and process.poll() is None:
+        if not process:
+            # The real broker inspects first and refuses a container that does not exist (yet).
+            return None, "", "exec broker refused request: Container is missing or outside the juno-exec namespace"
+        if process.poll() is None:
             process.send_signal(signal.SIGKILL)
         return 0, "", None
     if argv[0] == "ps":
@@ -180,13 +202,15 @@ class ServiceHarness:
         self.server.server_close()
 
     def close(self):
+        FakeBrokerCall.start_delay = 0.0
         for process in FakeBrokerCall.docker.running.values():
             if process.poll() is None:
                 process.kill()
         self.stop()
         for patch in self.patches:
             patch.stop()
-        shutil.rmtree(self.directory, ignore_errors=True)
+        # Read-only skill folders and anything a program chmod-ed shut.
+        self.service._remove_tree(self.directory)
 
     def request(self, method, path, body=None, headers=None, token=TOKEN, raw=False):
         data = body if isinstance(body, (bytes, type(None))) else json.dumps(body).encode()
@@ -603,6 +627,160 @@ class ServiceApi(unittest.TestCase):
 
 
 # ── real containers (opt-in) ────────────────────────────────────────────────
+
+class Hardening(unittest.TestCase):
+    """What the adversarial review of the lane broke, each now held by a test."""
+
+    LOOP = "import time\nwhile True:\n    time.sleep(0.1)\n"
+
+    def setUp(self):
+        self.host = ServiceHarness(self)
+
+    def alive(self, run_id):
+        process = FakeBrokerCall.docker.running.get("juno-exec-" + run_id)
+        return process is not None and process.poll() is None
+
+    def until(self, predicate, seconds=10, message="condition"):
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if predicate():
+                return
+            time.sleep(0.05)
+        self.fail("timed out waiting for " + message)
+
+    def status_of(self, run_id):
+        return self.host.request("GET", "/v1/runs/%s" % run_id)[1]["status"]
+
+    def test_stop_before_the_container_exists_still_kills_it(self):
+        # One `docker kill` sent while `docker run` is still creating the container
+        # is refused (no such container) and the program ran on after Stop.
+        FakeBrokerCall.start_delay = 0.8
+        run = self.host.run(self.LOOP, timeout_ms=600000, wait=False)
+        self.until(lambda: self.status_of(run["id"]) == "running", message="running")
+        status, _, _ = self.host.request("POST", "/v1/runs/%s/cancel" % run["id"])
+        self.assertEqual(status, 202)
+        self.until(lambda: self.status_of(run["id"]) == "cancelled", seconds=15, message="cancelled")
+        self.assertFalse(self.alive(run["id"]), "the container was killed once it existed")
+        self.assertGreater(FakeBrokerCall.docker.kills.count("juno-exec-" + run["id"]), 1, "the first kill found nothing and was repeated")
+
+    def test_a_time_limit_reached_before_the_container_exists_still_stops_it(self):
+        # Worse than Stop: the time limit was the only bound, so a missed kill left
+        # a container running for good, holding one of the host's four slots.
+        FakeBrokerCall.start_delay = 1.5
+        run = self.host.run(self.LOOP, timeout_ms=1000, wait=False)
+        self.until(lambda: self.status_of(run["id"]) == "timed_out", seconds=15, message="timed_out")
+        self.assertFalse(self.alive(run["id"]))
+
+    def test_a_workspace_the_program_locked_with_chmod_is_still_removed(self):
+        # The sandbox runs as the service's own uid, so a program can chmod its
+        # folders to 000; os.walk and rmtree then left them on the shared disk.
+        run = self.host.run("import os\nos.makedirs('locked/deeper/still', exist_ok=True)\n"
+                            "open('locked/deeper/still/data.bin', 'wb').write(b'x' * 100000)\n"
+                            "for path in ('locked/deeper/still', 'locked/deeper', 'locked'):\n    os.chmod(path, 0)\nprint('locked')\n")
+        self.assertEqual(run["status"], "succeeded")
+        root = os.path.join(self.host.policy["sessionsRoot"], SESSION)
+        status, _, _ = self.host.request("DELETE", "/v1/sessions/%s" % SESSION)
+        self.assertEqual(status, 200)
+        self.assertFalse(os.path.exists(root), "the locked tree is gone")
+        # The idle sweep takes the same path.
+        other = "s_" + "9" * 32
+        self.host.run("import os\nos.makedirs('shut', exist_ok=True)\nopen('shut/f', 'w').write('1')\nos.chmod('shut', 0)\n", session=other)
+        time.sleep(0.5)  # the run's last touch of the session marker lands just after it reports done
+        os.utime(os.path.join(self.host.policy["sessionsRoot"], other, ".active"), (0, 0))
+        for record in self.host.service.runs.values():
+            record.finishedAt = 0
+        self.host.service.sweep()
+        self.assertFalse(os.path.exists(os.path.join(self.host.policy["sessionsRoot"], other)))
+
+    def test_a_skill_bundle_is_refused_before_a_huge_member_is_read(self):
+        def bundle(entries, mode="w:gz"):
+            data = io.BytesIO()
+            with tarfile.open(fileobj=data, mode=mode) as archive:
+                for name, content in entries:
+                    info = tarfile.TarInfo(name)
+                    if content is None:
+                        info.type = tarfile.DIRTYPE
+                        archive.addfile(info)
+                    else:
+                        info.size = len(content)
+                        archive.addfile(info, io.BytesIO(content))
+            return data.getvalue()
+        huge = bundle([("big.bin", b"\0" * (6 * 1024 * 1024))])
+        self.assertLess(len(huge), 64 * 1024, "a small upload")
+        status, body, _ = self.host.request("PUT", "/v1/sessions/%s/skills/report" % SESSION, huge)
+        self.assertEqual((status, body["error"]), (413, "bundle_too_large"))
+        folders = bundle([("d%04d" % index, None) for index in range(service_module.LIMITS["maxSkillEntries"] + 1)])
+        status, body, _ = self.host.request("PUT", "/v1/sessions/%s/skills/report" % SESSION, folders)
+        self.assertEqual((status, body["error"]), (413, "bundle_too_large"), "folders count too: each is an inode on the shared disk")
+
+    def test_one_account_cannot_fill_the_host_queue(self):
+        limit = service_module.LIMITS["perAccountPending"]
+        runs = [self.host.run("import time\ntime.sleep(1)\n", wait=False) for _ in range(limit)]
+        status, body, _ = self.host.request("POST", "/v1/runs", {"session": SESSION, "account": ACCOUNT, "code": "print(1)"},
+                                            headers={"Idempotency-Key": "one-too-many"})
+        self.assertEqual((status, body["error"]), (429, "account_busy"))
+        other = self.host.run("print('other account')", account="a_" + "c" * 32, session="s_" + "c" * 32)
+        self.assertEqual(other["status"], "succeeded")
+        for run in runs:
+            self.assertEqual(self.host.wait(run["id"])["status"], "succeeded")
+
+    def test_a_session_belongs_to_the_account_that_first_used_it(self):
+        self.assertEqual(self.host.run("open('mine.txt', 'w').write('private')")["status"], "succeeded")
+        status, body, _ = self.host.request("POST", "/v1/runs", {"session": SESSION, "account": "a_" + "c" * 32, "code": "print(open('mine.txt').read())"},
+                                            headers={"Idempotency-Key": "another-account"})
+        self.assertEqual((status, body["error"]), (409, "session_account_mismatch"))
+
+    def test_a_program_filling_the_workspace_disk_is_stopped_and_only_its_session_cleared(self):
+        culprit_session, bystander_session = "s_" + "1" * 32, "s_" + "2" * 32
+        culprit = self.host.run("open('big.bin', 'wb').write(b'x' * 2000000)\n" + self.LOOP, session=culprit_session,
+                                account="a_" + "1" * 32, timeout_ms=600000, wait=False)
+        bystander = self.host.run("open('small.txt', 'w').write('1')\nimport time\ntime.sleep(3)\nprint('done')\n",
+                                  session=bystander_session, account="a_" + "2" * 32, timeout_ms=600000, wait=False)
+        big = os.path.join(self.host.policy["sessionsRoot"], culprit_session, "work", "big.bin")
+        small = os.path.join(self.host.policy["sessionsRoot"], bystander_session, "work", "small.txt")
+        self.until(lambda: os.path.exists(big) and os.path.getsize(big) == 2000000 and os.path.exists(small), message="both writing")
+        self.assertIsNone(self.host.service.watch_disk(), "nothing happens while the disk keeps its reserve")
+        with unittest.mock.patch.object(self.host.service, "disk_ok", return_value=False):
+            self.assertEqual(self.host.service.watch_disk(), culprit_session)
+            status, body, _ = self.host.request("POST", "/v1/runs", {"session": "s_" + "3" * 32, "account": "a_" + "3" * 32, "code": "print(1)"},
+                                                headers={"Idempotency-Key": "while-full"})
+            self.assertEqual((status, body["error"]), (503, "disk_full"))
+        final = self.host.wait(culprit["id"], seconds=10)
+        self.assertEqual(final["status"], "failed")
+        self.assertIn("disk", final["error"])
+        self.assertEqual(final["files"], [])
+        self.until(lambda: not os.path.exists(big), message="the culprit's files cleared")
+        self.assertTrue(os.path.isdir(os.path.join(self.host.policy["sessionsRoot"], culprit_session, "work", "inputs")))
+        done = self.host.wait(bystander["id"])
+        self.assertEqual(done["status"], "succeeded")
+        self.assertTrue(os.path.exists(small), "another session's files are untouched")
+
+    def test_finished_runs_release_their_live_output(self):
+        run = self.host.run("print('x' * 100000)")
+        service = self.host.service
+        self.assertGreater(service.event_bytes_total, 0)
+        record = service.runs[run["id"]]
+        record.finishedAt -= service_module.LIMITS["eventRetentionSeconds"] + 1
+        service.sweep()
+        self.assertEqual(service.event_bytes_total, 0)
+        self.assertEqual(record.events, [])
+        status, page, _ = self.host.request("GET", "/v1/runs/%s/output?stream=stdout&limit=10" % run["id"], raw=True)
+        self.assertEqual((status, page), (200, b"x" * 10), "the full log stays readable")
+
+    def test_the_live_output_of_all_runs_together_is_bounded(self):
+        with unittest.mock.patch.dict(service_module.LIMITS, {"maxEventBytesTotal": 50000}):
+            run = self.host.run("print('y' * 200000)")
+            self.assertLessEqual(self.host.service.event_bytes_total, 50000)
+        self.assertEqual(run["stdoutBytes"], 200001)
+        self.assertEqual(self.host.service.runs[run["id"]].events[-1][1], "notice")
+
+    def test_file_names_never_reach_the_journal(self):
+        self.assertEqual(service_module.redacted_path("/v1/sessions/%s/inputs/payroll%%202026.xlsx" % SESSION),
+                         "/v1/sessions/%s/inputs/<name>" % SESSION)
+        self.assertEqual(service_module.redacted_path("/v1/runs/r_%s/files/out/diagnosis.png?x=1" % ("1" * 24)),
+                         "/v1/runs/r_%s/files/<path>" % ("1" * 24))
+        self.assertEqual(service_module.redacted_path("/v1/runs/r_%s?wait=3" % ("1" * 24)), "/v1/runs/r_%s" % ("1" * 24))
+
 
 @unittest.skipUnless(os.environ.get("JUNO_EXEC_DOCKER_TESTS") == "1" and shutil.which("docker"), "set JUNO_EXEC_DOCKER_TESTS=1 with Docker running")
 class RealSandboxBoundary(unittest.TestCase):
