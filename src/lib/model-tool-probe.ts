@@ -139,7 +139,7 @@ export function probeToolset(opts: { image?: boolean } = {}): ChatToolset & { ca
 interface TurnRecord {
   text: string;
   calls: Array<{ name: string; round?: number; args?: string }>;
-  results: Array<{ name: string; ok: boolean; status?: string }>;
+  results: Array<{ name: string; ok: boolean; status?: string; args?: string }>;
 }
 
 async function runTurn(stream: ProbeStream, prompt: string, toolset: ChatToolset, timeoutMs: number): Promise<TurnRecord> {
@@ -148,7 +148,7 @@ async function runTurn(stream: ProbeStream, prompt: string, toolset: ChatToolset
   for await (const event of stream({ system: PROBE_SYSTEM, prompt, tools: createToolLoop(toolset), signal })) {
     if (event.type === "text") record.text += event.text;
     else if (event.type === "tool" && event.phase === "call") record.calls.push({ name: event.name, round: event.round, args: event.args });
-    else if (event.type === "tool" && event.phase === "result") record.results.push({ name: event.name, ok: event.ok, status: event.status });
+    else if (event.type === "tool" && event.phase === "result") record.results.push({ name: event.name, ok: event.ok, status: event.status, args: event.args });
   }
   return record;
 }
@@ -158,11 +158,27 @@ function mentionsNumber(text: string, value: number): boolean {
   return text.replace(/(?<=\d)[,.\s  '](?=\d{3}\b)/g, "").includes(String(value));
 }
 
+/** The product a multiply call's raw arguments ask for, or null when they do not parse. */
+function requestedProduct(args: string | undefined): number | null {
+  try {
+    const parsed = JSON.parse(args ?? "") as { a?: unknown; b?: unknown };
+    const product = Number(parsed.a) * Number(parsed.b);
+    return Number.isFinite(product) ? product : null;
+  } catch {
+    return null;
+  }
+}
+
 export function roundTripPassed(record: TurnRecord, a: number, b: number): { passed: boolean; detail?: string } {
   const called = record.calls.filter((call) => call.name === "multiply");
   if (called.length === 0) return { passed: false, detail: "The model did not call the tool." };
-  const ran = record.results.some((result) => result.name === "multiply" && result.ok);
-  if (!ran) return { passed: false, detail: "The model's call was not valid, so the tool did not run." };
+  const ran = record.results.filter((result) => result.name === "multiply" && result.ok);
+  if (ran.length === 0) return { passed: false, detail: "The model's call was not valid, so the tool did not run." };
+  // The stated number must be one the TOOL returned: a model that called with
+  // other numbers and then did the sum itself has not shown a round trip.
+  if (!ran.some((result) => requestedProduct(result.args) === a * b)) {
+    return { passed: false, detail: "The model called the tool with the wrong numbers." };
+  }
   if (!mentionsNumber(record.text, a * b)) return { passed: false, detail: "The model did not state the tool's result." };
   return { passed: true };
 }

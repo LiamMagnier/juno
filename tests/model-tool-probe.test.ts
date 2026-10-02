@@ -240,3 +240,14 @@ test("the swatch is a real PNG of one colour", () => {
   assert.equal(png.readUInt32BE(16), 4);
   assert.equal(png.readUInt32BE(20), 4);
 });
+
+test("a model that calls with other numbers and states the product itself has not shown a round trip", async () => {
+  const { roundTripPassed } = await import("@/lib/model-tool-probe");
+  const record = (args: string) => ({
+    text: "7006652",
+    calls: [{ name: "multiply", round: 0, args }],
+    results: [{ name: "multiply", ok: true, status: "succeeded", args }],
+  });
+  assert.deepEqual(roundTripPassed(record('{"a":1,"b":1}'), 1234, 5678), { passed: false, detail: "The model called the tool with the wrong numbers." });
+  assert.deepEqual(roundTripPassed(record('{"a":"1234","b":5678}'), 1234, 5678), { passed: true });
+});
