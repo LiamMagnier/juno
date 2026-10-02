@@ -52,7 +52,7 @@ const MIN_PASSWORD = 8;
  */
 const OAUTH_ERRORS: Record<string, string> = {
   OAuthAccountNotLinked:
-    "This email already signs in with a password. Use it below — Google can be linked to the account from Settings afterwards.",
+    "This email already signs in with a password. Use it below. Google can be linked to the account from Settings afterwards.",
   OAuthCallbackError: "Google didn't finish signing you in. Try again, or use your email and password.",
   OAuthSignin: "Google sign-in couldn't start. Try again in a moment.",
   AccessDenied: "That Google account isn't allowed to sign in here.",
@@ -274,7 +274,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
               <Link href={`/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="font-medium underline underline-offset-4">
                 sign in
               </Link>{" "}
-              instead — or{" "}
+              instead, or{" "}
               <Link href="/forgot-password" className="font-medium underline underline-offset-4">
                 reset your password
               </Link>
@@ -395,7 +395,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             {/* text-label, the product's one label voice (mono, sentence case),
                 rather than a bare Tailwind text-xs that appears nowhere else. */}
             <div className="relative flex justify-center">
-              <span className="bg-card px-2 font-mono text-label text-muted-foreground">or</span>
+              <span className="bg-background px-3 font-sans text-ui text-muted-foreground">or</span>
             </div>
           </div>
         </>
@@ -490,7 +490,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
           // becomes a different card under the reader's pointer.
           <div className="space-y-4 motion-safe:animate-rise-in">
             <p className="text-body text-muted-foreground">
-              This account uses two-step verification. Enter the 6-digit code from your authenticator app — or one of
+              This account uses two-step verification. Enter the 6-digit code from your authenticator app, or one of
               your recovery codes if you can&apos;t reach it.
             </p>
             <Field

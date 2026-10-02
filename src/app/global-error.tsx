@@ -1,177 +1,57 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Root recovery must navigate without the failed app router. */
 "use client";
 
-/**
- * Last-resort error boundary.
- *
- * `global-error` replaces the root layout, so it catches the one class of
- * failure nothing else can: an exception thrown *by* `app/layout.tsx` itself.
- * That layout awaits `auth()`, which hits the database on every request — so
- * any database outage (Neon suspended, compute quota exhausted, pooler
- * unreachable) took the whole site down to Next's bare white
- * "Application error: a server-side exception has occurred" page. This renders
- * something that at least looks like Juno and tells the visitor to come back.
- *
- * Deliberately self-contained: no globals.css, no next/font, no shared
- * component. The root layout is what provides those, and the root layout is
- * exactly what has already failed by the time we get here. The two grounds
- * come from theme-color.ts — a constant, not a stylesheet, so it survives the
- * failure — and are switched on `prefers-color-scheme` because next-themes,
- * which normally puts `.dark` on <html>, is not mounted either.
- */
-
-import { THEME_COLOR } from "@/components/ui/theme-color";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 
+// This boundary replaces the root layout, so its V3 surface and font fallbacks
+// must work without Providers, global CSS or an initialized theme context.
 const STYLES = `
-  .juno-fallback-body {
-    margin: 0;
-    min-height: 100dvh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem 1.25rem;
-    background: ${THEME_COLOR.light};
-    color: #1f1e1c;
-    font-family: ui-serif, Georgia, "Times New Roman", serif;
-    -webkit-font-smoothing: antialiased;
+  :root { color-scheme: light dark; --foreground: 216 9.091% 10.784%; --background: 240 20% 99.020%; }
+  * { box-sizing: border-box; }
+  .alevr-dppx-hi { display:none; }
+  @media(min-resolution:1.5dppx) { .alevr-dppx-lo { display:none; } .alevr-dppx-hi { display:inline; } }
+  body { margin:0; min-height:100dvh; background:#fcfcfd; color:#191b1e; font-family:Inter,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  header { padding:24px 32px; }
+  header a { display:inline-flex; align-items:center; min-height:44px; color:inherit; }
+  header a > span { position:relative; display:inline-block; flex-shrink:0; vertical-align:middle; }
+  main { min-height:calc(100dvh - 100px); max-width:560px; margin:auto; padding:80px 24px; display:flex; flex-direction:column; justify-content:center; text-align:center; }
+  h1 { margin:0; font-family:Newsreader,Georgia,serif; font-size:48px; line-height:1.1; font-weight:400; letter-spacing:-.02em; text-wrap:balance; }
+  p { margin:20px 0 0; color:#686b70; font-size:14px; line-height:1.6; }
+  .actions { margin-top:32px; display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+  .actions a,button { font:500 14px Inter,system-ui,sans-serif; min-height:44px; padding:12px 20px; border:0; border-radius:8px; color:#191b1e; background:#eff0f1; cursor:pointer; text-decoration:none; transition:background-color 120ms cubic-bezier(.33,1,.68,1); }
+  .actions > :first-child { background:#191b1e; color:#fcfcfd; }
+  .actions > :first-child:hover { background:#4e5054; }
+  .actions a:hover { background:#e6e7e9; }
+  :focus-visible { outline:2px solid #2d49c9; outline-offset:3px; }
+  .reference { font-size:12px; overflow-wrap:anywhere; }
+  @font-face { font-family:Inter; src:url('/fonts/inter-latin.woff2') format('woff2'); font-weight:400 600; font-display:swap; }
+  @font-face { font-family:Newsreader; src:url('/fonts/newsreader-regular.ttf') format('truetype'); font-weight:400; font-display:swap; }
+  @media(prefers-color-scheme:dark) {
+    :root { --foreground:220 6.977% 91.569%; --background:220 5.882% 10%; }
+    body { background:#18191b; color:#e8e9eb; } p { color:#95979c; }
+    .actions a { background:#2d2e31; color:#e8e9eb; } .actions a:hover { background:#37383c; }
+    .actions > :first-child { background:#e8e9eb; color:#18191b; } .actions > :first-child:hover { background:#b4b6ba; }
+    :focus-visible { outline-color:#97a6e6; }
   }
-  .juno-fallback-card {
-    width: 100%;
-    max-width: 30rem;
-    text-align: center;
-  }
-  .juno-fallback-mark {
-    width: 2.5rem;
-    height: 2.5rem;
-    margin: 0 auto;
-    display: block;
-  }
-  .juno-fallback-eyebrow {
-    margin: 1.75rem 0 0;
-    font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
-    font-size: 0.6875rem;
-    /* Sentence case, and a sentence-case tracking with it. This file inlines
-       its own CSS because it renders when the app's has failed to load, so it
-       carries a hand-written copy of the eyebrow idiom and has to be retuned
-       by hand alongside it. */
-    letter-spacing: 0.01em;
-    color: #8a6d3f;
-  }
-  .juno-fallback-title {
-    margin: 0.5rem 0 0;
-    font-size: 1.5rem;
-    font-weight: 500;
-    line-height: 1.25;
-  }
-  .juno-fallback-copy {
-    margin: 0.75rem 0 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 0.875rem;
-    line-height: 1.6;
-    color: #6b6862;
-  }
-  .juno-fallback-actions {
-    margin-top: 1.75rem;
-    display: flex;
-    gap: 0.625rem;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-  /* The product's interaction recipe, restated by hand for the one screen
-     that cannot load it (see the header note): a tonal cross-fade on hover at
-     the fast rung (120ms on --ease-out-soft), a dip to 0.97 on press at the
-     press rung (70ms), and the global 2px focus outline. Numbers copied from
-     globals.css's --dur-* / --ease-* tokens, which are not available here.
-     The outline is a fixed ink per theme, never currentColor: the primary
-     button's text IS the page ground, so a currentColor ring drawn 2px out
-     onto the page was the page's own colour and could not be seen. */
-  .juno-fallback-button {
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 0.875rem;
-    padding: 0.5rem 1.125rem;
-    border-radius: 10px;
-    border: 1px solid #e5dfd2;
-    background: #ffffff;
-    color: #1f1e1c;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-    transition:
-      background-color 120ms cubic-bezier(0.33, 1, 0.68, 1),
-      border-color 120ms cubic-bezier(0.33, 1, 0.68, 1),
-      transform 70ms cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  .juno-fallback-button:hover { border-color: #cfc6b3; }
-  .juno-fallback-button:active { transform: scale(0.97); }
-  .juno-fallback-button:focus-visible { outline: 2px solid #1f1e1c; outline-offset: 2px; }
-  .juno-fallback-button--primary {
-    background: #1f1e1c;
-    border-color: #1f1e1c;
-    color: ${THEME_COLOR.light};
-  }
-  .juno-fallback-button--primary:hover { background: #38352f; border-color: #38352f; }
-  .juno-fallback-digest {
-    margin: 1.5rem 0 0;
-    font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
-    font-size: 0.6875rem;
-    color: #9a968d;
-    word-break: break-all;
-  }
-  /* The card settles in on the shared entrance (rise-in: 6px and a fade over
-     220ms on --ease-out-soft) instead of cutting in over a blank window.
-     Nothing moves under reduced motion. */
-  @keyframes juno-fallback-rise {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: none; }
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .juno-fallback-card { animation: juno-fallback-rise 220ms cubic-bezier(0.33, 1, 0.68, 1) both; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .juno-fallback-button { transition: none; }
-    .juno-fallback-button:active { transform: none; }
-  }
-  @media (prefers-color-scheme: dark) {
-    .juno-fallback-body { background: ${THEME_COLOR.dark}; color: #f0ece1; }
-    .juno-fallback-mark { filter: invert(1); }
-    .juno-fallback-eyebrow { color: #c9a86a; }
-    .juno-fallback-copy { color: #a8a297; }
-    .juno-fallback-button { background: #211e19; border-color: #38342c; color: #f0ece1; }
-    .juno-fallback-button:hover { border-color: #4d4840; }
-    .juno-fallback-button:focus-visible { outline-color: #f0ece1; }
-    .juno-fallback-button--primary { background: #f0ece1; border-color: #f0ece1; color: ${THEME_COLOR.dark}; }
-    .juno-fallback-button--primary:hover { background: #ffffff; border-color: #ffffff; }
-    .juno-fallback-digest { color: #6f6a60; }
-  }
+  @media(max-width:480px) { header { padding:20px 24px; } h1 { font-size:40px; } }
+  @keyframes public-enter { from { opacity:.5; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  @media(prefers-reduced-motion:no-preference) { main h1 { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) both; } main p { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; } .actions { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; } }
+  @media(prefers-reduced-motion:reduce) { .actions a,button { transition:none; } }
 `;
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <html lang="en">
-      <body className="juno-fallback-body">
+      <head><meta charSet="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>{`Something went wrong · ${PRODUCT_NAME}`}</title><meta name="robots" content="noindex" /></head>
+      <body>
         <style dangerouslySetInnerHTML={{ __html: STYLES }} />
-        <main className="juno-fallback-card">
-          {/* Plain <img>, not next/image: the optimizer is itself a server route. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/juno-mark.png" alt={PRODUCT_NAME} width={512} height={512} className="juno-fallback-mark" />
-          <p className="juno-fallback-eyebrow">Temporarily unavailable</p>
-          <h1 className="juno-fallback-title">{`${PRODUCT_NAME} can’t reach its backend`}</h1>
-          <p className="juno-fallback-copy">
-            Your conversations are safe. The server can&rsquo;t read them right now, and the problem is on our side,
-            not yours. Try again in a few minutes.
-          </p>
-          <div className="juno-fallback-actions">
-            <button type="button" onClick={reset} className="juno-fallback-button juno-fallback-button--primary">
-              Try again
-            </button>
-            {/* A real document load, not a client nav: the point is to ask the
-                server to render the root layout again from scratch. */}
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a href="/" className="juno-fallback-button">
-              {`Reload ${PRODUCT_NAME}`}
-            </a>
-          </div>
-          {error.digest && <p className="juno-fallback-digest">Reference: {error.digest}</p>}
+        <header><a href="/" aria-label={`${PRODUCT_NAME} home`}><AlevrLockup height={26} tone="current" decorative /></a></header>
+        <main>
+          <h1>Something went wrong</h1>
+          <p>We couldn’t load this page. Try again in a moment. Your saved work is still there.</p>
+          <div className="actions"><button type="button" onClick={reset}>Try again</button><a href="/">Go to the home page</a></div>
+          {error.digest && <p className="reference">Reference {error.digest}</p>}
         </main>
       </body>
     </html>

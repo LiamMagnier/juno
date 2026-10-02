@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/session";
 import { isValidBrowserAuthorization } from "@/lib/native-auth-core";
 import { issueNativeAuthorizationCode } from "@/lib/native-auth";
-import { JunoMark } from "@/components/brand/logo";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { AppAuthHandoff, LegacyAppAuthHandoff } from "./handoff";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -69,14 +69,13 @@ function AuthFailure({ message }: { message: string }) {
   return (
     // The same centred `surface-raised-lg` panel as the handoff card, with the
     // failure named in the destructive ramp rather than left to the copy alone.
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-12 text-foreground">
+    <main className="alevr-public flex min-h-dvh items-center justify-center bg-background px-4 py-12 text-foreground">
       <div
         role="alert"
-        className="surface-raised-lg w-full max-w-md rounded-panel p-6 text-center motion-safe:animate-rise-in sm:p-7"
+        className="w-full max-w-md p-6 text-center motion-safe:animate-rise-in sm:p-7"
       >
-        <JunoMark className="mx-auto size-10" />
-        <p className="mt-6 font-mono text-label text-destructive">Sign-in failed</p>
-        <h1 className="mt-2 text-balance font-serif text-title">{`${PRODUCT_NAME} couldn’t start sign-in`}</h1>
+        <AlevrLockup height={28} className="mx-auto" />
+        <h1 className="mt-8 text-balance font-serif text-display">{`${PRODUCT_NAME} couldn’t start sign-in`}</h1>
         <p className="mt-3 text-body text-muted-foreground">{message}</p>
       </div>
     </main>

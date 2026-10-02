@@ -16,6 +16,8 @@ export const metadata: Metadata = {
 export default async function SignUpPage() {
   if (await getCurrentUser()) redirect("/chat");
 
+  const providers = { googleEnabled: isGoogleConfigured(), appleEnabled: isAppleConfigured(), emailLinkEnabled: isEmailLinkConfigured() };
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -25,7 +27,7 @@ export default async function SignUpPage() {
       {/* A real skeleton, not `null`: AuthForm reads useSearchParams, so it
           suspends on first render and the card used to be a heading over empty
           space that jumped to full height when the whole form arrived at once. */}
-      <Suspense fallback={<AuthFormSkeleton mode="signup" />}>
+      <Suspense fallback={<AuthFormSkeleton mode="signup" {...providers} />}>
         <AuthForm
           mode="signup"
           googleEnabled={isGoogleConfigured()}

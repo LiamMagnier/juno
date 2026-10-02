@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Literata, Newsreader } from "next/font/google";
 import "./globals.css";
+import "@/components/public/public.css";
 import "@/components/ui/juno-icons/icons.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
@@ -85,7 +86,7 @@ export const metadata: Metadata = {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: `${PRODUCT_NAME}: every frontier AI model, one honest subscription`,
+        alt: `${PRODUCT_NAME}. Go further.`,
       },
     ],
   },

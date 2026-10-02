@@ -1,0 +1,90 @@
+/* Public V3 surfaces. These selectors do not reach the app shell. */
+.alevr-public {
+  --primary: var(--foreground);
+  --primary-foreground: var(--background);
+  font-family: var(--font-sans), Inter, sans-serif;
+}
+.alevr-public h1, .alevr-public h2 { font-style: normal; text-wrap: balance; }
+.alevr-public ::selection { background: hsl(var(--selected)); color: hsl(var(--foreground)); }
+.alevr-public input { caret-color: hsl(var(--ring)); }
+.alevr-public input { min-height: 44px; }
+.alevr-public button[type="submit"] { min-height: 44px; }
+.alevr-public .field-well { border-color: hsl(var(--input)); box-shadow: none; }
+.alevr-public .field-well:focus-within { border-color: hsl(var(--ring)); }
+.alevr-public :is(button, a, input):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+.alevr-public .surface-raised, .alevr-public .surface-raised-lg, .alevr-public .stage-window { box-shadow: none; }
+.alevr-public .font-mono:not(code):not(pre) { font-family: var(--font-sans), Inter, sans-serif; }
+.alevr-public .stage { background: hsl(var(--muted)); }
+
+/* Onboarding is owned by the shell workstream. Its unique field scopes these
+   styles, preserving gating, focus trap, save, theme, accent and dismissal. */
+[role="dialog"]:has(#onboarding-name) {
+  --primary: var(--foreground);
+  --primary-foreground: var(--background);
+  background: hsl(var(--background));
+  border-radius: 14px;
+  box-shadow: none;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+[role="dialog"]:has(#onboarding-name) > .pointer-events-none { display: none; }
+[role="dialog"]:has(#onboarding-name) h2 {
+  font-family: var(--font-serif), Newsreader, Georgia, serif;
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 38px;
+}
+[role="dialog"]:has(#onboarding-name) h2::before {
+  content: "";
+  display: block;
+  width: 112px;
+  height: 28px;
+  margin-bottom: 32px;
+  background: hsl(var(--foreground));
+  mask: url('/brand/lockup-light.svg') left center / contain no-repeat;
+}
+[role="dialog"]:has(#onboarding-name) .font-mono { font-family: var(--font-sans), Inter, sans-serif; }
+[role="dialog"]:has(#onboarding-name) .field-well { box-shadow: none; }
+
+/* An authored image and one finite entrance sequence. The form is present
+   before animation starts; no idle loops, pointer parallax or fake activity. */
+.alevr-auth-form h1 { font-weight: 500; }
+.alevr-auth-form input { background: hsl(var(--card)); border-radius: 8px; transition: border-color 120ms cubic-bezier(.33,1,.68,1), background-color 120ms cubic-bezier(.33,1,.68,1); }
+.alevr-auth-form input:hover:not(:disabled) { border-color: hsl(var(--foreground) / .55); }
+.alevr-auth-form input:focus-visible { outline-offset: 2px; }
+.alevr-auth-form button[type="submit"] { border-radius: 8px; }
+@keyframes alevr-auth-enter {
+  from { opacity: .5; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes alevr-auth-image-enter {
+  from { opacity: .7; transform: scale(1.025); clip-path: inset(0 0 3% 0); }
+  to { opacity: 1; transform: scale(1); clip-path: inset(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .alevr-auth-header { animation: alevr-auth-enter 220ms cubic-bezier(.33,1,.68,1) both; }
+  .alevr-auth-form > div > div:first-child { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; }
+  .alevr-auth-form form { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; }
+  .alevr-auth-footer { animation: alevr-auth-enter 220ms cubic-bezier(.33,1,.68,1) 220ms both; }
+  .alevr-auth-image, .alevr-auth-mobile-art { animation: alevr-auth-image-enter 560ms cubic-bezier(.16,1,.3,1) both; }
+  .alevr-auth-art-title { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 160ms both; }
+  .alevr-auth-art-copy { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 220ms both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alevr-auth-form input { transition: none; }
+}
+
+/* One tempo across the public site. Reading stays stable; only its opening
+   hierarchy enters. Existing landing reveals handle content below the fold. */
+.alevr-public :is(a, button) { transition-duration: 120ms; transition-timing-function: cubic-bezier(.33,1,.68,1); }
+.alevr-public button:active:not(:disabled) { transform: translateY(1px); }
+@media (prefers-reduced-motion: no-preference) {
+  .alevr-public-state main > h1, .alevr-public article > header, .alevr-public main > header { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
+  .alevr-public-state main > p { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; }
+  .alevr-public-state main > div { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; }
+  [role="dialog"]:has(#onboarding-name) h2 { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alevr-public :is(a, button) { transition: none; }
+  .alevr-public button:active:not(:disabled) { transform: none; }
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 
-import { JunoMark } from "@/components/brand/logo";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { Button } from "@/components/ui/button";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -14,12 +14,12 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  */
 function HandoffCard({ deepLink }: { deepLink: string }) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-12 text-foreground">
+    <main className="alevr-public flex min-h-dvh items-center justify-center bg-background px-4 py-12 text-foreground">
       <div
         role="status"
-        className="surface-raised-lg w-full max-w-md rounded-panel p-6 text-center motion-safe:animate-rise-in sm:p-7"
+        className="w-full max-w-md p-6 text-center motion-safe:animate-rise-in sm:p-7"
       >
-        <JunoMark className="mx-auto size-10" />
+        <AlevrLockup height={28} className="mx-auto" />
         <h1 className="mt-6 text-balance font-serif text-title">{`Signing you in to ${PRODUCT_NAME}…`}</h1>
         <p className="mt-2 text-body text-muted-foreground">You can return to the app.</p>
         <Button asChild className="mt-6 w-full">

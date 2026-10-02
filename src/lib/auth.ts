@@ -173,7 +173,7 @@ export const authConfig: NextAuthConfig = {
   // tokens are encrypted before they land in the Account table.
   adapter: EncryptedPrismaAdapter(prismaUnguarded),
   session: { strategy: "jwt" },
-  pages: { signIn: "/sign-in" },
+  pages: { signIn: "/sign-in", error: "/auth-error", verifyRequest: "/check-email" },
   trustHost: true,
   cookies: process.env.COOKIE_DOMAIN
     ? {
