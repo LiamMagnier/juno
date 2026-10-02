@@ -1196,6 +1196,9 @@ test("a version serialises its request, never a grant", () => {
     securityScan: {},
     permissionDigest: null,
     requiresConsent: false,
+    bundleKey: null,
+    bundleDigest: null,
+    bundleManifest: null,
     createdAt: new Date("2026-01-02T00:00:00.000Z"),
   };
   const serialized = serializeSkillVersion(row);

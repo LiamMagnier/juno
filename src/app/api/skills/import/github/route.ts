@@ -50,11 +50,14 @@ import {
 import {
   MAX_DISCOVERED_SKILLS,
   GITHUB_IMPORT_REFUSAL_MESSAGES,
+  bundlePreflight,
   discoverGithubSkills,
+  fetchGithubSkillBundle,
   parseGithubSkillSource,
   type GithubDiscovery,
   type GithubSkillCandidate,
 } from "@/lib/skills/github";
+import { bundleKindForPath, skillBundleRefusalMessage } from "@/lib/skills/bundle";
 import {
   chooseImportSource,
   discoverySourceKey,
@@ -106,6 +109,18 @@ const bodySchema = z.object({
     .optional(),
 });
 
+function bundlePreview(candidate: GithubSkillCandidate) {
+  const refused = bundlePreflight(candidate);
+  if (refused) return { refused: refused.reason, message: skillBundleRefusalMessage(refused) };
+  const kinds = candidate.companionEntries.map((entry) => bundleKindForPath(entry.path)).filter(Boolean);
+  if (kinds.length === 0) return null;
+  return {
+    files: kinds.length,
+    scripts: kinds.filter((kind) => kind === "script").length,
+    totalBytes: candidate.companionEntries.reduce((sum, entry) => sum + entry.size, 0),
+  };
+}
+
 interface PreviewNotes {
   /** A skill of this repository was already installed from this path. */
   installed: boolean;
@@ -133,8 +148,13 @@ function previewOf(candidate: GithubSkillCandidate, notes: PreviewNotes) {
     hostKeys: candidate.skill.hostKeys,
     /** Frontmatter keys in neither vocabulary. Shown rather than swallowed. */
     ignoredKeys: candidate.skill.ignoredKeys,
-    /** Files beside the SKILL.md. Listed, never fetched, never executed. */
+    /**
+     * Files beside the SKILL.md. Kept on import as the skill's bundle (fetched
+     * then, not now), and run only in the sandbox after consent.
+     */
     companionFiles: candidate.companionFiles,
+    /** What an import would keep, from the tree: counts by kind, or why the folder is refused. */
+    bundle: bundlePreview(candidate),
     url: candidate.provenance.url,
     /**
      * The scanner's verdict on this file as it would be installed, so the
@@ -198,7 +218,7 @@ function annotate(
   return notes;
 }
 
-type SkipReason = "installed" | "slug_taken" | "invalid_slug";
+type SkipReason = "installed" | "slug_taken" | "invalid_slug" | "bundle_refused" | "fetch_failed";
 
 export async function POST(req: Request) {
   const { user, error } = await requireUser();
@@ -316,6 +336,7 @@ export async function POST(req: Request) {
   const imported: LibrarySkill[] = [];
   const skipped: { path: string; slug: string; reason: SkipReason; message: string }[] = [];
   let blockedCount = 0;
+  let stopped: { reason: string; message: string } | null = null;
 
   for (const candidate of chosen) {
     if (library.installed.has(candidate.path)) {
@@ -340,6 +361,29 @@ export async function POST(req: Request) {
       continue;
     }
 
+    // The folder, fetched at the commit the preview read. A refused folder
+    // skips the skill with the reason; a fetch that cannot finish stops the
+    // import, rather than installing a skill missing one of its files.
+    const fetched = await fetchGithubSkillBundle({ fetch, token }, discovery, candidate);
+    if (!fetched.ok && "problem" in fetched) {
+      skipped.push({
+        path: candidate.path,
+        slug,
+        reason: "bundle_refused",
+        message: skillBundleRefusalMessage(fetched.problem),
+      });
+      continue;
+    }
+    if (!fetched.ok) {
+      // GitHub stopped answering (a rate limit, usually). What landed stays;
+      // this and every later skill is reported, and the response says why.
+      stopped = { reason: fetched.reason, message: GITHUB_IMPORT_REFUSAL_MESSAGES[fetched.reason] };
+      for (const rest of chosen.slice(chosen.indexOf(candidate))) {
+        skipped.push({ path: rest.path, slug: rest.skill.name, reason: "fetch_failed", message: stopped.message });
+      }
+      break;
+    }
+
     const { contract, requestedTools } = githubSkillContract(candidate);
     const created = await createSkillWithFirstVersion({
       userId: user.id,
@@ -355,6 +399,7 @@ export async function POST(req: Request) {
       autoSelect: false,
       sourceId: target.source.id,
       sourcePath: candidate.path,
+      bundle: fetched.bundle,
     });
 
     if (!created.ok) {
@@ -398,6 +443,8 @@ export async function POST(req: Request) {
       problems,
       /** How many landed switched off because the scanner refused them. */
       blocked: blockedCount,
+      /** Set when GitHub stopped answering partway; the skipped list says which skills did not land. */
+      stopped,
       repository: { owner: discovery.owner, repo: discovery.repo, ref: discovery.ref, commit: discovery.commit },
       /** The source they were installed into, or null when nothing was. */
       source: kept ? serializeSkillSource(target.source) : null,

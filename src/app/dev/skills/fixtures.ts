@@ -265,6 +265,19 @@ When a page range is asked for, confirm it back before writing.`,
   securityScan: { findings: [] },
   permissionDigest: null,
   requiresConsent: false,
+  bundle: {
+    digest: "9f2c4e1a7b3d5f6081a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708",
+    totalBytes: 18_432,
+    files: [
+      { path: "SKILL.md", size: 1_204, kind: "instructions", mime: "text/markdown" },
+      { path: "reference/forms.md", size: 6_310, kind: "reference", mime: "text/markdown" },
+      { path: "scripts/fill_form.py", size: 4_118, kind: "script", mime: "text/x-python" },
+      { path: "scripts/merge.py", size: 1_980, kind: "script", mime: "text/x-python" },
+      { path: "assets/blank-form.pdf", size: 4_820, kind: "asset", mime: "application/pdf" },
+    ],
+    skipped: [{ path: "bin/qpdf", reason: "type_not_kept" }],
+    scripts: 2,
+  },
   createdAt: DAYS(1),
 };
 

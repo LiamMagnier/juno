@@ -30,7 +30,16 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/crypto";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { permissionExpansion, permissionSurfaceFromScan, scanSkillVersion } from "@/lib/work/skill-security";
+import {
+  bundleRequiresConsent,
+  carriedBundleScan,
+  permissionExpansion,
+  permissionSurfaceFromScan,
+  scanSkillVersion,
+  type SkillSecurityBundleInput,
+} from "@/lib/work/skill-security";
+import { bundleCounts, parseBundleManifest, skillBundleScanInput, type SkillBundle } from "@/lib/skills/bundle";
+import { loadSkillBundleTar, storeSkillBundle, type SkillBundleColumns } from "@/lib/skills/bundle-store";
 import {
   SKILL_CONTRACT_VERSION,
   emptySkillContract,
@@ -83,6 +92,29 @@ export interface CreateSkillInput {
   sourcePath?: string | null;
   /** Which surface asked, for the audit log. */
   actor?: Actor;
+  /**
+   * The skill's folder, when it arrived with one (a package or a repository).
+   * Stored before the rows are written; scanned with the instructions; and an
+   * imported bundle with scripts lands waiting for consent.
+   */
+  bundle?: SkillBundle | null;
+}
+
+/** Why a version waits for the reader, stored on its scan for the skill's page. */
+export type SkillConsentReason = "permissions" | "scripts";
+
+function bundleColumnsData(columns: SkillBundleColumns | null): {
+  bundleKey: string | null;
+  bundleDigest: string | null;
+  bundleManifest: Prisma.InputJsonValue | Prisma.NullTypes.DbNull;
+} {
+  return columns
+    ? {
+        bundleKey: columns.bundleKey,
+        bundleDigest: columns.bundleDigest,
+        bundleManifest: columns.bundleManifest as unknown as Prisma.InputJsonValue,
+      }
+    : { bundleKey: null, bundleDigest: null, bundleManifest: Prisma.DbNull };
 }
 
 export type CreateSkillResult =
@@ -144,14 +176,26 @@ export async function createSkillWithFirstVersion(input: CreateSkillInput): Prom
   const requestedTools = input.requestedTools ?? [];
   const trust = trustForOrigin(input.origin);
 
-  const securityScan = scanSkillVersion({
+  const scannedBundle = input.bundle ? skillBundleScanInput(input.bundle) : null;
+  const baseScan = scanSkillVersion({
     name: input.name,
     description: input.description,
     instructions: input.instructions,
     requestedTools,
     contract,
+    bundle: scannedBundle,
   });
+  const scriptsNeedConsent = bundleRequiresConsent({
+    trust,
+    bundle: input.bundle?.manifest ?? null,
+    consentedDigests: new Set(),
+  });
+  const consentFor: SkillConsentReason[] = scriptsNeedConsent ? ["scripts"] : [];
+  const securityScan = consentFor.length > 0 ? { ...baseScan, consentFor } : baseScan;
   const permissionDigest = createHash("sha256").update(securityScan.permissionFingerprint).digest("hex");
+  // Stored before the rows: a version must never name an object that is not there.
+  // A blocked bundle is stored too, so the skill's page can show what was refused.
+  const bundleColumns = input.bundle ? await storeSkillBundle(input.userId, input.bundle) : null;
 
   const write = () =>
     prisma.$transaction(async (tx) => {
@@ -183,7 +227,8 @@ export async function createSkillWithFirstVersion(input: CreateSkillInput): Prom
           securityStatus: securityScan.status,
           securityScan: securityScan as unknown as Prisma.InputJsonValue,
           permissionDigest,
-          requiresConsent: false,
+          requiresConsent: scriptsNeedConsent,
+          ...bundleColumnsData(bundleColumns),
         },
       });
       return { skill, version };
@@ -217,6 +262,8 @@ export async function createSkillWithFirstVersion(input: CreateSkillInput): Prom
       skillVersion: created.version.version,
       scanStatus: securityScan.status,
       findingCount: securityScan.findings.length,
+      requiresConsent: scriptsNeedConsent,
+      ...(input.bundle ? { contentHash: input.bundle.digest, fileCount: bundleCounts(input.bundle.manifest).files } : {}),
     },
   });
 
@@ -253,6 +300,16 @@ export interface MintSkillVersionInput {
    */
   head?: { description?: string; trust?: string };
   actor?: Actor;
+  /**
+   * The version's folder.
+   *
+   *   - absent: the bundle of the version the head points at is carried over,
+   *     so editing the instructions does not drop the scripts they describe;
+   *   - `{ fromVersion }`: that version's bundle (a restore restores its files);
+   *   - a `SkillBundle`: stored and used (an update from upstream);
+   *   - null: none (upstream removed every companion file).
+   */
+  bundle?: SkillBundle | null | { fromVersion: number };
 }
 
 export type MintSkillVersionResult =
@@ -280,24 +337,82 @@ export type MintSkillVersionResult =
  * version records the switch it overrode, so the clean version after it
  * restores that switch rather than assuming it was on.
  */
+/**
+ * The bundle a new version carries, its scanner input, and the columns to write.
+ *
+ * A carried bundle reuses the verdict an earlier scan reached for the same
+ * digest when this scanner version wrote it; otherwise the stored bytes are
+ * read (and checked against the digest) and scanned again.
+ */
+async function bundleForMint(
+  input: MintSkillVersionInput
+): Promise<{ columns: SkillBundleColumns | null; scan: SkillSecurityBundleInput | null }> {
+  if (input.bundle === null) return { columns: null, scan: null };
+  if (input.bundle && "tar" in input.bundle) {
+    const bundle = input.bundle;
+    return { columns: await storeSkillBundle(input.userId, bundle), scan: skillBundleScanInput(bundle) };
+  }
+  const head = input.bundle
+    ? null
+    : await prisma.workSkill.findFirst({ where: { id: input.skill.id, userId: input.userId }, select: { currentVersion: true } });
+  const fromVersion = input.bundle ? input.bundle.fromVersion : head?.currentVersion;
+  if (fromVersion === undefined) return { columns: null, scan: null };
+  const source = await prisma.workSkillVersion.findUnique({
+    where: { skillId_version: { skillId: input.skill.id, version: fromVersion } },
+    select: { bundleKey: true, bundleDigest: true, bundleManifest: true, securityScan: true },
+  });
+  const manifest = parseBundleManifest(source?.bundleManifest);
+  if (!source?.bundleKey || !source.bundleDigest || !manifest || manifest.digest !== source.bundleDigest) {
+    return { columns: null, scan: null };
+  }
+  const columns: SkillBundleColumns = { bundleKey: source.bundleKey, bundleDigest: source.bundleDigest, bundleManifest: manifest };
+  const carried = carriedBundleScan(source.securityScan, source.bundleDigest);
+  if (carried) return { columns, scan: { digest: source.bundleDigest, carried } };
+  const tar = await loadSkillBundleTar(columns);
+  return { columns, scan: skillBundleScanInput({ tar, digest: source.bundleDigest, manifest }) };
+}
+
 export async function mintSkillVersion(input: MintSkillVersionInput): Promise<MintSkillVersionResult> {
   const { userId, content } = input;
   const description = input.head?.description ?? input.skill.description;
-  const securityScan = scanSkillVersion({
+  const bundle = await bundleForMint(input);
+  const baseScan = scanSkillVersion({
     name: input.skill.name,
     description,
     instructions: content.instructions,
     requestedTools: content.requestedTools,
     contract: content.contract,
+    bundle: bundle.scan,
   });
-  const permissionDigest = createHash("sha256").update(securityScan.permissionFingerprint).digest("hex");
-  const previousVersion = await prisma.workSkillVersion.findFirst({
-    where: { skillId: input.skill.id },
-    orderBy: { version: "desc" },
-    select: { securityScan: true },
+  const permissionDigest = createHash("sha256").update(baseScan.permissionFingerprint).digest("hex");
+  const [previousVersion, consented, headTrust] = await Promise.all([
+    prisma.workSkillVersion.findFirst({
+      where: { skillId: input.skill.id },
+      orderBy: { version: "desc" },
+      select: { securityScan: true },
+    }),
+    bundle.columns
+      ? prisma.workSkillVersion.findMany({
+          where: { skillId: input.skill.id, requiresConsent: false, bundleDigest: { not: null } },
+          select: { bundleDigest: true },
+        })
+      : Promise.resolve([]),
+    input.head?.trust !== undefined
+      ? Promise.resolve({ trust: input.head.trust })
+      : prisma.workSkill.findFirst({ where: { id: input.skill.id, userId }, select: { trust: true } }),
+  ]);
+  const expansion = permissionExpansion(permissionSurfaceFromScan(previousVersion?.securityScan), baseScan.permissions);
+  const scriptsNeedConsent = bundleRequiresConsent({
+    trust: headTrust?.trust ?? "untrusted",
+    bundle: bundle.columns?.bundleManifest ?? null,
+    consentedDigests: new Set(consented.map((row) => row.bundleDigest).filter((digest): digest is string => !!digest)),
   });
-  const expansion = permissionExpansion(permissionSurfaceFromScan(previousVersion?.securityScan), securityScan.permissions);
-  const requiresConsent = expansion.length > 0;
+  const consentFor: SkillConsentReason[] = [
+    ...(expansion.length > 0 ? (["permissions"] as const) : []),
+    ...(scriptsNeedConsent ? (["scripts"] as const) : []),
+  ];
+  const securityScan = consentFor.length > 0 ? { ...baseScan, consentFor } : baseScan;
+  const requiresConsent = consentFor.length > 0;
 
   for (let tries = 0; tries < VERSION_ALLOCATION_TRIES; tries++) {
     try {
@@ -346,6 +461,7 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
               : { ...securityScan, [SWITCH_BEFORE_BLOCK_KEY]: heldSwitch }) as unknown as Prisma.InputJsonValue,
             permissionDigest,
             requiresConsent,
+            ...bundleColumnsData(bundle.columns),
           },
         });
         const trust = input.head?.trust ?? current.trust;
@@ -379,7 +495,10 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
           scanStatus: securityScan.status,
           findingCount: securityScan.findings.length,
           requiresConsent,
-          permissionAdditions: expansion,
+          permissionAdditions: [...expansion, ...(scriptsNeedConsent ? ["bundle:scripts"] : [])],
+          ...(bundle.columns
+            ? { contentHash: bundle.columns.bundleDigest, fileCount: bundle.columns.bundleManifest.files.length }
+            : {}),
         },
       });
 

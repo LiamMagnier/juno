@@ -10,9 +10,11 @@
  * the reader's own file on their own disk.
  *
  * EVERY IMPORT LANDS UNTRUSTED (`origin: "imported"`, a constant), is scanned,
- * and lists but never imports the files beside a SKILL.md. Links go through
- * the SSRF-safe fetcher: a skill URL is a stranger's address fetched from
- * Juno's network.
+ * and keeps the files beside a SKILL.md as the skill's bundle (`bundle.ts`):
+ * scanned with it, and an imported bundle with a script waits for consent
+ * before anything in it can run, which is only ever inside the no-network
+ * sandbox. Links go through the SSRF-safe fetcher: a skill URL is a stranger's
+ * address fetched from Juno's network.
  */
 
 import { createHash } from "node:crypto";
@@ -39,6 +41,7 @@ import {
   type PackageReadResult,
 } from "@/lib/skills/package";
 import { SKILL_MD_REFUSAL_MESSAGES, titleFromSkillName, type SkillMdRefusal } from "@/lib/skills/skill-md";
+import { bundleCounts, skillBundleRefusalMessage, skillBundleScanInput } from "@/lib/skills/bundle";
 import type { LibrarySkill } from "@/lib/skills/library-contract";
 import { MAX_SKILL_NAME_CHARS, normalizeSkillSlug } from "@/lib/work/skills";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -137,6 +140,14 @@ function previewOf(candidate: PackageCandidate, origin: PackageOrigin, notes: { 
     hostKeys: candidate.skill.hostKeys,
     ignoredKeys: candidate.skill.ignoredKeys,
     companionFiles: candidate.companionFiles,
+    /** What of the folder is kept, by kind, and what was left out. Null for instructions only. */
+    bundle: candidate.bundle
+      ? {
+          ...bundleCounts(candidate.bundle.manifest),
+          totalBytes: candidate.bundle.manifest.totalBytes,
+          skippedFiles: candidate.bundle.manifest.skipped.map((entry) => entry.path),
+        }
+      : null,
     url: origin.kind === "url" ? origin.url : "",
     securityStatus: scanSkillVersion({
       name: titleFromSkillName(candidate.skill.name),
@@ -144,6 +155,7 @@ function previewOf(candidate: PackageCandidate, origin: PackageOrigin, notes: { 
       instructions: candidate.skill.instructions,
       requestedTools,
       contract,
+      bundle: candidate.bundle ? skillBundleScanInput(candidate.bundle) : null,
     }).status,
     installed: false,
     ...notes,
@@ -275,14 +287,22 @@ export async function POST(req: Request) {
 
   if (importing && choice.digest !== digest) return refuse("source_changed", "That skill package changed since you reviewed it. Preview it again before importing.", 409);
 
-  if (!read.ok) return refuse(read.reason, PACKAGE_REFUSAL_MESSAGES[read.reason], 422);
+  if (!read.ok) {
+    const message = read.path
+      ? `${PACKAGE_REFUSAL_MESSAGES[read.reason]} (“${read.path.slice(0, 120)}”)`
+      : PACKAGE_REFUSAL_MESSAGES[read.reason];
+    return refuse(read.reason, message, 422);
+  }
   const problems = read.problems.map((problem) => ({
     path: problem.path,
-    reason: problem.reason,
+    // A refused folder reports the bundle's own reason (`symlink`, `unsafe_path`, …).
+    reason: problem.reason === "bundle" && problem.bundle ? problem.bundle.reason : problem.reason,
     message:
       problem.reason === "unreadable"
         ? "This file couldn't be read out of the archive."
-        : SKILL_MD_REFUSAL_MESSAGES[problem.reason as SkillMdRefusal],
+        : problem.reason === "bundle" && problem.bundle
+          ? skillBundleRefusalMessage(problem.bundle)
+          : SKILL_MD_REFUSAL_MESSAGES[problem.reason as SkillMdRefusal],
   }));
   // A lone SKILL.md that doesn't parse is the whole answer, not a footnote.
   if (read.candidates.length === 0 && problems.length === 1 && read.total === 1) {
@@ -348,6 +368,7 @@ export async function POST(req: Request) {
       // A constant. Never from the body.
       origin: "imported",
       autoSelect: false,
+      bundle: candidate.bundle,
     });
     if (!created.ok) {
       skipped.push({

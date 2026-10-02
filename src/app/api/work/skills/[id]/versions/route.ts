@@ -148,7 +148,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // highest one before it (`permissionExpansion`) so a version asking for more
   // waits for consent, and a blocked version lands switched off. Nothing there
   // switches a skill back on that the reader turned off.
-  const minted = await mintSkillVersion({ userId: user.id, skill, content, actor: "web" });
+  // A restore restores the files that version kept; an edit carries the
+  // current version's files over (the default), so changing the instructions
+  // never drops the scripts they describe.
+  const minted = await mintSkillVersion({
+    userId: user.id,
+    skill,
+    content,
+    actor: "web",
+    ...(restoreVersion !== undefined ? { bundle: { fromVersion: restoreVersion } } : {}),
+  });
   if (minted.ok) {
     return NextResponse.json(
       { skill: serializeSkill(minted.skill), version: serializeSkillVersion(minted.version) },

@@ -48,6 +48,7 @@ import {
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { parseBundleManifest, type SkillBundleFileKind } from "@/lib/skills/bundle-manifest";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -1903,7 +1904,34 @@ export interface ClientWorkSkillVersion {
   securityScan: unknown;
   permissionDigest: string | null;
   requiresConsent: boolean;
+  /**
+   * The skill's folder, when this version keeps one: every file with its size
+   * and kind, and what was left out. Never the storage key, which is the
+   * server's business. Null for an instructions-only version, and for a stored
+   * manifest this build cannot read (shown as no files rather than as wrong ones).
+   */
+  bundle: ClientSkillBundle | null;
   createdAt: string;
+}
+
+export interface ClientSkillBundle {
+  digest: string;
+  totalBytes: number;
+  files: { path: string; size: number; kind: SkillBundleFileKind; mime: string }[];
+  skipped: { path: string; reason: string }[];
+  scripts: number;
+}
+
+export function serializeSkillBundle(raw: unknown): ClientSkillBundle | null {
+  const manifest = parseBundleManifest(raw);
+  if (!manifest) return null;
+  return {
+    digest: manifest.digest,
+    totalBytes: manifest.totalBytes,
+    files: manifest.files.map(({ path, size, kind, mime }) => ({ path, size, kind, mime })),
+    skipped: manifest.skipped,
+    scripts: manifest.files.filter((file) => file.kind === "script").length,
+  };
 }
 
 export function serializeSkillVersion(version: WorkSkillVersion): ClientWorkSkillVersion {
@@ -1919,6 +1947,7 @@ export function serializeSkillVersion(version: WorkSkillVersion): ClientWorkSkil
     securityScan: version.securityScan,
     permissionDigest: version.permissionDigest,
     requiresConsent: version.requiresConsent,
+    bundle: version.bundleDigest ? serializeSkillBundle(version.bundleManifest) : null,
     createdAt: version.createdAt.toISOString(),
   };
 }

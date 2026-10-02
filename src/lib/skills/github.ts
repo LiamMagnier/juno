@@ -10,14 +10,17 @@
  * rather than asking them to paste one `SKILL.md` URL at a time, which is the
  * design that makes people give up on the second skill.
  *
- * WHAT IS DELIBERATELY NOT FETCHED. A skill directory may also hold
- * `scripts/`, `references/` and `assets/` — Anthropic's "level 3", read by an
- * agent with a filesystem and a shell. Juno has neither in a chat turn, and a
- * `scripts/` directory pulled from a stranger's repository and executed
- * anywhere is precisely the exfiltration shape Anthropic's own security note
- * describes. The tree listing already says what else the folder held, so the
- * preview can report "also ships 4 scripts, not imported" without a single
- * extra request and without ever holding the bytes.
+ * WHAT IS FETCHED, AND WHEN. A skill directory may also hold `scripts/`,
+ * `references/` and `assets/` — Anthropic's "level 3", read by an agent with a
+ * filesystem and a shell. The preview reads only the `SKILL.md` files and
+ * reports the rest from the tree listing ("keeps 4 files, 1 script") without a
+ * single extra request. The IMPORT then fetches the chosen skills' folders
+ * (`fetchGithubSkillBundle`) at the commit the preview read, and keeps them as
+ * bundles: scanned, consented to when an imported one carries a script, and
+ * only ever run inside the no-network sandbox (docs/rework/TOOL_RUNTIME_DESIGN.md
+ * §6.8, reversing docs/skills-audit.md §4.3 on the owner's decision). A symlink
+ * in the folder, an oversized file or too many files refuse that skill before
+ * any byte is fetched, from the tree alone.
  *
  * NO `server-only` AND NO PRISMA. `fetch` is injected, so
  * `tests/skills-github.test.ts` drives the whole discovery path — URL parsing,
@@ -27,6 +30,16 @@
 
 import { parseSkillMd, SKILL_MD_FILENAME, type ParsedSkillMd, type SkillMdRefusal } from "@/lib/skills/skill-md";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import {
+  MAX_BUNDLE_BYTES,
+  MAX_BUNDLE_FILE_BYTES,
+  MAX_BUNDLE_FILES,
+  buildSkillBundle,
+  checkBundlePath,
+  isBundleJunk,
+  type SkillBundle,
+  type SkillBundleProblem,
+} from "@/lib/skills/bundle";
 
 export const GITHUB_API_BASE = "https://api.github.com";
 
@@ -197,6 +210,26 @@ export interface GithubSkillCandidate {
    * rather than from the skill quietly not working.
    */
   companionFiles: string[];
+  /**
+   * The same files with what the tree says about each: size, blob id and
+   * whether git stored it as a symlink. What `bundlePreflight` and
+   * `fetchGithubSkillBundle` work from. Not capped at 50 like the list above:
+   * a folder over the bundle limit has to be seen to be over it.
+   */
+  companionEntries: GithubCompanionEntry[];
+  /** The SKILL.md exactly as read, for the bundle's own copy. */
+  raw: string;
+}
+
+/** One file beside a SKILL.md, as the git tree describes it. */
+export interface GithubCompanionEntry {
+  /** Relative to the skill's folder. */
+  path: string;
+  size: number;
+  /** The git blob id. Two trees with the same ids hold the same bytes. */
+  sha: string;
+  /** Mode 120000: git stored a symbolic link, not a file. */
+  symlink: boolean;
 }
 
 /** A `SKILL.md` that was found and could not be read. Reported, not dropped. */
@@ -433,6 +466,8 @@ interface TreeEntry {
   path?: string;
   type?: string;
   size?: number;
+  mode?: string;
+  sha?: string;
 }
 
 const directoryOf = (path: string) => {
@@ -593,6 +628,18 @@ export async function discoverGithubSkills(
       return;
     }
     const directory = directoryOf(path);
+    // A skill folder nested inside this one owns its own files.
+    const nestedDirs = matches.map(directoryOf).filter((dir) => dir !== directory && within(dir, directory));
+    const companionEntries = blobs
+      .filter((entry) => entry.path !== path && within(entry.path as string, directory))
+      .filter((entry) => !nestedDirs.some((dir) => within(entry.path as string, dir)))
+      .slice(0, MAX_BUNDLE_FILES + 1)
+      .map((entry) => ({
+        path: directory ? (entry.path as string).slice(directory.length + 1) : (entry.path as string),
+        size: typeof entry.size === "number" ? entry.size : 0,
+        sha: typeof entry.sha === "string" ? entry.sha : "",
+        symlink: entry.mode === "120000",
+      }));
     candidates.push({
       path,
       directory,
@@ -610,6 +657,8 @@ export async function discoverGithubSkills(
         .filter((other) => other !== path && within(other, directory))
         .map((other) => (directory ? other.slice(directory.length + 1) : other))
         .slice(0, 50),
+      companionEntries,
+      raw: raw.value,
     });
   });
 
@@ -651,4 +700,162 @@ export function provenanceRecord(provenance: GithubSkillProvenance): Record<stri
     "source.path": provenance.path,
     "source.url": provenance.url,
   };
+}
+
+
+// ---------------------------------------------------------------------------
+// The folder, kept
+// ---------------------------------------------------------------------------
+
+/** Provenance key for the companion files' identity at the commit read. */
+export const PROVENANCE_FILES_KEY = "source.files";
+
+/** Companion entries the bundle would consider (no dotfiles, no resource forks). */
+function keptEntries(candidate: Pick<GithubSkillCandidate, "companionEntries">): GithubCompanionEntry[] {
+  return candidate.companionEntries.filter((entry) => !isBundleJunk(entry.path));
+}
+
+/**
+ * The identity of a skill's companion files from the tree alone: their paths,
+ * blob ids and link flags. Stored in provenance, so an update check can tell
+ * "the scripts changed upstream" without fetching them. Empty string for a
+ * folder with nothing beside its SKILL.md.
+ */
+export function companionTreeDigest(candidate: Pick<GithubSkillCandidate, "companionEntries">): string {
+  const entries = keptEntries(candidate);
+  if (entries.length === 0) return "";
+  const line = entries
+    .map((entry) => `${entry.path}\0${entry.sha}\0${entry.symlink ? "l" : "f"}`)
+    .sort()
+    .join("\n");
+  // FNV-1a over the canonical listing, twice with different seeds: no crypto
+  // import (this module stays usable without Node built-ins) and the value is a
+  // change detector, not a security boundary — the bundle digest is that.
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < line.length; i++) {
+    const code = line.charCodeAt(i);
+    a = Math.imul(a ^ code, 0x01000193) >>> 0;
+    b = Math.imul(b ^ code, 0x5bd1e995) >>> 0;
+  }
+  return `${entries.length}:${a.toString(16).padStart(8, "0")}${b.toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * Refuses a folder from what the tree says, before any byte is fetched: a
+ * symlink, a path that cannot be held, too many files, a file or a total over
+ * the bundle limits. Null when the folder may be fetched.
+ */
+export function bundlePreflight(candidate: Pick<GithubSkillCandidate, "companionEntries">): SkillBundleProblem | null {
+  const all = candidate.companionEntries;
+  const link = all.find((entry) => entry.symlink);
+  if (link) return { reason: "symlink", path: link.path };
+  for (const entry of all) {
+    const checked = checkBundlePath(entry.path);
+    if (!checked.ok) return { reason: checked.reason, path: entry.path };
+  }
+  const entries = keptEntries(candidate);
+  if (entries.length + 1 > MAX_BUNDLE_FILES) return { reason: "too_many_files" };
+  const large = entries.find((entry) => entry.size > MAX_BUNDLE_FILE_BYTES);
+  if (large) return { reason: "file_too_large", path: large.path };
+  if (entries.reduce((sum, entry) => sum + entry.size, 0) > MAX_BUNDLE_BYTES) return { reason: "too_large" };
+  return null;
+}
+
+/** One file's bytes, bounded while they stream. */
+async function fetchBytes(client: GithubClient, url: string, limit: number): Promise<ApiResult<Uint8Array>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  client.signal?.addEventListener("abort", onAbort);
+  try {
+    const response = await client.fetch(url, {
+      headers: headers(client, "application/vnd.github.raw"),
+      signal: controller.signal,
+      redirect: "follow",
+    });
+    if (response.status === 404) return { ok: false, reason: "not_found" };
+    if (response.status === 401) return { ok: false, reason: "unauthorized" };
+    if (response.status === 403 || response.status === 429) {
+      const remaining = response.headers.get("x-ratelimit-remaining");
+      const retry = response.headers.get("retry-after");
+      return { ok: false, reason: remaining === "0" || retry !== null || response.status === 429 ? "rate_limited" : "unauthorized" };
+    }
+    if (!response.ok) return { ok: false, reason: "unreachable" };
+    const declared = Number(response.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declared) && declared > limit) return { ok: false, reason: "unreachable" };
+    const reader = response.body?.getReader();
+    if (!reader) return { ok: true, value: new Uint8Array(0) };
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > limit) {
+        await reader.cancel().catch(() => {});
+        return { ok: false, reason: "unreachable" };
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { ok: true, value: bytes };
+  } catch {
+    return { ok: false, reason: "unreachable" };
+  } finally {
+    clearTimeout(timer);
+    client.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+export type GithubBundleResult =
+  | { ok: true; bundle: SkillBundle | null }
+  | { ok: false; problem: SkillBundleProblem }
+  | { ok: false; reason: GithubImportRefusal };
+
+/**
+ * Fetches a skill's folder at the commit the walk read and packs it.
+ *
+ * Null for a folder with nothing beside its SKILL.md. A rate limit or an
+ * unreachable file fails the whole skill rather than importing it with a hole
+ * in its folder: a skill missing one of its scripts looks complete and breaks
+ * the first time it runs.
+ */
+export async function fetchGithubSkillBundle(
+  client: GithubClient,
+  discovery: Pick<GithubDiscovery, "owner" | "repo" | "commit">,
+  candidate: Pick<GithubSkillCandidate, "directory" | "path" | "raw" | "companionEntries">
+): Promise<GithubBundleResult> {
+  const refused = bundlePreflight(candidate);
+  if (refused) return { ok: false, problem: refused };
+  const entries = keptEntries(candidate);
+  if (entries.length === 0) return { ok: true, bundle: null };
+
+  const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(discovery.owner)}/${encodeURIComponent(discovery.repo)}`;
+  const prefix = candidate.directory ? `${candidate.directory}/` : "";
+  const reads = await readInOrder(
+    entries,
+    (entry) =>
+      fetchBytes(
+        client,
+        `${base}/contents/${`${prefix}${entry.path}`.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(discovery.commit)}`,
+        MAX_BUNDLE_FILE_BYTES
+      ),
+    (result) => !result.ok && result.reason === "rate_limited"
+  );
+  const failed = reads.find((result) => !result || !result.ok);
+  if (failed && !failed.ok) return { ok: false, reason: failed.reason === "not_found" ? "unreachable" : failed.reason };
+  if (reads.some((result) => !result)) return { ok: false, reason: "rate_limited" };
+
+  const skillName = candidate.path.slice(prefix.length);
+  const built = buildSkillBundle([
+    { path: skillName, bytes: new TextEncoder().encode(candidate.raw) },
+    ...entries.map((entry, index) => ({ path: entry.path, bytes: (reads[index] as { ok: true; value: Uint8Array }).value })),
+  ]);
+  return built.ok ? { ok: true, bundle: built.bundle } : { ok: false, problem: built.problem };
 }

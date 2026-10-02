@@ -26,7 +26,13 @@ import {
   type SkillLibrary,
   type SkillSourceChange,
 } from "@/lib/skills/library-contract";
-import { provenanceRecord, type GithubDiscovery, type GithubSkillCandidate } from "@/lib/skills/github";
+import {
+  PROVENANCE_FILES_KEY,
+  companionTreeDigest,
+  provenanceRecord,
+  type GithubDiscovery,
+  type GithubSkillCandidate,
+} from "@/lib/skills/github";
 import { titleFromSkillName } from "@/lib/skills/skill-md";
 import {
   permissionExpansion,
@@ -271,11 +277,15 @@ export function githubSkillContract(
   base: WorkSkillContract = emptySkillContract()
 ): { contract: WorkSkillContract; requestedTools: string[]; droppedTools: string[] } {
   const tools = partitionTools(candidate.skill.allowedTools);
+  const files = companionTreeDigest(candidate);
   const contract: WorkSkillContract = {
     ...base,
     provenance: {
       ...provenanceRecord(candidate.provenance),
       [PROVENANCE_DIGEST_KEY]: instructionsDigest(candidate.skill.instructions),
+      // The companion files' identity at this commit, when there are any, so
+      // an update check sees a changed script without fetching it.
+      ...(files ? { [PROVENANCE_FILES_KEY]: files } : {}),
       ...Object.fromEntries(
         Object.entries(candidate.skill.metadata).map(([key, value]) => [`skill.${key}`, value])
       ),
@@ -361,7 +371,26 @@ export function upstreamChanged(installed: InstalledSourceSkill, candidate: Gith
   const instructionsMoved = recorded
     ? recorded !== instructionsDigest(candidate.skill.instructions)
     : installed.instructions !== candidate.skill.instructions;
-  return instructionsMoved || !sameList(installed.requestedTools, partitionTools(candidate.skill.allowedTools).carried);
+  return (
+    instructionsMoved ||
+    upstreamFilesChanged(installed, candidate) ||
+    !sameList(installed.requestedTools, partitionTools(candidate.skill.allowedTools).carried)
+  );
+}
+
+/**
+ * Whether the files beside the SKILL.md differ from the ones installed.
+ *
+ * A skill installed before folders were kept recorded no file identity; if
+ * upstream has files now, that is a change worth offering (taking it brings
+ * the scripts the instructions describe).
+ */
+export function upstreamFilesChanged(
+  installed: Pick<InstalledSourceSkill, "contract">,
+  candidate: Pick<GithubSkillCandidate, "companionEntries">
+): boolean {
+  const recorded = installed.contract.provenance[PROVENANCE_FILES_KEY] ?? "";
+  return recorded !== companionTreeDigest(candidate);
 }
 
 /**
@@ -544,3 +573,5 @@ export function switchBeforeBlockAfterMint(input: {
 export function trustAfterUpstreamChange(trust: string, instructionsChanged: boolean): string {
   return instructionsChanged ? ("untrusted" satisfies WorkSkillTrust) : trust;
 }
+// The caller passes "instructions or files changed": a script nobody here has
+// read is no more vouched for than a sentence nobody has read.
