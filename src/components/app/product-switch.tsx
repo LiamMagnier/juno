@@ -375,8 +375,8 @@ function RailItem({
               rhythm from the products down to the footer — which the comment
               claimed while the box passed no size, letting SidebarMotionIcon
               fall back to its own `size-4` (16px) directly above nav glyphs at
-              18. `[&_svg]:size-4.5` is what makes the sentence true. */}
-          <span className="flex size-5 items-center justify-center [&_svg]:size-4.5">
+              18. `[&_svg]:size-4` is what makes the sentence true. */}
+          <span className="flex size-5 items-center justify-center [&_svg]:size-4">
             {locked ? (
               <Lock aria-hidden="true" />
             ) : (

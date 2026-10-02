@@ -25,6 +25,6 @@ export default async function ShellDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { quota, many, shell, w } = await searchParams;
-  const width = Math.min(336, Math.max(224, Number(w) || 288));
+  const width = Math.min(336, Math.max(224, Number(w) || 260));
   return <ShellFixture nearCap={quota === "near"} many={many === "1"} shell={shell === "1"} width={width} />;
 }
