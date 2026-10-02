@@ -40,6 +40,11 @@ test("the route decides execution tools from the entitlement rows and the verifi
   assert.match(route, /attachmentToolToggles\.code = execution\.legacyCodeInterpreter;/);
   assert.match(route, /toolSpecs: toolProviderSessions\?\.specs\.length \? toolProviderSessions\.specs : undefined,/);
   assert.match(route, /toolWatch\.observe\(ev\);/);
+  // Providers hear of a skill only once it APPLIED (blocked, unscanned and
+  // consent-pending skills are not armed), never the slug the request named.
+  const toolTurn = route.slice(route.indexOf("const toolTurn: ToolTurn = {"), route.indexOf("const execution = executionEntitlements({"));
+  assert.match(toolTurn, /skillSlug: appliedSkill\?\.candidate\.slug \?\? null,/);
+  assert.doesNotMatch(toolTurn, /turnSkillSlug/);
   // One capability snapshot per request: routing and tools read the same rows.
   assert.equal(route.match(/loadModelCapabilityMap\(/g)?.length, 1);
 });

@@ -357,7 +357,11 @@ export interface ToolTurn {
   plan: string;
   modelId: string;
   vision: boolean;
-  /** A skill the user armed explicitly for this message (`/slug`). */
+  /**
+   * A skill the user armed explicitly for this message (`/slug`) that passed
+   * every check and APPLIED (`loadChatSkill`); null when none did. Never the
+   * raw slug from the request.
+   */
   skillSlug: string | null;
 }
 

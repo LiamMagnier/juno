@@ -2814,7 +2814,10 @@ async function handleChat(req: Request) {
     plan,
     modelId: modelInfo.id,
     vision: modelInfo.vision,
-    skillSlug: turnSkillSlug ?? null,
+    // The skill that actually APPLIED, never the raw slug the request named:
+    // a blocked, unscanned or consent-pending skill is not armed, and the
+    // providers must not be told it is.
+    skillSlug: appliedSkill?.candidate.slug ?? null,
   };
   const execution = executionEntitlements({
     plan,

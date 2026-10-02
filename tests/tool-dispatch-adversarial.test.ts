@@ -169,7 +169,9 @@ test("nothing an executor reports after its call is answered reaches the stream"
   const { events } = await drain(
     executeToolBatch([call("first", "{}", 0), call("second", "{}", 1)], new AbortController().signal, { toolset: tools, cache: new Map() }),
   );
-  const forFirst = events.filter((e) => e.type === "tool" && e.callId === "jc_0_0").map((e) => (e.phase === "status" ? e.status : e.phase));
+  const forFirst = events
+    .filter((e): e is Extract<LlmEvent, { type: "tool" }> => e.type === "tool" && e.callId === "jc_0_0")
+    .map((e) => (e.phase === "status" ? e.status : e.phase));
   assert.deepEqual(forFirst, ["queued", "result"]);
 });
 
