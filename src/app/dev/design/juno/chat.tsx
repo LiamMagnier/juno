@@ -358,7 +358,7 @@ export function ChatSurface({
                         initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
                         animate={reduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
                         exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0, transition: T.exit }}
-                        transition={reduced ? R : { duration: 0.24, ease: EASE_OUT }}
+                        transition={reduced ? R : { duration: 0.22, ease: EASE_OUT }}
                         style={{ overflow: "hidden" }}
                       >
                         <NeedsYouRow count={needsOut} onShow={showNeeds} />
@@ -380,7 +380,7 @@ export function ChatSurface({
                 <Greeting />
               </motion.div>
               {ghost.suggest ? (
-                <motion.div style={ghost.suggest} className="jn-ghost__suggest" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : { duration: 0.1, ease: EASE_OUT }}>
+                <motion.div style={ghost.suggest} className="jn-ghost__suggest" initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={reduced ? R : { duration: 0.12, ease: EASE_OUT }}>
                   <Suggestions />
                 </motion.div>
               ) : null}

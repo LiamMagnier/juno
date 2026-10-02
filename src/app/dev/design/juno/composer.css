@@ -611,7 +611,7 @@
 }
 
 /* The dock (§2.1): one row attached to the composer's top edge, arriving
-   (height and opacity, 240 ms) when the thing it names is out of view. */
+   (height and opacity, base 220 ms) when the thing it names is out of view. */
 .jn .jn-dockrow-wrap {
   border-radius: var(--r-composer) var(--r-composer) 0 0;
 }

@@ -13,7 +13,7 @@ import { EASE_OUT, POP_IN, R, SPRING, T, TIMING, useReduced } from "./motion";
 import { face } from "./shell";
 
 /** A disclosure opening downward: out-soft from the first frame (both ends are not visible, so no ease-in). */
-const REVEAL = { duration: 0.24, ease: EASE_OUT };
+const REVEAL = { duration: 0.22, ease: EASE_OUT };
 
 /**
  * A box whose height follows its content on `base` (an approval collapsing to

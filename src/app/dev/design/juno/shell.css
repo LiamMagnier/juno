@@ -605,6 +605,9 @@
   justify-content: space-between;
   height: 44px;
   padding: 0 8px 0 10px;
+  /* Concentric with the panel, so the blur never samples the frame through the
+     rounded corner (Revision 2: grey smudges at the top right). */
+  border-radius: var(--r-panel) var(--r-panel) 0 0;
   background: var(--mat-bar);
   -webkit-backdrop-filter: var(--mat-filter-bar);
   backdrop-filter: var(--mat-filter-bar);

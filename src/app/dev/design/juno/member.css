@@ -109,6 +109,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
+  border-radius: var(--r-panel) var(--r-panel) 0 0;
   background: var(--mat-band);
   -webkit-backdrop-filter: var(--mat-filter-band);
   backdrop-filter: var(--mat-filter-band);
@@ -376,6 +377,7 @@
     margin-bottom: -32px;
   }
   .jn .jn-mhead::before {
+    border-radius: 0;
     -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
     mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   }
