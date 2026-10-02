@@ -406,6 +406,10 @@
       "routes": {
         "/api/connectors": "native",
         "/api/connectors/[id]": "native",
+        "/api/connectors/usage": {
+          "status": "planned",
+          "note": "When each app was last used (tool, chat), for the app's details under Customize \u203a Apps on the web. The apps do not show a last-used line yet."
+        },
         "/api/connectors/[id]/callback": {
           "status": "web-only",
           "note": "The provider redirects the browser here; the apps start the flow at /api/connectors/{id}/connect in the browser."

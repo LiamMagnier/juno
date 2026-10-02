@@ -1,6 +1,6 @@
 "use client";
 
-import { CustomizeNav } from "@/components/customize/customize-nav";
+import { CustomizeFrame } from "@/components/customize/customize-nav";
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "@/components/ui/icons";
@@ -8,7 +8,7 @@ import { LoadError } from "@/components/ui/load-error";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
-import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { AppPageHeader } from "@/components/app/app-page";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
@@ -73,8 +73,7 @@ export default function AutomationsPage() {
   );
 
   return (
-    <AppPage measure="wide">
-      <CustomizeNav current="routines" />
+    <CustomizeFrame current="routines">
       <AppPageHeader
         heading={FEATURE_NAMES.routines.label}
         lede="Tasks that start themselves, on a schedule or when something changes."
@@ -131,6 +130,6 @@ export default function AutomationsPage() {
           )}
         </>
       )}
-    </AppPage>
+    </CustomizeFrame>
   );
 }
