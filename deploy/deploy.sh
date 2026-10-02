@@ -643,9 +643,50 @@ on_exit() {
   trap - EXIT
   if (( status != 0 )) && (( ROLLBACK_NEEDED == 1 )); then
     rollback_release "deploy failed before the new release was verified"
+  elif (( status != 0 )) && [[ -n "$PAUSED_APPS" ]]; then
+    # Failed before anything was activated: no reload will bring the paused
+    # workers back, so they are started again here, as they were.
+    resume_background_apps
   fi
   cleanup_staging
   exit "$status"
+}
+
+# The background workers are paused for the length of a deploy: on the 1 GB VM
+# a release unpacking and restarting beside them pushed the box into swap, and
+# deploys crawled for half an hour before timing out (2026-10-02). The web
+# server and the voice relay keep serving. Activation (startOrReload) or a
+# rollback starts every app the active release declares, so they come back on
+# their own; a deploy that fails before activating starts them in on_exit.
+PAUSED_APPS=""
+pause_background_apps() {
+  PAUSED_APPS="$(pm2 jlist 2>/dev/null | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => (raw += chunk)).on("end", () => {
+      const keep = new Set(["juno-backend", "juno-voice-relay"]);
+      for (const line of raw.split("\n").reverse()) {
+        try {
+          const rows = JSON.parse(line);
+          if (!Array.isArray(rows)) continue;
+          const names = rows
+            .filter((row) => row?.name?.startsWith("juno-") && !keep.has(row.name) && row.pm2_env?.status === "online")
+            .map((row) => row.name);
+          return console.log(names.join(" "));
+        } catch {}
+      }
+    });
+  ' 2>/dev/null || true)"
+  [[ -n "$PAUSED_APPS" ]] || return 0
+  say "${YELLOW}⏸️ Pausing background workers for the deploy: $PAUSED_APPS${NC}"
+  # shellcheck disable=SC2086 # names are juno-* identifiers, split on purpose
+  pm2 stop $PAUSED_APPS >/dev/null 2>&1 || true
+}
+
+resume_background_apps() {
+  [[ -n "$PAUSED_APPS" ]] || return 0
+  say "${YELLOW}▶️ Starting the paused background workers again: $PAUSED_APPS${NC}"
+  # shellcheck disable=SC2086
+  pm2 start $PAUSED_APPS >/dev/null 2>&1 || true
 }
 
 # Held for the whole transaction, deploy or --rollback. The holder writes who
@@ -689,6 +730,7 @@ main() {
   trap on_exit EXIT
 
   say "${BLUE}🚀 Starting Juno release deployment...${NC}"
+  pause_background_apps
   require_deploy_environment
   if [[ -z "$DEPLOY_ARCHIVE" ]]; then
     require_clean_checkout

@@ -455,7 +455,14 @@ test("the VM preflight changes nothing while a deploy holds the lock, and says w
 test("with the lock free, the VM preflight clears only what no deploy can still need, then claims the run's upload directory", () => {
   const vm = fakeVm();
   try {
-    const preflight = () => spawnSync("bash", ["-s"], { encoding: "utf8", input: VM_PREFLIGHT, env: vm.env });
+    // A threshold no disk is under, so the prune runs: the preflight only
+    // deletes old releases when space is short.
+    const preflight = () =>
+      spawnSync("bash", ["-s"], {
+        encoding: "utf8",
+        input: VM_PREFLIGHT,
+        env: { ...vm.env, JUNO_PRUNE_BELOW_KB: "999999999999" },
+      });
     const run = preflight();
     assert.equal(run.status, 0, run.stdout + run.stderr);
 

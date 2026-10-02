@@ -63,8 +63,16 @@ printf 'pid %s since %s, preflight of run %s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:
 # Freeing space is best effort, as it always was: a find that trips over a file
 # something else removed mid-scan must not cost the deploy.
 releases="$LIVE_ROOT/releases"
+# Old releases are deleted here only when space is short (under 5 GB free):
+# a release is tens of thousands of files, and on a VM under memory pressure
+# deleting one held a deploy for 15 minutes (2026-10-02). deploy.sh prunes to
+# two releases after every successful activation either way.
+free_kb="$(df -Pk -- "$LIVE_ROOT" 2>/dev/null | awk 'NR == 2 { print $4 }')"
 if [ -d "$releases" ]; then
   find "$releases" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
+fi
+prune_below_kb="${JUNO_PRUNE_BELOW_KB:-5242880}"
+if [ -d "$releases" ] && { [ -z "$free_kb" ] || [ "$free_kb" -lt "$prune_below_kb" ]; }; then
   current_target="$(readlink -f "$LIVE_ROOT/current" 2>/dev/null || true)"
   previous_target="$(readlink -f "$LIVE_ROOT/previous" 2>/dev/null || true)"
   find "$releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort | while IFS= read -r dir; do
