@@ -7,7 +7,6 @@ import ts from "typescript";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = join(projectRoot, "src");
 const outputPath = join(sourceRoot, "lib", "i18n-catalog.generated.ts");
-const strings = new Set();
 
 const COPY_PROPERTIES = new Set([
   "alt",
@@ -45,7 +44,31 @@ const COPY_PROPERTIES = new Set([
   "tooltip",
 ]);
 
-function add(raw) {
+/*
+ * MODEL-FACING TEXT NEVER REACHES THE CATALOG (SPEC §10.5, INV-29).
+ *
+ * A tool's description, its parameter docs and the prompts around it are
+ * English written for a model, not UI copy: translating them would only spend
+ * a translation budget on strings no reader sees, and a translated prompt
+ * would be a bug. They live in exactly two places so this file can skip them
+ * by shape rather than by guesswork:
+ *
+ *   - `*.prompt.ts` files, skipped whole;
+ *   - the argument subtree of a `defineTool(...)` call, whose `description`
+ *     and `title` keys would otherwise match COPY_PROPERTIES below.
+ */
+function isPromptFile(path) {
+  return /\.prompt\.ts$/.test(path);
+}
+
+function isDefineToolCall(node) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  return (ts.isIdentifier(callee) && callee.text === "defineTool")
+    || (ts.isPropertyAccessExpression(callee) && callee.name.text === "defineTool");
+}
+
+function add(strings, raw) {
   const value = raw
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
@@ -147,14 +170,18 @@ function isDirectJsxChildExpression(node) {
   return false;
 }
 
-function visit(node) {
-  if (ts.isJsxText(node)) add(node.text);
+function collectNode(strings, root) {
+  const add1 = (raw) => add(strings, raw);
+  const visit = (node) => {
+  // Model-facing: never harvested (see isDefineToolCall).
+  if (isDefineToolCall(node)) return;
+  if (ts.isJsxText(node)) add1(node.text);
 
   if (ts.isJsxAttribute(node) && COPY_PROPERTIES.has(node.name.text)) {
-    if (node.initializer && ts.isStringLiteral(node.initializer)) add(node.initializer.text);
+    if (node.initializer && ts.isStringLiteral(node.initializer)) add1(node.initializer.text);
     if (node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
       const value = staticText(node.initializer.expression);
-      if (value) add(value);
+      if (value) add1(value);
     }
   }
 
@@ -162,14 +189,14 @@ function visit(node) {
     const name = propertyName(node.name);
     if (name && COPY_PROPERTIES.has(name)) {
       const value = staticText(node.initializer);
-      if (value) add(value);
+      if (value) add1(value);
       // A copy property can hold a LIST of strings — e.g. the time-of-day
       // greeting variants — not only one. Without this, a property whose value
       // is an array is silently skipped and its copy never reaches the catalog.
       else if (ts.isArrayLiteralExpression(node.initializer)) {
         for (const element of node.initializer.elements) {
           const item = staticText(element);
-          if (item) add(item);
+          if (item) add1(item);
         }
       }
     }
@@ -180,8 +207,9 @@ function visit(node) {
       || /_(?:LABEL|TITLE|HEADING|DESCRIPTION|MESSAGE|NOTE|PLACEHOLDER|ERROR)$/.test(node.name.text);
     if (isCopyVariable) {
       const collectInitializer = (child) => {
+        if (isDefineToolCall(child)) return;
         const value = staticText(child);
-        if (value) add(value);
+        if (value) add1(value);
         ts.forEachChild(child, collectInitializer);
       };
       collectInitializer(node.initializer);
@@ -192,12 +220,12 @@ function visit(node) {
     const expression = node.expression.getText();
     if (/^(?:toast\.(?:success|error|message|info|warning)|Error)$/.test(expression)) {
       const value = node.arguments[0] ? staticText(node.arguments[0]) : null;
-      if (value) add(value);
+      if (value) add1(value);
     }
   }
 
   if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && isDirectJsxChildExpression(node)) {
-    add(node.text);
+    add1(node.text);
   }
 
   // A sentence that names the product renders as one text node, so it is
@@ -208,35 +236,53 @@ function visit(node) {
   }
 
   ts.forEachChild(node, visit);
+  };
+  visit(root);
 }
 
-function walk(dir) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(path);
-      continue;
+/** The UI strings in one source file's text. Pure: no I/O. `*.prompt.ts` yields nothing. */
+export function collectFromSource(content, path, strings = new Set()) {
+  if (isPromptFile(path)) return strings;
+  const kind = extname(path) === ".tsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, kind);
+  collectNode(strings, source);
+  return strings;
+}
+
+/** Every UI string under `dir` (`.ts`/`.tsx`, recursively), skipping `skip` paths. */
+export function collectCatalogStrings(dir, { skip = [] } = {}) {
+  const strings = new Set();
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(path);
+        continue;
+      }
+      if (![".ts", ".tsx"].includes(extname(path)) || skip.includes(path)) continue;
+      collectFromSource(readFileSync(path, "utf8"), path, strings);
     }
-    if (![".ts", ".tsx"].includes(extname(path)) || path === outputPath) continue;
-    const content = readFileSync(path, "utf8");
-    const kind = extname(path) === ".tsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-    const source = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, kind);
-    visit(source);
-  }
+  };
+  walk(dir);
+  return strings;
 }
 
-walk(sourceRoot);
+/** The catalog entry of a source string: its id is what the browser sends, never the text. */
+export function catalogEntry(source) {
+  return { id: createHash("sha256").update(source, "utf8").digest("hex").slice(0, 16), source };
+}
 
-const catalog = [...strings]
-  .map((source) => ({
-    id: createHash("sha256").update(source, "utf8").digest("hex").slice(0, 16),
-    source,
-  }))
-  .sort((a, b) => a.id.localeCompare(b.id));
+function main() {
+  const strings = collectCatalogStrings(sourceRoot, { skip: [outputPath] });
+  const catalog = [...strings].map(catalogEntry).sort((a, b) => a.id.localeCompare(b.id));
 
-const generated = `// Generated by scripts/generate-i18n-catalog.mjs — do not edit by hand.\n` +
-  `// It contains static interface copy only; user content is never included.\n` +
-  `export const UI_TRANSLATION_CATALOG = ${JSON.stringify(catalog, null, 2)} as const;\n`;
+  const generated = `// Generated by scripts/generate-i18n-catalog.mjs — do not edit by hand.\n` +
+    `// It contains static interface copy only; user content is never included.\n` +
+    `export const UI_TRANSLATION_CATALOG = ${JSON.stringify(catalog, null, 2)} as const;\n`;
 
-writeFileSync(outputPath, generated, "utf8");
-console.log(`Wrote ${catalog.length} UI strings to ${relative(projectRoot, outputPath)}`);
+  writeFileSync(outputPath, generated, "utf8");
+  console.log(`Wrote ${catalog.length} UI strings to ${relative(projectRoot, outputPath)}`);
+}
+
+// Run as a script (`npm run i18n:extract`); imported (the extractor test), it only exports.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

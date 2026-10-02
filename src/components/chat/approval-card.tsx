@@ -6,6 +6,8 @@ import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton, tellInstead } from "@/components/chat/decision";
 import { Collapse } from "@/components/ui/collapse";
+import { PhraseWithArgs } from "@/lib/i18n-phrase";
+import type { PhraseLine } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
 import type {
   ActionApprovalDecision,
@@ -403,11 +405,20 @@ function approvalVerb(toolName: string): string {
 export function ApprovalCard({
   approval,
   onDecided,
+  callLine,
 }: {
   approval: ClientActionApproval;
   onDecided?: (approval: ClientActionApproval) => void;
+  /**
+   * The call this card belongs to, as its running phrase ("GitHub" · "Create
+   * issue"), when the card sits in a run block under that call (SPEC §7.10).
+   * It heads the card and is part of the group's accessible name, so a
+   * screen reader hears which call is asking, not only that one is.
+   */
+  callLine?: PhraseLine;
 }) {
   const labelId = React.useId();
+  const callLineId = React.useId();
   const detailId = React.useId();
   const visibleAt = React.useRef(0);
   const [armed, setArmed] = React.useState(false);
@@ -590,7 +601,7 @@ export function ApprovalCard({
       // A group, not a landmark: a transcript can hold several of these, and one
       // named region per approval turns the landmark list into noise.
       role="group"
-      aria-labelledby={labelId}
+      aria-labelledby={callLine?.length ? `${callLineId} ${labelId}` : labelId}
       aria-busy={sending || undefined}
       data-answerable={answerable ? "" : undefined}
       className={cn(
