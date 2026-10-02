@@ -1,13 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { ContextComposerField } from "./context-composer-field";
+import { ContextComposerField, rememberContextItem, type ContextFieldElement } from "./context-composer-field";
 import { type ContextToken, rangesForStoredText } from "@/lib/chat/context-tokens";
+import {
+  appendToDraft,
+  clearComposerDraft as forgetStoredDraft,
+  readComposerDraft,
+  tokensForRemainder,
+  tokensForText,
+  writeComposerDraft,
+} from "@/lib/chat/context-draft";
+import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type LayerSide } from "@/lib/chat/composer-layer-placement";
+import { TIMING } from "@/lib/interaction";
+import type { MentionItem, MentionSearchResult } from "@/lib/mentions/types";
 import type { VoiceCallParts } from "@/components/voice/realtime-voice";
 import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
+import { createPortal } from "react-dom";
 import {
   AudioLines,
   Crop,
@@ -18,6 +29,7 @@ import {
   Search,
   SquareDashedMousePointer,
   TextQuote,
+  AtSign,
 } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { toast } from "sonner";
@@ -34,12 +46,10 @@ import {
   ComposerPrimaryAction,
   ComposerArmedMark,
   ComposerFieldLead,
-  ComposerFieldMirror,
   ComposerShell,
   composerFieldClass,
   composerIconButtonClass,
   useComposerAutosize,
-  type ComposerFieldSegment,
   type ComposerPrimaryFace,
 } from "@/components/ui/composer-shell";
 import { useModifierKeyLabel } from "@/components/ui/platform";
@@ -99,7 +109,7 @@ import {
   COMPOSER_LONG_TEXT_CHARS,
   sampleLineCount,
 } from "@/lib/prompt-limits";
-import { duration, reducedVariants, variants } from "@/lib/motion";
+import { duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
   artifactEditRequestFromQuote,
@@ -279,6 +289,11 @@ interface ComposerProps {
   selectedProjectId?: string | null;
   onPickProject?: (projectId: string | null) => void;
   onDictatingChange?: (dictating: boolean) => void;
+  /**
+   * The @ lookup, injected only by the dev galleries (labelled fixtures, no
+   * account); production searches GET /api/mentions.
+   */
+  loadMentions?: (query: string, signal: AbortSignal) => Promise<MentionSearchResult>;
 }
 
 // One palette serves both composer triggers: "/" (commands, e.g. "/model") and
@@ -313,7 +328,6 @@ type SlashItem = ModelInfo | SlashCommand;
 type SlashState =
   | { kind: "model"; items: ModelInfo[] }
   | { kind: "command"; items: SlashCommand[] }
-  | { kind: "mention"; items: SlashCommand[] }
   | null;
 
 const GROUP_LABELS: Record<PaletteGroup, string> = {
@@ -334,69 +348,6 @@ const PRIMARY_FACES = {
   send: "send",
   voice: "voice",
 } as const satisfies Record<string, ComposerPrimaryFace>;
-// Mirrors COMPOSIO_APP_PREFIX in lib/composio, which pulls in prisma and so
-// cannot be imported from a client component.
-const COMPOSIO_ID_PREFIX = "composio:";
-
-/** The token an app answers to after "@": "composio:googlecalendar" → "googlecalendar". */
-const connectorKey = (id: string) =>
-  (id.startsWith(COMPOSIO_ID_PREFIX)
-    ? id.slice(COMPOSIO_ID_PREFIX.length)
-    : id
-  ).toLowerCase();
-
-/**
- * What an app is called INSIDE a draft: "@GitHub", "@AppleCalendar".
- *
- * The app's own label closed up into one word, not `connectorKey` — the key is
- * an id (`googlecalendar`, `composio:` stripped) and this is a word in a
- * sentence the reader is writing. Both still MATCH, below; only one is
- * written.
- *
- * EVERY non-word character goes, not just spaces, because the tokenizer's
- * `[A-Za-z0-9_-]+` would stop at the first one: an app called "X.com" written
- * as "@X.com" would match as "@X", find nothing, and draw as plain text. What
- * is written has to be what can be read back.
- */
-const mentionText = (label: string) => `@${label.replace(/[^\w]/g, "")}`;
-
-/**
- * Split a draft into plain runs and the apps it mentions.
- *
- * `lookup` holds only the apps that are actually attached to this chat, so the
- * paint follows the state: detach GitHub and the "@GitHub" you typed stays in
- * the sentence as the eight characters it always was. A mention must start a
- * word — "foo@github" is an email address, not a mention.
- *
- * The plain runs are returned verbatim, including their whitespace, because
- * the mirror has to reproduce the string EXACTLY or the caret drifts.
- */
-function draftSegments(
-  text: string,
-  lookup: Map<string, { id: string; label: string }>,
-): ComposerFieldSegment[] {
-  if (!text || lookup.size === 0) return [{ kind: "text", value: text }];
-  const out: ComposerFieldSegment[] = [];
-  const re = /@([A-Za-z0-9_-]+)/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const before = text[m.index - 1];
-    if (before !== undefined && /[\w@]/.test(before)) continue;
-    const hit = lookup.get(m[1].toLowerCase());
-    if (!hit) continue;
-    if (m.index > last) out.push({ kind: "text", value: text.slice(last, m.index) });
-    out.push({
-      kind: "mention",
-      value: m[1],
-      icon: <ConnectorMark id={hit.id} />,
-    });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push({ kind: "text", value: text.slice(last) });
-  return out;
-}
-
 // Prefix match only, exactly as the slash list has always filtered — `match`
 // widens connector rows without changing how commands behave.
 const filterRows = (rows: SlashCommand[], query: string) =>
@@ -407,29 +358,10 @@ const filterRows = (rows: SlashCommand[], query: string) =>
       )
     : rows;
 
-// Selection is carried by the neutral accent fill + a coral hairline, never a
-// coral wash: the mouse moves the cursor here, so a filled coral row would read
-// as a hover colour rather than as "this is what Enter picks". The fill
-// cross-fades between rows on --dur-fast as the cursor moves.
-//
-// `rounded-control`, by the same arithmetic DropdownMenuItem documents: the
-// palette shell is a 16px `rounded-popover` with p-1.5, so 16 − 6 leaves 10px
-// for the rows. At rounded-md these were drawn 2px too round for their shell —
-// and 2px rounder than the + menu's rows one trigger to the left, which are the
-// same object.
-const paletteRowClass = (selected: boolean) =>
-  cn(
-    // `px-2.5` inside the list's `p-1.5` puts the glyph on 16 and `gap-2.5`
-    // carries the label to 46 — the shell's grid, shared with ⌘K and the
-    // sidebar behind it.
-    // No `motion-reduce:transition-none`: the fill and the hairline are a
-    // tonal cross-fade, not travel, and reduced motion keeps fades on their
-    // timing (ICONS_AND_MOTION.md §2.2, rule 10).
-    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-body transition-[background-color,box-shadow] duration-fast ease-out-soft",
-    selected
-      ? "bg-accent ring-1 ring-inset ring-primary/20"
-      : "hover:bg-accent/50",
-  );
+// The slash palette's rows are the composer layer's rows (composer.css): the
+// highlight is a fill that moves without animation (F0), and it marks the one
+// row Enter picks. Hover tints only under a fine pointer.
+const PALETTE_ROW_CLASS = "composer-layer__row cursor-pointer select-none";
 
 /** Chunk the flat, pre-ordered rows into their groups while keeping each row's
  *  index in the FLAT list — that index is the keyboard cursor. */
@@ -446,49 +378,6 @@ function groupRows(items: SlashCommand[]) {
   return out;
 }
 
-/* The palette's ceiling and the chrome that sits between the listbox and the
- * top edge it is clamped against: the popover's mb-2 gap, its own hairline
- * border and p-1.5, and a gutter so the palette never kisses that edge. The
- * ceiling stays 18rem — it is the room above the anchor, measured below against
- * the nearest clipping ancestor, that decides the rest. */
-const PALETTE_MAX_H = 288;
-const PALETTE_CHROME = 8 + 2 * 1 + 2 * 6 + 8;
-
-/** Ancestors that clip the palette. Nothing portals it, so its rows are lost to
- *  the nearest overflow-hiding boxes — the chat column, and the empty-state
- *  scroller — rather than to the viewport. Their padding-box top sits BELOW y=0
- *  whenever anything stacks above the chat column (the md:hidden mobile header,
- *  the incognito bar plus the column's own margin), so measuring room against
- *  the viewport over-counts by exactly that offset and lets the palette clip.
- *  Resolved once per open: getComputedStyle on every ancestor every frame would
- *  force a style recalc, and the clip chain only changes with the tree. */
-function clipAncestors(el: HTMLElement): HTMLElement[] {
-  const out: HTMLElement[] = [];
-  for (let node = el.parentElement; node; node = node.parentElement) {
-    const style = getComputedStyle(node);
-    if (style.overflowY !== "visible" || style.overflowX !== "visible")
-      out.push(node);
-  }
-  return out;
-}
-
-/** Land the clamp on a row boundary so the list never opens onto a sliced row.
- *  Row offsets are read against the popover (the nearest positioned ancestor),
- *  so the listbox's own offset comes back out; unlike getBoundingClientRect,
- *  offsetTop ignores scrollTop, which is what keeps this stable to re-measure.
- *  Snapping only applies once the content actually overflows: rounding a fitting
- *  list down to its last row would conjure a 1px scrollbar out of nothing. */
-function snapPaletteToRow(list: HTMLElement | null, limit: number) {
-  if (!list || list.scrollHeight <= limit) return limit;
-  let snapped = limit;
-  for (const row of list.querySelectorAll<HTMLElement>('[role="option"]')) {
-    const bottom = row.offsetTop - list.offsetTop + row.offsetHeight;
-    if (bottom > limit) break;
-    snapped = bottom;
-  }
-  return snapped;
-}
-
 // aria-hidden: the enclosing role="group" already carries this label, so exposing
 // it again would announce every section name twice.
 function PaletteEyebrow({
@@ -499,24 +388,10 @@ function PaletteEyebrow({
   counter?: string;
 }) {
   return (
-    <div
-      aria-hidden
-      className="flex items-baseline justify-between gap-2 px-2.5 pb-1 pt-1.5"
-    >
-      {/* The command palette's group-heading voice, not a mono eyebrow. Both
-          are filtered, arrow-driven lists and the codebase calls them "one
-          vocabulary"; mono is the machine voice a settings page heads its
-          groups with, and these head a list of the reader's own skills and
-          connectors. The counter beside it stays mono, because a count IS
-          machine metadata and tabular figures are why. */}
-      <span className="text-ui font-medium text-muted-foreground">
-        {label}
-      </span>
-      {counter && (
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">
-          {counter}
-        </span>
-      )}
+    <div aria-hidden className="composer-layer__label flex items-baseline justify-between gap-2">
+      <span>{label}</span>
+      {/* A count IS machine metadata, so it keeps tabular figures. */}
+      {counter && <span className="font-mono tabular-nums">{counter}</span>}
     </div>
   );
 }
@@ -547,50 +422,37 @@ function PaletteIcon({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The palette's floating shell, kept mounted through its exit.
- *
- * It arrives the way every floating layer does (the `pop` pair: 4px toward
- * the anchor and 0.96, in on the spring curve) and now leaves the same way,
- * faster and on the accelerate curve, instead of vanishing in a frame when
- * the token is completed, dismissed or stops matching.
- *
- * It sits under an `AnimatePresence` with ONE fixed key, which is what keeps
- * the listbox id and `paletteListRef` honest: a palette reopened while the
- * old one is still leaving is the same element turning back, not a second
- * copy beside it, so there is never a duplicate `composer-palette-listbox`,
- * and the ref only goes to null when the one element really unmounts (the
- * measuring effect reads it only while the palette is open anyway).
- *
- * While leaving it renders the rows it last showed, which is the point, and
- * it is `inert` and `aria-hidden` with no pointer events: the field already
- * reports it collapsed (`aria-expanded` false, no active descendant), and a
- * row caught by a click mid-fade must not fire.
- *
- * Reduced motion: the travel and scale drop out and the fade keeps its timing.
+ * The slash palette's floating shell (INTERACTION_SPEC C11): the composer
+ * layer recipe on the shared material, portalled to the body at a fixed
+ * position `placeComposerLayer` chose OUTSIDE the composer, below it on the
+ * home and above it in the dock, so it never covers the draft or the row of
+ * controls. Typing "/" opened it, so it appears and leaves in the same frame
+ * (F0): no fade, no travel.
  */
-function PaletteLayer({ children }: { children: React.ReactNode }) {
-  const isPresent = useIsPresent();
-  const reduce = useReducedMotion() ?? false;
-  return (
-    <motion.div
-      variants={reduce ? reducedVariants.pop : variants.pop}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      inert={!isPresent}
-      aria-hidden={isPresent ? undefined : true}
-      // `.surface-float` draws the throw (no `shadow-*` beside it, or the
-      // utility would replace it). origin-bottom rather than .origin-popper:
-      // this is pinned to the composer's top edge, not Radix popper content,
-      // so the pop scales out of that edge. `z-popper`, the named rung every
-      // floating list in the product stacks on.
-      className={cn(
-        "surface-float overlay-glass absolute bottom-full left-2 right-2 z-popper mb-2 origin-bottom overflow-hidden rounded-popover p-1.5",
-        !isPresent && "pointer-events-none",
-      )}
+function SlashLayer({ placement, children }: { placement: LayerPlacement | null; children: React.ReactNode }) {
+  const [body, setBody] = React.useState<HTMLElement | null>(null);
+  React.useEffect(() => setBody(document.body), []);
+  if (!body) return null;
+  return createPortal(
+    <div
+      className="composer-layer composer-layer--palette surface-float"
+      data-composer-layer=""
+      data-side={placement?.side}
+      onMouseDown={(event) => event.preventDefault()}
+      style={
+        placement
+          ? {
+              left: placement.left,
+              width: placement.width,
+              maxHeight: placement.maxHeight,
+              ...(placement.side === "below" ? { top: placement.top } : { bottom: placement.bottom }),
+            }
+          : { visibility: "hidden", left: 0, top: 0 }
+      }
     >
       {children}
-    </motion.div>
+    </div>,
+    body,
   );
 }
 
@@ -664,6 +526,7 @@ export function Composer({
   selectedProjectId = null,
   onPickProject,
   onDictatingChange,
+  loadMentions,
 }: ComposerProps) {
   const { features, settings, setSettings, quota, models } = useApp();
   const dockFootnote = frame === "dock" ? footnote : undefined;
@@ -847,7 +710,12 @@ export function Composer({
           ? "Describe an image to generate…"
           : modality === "video"
             ? "Describe a video to generate…"
-            : `Message ${PRODUCT_NAME}…`));
+            : // An invitation, not a syntax lesson: @ and / are taught by
+              // the + menu and the palette (gallery revision 2). The first
+              // message is asked for; after it, the next one follows up.
+              frame === "dock"
+              ? "Ask a follow-up"
+              : "Ask anything"));
   const [text, setText] = React.useState("");
 
   // Huge pastes stay in `text` for send, but we collapse the textarea DOM so
@@ -877,14 +745,6 @@ export function Composer({
     () => allConnectors.filter((c) => c.connected),
     [allConnectors],
   );
-  /* id → label, for the apps "@" can actually switch on. A row for an app that
-     is not linked yet goes to Connections instead of writing a word into the
-     draft, so only linked apps are here. */
-  const connectorLabels = React.useMemo(() => {
-    const map = new Map<string, string>();
-    for (const connector of connectors) map.set(connector.id, connector.label);
-    return map;
-  }, [connectors]);
   const [connectorsLoading, setConnectorsLoading] = React.useState(false);
   /**
    * Whether the last connector fetch failed.
@@ -899,37 +759,74 @@ export function Composer({
   const [connectorQuery, setConnectorQuery] = React.useState("");
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const textareaRef = React.useRef<ContextFieldElement>(null);
   const [contextTokens, setContextTokens] = React.useState<ContextToken[]>([]);
   /*
-   * ── The field tier's three pieces of bookkeeping ──────────────────────────
+   * ── The field tier's bookkeeping ──────────────────────────────────────────
    *
-   * `caret` is what lets "@" open its palette in the middle of a sentence
-   * rather than only at character zero — see `mentionAt`. It is read off the
-   * textarea on every change and every selection move, which is the only place
-   * the truth lives.
+   * `leadWidth` is how wide the marks drawn over the start of the field are
+   * (a skill, Deep Field: what this one message runs as); it becomes the
+   * field's `text-indent`, so the first word lands after them. Measured, never
+   * assumed: a mark holds a skill's name.
    *
-   * `leadWidth` is how wide the armed marks drawn over the start of the field
-   * are; it becomes the textarea's `text-indent`, so the first word lands
-   * after them. Measured, never assumed: the marks hold a connector's label.
-   *
-   * `mirrorRef` / `leadRef` are written to directly while the draft scrolls,
-   * because doing it through state would re-render this component on every
-   * frame of a scroll.
+   * `leadRef` is written to directly while the draft scrolls, because doing it
+   * through state would re-render this component on every frame of a scroll.
    */
-  const [caret, setCaret] = React.useState(0);
   const [leadWidth, setLeadWidth] = React.useState(0);
-  const mirrorRef = React.useRef<HTMLDivElement>(null);
   const leadRef = React.useRef<HTMLSpanElement>(null);
   const onFieldScroll = React.useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    const top = e.currentTarget.scrollTop;
-    if (mirrorRef.current) mirrorRef.current.scrollTop = top;
-    if (leadRef.current) leadRef.current.style.transform = `translateY(${-top}px)`;
+    if (leadRef.current) leadRef.current.style.transform = `translateY(${-e.currentTarget.scrollTop}px)`;
   }, []);
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const paletteAnchorRef = React.useRef<HTMLDivElement>(null);
-  const paletteListRef = React.useRef<HTMLDivElement>(null);
+  /** The composer surface: every layer it opens is placed outside this box. */
+  const shellRef = React.useRef<HTMLDivElement>(null);
+  /*
+   * Focus from the keyboard draws one ring in the presence ink around the
+   * whole composer; focus from a pointer only darkens its edge (C1). A text
+   * field matches :focus-visible on every focus, so the composer remembers
+   * whether a pointer pressed it just before.
+   */
+  const pointerFocus = React.useRef(false);
+  const [keyboardFocus, setKeyboardFocus] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  /** Which side of the composer its layers open toward: below on the home, above in the dock. */
+  const layerSide = preferredLayerSide(frame);
+  /** The side a layer is open on right now (the home moves its suggestions aside for one below). */
+  const [fieldLayer, setFieldLayer] = React.useState<LayerSide | null>(null);
+  const [menuLayer, setMenuLayer] = React.useState<LayerSide | null>(null);
+
+  /*
+   * ── The unsent draft, kept while the composer is not mounted (C21) ────────
+   *
+   * One per chat (the home's under "new"), with its tokens, so moving between
+   * chats, a remount or a reload never loses what was being written. Saved
+   * `draftSave` after the last change and once more on the way out; a send
+   * forgets it at once, so a sent message never comes back as a draft. Never
+   * in incognito, and not while the field is steering a run.
+   */
+  const draftKey = privateMode || steering?.active ? null : (conversationId ?? "new");
+  const latestDraft = React.useRef({ text: "", tokens: [] as ContextToken[] });
+  latestDraft.current = { text, tokens: contextTokens };
+  React.useEffect(() => {
+    if (!draftKey) return;
+    const stored = readComposerDraft(draftKey);
+    const field = textareaRef.current;
+    if (stored && field && !field.getDraft().text) field.setDraft(stored);
+  }, [draftKey]);
+  React.useEffect(() => {
+    if (!draftKey) return;
+    const timer = window.setTimeout(() => writeComposerDraft(draftKey, latestDraft.current), TIMING.draftSave);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, text, contextTokens]);
+  React.useEffect(() => {
+    if (!draftKey) return;
+    return () => writeComposerDraft(draftKey, latestDraft.current);
+  }, [draftKey]);
+  /** A send that went: the draft it carried is not kept for later. */
+  const forgetDraft = React.useCallback(() => {
+    if (draftKey) forgetStoredDraft(draftKey);
+    latestDraft.current = { text: "", tokens: [] };
+  }, [draftKey]);
   const {
     uploads,
     addFiles,
@@ -1127,6 +1024,30 @@ export function Composer({
     };
     window.addEventListener("juno:composer-seed", seed);
     return () => window.removeEventListener("juno:composer-seed", seed);
+  }, []);
+
+  // A home suggestion that names a thing ("Use GitHub") puts it in the
+  // sentence as a token, after whatever is already written, and hands the
+  // caret back. Through the field's draft, so the token keeps its data.
+  React.useEffect(() => {
+    const insert = (event: Event) => {
+      const detail = event instanceof CustomEvent ? (event.detail as { token?: ContextToken; item?: MentionItem }) : undefined;
+      const field = textareaRef.current;
+      if (!field || !detail?.token) return;
+      if (detail.item) rememberContextItem(detail.item);
+      const current = field.getDraft();
+      const lead = current.text.trimEnd() ? `${current.text.trimEnd()} ` : "";
+      const label = detail.token.label;
+      field.setDraft(
+        {
+          text: `${lead}${label} `,
+          tokens: [...tokensForText(lead, current.tokens), { ...detail.token, range: { start: lead.length, end: lead.length + label.length } }],
+        },
+        { focus: true },
+      );
+    };
+    window.addEventListener("juno:composer-insert-token", insert);
+    return () => window.removeEventListener("juno:composer-insert-token", insert);
   }, []);
 
   // "Message" on an agent's profile: the one invitation there is to talk.
@@ -1484,9 +1405,19 @@ export function Composer({
         // spread only where the rest of the per-send options survive.
         ...(quote?.mode === "modify" || !skillForSend ? null : { skillSlug: skillForSend }),
         ...(connectorsForSend ? { connectors: connectorsForSend } : null),
-        ...(contextTokens.length && !quote ? { context: rangesForStoredText(draft, contextTokens) } : null),
+        // Ranges are sent against the words that go. A typed "/skill" sends
+        // only what follows it, so its tokens move back by the head it lost
+        // (or the request schema would refuse the turn as label_mismatch).
+        ...(contextTokens.length && !quote
+          ? {
+              context: typedSkill
+                ? rangesForStoredText(draftForSend, tokensForRemainder(draft, draftForSend, contextTokens))
+                : rangesForStoredText(draft, tokensForText(draft, contextTokens)),
+            }
+          : null),
       });
       if (result && result.accepted === false) return;
+      forgetDraft();
       setText("");
       setDraftExpanded(false);
       setResearch(false); // per-send: research never sticks to the next message
@@ -1510,13 +1441,18 @@ export function Composer({
   const closeDictation = React.useCallback(
     (transcript: string, sendNow: boolean) => {
       setDictating(false);
-      const merged = [text.trim(), transcript.trim()].filter(Boolean).join(" ");
+      // The words land after the draft, which keeps its start, so every token
+      // already in it stays on its words (context-draft.ts, `appendToDraft`).
+      const draft = appendToDraft({ text, tokens: contextTokens }, transcript);
+      const merged = draft.text;
+      const restore = () => {
+        const field = textareaRef.current;
+        if (field) field.setDraft(draft, { focus: true });
+        else setText(merged);
+      };
       if (!sendNow || !merged || controlsLocked) {
-        setText(merged);
-        requestAnimationFrame(() => {
-          autoresize();
-          textareaRef.current?.focus();
-        });
+        restore();
+        requestAnimationFrame(autoresize);
         return;
       }
       interceptedDraftRef.current = merged;
@@ -1526,11 +1462,13 @@ export function Composer({
         const result = await onSend(outgoing, sendAttachments, {
           ...outgoingOptions,
           ...(connectorsForSend ? { connectors: connectorsForSend } : null),
+          ...(draft.tokens.length && !quote ? { context: rangesForStoredText(merged, draft.tokens) } : null),
         });
         if (result && result.accepted === false) {
-          setText(merged); // keep the words — nothing gets lost on a refusal
+          restore(); // keep the words and their tokens: nothing is lost on a refusal
           return;
         }
+        forgetDraft();
         setText("");
         setResearch(false); // per-send: research never sticks to the next message
         setSkillSlug(null);
@@ -1541,6 +1479,7 @@ export function Composer({
     },
     [
       text,
+      contextTokens,
       controlsLocked,
       quote,
       onSend,
@@ -1551,6 +1490,7 @@ export function Composer({
       autoresize,
       setDictating,
       resolveSendConnectors,
+      forgetDraft,
     ],
   );
 
@@ -1735,151 +1675,11 @@ export function Composer({
     ],
   );
 
-  // "@" rows toggle a capability rather than navigate. A row whose capability is
-  // unavailable stays VISIBLE with the reason attached — "@search" on a model
-  // that can't search has to say why, not vanish and match nothing.
-  const mentions = React.useMemo<SlashCommand[]>(() => {
-    const rows: SlashCommand[] = [
-      {
-        id: "tool:search",
-        key: "search",
-        label: "@search",
-        hint: "Search the web",
-        group: "tools",
-        icon: ComposerIcons.web,
-        on: canWebSearch ? webSearchEnabled : undefined,
-        note: canWebSearch
-          ? undefined
-          : modality === "chat"
-            ? "not on this model"
-            : "chat only",
-        run: canWebSearch
-          ? () => onToggleWebSearch?.(!webSearchEnabled)
-          : () =>
-              toast.error(
-                `Web search isn’t available ${modality === "chat" ? "on this model" : "for this modality"}.`,
-              ),
-      },
-      ...(researchAvailable
-        ? [
-            {
-              id: "tool:research",
-              key: "research",
-              label: "@research",
-              hint: "Deep-research the next message",
-              group: "tools" as const,
-              icon: ComposerIcons.research,
-              on: research,
-              run: researchAvailable
-                ? () => setResearch((v) => !v)
-                : () =>
-                    toast.error("Research is available on paid plans."),
-            },
-          ]
-        : []),
-      {
-        id: "tool:memory",
-        key: "memory",
-        label: "@memory",
-        hint: "Remember things across chats",
-        group: "tools",
-        icon: ComposerIcons.memory,
-        on: settings.memoryEnabled,
-        run: () => toggleMemory(!settings.memoryEnabled),
-      },
-      // No "@python" row: the sandbox is always on, and a switch that cannot
-      // be switched was the one fake control in this list.
-      {
-        id: "tool:assistants",
-        key: "assistants",
-        label: "@assistants",
-        hint: `Browse & switch ${PRODUCT_NAME} Assistants`,
-        group: "navigate",
-        icon: AppIcons.assistants,
-        run: () => router.push("/assistants"),
-      },
-    ];
-
-    if (showConnectors) {
-      // Linked apps first: they're the ones "@" can actually switch on.
-      const usable = allConnectors
-        .filter((connector) => connector.connected || connector.configured)
-        .sort((a, b) => Number(b.connected) - Number(a.connected));
-      for (const connector of usable) {
-        const key = connectorKey(connector.id);
-        rows.push({
-          id: `connector:${connector.id}`,
-          key,
-          label: `@${key}`,
-          hint: connector.label,
-          group: "connectors",
-          connectorId: connector.id,
-          match: `${connector.label.toLowerCase()} ${key}`,
-          on: connector.connected
-            ? connectorsEnabled.includes(connector.id)
-            : undefined,
-          note: connector.connected ? undefined : "not connected",
-          // Not connected is not a failure — it's a missing setup step, so say
-          // what's wrong and go to the one place that can fix it.
-          run: connector.connected
-            ? () => pickConnector(connector.id)
-            : () => {
-                toast.info(
-                  `${connector.label} isn’t connected yet. Opening Connections.`,
-                );
-                router.push("/connections");
-              },
-        });
-      }
-    }
-    return rows;
-  }, [
-    canWebSearch,
-    webSearchEnabled,
-    onToggleWebSearch,
-    modality,
-    researchAvailable,
-    research,
-    settings.memoryEnabled,
-    toggleMemory,
-    showConnectors,
-    allConnectors,
-    connectorsEnabled,
-    pickConnector,
-    router,
-  ]);
-
-  /**
-   * The "@" fragment the caret is sitting in the middle of, if any.
-   *
-   * "@" USED TO BE ANCHORED AT CHARACTER ZERO, like "/", and the two are not
-   * the same kind of thing. "/" is a command: it takes the whole line, it is
-   * the first thing you type, and there is nothing else in the draft when you
-   * type it. "@" names something INSIDE a sentence — "look on my @GitHub and
-   * push the branch" — which is the only way anyone has ever written a
-   * mention, in any product that has them. Anchored at zero it could not be
-   * written at all: the palette simply never opened, so the feature existed
-   * only for a draft you had not started.
-   *
-   * A mention starts a word, so the fragment has to be preceded by the start
-   * of the draft or by whitespace — otherwise every email address in a pasted
-   * paragraph opens a connector list.
-   */
-  const mentionAt = React.useMemo(() => {
-    const head = text.slice(0, caret);
-    const m = head.match(/(?:^|\s)@([\w-]*)$/);
-    if (!m) return null;
-    return { start: caret - m[1].length - 1, end: caret, query: m[1] };
-  }, [text, caret]);
-
-  // Both triggers close on any character the token can't contain — typing a
-  // space is how you get a literal "@" or "/". "/" is anchored at the start of
-  // the draft; "@" is anchored at the caret (see `mentionAt`).
+  // "/" is anchored at the start of the draft and closes on any character a
+  // command cannot contain (a space is how you type a literal "/"). "@" is the
+  // context field's own palette (context-composer-field.tsx): it names a
+  // thing in the sentence, and tools live in "/" and the + menu.
   const slash = React.useMemo((): SlashState => {
-    if (mentionAt) {
-      const items = filterRows(mentions, mentionAt.query.toLowerCase());
-      return items.length ? { kind: "mention", items } : null;
-    }
     if (text.startsWith("/")) {
       const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
       if (modelMatch) {
@@ -1902,7 +1702,7 @@ export function Composer({
       return null;
     }
     return null;
-  }, [mentionAt, mentions, text, models, commands]);
+  }, [text, models, commands]);
 
   /*
    * The first "/" is what asks for the skill library.
@@ -1940,74 +1740,50 @@ export function Composer({
     !controlsLocked && !!slash && !slashDismissed && slash.items.length > 0;
 
   /*
-   * The palette is pinned above the anchor by hand, not by Radix popper, so it
-   * gets no --radix-*-available-height and nothing measures the room above it
-   * for us. That room is not a constant: in the empty state the composer is
-   * vertically centred (chat-view.tsx), so a ~700px laptop leaves ~250-320px
-   * above it — less than the list's own 18rem. Overflowing is unrecoverable,
-   * not merely ugly: rows laid out above a clipper's top edge create no
-   * scrollable area, so they cannot be reached.
+   * Where the "/" palette goes: outside the composer, at the field's start,
+   * below on the home and above in the dock (`placeComposerLayer`), its height
+   * capped to the room it actually has so a short window scrolls the list
+   * instead of pushing it over the draft. Sampled per frame while open: what
+   * moves the composer (the greeting, a voice panel mounting) leaves its own
+   * box the same size, so no observer would hear it. React bails out when the
+   * placement is unchanged.
    */
-  const [paletteMaxH, setPaletteMaxH] = React.useState(PALETTE_MAX_H);
+  const [slashPlacement, setSlashPlacement] = React.useState<LayerPlacement | null>(null);
   React.useLayoutEffect(() => {
-    if (!slashOpen) return;
-    const anchor = paletteAnchorRef.current;
-    if (!anchor) return;
-    const clippers = clipAncestors(anchor);
-    const measure = () => {
-      let ceiling = 0;
-      for (const clipper of clippers) {
-        // clientTop = border-top: overflow clips at the padding box, not the border box.
-        ceiling = Math.max(
-          ceiling,
-          clipper.getBoundingClientRect().top + clipper.clientTop,
-        );
-      }
-      const room =
-        anchor.getBoundingClientRect().top - ceiling - PALETTE_CHROME;
-      const limit = Math.max(0, Math.min(PALETTE_MAX_H, room));
-      setPaletteMaxH(snapPaletteToRow(paletteListRef.current, limit));
-    };
-    /* The clamp depends on the anchor's POSITION, but everything that moves it
-     * leaves its own box the same size — the greeting cross-fading above, the
-     * voice panel mounting — so a ResizeObserver on the anchor never fires for
-     * any of it. Sample per frame while the palette is open (Floating UI's
-     * autoUpdate does the same for moved-not-resized anchors); React bails out
-     * when the measurement is unchanged, and the palette is open only while a
-     * slash/mention token is being typed. */
+    if (!slashOpen) {
+      setSlashPlacement(null);
+      return;
+    }
     let raf = 0;
+    let last = "";
     const tick = () => {
-      measure();
+      const box = shellRef.current?.getBoundingClientRect();
+      if (box) {
+        const next = placeComposerLayer({
+          composer: box,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          anchorX: box.left + 16,
+          inset: 4,
+          width: 420,
+          need: 300,
+          prefer: layerSide,
+        });
+        const key = JSON.stringify(next);
+        if (key !== last) {
+          last = key;
+          setSlashPlacement(next);
+        }
+      }
       raf = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, [slashOpen, slash]);
+  }, [slashOpen, layerSide]);
 
   React.useEffect(() => setSlashIndex(0), [text]);
   React.useEffect(() => {
-    if (!text.startsWith("/") && !text.startsWith("@"))
-      setSlashDismissed(false);
+    if (!text.startsWith("/")) setSlashDismissed(false);
   }, [text]);
-
-  /**
-   * Put the caret at `at` and give the field back the focus.
-   *
-   * A palette row is a mouse target as well as a keyboard one, so a click has
-   * taken focus out of the textarea by the time this runs — without the
-   * `focus()` the next keystroke goes nowhere, which is the bug people
-   * describe as "it ate my typing".
-   */
-  const restoreCaret = React.useCallback((at: number) => {
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(at, at);
-      setCaret(at);
-      autoresize();
-    });
-  }, [autoresize]);
 
   const applySlash = (item: SlashItem) => {
     if ("providerModel" in item) {
@@ -2033,35 +1809,6 @@ export function Composer({
           el.setSelectionRange(el.value.length, el.value.length);
         }
       });
-      return;
-    }
-    /*
-     * A MENTION IS EDITED IN PLACE; IT DOES NOT TAKE THE DRAFT WITH IT.
-     *
-     * Every row here used to end in `setText("")` — so picking GitHub out of
-     * the "@" list deleted the sentence you were writing it into. That was
-     * survivable only because "@" could not be typed past character zero,
-     * which is to say the feature was safe because it was unreachable.
-     *
-     * An app becomes WORDS: the fragment you typed is replaced by "@GitHub"
-     * and a space, so the mention is in the clause it qualifies and the mirror
-     * draws it there with the app's own logo. A tool (research, web, memory)
-     * becomes a MARK at the head of the field instead — "@research" is not
-     * English in the middle of a request — so its fragment is simply removed.
-     */
-    if (mentionAt && slash?.kind === "mention") {
-      const connector = "connectorId" in item ? item.connectorId : undefined;
-      const before = text.slice(0, mentionAt.start);
-      const after = text.slice(mentionAt.end);
-      const label = connector ? connectorLabels.get(connector) : undefined;
-      // The space is what ends the mention, so it is only owed when the draft
-      // does not already carry one — inserting into "… @gi| and push" must not
-      // leave two.
-      const gap = /^\s/.test(after) ? "" : " ";
-      const insert = label ? `${mentionText(label)}${gap}` : "";
-      item.run?.();
-      setDraftText(before + insert + after);
-      restoreCaret(before.length + insert.length);
       return;
     }
     item.run?.();
@@ -2412,38 +2159,6 @@ export function Composer({
   );
   const activeConnectorCount = attachedConnectors.length;
 
-  /*
-   * ── What the draft itself says ────────────────────────────────────────────
-   *
-   * An app attached to this chat can be named INSIDE the sentence — "look on
-   * my @GitHub and …" — which is where "@" put it, and where it belongs: it
-   * qualifies that clause, not the whole message. `lookup` answers both the
-   * word the reader typed (`@GitHub`) and the app's id (`@github`), because
-   * "@" offers the id and prose wants the label.
-   */
-  const mentionLookup = React.useMemo(() => {
-    const map = new Map<string, { id: string; label: string }>();
-    for (const connector of attachedConnectors) {
-      const row = { id: connector.id, label: connector.label };
-      map.set(mentionText(connector.label).slice(1).toLowerCase(), row);
-      map.set(connectorKey(connector.id), row);
-    }
-    return map;
-  }, [attachedConnectors]);
-  const draft = React.useMemo(() => draftSegments(text, mentionLookup), [text, mentionLookup]);
-  /* Which apps the sentence already names. They are drawn there and must not
-     ALSO be drawn as a mark at the head of the field — one state, one mark. */
-  const mentionedConnectorIds = React.useMemo(() => {
-    const ids = new Set<string>();
-    for (const segment of draft) {
-      if (segment.kind !== "mention") continue;
-      const hit = mentionLookup.get(segment.value.toLowerCase());
-      if (hit) ids.add(hit.id);
-    }
-    return ids;
-  }, [draft, mentionLookup]);
-  /* The mirror only paints while it has something the textarea cannot draw. */
-  const mirrored = mentionedConnectorIds.size > 0;
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
     ? connectors.filter((connector) =>
@@ -2481,28 +2196,24 @@ export function Composer({
   const armedSummary = activeToolCount > 0 ? `${armedTools.join(", ")} on` : "";
 
   /**
-   * ── What the composer SHOWS is armed ──────────────────────────────────────
+   * ── What THIS message runs as, at the head of the sentence ────────────────
    *
-   * The same states the summary above names, as objects this time, in one
-   * ordered list so the render site is a `.map` rather than five hand-written
-   * branches that can each drift. Order is fixed and is the menu's: how this
-   * message is answered (a skill, research, web), then what it can reach (the
-   * apps). Fixed order matters more than it looks — a list that
-   * re-sorted itself as you armed things would move the mark you were about to
-   * press out from under the pointer.
+   * Only the per-message modes are drawn in the field: a skill and Deep Field,
+   * the two things that change how this one message is answered and clear
+   * themselves after it is sent (C11 puts a command token at the head of the
+   * message; these are that token). They are drawn in the token family, where
+   * the first word would go.
    *
-   * MEMORY IS DELIBERATELY ABSENT, though the summary counts it. It is an
-   * account setting, on by default, that applies to every message in the
-   * product — a mark for it would be permanent furniture stating something
-   * true of the whole app rather than of this message, and a row where one
-   * mark is always lit teaches the reader to stop reading the row.
+   * Standing settings are NOT drawn here (C19: nothing is drawn as an armed
+   * chip). Web search, memory and the apps attached to this chat are true of
+   * every message until changed, so a chip for them would be permanent
+   * furniture that teaches the reader to stop reading the field; the + menu
+   * shows them checked, and the + button's accessible name lists what is on.
+   * An app named for one message is a context token in the sentence instead.
    */
   const armedMarks: ArmedMark[] = [
-    /* The skill, first among the "how this is answered" marks, because it is
-       the one that changes the method rather than the reach. An untrusted
-       skill says so on the mark: it is the fact that decides how its
-       instructions reach the model, and the reader deserves to see it at the
-       moment they send rather than only on the skill's page. */
+    /* The skill first: it changes the method rather than the reach. An
+       untrusted skill says so on the mark, at the moment of sending. */
     ...(skillArmed
       ? [{
           id: "skill",
@@ -2522,136 +2233,39 @@ export function Composer({
           id: "research",
           icon: <ComposerIcons.research className="size-4" />,
           label: FEATURE_NAMES.research.label,
-          // No depth word: Research sizes itself, and a level name told people
-          // to pick a model to get a "deeper" run it did not give them.
+          // No depth word: Deep Field sizes itself.
           tooltip: <>{`${FEATURE_NAMES.research.description}: plans, reads the web and writes a cited report. Usually 5–15 minutes.`}</>,
           openLabel: `${FEATURE_NAMES.research.accessibleLabel} on. Opens the add menu.`,
           removeLabel: `Turn off ${FEATURE_NAMES.research.label}`,
           remove: () => setResearch(false),
         }]
       : []),
-    ...(canWebSearch && webSearchEnabled
-      ? [{
-          id: "web",
-          icon: <ComposerIcons.web className="size-4" />,
-          label: "Web search",
-          openLabel: "Web search is on for this chat. Opens the add menu.",
-          removeLabel: "Turn off web search",
-          remove: () => onToggleWebSearch?.(false),
-        }]
-      : []),
-    /* Each connected app under its OWN logo — a GitHub mark says "GitHub"
-       faster than the word does, and an app with no drawing falls back to the
-       same plug the Connections destination uses. `pickConnector`, not
-       `onToggleConnector`: the per-chat cap is a rule about connectors, not
-       about one menu. */
-    ...(showConnectors
-      ? attachedConnectors
-          .filter((connector) => !mentionedConnectorIds.has(connector.id))
-          .map((connector) => ({
-          id: `connector:${connector.id}`,
-          icon: <ConnectorMark id={connector.id} className="size-4" />,
-          label: connector.label,
-          openLabel: `${connector.label} is attached to this chat. Opens the add menu.`,
-          removeLabel: `Detach ${connector.label}`,
-          remove: () => pickConnector(connector.id),
-        }))
-      : []),
   ];
-  /**
-   * TWO, THEN A COUNT.
-   *
-   * The worst case is eight marks: a skill, deep research, web search and five
-   * connectors. The marks now sit in the FIELD, at the
-   * draft's own 16px, and every pixel they take is a pixel the sentence starts
-   * further in — so the number that fits is smaller here than it would be on
-   * the controls row, not larger. Two named marks and a count is ~380px of a
-   * 760px composer; a third would leave less room for the prompt than for the
-   * things qualifying it.
-   *
-   * Most drafts never reach two. An app named in the sentence is drawn THERE
-   * and is not a mark at all (`mentionedConnectorIds`), so this list is a
-   * skill, research, web search, and whatever was armed from the `+` menu
-   * without being mentioned.
-   *
-   * The tail collapses into one mark that names the rest in its tooltip and
-   * opens the menu where they are changed; pressing its ✕ clears exactly the
-   * states it stands for.
-   */
-  const ARMED_MARK_LIMIT = 2;
-  const shownArmedMarks = armedMarks.slice(0, ARMED_MARK_LIMIT);
-  const restArmedMarks = armedMarks.slice(ARMED_MARK_LIMIT);
   /*
-   * Two marks with words is ~260px, and a phone composer is 350 wide — which
+   * Two marks with words is ~260px, and a phone composer is 350 wide, which
    * would leave the sentence a third of its own line. Below a 30rem COMPOSER
-   * (not window; the composer is the `@container`, see composer-shell.tsx) the
-   * marks keep their icons and drop their words.
-   *
-   * ONE mark always keeps its words, because one mark has never been the
-   * problem: a lone telescope at the head of a field says nothing, where "Deep
-   * research" says all of it. What that case gives up instead is the `detail`
-   * — which the mark drops at this width on its own, at every count. The count
-   * mark is exempt at every width and in both directions: its label IS its
-   * information, and "⋯" alone says nothing at all.
-   *
-   * A literal, not a computed string: Tailwind scans source text, so a class
-   * assembled at runtime would never be generated.
+   * (the composer is the `@container`, see composer-shell.tsx) two marks keep
+   * their glyphs and drop their words; one mark always keeps its words. A
+   * literal class: Tailwind scans source text.
    */
   const armedLabelClass = armedMarks.length > 1 ? "hidden @[30rem]:inline" : undefined;
-
-  /**
-   * The marks, drawn into the head of the draft (`ComposerFieldLead`).
-   *
-   * They are built here rather than in the JSX below because the field slot is
-   * three layers deep and the one thing it must not also be is the place this
-   * list is decided.
-   */
-  /*
-   * The indent the two layers below the marks owe them — and ZERO the moment
-   * the marks are gone. `leadWidth` is the last measurement the group made;
-   * reading it directly would leave a 180px hole at the head of the field
-   * after the last mark was disarmed, because nothing re-measures a group that
-   * has unmounted.
-   */
-  const leadMarks = [
-    ...shownArmedMarks.map((mark) => (
-      <ComposerArmedMark
-        key={mark.id}
-        icon={mark.icon}
-        label={mark.label}
-        labelClassName={armedLabelClass}
-        detail={mark.detail}
-        tooltip={mark.tooltip}
-        onOpen={() => setPlusOpen(true)}
-        onRemove={mark.remove}
-        openLabel={mark.openLabel}
-        removeLabel={mark.removeLabel}
-        disabled={controlsLocked}
-      />
-    )),
-    ...(restArmedMarks.length > 0
-      ? [
-          <ComposerArmedMark
-            key="more"
-            /* The overflow glyph, not a `+`: a plus in this composer means
-               "add something" — it is the button to the left — and this mark
-               removes rather than adds. */
-            icon={<ActionIcons.more className="size-4" />}
-            label={`${restArmedMarks.length} more`}
-            /* `shrink-0`, and no container query: this label IS the
-               information — "⋯" alone says nothing, and "2 mo…" says it
-               wrong. */
-            labelClassName="shrink-0"
-            tooltip={restArmedMarks.map((mark) => mark.label).join(", ")}
-            onOpen={() => setPlusOpen(true)}
-            onRemove={() => restArmedMarks.forEach((mark) => mark.remove())}
-            openLabel={`Also on for this message: ${restArmedMarks.map((mark) => mark.label).join(", ")}. Opens the add menu.`}
-            removeLabel={`Turn off ${restArmedMarks.map((mark) => mark.label).join(", ")}`}
-            disabled={controlsLocked}
-          />,
-        ]
-      : []),
-  ];
+  /* The indent the field owes the marks, and ZERO the moment they are gone:
+     nothing re-measures a group that has unmounted. */
+  const leadMarks = armedMarks.map((mark) => (
+    <ComposerArmedMark
+      key={mark.id}
+      icon={mark.icon}
+      label={mark.label}
+      labelClassName={armedLabelClass}
+      detail={mark.detail}
+      tooltip={mark.tooltip}
+      onOpen={() => setPlusOpen(true)}
+      onRemove={mark.remove}
+      openLabel={mark.openLabel}
+      removeLabel={mark.removeLabel}
+      disabled={controlsLocked}
+    />
+  ));
   const leadIndent = leadMarks.length > 0 ? leadWidth : 0;
 
   /**
@@ -2817,7 +2431,7 @@ export function Composer({
     ? {
         kind: "sub",
         id: "skill",
-        label: "Use a skill",
+        label: "Run a skill",
         icon: AppIcons.skills,
         // Only while one is armed, like the research row's depth: a name on an
         // unarmed row reads as the state rather than as what it would be.
@@ -2844,6 +2458,22 @@ export function Composer({
         }
       : null;
 
+  /** The + menu's "Mention" row: an "@" at the caret, and the palette opens on it. */
+  const mentionRow: PlusMenuItem | null =
+    !privateMode && !voiceActive && modality === "chat"
+      ? {
+          kind: "action",
+          id: "mention",
+          label: "Mention a file, app or agent",
+          icon: AtSign,
+          detail: "@",
+          onSelect: () => {
+            // After the menu has handed focus back, so the "@" lands in the field.
+            window.setTimeout(() => textareaRef.current?.openMention(), 0);
+          },
+        }
+      : null;
+
   const plusSections: PlusMenuSection[] = voiceActive
     ? [
         [
@@ -2853,7 +2483,7 @@ export function Composer({
           {
             kind: "action",
             id: voiceCanSeeImages ? "files" : "voice-files",
-            label: voiceCanSeeImages ? "Add files or photos" : "Add files",
+            label: voiceCanSeeImages ? "Add photos and files" : "Add files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
             disabled: !canAttach,
@@ -2863,7 +2493,7 @@ export function Composer({
           {
             kind: "action",
             id: "library",
-            label: "Add from library",
+            label: `Add from ${FEATURE_NAMES.library.label}`,
             icon: AppIcons.library,
             disabled: !canAttach,
             note: attachNote,
@@ -2873,15 +2503,14 @@ export function Composer({
         researchRow ? [researchRow] : [],
       ]
     : [
-        // Bring something in. "Attach files" and "Photos" used to be two rows
-        // for one job: ACCEPT_ATTRIBUTE (lib/uploads.ts) already carries every
-        // image mime, so one sheet has always offered both. The merged row is
-        // also the only place in the product that teaches ⌘U.
+        // Bring something in (the gallery's order). One row for photos and
+        // files: ACCEPT_ATTRIBUTE (lib/uploads.ts) carries every image mime,
+        // and the row is the one place in the product that teaches ⌘U.
         [
           {
             kind: "action",
             id: "files",
-            label: "Add files or photos",
+            label: "Add photos and files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
             disabled: !canAttach,
@@ -2906,11 +2535,37 @@ export function Composer({
           {
             kind: "action",
             id: "library",
-            label: "Add from library",
+            label: `Add from ${FEATURE_NAMES.library.label}`,
             icon: AppIcons.library,
             disabled: !canAttach,
             note: attachNote,
             onSelect: () => setLibraryOpen(true),
+          },
+        ],
+        // Name things in the sentence: what "@" and "/" do, taught here so the
+        // placeholder never has to be a syntax lesson.
+        [...(mentionRow ? [mentionRow] : []), ...(skillRow ? [skillRow] : [])],
+        // How this message is answered: the Deep Field mode, then the two
+        // switches people actually flip (C19).
+        [
+          ...(researchRow ? [researchRow] : []),
+          {
+            kind: "toggle",
+            id: "search",
+            label: "Web search",
+            icon: ComposerIcons.web,
+            checked: canWebSearch && webSearchEnabled,
+            disabled: !canWebSearch,
+            note: canWebSearch ? undefined : modality === "chat" ? "Not on this model" : "Chat only",
+            onToggle: () => onToggleWebSearch?.(!webSearchEnabled),
+          },
+          {
+            kind: "toggle",
+            id: "memory",
+            label: FEATURE_NAMES.memory.label,
+            icon: ComposerIcons.memory,
+            checked: settings.memoryEnabled,
+            onToggle: () => toggleMemory(!settings.memoryEnabled),
           },
         ],
         // Where this chat sits and what it can reach.
@@ -2943,41 +2598,61 @@ export function Composer({
               ]
             : []),
         ],
-        // Armed for this message. Canvas is not here and has no row anywhere:
-        // whether an answer belongs in an artifact is the model's decision now
-        // (src/lib/chat/system-prompt.ts), so there is nothing for a user to
-        // switch and nothing that can be left switched off by accident.
-        [
-          // First in the group: a skill decides HOW the answer is made, which
-          // the rows under it then modify. It is also the only row here that
-          // can carry somebody else's instructions, and burying it under three
-          // toggles is how a reader stops noticing which one is lit.
-          ...(skillRow ? [skillRow] : []),
-          ...(researchRow ? [researchRow] : []),
-          {
-            kind: "toggle",
-            id: "search",
-            label: "Web search",
-            icon: ComposerIcons.web,
-            checked: canWebSearch && webSearchEnabled,
-            disabled: !canWebSearch,
-            note: canWebSearch ? undefined : modality === "chat" ? "Not on this model" : "Chat only",
-            onToggle: () => onToggleWebSearch?.(!webSearchEnabled),
-          },
-          {
-            kind: "toggle",
-            id: "memory",
-            label: FEATURE_NAMES.memory.label,
-            icon: ComposerIcons.memory,
-            checked: settings.memoryEnabled,
-            onToggle: () => toggleMemory(!settings.memoryEnabled),
-          },
-        ],
       ];
+
+  /*
+   * Where the + menu and the model popover open: outside the composer, on the
+   * side `placeComposerLayer` picks (below on the home, above in the dock, by
+   * room), so neither covers the draft or the composer's own buttons.
+   */
+  const sideFor = (trigger: HTMLElement | null, need: number, width: number): { box: DOMRect; side: LayerSide } => {
+    const box = shellRef.current?.getBoundingClientRect() ?? trigger?.getBoundingClientRect() ?? new DOMRect();
+    const placed = placeComposerLayer({
+      composer: box,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      anchorX: trigger?.getBoundingClientRect().left ?? box.left,
+      width,
+      need,
+      prefer: layerSide,
+    });
+    return { box, side: placed.side };
+  };
+  const pickMenuLayer = (trigger: HTMLElement, need: number) => {
+    const { box, side } = sideFor(trigger, need, 288);
+    const at = trigger.getBoundingClientRect();
+    return side === "below"
+      ? { side: "bottom" as const, sideOffset: Math.round(box.bottom - at.bottom + 8) }
+      : { side: "top" as const, sideOffset: Math.round(at.top - box.top + 8) };
+  };
+  const pickModelSide = (need: number) => (sideFor(null, need, 344).side === "below" ? "bottom" : "top");
+  const onMenuSide = React.useCallback(
+    (side: "top" | "bottom" | null) => setMenuLayer(side === null ? null : side === "bottom" ? "below" : "above"),
+    [],
+  );
+  /** The effort, in words, only when it is not the model's usual one (C17: "Opus Deep"). */
+  const effortLabel =
+    !isAuto && resolved && effortOptions.length >= 2 && reasoningEffort !== defaultReasoning(resolved)
+      ? effortOptions.find((option) => option.value === clampReasoningEffort(resolved, reasoningEffort))?.label
+      : undefined;
+
+  /** The field's accessible name (C1). The placeholder is a hint, never the name. */
+  const fieldLabel =
+    steerMode && steering
+      ? steering.placeholder
+      : customPlaceholder?.startsWith("Message ")
+        ? customPlaceholder.replace(/…$/, "")
+        : `Message ${PRODUCT_NAME}`;
+  /** A layer is open below the composer (the home's suggestions step aside for it). */
+  const layerBelow =
+    fieldLayer === "below" || menuLayer === "below" || (slashOpen && slashPlacement?.side === "below");
 
   return (
     <div
       ref={rootRef}
+      // What the home reads (composer.css): a draft makes its suggestions moot,
+      // and a layer opened below covers them.
+      data-composer-draft={text.trim() || uploads.length > 0 ? "" : undefined}
+      data-layer-below={layerBelow ? "" : undefined}
       className={cn(
         "w-full",
         frame === "dock" && "page-gutter mx-auto max-w-3xl",
@@ -3076,10 +2751,13 @@ export function Composer({
         >
         <VoiceComposerGlow call={voiceCall}>
         <ComposerShell
-          // The palette's containing block: it carries `relative`, so this — not
-          // the surface — is what its `bottom-full` resolves against, and so this
-          // is the top edge the room above it must be measured from.
-          fieldTierRef={paletteAnchorRef}
+          // The box every layer the composer opens is placed outside of.
+          ref={shellRef}
+          frame={frame === "landing" ? "home" : "dock"}
+          keyboardFocus={keyboardFocus}
+          onPointerDownCapture={() => {
+            pointerFocus.current = true;
+          }}
           dimmed={controlsLocked && !steerMode}
           className={cn(
             "max-h-[600px]",
@@ -3301,31 +2979,17 @@ export function Composer({
                 </div>
               )}
 
-            {/* Matches the DropdownMenu/Popover surface exactly — this is the same
-            kind of object as the + menu and shouldn't read as its own species.
-            `PaletteLayer` carries the shell and its enter/exit pair; the one
-            fixed key is what lets it leave without a second copy ever sharing
-            the listbox id (see its note). */}
-            <AnimatePresence>
+            {/* The "/" palette: the composer layer recipe on the shared
+                material, placed outside the composer (SlashLayer). Options,
+                not tab stops: the caret never leaves the field, so this is a
+                combobox popup, and each row's state is its `aria-checked`. */}
             {slashOpen && slash && (
-              <PaletteLayer key="composer-palette">
-                {/* Options, not tab stops: the caret never leaves the textarea, so this
-                is a combobox popup, and each row's state is its `aria-checked`
-                rather than a control of its own. */}
+              <SlashLayer placement={slashPlacement}>
                 <div
-                  ref={paletteListRef}
                   id="composer-palette-listbox"
                   role="listbox"
-                  aria-label={
-                    slash.kind === "model"
-                      ? "Switch model"
-                      : slash.kind === "mention"
-                        ? "Apps and tools"
-                        : "Commands"
-                  }
-                  // Measured, not `max-h-72`: the cap is whatever fits above the anchor.
-                  style={{ maxHeight: paletteMaxH }}
-                  className="overflow-y-auto overscroll-contain"
+                  aria-label={slash.kind === "model" ? "Switch model" : "Commands"}
+                  className="composer-layer__scroll"
                 >
                   {slash.kind === "model" ? (
                     <div role="group" aria-label="Switch model">
@@ -3336,53 +3000,29 @@ export function Composer({
                           id={`composer-palette-${i}`}
                           role="option"
                           aria-selected={i === slashIndex}
-                          // The arrow-key cursor plays the glyph's hover
-                          // gesture, as a Radix menu's highlighted row does.
-                          data-highlighted={i === slashIndex ? "" : undefined}
-                          onMouseEnter={() => setSlashIndex(i)}
-                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseMove={() => {
+                            if (i !== slashIndex) setSlashIndex(i);
+                          }}
                           onClick={() => applySlash(m)}
-                          className={paletteRowClass(i === slashIndex)}
+                          className={PALETTE_ROW_CLASS}
                         >
                           <PaletteIcon>
-                            <ProviderLogo
-                              provider={m.provider}
-                              className="size-4"
-                            />
+                            <ProviderLogo provider={m.provider} className="size-4" />
                           </PaletteIcon>
-                          <span className="min-w-0 flex-1 truncate text-ui font-medium">
-                            {m.name}
-                          </span>
+                          <span className="min-w-0 flex-1 truncate">{m.name}</span>
                           <span className="shrink-0 text-caption text-muted-foreground">
                             {PROVIDERS[m.provider].label.split(" · ")[0]}
                           </span>
                           {m.id === model && (
-                            <StatusIcons.success aria-hidden className="size-3.5 shrink-0 text-primary" />
+                            <StatusIcons.success aria-hidden className="size-3.5 shrink-0 text-foreground" />
                           )}
                         </div>
                       ))}
                     </div>
                   ) : (
                     groupRows(slash.items).map(({ group, rows }) => (
-                      <div
-                        key={group}
-                        role="group"
-                        // The eyebrow is aria-hidden, so the cap has to ride on the
-                        // group name or it would exist for sighted users only.
-                        aria-label={
-                          group === "connectors"
-                            ? `Connectors, ${activeConnectorCount} of ${MAX_CHAT_CONNECTORS} on`
-                            : GROUP_LABELS[group]
-                        }
-                      >
-                        <PaletteEyebrow
-                          label={GROUP_LABELS[group]}
-                          counter={
-                            group === "connectors"
-                              ? `${activeConnectorCount}/${MAX_CHAT_CONNECTORS}`
-                              : undefined
-                          }
-                        />
+                      <div key={group} role="group" aria-label={GROUP_LABELS[group]} className="composer-layer__group">
+                        <PaletteEyebrow label={GROUP_LABELS[group]} />
                         {rows.map(({ item, index }) => {
                           const Icon = item.icon;
                           const selected = index === slashIndex;
@@ -3393,71 +3033,35 @@ export function Composer({
                               role="option"
                               aria-selected={selected}
                               // aria-selected is the keyboard cursor; aria-checked is
-                              // the tool's own state. The tick that draws it is
-                              // aria-hidden, so without this the state is visual only.
+                              // the tool's own state (its tick is aria-hidden).
                               aria-checked={item.on}
-                              data-highlighted={selected ? "" : undefined}
-                              onMouseEnter={() => setSlashIndex(index)}
-                              // Keeps the caret (and the draft's selection) in the
-                              // textarea when a row is picked with the mouse.
-                              onMouseDown={(event) => event.preventDefault()}
+                              onMouseMove={() => {
+                                if (!selected) setSlashIndex(index);
+                              }}
                               onClick={() => applySlash(item)}
-                              className={paletteRowClass(selected)}
+                              className={PALETTE_ROW_CLASS}
                             >
                               <PaletteIcon>
-                                {item.connectorId ? (
-                                  <ConnectorMark
-                                    id={item.connectorId}
-                                    className="size-4 text-foreground"
-                                  />
-                                ) : Icon ? (
-                                  // Coral marks a tool that is ON — the one state worth
-                                  // colouring. Selection is the ring, not the colour;
-                                  // an off tool's mark is muted at rest and takes the
-                                  // row's ink under the cursor.
+                                {Icon ? (
                                   <Icon
                                     aria-hidden
-                                    className={cn(
-                                      "size-4",
-                                      item.on
-                                        ? "text-primary"
-                                        : selected
-                                          ? "text-foreground"
-                                          : "text-muted-foreground",
-                                    )}
+                                    motion="none"
+                                    className={cn("size-4", item.on || selected ? "text-foreground" : "text-muted-foreground")}
                                   />
                                 ) : null}
                               </PaletteIcon>
                               <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                                <span className="max-w-[55%] shrink-0 truncate font-mono text-ui">
-                                  {item.label}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-                                  {item.hint}
-                                </span>
+                                <span className="max-w-[55%] shrink-0 truncate font-mono text-ui">{item.label}</span>
+                                <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{item.hint}</span>
                               </span>
                               {(item.note || item.on) && (
                                 // One trailing slot, note then tick, so an armed
-                                // skill keeps its source beside the mark. No
-                                // other row carries both: a row with a note
-                                // ("not connected") has no state to show.
+                                // skill keeps its source beside the tick.
                                 <span className="flex shrink-0 items-center gap-1.5">
                                   {item.note && (
-                                    <span className="whitespace-nowrap text-caption text-muted-foreground">
-                                      {item.note}
-                                    </span>
+                                    <span className="whitespace-nowrap text-caption text-muted-foreground">{item.note}</span>
                                   )}
-                                  {item.on && (
-                                    // The same tick the + menu draws, for the same
-                                    // rows. These two surfaces are deliberately one
-                                    // vocabulary; they drifted once before, when one
-                                    // hand-rolled a track and the other rendered the
-                                    // real Switch, and the fix was to make them agree.
-                                    <StatusIcons.success
-                                      aria-hidden
-                                      className="size-3.5 shrink-0 text-primary"
-                                    />
-                                  )}
+                                  {item.on && <StatusIcons.success aria-hidden className="size-3.5 shrink-0 text-foreground" />}
                                 </span>
                               )}
                             </div>
@@ -3467,9 +3071,8 @@ export function Composer({
                     ))
                   )}
                 </div>
-              </PaletteLayer>
+              </SlashLayer>
             )}
-            </AnimatePresence>
 
             {/* Huge drafts render as a compact card above; keep the textarea out of
             the DOM so React never diffs multi-10k controlled values every key. */}
@@ -3478,48 +3081,36 @@ export function Composer({
           field={
             !showCollapsedDraft && (
               /*
-               * ── THE FIELD TIER, THREE LAYERS DEEP ────────────────────────
+               * ── THE FIELD TIER ───────────────────────────────────────────
                *
-               * Bottom: the mirror, which paints the draft a second time so an
-               * app the sentence mentions can carry its logo. It only paints
-               * text while there IS such a mention; the rest of the time the
-               * textarea draws its own, exactly as it always has.
-               *
-               * Middle: the textarea. It keeps the caret, the selection, IME
-               * composition, undo and the native mobile keyboard — everything
-               * a rich-text rewrite of this control would have had to
-               * reimplement and get wrong.
-               *
-               * Top: the armed marks, laid into the start of the draft, with
-               * `text-indent` on the two layers below reserving exactly their
-               * width. They are the only part of this stack that takes a
-               * click.
+               * The field is the contenteditable sentence with its context
+               * tokens (context-composer-field.tsx); the marks for what this
+               * message runs as (a skill, Deep Field) are laid over its head,
+               * with `text-indent` reserving exactly their width. Its layers
+               * (the @ palette, a token's popover) open outside this box.
                */
               <div className="relative">
-                {false && mirrored && (
-                  <ComposerFieldMirror segments={draft} indent={leadIndent} viewportRef={mirrorRef} />
-                )}
                 <ContextComposerField
                   conversationId={conversationId}
                   privateMode={privateMode}
+                  mentionsDisabled={voiceActive || modality !== "chat"}
                   onTokensChange={setContextTokens}
-                  ref={textareaRef}
+                  anchorRef={shellRef}
+                  layerSide={layerSide}
+                  onLayerChange={setFieldLayer}
+                  loadMentions={loadMentions}
+                  ref={textareaRef as React.Ref<HTMLTextAreaElement>}
                   id={CHAT_COMPOSER_FIELD_ID}
-                  aria-label={
-                    steerMode && steering
-                      ? steering.placeholder
-                      : placeholder || `Ask ${PRODUCT_NAME}`
-                  }
+                  // The field's name (C1): "Message Alevr", "Message Mira" in
+                  // an agent's thread, or what a live run asks for.
+                  aria-label={fieldLabel}
                   value={text}
-                  onChange={(e) => {
-                    setDraftText(e.target.value);
-                    setCaret(e.target.selectionStart ?? e.target.value.length);
+                  onChange={(e) => setDraftText(e.target.value)}
+                  onFocus={() => {
+                    setKeyboardFocus(!pointerFocus.current);
+                    pointerFocus.current = false;
                   }}
-                  // Arrow keys, clicks and drags move the caret without
-                  // changing a character, and "@" has to know where it is —
-                  // `onSelect` is the one event a textarea fires for all of
-                  // them.
-                  onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                  onBlur={() => setKeyboardFocus(false)}
                   onScroll={onFieldScroll}
                   onKeyDown={onKeyDown}
                   onPaste={onPaste}
@@ -3527,15 +3118,10 @@ export function Composer({
                   // typed while the reply streams (see `sendBlocked`). Only a hard
                   // send lock and the pre-flight check take the field away.
                   disabled={sendLocked || status === "checking"}
-                  rows={1}
                   /*
-                   * NO PLACEHOLDER WHILE A MARK IS IN THE LINE. The marks sit
-                   * at the head of the field and the placeholder starts after
-                   * them, so on a phone "Deep research" and "Message Juno…"
-                   * split one line between them and the prompt wraps under its
-                   * own hint. The field is still named — `aria-label` above —
-                   * and a composer holding an armed tool is not a composer
-                   * anyone needs told what to do with.
+                   * NO PLACEHOLDER WHILE A MARK IS IN THE LINE: on a phone the
+                   * mark and the hint would split one line and the prompt would
+                   * wrap under its own hint. The field is still named.
                    */
                   placeholder={
                     leadMarks.length > 0
@@ -3544,51 +3130,22 @@ export function Composer({
                         ? steering.placeholder
                         : placeholder
                   }
-                  // The palette is driven from here — focus never moves to it — so the
-                  // textarea has to name the row the arrow keys are sitting on, and
-                  // aria-controls ties that row's listbox back to this field while it
-                  // is showing (activedescendant alone leaves AT to guess which list).
-                  //
-                  // The three attributes below are what makes that legible rather
-                  // than merely present. The field was setting `aria-controls` and
-                  // `aria-activedescendant` on a PLAIN TEXTAREA: an active
-                  // descendant pointing into a list that, as far as assistive
-                  // technology was concerned, did not exist and had never opened.
-                  // Typing "/" announced nothing, and the first arrow key moved a
-                  // selection the user had not been told about. A combobox that
-                  // reports whether it is expanded is the difference between a
-                  // palette and a trap.
-                  role="combobox"
+                  // The "/" palette is driven from here (focus never moves to
+                  // it), so the field names the row the arrows are on. The @
+                  // palette is the field's own and sets these itself.
                   aria-expanded={slashOpen}
-                  aria-autocomplete="list"
-                  aria-haspopup="listbox"
-                  aria-controls={
-                    slashOpen ? "composer-palette-listbox" : undefined
-                  }
+                  aria-controls={slashOpen ? "composer-palette-listbox" : undefined}
                   aria-activedescendant={
                     slashOpen && slash
                       ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}`
                       : undefined
                   }
-                  // 16px in EVERY state, and composerFieldClass is the only thing
-                  // that sets it: iOS Safari zooms the whole page into a focused
-                  // field below 16px and does not zoom back out on blur. The
-                  // clarification and expanded-huge-draft states used to step
-                  // down to the body rung right here — which re-opened exactly
-                  // the zoom the base class exists to prevent, on the two states
-                  // where the field is longest. Their density comes from
-                  // useComposerAutosize's maxLines / maxHeight instead.
-                  className={cn(
-                    composerFieldClass,
-                    // Hands the text to the mirror behind, and takes the caret
-                    // and the selection colour back — see globals.css. Only
-                    // while there is something the textarea cannot draw.
-                    false && mirrored && "composer-field--mirrored no-scrollbar",
-                  )}
+                  // 16px in EVERY state (composerFieldClass): iOS Safari zooms
+                  // into a focused field below 16px. The home's field is taller
+                  // at rest; density elsewhere comes from the autosize caps.
+                  className={cn(composerFieldClass, frame === "landing" && "min-h-[4.375rem] max-[760px]:min-h-[3.25rem]")}
                   // The marks drawn over the head of the field, as a hole in
-                  // the first line. `text-indent` is the only property that
-                  // indents one line rather than a block, which is exactly the
-                  // shape of what is being reserved.
+                  // the first line: `text-indent` indents one line, not a block.
                   style={leadIndent ? { textIndent: leadIndent } : undefined}
                 />
                 {leadMarks.length > 0 && (
@@ -3605,9 +3162,10 @@ export function Composer({
                 open={plusOpen}
                 onOpenChange={setPlusOpen}
                 disabled={plusLocked}
-                label={armedSummary ? `Add: ${armedSummary}` : "Add"}
-                tooltip={armedSummary ? `Add: ${armedSummary}` : "Add files, tools and context"}
+                label={armedSummary ? `Add files and more: ${armedSummary}` : "Add files and more"}
+                tooltip="Add files and more"
                 sections={plusSections}
+                layer={{ pick: pickMenuLayer, onSide: onMenuSide }}
               />
               {voiceCall?.status}
             </>
@@ -3622,6 +3180,8 @@ export function Composer({
                   onChange={changeModel}
                   disabled={controlsLocked}
                   thinking={thinkingControl}
+                  effortLabel={effortLabel}
+                  layer={{ box: shellRef, pickSide: pickModelSide, onSide: onMenuSide }}
                 />
               </div>
               {speechSupported && (

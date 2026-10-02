@@ -87,12 +87,41 @@ function editorPoint(root: HTMLElement, at: number): [Node, number] {
   return walk(root) ?? [root, root.childNodes.length];
 }
 
-export function setEditorSelection(root: HTMLElement, start: number, end = start) {
+/** A DOM range over text offsets, without touching the selection (to measure where a span of the draft is drawn). */
+export function editorRange(root: HTMLElement, start: number, end = start): Range {
   const range = document.createRange();
   const [startNode, startOffset] = editorPoint(root, Math.max(0, start));
   const [endNode, endOffset] = editorPoint(root, Math.max(start, end));
-  range.setStart(startNode, startOffset); range.setEnd(endNode, endOffset);
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
+  return range;
+}
+
+export function setEditorSelection(root: HTMLElement, start: number, end = start) {
+  const range = editorRange(root, start, end);
   const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+}
+
+/** The token elements in the field, in document order. */
+export function tokenElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>("[data-context-token]"));
+}
+
+/** The text offsets a token element covers. */
+export function tokenSpan(root: HTMLElement, node: HTMLElement): { start: number; end: number } {
+  const parent = node.parentNode!;
+  const index = Array.from(parent.childNodes).indexOf(node as ChildNode);
+  const start = editorOffset(root, parent, index);
+  return { start, end: start + readEditor(node).text.length };
+}
+
+/** The token the stored JSON on an element describes, or null when it does not parse. */
+export function tokenOf(node: HTMLElement): ContextToken | null {
+  try {
+    return node.dataset.contextToken ? (JSON.parse(node.dataset.contextToken) as ContextToken) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Select exactly one node, so an editing command acts on it whole. */

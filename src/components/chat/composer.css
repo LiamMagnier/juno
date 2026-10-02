@@ -1,13 +1,30 @@
 /*
- * The composer's context objects and the layers it opens (Alevr V3 gallery,
- * home and menus scenes; INTERACTION_SPEC C7-C10).
+ * The chat composer's context objects and the layers it opens (Alevr V3
+ * gallery, home and menus scenes; INTERACTION_SPEC C7-C10, C17, C19).
  *
- * Plain, unlayered CSS on purpose and only for elements Tailwind does not
- * style: the token spans live inside a contenteditable (no React classes
- * reach them), and the palette and popover are portalled layers whose rows
- * share one recipe. Colours are the V3 tokens from globals.css; timings are
- * the shared ladder (press 70, fast 120, exit 160, base 220).
+ * Plain CSS on purpose, and only for what Tailwind cannot reach: the token
+ * spans live inside a contenteditable (no React classes reach them), and the
+ * palette and the token popover are portalled layers whose rows share one
+ * recipe. Colours are the V3 tokens from globals.css plus the few inks the
+ * composer needs that the app tokens do not name (the second ink, the token
+ * wells); timings are the shared ladder (press 70, fast 120, exit 160,
+ * base 220) and the shared curves.
  */
+
+:root {
+  /* The second ink: labels that are read but are not the sentence (#4e5054). */
+  --cmp-ink-2: 220 4% 32%;
+  /* A token's well, one tone step above the composer, and the two steps past it. */
+  --cmp-well: 210 7% 94%;
+  --cmp-well-2: 220 5% 90.6%;
+  --cmp-well-3: 216 6% 87.3%;
+}
+.dark {
+  --cmp-ink-2: 220 4% 72%;
+  --cmp-well: 225 3.4% 18.4%;
+  --cmp-well-2: 228 4.2% 22.7%;
+  --cmp-well-3: 228 3.4% 26.5%;
+}
 
 /* ——————————————————————————— Tokens in the sentence ——————————————————————————— */
 
@@ -15,43 +32,44 @@
    thing's own mark, its name at the sentence's size. Colour comes only from
    the mark. 24 px tall on the 26 px line, so two lines of tokens never touch. */
 .context-composer-field .context-token {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  display: inline-block;
   height: 24px;
+  line-height: 24px;
   padding: 0 6px 0 4px;
   margin: 0 1px;
   border-radius: 7px;
-  background-color: hsl(var(--secondary));
+  background-color: hsl(var(--cmp-well));
   font-size: 15px;
-  line-height: 24px;
   letter-spacing: -0.004em;
   color: hsl(var(--foreground));
   white-space: nowrap;
-  vertical-align: -1px;
+  vertical-align: baseline;
   cursor: default;
+  outline: none;
   transition:
     background-color var(--dur-fast) var(--ease-out-soft),
     opacity var(--dur-exit) var(--ease-in);
 }
+/* inline-flex with no line box of its own, so an agent's face sits on the
+   same baseline as a file's page and an app's logo. */
 .context-composer-field .context-token-mark {
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
   width: 16px;
   height: 16px;
-  flex: none;
+  margin-right: 5px;
+  vertical-align: -3px;
   line-height: 0;
   color: hsl(var(--muted-foreground));
 }
 @media (hover: hover) and (pointer: fine) {
   .context-composer-field .context-token:hover {
-    background-color: hsl(var(--selected));
+    background-color: hsl(var(--cmp-well-2));
   }
 }
 /* First Backspace selects (C9): one tone deeper and a 1.5 px edge in the
-   tertiary ink. The second Backspace removes it. */
+   third ink. The second Backspace removes it. */
 .context-composer-field .context-token[data-selected] {
-  background-color: hsl(var(--selected));
+  background-color: hsl(var(--cmp-well-2));
   box-shadow: 0 0 0 1.5px hsl(var(--muted-foreground));
 }
 /* Needs something before it resolves (an app not connected): the mark at 40%.
@@ -67,14 +85,19 @@
 }
 @keyframes context-token-settle {
   from {
-    background-color: hsl(var(--selected));
+    background-color: hsl(var(--cmp-well-3));
   }
 }
 /* Removed by pointer (the popover's Remove from message): it yields in place,
-   fading on exit timing. The keyboard path removes it in the same frame. */
+   fading on exit timing. The keyboard removes it in the same frame. */
 .context-composer-field .context-token[data-leaving] {
   opacity: 0;
   pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .context-composer-field .context-token[data-settle] {
+    animation: none;
+  }
 }
 /* Increase Contrast: a meaningful tone boundary becomes a hairline (§1.7). */
 @media (prefers-contrast: more) {
@@ -83,26 +106,36 @@
   }
 }
 
-/* The placeholder: drawn by CSS while the field is empty, never announced as
-   content (the field's accessible name is its label, C1). */
+/* The field. Its focus is drawn on the composer surface (C1), never on the
+   text box itself. The placeholder is drawn by CSS while the field is empty
+   and is never announced as content: the field's name is its label. */
+.context-composer-field {
+  outline: none;
+  letter-spacing: -0.006em;
+  overflow-wrap: anywhere;
+}
+.context-composer-field:focus-visible {
+  outline: none;
+}
 .context-composer-field:empty::before {
   content: attr(data-placeholder);
   color: hsl(var(--muted-foreground));
   pointer-events: none;
 }
 
-/* ——————————————————————————— The palette and the token popover ——————————————————————————— */
+/* ——————————————————————————— Layers: the palette and the token popover ——————————————————————————— */
 
 /* On the shared popover material (`.surface-float`, D-033); these are the rows. */
 .composer-layer {
   position: fixed;
-  z-index: var(--z-popper);
+  z-index: var(--z-popper, 50);
   display: flex;
   flex-direction: column;
   border-radius: 14px;
   padding: 6px;
   overflow: hidden;
   color: hsl(var(--foreground));
+  cursor: default;
 }
 .composer-layer__scroll {
   flex: 1 1 auto;
@@ -111,6 +144,9 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
+.composer-layer__group + .composer-layer__group {
+  margin-top: 4px;
+}
 .composer-layer__label {
   padding: 7px 10px 3px;
   font-size: 12px;
@@ -118,33 +154,32 @@
   font-weight: 500;
   color: hsl(var(--muted-foreground));
 }
-.composer-layer__group + .composer-layer__group {
-  margin-top: 4px;
-}
 .composer-layer__row {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 34px;
+  height: 34px;
   padding: 0 10px;
   border-radius: 8px;
   font-size: 14px;
   line-height: 20px;
   text-align: left;
   color: hsl(var(--foreground));
-  cursor: default;
   transition: background-color var(--dur-fast) var(--ease-out-soft);
 }
 @media (hover: hover) and (pointer: fine) {
   .composer-layer__row:hover {
-    background-color: hsl(var(--accent));
+    background-color: hsl(var(--foreground) / 0.045);
   }
 }
-/* The highlight moves without animation (F0); it is the row Enter picks. */
+/* The highlight moves without animation (F0): it is the row Enter picks. */
 .composer-layer__row[aria-selected="true"] {
-  background-color: hsl(var(--selected));
+  background-color: hsl(var(--foreground) / 0.06);
   transition: none;
+}
+.dark .composer-layer__row[aria-selected="true"] {
+  background-color: hsl(0 0% 100% / 0.068);
 }
 .composer-layer__mark {
   display: grid;
@@ -157,16 +192,16 @@
   opacity: 0.4;
 }
 .composer-layer__name {
+  flex: 1 0 auto;
+  max-width: 70%;
   min-width: 0;
-  flex: 1 1 auto;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .composer-layer__detail {
-  min-width: 0;
-  max-width: 55%;
   flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
   overflow: hidden;
   white-space: nowrap;
@@ -181,8 +216,15 @@
   line-height: 18px;
   color: hsl(var(--muted-foreground));
 }
+.composer-layer__retry {
+  color: hsl(var(--foreground));
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .composer-layer__foot {
   display: flex;
+  flex: none;
   gap: 16px;
   margin: 6px -6px -6px;
   padding: 9px 14px 10px;
@@ -199,35 +241,46 @@
 .composer-layer__key {
   display: inline-grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 4px;
   border-radius: 5px;
   border: 1px solid hsl(var(--border));
   font-size: 11px;
   line-height: 1;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--cmp-ink-2));
 }
-/* Keyboard hints mean nothing on a touch screen. */
+.composer-layer__key--glyph {
+  padding: 0 1px;
+}
+/* Keyboard hints mean nothing on a touch screen; rows grow to the touch target. */
 @media (pointer: coarse) {
   .composer-layer__foot {
     display: none;
   }
   .composer-layer__row {
-    min-height: 44px;
+    height: 44px;
   }
 }
 
 /* The token popover (C10): grows from its token, says in words what the
-   token stands for and what using it will ask. */
+   token stands for and what using it will do. */
 .composer-layer--popover {
   padding: 14px 16px 12px;
+  overflow-y: auto;
 }
 .composer-popover__head {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+.composer-popover__mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
 }
 .composer-popover__who {
   display: flex;
@@ -251,7 +304,7 @@
   margin-top: 10px;
   font-size: 13px;
   line-height: 18px;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--cmp-ink-2));
 }
 .composer-popover__foot {
   display: flex;
@@ -262,6 +315,8 @@
   padding: 6px 8px;
   border-top: 1px solid hsl(var(--border));
 }
+/* One button family in the foot: quiet text verbs; the one that resolves the
+   token (Connect) is the same verb weighted, never a second style. */
 .composer-popover__verb {
   display: inline-flex;
   align-items: center;
@@ -275,11 +330,11 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .composer-popover__verb:hover {
-    background-color: hsl(var(--accent));
+    background-color: hsl(var(--foreground) / 0.045);
   }
 }
 .composer-popover__verb:active {
-  background-color: hsl(var(--selected));
+  background-color: hsl(var(--foreground) / 0.085);
 }
 .composer-popover__verb--strong {
   font-weight: 500;
@@ -293,8 +348,190 @@
 /* ——————————————————————————— Home suggestions ——————————————————————————— */
 
 /* A layer opened below the home composer covers the suggestions, and a draft
-   makes them moot: they step out in the same frame (keyboard-born, F0). */
-.chat-home:has([data-composer-layer="below"]) .chat-home__suggest,
+   makes them moot: they step out of the way in the same frame (F0). */
+.chat-home:has([data-layer-below]) .chat-home__suggest,
 .chat-home:has([data-composer-draft]) .chat-home__suggest {
   visibility: hidden;
+}
+
+/* ——————————————————————————— The controls row ——————————————————————————— */
+
+/* The + turns a quarter into a close mark while its menu is open (C19: base,
+   in-out); opened from the keyboard it turns in the same frame (F0). */
+.composer-plus .composer-plus__glyph {
+  transition: transform var(--dur-base) var(--ease-in-out);
+}
+.composer-plus[data-state="open"] .composer-plus__glyph {
+  transform: rotate(45deg);
+}
+.composer-plus[data-opened-by="keyboard"] .composer-plus__glyph {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-plus .composer-plus__glyph {
+    transition: none;
+  }
+}
+
+/* The model control (C17): the short name in the second ink, the effort in
+   the third only when it is not the usual one, one chevron. No logo, no pill
+   edge, no border; a tone under the pointer and while open. */
+.composer-model-chip {
+  height: 32px;
+  gap: 5px;
+  padding: 0 8px 0 11px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 400;
+  color: hsl(var(--cmp-ink-2));
+}
+.composer-model-chip > svg,
+.composer-model-chip__effort {
+  color: hsl(var(--muted-foreground));
+}
+.composer-model-chip > svg {
+  width: 16px;
+  height: 16px;
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-model-chip:hover {
+    background-color: hsl(var(--foreground) / 0.045);
+    color: hsl(var(--foreground));
+  }
+}
+.composer-model-chip[data-state="open"],
+.composer-model-chip:active {
+  background-color: hsl(var(--foreground) / 0.085);
+  color: hsl(var(--foreground));
+}
+.dark .composer-model-chip[data-state="open"],
+.dark .composer-model-chip:active {
+  background-color: hsl(0 0% 100% / 0.09);
+}
+@media (pointer: coarse) {
+  .composer-model-chip {
+    height: 44px;
+  }
+}
+
+/* ——————————————————————————— The home ——————————————————————————— */
+
+/* The composer sits at the panel's optical centre, a little above the
+   geometric one (the lower track is 18% taller); the greeting rests on it
+   from above and the suggestions hang beneath it, so the composer, not the
+   stack, is what is centred (V3 home, D-033). */
+.chat-home {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1.18fr);
+  grid-template-columns: minmax(0, 720px);
+  justify-content: center;
+  width: 100%;
+}
+.chat-home__greet {
+  grid-row: 1;
+  align-self: end;
+  padding-top: 56px;
+  margin-bottom: 28px;
+}
+.chat-home__composer {
+  grid-row: 2;
+}
+.chat-home__suggest {
+  grid-row: 3;
+  align-self: start;
+  padding-bottom: 56px;
+}
+.chat-home__title {
+  font-size: 44px;
+  line-height: 52px;
+  letter-spacing: -0.014em;
+  font-variation-settings: "opsz" 48;
+}
+.chat-home__chips {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+.chat-home__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.13);
+  font-size: 14px;
+  color: hsl(var(--cmp-ink-2));
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-soft),
+    color var(--dur-fast) var(--ease-out-soft);
+}
+.dark .chat-home__chip {
+  box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.1);
+}
+.chat-home__chip > svg {
+  flex: none;
+  color: hsl(var(--muted-foreground));
+}
+@media (hover: hover) and (pointer: fine) {
+  .chat-home__chip:hover {
+    background-color: hsl(var(--foreground) / 0.045);
+    color: hsl(var(--foreground));
+  }
+}
+.chat-home__chip:active {
+  background-color: hsl(var(--foreground) / 0.085);
+  transition-duration: var(--dur-press);
+}
+@media (pointer: coarse) {
+  .chat-home__chip {
+    height: 44px;
+  }
+}
+@media (max-width: 1200px) {
+  .chat-home {
+    grid-template-columns: minmax(0, 660px);
+  }
+}
+/* Phone: the composer stays within the thumb's reach at the foot of the
+   screen; the greeting takes the centre and the suggestions sit on the
+   composer as one row that scrolls under the screen's edge. */
+@media (max-width: 760px) {
+  .chat-home {
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+  .chat-home__greet {
+    align-self: center;
+    padding: 0 0 6vh;
+    margin-bottom: 0;
+  }
+  .chat-home__title {
+    font-size: 32px;
+    line-height: 38px;
+    font-variation-settings: "opsz" 32;
+  }
+  .chat-home__suggest {
+    grid-row: 2;
+    padding-bottom: 0;
+  }
+  .chat-home__composer {
+    grid-row: 3;
+    margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .chat-home__chips {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--page-gutter, 16px)) 10px;
+    padding: 2px var(--page-gutter, 16px);
+    scroll-padding-inline: var(--page-gutter, 16px);
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
 }

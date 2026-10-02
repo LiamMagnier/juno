@@ -68,6 +68,7 @@ import {
   ArrowUpIcon,
   ArrowUpRightIcon,
   ArrowUDownLeftIcon,
+  AtIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   BellSimpleIcon,
@@ -251,6 +252,7 @@ import {
   WrenchIcon,
   XCircleIcon,
   XIcon,
+  KeyReturnIcon,
 } from "@phosphor-icons/react/dist/ssr";
 
 import {
@@ -371,6 +373,8 @@ const HOUSE_ICON_NAMES: Record<string, string> = {
   "juno-orbit": "orbit",
   "juno-design": "design",
   "send": "send",
+  "at": "at",
+  "enter": "enter",
   "search": "search",
   "settings": "settings",
   "plus": "plus",
@@ -514,6 +518,10 @@ export const ArrowLeft = glyph(ArrowLeftIcon, "arrow-left", { motion: "nudge-l" 
 export const ArrowRight = glyph(ArrowRightIcon, "arrow-right", { motion: "nudge-r" });
 export const ArrowUp = glyph(ArrowUpIcon, "arrow-up", { motion: "nudge-u" });
 export const ArrowDown = glyph(ArrowDownIcon, "arrow-down", { motion: "nudge-d" });
+/** Mention: the @ that puts a file, app or agent in the sentence (the + menu row, the palette). */
+export const AtSign = glyph(AtIcon, "at");
+/** Return, as a key: the palette's "to add" hint. */
+export const CornerDownLeft = glyph(KeyReturnIcon, "enter");
 export const ArrowUpRight = glyph(ArrowUpRightIcon, "arrow-up-right", { motion: "nudge-ne" });
 export const ArrowUpToLine = glyph(ArrowLineUpIcon, "arrow-up-to-line", { motion: "nudge-u" });
 export const ArrowDownToLine = glyph(ArrowLineDownIcon, "arrow-down-to-line", { motion: "nudge-d" });
