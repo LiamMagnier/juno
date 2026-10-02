@@ -316,27 +316,23 @@ export function ComposerArmedMark({
   /** While the row is locked (streaming): the ✕ stops, the label still opens. */
   disabled?: boolean;
 }) {
+  /*
+   * SYMMETRIC AT REST (owner: "the padding on the left and right isn't the
+   * same"). The ✕ used to sit after the label at opacity 0, reserving 20px of
+   * empty chip on the right. Removal now lives ON the icon: under the pointer
+   * or keyboard focus the mark cross-fades to ✕ in the same 20px box, so the
+   * chip is icon · label with equal 6px optical padding on both sides.
+   */
   const trigger = (
     <button
       type="button"
       onClick={onOpen}
       aria-label={openLabel}
-      className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      {/* A fixed box, so a brand logo and a set glyph put their labels on
-          the same edge. `[&_svg]:size-4` reaches the mark whether it arrived as
-          a `<GitHubMark>` or as a component from `@/components/ui/icons`. */}
-      <span aria-hidden className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
-        {icon}
-      </span>
       <span className={cn("truncate", labelClassName)}>{label}</span>
       {detail && (
         <>
-          {/* The derived fact rides muted: it is a CONSEQUENCE of the state,
-              not a second state. It is also the FIRST thing to go when the
-              composer runs short, at every mark count — the state's NAME
-              outranks a qualifier on it, and the qualifier is in the tooltip
-              either way. */}
           <span aria-hidden className={cn("shrink-0 text-muted-foreground", ARMED_DETAIL_CLASS)}>·</span>
           <span aria-hidden className={cn("shrink-0 truncate text-muted-foreground", ARMED_DETAIL_CLASS)}>
             {detail}
@@ -348,15 +344,28 @@ export function ComposerArmedMark({
   return (
     <span
       className={cn(
-        "group/armed inline-flex min-w-0 items-center rounded-md bg-accent align-baseline font-medium text-foreground",
-        // It ARRIVES. A tool you just armed appearing with no transition in the
-        // line you are typing is the one moment this mark has to be noticed;
-        // after that it should be quiet, which is what the rest of the recipe
-        // is for. `motion-safe:` because a spring pop is exactly what reduced
-        // motion asks not to see.
+        "group/armed inline-flex min-w-0 items-center gap-1 rounded-md bg-accent pl-1 align-baseline font-medium text-foreground",
         "motion-safe:animate-pop-in",
       )}
     >
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        aria-label={removeLabel}
+        className="relative grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+      >
+        <span
+          aria-hidden
+          className="col-start-1 row-start-1 flex size-4 items-center justify-center transition-opacity duration-fast ease-out-soft group-hover/armed:opacity-0 group-focus-within/armed:opacity-0 motion-reduce:transition-none [&_svg]:size-4"
+        >
+          {icon}
+        </span>
+        <ActionIcons.dismiss
+          aria-hidden
+          className="col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover/armed:opacity-100 group-focus-within/armed:opacity-100 motion-reduce:transition-none"
+        />
+      </button>
       {tooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>{trigger}</TooltipTrigger>
@@ -367,19 +376,6 @@ export function ComposerArmedMark({
       ) : (
         trigger
       )}
-      {/* `opacity-0`, never `hidden`. A ✕ that only takes up space on hover
-          re-measures the mark under the pointer and shifts the words after it
-          by 20px at the moment you are reaching for one of them. The space is
-          reserved at rest and costs nothing but air. */}
-      <button
-        type="button"
-        onClick={onRemove}
-        disabled={disabled}
-        aria-label={removeLabel}
-        className="inline-flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 text-muted-foreground opacity-0 transition-[opacity,color] duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-0 group-hover/armed:opacity-100 motion-reduce:transition-none coarse:opacity-100"
-      >
-        <ActionIcons.dismiss aria-hidden className="size-3.5" />
-      </button>
     </span>
   );
 }

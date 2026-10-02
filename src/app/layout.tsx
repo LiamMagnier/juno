@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Literata, Newsreader } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import "@/components/public/public.css";
 import "@/components/ui/juno-icons/icons.css";
@@ -36,31 +36,38 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 // to be right. 600 and not 700 because 600 is what "bold" already resolves to
 // everywhere else here; a 700 wordmark over a 600 interface would be the
 // heaviest thing on the page by a step nothing else uses.
-const sans = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+// SELF-HOSTED (2026-10-02). next/font/google fetched the CSS from Google at
+// build time, and a malformed response ("Cannot read properties of null
+// (reading '1')") failed four production builds. The same OFL variable fonts
+// now ship from src/app/fonts (Fontsource builds; licences beside them), so a
+// build never depends on Google. One variable file per face covers 400-600.
+const sans = localFont({
+  src: [{ path: "./fonts/inter-latin-wght-normal.woff2", weight: "400 600", style: "normal" }],
   variable: "--font-sans",
   display: "swap",
+  fallback: ["system-ui", "-apple-system", "Segoe UI", "sans-serif"],
 });
-const serif = Newsreader({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+const serif = localFont({
+  src: [
+    { path: "./fonts/newsreader-latin-wght-normal.woff2", weight: "400 600", style: "normal" },
+    { path: "./fonts/newsreader-latin-wght-italic.woff2", weight: "400 600", style: "italic" },
+  ],
   variable: "--font-serif",
   display: "swap",
+  fallback: ["Georgia", "serif"],
 });
-const serifCyrillic = Literata({
-  subsets: ["cyrillic"],
-  weight: ["400", "500", "600"],
+const serifCyrillic = localFont({
+  src: [{ path: "./fonts/literata-cyrillic-normal.woff2", weight: "400 600", style: "normal" }],
   variable: "--font-serif-cyr",
   display: "swap",
   preload: false,
+  fallback: ["Georgia", "serif"],
 });
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const mono = localFont({
+  src: [{ path: "./fonts/jetbrains-mono-latin-wght-normal.woff2", weight: "400 600", style: "normal" }],
   variable: "--font-mono",
   display: "swap",
+  fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
 });
 
 const APP_DESCRIPTION =
