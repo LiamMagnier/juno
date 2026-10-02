@@ -118,7 +118,7 @@ const releaseEnv = process.env.GIT_SHA ? { GIT_SHA: process.env.GIT_SHA } : {};
 const POOL_BUDGET = {
   "juno-backend": 4,
   "juno-work": 2,
-  "juno-sweepers": 2,
+  "juno-sweepers": 3,
 };
 function pooledDatabaseEnv(appName) {
   const raw = process.env.DATABASE_URL || rootEnv.DATABASE_URL;
@@ -241,38 +241,13 @@ module.exports = {
       merge_logs: true,
     },
     {
-      // Work schedules and triggers: turns a due WorkSchedule into a queued
-      // WorkRun, which juno-work then claims (scripts/work-scheduler.ts).
-      //
-      // Separate from juno-work deliberately. The executor is horizontally
-      // scalable — leases mean several may run at once — while the thing that
-      // decides a schedule is due must not be, or one cron expression fires
-      // twice. Keeping them apart is what lets the executor be scaled without
-      // anybody having to remember that.
-      //
-      name: "juno-work-scheduler",
-      cwd: runRoot,
-      ...tsxWorker("scripts/work-scheduler.ts", 160),
-      watch: false,
-      max_memory_restart: "400M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-work-scheduler"),
-        NODE_ENV: "production",
-        NODE_OPTIONS: "--conditions=react-server",
-      },
-      error_file: "logs/work-scheduler-err.log",
-      out_file: "logs/work-scheduler-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
-    {
-      // The five small background loops in one process (scripts/sweepers.ts):
-      // restart-safe research adoption (rows whose lease is absent or
+      // The VM's background loops in one process (scripts/sweepers.ts): the
+      // Work scheduler (schedules and artifact maintenance), the event-trigger
+      // poller, restart-safe research adoption (rows whose lease is absent or
       // expired; the API still nudges fresh runs), nightly memory dreaming,
       // proactive agents' reflection, stale import recovery, and the Cloud
       // Code sweeper for tasks whose runner stopped reporting. Separately they
-      // were five Node processes and five Prisma engines on a 1 GB VM.
+      // were seven Node processes and seven Prisma engines on a 1 GB VM.
       name: "juno-sweepers",
       cwd: runRoot,
       ...tsxWorker("scripts/sweepers.ts", 384, { args: "--daemon" }),
@@ -290,43 +265,10 @@ module.exports = {
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
-    {
-      // Event triggers: polls the sources a WorkTrigger watches and turns a
-      // match into a queued WorkRun (scripts/work-trigger-poller.ts).
-      //
-      // Its own app rather than a tick inside juno-work-scheduler, for the same
-      // reason those two are separate. The scheduler's work is arithmetic on a
-      // cron expression and finishes in milliseconds; this one makes network
-      // calls to Gmail and CalDAV that can hang for as long as those services
-      // let them. Sharing a process would mean one unresponsive mail server
-      // stops every cron schedule in the deployment from firing.
-      //
-      // Single instance, and it must stay that way: the poller claims a trigger
-      // with an optimistic lease, but the cursor that stops a restart re-firing
-      // history is per-trigger, not per-process.
-      //
-      // NOTE: inert until the account has an event trigger. With none
-      // configured the sweep finds nothing and costs one indexed query every
-      // two minutes.
-      name: "juno-work-triggers",
-      cwd: runRoot,
-      ...tsxWorker("scripts/work-trigger-poller.ts", 160),
-      watch: false,
-      max_memory_restart: "400M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-work-triggers"),
-        NODE_ENV: "production",
-        NODE_OPTIONS: "--conditions=react-server",
-      },
-      error_file: "logs/work-triggers-err.log",
-      out_file: "logs/work-triggers-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
-    // Artifact maintenance runs inside juno-work-scheduler: one bounded idle
-    // draft pass per minute and one trash page per six hours, dry unless armed.
-    // Six PM2 apps in all; the pooler budget above stays under its 15 slots.
+    // Artifact maintenance runs inside the Work scheduler (juno-sweepers): one
+    // bounded idle draft pass per minute and one trash page per six hours, dry
+    // unless armed.
+    // Four PM2 apps in all; the pooler budget above stays under its 15 slots.
     {
       name: "juno-voice-relay",
       // The relay is its own package inside the release, so it is the one app

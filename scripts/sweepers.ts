@@ -1,10 +1,11 @@
 /**
- * One process for the VM's five small background loops.
+ * One process for the VM's background loops.
  *
- * Research adoption, memory dreaming, agent reflection, import recovery and
- * the Cloud Code task sweeper each ran as their own PM2 app. Every one of
+ * The Work scheduler, the event-trigger poller, research adoption, memory
+ * dreaming, agent reflection, import recovery and the Cloud Code task sweeper
+ * each ran as their own PM2 app. Every one of
  * them loaded its own copy of the app's module graph and Prisma engine
- * (60–80 MB resident apiece), and on the 1 GB VM the five together pushed the
+ * (60–80 MB resident apiece), and on the 1 GB VM the seven together pushed the
  * box into swap until the site stopped answering (2026-10-02). They are
  * independent timers that share one Prisma client here instead.
  *
@@ -14,6 +15,8 @@
  * lease- or row-based sweep, so a tick cut short is picked up on the next
  * start. The code-task sweeper reads `--daemon` from argv, which PM2 passes.
  */
+import "./work-scheduler";
+import "./work-trigger-poller";
 import "./research-worker";
 import "./memory-dreamer";
 import "./agent-reflector";
