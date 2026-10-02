@@ -487,9 +487,20 @@ verify_pm2_ecosystem() {
 wait_for_voice_relay_health() {
   local release_dir="$1"
   say "${YELLOW}🎙️ Verifying voice relay health and WebSocket handshake...${NC}"
-  if [[ -f "$release_dir/scripts/verify-voice-relay.mjs" ]]; then
-    run_in_release "$release_dir" node scripts/verify-voice-relay.mjs || fail "Voice relay health verification failed."
-  fi
+  [[ -f "$release_dir/scripts/verify-voice-relay.mjs" ]] || return 0
+  # Several tries, like the app health wait above: the relay restarts in the
+  # same reload, and on the 1 GB VM one 10 s probe right after it rolled back
+  # a release that was otherwise healthy (2026-10-02).
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    if VOICE_RELAY_TIMEOUT_MS="${VOICE_RELAY_TIMEOUT_MS:-20000}" \
+      run_in_release "$release_dir" node scripts/verify-voice-relay.mjs; then
+      return 0
+    fi
+    say "${YELLOW}Voice relay not ready yet (attempt ${attempt}/6); retrying in 10s...${NC}"
+    sleep 10
+  done
+  fail "Voice relay health verification failed."
 }
 
 prune_old_releases() {
@@ -705,7 +716,14 @@ main() {
 
   # Pre-flight cleanup of old releases and staging directories to ensure disk space
   find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
-  prune_old_releases "$RELEASES_DIR" "$CURRENT_LINK" "$PREVIOUS_LINK" 1
+  # Only when space is short: deleting a release is tens of thousands of
+  # files, and on a VM under memory pressure that alone held a deploy for 15
+  # minutes (2026-10-02). The post-activation prune below runs either way.
+  local free_kb
+  free_kb="$(df -Pk -- "$RELEASES_DIR" | awk 'NR == 2 { print $4 }')"
+  if [[ -z "$free_kb" || "$free_kb" -lt 5242880 ]]; then
+    prune_old_releases "$RELEASES_DIR" "$CURRENT_LINK" "$PREVIOUS_LINK" 1
+  fi
 
   local release_id
   release_id="${TARGET_SHA:0:12}-$(date -u +%Y%m%d%H%M%S)-$$"
