@@ -406,7 +406,7 @@ class Ctx:
 
 # Line-like eyes (closed arcs) read heavier than filled ovals at the same
 # scale and merge into a brow or a moustache when big: they scale less.
-STYLE_SCALE = {"arc": 0.77, "sleep": 0.77, "smile": 0.83, "sleepy": 0.83, "dash": 0.78, "sticker": 0.88}
+STYLE_SCALE = {"arc": 0.77, "sleep": 0.77, "smile": 0.83, "sleepy": 0.83, "dash": 0.78, "sticker": 0.88, "crescent": 0.86}
 
 
 def eye_frame(c, eyes):
@@ -454,6 +454,12 @@ def add_eyes(c, eyes):
             r = w * 0.78
             reg = lambda x, zz, cx=cx: smax(S.ellipse2(x, zz, (cx, z - r * 0.35), r, r * 1.05), (z - r * 0.35) - zz + 0.0, 0.006)
             c.decal(f"eye{i}", reg, (cx - 1.4 * r, cx + 1.4 * r, z - r, z + 1.2 * r), color, 0.002, 0.013)
+        elif st == "crescent":
+            # A happy closed eye as a soft filled crescent (thick in the middle,
+            # tapering ends, bowed up): reads as a smile of the eyes at any size.
+            r = w * 0.95
+            reg = lambda x, zz, cx=cx: smax(S.circle2(x, zz, (cx, z - r * 0.25), r), -S.circle2(x, zz, (cx, z - r * 0.25 - r * 0.5), r * 1.02), 0.004)
+            c.decal(f"eye{i}", reg, (cx - 1.3 * r, cx + 1.3 * r, z - r, z + r), color, 0.003, 0.016)
         elif st == "sleepy":
             # Relaxed: flat on top, round underneath.
             r = w * 0.8
@@ -794,10 +800,10 @@ CAST = {
     ],
     # C — soft symbols: round button eyes, happy half-moons, sleepy arcs, one-piece shades
     "C": [
-        dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="smile", gap=1.3, z=0.47, size=1.25), acc=[]),
+        dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="crescent", gap=1.25, z=0.47, size=1.15), acc=[]),
         dict(id="luna", name="Luna", shape="moon", color=PAL["cobalt"], eyes=dict(style="sleep"), acc=[dict(id="nightcap", color=PAL["sky"], pom=WHITE)]),
         dict(id="zap", name="Zip", shape="sparkle", color=PAL["aqua"], eyes=dict(style="round"), acc=[]),
-        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8, gap=1.2), acc=[dict(id="visor", color=INK)], lift=0.14),
+        dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8, gap=1.2), acc=[dict(id="visor", color=INK)], lift=0.32),
         dict(id="drip", name="Drip", shape="drop", color=PAL["emerald"], eyes=dict(style="sleep"), acc=[]),
         dict(id="daisy", name="Daisy", shape="flower", color=PAL["bubblegum"], center=PAL["butter"], eyes=dict(style="round", gap=1.15), acc=[]),
     ],
