@@ -41,7 +41,7 @@ CREATE TABLE "ToolRun" (
     CONSTRAINT "ToolRun_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "ToolRun_sessionId_callId_argsDigest_key" ON "ToolRun"("sessionId", "callId", "argsDigest");
+CREATE UNIQUE INDEX "ToolRun_userId_sessionId_callId_argsDigest_key" ON "ToolRun"("userId", "sessionId", "callId", "argsDigest");
 CREATE INDEX "ToolRun_userId_createdAt_idx" ON "ToolRun"("userId", "createdAt");
 CREATE INDEX "ToolRun_status_leaseUntil_idx" ON "ToolRun"("status", "leaseUntil");
 CREATE INDEX "ToolRun_conversationId_idx" ON "ToolRun"("conversationId");

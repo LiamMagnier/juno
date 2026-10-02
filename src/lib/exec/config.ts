@@ -54,6 +54,8 @@ export const EXEC_LIMITS = {
   /** Images returned to a vision model in the tool round. */
   maxImages: 4,
   maxImageBytes: 4 * 1024 * 1024,
+  /** Longest side of an image sent to the model (Anthropic refuses more than 8000 px). */
+  maxImageSide: 8000,
   /** One check_run page. */
   pageChars: 40_000,
   /** How long a lease lasts without renewal before the sweep may take the row. */

@@ -31,7 +31,7 @@ import { captureOutputs, reloadImages, storeFullLogs } from "@/lib/exec/capture"
 import { parseCheckRunArgs, parseRunCodeArgs } from "@/lib/exec/args";
 export { parseCheckRunArgs, parseRunCodeArgs };
 import { formatDuration, languageLabel, outcomeText, runSummary, type StreamSlice } from "@/lib/exec/format";
-import { codeDigest, hostAccountId, hostIdempotencyKey, hostSessionId, runArgsDigest } from "@/lib/exec/ids";
+import { codeDigest, hostAccountId, hostIdempotencyKey, hostInputName, hostSessionId, runArgsDigest } from "@/lib/exec/ids";
 import {
   claimMetering,
   claimToolRun,
@@ -259,35 +259,54 @@ export async function outcomeFromRow(
 
 // ── inputs and skills ───────────────────────────────────────────────────────
 
-/** Per process: which attachments a host session already holds, so a file goes up once. */
-const uploaded = new Map<string, Set<string>>();
+/**
+ * Per process: what each host session's inputs/ holds, as name → attachment id,
+ * so a file goes up once. By NAME, because that is what the host stores: two
+ * calls that give one name to different attachments (`files` picking an older
+ * "data.csv") must replace the file, not keep whichever went up first. And only
+ * for a while: the host drops a session after 30 idle minutes, so an entry
+ * older than INPUT_CACHE_MS is uploaded again rather than trusted.
+ */
+const uploaded = new Map<string, { at: number; names: Map<string, string> }>();
+const INPUT_CACHE_MS = 20 * 60_000;
 
-async function uploadInputs(
+export async function uploadInputs(
   client: JunoExecClient,
   remoteSession: string,
   inputs: readonly ExecInputFile[],
   signal?: AbortSignal,
 ): Promise<Array<{ attachmentId: string; name: string; bytes: number }>> {
-  const seen = uploaded.get(remoteSession) ?? new Set<string>();
-  uploaded.set(remoteSession, seen);
+  const now = Date.now();
+  let session = uploaded.get(remoteSession);
+  if (!session || now - session.at > INPUT_CACHE_MS) {
+    session = { at: now, names: new Map<string, string>() };
+    uploaded.set(remoteSession, session);
+  }
   if (uploaded.size > 500) uploaded.delete(uploaded.keys().next().value as string);
   const used = new Map<string, number>();
   const record: Array<{ attachmentId: string; name: string; bytes: number }> = [];
   for (const input of inputs.slice(0, EXEC_LIMITS.maxInputFiles)) {
     if (input.size > EXEC_LIMITS.maxInputBytes) continue;
     // Two attachments with one name: the later one gets " (2)" before its extension.
-    const count = (used.get(input.fileName) ?? 0) + 1;
-    used.set(input.fileName, count);
-    const name = count === 1 ? input.fileName : input.fileName.replace(/(\.[^.]*)?$/, ` (${count})$1`);
-    const key = `${input.id}:${name}`;
-    if (!seen.has(key)) {
+    const base = hostInputName(input.fileName);
+    const count = (used.get(base) ?? 0) + 1;
+    used.set(base, count);
+    const name = count === 1 ? base : base.replace(/(\.[^.]*)?$/, ` (${count})$1`);
+    if (session.names.get(name) !== input.id) {
       const { bytes } = await getObjectBytes(input.storageKey);
+      session.names.delete(name);
       await client.putInput(remoteSession, name, bytes, signal);
-      seen.add(key);
+      session.names.set(name, input.id);
     }
     record.push({ attachmentId: input.id, name, bytes: input.size });
   }
   return record;
+}
+
+/** A run started in this session: the host has just touched it, so the cache stays good. */
+function touchUploaded(remoteSession: string): void {
+  const session = uploaded.get(remoteSession);
+  if (session) session.at = Date.now();
 }
 
 function skillUsed(code: string, skills: readonly SkillMount[] | undefined): SkillMount | null {
@@ -535,7 +554,7 @@ export async function executeRunCode(
   }
   const runBudget = ctx.surface === "work" ? 100 : EXEC_LIMITS.runsPerTurn;
   const client = new JunoExecClient(endpoint);
-  const remoteSession = hostSessionId(ctx.surface, ctx.sessionId);
+  const remoteSession = hostSessionId(ctx.surface, ctx.sessionId, ctx.userId);
   const argsDigest = runArgsDigest(parsed);
 
   // Inputs: named files resolve against what this conversation (or run) may read.
@@ -592,6 +611,12 @@ export async function executeRunCode(
 
   let snapshot: HostRunSnapshot | null = null;
   if (!row.remoteRunId) {
+    // "prepare" (uploads) is abortable and starts nothing. The start request
+    // itself is NOT given the turn's signal: aborting it after the body went
+    // out could leave a run the host started while the row said "Nothing was
+    // run". The host answers at once, and a Stop that came meanwhile is acted
+    // on below by cancelling the run it reports.
+    let phase: "prepare" | "start" = "prepare";
     try {
       const inputRecord = await uploadInputs(client, remoteSession, inputs, ctx.signal);
       await recordInputs(lease, inputRecord);
@@ -600,6 +625,8 @@ export async function executeRunCode(
         await client.putSkill(remoteSession, mount.slug, await mount.openBundle(), ctx.signal);
         skillSlugs.push(mount.slug);
       }
+      if (ctx.signal?.aborted) throw new Error("aborted before the start");
+      phase = "start";
       snapshot = await client.startRun(
         {
           session: remoteSession,
@@ -609,13 +636,12 @@ export async function executeRunCode(
           timeoutMs: parsed.timeoutMs,
           ...(skillSlugs.length ? { skills: skillSlugs } : {}),
         },
-        hostIdempotencyKey(ctx.surface, ctx.sessionId, ctx.callId, argsDigest),
-        ctx.signal,
+        hostIdempotencyKey(remoteSession, ctx.callId, argsDigest),
       );
+      touchUploaded(remoteSession);
     } catch (error) {
-      if (ctx.signal?.aborted) {
-        // Stopped before the host confirmed a start. The same key is safe to
-        // reuse, but nobody is waiting, so nothing is started on our behalf.
+      if (phase === "prepare" && ctx.signal?.aborted) {
+        // Stopped while the inputs went up: the start was never requested.
         await settleToolRun(lease, refusedSettlement("Stopped before the run started."));
         const text = "Stopped before the run started. Nothing was run.";
         return { status: "cancelled", text, body: text, error: { code: "cancelled" } };
@@ -762,12 +788,18 @@ export interface SweepResult {
  * files attached; a run the host does not have, or has as `lost`, becomes
  * `outcome_unknown`. Nothing is started, and nothing is re-run.
  */
-export async function sweepToolRuns(options: { now?: Date; limit?: number } = {}): Promise<SweepResult> {
+export async function sweepToolRuns(options: { now?: Date; limit?: number; budgetMs?: number } = {}): Promise<SweepResult> {
   const now = options.now ?? new Date();
   const result: SweepResult = { examined: 0, finishedLate: 0, unknown: 0, stillRunning: 0 };
   const rows = await findAbandonedRuns(now, options.limit ?? 20);
   const endpoint = execEndpoint();
+  // The sweep runs inside the scheduler's tick, which also dispatches due
+  // schedules: collecting twenty runs' files can take minutes, so it stops
+  // taking rows after its budget and the next tick goes on.
+  const startedAt = Date.now();
+  const budgetMs = options.budgetMs ?? 30_000;
   for (const candidate of rows) {
+    if (Date.now() - startedAt > budgetMs) break;
     const lease = await takeExpiredLease(candidate.id, candidate.userId, now);
     if (!lease) continue;
     result.examined += 1;

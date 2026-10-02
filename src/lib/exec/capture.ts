@@ -24,9 +24,9 @@ import { libraryCapacity, lockedLibraryCapacity, assertLibraryCapacity, LibraryQ
 import { EXEC_LIMITS } from "@/lib/exec/config";
 import type { HostFileEntry, HostRunSnapshot, JunoExecClient } from "@/lib/exec/client";
 import type { ExecImage, ExecOutputFile, ExecSurface } from "@/lib/exec/types";
-import { imageDimensions } from "@/lib/exec/image-size";
+import { imageDimensions, sendableDimensions } from "@/lib/exec/image-size";
 
-export { imageDimensions };
+export { imageDimensions, sendableDimensions };
 
 const MAX_FILE_MB = 25;
 
@@ -169,7 +169,8 @@ export async function captureOutputs(input: CaptureInput): Promise<CaptureResult
       kind === "IMAGE" &&
       images.length < EXEC_LIMITS.maxImages &&
       bytes.byteLength <= EXEC_LIMITS.maxImageBytes &&
-      /^image\/(png|jpeg|gif|webp)$/.test(storedMime)
+      /^image\/(png|jpeg|gif|webp)$/.test(storedMime) &&
+      sendableDimensions(dimensions)
     ) {
       images.push({ mimeType: storedMime, base64: Buffer.from(bytes).toString("base64"), label: fileName });
     }
@@ -183,11 +184,13 @@ export async function reloadImages(attachmentIds: readonly string[], userId: str
   const { getObjectBytes } = await import("@/lib/storage");
   const rows = await prisma.attachment.findMany({
     where: { id: { in: [...attachmentIds] }, userId, kind: "IMAGE", deletedAt: null },
-    select: { id: true, fileName: true, mimeType: true, storageKey: true, size: true },
+    select: { id: true, fileName: true, mimeType: true, storageKey: true, size: true, width: true, height: true },
   });
   const images: ExecImage[] = [];
   for (const row of rows) {
     if (images.length >= EXEC_LIMITS.maxImages || row.size > EXEC_LIMITS.maxImageBytes) continue;
+    if (!sendableDimensions(row.width && row.height ? { width: row.width, height: row.height } : null)) continue;
+    if (!/^image\/(png|jpeg|gif|webp)$/.test(row.mimeType)) continue;
     try {
       const { bytes } = await getObjectBytes(row.storageKey);
       images.push({ mimeType: row.mimeType, base64: Buffer.from(bytes).toString("base64"), label: row.fileName });

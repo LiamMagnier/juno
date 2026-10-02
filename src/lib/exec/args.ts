@@ -13,11 +13,26 @@ export interface ParsedRunCode {
   timeoutMs: number;
 }
 
+/**
+ * A provider's arguments are not always an object: a call whose JSON did not
+ * parse arrives as a string (whose keys are its character indexes, so a 200 KB
+ * program became a 200,000-name "unknown arguments" list), an array or null.
+ */
+function argumentsError(raw: unknown, allowed: ReadonlySet<string>): string | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return "The arguments must be a JSON object, for example {\"code\": \"print(1)\"}.";
+  }
+  const unknown = Object.keys(raw).filter((key) => !allowed.has(key));
+  if (!unknown.length) return null;
+  const shown = unknown.slice(0, 5).map((key) => key.slice(0, 40)).join(", ");
+  return `Unknown argument${unknown.length > 1 ? "s" : ""}: ${shown}${unknown.length > 5 ? `, and ${unknown.length - 5} more` : ""}.`;
+}
+
 export function parseRunCodeArgs(raw: Record<string, unknown>, surface: ExecSurface): ParsedRunCode | { error: string } {
   const limits = surfaceLimits(surface);
   const allowed = new Set(["language", "code", "files", "timeout_seconds", "reason"]);
-  const unknown = Object.keys(raw).filter((key) => !allowed.has(key));
-  if (unknown.length) return { error: `Unknown argument${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}.` };
+  const invalid = argumentsError(raw, allowed);
+  if (invalid) return { error: invalid };
   const language = (raw.language ?? "python") as ExecLanguage;
   if (!EXEC_LANGUAGES.includes(language)) return { error: `language must be one of ${EXEC_LANGUAGES.join(", ")}.` };
   if (typeof raw.code !== "string" || !raw.code.trim()) return { error: "code is required and must be a non-empty string." };
@@ -26,6 +41,9 @@ export function parseRunCodeArgs(raw: Record<string, unknown>, surface: ExecSurf
   if (raw.files !== undefined && raw.files !== null) {
     if (!Array.isArray(raw.files) || !raw.files.every((entry) => typeof entry === "string")) {
       return { error: "files must be an array of attachment names." };
+    }
+    if (raw.files.length > EXEC_LIMITS.maxInputFiles) {
+      return { error: `files names more than ${EXEC_LIMITS.maxInputFiles} attachments; a run takes at most ${EXEC_LIMITS.maxInputFiles}.` };
     }
     files = raw.files as string[];
   }
@@ -43,8 +61,8 @@ export function parseRunCodeArgs(raw: Record<string, unknown>, surface: ExecSurf
 
 export function parseCheckRunArgs(raw: Record<string, unknown>): Required<Pick<CheckRunArgs, "run_id" | "wait_seconds">> & Pick<CheckRunArgs, "stream" | "offset"> | { error: string } {
   const allowed = new Set(["run_id", "wait_seconds", "stream", "offset"]);
-  const unknown = Object.keys(raw).filter((key) => !allowed.has(key));
-  if (unknown.length) return { error: `Unknown argument${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}.` };
+  const invalid = argumentsError(raw, allowed);
+  if (invalid) return { error: invalid };
   if (typeof raw.run_id !== "string" || !/^[a-z0-9]{10,40}$/.test(raw.run_id)) return { error: "run_id must be the run id run_code returned." };
   let wait = 30;
   if (raw.wait_seconds !== undefined) {

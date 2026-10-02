@@ -1,4 +1,5 @@
 /** Image dimensions read from the header bytes, for produced images (pure). */
+import { EXEC_LIMITS } from "@/lib/exec/config";
 
 /** Width and height from a PNG, GIF, JPEG or WebP header; null when unknown. */
 export function imageDimensions(bytes: Uint8Array): { width: number; height: number } | null {
@@ -31,4 +32,27 @@ export function imageDimensions(bytes: Uint8Array): { width: number; height: num
     }
   }
   return null;
+}
+
+/**
+ * Whether a produced image may go back to the model in the tool round. The
+ * file is attached either way; this is about the provider request. Anthropic
+ * rejects an image over 8000 px on a side with a 400 that fails the whole turn,
+ * and a program writes one easily (`savefig(dpi=1000)`), so an image whose
+ * header gives no size, or a size over the bound, is not sent (the text then
+ * says how many images follow, which is how the model knows).
+ */
+export function sendableDimensions(dimensions: { width: number; height: number } | null): boolean {
+  if (!dimensions) return false;
+  const { width, height } = dimensions;
+  return width > 0 && height > 0 && width <= EXEC_LIMITS.maxImageSide && height <= EXEC_LIMITS.maxImageSide;
+}
+
+/** A display name for a produced path: the base name, prefixed by its folder when two collide. */
+function displayNames(entries: readonly HostFileEntry[]): string[] {
+  const bases = entries.map((entry) => entry.path.split("/").pop() || entry.path);
+  return entries.map((entry, index) => {
+    const base = bases[index];
+    return bases.filter((candidate) => candidate === base).length > 1 ? entry.path.replace(/\//g, "_") : base;
+  });
 }

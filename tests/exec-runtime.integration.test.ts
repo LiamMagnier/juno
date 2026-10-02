@@ -351,7 +351,15 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
     const { executeRunCode } = await import("@/lib/exec/runtime");
     const f = await seed();
     const saved = process.env.CODE_INTERPRETER_URL;
-    process.env.CODE_INTERPRETER_URL = "http://127.0.0.1:3179";
+    // A loopback port nothing listens on (not a fixed one: the host under test may be there).
+    const { createServer } = await import("node:net");
+    const closedPort = await new Promise<number>((resolve) => {
+      const server = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = server.address() as { port: number };
+        server.close(() => resolve(port));
+      });
+    });
+    process.env.CODE_INTERPRETER_URL = `http://127.0.0.1:${closedPort}`;
     try {
       const outcome = await executeRunCode({ code: "print(1)" }, ctx(f));
       assert.equal(outcome.error?.code, "capability_unavailable", outcome.text);
@@ -394,6 +402,132 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
     const failed = await deps.runCode({ code: "raise SystemExit(4)" }, { callId: "toolu_work_2" });
     assert.equal(failed.isError, true);
     assert.equal(failed.exitCode, 4);
+  });
+
+  /*
+   * ── What the adversarial review broke ─────────────────────────────────────
+   */
+
+  test("review: Stop while the start request is in flight cancels the run the host started, never claims nothing ran", async () => {
+    const { executeRunCode } = await import("@/lib/exec/runtime");
+    const { JunoExecClient } = await import("@/lib/exec/client");
+    const { execEndpoint } = await import("@/lib/exec/config");
+    const http = await import("node:http");
+    const f = await seed();
+    const controller = new AbortController();
+    // A proxy in front of the host: POST /v1/runs reaches the host at once, and
+    // its answer is held for a second while Stop arrives.
+    const upstream = new URL(HOST!);
+    const proxy = http.createServer((request, response) => {
+      const forward = http.request(
+        { host: upstream.hostname, port: upstream.port, path: request.url, method: request.method, headers: request.headers },
+        (answer) => {
+          const relay = () => {
+            response.writeHead(answer.statusCode ?? 502, answer.headers);
+            answer.pipe(response);
+          };
+          if (request.method === "POST" && request.url === "/v1/runs") {
+            controller.abort();
+            setTimeout(relay, 1000);
+          } else relay();
+        },
+      );
+      request.pipe(forward);
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const saved = process.env.CODE_INTERPRETER_URL;
+    process.env.CODE_INTERPRETER_URL = `http://127.0.0.1:${(proxy.address() as { port: number }).port}`;
+    let outcome;
+    try {
+      outcome = await executeRunCode({ code: "import time\ntime.sleep(60)\nopen('never.txt','w').write('x')\n" }, ctx(f, { signal: controller.signal }));
+    } finally {
+      process.env.CODE_INTERPRETER_URL = saved;
+      proxy.close();
+    }
+    assert.doesNotMatch(outcome.text, /Nothing was run/, "the host did start it, so 'nothing was run' would be false");
+    assert.equal(outcome.status, "cancelled", outcome.text);
+    const row = await prisma.toolRun.findFirstOrThrow({ where: { userId: f.user.id } });
+    assert.equal(row.status, "cancelled");
+    assert.ok(row.remoteRunId, "the run the host started is recorded");
+    const host = await new JunoExecClient(execEndpoint()!).getRun(row.remoteRunId!, 0);
+    assert.equal(host.status, "cancelled", "and it was stopped on the host, not left running");
+  });
+
+  test("review: two accounts sending the same session id never share a workspace or a record", async () => {
+    const { executeRunCode } = await import("@/lib/exec/runtime");
+    const a = await seed();
+    const b = await seed();
+    const sessionId = `gen-shared-${randomBytes(4).toString("hex")}`;
+    const call = { code: "import os\nopen('mine.txt','w').write('secret of whoever ran first')\nprint(sorted(os.listdir('.')))\n" };
+    const first = await executeRunCode(call, ctx(a, { sessionId, callId: "call_same" }));
+    assert.equal(first.status, "succeeded", first.text);
+    const second = await executeRunCode(
+      { code: "import os\nprint(sorted(os.listdir('.')))\nprint(open('mine.txt').read() if os.path.exists('mine.txt') else 'no file here')\n" },
+      ctx(b, { sessionId, callId: "call_same" }),
+    );
+    assert.equal(second.status, "succeeded", second.text);
+    assert.match(second.text, /no file here/, "B's run does not see A's workspace");
+    assert.doesNotMatch(second.text, /secret of whoever ran first/);
+    // The same call, byte for byte, from B: its own row and its own run, not A's result.
+    const replayedForB = await executeRunCode(call, ctx(b, { sessionId, callId: "call_same" }));
+    assert.equal(replayedForB.replayed, undefined, "B's first identical call is not A's recorded result");
+    const rowsA = await prisma.toolRun.findMany({ where: { userId: a.user.id } });
+    const rowsB = await prisma.toolRun.findMany({ where: { userId: b.user.id } });
+    assert.equal(rowsA.length, 1);
+    assert.equal(rowsB.length, 2);
+    assert.notEqual(rowsA[0].remoteSession, rowsB[0].remoteSession);
+    const filesB = await prisma.attachment.findMany({ where: { userId: b.user.id, origin: "tool_output" } });
+    assert.ok(filesB.every((file) => file.conversationId === b.conversation.id));
+  });
+
+  test("review: an attachment named like a dotfile no longer makes every run refuse", async () => {
+    const { executeRunCode } = await import("@/lib/exec/runtime");
+    const { putObject } = await import("@/lib/storage");
+    const f = await seed();
+    const key = `test/${randomBytes(6).toString("hex")}/hidden.csv`;
+    await putObject(key, Buffer.from("a,b\n1,2\n"), "text/csv");
+    await prisma.attachment.create({
+      data: { userId: f.user.id, conversationId: f.conversation.id, kind: "FILE", fileName: ".hidden.csv", mimeType: "text/csv", size: 8, storageKey: key, parserState: "ready" },
+    });
+    const outcome = await executeRunCode({ code: "import os\nprint(sorted(os.listdir('inputs')))\n" }, ctx(f));
+    assert.equal(outcome.status, "succeeded", outcome.text);
+    assert.match(outcome.text, /_hidden\.csv/);
+    assert.match(outcome.text, /sales\.csv/);
+  });
+
+  test("review: a re-used input name gets the right file, not whichever went up first", async () => {
+    const { uploadInputs } = await import("@/lib/exec/runtime");
+    const { putObject } = await import("@/lib/storage");
+    const puts: Array<{ name: string; text: string }> = [];
+    const client = { putInput: async (_session: string, name: string, bytes: Uint8Array) => (puts.push({ name, text: Buffer.from(bytes).toString() }), { sha256: "" }) };
+    const keyA = `test/${randomBytes(6).toString("hex")}/a.csv`;
+    const keyB = `test/${randomBytes(6).toString("hex")}/b.csv`;
+    await putObject(keyA, Buffer.from("A"), "text/csv");
+    await putObject(keyB, Buffer.from("B"), "text/csv");
+    const fileA = { id: "att_a", fileName: "data.csv", mimeType: "text/csv", size: 1, storageKey: keyA };
+    const fileB = { id: "att_b", fileName: "data.csv", mimeType: "text/csv", size: 1, storageKey: keyB };
+    const session = `s_${randomBytes(16).toString("hex")}`;
+    const run = (inputs: Array<typeof fileA>) => uploadInputs(client as never, session, inputs);
+    await run([fileA]);
+    await run([fileA]);
+    assert.deepEqual(puts, [{ name: "data.csv", text: "A" }], "the same file goes up once");
+    await run([fileB]);
+    await run([fileA]);
+    assert.deepEqual(puts.map((put) => put.text), ["A", "B", "A"], "data.csv holds A again when the run asks for A");
+  });
+
+  test("review: an image too large for the providers is attached but not sent back to the model", async () => {
+    const { executeRunCode } = await import("@/lib/exec/runtime");
+    const f = await seed();
+    const outcome = await executeRunCode(
+      { code: "import matplotlib.pyplot as plt\nplt.figure(figsize=(90, 1), dpi=100)\nplt.plot([0, 1], [0, 1])\nplt.savefig('wide.png')\nprint('saved')\n" },
+      ctx(f),
+    );
+    assert.equal(outcome.status, "succeeded", outcome.text);
+    const png = await prisma.attachment.findFirstOrThrow({ where: { userId: f.user.id, origin: "tool_output" } });
+    assert.ok((png.width ?? 0) > 8000, `the chart is ${png.width} px wide`);
+    assert.equal(outcome.images?.length ?? 0, 0, "a 9000 px image would fail the provider request, so it stays out of the tool round");
+    assert.match(outcome.text, /wide\.png/, "the file is still reported and attached");
   });
 
   test("close the database", async () => {

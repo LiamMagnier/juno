@@ -20,11 +20,11 @@ import {
   statusLine,
 } from "@/lib/exec/format";
 import { parseCheckRunArgs, parseRunCodeArgs } from "@/lib/exec/args";
-import { hostAccountId, hostIdempotencyKey, hostSessionId, runArgsDigest } from "@/lib/exec/ids";
+import { hostAccountId, hostIdempotencyKey, hostInputName, hostSessionId, runArgsDigest } from "@/lib/exec/ids";
 import { toToolOutcome, toToolProgress } from "@/lib/exec/contract";
 import { clearSkillMounts, mountSkill, skillMountsFor } from "@/lib/exec/mounts";
 import { execEntitlement, surfaceLimits } from "@/lib/exec/config";
-import { imageDimensions } from "@/lib/exec/image-size";
+import { imageDimensions, sendableDimensions } from "@/lib/exec/image-size";
 import { runCodeSpec, RUN_CODE_TIMEOUT_MS } from "@/lib/tools/specs/run-code";
 import { checkRunSpec } from "@/lib/tools/specs/check-run";
 import { execToolProvider } from "@/lib/exec/provider";
@@ -128,19 +128,64 @@ test("run_code arguments are validated before anything is recorded", () => {
 
 test("the host sees opaque identifiers only, and the same call has the same key", () => {
   process.env.AUTH_SECRET ??= "unit-test-secret";
-  const session = hostSessionId("chat", "generation-1");
+  const session = hostSessionId("chat", "generation-1", "user_abc");
   assert.match(session, /^s_[0-9a-f]{32}$/);
-  assert.equal(session, hostSessionId("chat", "generation-1"));
-  assert.notEqual(session, hostSessionId("work", "generation-1"));
+  assert.equal(session, hostSessionId("chat", "generation-1", "user_abc"));
+  assert.notEqual(session, hostSessionId("work", "generation-1", "user_abc"));
+  // A chat generation id can come from the client: another account sending the
+  // same one gets its own workspace, never this one.
+  assert.notEqual(session, hostSessionId("chat", "generation-1", "user_other"));
   const account = hostAccountId("user_abc");
   assert.match(account, /^a_[0-9a-f]{32}$/);
   assert.doesNotMatch(account, /user_abc/);
   const digest = runArgsDigest({ language: "python", code: "print(1)", files: ["b", "a"], timeoutMs: 1000 });
   assert.equal(digest, runArgsDigest({ language: "python", code: "print(1)", files: ["a", "b"], timeoutMs: 1000 }));
   assert.notEqual(digest, runArgsDigest({ language: "python", code: "print(2)", files: ["a", "b"], timeoutMs: 1000 }));
-  const key = hostIdempotencyKey("chat", "generation-1", "toolu_1", digest);
-  assert.equal(key, hostIdempotencyKey("chat", "generation-1", "toolu_1", digest));
-  assert.ok(hostIdempotencyKey("chat", "g", "x".repeat(500), digest).length < 300);
+  const key = hostIdempotencyKey(session, "toolu_1", digest);
+  assert.equal(key, hostIdempotencyKey(session, "toolu_1", digest));
+  assert.notEqual(key, hostIdempotencyKey(hostSessionId("chat", "generation-1", "user_other"), "toolu_1", digest));
+  assert.ok(hostIdempotencyKey(session, "x".repeat(500), digest).length < 300);
+  // A provider's id that is not header-safe ASCII is hashed, not sent (fetch
+  // throws on a newline or a character past U+00FF, which failed the run).
+  for (const callId of ["call\r\nX-Injected: 1", "appel_é_ü", "调用_1", "", "a b"]) {
+    const value = hostIdempotencyKey(session, callId, digest);
+    assert.match(value, /^[\x21-\x7e]+$/, JSON.stringify(callId));
+    assert.equal(value, hostIdempotencyKey(session, callId, digest));
+  }
+  assert.notEqual(hostIdempotencyKey(session, "调用_1", digest), hostIdempotencyKey(session, "调用_2", digest));
+});
+
+test("input names are ones the host accepts, so one odd attachment cannot refuse every run", () => {
+  const accepted = (name: string) => /^[^/\\\u0000-\u001f]{1,200}$/u.test(name) && !name.startsWith(".");
+  for (const name of [".data.csv", "..", ".", "a/b.csv", "back\\slash.txt", "tab\tname.csv", "x".repeat(400) + ".xlsx", "   ", "ok.csv"]) {
+    const safe = hostInputName(name);
+    assert.ok(accepted(safe), `${JSON.stringify(name)} → ${JSON.stringify(safe)}`);
+    assert.ok(accepted(safe.replace(/(\.[^.]*)?$/, " (2)$1")), "a numbered duplicate fits too");
+  }
+  assert.equal(hostInputName("ok.csv"), "ok.csv");
+  assert.equal(hostInputName(".data.csv"), "_data.csv");
+  assert.ok(hostInputName("x".repeat(400) + ".xlsx").endsWith(".xlsx"));
+});
+
+test("arguments that are not an object, or carry many unknown keys, get a short refusal", () => {
+  for (const raw of ["print(1)", ["print(1)"], null, 42]) {
+    const parsed = parseRunCodeArgs(raw as unknown as Record<string, unknown>, "chat");
+    assert.ok("error" in parsed && /JSON object/.test(parsed.error), JSON.stringify(raw));
+    assert.ok("error" in parseCheckRunArgs(raw as unknown as Record<string, unknown>));
+  }
+  const many = Object.fromEntries(Array.from({ length: 5000 }, (_, index) => [`k${index}`, 1]));
+  const parsed = parseRunCodeArgs({ code: "print(1)", ...many }, "chat");
+  assert.ok("error" in parsed && parsed.error.length < 200 && /4995 more/.test(parsed.error), "error" in parsed ? parsed.error : "");
+  const files = parseRunCodeArgs({ code: "print(1)", files: Array.from({ length: 21 }, (_, index) => `f${index}.csv`) }, "chat");
+  assert.ok("error" in files);
+});
+
+test("an image goes back to the model only with a known size the providers accept", () => {
+  assert.equal(sendableDimensions({ width: 1600, height: 1200 }), true);
+  assert.equal(sendableDimensions({ width: 8000, height: 8000 }), true);
+  assert.equal(sendableDimensions({ width: 10000, height: 600 }), false, "savefig(dpi=1000) would fail the whole turn");
+  assert.equal(sendableDimensions({ width: 0, height: 10 }), false);
+  assert.equal(sendableDimensions(null), false);
 });
 
 function facts(status: ToolRunStatus, overrides: Partial<ExecRunFacts> = {}): ExecRunFacts {

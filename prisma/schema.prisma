@@ -4511,7 +4511,7 @@ model ToolRun {
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   workRun      WorkRun?      @relation(fields: [workRunId], references: [id], onDelete: Cascade)
 
-  @@unique([sessionId, callId, argsDigest])
+  @@unique([userId, sessionId, callId, argsDigest])
   @@index([userId, createdAt])
   @@index([status, leaseUntil])
   @@index([conversationId])

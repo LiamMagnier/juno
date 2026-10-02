@@ -3,8 +3,11 @@ import "server-only";
  * ToolRun persistence: the durable record of every hosted run (design §6.6).
  *
  * Two guards keep a call from running twice. The row is keyed by
- * (sessionId, callId, argsDigest), so a replayed or re-dispatched call finds
- * its row; and the host's Idempotency-Key is derived from the same triple.
+ * (userId, sessionId, callId, argsDigest), so a replayed or re-dispatched call
+ * finds its row; and the host's Idempotency-Key is derived from the same key.
+ * The account is in it because a chat session id (the generation id) can come
+ * from the client: another account sending the same id and call must neither
+ * collide with this row nor be handed its result.
  *
  * One process at a time drives a non-terminal row, by LEASE: `leaseUntil` is
  * both the expiry and the owner's token (a claim writes a fresh timestamp, and
@@ -109,7 +112,7 @@ export async function claimToolRun(
   const existing = await prisma.toolRun.findFirst({
     where: { userId: input.userId, sessionId: input.sessionId, callId: input.callId, argsDigest: input.argsDigest },
   });
-  if (!existing) throw new Error("A tool run with this key belongs to another account.");
+  if (!existing) throw new Error("The tool run with this key could not be read back.");
   return existingClaim(existing);
 }
 
@@ -274,7 +277,10 @@ export async function findAbandonedRuns(now: Date, limit: number): Promise<ToolR
       status: { in: ["queued", "running"] },
       OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
     },
-    orderBy: { createdAt: "asc" },
+    // Longest-lapsed first. A run the sweep found still going is released with
+    // a fresh timestamp and so goes to the back: by createdAt, twenty long Work
+    // runs at the front would starve every finished run behind them.
+    orderBy: [{ leaseUntil: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
     take: limit,
   });
 }

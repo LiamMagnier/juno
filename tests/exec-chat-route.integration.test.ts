@@ -445,7 +445,15 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
       return { tool: { name: "code_interpreter", input: { code: "print(1)" } } };
     };
     const saved = process.env.CODE_INTERPRETER_URL;
-    process.env.CODE_INTERPRETER_URL = "http://127.0.0.1:3179";
+    // A loopback port nothing listens on (not a fixed one: the host under test may be there).
+    const { createServer } = await import("node:net");
+    const closedPort = await new Promise<number>((resolve) => {
+      const server = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = server.address() as { port: number };
+        server.close(() => resolve(port));
+      });
+    });
+    process.env.CODE_INTERPRETER_URL = `http://127.0.0.1:${closedPort}`;
     try {
       const { done } = await chat({ message: "Run print(1).", model: "claude-sonnet-5", attachmentIds: [f.attachment.id] });
       assert.ok(done);
