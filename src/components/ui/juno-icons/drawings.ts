@@ -611,27 +611,6 @@ export function ellArc(cx: number, cy: number, a: number, b: number, phi: number
  * to chase: it cannot read as refresh, sync or a spinner, and it never moves.
  */
 const ORBIT_A = 9.375;
-const ORBIT_B = n3(ORBIT_A * 0.618);
-const ORBIT_TILT = -24;
-const ORBIT_FRONT = 0.9;
-/**
- * The optical centre: the open break takes the right tip, so drawn about the
- * grid's centre the ink would sit half a unit left and a third of a unit high
- * (its box runs 3.12 to 19.87 by 5.48 to 17.87). The ellipse is centred where
- * the ink is centred.
- */
-const ORBIT_CX = 12.5;
-const ORBIT_CY = 12.33;
-/** The 16 px line in construction units (1.25 px at 16 is 1.875 keyline units). */
-const LINE16 = 1.667;
-/** ds/dt of an ellipse, units per degree of its parameter. */
-const ellSpeed = (a: number, b: number, t: number): number => Math.hypot(a * Math.sin((t * Math.PI) / 180), b * Math.cos((t * Math.PI) / 180)) * (Math.PI / 180);
-/** The parameter reached after walking arc length `s` from `t0`, forward (1) or back (-1). */
-function ellWalk(a: number, b: number, t0: number, s: number, dir: 1 | -1): number {
-  let t = t0;
-  for (let acc = 0; acc < s; t += 0.05 * dir) acc += ellSpeed(a, b, t) * 0.05;
-  return Math.round(t * 100) / 100;
-}
 function orbitArcs(a: number, chord: number): string[] {
   const b = a / ((1 + Math.sqrt(5)) / 2);
   const th = (-24 * Math.PI) / 180;

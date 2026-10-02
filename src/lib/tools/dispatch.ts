@@ -615,7 +615,7 @@ async function execute(
           outcome = { ...outcome, durationMs: now() - startedAt };
         }
       } finally {
-        if (brokered) {
+        if (brokered && ctx.ports) {
           const ok = outcome?.status === "succeeded";
           await ctx.ports.completeExternalAction?.({
             userId: context.userId ?? "",
