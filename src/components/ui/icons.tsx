@@ -176,6 +176,9 @@ export const ArrowLeft = glyph("arrow-left", "ArrowLeft");
 export const ArrowRight = glyph("arrow-right", "ArrowRight");
 export const ArrowUp = glyph("arrow-up", "ArrowUp");
 export const ArrowDown = glyph("arrow-down", "ArrowDown");
+/** Mention and return-key glyphs used by the redesigned composer. */
+export const AtSign = glyph("at", "AtSign");
+export const CornerDownLeft = glyph("enter", "CornerDownLeft");
 export const ArrowUpRight = glyph("arrow-up-right", "ArrowUpRight");
 export const ArrowUpToLine = glyph("arrow-up-line", "ArrowUpToLine");
 export const ArrowDownToLine = glyph("arrow-down-line", "ArrowDownToLine");
