@@ -326,10 +326,10 @@ export function ShellFixture({
       <SelectConversation id="c-active" />
       <main className="min-h-dvh bg-background p-6">
         <div className="flex flex-wrap items-start gap-8">
-          <Frame label={`Chat, expanded (${width})`} width={collapsed ? 64 : width} open={width}>
+          <Frame label={`Chat, expanded (${width})`} width={collapsed ? 52 : width} open={width}>
             <AppSidebar product="chat" collapsed={collapsed} onToggleCollapse={() => setCollapsed((v) => !v)} />
           </Frame>
-          <Frame label="Rail (64)" width={64}>
+          <Frame label="Rail (52)" width={52}>
             <AppSidebar product="chat" collapsed onToggleCollapse={() => undefined} />
           </Frame>
           <Frame label={`Code, expanded (${width})`} width={width}>

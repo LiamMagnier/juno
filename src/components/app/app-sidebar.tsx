@@ -925,7 +925,7 @@ export function AppSidebar({
           "flex h-full flex-col text-sidebar-foreground",
           // Desktop width rides the shell's --juno-sidebar-width (user-resizable);
           // keeping it on the inner column preserves the collapse clip-reveal.
-          // w-16 = 64px = app-shell's RAIL_WIDTH. Not the spec's 56: the
+          // w-[52px] = app-shell's RAIL_WIDTH: 36px targets in px-2. (Was 64:
           // product switch's rail items are 44px inside `px-2.5`, which is
           // exactly 64, and that control is signed off and not ours to resize.
           collapsed ? "w-[52px]" : "w-full md:w-[var(--juno-sidebar-width,260px)]"

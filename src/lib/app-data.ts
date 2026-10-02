@@ -5,7 +5,8 @@ import { listConversations } from "@/lib/queries";
 import { getQuota, planFromAccount } from "@/lib/usage";
 import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
 import { effectiveBudget } from "@/lib/spend-ceiling";
-import { env, isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
+import { env, isStripeConfigured, isStorageAvailable, isServerTtsConfigured } from "@/lib/env";
+import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
 import { configuredProviders } from "@/lib/providers";
@@ -204,7 +205,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       billing: isStripeConfigured(),
       purchasablePlans: purchasablePlans("month"),
       purchasableAnnualPlans: purchasablePlans("year"),
-      serverStt: isServerSttConfigured(),
+      serverStt: isAnySttAvailable(),
       serverTts: isServerTtsConfigured(),
       // The voice picker lists OpenAI voices, so it must know which provider is live.
       ttsProvider: isServerTtsConfigured() ? (env.voice.ttsProvider === "elevenlabs" ? "elevenlabs" : "openai") : null,

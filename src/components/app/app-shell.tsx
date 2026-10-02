@@ -476,7 +476,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           Skip to content
         </a>
 
-        {/* At md–lg the rail keeps its 64px in flow and the expanded panel floats
+        {/* At md–lg the rail keeps its 52px in flow and the expanded panel floats
             over the content; a click anywhere outside it folds it back.
 
             IN FLOW, which is what the sentence above always said and what the
@@ -486,7 +486,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             place in the row is what lets the panel float out and fold home
             without the content under it moving at all. */}
         {floatingFrame && (
-          /* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
+          /* w-[52px] IS RAIL_WIDTH. Two more places spell the rail's width — this
              spacer and app-sidebar's collapsed column — and a mismatch leaves
              a seam of page showing through beside the rail at md–lg. */
           <div aria-hidden className="hidden h-full w-[52px] shrink-0 bg-sidebar md:block" />
