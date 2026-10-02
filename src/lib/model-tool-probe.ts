@@ -242,11 +242,20 @@ export async function runToolProbe(input: {
   return { evidence: evidence("verified"), answered: true };
 }
 
-/** The verdict a stored evidence object gives today. Missing, stale or older-version evidence is untested. */
-export function toolCallingVerdict(evidence: unknown, now = new Date()): ToolCallingVerdict {
+/**
+ * The verdict a stored evidence object gives today. Missing, stale or
+ * older-version evidence is untested.
+ *
+ * `adapter`, when given, is the adapter THIS turn will use: evidence gathered
+ * through another one (an OpenAI model probed over chat completions, then run
+ * in Pro mode over Responses) says nothing about this code path, so it is
+ * untested here.
+ */
+export function toolCallingVerdict(evidence: unknown, now = new Date(), adapter?: string): ToolCallingVerdict {
   const tools = (evidence as { tools?: unknown } | null | undefined)?.tools as Partial<ToolProbeEvidence> | undefined;
   if (!tools || tools.probeVersion !== TOOL_PROBE_VERSION) return "untested";
   if (tools.failureKind === "transport") return "untested";
+  if (adapter !== undefined && tools.adapter !== adapter) return "untested";
   const expires = typeof tools.expiresAt === "string" ? Date.parse(tools.expiresAt) : Number.NaN;
   if (!Number.isFinite(expires) || expires <= now.getTime()) return "untested";
   return tools.verdict === "verified" ? "verified" : tools.verdict === "failed" ? "failed" : "untested";

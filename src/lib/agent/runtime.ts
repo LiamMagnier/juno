@@ -79,6 +79,24 @@ function riskOf(riskClass: string): ToolRisk {
   }
 }
 
+/**
+ * Whether a call can run beside others: a read that can NEVER ask a person.
+ *
+ * Every registry tool passes the broker, and the broker asks about a read too
+ * when the account chose "Always ask". Two approval cards at once is a shape
+ * neither the clients nor the stall watchdog were built for (its pause is a
+ * flag, not a count: the first result re-arms it while the second card is
+ * still waiting, and the turn is killed as a stalled model) — the reason
+ * connector reads are serialised too. And two of the registry reads
+ * (`read_document`, up to 64 MB per file, and `inspect_image`) load whole
+ * files into a web process on an 887 MB host: four at once is how it runs out
+ * of memory. So registry tools run one at a time, as they always did; only a
+ * pure provider spec (`broker: "none"`, a read) runs in parallel.
+ */
+function runsInParallel(risk: ToolRisk, declared: boolean, brokered: boolean): boolean {
+  return declared && risk === "read" && !brokered;
+}
+
 /** A registry tool as the dispatcher sees it. Its schema is validated strictly when it is portable. */
 export function resolvedRegistryTool(tool: ToolDefinition<unknown, unknown>): ResolvedTool {
   const portable = portableSchemaProblem(tool.parameters) === null;
@@ -88,13 +106,23 @@ export function resolvedRegistryTool(tool: ToolDefinition<unknown, unknown>): Re
     origin: "alevr",
     title: tool.name,
     risk,
-    parallelSafe: risk === "read",
+    parallelSafe: runsInParallel(risk, true, true),
     timeoutMs: REGISTRY_TIMEOUT_MS[tool.id] ?? DEFAULT_REGISTRY_TIMEOUT_MS,
     dedupe: true,
     ...(portable
       ? { input: tool.parameters as unknown as PortableSchema }
       : { inputSchema: tool.parameters as unknown as Record<string, unknown> }),
   };
+}
+
+/**
+ * Whether a spec's calls pass the approval broker. Only a READ may opt out
+ * (`broker: "none"`): a spec that writes, reaches outside or runs code and
+ * declares itself unbrokered is brokered anyway, because a provider is never
+ * trusted to waive its own authorisation (`defineTool` refuses it too).
+ */
+export function specIsBrokered(spec: Pick<ToolSpec, "broker" | "risk">): boolean {
+  return spec.broker !== "none" || spec.risk !== "read";
 }
 
 /** A provider spec (run_code, use_skill…) as the dispatcher sees it. */
@@ -104,7 +132,7 @@ export function resolvedSpecTool(spec: ToolSpec): ResolvedTool {
     origin: "alevr",
     title: spec.title,
     risk: spec.risk,
-    parallelSafe: spec.parallelSafe && spec.risk === "read",
+    parallelSafe: runsInParallel(spec.risk, spec.parallelSafe, specIsBrokered(spec)),
     timeoutMs: spec.timeoutMs,
     dedupe: spec.dedupe,
     input: spec.input,
@@ -308,7 +336,7 @@ export class UnifiedAgentRegistry {
   ): Promise<ToolOutcome> {
     const signal = context.abortSignal ?? new AbortController().signal;
     let receiptId: string | null = null;
-    if (spec.broker === "juno_runtime") {
+    if (specIsBrokered(spec)) {
       try {
         const { authorizeExternalAction } = await import("@/lib/action-approval-store");
         const authorization = await authorizeExternalAction({
@@ -374,12 +402,15 @@ export class UnifiedAgentRegistry {
       return outcome;
     } catch (err: unknown) {
       if (receiptId) {
+        // Not the error's own message: a replay of this call hands the stored
+        // text to the model, and a thrown error's message (a database error,
+        // an internal path) is the server log's, not the model's.
         const { completeExternalAction } = await import("@/lib/action-approval-store");
         await completeExternalAction({
           userId: context.userId,
           receiptId,
           ok: false,
-          result: err instanceof Error ? err.message : String(err),
+          result: "The tool failed with an internal error.",
         });
       }
       throw err;

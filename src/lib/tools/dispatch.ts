@@ -32,7 +32,11 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import {
   CANCELLED_BEFORE_RUN_TEXT,
+  CANCELLED_WHILE_RUNNING_EFFECT_TEXT,
   CANCELLED_WHILE_RUNNING_TEXT,
+  internalToolErrorText,
+  invalidJsonText,
+  oversizedResultText,
   timeoutText,
   toolErrorText,
   unknownToolText,
@@ -50,7 +54,12 @@ import {
   type ToolOutcomeStatus,
   type ToolProgress,
 } from "@/lib/tools/types";
-import { parseToolArguments, portableArgumentsProblem, shallowArgumentsProblem } from "@/lib/tools/validate";
+import {
+  coercePortableArguments,
+  parseToolArguments,
+  portableArgumentsProblem,
+  shallowArgumentsProblem,
+} from "@/lib/tools/validate";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ToolExecution } from "@/lib/mcp";
 import { wrapUntrusted } from "@/lib/untrusted-content";
@@ -70,6 +79,15 @@ export const FINAL_ROUND_NOTE = `[${PRODUCT_NAME}: this is the last step. Do not
 export const MAX_PARALLEL_CALLS = 4;
 /** A thrown error's message is cut to this before it reaches the model. */
 const ERROR_MESSAGE_CHARS = 2_000;
+/**
+ * The most model-facing text one result may carry. Every tool that exists
+ * bounds itself well below this (connectors 30k, documents 60k, code 34k); the
+ * ceiling is for the one that does not, because an unbounded result is a
+ * provider request that fails the whole turn and memory this host cannot
+ * spare. Over it, the text is WITHHELD rather than cut: a cut could split the
+ * untrusted envelope and leave it open.
+ */
+export const MAX_TOOL_RESULT_CHARS = 100_000;
 
 export interface ToolBatchContext {
   toolset: ChatToolset;
@@ -91,16 +109,44 @@ type ReadyCall = Extract<PreparedCall, { ok: true }>;
 function prepare(call: ToolCallInput, toolset: ChatToolset): PreparedCall {
   const tool = toolset.resolve(call.name);
   if (!tool) return { call, ok: false, code: "unknown_tool", text: unknownToolText(call.name) };
-  const parsed = parseToolArguments(call.argsText);
-  if (!parsed.ok) return { call, ok: false, code: "invalid_args", text: parsed.text, tool };
-  const problem = tool.input
-    ? portableArgumentsProblem(parsed.args, tool.input)
-    : shallowArgumentsProblem(parsed.args, tool.inputSchema);
-  if (problem) return { call, ok: false, code: "invalid_args", text: problem, tool };
-  // Keyed by the function name, unique per toolset — two connectors' `{}`
-  // calls must never share an entry (SPEC §4.5).
-  const dedupeKey = tool.dedupe ? `${tool.name}:${canonicalize(parsed.args)}` : null;
-  return { call, ok: true, args: parsed.args, tool, dedupeKey };
+  // Whatever a provider sent, preparing it must not throw: a throw here would
+  // leave every call of the batch unanswered. Arguments nested deep enough to
+  // overflow the stack in the checks below are malformed, and answered so.
+  try {
+    const parsed = parseToolArguments(call.argsText);
+    if (!parsed.ok) return { call, ok: false, code: "invalid_args", text: parsed.text, tool };
+    const problem = tool.input
+      ? portableArgumentsProblem(parsed.args, tool.input)
+      : shallowArgumentsProblem(parsed.args, tool.inputSchema);
+    if (problem) return { call, ok: false, code: "invalid_args", text: problem, tool };
+    // An Alevr tool runs with every value in its declared type ("false" is
+    // false, "5" is 5): see `coercePortableArguments`.
+    const args = tool.input ? coercePortableArguments(parsed.args, tool.input) : parsed.args;
+    // Keyed by the function name, unique per toolset — two connectors' `{}`
+    // calls must never share an entry (SPEC §4.5).
+    const dedupeKey = tool.dedupe ? `${tool.name}:${canonicalize(args)}` : null;
+    return { call, ok: true, args, tool, dedupeKey };
+  } catch (error) {
+    const reason = error instanceof RangeError ? "nested too deeply" : "could not be read";
+    return { call, ok: false, code: "invalid_args", text: invalidJsonText(reason), tool };
+  }
+}
+
+/** A call that may change something: after a timeout or a Stop mid-run its effect is not known. */
+function mayHaveTakenEffect(tool: ResolvedTool): boolean {
+  return tool.risk !== "read";
+}
+
+/** The ceiling on model-facing text (MAX_TOOL_RESULT_CHARS), applied to every outcome. */
+function boundedOutcome(outcome: ToolOutcome): ToolOutcome {
+  if (outcome.text.length <= MAX_TOOL_RESULT_CHARS) return outcome;
+  const text = oversizedResultText(outcome.text.length, MAX_TOOL_RESULT_CHARS);
+  return {
+    ...outcome,
+    text,
+    // The panel's copy has no envelope to break, so it keeps a head.
+    body: outcome.body.length > MAX_TOOL_RESULT_CHARS ? `${outcome.body.slice(0, MAX_TOOL_RESULT_CHARS)}\n\n${text}` : outcome.body,
+  };
 }
 
 /** Consecutive parallel-safe reads form one group; every other call is a group of one. */
@@ -225,49 +271,68 @@ export async function* executeToolBatch(
   signal: AbortSignal,
   ctx: ToolBatchContext,
 ): AsyncGenerator<LlmEvent, BatchResult[]> {
-  const prepared = calls.map((call) => prepare(call, ctx.toolset));
-  const channel = new EventChannel();
-  const results = new Array<BatchResult>(prepared.length);
-  const inflight = new Map<string, Promise<void>>();
-  const position = new Map(prepared.map((entry, i) => [entry, i]));
+  /*
+   * The batch's own signal: the turn's abort, and also this generator being
+   * ABANDONED — a consumer that throws or breaks out of its loop calls
+   * `return()` at a yield, and the calls still running would otherwise go on
+   * running (and acting) for a turn that is over. The `finally` below aborts
+   * them; they settle as `cancelled` into a channel nobody reads.
+   */
+  const batch = new AbortController();
+  const onTurnAbort = () => batch.abort(abortReason(signal));
+  if (signal.aborted) onTurnAbort();
+  else signal.addEventListener("abort", onTurnAbort, { once: true });
+  let completed = false;
 
-  // Every runnable row is queued at once, before any of them runs.
-  for (const entry of prepared) {
-    if (!entry.ok) continue;
-    yield {
-      type: "tool",
-      phase: "status",
-      server: ctx.toolset.labelFor(entry.call.name),
-      name: entry.call.name,
-      callId: entry.call.callId,
-      status: "queued",
-    };
-  }
+  try {
+    const prepared = calls.map((call) => prepare(call, ctx.toolset));
+    const channel = new EventChannel();
+    const results = new Array<BatchResult>(prepared.length);
+    const inflight = new Map<string, Promise<void>>();
+    const position = new Map(prepared.map((entry, i) => [entry, i]));
 
-  for (const group of groupsOf(prepared)) {
-    let next = 0;
-    const worker = async () => {
-      while (next < group.length) {
-        const entry = group[next++];
-        results[position.get(entry)!] = await runCall(entry, signal, ctx, channel, inflight);
+    // Every runnable row is queued at once, before any of them runs.
+    for (const entry of prepared) {
+      if (!entry.ok) continue;
+      yield {
+        type: "tool",
+        phase: "status",
+        server: ctx.toolset.labelFor(entry.call.name),
+        name: entry.call.name,
+        callId: entry.call.callId,
+        status: "queued",
+      };
+    }
+
+    for (const group of groupsOf(prepared)) {
+      let next = 0;
+      const worker = async () => {
+        while (next < group.length) {
+          const entry = group[next++];
+          results[position.get(entry)!] = await runCall(entry, batch.signal, ctx, channel, inflight);
+        }
+      };
+      const done = Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_CALLS, group.length) }, worker));
+      let settled = false;
+      void done.finally(() => (settled = true)).catch(() => undefined);
+      while (!settled) {
+        await channel.wait(done);
+        for (const event of channel.drain()) yield event;
       }
-    };
-    const done = Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_CALLS, group.length) }, worker));
-    let settled = false;
-    void done.finally(() => (settled = true)).catch(() => undefined);
-    while (!settled) {
-      await channel.wait(done);
+      await done;
       for (const event of channel.drain()) yield event;
     }
-    await done;
-    for (const event of channel.drain()) yield event;
+
+    const last = results.at(-1);
+    if (ctx.nextIsFinal && last) last.text = `${last.text}\n\n${FINAL_ROUND_NOTE}`;
+
+    completed = true;
+    if (signal.aborted) throw abortReason(signal);
+    return results;
+  } finally {
+    signal.removeEventListener("abort", onTurnAbort);
+    if (!completed && !batch.signal.aborted) batch.abort(new DOMException("The tool batch was abandoned.", "AbortError"));
   }
-
-  const last = results.at(-1);
-  if (ctx.nextIsFinal && last) last.text = `${last.text}\n\n${FINAL_ROUND_NOTE}`;
-
-  if (signal.aborted) throw abortReason(signal);
-  return results;
 }
 
 async function runCall(
@@ -327,7 +392,7 @@ async function runCall(
   let release: () => void = () => {};
   if (entry.dedupeKey) inflight.set(entry.dedupeKey, new Promise<void>((resolve) => (release = resolve)));
   try {
-    const outcome = await execute(entry, signal, ctx, channel, server);
+    const outcome = boundedOutcome(await execute(entry, signal, ctx, channel, server));
     // A call that may change state (a write, or a run that shares a
     // workspace) makes every earlier answer stale: "list, create, list" must
     // list again, not replay the first list.
@@ -360,11 +425,15 @@ async function execute(
   else turn.addEventListener("abort", onTurnAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running = false;
+  // Once the call has an outcome, nothing the executor reports may reach the
+  // stream: a late `running` after the result would hold the stall watchdog
+  // for the rest of the turn, and late progress would reopen a closed row.
+  let settled = false;
   let startedAt: number | null = null;
   let lastProgressAt = Number.NEGATIVE_INFINITY;
 
   const onAuthorized = () => {
-    if (running) return;
+    if (running || settled) return;
     running = true;
     startedAt = now();
     channel.push({ type: "tool", phase: "status", server, name: call.name, callId: call.callId, status: "running", timeoutMs: tool.timeoutMs });
@@ -372,10 +441,11 @@ async function execute(
     timer.unref?.();
   };
   const onApprovalRequest = (_approval: ClientActionApproval) => {
+    if (settled) return;
     channel.push({ type: "tool", phase: "status", server, name: call.name, callId: call.callId, status: "awaiting_approval" });
   };
   const reportProgress = (progress: ToolProgress) => {
-    if (controller.signal.aborted) return;
+    if (settled || controller.signal.aborted) return;
     const at = now();
     if (at - lastProgressAt < TOOL_PROGRESS_MIN_INTERVAL_MS) return;
     lastProgressAt = at;
@@ -397,19 +467,34 @@ async function execute(
     if (outcome.durationMs === undefined && startedAt !== null) return { ...outcome, durationMs: now() - startedAt };
     return outcome;
   } catch (error) {
+    const effect = mayHaveTakenEffect(tool);
     if (turn.aborted) {
-      return failedOutcome("cancelled", running ? CANCELLED_WHILE_RUNNING_TEXT : CANCELLED_BEFORE_RUN_TEXT, "cancelled");
+      const text = !running ? CANCELLED_BEFORE_RUN_TEXT : effect ? CANCELLED_WHILE_RUNNING_EFFECT_TEXT : CANCELLED_WHILE_RUNNING_TEXT;
+      return failedOutcome("cancelled", text, "cancelled");
     }
     const elapsed = startedAt === null ? {} : { durationMs: now() - startedAt };
     if (controller.signal.reason instanceof ToolTimeout) {
-      return { ...failedOutcome("timeout", timeoutText(tool.timeoutMs)), ...elapsed };
+      return { ...failedOutcome("timeout", timeoutText(tool.timeoutMs, effect)), ...elapsed };
     }
     const message = (error instanceof Error ? error.message : String(error)).slice(0, ERROR_MESSAGE_CHARS);
-    const body = toolErrorText(message);
+    if (tool.origin !== "connector") {
+      // Alevr's own code threw: a bug or an infrastructure fault. Its message
+      // (a database error, an internal path) stays in the server log; the
+      // model and the panel get a sentence they can act on.
+      console.error("[tools] a tool threw", {
+        tool: tool.name,
+        callId: call.callId,
+        error: error instanceof Error ? error.name : typeof error,
+        message: message.slice(0, 300),
+      });
+      const text = internalToolErrorText(effect);
+      return { status: "failed", text, body: text, error: { code: "tool_error" }, ...elapsed };
+    }
     // A connector's error message is its text too, so it goes inside the envelope.
-    const text = tool.origin === "connector" ? wrapUntrusted(server, body) : body;
-    return { status: "failed", text, body, error: { code: "tool_error" }, ...elapsed };
+    const body = toolErrorText(message);
+    return { status: "failed", text: wrapUntrusted(server, body), body, error: { code: "tool_error" }, ...elapsed };
   } finally {
+    settled = true;
     if (timer) clearTimeout(timer);
     turn.removeEventListener("abort", onTurnAbort);
   }

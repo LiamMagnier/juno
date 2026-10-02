@@ -34,7 +34,8 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 test("the route decides execution tools from the entitlement rows and the verified verdict", () => {
   const route = read("src/app/api/chat/route.ts");
-  assert.match(route, /const toolCallingVerdict = modelToolCallingVerdict\(modelInfo, capabilityProbes\);/);
+  // Bound to the adapter this turn uses: Pro mode moves an OpenAI model onto Responses.
+  assert.match(route, /const toolCallingVerdict = modelToolCallingVerdict\(modelInfo, capabilityProbes, new Date\(\), \{ proMode: useProMode \}\);/);
   assert.match(route, /const execution = executionEntitlements\(\{/);
   assert.match(route, /attachmentToolToggles\.code = execution\.legacyCodeInterpreter;/);
   assert.match(route, /toolSpecs: toolProviderSessions\?\.specs\.length \? toolProviderSessions\.specs : undefined,/);
@@ -335,7 +336,7 @@ if (!DB_URL) {
     });
     const probes = await loadModelCapabilityMap([modelId]);
     assert.equal((probes.get(modelId)!.evidence as { httpStatus?: number }).httpStatus, 200);
-    assert.equal(modelToolCallingVerdict({ id: modelId }, probes), "verified");
+    assert.equal(modelToolCallingVerdict({ id: modelId, provider: "anthropic", api: undefined }, probes), "verified");
   });
 
   test("nothing left the process", async () => {

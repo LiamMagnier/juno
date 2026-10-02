@@ -244,13 +244,18 @@ export async function persistModelCapabilityProbe(snapshot: ModelCapabilitySnaps
   });
 }
 
-/** Whether this model's tool calling is verified, from the capability rows the route already loaded. */
+/**
+ * Whether this model's tool calling is verified, from the capability rows the
+ * route already loaded — through the adapter this turn will use (Pro mode
+ * moves an OpenAI model onto Responses, a different tool loop).
+ */
 export function modelToolCallingVerdict(
-  model: Pick<ModelInfo, "id">,
+  model: Pick<ModelInfo, "id" | "provider" | "api">,
   probes: ReadonlyMap<string, Pick<ModelCapabilityProbe, "evidence">>,
   now = new Date(),
+  opts: { proMode?: boolean } = {},
 ): ToolCallingVerdict {
-  return toolCallingVerdict(probes.get(model.id)?.evidence ?? null, now);
+  return toolCallingVerdict(probes.get(model.id)?.evidence ?? null, now, providerAdapterFor(model, !!opts.proMode));
 }
 
 /**

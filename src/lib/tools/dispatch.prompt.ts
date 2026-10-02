@@ -39,14 +39,41 @@ export function toolErrorText(message: string): string {
   return `Tool error: ${message}`;
 }
 
-export function timeoutText(timeoutMs: number): string {
+/**
+ * A timed-out READ is simply over. A call that may change something is not
+ * known to have done nothing: the remote side can finish after we stop
+ * waiting, so the model is told to check before it repeats it — "did not
+ * finish" there is a claim that invites a second, real execution.
+ */
+export function timeoutText(timeoutMs: number, mayHaveTakenEffect = false): string {
   const seconds = Math.max(1, Math.round(timeoutMs / 1_000));
-  return `Timed out after ${seconds} s. Try a narrower request or another approach.`;
+  return mayHaveTakenEffect
+    ? `Timed out after ${seconds} s. It may still have taken effect: check before running it again.`
+    : `Timed out after ${seconds} s. Try a narrower request or another approach.`;
 }
 
 export const CANCELLED_BEFORE_RUN_TEXT = "The call was cancelled before it ran: the user stopped the reply.";
 
 export const CANCELLED_WHILE_RUNNING_TEXT =
   "The call was cancelled while it ran: the user stopped the reply. Whatever it was doing did not finish.";
+
+/** Stopped mid-run, for a call that may change something: its effect is not known. */
+export const CANCELLED_WHILE_RUNNING_EFFECT_TEXT =
+  "The call was cancelled while it ran: the user stopped the reply. It may have partly or fully taken effect: check before running it again.";
+
+/**
+ * A native or Alevr tool THREW. That is a bug or an infrastructure failure,
+ * not an answer, and its message (a database error, an internal path) is not
+ * the model's or the person's to read; it is logged server-side instead.
+ */
+export function internalToolErrorText(mayHaveTakenEffect: boolean): string {
+  return mayHaveTakenEffect
+    ? "The tool failed with an internal error. It may have partly taken effect: check before running it again."
+    : "The tool failed with an internal error. Try again later or another approach.";
+}
+
+export function oversizedResultText(chars: number, limit: number): string {
+  return `The tool's output was ${chars} characters long, over the ${limit}-character limit, so it was withheld. Ask for a smaller part of it.`;
+}
 
 export const NO_RESULT_TEXT = "The call returned no result, so nothing is known about its outcome.";

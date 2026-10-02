@@ -106,6 +106,55 @@ export function portableArgumentsProblem(args: Record<string, unknown>, schema: 
   return objectProblem(args, schema, "");
 }
 
+function coerceValue(value: unknown, property: PortableProperty): unknown {
+  switch (property.type) {
+    case "number":
+    case "integer":
+      return typeof value === "string" ? Number(value) : value;
+    case "boolean":
+      return value === "true" ? true : value === "false" ? false : value;
+    case "array":
+      return Array.isArray(value) ? value.map((item) => coerceValue(item, property.items)) : value;
+    case "object":
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? coerceObject(value as Record<string, unknown>, property)
+        : value;
+    default:
+      return value;
+  }
+}
+
+function coerceObject(
+  args: Record<string, unknown>,
+  schema: { properties: Record<string, PortableProperty> },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(args)) {
+    // A null optional field is a field left out (the check above skips it);
+    // the portable subset has no nullable type, so the tool never sees null.
+    if (value === undefined || value === null) continue;
+    const property = Object.hasOwn(schema.properties, field) ? schema.properties[field] : undefined;
+    if (!property) continue;
+    out[field] = coerceValue(value, property);
+  }
+  return out;
+}
+
+/**
+ * The arguments an Alevr tool RUNS with, once `portableArgumentsProblem` has
+ * passed them: every value in its declared type.
+ *
+ * The check is lenient on purpose — several providers send `"5"` for 5 and
+ * `"false"` for false — but passing the raw string on is a type confusion the
+ * tool cannot see: `if (args.network)` is TRUE for the string "false". So a
+ * value the check admitted as a number or a boolean is handed over AS one,
+ * and an optional field sent as null is left out. Call only on arguments the
+ * check accepted.
+ */
+export function coercePortableArguments(args: Record<string, unknown>, schema: PortableSchema): Record<string, unknown> {
+  return coerceObject(args, schema);
+}
+
 const PRIMITIVE_CHECKS: Readonly<Record<string, (value: unknown) => boolean>> = {
   string: (value) => typeof value === "string",
   number: isNumeric,

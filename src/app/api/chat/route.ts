@@ -2803,7 +2803,7 @@ async function handleChat(req: Request) {
    * the same way. No provider is installed until the execution and skill
    * lanes land, so today every turn gets the note and no execution tool.
    */
-  const toolCallingVerdict = modelToolCallingVerdict(modelInfo, capabilityProbes);
+  const toolCallingVerdict = modelToolCallingVerdict(modelInfo, capabilityProbes, new Date(), { proMode: useProMode });
   const installedToolProviders = toolProviders();
   const toolTurn: ToolTurn = {
     userId: user.id,
@@ -2848,7 +2848,9 @@ async function handleChat(req: Request) {
             candidate.id !== modelInfo!.id &&
             isProviderConfigured(candidate.provider) &&
             canUseModel(plan, candidate.id) &&
-            modelToolCallingVerdict(candidate, capabilityProbes) === "verified",
+            modelToolCallingVerdict(candidate, capabilityProbes, new Date(), {
+              proMode: useProMode && supportsProMode(candidate),
+            }) === "verified",
         ).map((candidate) => candidate.name)
       : [];
   const executionSections =

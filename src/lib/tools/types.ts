@@ -257,14 +257,19 @@ export interface ToolSpec<A extends Record<string, unknown> = Record<string, unk
   description: string;
   input: PortableSchema;
   risk: ToolRisk;
-  /** May run concurrently with other parallel-safe reads in the same round. Only `read`. */
+  /**
+   * May run concurrently with other parallel-safe reads in the same round.
+   * Only a `read` with `broker: "none"`: a brokered call can ask a person, and
+   * approvals are never raised two at a time (`resolvedSpecTool`).
+   */
   parallelSafe: boolean;
   /** Bound on one execution, excluding any approval wait. */
   timeoutMs: number;
   /**
    * How the call is authorised. `juno_runtime`: the runtime asks the approval
    * broker before `execute` (exact rules in `action-approval.ts`). `none`: pure,
-   * never brokered. A spec never authorises itself.
+   * never brokered — allowed for a `read` only; any other risk is brokered
+   * whatever it declares. A spec never authorises itself.
    */
   broker: "juno_runtime" | "none";
   /** Identical calls in one turn return the first outcome. */
@@ -285,6 +290,9 @@ export function defineTool<A extends Record<string, unknown>>(spec: ToolSpec<A>)
   const problem = portableSchemaProblem(spec.input);
   if (problem) throw new Error(`defineTool(${spec.id}): ${problem}`);
   if (spec.parallelSafe && spec.risk !== "read") throw new Error(`defineTool(${spec.id}): only a read may be parallel-safe`);
+  // A spec never waives its own authorisation: only a pure read may skip the
+  // broker (the runtime brokers any other spec regardless, `specIsBrokered`).
+  if (spec.broker === "none" && spec.risk !== "read") throw new Error(`defineTool(${spec.id}): only a read may skip the broker`);
   if (!(spec.timeoutMs > 0)) throw new Error(`defineTool(${spec.id}): timeoutMs must be positive`);
   return spec;
 }
