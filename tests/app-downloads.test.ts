@@ -113,9 +113,9 @@ test("the two download surfaces revalidate on the same clock", () => {
 
 test("no surface links at the deleted self-signed installer", () => {
   // docs/native/RELEASE.md described public/downloads/Juno.dmg as "rejected by
-  // Gatekeeper. It must not be promoted." The landing hero and the features list
-  // both linked straight at it.
-  for (const file of ["../src/components/landing/landing-page.tsx", "../src/components/landing/features.tsx"]) {
+  // Gatekeeper. It must not be promoted." Check every current marketing entry
+  // point that offers the installer, including the product study's Code tab.
+  for (const file of ["../src/components/landing/landing-page.tsx", "../src/components/landing/platforms.tsx", "../src/components/landing/product-study.tsx"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.doesNotMatch(source, /href: "\/downloads\/Juno\.dmg"/);
     assert.match(source, /"\/download"/);

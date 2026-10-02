@@ -1,125 +1,53 @@
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { staggerDelay } from "@/lib/motion";
-import { LabMarquee, MODELS_FLOOR, TOTAL_LABS } from "@/components/landing/lab-marquee";
-import { Metering } from "@/components/landing/metering";
-import { Platforms } from "@/components/landing/platforms";
-import { Features, Privacy } from "@/components/landing/features";
-import { Pricing } from "@/components/landing/pricing";
-import { Closing } from "@/components/landing/closing";
-import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
-import { LandingColumn } from "@/components/landing/section";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { LabMarquee, MODELS_FLOOR, TOTAL_LABS } from "./lab-marquee";
+import { Metering } from "./metering";
+import { Platforms } from "./platforms";
+import { Features, Privacy } from "./features";
+import { Pricing } from "./pricing";
+import { Closing } from "./closing";
+import { SiteFooter, SiteHeader } from "./site-chrome";
+import { LandingColumn } from "./section";
+import { ProductOverview } from "./product-overview";
+import { BrandStory } from "./brand-story";
+import "./overview.css";
 
-/**
- * The public front door (signed-out "/"). Server-rendered: model names, counts
- * and prices are read from the registry at render time, so the page can never
- * disagree with the product. The only client code is three small islands:
- * the bar's scrolled state (landing-header.tsx) and the scroll reveals below
- * the hero (reveal.tsx), which wrap server markup, and the phone menu's
- * close behaviour on top of a native <details> (phone-menu.tsx).
- *
- * Reading order: the hero sets the product on a painted plate; the marquee
- * says who is in the picker; Metering holds up the receipt; Platforms shows
- * where Juno runs; Features lists the rest; Privacy, Pricing and the closing
- * band finish. Each section has its own anatomy (a receipt on a plate, a
- * bento, a sticky column, a band, plan cards) so the serif headings in a row
- * never read as one template stamped over and over. Header and footer are the
- * public site's shared chrome (site-chrome.tsx).
- */
-
-/**
- * The hero's entrance, which runs once per session.
- *
- * The five-step rise-in replayed on every load — back from the sign-in page,
- * every refresh — which is the difference between an entrance and a tic. The
- * inline script below runs before the hero paints (it is parsed in place),
- * marks the document when the session has already seen it, and the arbitrary
- * variant turns the animation off under that mark. sessionStorage, not
- * localStorage: a new visit a week later should get the entrance again.
- * Wrapped in try/catch because storage throws in some private modes, and a
- * thrown script here would only cost the animation its gate — not the page.
- */
+// Preserve the existing session entrance gate and its CSP nonce contract.
 const HERO_SEEN_KEY = "juno:landing-seen";
 const HERO_SEEN_SCRIPT = `try{if(sessionStorage.getItem("${HERO_SEEN_KEY}"))document.documentElement.setAttribute("data-landing-seen","");sessionStorage.setItem("${HERO_SEEN_KEY}","1")}catch(e){}`;
-const HERO_ENTER =
-  "motion-safe:animate-rise-in [animation-fill-mode:backwards] [[data-landing-seen]_&]:animate-none";
 
 export function LandingPage({ nonce }: { nonce?: string }) {
   return (
-    // No `bg-background` here: `body` already paints --background, and a fill
-    // on this block would sit over the hero's backdrop where it runs up behind
-    // the bar. `relative` is only an anchor for the bar's scroll sentinel (see
-    // LandingHeader); with no z-index it opens no stacking context.
-    <div className="alevr-public relative min-h-dvh text-foreground">
+    <div className="alevr-public alevr-home relative min-h-dvh text-foreground">
       <SiteHeader onLanding />
-
       <main>
-        {/* Runs before the hero below is parsed — see HERO_SEEN_SCRIPT. */}
         <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: HERO_SEEN_SCRIPT }} />
-        {/* The hero: the promise, two actions, then the product on a painted
-            plate (hero-stage.tsx). The type sits on the page ground above the
-            stage rather than over the paint, so it never fights the picture
-            for contrast. */}
-        <section className="relative">
-          <LandingColumn contentClassName="grid items-center gap-10 pb-10 pt-12 sm:pb-14 sm:pt-20 lg:grid-cols-2 lg:gap-16">
-            <div>
-            <h1
-              style={staggerDelay(0, "loose")}
-              className={`max-w-[20ch] text-balance pb-1 font-serif lg:max-w-none text-hero font-medium tracking-tight ${HERO_ENTER}`}
-            >
-              Go further.
-            </h1>
-            <p
-              style={staggerDelay(1, "loose")}
-              className={`mt-5 max-w-[34rem] text-pretty text-body-lg text-muted-foreground ${HERO_ENTER}`}
-            >
-              A calm place to think, make something, and carry your work forward. Conversation. Agents. Code.
-            </p>
-            <div
-              style={staggerDelay(2, "loose")}
-              className={`mt-8 flex flex-wrap items-center gap-3 ${HERO_ENTER}`}
-            >
-              <Button asChild size="lg">
-                <Link href="/sign-up">
-                  {`Start with ${PRODUCT_NAME}`}
-                  <ArrowRight aria-hidden />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="secondary">
-                <Link href="/download">Download for Mac</Link>
-              </Button>
-            </div>
-            </div>
-            <div style={staggerDelay(3, "loose")} className={`relative aspect-[4/3] overflow-hidden rounded-menu bg-[#18191b] lg:aspect-[4/5] ${HERO_ENTER}`} aria-hidden="true">
-              <Image src="/brand/auth-continuation.webp" alt="" fill priority unoptimized sizes="(max-width:1023px) 100vw, 50vw" className="object-cover object-[50%_28%]" />
+        <section className="alevr-home-hero" aria-labelledby="alevr-hero">
+          <LandingColumn contentClassName="alevr-hero-copy">
+            <h1 id="alevr-hero" className="font-serif">Go further.</h1>
+            <p className="mt-5 text-body-lg leading-relaxed text-foreground/80">Conversation, agents, and code. One workspace to research, make things, and carry your work forward.</p>
+            <div className="alevr-hero-actions">
+              <Button asChild size="lg"><Link href="/sign-up">Create account<ArrowRight aria-hidden /></Link></Button>
+              <Button asChild size="lg" variant="secondary"><Link href="/download">Download for Mac</Link></Button>
             </div>
           </LandingColumn>
-
         </section>
-
-        {/* Under the hero, never inside it: who is in the picker. */}
-        <section aria-labelledby="labs-heading" className="pb-6 pt-12 sm:pt-16">
-          <LandingColumn contentClassName="py-0">
-            <p id="labs-heading" className="text-center text-body text-muted-foreground">
-              {MODELS_FLOOR}+ models from {TOTAL_LABS} labs, in one picker
-            </p>
-          </LandingColumn>
-          <div className="mx-auto mt-6 max-w-[80rem]">
-            <LabMarquee />
-          </div>
-        </section>
-
-        <Metering />
-        <Platforms />
+        <ProductOverview />
         <Features />
+        <section aria-labelledby="labs-heading" className="alevr-labs">
+          <LandingColumn contentClassName="py-0">
+            <p id="labs-heading" className="text-center text-body text-muted-foreground">{MODELS_FLOOR}+ models from {TOTAL_LABS} labs, in one workspace</p>
+            <div className="mt-6"><LabMarquee /></div>
+          </LandingColumn>
+        </section>
+        <BrandStory />
+        <Metering />
         <Privacy />
         <Pricing />
+        <Platforms />
         <Closing />
       </main>
-
       <SiteFooter />
     </div>
   );

@@ -9,9 +9,9 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // Signed-in users go straight to the app; strangers get the front door.
 export const metadata: Metadata = {
-  title: { absolute: `${PRODUCT_NAME}: every frontier AI model, one honest subscription` },
+  title: { absolute: `${PRODUCT_NAME} · Go further.` },
   description:
-    "Chat with Claude, GPT, Gemini and models from a dozen more labs in one calm workspace. Plans are metered by real API cost — you see what every answer costs. Hosted in France, GDPR by default.",
+    "Conversation, persistent agents, and code in one workspace. Bring your context, research with frontier models, and carry your work forward. See what every answer costs.",
   alternates: { canonical: "/" },
 };
 
@@ -32,7 +32,7 @@ function structuredData(): string {
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, macOS, iOS",
     description:
-      "Every frontier AI model — Claude, GPT, Gemini and a dozen more labs — in one calm workspace, metered by what answers actually cost.",
+      "Conversation, persistent agents, and code in one workspace, with frontier models and transparent usage pricing.",
     offers: PLAN_LIST.map((plan) => ({
       "@type": "Offer",
       name: plan.name,

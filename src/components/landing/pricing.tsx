@@ -1,78 +1,29 @@
 import Link from "next/link";
-import { PlanCards, type PlanCardItem } from "@/components/billing/plan-cards";
 import { Button } from "@/components/ui/button";
 import { PLAN_LIST } from "@/lib/plans";
 import { isPlanPurchasable } from "@/lib/stripe";
-import { Reveal } from "@/components/landing/reveal";
-import { Section } from "@/components/landing/section";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { Reveal } from "./reveal";
+import { Section } from "./section";
 
-/**
- * Pricing — the same plan cards /upgrade renders, fed by the same config
- * (src/lib/plans.ts) the billing flow uses. Names, prices and feature lists
- * cannot drift from what checkout sells.
- */
-
-/**
- * One line per paid tier, in the landing's voice. Free falls through to its
- * own tagline in plans.ts: the line this used to carry ("Chatting unlocks
- * with Pro") predates the 15-message trial and would sit directly above a
- * feature list that says the opposite.
- *
- * The multiples are the ratio of enforced budgets — BUDGET_EUR in
- * src/lib/spend.ts, Pro 11 € / Max 55 € / Max ×10 110 € — which is also why
- * the top tier is named ×10 (see plans.ts). One place, one number.
- */
-const ONE_LINERS: Partial<Record<string, string>> = {
-  PRO: "Every model, voice, memory and artifacts. A real month of everyday use.",
-  MAX: `Five times Pro's monthly budget, for people who live in ${PRODUCT_NAME}.`,
-  MAX20: "Ten times Pro's monthly budget. The most headroom we sell.",
-};
-
+/** Public comparison uses the checkout's data without borrowing billing badges. */
 export function Pricing() {
-  // Without its STRIPE_PRICE_* env var a tier's checkout answers 503, so the
-  // card cannot carry a buy button — but the plan itself is real and the
-  // prices are what will be charged, so the cards still render. What changes
-  // is the action: an account today, checkout when it opens. A "not
-  // configured" box in the middle of a marketing page told a visitor about
-  // the deployment's env vars, which is nothing a visitor can act on.
-  const purchasable = new Set(PLAN_LIST.filter((plan) => isPlanPurchasable(plan.id)).map((plan) => plan.id));
-  const checkoutOpen = purchasable.size > 0;
-
-  const items: PlanCardItem[] = PLAN_LIST.map((plan) => {
-    const recommended = plan.id === "PRO";
-    return {
-      plan,
-      tagline: ONE_LINERS[plan.id] ?? plan.tagline,
-      price: `${plan.price} €`,
-      // "excl. VAT", not the French "HT": this page is English.
-      priceSuffix: plan.price > 0 ? "excl. VAT / mo" : "/ mo",
-      recommended,
-      action: (
-        <Button asChild variant={recommended ? "default" : "secondary"} className="w-full">
-          <Link href="/sign-up">Create account</Link>
-        </Button>
-      ),
-    };
-  });
-
+  const checkoutOpen = PLAN_LIST.some(plan => isPlanPurchasable(plan.id));
   return (
-    <Section
-      id="pricing"
-      eyebrow="Plans"
-      heading="Simple plans, metered honestly."
-      lede="Every paid plan unlocks every model. The difference is budget, measured in real usage rather than message counts."
-    >
-      {/* One reveal for the tiers and their footnote. `amount` is low because
-          four cards stacked on a phone are several screens tall, and a 30%
-          threshold would hold the first card blank while it sat on screen. */}
-      <Reveal className="mt-10" amount={0.1}>
-        <PlanCards items={items} />
-        <p className="mt-6 max-w-prose text-body text-muted-foreground">
-          {checkoutOpen
-            ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time; changes apply instantly."
-            : "Prices are per month, before VAT. Checkout opens soon. A free account works today, and everything carries over when you upgrade."}
-        </p>
+    <Section id="pricing" heading="Choose your room to work." lede="Every paid plan unlocks every model. Choose a monthly usage budget that fits your work.">
+      <Reveal amount={0.1}>
+        <div className="alevr-pricing-grid">
+          {PLAN_LIST.map(plan => (
+            <div key={plan.id} className="alevr-pricing-plan" data-plan={plan.id}>
+              <h3 className="font-serif text-title">{plan.name}</h3>
+              <p className="mt-5 font-serif text-display tabular-nums">{plan.price} €</p>
+              <p className="mt-1 text-caption text-muted-foreground">{plan.price > 0 ? "excl. VAT / month" : "/ month"}</p>
+              <p className="mt-5 min-h-10 text-ui leading-relaxed text-muted-foreground">{plan.tagline}</p>
+              <details><summary>All features</summary><ul>{plan.features.map(feature => <li key={feature}>{feature}</li>)}</ul></details>
+              <Button asChild variant={plan.id === "PRO" ? "default" : "secondary"}><Link href="/sign-up">Create account</Link></Button>
+            </div>
+          ))}
+        </div>
+        <p className="mt-6 max-w-prose text-ui leading-relaxed text-muted-foreground">{checkoutOpen ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time; changes apply instantly." : "Prices are per month, before VAT. Checkout opens soon. A free account works today, and everything carries over when you upgrade."}</p>
       </Reveal>
     </Section>
   );

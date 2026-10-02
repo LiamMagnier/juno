@@ -1,0 +1,58 @@
+import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
+import { AgentFace } from "@/components/agents/agent-face";
+import { FileDiff, type DiffRow } from "@/components/aicss/file-diff";
+import { ProductStudy } from "./product-study";
+import { LandingColumn } from "./section";
+import { Reveal } from "./reveal";
+import type { SharedChatMessage } from "@/lib/share";
+
+const CONVERSATION: SharedChatMessage[] = [
+  { id: "example-question", role: "USER", content: "Help me turn these customer interviews into a useful product brief.", model: null, createdAt: "2026-10-01T10:00:00.000Z" },
+  { id: "example-answer", role: "ASSISTANT", content: "## Start with the decision\n\nThe brief should help your team choose what to build next. Separate what people asked for from the problem they were trying to solve.\n\n**A useful structure**\n\n- The recurring problem\n- Evidence from the interviews\n- The smallest change worth testing\n\nThen make the open questions explicit, so the next conversation moves the work forward.", model: null, createdAt: "2026-10-01T10:01:00.000Z" },
+];
+const DIFF: DiffRow[] = [
+  { old: 1, cur: 1, type: "ctx", text: "export function canPublish(document) {" },
+  { old: 2, cur: null, type: "del", text: "  return document.ready;" },
+  { old: null, cur: 2, type: "add", text: "  return document.ready" },
+  { old: null, cur: 3, type: "add", text: "    && document.reviewed" },
+  { old: null, cur: 4, type: "add", text: "    && document.ownerApproved;" },
+  { old: 3, cur: 5, type: "ctx", text: "}" },
+];
+
+export function ProductOverview() {
+  return (
+    <section id="features" className="alevr-overview scroll-mt-20">
+      <LandingColumn contentClassName="py-16 sm:py-24">
+        <Reveal>
+          <h2 className="max-w-2xl font-serif text-display font-medium tracking-tight sm:text-hero">From a question to work that lasts.</h2>
+          <p className="mt-5 max-w-xl text-body-lg leading-relaxed text-muted-foreground">Three ways to go further, with your context and control intact.</p>
+        </Reveal>
+        <Reveal className="mt-10 sm:mt-14" amount={0.15}>
+          <ProductStudy
+            chat={<SharedChatTranscript messages={CONVERSATION} artifacts={[]} />}
+            orbit={<OrbitExample />}
+            code={<div><FileDiff file="publish.ts" rows={DIFF} /><p className="mt-6 text-body text-muted-foreground">Review the proposed change before applying it.</p></div>}
+          />
+        </Reveal>
+      </LandingColumn>
+    </section>
+  );
+}
+
+function OrbitExample() {
+  return (
+    <div>
+      <div className="flex items-center gap-5">
+        <AgentFace avatar={{ shape: "prism", tone: "teal", eyes: "soft", mark: "none" }} state="idle" size={64} live={false} />
+        <div><p className="font-serif text-page-title">Mira</p><p className="mt-1 text-ui text-muted-foreground">Research agent</p></div>
+      </div>
+      <p className="mt-8 font-serif text-title">A role you shape together.</p>
+      <p className="mt-3 text-body leading-relaxed text-muted-foreground">Compare customer feedback with our product plans. Keep the evidence clear, and ask me before publishing anything.</p>
+      <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-6 text-ui">
+        <dt className="text-muted-foreground">Research</dt><dd>Allowed</dd>
+        <dt className="text-muted-foreground">Publish externally</dt><dd>Ask first</dd>
+        <dt className="text-muted-foreground">Standing work</dt><dd>Weekly feedback review</dd>
+      </dl>
+    </div>
+  );
+}

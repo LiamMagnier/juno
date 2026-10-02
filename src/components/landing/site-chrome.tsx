@@ -77,7 +77,7 @@ export function SiteHeader({ onLanding = false }: { onLanding?: boolean }) {
         <Link href="/" aria-label={`${PRODUCT_NAME} home`} className={`${LOGO_LOCKUP} min-h-11`}>
           <AlevrLockup height={26} decorative />
         </Link>
-        <nav aria-label="Sections" className="hidden items-center gap-0.5 md:flex">
+        <nav aria-label="Sections" className="hidden items-center gap-0.5 lg:flex">
           {links.map(({ href, label }) => (
             <Button key={href} asChild variant="ghost" size="sm" className="text-muted-foreground">
               <a href={href}>{label}</a>
@@ -86,16 +86,16 @@ export function SiteHeader({ onLanding = false }: { onLanding?: boolean }) {
         </nav>
         <div className="flex items-center gap-2">
           <PublicThemeToggle />
-          <nav aria-label="Account" className="flex items-center gap-2">
+          <nav aria-label="Account" className="hidden items-center gap-2 sm:flex">
             <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
               <Link href="/sign-in">Sign in</Link>
             </Button>
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="hidden sm:inline-flex">
               <Link href="/sign-up">Create account</Link>
             </Button>
           </nav>
-          {/* Below `md` the section links live in a native <details> menu. */}
-          <LandingPhoneMenu links={links} />
+          {/* The compact menu keeps both navigation and returning-user access. */}
+          <LandingPhoneMenu links={[...links, { href: "/sign-in", label: "Sign in" }, { href: "/sign-up", label: "Create account" }]} />
         </div>
       </LandingColumn>
     </LandingHeader>

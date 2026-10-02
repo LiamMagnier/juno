@@ -123,7 +123,7 @@ export function LandingPhoneMenu({ links }: { links: readonly { href: string; la
       // variant is plain `[open]`.
       data-closing={phase === "closing" ? "" : undefined}
       onKeyDown={onKeyDown}
-      className="group relative md:hidden"
+      className="group relative lg:hidden"
     >
       {/* Menu and X overlap and cross-fade on the open state (the contract's
           state swap: opacity plus 0.8 to 1 scale on the fast rung), rather
@@ -138,7 +138,7 @@ export function LandingPhoneMenu({ links }: { links: readonly { href: string; la
         ref={summaryRef}
         aria-label="Sections"
         onClick={onSummaryClick}
-        className="pressable flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground group-[[open]:not([data-closing])]:bg-accent group-[[open]:not([data-closing])]:text-foreground coarse:size-11 [&::-webkit-details-marker]:hidden"
+        className="pressable flex size-11 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground group-[[open]:not([data-closing])]:bg-accent group-[[open]:not([data-closing])]:text-foreground [&::-webkit-details-marker]:hidden"
       >
         <span className="inline-grid place-items-center">
           <span
