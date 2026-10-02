@@ -48,7 +48,14 @@ import {
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import { parseBundleManifest, type SkillBundleFileKind } from "@/lib/skills/bundle-manifest";
+import { bundleHasScripts, parseBundleManifest, type SkillBundleFileKind } from "@/lib/skills/bundle-manifest";
+import {
+  CHECK_RUN_TOOL_ID,
+  READ_SKILL_FILE_TOOL_ID,
+  RUN_CODE_TOOL_ID,
+  USE_SKILL_TOOL_ID,
+  canonicalToolId,
+} from "@/lib/tools/types";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -497,12 +504,67 @@ export function skillRequestFrom(version: {
   };
 }
 
-/** The same, straight from a stored row. */
+/**
+ * Names other hosts give the capability `run_code` is here, as skills written
+ * for them declare it (`allowed-tools: Bash`, native Code's `run_command`, the
+ * old `code_interpreter`). Read as a request for `run_code`, so a Claude Code
+ * skill that asks for a shell is granted the sandbox when the turn or run has
+ * it, and told plainly when it does not, instead of narrowing the run down to a
+ * tool name nothing here answers to. Shared by chat and Work.
+ */
+const SKILL_TOOL_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  bash: RUN_CODE_TOOL_ID,
+  shell: RUN_CODE_TOOL_ID,
+  python: RUN_CODE_TOOL_ID,
+  run_command: RUN_CODE_TOOL_ID,
+  code_execution: RUN_CODE_TOOL_ID,
+});
+
+/** A requested tool name as this product calls it. */
+export function canonicalSkillToolName(name: string): string {
+  const canonical = canonicalToolId(name);
+  return SKILL_TOOL_ALIASES[canonical.toLowerCase()] ?? canonical;
+}
+
+/**
+ * The skill tools themselves. A skill never narrows them away: they read only
+ * the skill's own files, and a skill that declares `run_code` and nothing else
+ * still has to be able to read the reference its instructions point at.
+ */
+export const SKILL_SELF_TOOLS: readonly string[] = Object.freeze([USE_SKILL_TOOL_ID, READ_SKILL_FILE_TOOL_ID]);
+
+/**
+ * The tool names a Work run may KEEP once a skill is in force: what the skill
+ * was granted, plus what its own method implies, and never more than the run
+ * already had (the runner filters its own toolset by this list with
+ * `narrowToPermittedTools`, so a name here that the run lacks adds nothing).
+ *
+ * - A skill whose folder carries scripts is asking to run them: `run_code`
+ *   stays when the run has it, whatever its `allowed-tools` line forgot.
+ * - `check_run` goes with `run_code`: it only follows a run `run_code` started.
+ * - The skill tools stay (see `SKILL_SELF_TOOLS`).
+ *
+ * Unchanged for every other tool: a skill that declares none keeps none of
+ * them, which is Work's rule (the skill is the run's method).
+ */
+export function skillPermittedRunTools(resolvedTools: readonly string[], bundleManifest?: unknown): string[] {
+  const permitted = new Set(resolvedTools.map(canonicalSkillToolName));
+  if (bundleHasScripts(parseBundleManifest(bundleManifest))) permitted.add(RUN_CODE_TOOL_ID);
+  if (permitted.has(RUN_CODE_TOOL_ID)) permitted.add(CHECK_RUN_TOOL_ID);
+  for (const tool of SKILL_SELF_TOOLS) permitted.add(tool);
+  return [...permitted];
+}
+
+/**
+ * The same, straight from a stored row. Tool names are read as this product
+ * calls them (`Bash` is a request for `run_code`), so a run's grant layer,
+ * which uses those names, can grant them.
+ */
 export function skillRequestFromRow(
   version: Pick<WorkSkillVersion, "requestedTools" | "contract">
 ): WorkSkillRequest {
   return skillRequestFrom({
-    requestedTools: parseRequestedTools(version.requestedTools),
+    requestedTools: [...new Set(parseRequestedTools(version.requestedTools).map(canonicalSkillToolName))],
     contract: parseSkillContract(version.contract),
   });
 }

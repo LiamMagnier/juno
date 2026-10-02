@@ -33,14 +33,11 @@ import {
   INSPECT_IMAGE_TOOL_ID,
   READ_DOCUMENT_TOOL_ID,
 } from "@/lib/chat/tool-policy";
+import { CHECK_RUN_TOOL_ID, RUN_CODE_TOOL_ID } from "@/lib/tools/types";
+import { bundleCompanionFiles, bundleHasScripts, type SkillBundleManifest } from "@/lib/skills/bundle-manifest";
 import {
-  READ_SKILL_FILE_TOOL_ID,
-  RUN_CODE_TOOL_ID,
-  USE_SKILL_TOOL_ID,
-  canonicalToolId,
-} from "@/lib/tools/types";
-import { bundleCompanionFiles, type SkillBundleManifest } from "@/lib/skills/bundle-manifest";
-import {
+  SKILL_SELF_TOOLS,
+  canonicalSkillToolName,
   resolveSkillPermissions,
   selectSkillBySlug,
   skillRequestFrom,
@@ -82,33 +79,12 @@ export const CHAT_SKILL_TOOLS = {
 } as const;
 
 /**
- * Names other hosts give the capability `run_code` is here, as skills written
- * for them declare it (`allowed-tools: Bash`, native Code's `run_command`, the
- * old `code_interpreter`). Read as a request for `run_code`, so a Claude Code
- * skill that asks for a shell is granted the sandbox when the turn has it, and
- * told plainly when it does not, instead of narrowing the turn down to a tool
- * name nothing here answers to.
+ * `Bash`, `python`, `run_command`… read as `run_code`; shared with Work runs
+ * (`src/lib/work/skills.ts`), re-exported here for the chat callers.
  */
-const SKILL_TOOL_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-  bash: RUN_CODE_TOOL_ID,
-  shell: RUN_CODE_TOOL_ID,
-  python: RUN_CODE_TOOL_ID,
-  run_command: RUN_CODE_TOOL_ID,
-  code_execution: RUN_CODE_TOOL_ID,
-});
+export { canonicalSkillToolName };
 
-/** A requested tool name as this product calls it. */
-export function canonicalSkillToolName(name: string): string {
-  const canonical = canonicalToolId(name);
-  return SKILL_TOOL_ALIASES[canonical.toLowerCase()] ?? canonical;
-}
-
-/**
- * The skill tools themselves. A skill never narrows them away: they read only
- * the skill's own files, and a skill that declares `run_code` and nothing else
- * still has to be able to read the reference its instructions point at.
- */
-const SKILL_SELF_TOOLS: ReadonlySet<string> = new Set([USE_SKILL_TOOL_ID, READ_SKILL_FILE_TOOL_ID]);
+const SKILL_SELF_TOOL_SET: ReadonlySet<string> = new Set(SKILL_SELF_TOOLS);
 
 /** What this turn is actually carrying, read off the route's own decisions. */
 export interface ChatSkillCapabilities {
@@ -533,5 +509,10 @@ export function narrowRuntimeToolsForSkill(
     [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
   );
   if (requested.size === 0) return [...allowlist];
-  return allowlist.filter((tool) => SKILL_SELF_TOOLS.has(tool) || requested.has(canonicalSkillToolName(tool)));
+  // What the skill's own method implies, as in a Work run
+  // (`skillPermittedRunTools`): a folder with scripts asks to run them, and
+  // `check_run` only ever follows a run `run_code` started.
+  if (bundleHasScripts(application.bundle?.manifest)) requested.add(RUN_CODE_TOOL_ID);
+  if (requested.has(RUN_CODE_TOOL_ID)) requested.add(CHECK_RUN_TOOL_ID);
+  return allowlist.filter((tool) => SKILL_SELF_TOOL_SET.has(tool) || requested.has(canonicalSkillToolName(tool)));
 }

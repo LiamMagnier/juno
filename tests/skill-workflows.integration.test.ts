@@ -442,6 +442,24 @@ if (!URL) {
       await tools.close();
     }
     assert.deepEqual(skillMountsFor("work", runId), []);
+
+    // The runner applied the skill itself (by /slug in the goal) and pinned a
+    // version: that version is armed, readable and mounted, even though the
+    // skill has been edited since.
+    const pinnedRun = `run_${randomUUID()}`;
+    const head = await db.workSkill.findUniqueOrThrow({ where: { id: skillId } });
+    assert.ok(head.currentVersion > 1, "the skill was edited after version 1");
+    const pinned = await skillToolsFor({ userId: owner, runId: pinnedRun, projectId: null, appliedSlug: "quarterly-summary", appliedVersion: 1, codeExecution: true });
+    try {
+      assert.equal(pinned.session.armed?.version.version, 1);
+      assert.match(pinned.promptSection ?? "", /About the \/quarterly-summary skill in force/);
+      const version1 = await db.workSkillVersion.findUniqueOrThrow({ where: { skillId_version: { skillId, version: 1 } } });
+      assert.deepEqual(skillMountsFor("work", pinnedRun).map((mount) => mount.skillVersionId), [version1.id]);
+      const readSkillFile = pinned.tools.find((tool) => tool.spec.name === "read_skill_file")!;
+      assert.match((await readSkillFile.execute({ skill: "quarterly-summary", path: "reference/style.md" })).output, /Freeze the header row/);
+    } finally {
+      await pinned.close();
+    }
   });
 
   sandboxTest("a skill asking for network and connectors gets neither: the grant is the turn's and a socket fails in the sandbox", async () => {

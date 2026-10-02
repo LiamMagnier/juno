@@ -11,6 +11,15 @@
  * offered to the run can be loaded by name, with the same rules and sentences
  * as chat (`workflow.ts`).
  *
+ * WIRING (scripts/work-runner.ts, after `applySkill`). The runner narrows its
+ * toolset with `skillPermittedRunTools(skill.tools, version.bundleManifest)`
+ * (src/lib/work/skills.ts) instead of the bare resolved list, so a skill whose
+ * folder carries scripts keeps `run_code` (and `check_run`) when the run has
+ * it; then it opens these tools with `appliedSlug`/`appliedVersion` from the
+ * skill it applied and `codeExecution` = whether `run_code` survived, appends
+ * them AFTER the narrowing (they read only the skill's own files), adds
+ * `promptSection` to the run's system prompt and `close` to its disposers.
+ *
  * WHY THE SHAPE IS MIRRORED. `runner/agent-core` is vendored and excluded from
  * this project's tsconfig, so `WorkToolDefinition` cannot be imported here (see
  * `src/lib/work/connectors.ts`). `SkillWorkTool` repeats exactly the fields the
@@ -66,6 +75,8 @@ export interface SkillRunContext {
   projectId: string | null;
   /** The skill the runner already applied (and audited), when one is in force. */
   appliedSlug?: string | null;
+  /** The version the runner pinned for it; its files and mount are that version's. */
+  appliedVersion?: number | null;
   /** Whether `run_code` is among the run's tools. */
   codeExecution: boolean;
   policy?: SkillDiscoveryPolicy;
@@ -102,6 +113,7 @@ export async function skillToolsFor(run: SkillRunContext): Promise<SkillRunTools
     sessionId: run.runId,
     projectId: run.projectId,
     armedSlug: run.appliedSlug ?? null,
+    armedVersion: run.appliedVersion ?? null,
     code: run.codeExecution,
     skillFiles: true,
     policy: run.policy,

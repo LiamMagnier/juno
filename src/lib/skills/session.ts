@@ -54,6 +54,12 @@ export interface SkillToolSessionInput {
   /** The skill the person armed (`/slug`), or the one a Work run already applied. */
   armedSlug?: string | null;
   /**
+   * The version to arm, when the caller pinned one (a Work run records the
+   * version it applied, and its files must be that version's even if the skill
+   * was edited a second later). Defaults to the skill's current version.
+   */
+  armedVersion?: number | null;
+  /**
    * Whether `run_code` is on this turn, when the caller knows (`"unknown"`
    * when it does not; see `skillBundleNote`). A loaded skill's folder is
    * mounted unless this is `false`: a mount is read only by a `run_code` call,
@@ -212,7 +218,7 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
         })
         .then((found) => (found ? { ...found, enabled: true } : null)));
     if (row) {
-      const version = await readVersion(row.id, row.currentVersion, row);
+      const version = await readVersion(row.id, input.armedVersion ?? row.currentVersion, row);
       if (version && skillLoadRefusal(version) === null) {
         armed = { row, version, via: "slash", mounted: mount(row, version) };
         loaded.set(row.slug, armed);

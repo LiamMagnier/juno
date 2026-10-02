@@ -34,7 +34,13 @@ import {
   type SkillBundleInputFile,
 } from "@/lib/skills/bundle";
 import { bundleRequiresConsent, carriedBundleScan, scanSkillVersion } from "@/lib/work/skill-security";
-import { emptySkillContract, serializeSkillBundle } from "@/lib/work/skills";
+import {
+  emptySkillContract,
+  resolveSkillPermissions,
+  serializeSkillBundle,
+  skillPermittedRunTools,
+  skillRequestFromRow,
+} from "@/lib/work/skills";
 import {
   applyChatSkill,
   canonicalSkillToolName,
@@ -67,7 +73,7 @@ import {
 } from "@/lib/skills/github";
 import { createUseSkillSpec } from "@/lib/tools/specs/use-skill";
 import { createReadSkillFileSpec } from "@/lib/tools/specs/read-skill-file";
-import { portableSchemaProblem, RUN_CODE_TOOL_ID } from "@/lib/tools/types";
+import { CHECK_RUN_TOOL_ID, portableSchemaProblem, RUN_CODE_TOOL_ID } from "@/lib/tools/types";
 
 const enc = (text: string) => new TextEncoder().encode(text);
 const FIXTURE = "tests/fixtures/skills/quarterly-summary";
@@ -638,6 +644,48 @@ test("a shell request on a turn whose execution is not decided yet is explained 
   // Decided either way, the conditional is not said.
   assert.doesNotMatch(applied(["Bash"], false).systemSuffix, /use run_code if it is among your tools/);
   assert.doesNotMatch(applied(["Bash"], true).systemSuffix, /use run_code if it is among your tools/);
+});
+
+test("a skill's folder of scripts keeps run_code (and check_run) through a chat narrowing its allowed-tools line forgot", () => {
+  const built = buildSkillBundle(fixtureFiles());
+  assert.ok(built.ok);
+  if (!built.ok) return;
+  const withScripts = { ...applied(["web_search"], true), bundle: { digest: built.bundle.digest, manifest: built.bundle.manifest } };
+  assert.deepEqual(
+    narrowRuntimeToolsForSkill([RUN_CODE_TOOL_ID, CHECK_RUN_TOOL_ID, "read_document", "use_skill"], withScripts),
+    [RUN_CODE_TOOL_ID, CHECK_RUN_TOOL_ID, "use_skill"],
+    "the scripts are a request to run them; the turn still had to carry run_code"
+  );
+  assert.deepEqual(narrowRuntimeToolsForSkill(["read_document"], withScripts), [], "and it adds nothing the turn lacked");
+  const noScripts = applied(["web_search"], true);
+  assert.deepEqual(narrowRuntimeToolsForSkill([RUN_CODE_TOOL_ID, CHECK_RUN_TOOL_ID], noScripts), []);
+  assert.deepEqual(
+    narrowRuntimeToolsForSkill([RUN_CODE_TOOL_ID, CHECK_RUN_TOOL_ID], applied(["Bash"], true)),
+    [RUN_CODE_TOOL_ID, CHECK_RUN_TOOL_ID],
+    "check_run follows run_code"
+  );
+});
+
+test("Work: a request reads Bash as run_code, and a run keeps what the skill's method implies and never more", () => {
+  const request = skillRequestFromRow({ requestedTools: ["Bash", "run_code", "web_search"], contract: {} });
+  assert.deepEqual(request.tools, [RUN_CODE_TOOL_ID, "web_search"]);
+  const resolved = resolveSkillPermissions({
+    request,
+    granted: [{ tools: [RUN_CODE_TOOL_ID, CHECK_RUN_TOOL_ID, "web_fetch"], connectors: [], apps: [], domains: [], policy: "conservative" }],
+  });
+  assert.deepEqual(resolved.tools, [RUN_CODE_TOOL_ID], "granted under the run's own name");
+  assert.deepEqual(resolved.withheld.tools, ["web_search"]);
+
+  const built = buildSkillBundle(fixtureFiles());
+  assert.ok(built.ok);
+  if (!built.ok) return;
+  assert.deepEqual(skillPermittedRunTools([], null).sort(), ["read_skill_file", "use_skill"], "Work's rule: a skill that declares nothing keeps no other tool");
+  assert.deepEqual(
+    skillPermittedRunTools([], built.bundle.manifest).sort(),
+    [CHECK_RUN_TOOL_ID, "read_skill_file", RUN_CODE_TOOL_ID, "use_skill"].sort(),
+    "a folder with scripts keeps run_code and check_run"
+  );
+  assert.deepEqual(skillPermittedRunTools(["web_fetch"], { not: "a manifest" }).sort(), ["read_skill_file", "use_skill", "web_fetch"]);
 });
 
 test("an armed imported skill whose scripts nobody reviewed is refused with its own reason", () => {
