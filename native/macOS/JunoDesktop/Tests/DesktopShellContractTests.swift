@@ -74,7 +74,8 @@ import Testing
     }
 
     @Test func theColumnSaysTheWebsWords() {
-        #expect(JunoShellChatSidebar.Action.allCases == [.new, .search, .notifications])
+        // Contract v2 moved Notifications out of the column into headerActions.
+        #expect(JunoShellChatSidebar.Action.allCases == [.new, .search])
         #expect(JunoShellChatSidebar.Action.new.label == "New chat")
         #expect(JunoShellChatSidebar.Heading.allCases.map(\.label) == [
             "Needs you", "Orbit", "Pinned projects", "Pinned chats", "Recent",
