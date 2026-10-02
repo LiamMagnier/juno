@@ -300,7 +300,7 @@ export function AgentHire({
 
             <div className="flex items-center gap-3 border-t border-border pt-6">
               <Button type="submit" loading={saving} disabled={!trimmedName}>
-                Hire {trimmedName || "agent"}
+                Create {trimmedName || "agent"}
               </Button>
               {embedded ? null : (
                 <Button asChild variant="ghost">
