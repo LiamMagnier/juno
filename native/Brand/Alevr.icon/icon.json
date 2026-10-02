@@ -1,0 +1,45 @@
+{
+  "fill": {
+    "solid": "srgb:0.09412,0.09804,0.10588,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "blade-1.svg",
+          "name": "blade-1",
+          "glass": true
+        },
+        {
+          "image-name": "blade-2.svg",
+          "name": "blade-2",
+          "glass": true
+        },
+        {
+          "image-name": "blade-3.svg",
+          "name": "blade-3",
+          "glass": true
+        },
+        {
+          "image-name": "blade-4.svg",
+          "name": "blade-4",
+          "glass": true
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

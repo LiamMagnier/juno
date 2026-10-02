@@ -569,6 +569,57 @@ const BRAIN_FOLDS = ["M7.6 6.2C7.6 7.5 8.4 8.6 9.75 8.6", "M5.6 15.2C7 15.2 8.25
 /** The pin's parts, so the unpin is the pin. */
 const PIN_PARTS = [poly(8.25, 3.75, 15.75, 3.75), PIN, poly(12, 13.5, 12, 20.25)];
 
+/* —————————————————————————————— Alevr's destinations —————————————————————————————— */
+
+/**
+ * Orbit, Alevr's agent workspace: two separated open arcs of one ellipse,
+ * b = a / phi, the major axis rising 24 degrees, the two gaps at the ends of
+ * the major axis so the arcs are in point symmetry (the Continuum's pairing).
+ * A gap is the clear chord between the round caps. This is the brand glyph
+ * (src/components/brand/brand-glyphs.ts, ORBIT_GLYPH) entered in the one
+ * registry; tests/brand-icon-registry.test.ts holds the two to the same
+ * drawing. Static: it is a place, never a spinner.
+ */
+function orbitArcs(a: number, chord: number): string[] {
+  const b = a / ((1 + Math.sqrt(5)) / 2);
+  const th = (-24 * Math.PI) / 180;
+  const at = (deg: number): [number, number] => {
+    const t = (deg * Math.PI) / 180;
+    const x = a * Math.cos(t);
+    const y = b * Math.sin(t);
+    return [12 + x * Math.cos(th) - y * Math.sin(th), 12 + x * Math.sin(th) + y * Math.cos(th)];
+  };
+  const half = (g: number): number => {
+    let lo = 0;
+    let hi = 60;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      const p0 = at(g - mid);
+      const q0 = at(g + mid);
+      if (Math.hypot(q0[0] - p0[0], q0[1] - p0[1]) < chord) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  };
+  return [0, 180].map((g) => {
+    const [x0, y0] = at(g + half(g));
+    const [x1, y1] = at(g + 180 - half(g + 180));
+    return `M${P(x0, y0)}A${fmt(a)} ${fmt(b)} -24 0 1 ${P(x1, y1)}`;
+  });
+}
+/** 24 px: a = 9.375, a 2 unit clear gap (chord 2 + the 1.5 unit line). */
+const ORBIT_ARCS = orbitArcs(9.375, 3.5);
+/**
+ * Below 18 px Orbit is drawn larger (a = 10.125) with a 1.5 px clear gap, so
+ * the open, tilted ellipse stands as tall as Code's brackets beside it.
+ */
+const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
+
+/** Code: opposed square brackets with continuous corners; the cursor stands inset between them. */
+const codeBracket = (top: number, bottom: number, arm: number, r: number): string =>
+  `M${fmt(arm)} ${fmt(top)}H${fmt(4.5 + r * 1.18)}${corner(4.5, top, 1, 0, 0, 1, r)}V${fmt(bottom - r * 1.18)}${corner(4.5, bottom, 0, -1, 1, 0, r)}H${fmt(arm)}`;
+const CODE_BRACKET = codeBracket(4.5, 19.5, 9.75, 2.25);
+
 /* —————————————————————————————— The set —————————————————————————————— */
 
 const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => ({ viewBox: 24, line: 1.5, ...d });
@@ -584,14 +635,20 @@ export const ICONS = {
     hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
     motion: "The bubble speaks: a small pop from the tail.",
   }),
+  /**
+   * Orbit has no "on" form: selection is tonal, on the row, never a filled or
+   * turned glyph, so the place never reads as a status or a spinner.
+   */
+  orbit: I({
+    group: "Navigation",
+    elements: ORBIT_ARCS.map((d) => p(d)),
+    small: { elements: ORBIT_ARCS_SMALL.map((d) => p(d)) },
+    motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
+  }),
   code: I({
     group: "Navigation",
-    elements: [
-      g([p(poly(8.25, 7.5, 3.75, 12, 8.25, 16.5))], { x: -1 }),
-      g([p(poly(15.75, 7.5, 20.25, 12, 15.75, 16.5))], { x: 1 }),
-      p(poly(13.5, 5.25, 10.5, 18.75)),
-    ],
-    motion: "The brackets open a unit each way.",
+    elements: [g([p(CODE_BRACKET)], { x: -1 }), g([p(flipX(CODE_BRACKET))], { x: 1 }), p(poly(12, 8.25, 12, 15.75))],
+    motion: "Alevr Code: opposed brackets with the cursor inset between them. The brackets open a unit each way; the cursor holds still.",
   }),
   "new-chat": I({
     group: "Navigation",

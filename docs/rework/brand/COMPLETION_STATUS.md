@@ -16,11 +16,11 @@ Yes, in this checkout: docs/rework/HANDOFF.md begins with an explicit brand entr
 | Interface icon family | Geometry, semantic inventory and state/accessibility rules prepared; complete production drawings not delivered |
 | Source-surface inventory and Claude handoff | Located surfaces, export requirements and implementation boundaries prepared; exhaustive call-site sweep still pending |
 | Current product / interaction / Code prose | Updated to working names and latest V3 visual decisions |
-| Logo and launcher icon | Previous A-shaped concept explicitly rejected; three replacement concepts generated for review; no replacement adopted |
+| Logo and launcher icon | Continuum selected by the owner; production vector, optical masters, wordmark, lockup, thinking mark, tab icon, favicon, app icons (macOS grid) and an Icon Composer document built and revised after critique ([CONTINUUM_GEOMETRY.md](CONTINUUM_GEOMETRY.md)); on the refoundation trunk, not released |
 | Existing board applications | Illustrative; still contain rejected master logo, so must be updated after replacement selection |
 | Agent appearance | Latest D-034 direction documented, generated exploration shown; final accepted model/rig not delivered |
 | Alevr naming | Owner-liked working name; exact hosted-chatbot use exists; earlier no-existing-use requirement and availability unresolved |
-| Final vector masters, optical glyphs, favicon/native catalogs | Not delivered |
+| Final vector masters, optical glyphs, favicon/native catalogs | Built (see CONTINUUM_GEOMETRY.md); Orbit and Code are in the shared icon registry; product call sites still draw the old mark |
 | Product implementation and real-app acceptance | Intentionally outside this documentation/artwork task |
 
 ## What prevents calling the identity complete?
