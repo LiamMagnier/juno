@@ -37,6 +37,8 @@ const APPLIED_HOLD_MS = 4500;
 // Named so the copy extractor reads them: a string inside a ternary prop is invisible to it.
 const PROMPT_PLACEHOLDER = `Tell ${PRODUCT_NAME} what to remember, change or forget`;
 const PAUSED_PLACEHOLDER = "Memory is off. Turn it on to make changes.";
+/** Three shapes of instruction, one press each to start from: add, correct, forget. */
+const SUGGESTIONS = ["I moved to a new city", "I prefer answers in French", "Forget where I used to work"];
 
 export interface PromptDockHandle {
   focus: () => void;
@@ -174,10 +176,10 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
           void submit();
         }}
         className={cn(
-          // The field recipe (Input, Textarea): the page's own ground inside the
-          // card, on the --input hairline that says "type here", darkening on
-          // hover and focus. Focus is the edge, not a ring.
-          "flex items-end gap-2 rounded-field border border-input bg-background py-1.5 pl-3.5 pr-1.5 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          // The composer's shape (22px, no shadow, the edge raises on focus):
+          // telling memory something is a message to Alevr, so it looks like
+          // one. 10px inset keeps the 12px send button concentric (22 − 10).
+          "flex items-end gap-2 rounded-composer border border-input bg-background py-2.5 pl-5 pr-2.5 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           !paused && "hover:border-foreground/40 focus-within:border-foreground/60"
         )}
       >
@@ -205,7 +207,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
             }}
             placeholder={busy ? "" : paused ? PAUSED_PLACEHOLDER : PROMPT_PLACEHOLDER}
             aria-label={PROMPT_PLACEHOLDER}
-            className="block w-full resize-none bg-transparent py-1 text-ui text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+            className="block w-full resize-none bg-transparent py-1.5 text-body text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
           />
           {busy && (
             <span
@@ -229,6 +231,37 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
           <TooltipContent>Draft this change</TooltipContent>
         </Tooltip>
       </form>
+
+      {/* Starting points while the bar is empty and nothing is waiting: the
+          three things the bar can do, each one press from a draft. */}
+      <AnimatePresence initial={false}>
+        {!paused && !busy && !value && drafting === null && pending.length === 0 && (
+          <motion.div key="suggestions" className="grid" {...unfold}>
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex flex-wrap items-center gap-1.5 px-1 pt-3">
+                {SUGGESTIONS.map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    onClick={() => {
+                      setValue(text);
+                      requestAnimationFrame(() => {
+                        const field = fieldRef.current;
+                        if (!field) return;
+                        field.focus();
+                        field.setSelectionRange(text.length, text.length);
+                      });
+                    }}
+                    className="inline-flex h-7 items-center rounded-full border border-border/70 px-3 text-caption text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.97] motion-reduce:transition-none"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence initial={false}>
         {drafting !== null && (

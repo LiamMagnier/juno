@@ -10,8 +10,10 @@ import { cn } from "@/lib/utils";
 import { ActivitySheet, type ActivityTab } from "@/components/memory/activity-sheet";
 import { ImportDialog } from "@/components/memory/import-dialog";
 import { MemoryFooter, ResetDialog } from "@/components/memory/memory-footer";
-import { MemoryHeader, MemoryHeaderActions } from "@/components/memory/memory-header";
-import { MemoryList, type MemorySort } from "@/components/memory/memory-list";
+import { MemoryHeaderActions } from "@/components/memory/memory-header";
+import { MemoryList, topicSummary, type MemoryListHandle, type MemorySort } from "@/components/memory/memory-list";
+import { MemoryHero } from "@/components/memory/memory-hero";
+import "@/components/memory/memory.css";
 import { BackfillNotice, PausedNotice, PolicyNotice } from "@/components/memory/memory-notices";
 import { MemoryBodySkeleton } from "@/components/memory/memory-skeleton";
 import { MemoryWelcome } from "@/components/memory/memory-welcome";
@@ -281,6 +283,35 @@ export function MemoryManagerView({
     (backfill.remaining ?? 0) > 0 &&
     accountActiveCount < THIN_MEMORY;
 
+  // The hero's figures and constellation describe the scope on screen.
+  const topics = React.useMemo(() => topicSummary(facts), [facts]);
+  const newest = React.useMemo(() => {
+    let best: (typeof facts)[number] | null = null;
+    for (const entry of facts) {
+      if (isRetired(entry)) continue;
+      if (!best || entry.createdAt > best.createdAt) best = entry;
+    }
+    return best;
+  }, [facts]);
+  const previews = React.useMemo(() => {
+    const byTopic: Record<string, string[]> = {};
+    const newestFirst = facts.filter((entry) => !isRetired(entry)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    for (const entry of newestFirst) {
+      const id = topics.some((t) => t.id === entry.category) ? (entry.category as string) : "uncategorised";
+      const list = (byTopic[id] ??= []);
+      if (list.length < 3) list.push(entry.content);
+    }
+    return byTopic;
+  }, [facts, topics]);
+  const activeCount = React.useMemo(() => facts.filter((entry) => !isRetired(entry)).length, [facts]);
+  const listRef = React.useRef<MemoryListHandle>(null);
+  const [currentTopic, setCurrentTopic] = React.useState<string | null>(null);
+  const liveTopicId = React.useMemo(
+    () => (newest ? (topics.find((t) => t.id === (newest.category ?? "uncategorised"))?.id ?? null) : null),
+    [newest, topics]
+  );
+  const showHeroData = loaded && anythingRemembered && !memory.loadError;
+
   const dock = (
     <PromptDock
       ref={dockRef}
@@ -297,8 +328,8 @@ export function MemoryManagerView({
   );
 
   return (
-    <div className="@container/memory">
-      <MemoryHeader
+    <div className="mem @container/memory">
+      <MemoryHero
         actions={
           <MemoryHeaderActions
             enabled={!memory.paused}
@@ -315,7 +346,20 @@ export function MemoryManagerView({
             empty={!anythingRemembered}
           />
         }
+        count={activeCount}
+        topics={showHeroData ? topics : []}
+        lastLearned={newest?.createdAt ?? null}
+        liveTopicId={liveTopicId}
+        activeId={currentTopic}
+        onSelect={(id) => listRef.current?.jumpTo(id)}
+        previews={previews}
+        scopes={
+          loaded && anythingRemembered && scopes.length > 1 ? (
+            <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />
+          ) : undefined
+        }
       />
+      <div className="h-12" aria-hidden="true" />
 
       <PausedNotice open={memory.paused} onTurnOn={() => void memory.setPaused(false)} />
       <PolicyNotice message={memory.policyNotice} onOpenSettings={onOpenSettings} />
@@ -365,9 +409,6 @@ export function MemoryManagerView({
         // One entrance for the page body as the data lands; nothing inside it
         // staggers. A scope switch re-plays a fade on the content it changed.
         <div className="motion-safe:animate-rise-in">
-          <div className={cn(scopes.length > 1 && "mb-4")}>
-            <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />
-          </div>
           <div key={activeScope ?? "account"} className={cn(scopeSwitched && "motion-safe:animate-fade-in")}>
             <SummaryPanel
               summary={activeScope ? projectSummary : memory.summary}
@@ -385,8 +426,10 @@ export function MemoryManagerView({
               {!activeScope && dock}
             </SummaryPanel>
 
-            <div className="mt-10">
+            <div className="mt-16">
               <MemoryList
+                handleRef={listRef}
+                onActiveChange={setCurrentTopic}
                 facts={facts}
                 query={query}
                 onQueryChange={setQuery}

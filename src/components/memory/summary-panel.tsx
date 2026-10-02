@@ -24,9 +24,9 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * rest in place, under the same fade that says there is more.
  *
  * The prompt bar is the panel's foot (`children`): changing memory in words
- * happens directly under the words being changed. It is inset 8px from the
- * panel's edge, which is exactly what makes its 12px corners concentric with
- * the panel's 20px ones.
+ * happens directly under the words being changed. It is inset 6px from the
+ * panel's edge (p-1.5), which makes its 10px corners concentric with the
+ * panel's 16px ones.
  */
 
 /** Roughly how much prose shows before "Read the whole summary": about six lines of the reading column. */
@@ -70,21 +70,21 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
   const hasSummary = !!summary && sections.length > 0;
 
   return (
-    <section aria-labelledby="memory-summary-heading" className="surface-raised @container/summary rounded-panel">
-      <div className="px-5 pb-1 pt-4">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 id="memory-summary-heading" className="mr-auto text-ui font-medium text-muted-foreground">
-            {project ? "Project summary" : "Summary"}
+    // Set like the list under it: a 13rem margin column that names the block
+    // and holds its controls, and the reading column. The two blocks share one
+    // grid line, so the page reads as one document rather than stacked boxes.
+    <section aria-labelledby="memory-summary-heading" className="@container/summary">
+      <div className="grid gap-x-14 gap-y-5 @[50rem]/summary:grid-cols-[13rem_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <h2 id="memory-summary-heading" className="mem-h2 text-foreground">
+            {project ? "This project" : "Summary"}
           </h2>
-          <div className="-mr-2 flex items-center gap-0.5">
-            {hasSummary && (
-              <span className="mr-1.5 text-caption text-muted-foreground">
-                <span>Updated</span> <span>{relativeTime(summary.updatedAt)}</span>
-              </span>
-            )}
-            {/* Labelled where there is room, glyphs with tooltips where there
-                is not: on a phone the two labels pushed the row onto a second
-                line under a one-word heading. */}
+          {hasSummary && (
+            <p className="mem-annot mt-2">
+              <span>Updated</span> <span>{relativeTime(summary.updatedAt)}</span>
+            </p>
+          )}
+          <div className="-ml-2.5 mt-3 flex flex-wrap gap-0.5 @[50rem]/summary:flex-col @[50rem]/summary:items-start">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -92,26 +92,19 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
                   size="sm"
                   loading={consolidating}
                   onClick={onRebuild}
-                  aria-label={hasSummary ? "Rebuild the summary" : "Write the summary"}
-                  className="gap-1.5 px-2 text-muted-foreground"
+                  className="gap-2 px-2.5 text-muted-foreground"
                 >
                   <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-                  <span className="hidden @[30rem]/summary:inline">{hasSummary ? "Rebuild" : "Write summary"}</span>
+                  <span>{hasSummary ? "Rebuild" : "Write summary"}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{`Rewrite it from everything ${PRODUCT_NAME} remembers`}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onOpenActivity}
-                  aria-label="Activity"
-                  className="gap-1.5 px-2 text-muted-foreground"
-                >
+                <Button variant="ghost" size="sm" onClick={onOpenActivity} className="gap-2 px-2.5 text-muted-foreground">
                   <History className="size-3.5" aria-hidden="true" />
-                  <span className="hidden @[30rem]/summary:inline">Activity</span>
+                  <span>Activity</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Your edits and a recap of what changed</TooltipContent>
@@ -119,73 +112,88 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
           </div>
         </div>
 
-        {hasSummary ? (
-          // Keyed on the scope and the rebuild, so a new summary (or a different
-          // project's) arrives as one piece instead of changing words in place.
-          <div key={`${project?.id ?? "account"}:${summary.updatedAt}`} className="pb-3 pt-2 motion-safe:animate-fade-in">
-            <div className="relative">
-              <Sections sections={preview} />
-              {rest.length > 0 && (
-                <div
-                  aria-hidden="true"
-                  className={cn(
-                    "pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-card to-transparent transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
-                    expanded && "opacity-0"
+        <div className="min-w-0">
+          {hasSummary ? (
+            <div key={`${project?.id ?? "account"}:${summary.updatedAt}`} className="motion-safe:animate-fade-in">
+              <Lead section={sections[0]} />
+              {preview.length > 1 && (
+                <div className="relative mt-8">
+                  <Sections sections={preview.slice(1)} />
+                  {rest.length > 0 && (
+                    <div
+                      aria-hidden="true"
+                      className={cn(
+                        "pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+                        expanded && "opacity-0"
+                      )}
+                    />
                   )}
-                />
+                </div>
+              )}
+              {rest.length > 0 && (
+                <>
+                  <Collapse open={expanded} innerClassName="pt-6">
+                    <Sections sections={rest} />
+                  </Collapse>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((open) => !open)}
+                    aria-expanded={expanded}
+                    className="-mx-3 mt-2 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground motion-reduce:transition-none"
+                  >
+                    {expanded ? <span>Show less</span> : <span>Read the whole summary</span>}
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn(
+                        "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                        expanded && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </>
               )}
             </div>
-            {rest.length > 0 && (
-              <>
-                <Collapse open={expanded} innerClassName="pt-5">
-                  <Sections sections={rest} />
-                </Collapse>
-                <button
-                  type="button"
-                  onClick={() => setExpanded((open) => !open)}
-                  aria-expanded={expanded}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-control py-1 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
-                >
-                  {expanded ? <span>Show less</span> : <span>Read the whole summary</span>}
-                  <ChevronDown
-                    aria-hidden="true"
-                    className={cn(
-                      "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                      expanded && "rotate-180"
-                    )}
-                  />
-                </button>
-              </>
-            )}
-          </div>
-        ) : consolidating ? (
-          <p role="status" className="flex items-center gap-2.5 pb-4 pt-3 text-body text-muted-foreground">
-            <ThinkingDots />
-            {project ? <span>Reading this project’s chats…</span> : <span>Reading your chats and projects…</span>}
-          </p>
-        ) : project ? (
-          <p className="max-w-prose pb-4 pt-2 text-body text-muted-foreground">
-            {`${PRODUCT_NAME} writes this from the chats in this project as you go. Only those chats read it, and they read nothing else ${PRODUCT_NAME} remembers about you.`}
-          </p>
-        ) : (
-          <p className="max-w-prose pb-4 pt-2 text-body text-muted-foreground">
-            {`${PRODUCT_NAME} writes a short summary of what it knows once it has a few things to go on. Everything it remembers is listed below either way.`}
-          </p>
-        )}
-      </div>
+          ) : consolidating ? (
+            <p role="status" className="flex items-center gap-2.5 text-body text-muted-foreground">
+              <ThinkingDots />
+              {project ? <span>Reading this project’s chats…</span> : <span>Reading your chats and projects…</span>}
+            </p>
+          ) : project ? (
+            <p className="mem-lead max-w-[36rem] text-muted-foreground">
+              {`${PRODUCT_NAME} writes this from the chats in this project as you go. Only those chats read it, and they read nothing else ${PRODUCT_NAME} remembers about you.`}
+            </p>
+          ) : (
+            <p className="mem-lead max-w-[36rem] text-muted-foreground">
+              {`${PRODUCT_NAME} writes a short summary of what it knows once it has a few things to go on. Everything it remembers is listed below either way.`}
+            </p>
+          )}
 
-      {children && <div className="p-2 pt-1">{children}</div>}
+          {children && <div className="mt-8">{children}</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** The opening section, set as the page's lead: the one paragraph meant to be read first. */
+function Lead({ section }: { section: SummarySection }) {
+  return (
+    <section>
+      <h3 className="mem-annot">{section.title}</h3>
+      <Markdown content={section.body} className="mem-lead mt-2 max-w-[40rem] text-foreground [&_p]:m-0" />
     </section>
   );
 }
 
 function Sections({ sections }: { sections: SummarySection[] }) {
+  // Two columns once the panel is wide enough to set two readable measures:
+  // the summary reads like a profile, not one 900px line.
   return (
-    <div className="space-y-4">
+    <div className="gap-10 @[40rem]/summary:columns-2 [&>section+section]:mt-5">
       {sections.map((section) => (
-        <section key={section.title}>
-          <h3 className="text-ui font-semibold text-foreground">{section.title}</h3>
-          <Markdown content={section.body} className="mt-1 text-body text-foreground" />
+        <section key={section.title} className="break-inside-avoid">
+          <h3 className="text-ui font-medium text-foreground">{section.title}</h3>
+          <Markdown content={section.body} className="mt-1.5 text-body text-muted-foreground" />
         </section>
       ))}
     </div>

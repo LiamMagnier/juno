@@ -55,7 +55,7 @@ export function ScopeBar({
           aria-label="Show memory from"
           // overflow-x clips the block axis too, so the vertical padding is the
           // room a focused chip's outline needs.
-          className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="-mx-1 flex flex-wrap gap-1.5 px-1 py-1"
         >
           {scopes.map((scope) => {
             const active = scope.id === selected.id;

@@ -3,7 +3,6 @@
 import * as React from "react";
 import { History, MessagesSquare, Upload } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
-import { AppPageHeader } from "@/components/app/app-page";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,36 +15,6 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { PRODUCT_NAME } from "@/lib/brand/names";
-
-/*
- * The page's name, the one switch, and the things done rarely.
- *
- * ONE SWITCH, AND IT IS THE SETTING. On means `memoryEnabled`, the same field
- * the Memory section of Settings shows, so the two can never disagree. It used
- * to be a "Pause memory" switch in a strip at the bottom of the page, worded
- * the other way round from the setting it flipped, and inside the settings
- * modal both were on screen at once.
- *
- * EVERYTHING ELSE IS IN ONE MENU. Learning from past chats, import, export,
- * the settings and reset are each done a handful of times in an account's
- * life; they were a stats strip, a privacy strip and a header button, all
- * permanently on screen.
- *
- * The header renders during loading too (with the controls held as
- * placeholders), so the page's name never moves when the data lands.
- */
-
-export function MemoryHeader({ actions }: { actions: React.ReactNode }) {
-  return (
-    <AppPageHeader
-      heading="Memory"
-      lede={`What ${PRODUCT_NAME} carries from one chat to the next.`}
-      actions={actions}
-      className="mb-5"
-    />
-  );
-}
 
 /** The header's controls while the page loads: the same footprint, no behaviour. */
 export function MemoryHeaderActionsSkeleton() {

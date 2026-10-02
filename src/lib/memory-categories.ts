@@ -37,7 +37,7 @@ export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 export const MEMORY_CATEGORY_META: Record<MemoryCategory, { label: string; description: string }> = {
   identity: {
     label: "Identity",
-    description: "Who you are — your role, where you live and work, the languages you speak.",
+    description: "Who you are: your role, where you live and work, the languages you speak.",
   },
   preferences: {
     label: "Preferences",
@@ -61,7 +61,7 @@ export const MEMORY_CATEGORY_META: Record<MemoryCategory, { label: string; descr
   },
   relationships: {
     label: "People",
-    description: "The people you mention — family, colleagues, collaborators.",
+    description: "The people you mention, from family to colleagues and collaborators.",
   },
   temporary: {
     label: "Temporary",

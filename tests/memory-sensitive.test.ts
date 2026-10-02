@@ -420,7 +420,7 @@ test("Undo replays the server's inverse, never one derived on the client", () =>
 test("the memory manager renders the summary, the list, the prompt bar and the activity sheet", () => {
   const body = src("src/components/memory/memory-manager.tsx");
   for (const component of [
-    "MemoryHeader",
+    "MemoryHero",
     "SummaryPanel",
     "PromptDock",
     "MemoryList",

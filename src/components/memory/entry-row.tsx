@@ -113,7 +113,7 @@ export function EntryRow({
       // The hairline between rows is drawn inset to the text column, not by
       // the list's border: the row itself bleeds 12px either side so its hover
       // fill has room around the text, and a border would bleed with it.
-      className="relative grid grid-rows-[1fr] before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-border/70 first:before:hidden"
+      className="relative grid grid-rows-[1fr]"
     >
       {/* The clip lives on the track's only item and the padding one level in:
           padding cannot shrink below itself, so a padded item would stop the
@@ -143,7 +143,7 @@ export function EntryRow({
             // Keyed on the highlight so a second change to the same row replays it.
             key={highlighted ? "flash" : "rest"}
             className={cn(
-              "group/row flex items-start gap-2 px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/50 motion-reduce:transition-none",
+              "group/row flex items-start gap-2 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted motion-reduce:transition-none",
               highlighted && "animate-cite-flash [animation-duration:var(--dur-emphasis)]"
             )}
           >
@@ -156,7 +156,7 @@ export function EntryRow({
                   setEditing(true);
                 }}
                 className={cn(
-                  "cursor-text text-pretty text-ui text-foreground",
+                  "cursor-text text-pretty text-body text-foreground",
                   retired && "text-muted-foreground line-through decoration-muted-foreground/40"
                 )}
               >
@@ -249,7 +249,7 @@ function RowEditor({
         // The field's text sits exactly where the sentence did: the negative
         // margin cancels the padding that gives the field its edge, out to the
         // row's own edges (the list bleeds the rows 12px past the column).
-        className="-mx-3 block w-[calc(100%+1.5rem)] resize-none overflow-hidden rounded-field border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft focus-visible:border-foreground/60"
+        className="-mx-3 block w-[calc(100%+1.5rem)] resize-none overflow-hidden rounded-control border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft focus-visible:border-foreground/60"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-caption text-muted-foreground">Enter to save, Esc to cancel</p>
@@ -286,6 +286,9 @@ function sourceChatId(memory: Memory): string | null {
  * tokens that change what the fact means at the end of it. The retired status
  * leads, because on a retired row it is the first thing a reader needs.
  */
+/** How long a memory reads as new. */
+const NEW_FOR_MS = 3 * 24 * 60 * 60 * 1000;
+
 function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean }) {
   const words = learnedFrom(memory);
   const chatId = sourceChatId(memory);
@@ -317,6 +320,15 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
     )
   );
   parts.push(<span key="when">{relativeTime(memory.createdAt)}</span>);
+  // Learned in the last three days: the facts most worth a second look, since
+  // the newest is the likeliest to be wrong. Real state, in presence blue.
+  if (!status && Date.now() - new Date(memory.createdAt).getTime() < NEW_FOR_MS) {
+    parts.unshift(
+      <span key="new" className="mem-new font-medium">
+        New
+      </span>
+    );
+  }
   if (memory.expiresAt && !status) {
     parts.push(
       <span key="expires">

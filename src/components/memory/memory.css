@@ -1,0 +1,163 @@
+/*
+ * Memory, in the homepage's language (src/components/home/alv-base.css): the
+ * construction's hairline orbits, Newsreader for the few things meant to be
+ * read as a page, mono annotations for figures, and presence blue for the one
+ * live object (the most recent thing Alevr learned). One theme family, the
+ * app's radius ladder (row 8, card 12, panel 16, composer 22).
+ */
+.mem {
+  --mem-line: hsl(var(--foreground) / 0.12);
+  --mem-hair: hsl(var(--foreground) / 0.07);
+  --mem-presence: #2d49c9;
+  --mem-presence-soft: rgb(45 73 201 / 0.1);
+  --mem-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dark .mem {
+  --mem-line: hsl(var(--foreground) / 0.14);
+  --mem-hair: hsl(var(--foreground) / 0.08);
+  --mem-presence: #97a6e6;
+  --mem-presence-soft: rgb(151 166 230 / 0.12);
+}
+
+/* Type */
+.mem-display {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: clamp(40px, 4.6vw, 60px);
+  line-height: 1.02;
+  letter-spacing: -0.032em;
+  font-optical-sizing: auto;
+}
+.mem-h2 {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.018em;
+}
+.mem-h3 {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+.mem-lead {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 21px;
+  line-height: 1.45;
+  letter-spacing: -0.006em;
+  text-wrap: pretty;
+}
+.mem-figure {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.mem-figure-sm { font-size: 22px; letter-spacing: -0.012em; }
+.mem-annot {
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* The constellation */
+.mem-orbit {
+  fill: none;
+  stroke: var(--mem-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.mem-orbit-faint { stroke: var(--mem-hair); }
+.mem-spoke {
+  stroke: var(--mem-hair);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 240ms var(--mem-ease);
+}
+.mem-trajectory {
+  fill: none;
+  stroke: var(--mem-presence);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.mem-node { fill: hsl(var(--foreground)); transition: transform 320ms var(--mem-ease), fill 200ms; transform-box: fill-box; transform-origin: center; }
+.mem-node-hit { fill: transparent; cursor: pointer; }
+.mem-node-ring { fill: none; stroke: var(--mem-presence); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.mem-node-live { fill: var(--mem-presence); }
+.mem-center { fill: hsl(var(--foreground)); }
+.mem-label {
+  fill: hsl(var(--muted-foreground));
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: fill 200ms;
+}
+.mem-star:hover .mem-node,
+.mem-star:focus-visible .mem-node,
+.mem-star[data-active] .mem-node { transform: scale(1.45); }
+.mem-star:hover .mem-label,
+.mem-star:focus-visible .mem-label,
+.mem-star[data-active] .mem-label { fill: hsl(var(--foreground)); }
+.mem-star:hover .mem-spoke,
+.mem-star[data-active] .mem-spoke { stroke: var(--mem-line); }
+.mem-star { outline: none; }
+.mem-star:focus-visible .mem-node-hit { stroke: hsl(var(--foreground)); stroke-width: 1; }
+
+/* Entrances. Everything here is drawn or set once; nothing loops except the
+   one live ring, which breathes slowly and rests under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .mem-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: mem-draw 1800ms var(--mem-ease) forwards;
+    animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+  }
+  .mem-pop {
+    opacity: 0;
+    animation: mem-pop 700ms var(--mem-ease) forwards;
+    animation-delay: calc(var(--i, 0) * 70ms + 520ms);
+  }
+  .mem-breathe { animation: mem-breathe 3200ms ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .mem-rise {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: mem-rise 900ms var(--mem-ease) forwards;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .mem-reveal { opacity: 0; transform: translateY(18px); transition: opacity 800ms var(--mem-ease), transform 800ms var(--mem-ease); }
+  .mem-reveal[data-on] { opacity: 1; transform: none; }
+}
+@keyframes mem-draw { to { stroke-dashoffset: 0; } }
+@keyframes mem-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes mem-rise { to { opacity: 1; transform: none; } }
+@keyframes mem-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.15; transform: scale(1.6); }
+}
+
+.mem-new { color: var(--mem-presence); }
+
+/* Rows enter in sequence the first time their section scrolls in; rows that
+   arrive later (Show all, an Undo) play the list's own unfold instead. */
+@media (prefers-reduced-motion: no-preference) {
+  .mem-reveal > ul > li { opacity: 0; transform: translateY(8px); }
+  .mem-reveal[data-on] > ul > li { animation: mem-rise 700ms var(--mem-ease) forwards; }
+  .mem-reveal[data-on] > ul > li:nth-child(2) { animation-delay: 50ms; }
+  .mem-reveal[data-on] > ul > li:nth-child(3) { animation-delay: 100ms; }
+  .mem-reveal[data-on] > ul > li:nth-child(4) { animation-delay: 150ms; }
+  .mem-reveal[data-on] > ul > li:nth-child(5) { animation-delay: 200ms; }
+  .mem-reveal[data-on] > ul > li:nth-child(n + 6) { animation-delay: 250ms; }
+}
+
+/* Rows */
+.mem-row-meta { opacity: 0.85; transition: opacity 160ms; }
+.group\/row:hover .mem-row-meta { opacity: 1; }

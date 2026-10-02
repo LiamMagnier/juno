@@ -3,7 +3,7 @@
 import * as React from "react";
 import { MotionConfig } from "framer-motion";
 import { toast } from "sonner";
-import { AppPage } from "@/components/app/app-page";
+import { CustomizeFrame } from "@/components/customize/customize-nav";
 import { MemoryManagerView } from "@/components/memory/memory-manager";
 import type { MemoryEditRecord, Memory, Operation, ProjectSummaryData, SummaryData } from "@/components/memory/memory-model";
 import type { BackfillState } from "@/components/memory/use-backfill";
@@ -433,10 +433,12 @@ function Fixture({ state }: { state: string }) {
 export function MemoryGallery({ state }: { state: string }) {
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-dvh bg-background text-foreground">
-        <AppPage measure="reading" scroll={false}>
+      <div className="h-dvh bg-background text-foreground">
+        {/* The real route's frame (customize tabs, the wide measure), so the
+            gallery shows the page at the width it ships at. */}
+        <CustomizeFrame current="memory">
           <Fixture key={state} state={state} />
-        </AppPage>
+        </CustomizeFrame>
       </div>
     </MotionConfig>
   );
