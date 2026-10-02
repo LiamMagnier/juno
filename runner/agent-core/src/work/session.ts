@@ -949,6 +949,8 @@ export class WorkAgentSession {
     const ctx: ToolContext = {
       cwd: this.options.cwd,
       ...(this.options.env ? { env: this.options.env } : {}),
+      callId: call.id,
+      ...(this.aborter ? { signal: this.aborter.signal } : {}),
     };
     const startedAt = this.clock.now();
     let output: string;

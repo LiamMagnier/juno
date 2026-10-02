@@ -127,6 +127,19 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // "unknown", which asks under every policy, and the turn hung.
   "juno_runtime:read_document": "read_only",
   "juno_runtime:inspect_image": "read_only",
+  // Hosted code execution (src/lib/exec, deploy/exec-host): each run is a fresh
+  // container on the separate execution host with NO network, no credentials,
+  // a read-only root and only this conversation's files, and what it produces
+  // comes back to this conversation only, so it reads and never acts outside
+  // the turn (chat-rework DECISIONS §4b). The precondition is the network
+  // profile: the broker policy on the host pins `--network none`, and the tool
+  // is not attached unless the host reports egress "none". A network-enabled
+  // profile would be a separate action classed `external_write`. Without these
+  // rules every run classified "unknown" and asked under every policy.
+  // `code_interpreter` is the registry alias until L1's dispatcher lands.
+  "juno_runtime:run_code": "read_only",
+  "juno_runtime:check_run": "read_only",
+  "juno_runtime:code_interpreter": "read_only",
   // Agent configuration changes that add recurring cost, a persistent computer,
   // higher autonomy or new connected apps (src/lib/chat/agent-config-tools.ts).
   "juno_agents:create_routine": "external_write",

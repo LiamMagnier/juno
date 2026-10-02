@@ -94,6 +94,8 @@ import {
 import { workModelOptions } from "@/lib/work/models";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
+import { workExecDeps } from "@/lib/exec/work";
+import { runtimeManifestSummary } from "@/lib/exec/runtime";
 import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
 import {
   admitConnectorResult,
@@ -1733,6 +1735,19 @@ async function fetchPinnedWebPage(
  * something; then the workspace and the shell last, which is where a model
  * that has run out of better ideas goes.
  */
+/**
+ * The skill tools for a Work run: `use_skill` and `read_skill_file`, which let
+ * the model discover a skill, read its referenced files and mount its bundle
+ * (with `mountSkill("work", runId, …)`) so `run_code` can run its scripts.
+ *
+ * THE CALL SITE FOR THE SKILL LANE (L3, rf/skill-workflows). Its
+ * `skillToolsFor` (src/lib/skills/run-tools.ts) replaces this body; until it
+ * lands a run carries no skill tools, which is the behaviour before the rework.
+ */
+async function workSkillTools(_input: { runId: string; userId: string }): Promise<WorkToolDefinition[]> {
+  return [];
+}
+
 function buildTools(input: {
   runtime: WorkRuntime;
   runId: string;
@@ -1750,6 +1765,14 @@ function buildTools(input: {
    * hundred megabytes of Chromium on a worker that runs three runs at once.
    */
   disposers: Array<() => Promise<void>>;
+  /**
+   * run_code / check_run in Alevr's hosted sandbox (src/lib/exec/work.ts), or
+   * null when no execution host is configured. Never the worker's own checkout:
+   * the programs run on the separate execution host with no network.
+   */
+  exec: { deps: NonNullable<ReturnType<typeof workExecDeps>>; manifestLine: string | null } | null;
+  /** use_skill / read_skill_file for this run (L3's `skillToolsFor`); empty until that lands. */
+  skillTools: WorkToolDefinition[];
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -2127,6 +2150,10 @@ function buildTools(input: {
     ...remoteComputerTools,
     deliverables,
     cloudFiles,
+    // A sandbox on the execution host, not this worker: `withoutHostWorkspaceTools`
+    // keeps these (they are not workspace tools) and strips the host ones below.
+    ...(input.exec ? runtime.execTools({ ...input.exec.deps, manifestLine: input.exec.manifestLine }) : []),
+    ...input.skillTools,
     ...runtime.workspaceTools(),
   ]);
 }
@@ -3445,6 +3472,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
    * connectors, so it runs on the pause path as well as the terminal ones.
    */
   const disposers: Array<() => Promise<void>> = [];
+  const execDeps = workExecDeps({
+    runId: input.runId,
+    userId: input.userId,
+    sessionId: run.sessionId,
+    projectId: run.session.projectId ?? null,
+    vision: choice.info?.vision ?? false,
+  });
   const tools = buildTools({
     runtime,
     runId: input.runId,
@@ -3455,6 +3489,8 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     egressDomains,
     remoteComputer,
     disposers,
+    exec: execDeps ? { deps: execDeps, manifestLine: await runtimeManifestSummary().catch(() => null) } : null,
+    skillTools: await workSkillTools({ runId: input.runId, userId: input.userId }),
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
