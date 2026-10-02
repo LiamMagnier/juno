@@ -26,6 +26,9 @@ const intentionalFixtures = new Set([
   "tests/dlp.test.ts|GitHub token",
   "tests/dlp.test.ts|OpenAI secret",
   "tests/memory-import.test.ts|GitHub token",
+  // Fake keys (AbCdEf…, abcdef…) the DLP and search-profile tests use to prove real-looking keys are refused.
+  "tests/web-exfil.test.ts|OpenAI secret",
+  "tests/web-search-profile.test.ts|OpenAI secret",
 ]);
 
 const findings = [];
