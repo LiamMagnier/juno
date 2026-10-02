@@ -61,7 +61,6 @@ function lineupPage(S, theme) {
   // The dots key-art composition: a centred wordmark, the characters peeking up
   // from the bottom edge, shoulder to shoulder. Alevr's wordmark is upright
   // Newsreader 600, quiet (no prismatic glow).
-  const t = THEMES[theme];
   const ink = theme === "dark" ? "#f6f5f2" : "#141418";
   const halo = theme === "dark" ? "text-shadow:0 0 42px rgba(255,255,255,.16)" : "";
   // Pure black and pure white, like the reference key art (the other sheets keep the V3 neutrals).
