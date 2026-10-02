@@ -65,6 +65,10 @@ LIMITS = {
     "maxTimeoutMs": 30 * 60 * 1000,
     "minTimeoutMs": 1000,
     "maxLogBytes": 16 * 1024 * 1024,      # per stream, on disk
+    # Both streams together. Past this a program is stopped: what it prints beyond
+    # the kept 16 MB is discarded anyway, and relaying gigabytes through the broker
+    # and this process for up to 30 minutes starved every other run on the host.
+    "maxOutputBytes": 256 * 1024 * 1024,
     "maxEventBytes": 2 * 1024 * 1024,     # per run, in memory for the SSE feed
     "maxEventBytesTotal": 128 * 1024 * 1024,  # all runs together (the unit has MemoryMax=512M)
     "eventRetentionSeconds": 120,         # a finished run's live feed is dropped after this; /output keeps the log
@@ -271,6 +275,7 @@ class Run:
         self.cancel_requested = False
         self.timed_out = False
         self.disk_exceeded = False
+        self.output_exceeded = False
         self.stopping = False      # a stop loop is killing the container
         self.call_done = False     # the broker call (docker run) has returned
         self.call = None
@@ -389,9 +394,18 @@ class Service:
 
     # ── the shared workspace disk ──
     def disk_ok(self):
-        """Whether the workspace filesystem still has its reserve of space and inodes."""
+        """Whether the workspace filesystem AND the one holding the run logs still
+        have their reserve of space and inodes.
+
+        The logs (up to 32 MB a run, kept 30 minutes) live under dataRoot, which on
+        the execution host is the root filesystem, not the size-capped workspace
+        image: checking only the workspaces let a stream of noisy runs fill the
+        host's own disk."""
+        return self._filesystem_ok(self.sessions_root) and self._filesystem_ok(self.runs_root)
+
+    def _filesystem_ok(self, path):
         try:
-            info = os.statvfs(self.sessions_root)
+            info = os.statvfs(path)
         except OSError:
             return True
         total = info.f_blocks * info.f_frsize
@@ -460,7 +474,10 @@ class Service:
             file.write(str(now()))
 
     def put_input(self, session, name, body, length):
-        name = urllib.parse.unquote(name)
+        # `name` arrives decoded once, by dispatch(). Decoding it again turned a
+        # file called "report%20final.csv" into "report final.csv" (the program
+        # then could not find the name it was given) and "a%2Fb.csv" into a name
+        # with a slash, refused, which failed every run of the conversation.
         if not INPUT_NAME.fullmatch(name) or name in (".", "..") or name.startswith("."):
             raise Refused(400, "bad_name", "Invalid input file name")
         if length is None or length < 0:
@@ -734,7 +751,7 @@ class Service:
                 "--user", policy["runUser"], "--pids-limit", str(policy["pidsLimit"]),
                 "--memory", f"{policy['memoryMb']}m", "--memory-swap", f"{policy['memoryMb']}m", "--cpus", str(policy["cpus"]),
                 "--tmpfs", f"/tmp:rw,nosuid,nodev,size={policy['tmpfsSize']},mode=1777",
-                "--workdir", "/work", "--stop-timeout", "1"]
+                "--workdir", "/work", "--stop-timeout", "1", "--log-driver", "none"]
         if policy.get("runtime"):
             argv += ["--runtime", policy["runtime"]]
         argv += ["--mount", f"type=bind,source={root}/work,target=/work",
@@ -826,7 +843,11 @@ class Service:
                         setattr(run, stream + "Truncated", True)
                 if getattr(run, key) > LIMITS["maxLogBytes"]:
                     setattr(run, stream + "Truncated", True)
-                self._append_event(run, stream, chunk.decode("utf-8", "replace"))
+                if not run.events_truncated:
+                    self._append_event(run, stream, chunk.decode("utf-8", "replace"))
+                if run.stdoutBytes + run.stderrBytes > LIMITS["maxOutputBytes"] and not run.output_exceeded:
+                    run.output_exceeded = True
+                    self._stop(run)
             exit_code, refused = run.call.exit_code, run.call.refused
         except OSError as error:
             # Before the broker call nothing was started (a full disk, say); after
@@ -848,7 +869,7 @@ class Service:
             return
         if run.cancel_requested:
             status = "cancelled"
-        elif run.disk_exceeded:
+        elif run.disk_exceeded or run.output_exceeded:
             status = "failed"
         elif run.timed_out:
             status = "timed_out"
@@ -860,6 +881,9 @@ class Service:
         if run.disk_exceeded and status == "failed":
             error = ("The program was stopped because the sandbox's disk was filling up, and this session's working "
                      "files were cleared. Write less data (or delete what you no longer need) and run it again.")
+        elif run.output_exceeded and status == "failed":
+            error = ("The program was stopped because it printed more than %d MB. Print less (a summary, or the first "
+                     "rows), or write large results to a file instead." % (LIMITS["maxOutputBytes"] // (1024 * 1024)))
         elif exit_code in (125, 126, 127) and run.stdoutBytes == 0 and status == "failed":
             error = "The sandbox could not start the program (docker exit %d)." % exit_code
         elif exit_code == 137 and status == "failed":

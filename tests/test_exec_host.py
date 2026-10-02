@@ -271,6 +271,7 @@ class BrokerPolicy(unittest.TestCase):
             ("--network", "none"), ("--cap-drop", "ALL"), ("--security-opt", "no-new-privileges"), ("--user", "1000:1000"),
             ("--pids-limit", "256"), ("--memory", "1536m"), ("--memory-swap", "1536m"), ("--cpus", "1"),
             ("--tmpfs", "/tmp:rw,nosuid,nodev,size=256m,mode=1777"), ("--workdir", "/work"), ("--stop-timeout", "1"),
+            ("--log-driver", "none"),
             ("--mount", "type=bind,source=%s/work,target=/work" % self.root),
             ("--mount", "type=bind,source=%s/inputs,target=/work/inputs,readonly" % self.root),
             ("--mount", "type=bind,source=%s/programs/%s,target=/juno/program,readonly" % (self.root, self.run_id)),
@@ -336,6 +337,11 @@ class BrokerPolicy(unittest.TestCase):
             "pid host": self.argv(extra=["--pid", "host"]),
             "ipc host": self.argv(extra=["--ipc", "host"]),
             "security unconfined": self.argv(extra=["--security-opt", "seccomp=unconfined"]),
+            # The daemon's json-file copy of the output has no size cap: a program
+            # printing for 30 minutes filled the host's root disk.
+            "daemon keeps the output": self.argv(drop={"--log-driver"}),
+            "json-file log": self.argv(replace={"--log-driver": "json-file"}),
+            "log options": self.argv(extra=["--log-opt", "max-size=10g"]),
         }
         other = list(self.argv())
         other[other.index("type=bind,source=%s/programs/%s,target=/juno/program,readonly" % (self.root, self.run_id))] = \
@@ -773,6 +779,37 @@ class Hardening(unittest.TestCase):
             self.assertLessEqual(self.host.service.event_bytes_total, 50000)
         self.assertEqual(run["stdoutBytes"], 200001)
         self.assertEqual(self.host.service.runs[run["id"]].events[-1][1], "notice")
+
+    def test_a_program_printing_without_end_is_stopped(self):
+        # Output past the ceiling is discarded anyway; relaying it for the whole time
+        # limit kept the broker and the service busy for every other run.
+        with unittest.mock.patch.dict(service_module.LIMITS, {"maxOutputBytes": 300000}):
+            run = self.host.run("import sys\nwhile True:\n    sys.stdout.write('z' * 4096)\n    sys.stdout.flush()\n",
+                                timeout_ms=600000, wait=False)
+            final = self.host.wait(run["id"], seconds=20)
+        self.assertEqual(final["status"], "failed", final)
+        self.assertIn("printed more than", final["error"])
+        self.assertGreater(final["stdoutBytes"], 300000)
+        self.assertFalse(self.alive(run["id"]), "the program is no longer running")
+
+    def test_a_full_log_disk_refuses_new_runs(self):
+        # The run logs live on dataRoot (the host's root filesystem in production),
+        # not on the size-capped workspace image.
+        service = self.host.service
+        original = service._filesystem_ok
+        with unittest.mock.patch.object(service, "_filesystem_ok", side_effect=lambda path: path != service.runs_root and original(path)):
+            status, body, _ = self.host.request("POST", "/v1/runs", {"session": SESSION, "account": ACCOUNT, "code": "print(1)"},
+                                                headers={"Idempotency-Key": "logs-full"})
+        self.assertEqual((status, body["error"]), (503, "disk_full"))
+
+    def test_input_names_are_decoded_once(self):
+        # "report%20final.csv" is a real file name; a second decode renamed it, and
+        # "a%2Fb.csv" became a name with a slash that failed every run.
+        for name, encoded in (("report%20final.csv", "report%2520final.csv"), ("a%2Fb.csv", "a%252Fb.csv"), ("100%.csv", "100%25.csv")):
+            with self.subTest(name=name):
+                status, body, _ = self.host.request("PUT", "/v1/sessions/%s/inputs/%s" % (SESSION, encoded), b"x")
+                self.assertEqual((status, body["name"]), (201, name))
+                self.assertTrue(os.path.isfile(os.path.join(self.host.policy["sessionsRoot"], SESSION, "inputs", name)))
 
     def test_file_names_never_reach_the_journal(self):
         self.assertEqual(service_module.redacted_path("/v1/sessions/%s/inputs/payroll%%202026.xlsx" % SESSION),

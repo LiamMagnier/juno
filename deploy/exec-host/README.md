@@ -18,8 +18,9 @@ the owner provisions a separate host and runs `setup.sh` on it.
 
 Every run is a fresh container: `--network none`, `--read-only`, `--cap-drop ALL`,
 `--security-opt no-new-privileges`, a non-root uid, `--pids-limit 256`,
-`--memory 1536m` (swap equal), `--cpus 1`, a 256 MB tmpfs `/tmp`, optionally gVisor
-(`--gvisor`). Mounts are the session's own directories only: `/work` (the workspace,
+`--memory 1536m` (swap equal), `--cpus 1`, a 256 MB tmpfs `/tmp`, `--log-driver none`
+(the daemon keeps no unbounded copy of the output on the host disk), optionally gVisor
+(`--gvisor`). A run that prints more than 256 MB in total is stopped. Mounts are the session's own directories only: `/work` (the workspace,
 read-write), `/work/inputs` (the conversation's files, read-only), `/juno/program`
 (this run's program, read-only), `/skills/<slug>` (skill bundles, read-only). The
 broker refuses any other image, network, mount, capability, user, device, environment,

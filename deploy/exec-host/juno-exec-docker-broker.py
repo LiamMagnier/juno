@@ -123,7 +123,8 @@ def validate_run(argv, policy):
     flags = {}
     boolean = {"--rm", "--read-only", "--init"}
     valued = {"--name", "--label", "--network", "--cap-drop", "--security-opt", "--user", "--pids-limit",
-              "--memory", "--memory-swap", "--cpus", "--tmpfs", "--mount", "--workdir", "--runtime", "--stop-timeout"}
+              "--memory", "--memory-swap", "--cpus", "--tmpfs", "--mount", "--workdir", "--runtime", "--stop-timeout",
+              "--log-driver"}
     while index < len(argv) and argv[index].startswith("--"):
         key = argv[index]
         if key in boolean:
@@ -154,6 +155,12 @@ def validate_run(argv, policy):
         "--cpus": [str(policy["cpus"])],
         "--tmpfs": ["/tmp:rw,nosuid,nodev,size=" + policy["tmpfsSize"] + ",mode=1777"],
         "--workdir": ["/work"], "--stop-timeout": ["1"],
+        # No daemon-side copy of the output: the default json-file driver keeps
+        # everything a program prints on the host's root disk for as long as the
+        # container lives (no size cap), so one run printing for its 30 minutes
+        # filled the disk. `docker run` still relays both streams and the exit
+        # status through the attach; juno-exec keeps the bounded log.
+        "--log-driver": ["none"],
     }
     if policy.get("runtime"):
         fixed["--runtime"] = [policy["runtime"]]

@@ -66,7 +66,11 @@ RUN_UID="$(id -u juno-exec)"
 RUN_GID="$(id -g juno-exec)"
 install -d -o juno-exec -g juno-exec -m 0750 "$DATA" "$DATA/runs" "$DATA/idempotency"
 if ! mountpoint -q "$SESSIONS"; then
-  [ -f "$DATA/sessions.img" ] || { truncate -s "$WORK_SIZE" "$DATA/sessions.img"; mkfs.ext4 -q -F "$DATA/sessions.img"; }
+  # Allocated up front, not sparse: a sparse image lives on the root disk's free
+  # space, so a root disk that filled up (logs, images) turned the workspaces'
+  # writes into I/O errors inside the image, and the image could grow into
+  # space the host needs. fallocate fails at once when the disk is too small.
+  [ -f "$DATA/sessions.img" ] || { fallocate -l "$WORK_SIZE" "$DATA/sessions.img"; mkfs.ext4 -q -F "$DATA/sessions.img"; }
   install -d -m 0750 "$SESSIONS"
   grep -q "$DATA/sessions.img" /etc/fstab || echo "$DATA/sessions.img $SESSIONS ext4 loop,nosuid,nodev,noexec 0 2" >> /etc/fstab
   mount "$SESSIONS"
