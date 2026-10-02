@@ -667,6 +667,44 @@ def acc_bow(c, color, x=0.2, side=1):
     c.add("bow", f, 0.004, "felt", color)
 
 
+def acc_headphones(c, color, cup=None, z=None, y=0.02, r=0.16):
+    """Big matte over-ear headphones: a band that hugs the crown, two fat round cups
+    at the sides of the head (just above the eye line), a soft cushion ring."""
+    zc = z if z is not None else c.face["z"] + 0.12
+    fn = c.fn
+
+    def side(sx):
+        # march out from the middle along x at (y, zc) to the body surface
+        xs = np.linspace(0.0, sx * 1.0, 400)
+        P = np.stack([xs, np.full_like(xs, y), np.full_like(xs, zc)], -1)
+        d = c.f(P)
+        i = int(np.argmax(d > 0))
+        return float(xs[max(i, 1)])
+
+    xl, xr = side(-1), side(1)
+
+    def band(p):
+        d = fn(p)
+        sh = np.abs(d - 0.045) - 0.022
+        sh = smax(sh, np.abs(p[:, 1] - y) - 0.05, 0.02)
+        return smax(sh, (zc + 0.04) - p[:, 2], 0.03)
+
+    c.add("band", band, 0.005, "matte", color, lo=(c.lo[0] - 0.12, y - 0.12, zc - 0.05), hi=(c.hi[0] + 0.12, y + 0.12, c.hi[2] + 0.12), rough=0.75, sheen=0.25)
+    for i, (sx, x0) in enumerate(((-1, xl), (1, xr))):
+        cc = np.array([x0 + sx * 0.035, y, zc])
+
+        def cupf(p, cc=cc, sx=sx):
+            q = p - cc
+            rho = np.sqrt(q[:, 1] ** 2 + q[:, 2] ** 2)
+            # a fat round cushion-cup: a short cylinder along x, very rounded
+            dx = np.abs(q[:, 0]) - 0.055
+            dr = rho - (r - 0.05)
+            outside = np.sqrt(np.maximum(dx, 0) ** 2 + np.maximum(dr, 0) ** 2)
+            return outside + np.minimum(np.maximum(dx, dr), 0) - 0.05
+
+        c.add(f"cup{i}", cupf, 0.005, "matte", cup or color, lo=tuple(cc - 0.25), hi=tuple(cc + 0.25), rough=0.75, sheen=0.25)
+
+
 def acc_butter(c, color=PAL["butter"]):
     zt = c.top(0.05)
     k = np.array([0.05, -0.02, zt + 0.02])
@@ -767,6 +805,7 @@ ACCESSORIES = {
     "ring": lambda c, a, e: acc_ring(c, a.get("color", INK)),
     "bow": lambda c, a, e: acc_bow(c, a.get("color", INK), a.get("x", 0.2)),
     "butter": lambda c, a, e: acc_butter(c, a.get("color", PAL["butter"])),
+    "headphones": lambda c, a, e: acc_headphones(c, a.get("color", INK), a.get("cup"), a.get("z"), a.get("y", 0.02), a.get("r", 0.16)),
     "leaf": lambda c, a, e: acc_leaf(c, a.get("color", PAL["emerald"])),
     "acorncap": lambda c, a, e: acc_acorncap(c, a.get("color", PAL["cocoa"])),
     "antenna": lambda c, a, e: acc_antenna(c, a.get("color", INK), a.get("ball")),
