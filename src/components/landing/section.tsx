@@ -17,7 +17,6 @@ import { Reveal } from "@/components/landing/reveal";
  */
 export function Section({
   id,
-  eyebrow,
   heading,
   lede,
   children,
@@ -37,7 +36,7 @@ export function Section({
     <section id={id} className={cn("scroll-mt-20", className)}>
       <LandingColumn contentClassName="py-14 sm:py-16">
         <Reveal>
-          <PageHeader eyebrow={eyebrow} heading={heading} lede={lede} />
+          <PageHeader heading={heading} lede={lede} />
         </Reveal>
         {children}
       </LandingColumn>

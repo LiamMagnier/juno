@@ -22,7 +22,7 @@ const SECURITY_HEADERS = [
 ];
 
 export const PUBLIC_ROUTES = [
-  { path: "/", markers: [/<main\b/i, /<h1\b/i, /Every frontier model/i] },
+  { path: "/", markers: [/<main\b/i, /<h1\b/i, /Go further/i] },
   { path: "/sign-in", markers: [/<main\b/i, /Welcome back/i, /id=["']email["']/i, /id=["']password["']/i] },
   { path: "/sign-up", markers: [/<main\b/i, /Create your account/i, /id=["']email["']/i, /id=["']password["']/i] },
   { path: "/forgot-password", markers: [/<main\b/i, /Reset your password/i, /you@example\.com/i] },

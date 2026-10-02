@@ -79,7 +79,7 @@ export function VerifyEmailBanner() {
       <MailWarning className="size-4 shrink-0 text-warning" aria-hidden />
       <p className="min-w-0 flex-1">
         Confirm{" "}
-        <span className="font-medium">{status.email ?? "your email address"}</span> to start sending messages — we
+        <span className="font-medium">{status.email ?? "your email address"}</span> to start sending messages. We
         emailed you a link.
       </p>
       {status.canResend && (

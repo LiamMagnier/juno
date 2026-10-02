@@ -64,11 +64,11 @@ export const UI_STATE_FIXTURES = [
       /<h1\b/,
       /Try again/,
       /href="\/chat"/,
-      /\$\{PRODUCT_NAME\} can(?:&rsquo;|'|’)t reach its backend/,
+      /We couldn’t load this page/,
       /<main\b/,
     ],
     forbidden: [],
-    responsive: [/flex-wrap/, /width: 100%/, /max-width:/],
+    responsive: [/flex-wrap/, /max-width:560px/, /max-width:/],
   },
   {
     id: "partial",

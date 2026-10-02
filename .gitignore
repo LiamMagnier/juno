@@ -131,3 +131,14 @@ native/Config/JunoMobile-Local.xcconfig
 # Python bytecode (the gates run Python tests; a cache dir makes the release check see a dirty tree)
 __pycache__/
 *.pyc
+
+# Local public-pages validation data and logs.
+/.validation/
+/.next-public-dev.log
+/.public-*.log
+/.public-signin.html
+/deploy/agent-computers/__pycache__/
+
+# Ephemeral server-rendered QA previews.
+/public/_review-*.html
+/public/_review*.css

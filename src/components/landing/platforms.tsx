@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Globe, Laptop, Smartphone } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Plate } from "@/components/landing/plate";
-import { ProductShot, hasProductShot } from "@/components/landing/product-shot";
 import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -18,12 +16,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * complete composition, not a hole.
  */
 
-const MAC_SHOT = "mac-code-session";
-const PHONE_SHOT = "ios-chat";
 
 export function Platforms() {
-  const mac = hasProductShot(MAC_SHOT);
-  const phone = hasProductShot(PHONE_SHOT);
   return (
     <Section
       id="apps"
@@ -32,10 +26,9 @@ export function Platforms() {
     >
       <RevealList className="mt-10 grid gap-4 lg:grid-cols-12 lg:grid-rows-[auto_auto]">
         <RevealItem index={0} className="stage flex flex-col rounded-stage lg:col-span-8 lg:row-span-2">
-          <Plate name="valley" sizes="(min-width: 1024px) 800px, 100vw" imageClassName="object-[60%_40%]" />
           <div className="relative p-6 sm:p-8">
             <GlyphTile icon={Laptop} />
-            <h3 className="mt-4 text-title text-foreground">{`${PRODUCT_NAME} for Mac`}</h3>
+            <h3 className="mt-4 font-serif text-title text-foreground">{`${PRODUCT_NAME} for Mac`}</h3>
             <p className="mt-2 max-w-md text-body text-foreground/80">
               {`A native app with ${PRODUCT_NAME} Code built in. It reads your repository, runs your tests and asks before it changes anything.`}
             </p>
@@ -46,47 +39,16 @@ export function Platforms() {
               </Link>
             </Button>
           </div>
-          {mac ? (
-            // Bleeds off the cell's right and bottom edges: the window is the
-            // point of the cell, and a whole Mac window shrunk to fit is a stamp.
-            <div className="relative -mb-[4%] -mr-[8%] mt-auto pl-6 sm:pl-10">
-              <ProductShot
-                name={MAC_SHOT}
-                alt={`${PRODUCT_NAME} Code on Mac: a session fixing a stale cart total, the diff beside the transcript`}
-                width={3072}
-                height={1992}
-                sizes="(min-width: 1024px) 820px, 110vw"
-              />
-            </div>
-          ) : (
-            <div className="min-h-40 flex-1 lg:min-h-72" />
-          )}
         </RevealItem>
 
         <RevealItem index={1} className="stage flex flex-col rounded-stage lg:col-span-4 lg:row-span-2">
-          <Plate name="path" dim sizes="(min-width: 1024px) 400px, 100vw" imageClassName="object-[50%_70%]" />
           <div className="relative p-6 sm:p-8">
             <GlyphTile icon={Smartphone} />
-            <h3 className="mt-4 text-title text-foreground">{`${PRODUCT_NAME} for iPhone`}</h3>
+            <h3 className="mt-4 font-serif text-title text-foreground">{`${PRODUCT_NAME} for iPhone`}</h3>
             <p className="mt-2 max-w-[15rem] text-body text-foreground/80">
               Voice, camera and your projects in your pocket. Coming to the App Store.
             </p>
           </div>
-          {phone ? (
-            <div className="relative mx-auto mt-auto w-3/5 max-w-60">
-              <div className="stage-window overflow-hidden rounded-t-stage">
-                <ProductShot
-                  name={PHONE_SHOT}
-                  alt={`${PRODUCT_NAME} for iPhone: a conversation with the composer at the bottom`}
-                  width={1179}
-                  height={2556}
-                  sizes="240px"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="min-h-40 flex-1" />
-          )}
         </RevealItem>
       </RevealList>
 
@@ -112,7 +74,7 @@ export function Platforms() {
 
 function GlyphTile({ icon: Icon }: { icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }> }) {
   return (
-    <span className="flex size-11 shrink-0 items-center justify-center rounded-field bg-card/80 text-foreground shadow-sm ring-1 ring-foreground/5 backdrop-blur">
+    <span className="flex size-11 shrink-0 items-center justify-center rounded-field bg-card/80 text-foreground  ">
       <Icon className="size-5" aria-hidden />
     </span>
   );

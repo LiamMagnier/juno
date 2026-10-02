@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { PublicState } from "@/components/public/public-frame";
+import { Button } from "@/components/ui/button";
 import type { Metadata } from "next";
 import { findAgent } from "@/lib/agents/store";
 import { consumeComputerHandoff } from "@/lib/computer/handoff";
@@ -20,11 +23,7 @@ export const metadata: Metadata = {
 const EXPIRED_MESSAGE = "This link has expired. Open the computer again from the app.";
 
 function Expired() {
-  return (
-    <main className="flex h-dvh w-screen items-center justify-center bg-neutral-950 px-6 text-center text-body text-neutral-300">
-      <p>{EXPIRED_MESSAGE}</p>
-    </main>
-  );
+  return <PublicState title="This computer link has expired" description={EXPIRED_MESSAGE}><Button asChild><Link href="/chat">Back to chat</Link></Button></PublicState>;
 }
 
 /**

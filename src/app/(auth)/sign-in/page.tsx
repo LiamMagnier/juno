@@ -16,6 +16,8 @@ export const metadata: Metadata = {
 export default async function SignInPage() {
   if (await getCurrentUser()) redirect("/chat");
 
+  const providers = { googleEnabled: isGoogleConfigured(), appleEnabled: isAppleConfigured(), emailLinkEnabled: isEmailLinkConfigured() };
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -25,7 +27,7 @@ export default async function SignInPage() {
       {/* A real skeleton, not `null`: AuthForm reads useSearchParams, so it
           suspends on first render and the card used to be a heading over empty
           space that jumped to full height when the whole form arrived at once. */}
-      <Suspense fallback={<AuthFormSkeleton mode="signin" />}>
+      <Suspense fallback={<AuthFormSkeleton mode="signin" {...providers} />}>
         {/* Each provider flag is resolved here, on the server, where the
             credentials are. The form never renders a button that cannot work. */}
         <AuthForm

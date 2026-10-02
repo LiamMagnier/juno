@@ -6,7 +6,6 @@ import { eurPerUsd } from "@/lib/spend";
 import { CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatEur } from "@/components/landing/eur";
-import { Plate } from "@/components/landing/plate";
 import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -78,8 +77,7 @@ export function Metering() {
       <div className="mt-10 grid items-stretch gap-10 lg:grid-cols-12 lg:gap-14">
         <Reveal className="lg:col-span-7">
           <div className="stage flex h-full items-center justify-center rounded-stage px-4 py-10 sm:px-10 sm:py-14">
-            <Plate name="coast" dim sizes="(min-width: 1024px) 700px, 100vw" imageClassName="object-[50%_60%]" />
-            <div className="stage-window relative w-full max-w-[26rem] rounded-panel bg-card/90 p-5 backdrop-blur-xl sm:p-6">
+            <div className="stage-window relative w-full max-w-[26rem] rounded-panel bg-card p-5  sm:p-6">
               <CardEyebrow>One message, priced</CardEyebrow>
               <p className="mt-1.5 text-caption text-muted-foreground">
                 The same exchange, about {SAMPLE.input.toLocaleString("en-US")} tokens in and{" "}
@@ -100,7 +98,7 @@ export function Metering() {
                       className="flex items-baseline gap-2.5"
                     >
                       <span className="whitespace-nowrap">{name}</span>
-                      <span className="min-w-4 flex-1 border-b border-dotted border-border" aria-hidden />
+                      <span className="min-w-4 flex-1 border-b border-solid border-border" aria-hidden />
                       <span className="tabular-nums text-muted-foreground">~{cost}</span>
                     </RevealItem>
                   ))}

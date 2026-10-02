@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Plate } from "@/components/landing/plate";
 import { LandingColumn } from "@/components/landing/section";
 import { Reveal } from "@/components/landing/reveal";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -18,14 +17,9 @@ export function Closing() {
       <LandingColumn contentClassName="pb-16 sm:pb-24">
         <Reveal>
           <div className="stage rounded-stage">
-            <Plate name="horizon" dim sizes="(min-width: 1280px) 1200px, 100vw" imageClassName="object-[50%_65%]" />
-            <div
-              aria-hidden
-              className="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_30%,hsl(var(--background)/0.55),transparent_75%)]"
-            />
             <div className="relative flex min-h-[26rem] flex-col items-center justify-center px-6 py-16 text-center sm:min-h-[30rem]">
               <h2 className="max-w-[18ch] text-balance font-serif text-hero font-medium tracking-tight text-foreground">
-                The right model for every task.
+                Start with a conversation.
               </h2>
               <p className="mt-4 max-w-md text-pretty text-body-lg text-foreground/80">
                 Free to start. Every model on a paid plan, metered honestly.

@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { downloadHref, downloadLink, isUpdaterDownloadUrl, type AppDownload } from "@/lib/app-downloads";
 import { GET as feedRoute } from "../src/app/api/downloads/route";
 import { GET as redirectRoute } from "../src/app/download/[platform]/route";
-import DownloadPage from "../src/app/download/page";
+import { createRequire } from "node:module";
 
 /*
  * The release feed against a scripted GitHub.
@@ -553,7 +553,18 @@ function downloadAnchors(html: string): { href: string; download: boolean }[] {
 async function renderDownloadPage(): Promise<string> {
   const scope = globalThis as { React?: typeof React };
   scope.React ??= React;
-  return renderToStaticMarkup(await DownloadPage());
+  // The production brand mark imports optical-master CSS. Node's renderer
+  // has no stylesheet loader, so ignore that asset during this SSR-only test.
+  const require = createRequire(import.meta.url);
+  const previous = require.extensions[".css"];
+  require.extensions[".css"] = () => {};
+  try {
+    const { default: DownloadPage } = await import("../src/app/download/page");
+    return renderToStaticMarkup(await DownloadPage());
+  } finally {
+    if (previous) require.extensions[".css"] = previous;
+    else delete require.extensions[".css"];
+  }
 }
 
 test("the /download page links a private release through the route as a plain link", async () => {
