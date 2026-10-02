@@ -15,6 +15,10 @@ struct TranscriptFixture {
     /// stages render what the transcript draws today, so each stage's change
     /// shows up as a difference in a picture that already existed.
     let stage: Int
+    /// The picture's width when it is not the transcript column: a lone
+    /// control drawn at 832pt is mostly canvas, too little ink for the
+    /// renderer's blank check to tell it from an empty window.
+    var width: CGFloat? = nil
     let view: @MainActor () -> AnyView
     /// Work to finish before the picture is taken — the web stills an
     /// artifact fixture draws from (``SnapshotStillCache``).
@@ -555,7 +559,7 @@ enum TranscriptSnapshotFixtures {
                         .environment(\.junoSnapshotOpaqueGlass, true)
                 )
             },
-            TranscriptFixture(name: "scroll-to-latest", stage: 4) {
+            TranscriptFixture(name: "scroll-to-latest", stage: 4, width: 120) {
                 AnyView(
                     ScrollToLatestButton(isShown: true, action: {})
                         .padding(24)
