@@ -2,9 +2,7 @@
 
 import * as React from "react";
 import { LazyMotion, domAnimation, m, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
-import { AgentFace } from "@/components/agents/agent-face";
-import type { AgentAvatar } from "@/lib/agents/avatar";
-import type { AgentState } from "@/lib/agents/domain";
+import { User } from "@/components/ui/icons";
 
 /**
  * Orbit: you at the centre, your agents on their own orbits around you. As
@@ -13,12 +11,14 @@ import type { AgentState } from "@/lib/agents/domain";
  * nothing circles on its own. Each agent says its state in words.
  */
 
-type Agent = { name: string; role: string; avatar: AgentAvatar; state: AgentState; line: string; attention?: boolean; orbit: number; angle: number };
+/** Characters are cut from the owner's sheet by scripts/brand/extract-orbit-agents.mjs. */
+type Agent = { name: string; sprite: string; line: string; attention?: boolean; orbit: number; angle: number };
 
 const AGENTS: Agent[] = [
-  { name: "Mira", role: "Research", avatar: { shape: "prism", tone: "teal", eyes: "soft", mark: "none" }, state: "working", line: "Comparing competitor pricing", orbit: 1, angle: 200 },
-  { name: "Otto", role: "Writing", avatar: { shape: "pebble", tone: "coral", eyes: "round", mark: "leaf" }, state: "done", line: "Finished the weekly summary", orbit: 2, angle: 335 },
-  { name: "Scout", role: "Operations", avatar: { shape: "capsule", tone: "amber", eyes: "tall", mark: "antenna" }, state: "waiting", line: "Needs your answer before sending", attention: true, orbit: 0, angle: 62 },
+  { name: "Mira", sprite: "quill", line: "Comparing competitor pricing", orbit: 1, angle: 200 },
+  { name: "Otto", sprite: "macaron", line: "Finished the weekly summary", orbit: 2, angle: 335 },
+  { name: "Scout", sprite: "bell", line: "Needs your answer before sending", attention: true, orbit: 0, angle: 62 },
+  { name: "Pip", sprite: "sprout", line: "Drafting next week's plan", orbit: 2, angle: 148 },
 ];
 
 /** Orbit radii as fractions of the map box (rx of width, ry of height). */
@@ -43,7 +43,8 @@ function Placed({ agent, progress, still }: { agent: Agent; progress: MotionValu
   return (
     <m.div className="absolute inset-0" style={still ? { x: `${rest.x}%`, y: `${rest.y}%` } : { x, y }}>
       <div className="alv-agent" style={{ left: 0, top: 0 }}>
-        <AgentFace avatar={agent.avatar} state={agent.state} size={72} live={false} />
+        {/* eslint-disable-next-line @next/next/no-img-element -- static transparent sprite */}
+        <img className="alv-agent-sprite" src={`/brand/agents/${agent.sprite}.webp`} alt="" width={132} height={132} loading="lazy" decoding="async" />
         <span className="alv-agent-name">{agent.name}</span>
         <span className="alv-agent-state" data-attention={agent.attention || undefined}>{agent.line}</span>
       </div>
@@ -70,7 +71,7 @@ export function OrbitScene() {
           ))}
         </svg>
         <div className="alv-orbit-you">
-          <span className="alv-you-disc"><span className="alv-avatar" style={{ width: 44, height: 44, fontSize: 14 }}>You</span></span>
+          <span className="alv-you-disc" role="img" aria-label="You"><User aria-hidden className="size-7" /></span>
         </div>
         {AGENTS.map((a) => <Placed key={a.name} agent={a} progress={draw} still={reduce} />)}
       </div>
