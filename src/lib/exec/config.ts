@@ -35,6 +35,8 @@ const WORK_LIMITS: SurfaceLimits = { inlineWaitMs: 30 * 60_000, defaultTimeoutMs
 export function surfaceLimits(surface: ExecSurface): SurfaceLimits {
   const base = surface === "work" ? WORK_LIMITS : CHAT_LIMITS;
   // Tests shorten the inline wait to exercise the `running` → check_run path.
+  // Never honoured in production, where a stray value would change behaviour.
+  if (process.env.NODE_ENV === "production") return base;
   const override = Number(process.env.EXEC_INLINE_WAIT_MS);
   return Number.isFinite(override) && override > 0 ? { ...base, inlineWaitMs: override } : base;
 }

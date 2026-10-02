@@ -432,6 +432,10 @@ class Service:
         except tarfile.TarError as error:
             shutil.rmtree(staging, ignore_errors=True)
             raise Refused(400, "bad_bundle", "Not a readable tar archive: " + str(error)[:120])
+        except OSError as error:
+            # A path that is both a file and a folder, or a duplicate entry.
+            self._remove_tree(staging)
+            raise Refused(400, "bad_bundle", "The bundle's paths conflict: " + type(error).__name__)
         except Refused:
             shutil.rmtree(staging, ignore_errors=True)
             raise

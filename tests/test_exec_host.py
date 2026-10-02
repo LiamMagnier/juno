@@ -563,7 +563,8 @@ class ServiceApi(unittest.TestCase):
                         info.type, info.linkname = tarfile.LNKTYPE, content
                         archive.addfile(info)
             return data.getvalue()
-        for name, entries in (("symlink", [("evil", "symlink", "/etc/passwd")]),
+        for name, entries in (("file and folder", [("x", "file", b"1"), ("x/y", "file", b"2")]),
+                              ("symlink", [("evil", "symlink", "/etc/passwd")]),
                               ("hardlink", [("evil", "hardlink", "/etc/passwd")]),
                               ("dotdot", [("../escape.py", "file", b"x")]),
                               ("absolute", [("/etc/cron.d/x", "file", b"x")])):
