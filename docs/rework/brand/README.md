@@ -15,7 +15,7 @@ Read in order:
 6. [Completion status](COMPLETION_STATUS.md): what is prepared, what was rejected and what remains before final identity adoption.
 7. [Logo selection and exploration](LOGO_REVISION.md): the owner selected Continuum; Relay/Parallax and rejected Open Fold remain historical exploration.
 8. [Thinking and micro-interactions](MOTION_AND_THINKING.md): branded thinking feedback and consistent feature motion for Claude’s later implementation.
-9. [Continuum geometry](CONTINUUM_GEOMETRY.md): the production vector reconstruction, optical masters, wordmark, glyphs, thinking mark and exports, with evidence (brand lane, not yet landed).
+9. [Continuum geometry](CONTINUUM_GEOMETRY.md): the production vector reconstruction, optical masters, wordmark, glyphs, thinking mark and exports, with evidence (revision 2, on the refoundation trunk; not released).
 
 ## Authority and status
 

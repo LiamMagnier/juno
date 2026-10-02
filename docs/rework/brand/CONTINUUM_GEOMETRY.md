@@ -1,6 +1,6 @@
 # Continuum geometry: construction and evidence
 
-2026-10-02 · brand lane `rf/brand-assets` · not landed, not deployed, not released.
+2026-10-02 · brand lane `rf/brand-assets`, revision 2 (after the brand critique) · landed on the refoundation trunk; not pushed, deployed or released.
 
 This records how the owner-selected Continuum raster became production vector geometry, the rules the geometry obeys, the measured evidence, and every asset exported from it. The data lives in code; this document explains it.
 
@@ -13,7 +13,9 @@ This records how the owner-selected Continuum raster became production vector ge
 | Components | `continuum-mark.tsx`, `alevr-wordmark.tsx`, `alevr-lockup.tsx`, `orbit-glyph.tsx`, `code-glyph.tsx`, `thinking-mark.tsx` (+ `.css`, timing in `thinking-schedule.ts`) |
 | Exporter | `scripts/brand/export-brand-assets.ts` (`npx tsx scripts/brand/export-brand-assets.ts`) |
 | Gallery | `/dev/brand` (`src/app/dev/brand/`) |
-| Tests | `tests/thinking-mark-schedule.test.ts` |
+| Tests | `tests/thinking-mark-schedule.test.ts` (timing), `tests/brand-icon-registry.test.ts` (Orbit and Code in the icon registry) |
+| Favicon-only drawings | `scripts/brand/favicon-frames.json` (the hand-drawn 16 px frame, the 26 px master) |
+| Icon Composer document | `native/Brand/Alevr.icon` (not yet referenced by either Xcode project) |
 
 ## 1. What the source actually contains
 
@@ -100,76 +102,89 @@ Channel minimums of the master (units): upper sweep / right fin 8.2, right fin /
 
 ## 6. Optical masters (16, 20, 24, 32 px)
 
-At 16 px the master's channels are 0.5 px and the blades fuse. Each optical master:
+At 16 px the master's channels are 0.5 px and the blades fuse, so each small size has its own drawing.
 
-1. scales the master into an N × N box at full width;
-2. moves every outline point inward along its normal by `softplus((w − d) / 2)`, where `d` is the distance to the nearest other blade and `w` the target channel. Each channel opens to at least `w` and nothing away from a channel moves; the displacement is smoothed along the outline so curvature stays continuous;
-3. cuts a tip where the retreating edge meets its partner;
-4. refits the outline on its own extrema (the ramps where a channel opens create real inflections, so a few smooth nodes appear at 16 and 20);
-5. places the box vertically so the outer extrema land on, or within 0.05 px of, whole pixels, slightly above centre for the low visual mass (top at 2.045, 3, 3.634 and 5 px).
+**16 and 20 px move whole blades.** Revision 1 opened the channels by pushing outline points inward and refitting; at 16 and 20 that pinched the upper sweep's round head into a stepped waist, put a knee in the lower sweep's head and a wave along the left fin's inner edge. Revision 2 keeps every blade's exact master outline (so its round head, its curvature-continuous joins and its clean edges are the master's by construction) and changes only its placement:
 
-| Size | Target channel | Measured minimum (px) |
-|---|---|---|
-| 16 | 1.3 | 1.25 – 1.29 |
-| 20 | 1.15 | 1.07 – 1.15 |
-| 24 | 1.0 | 0.94 – 1.26 |
-| 32 | 1.0 | 1.05 – 1.67 |
+1. per blade, a translation, a turn of at most 4.3° about its own centroid and a uniform scale of at least 0.97;
+2. a pattern search keeps the drawing as close to the master as it can (silhouette IoU after both are fitted to the same box) while every channel opens to its target;
+3. a second search in pixels nudges each blade (at most half a pixel) and the whole (scale 0.97 to 1) so the outer extrema land on whole pixels without closing a channel;
+4. the box sits slightly above centre for the low visual mass.
 
-The 16 px master is the allowed simplification: wider channels, slightly thinner blades. Trimming the hairline tails was also tried (morphological opening, then refit) and rejected: the blades read as blobs. `ContinuumMark` picks the master by rendered size (≤17 → 16, ≤21 → 20, ≤27 → 24, ≤40 → 32, else the master). Comparison at 8x: `optical-masters-8x.png` and the `/dev/brand` optical bench.
+Tooling: `tools/continuum/rigid.mjs` (outside the repo, beside the revision 1 tools).
+
+**24 and 32 px** need far less and keep revision 1's construction: each outline point moves inward by `softplus((w − d) / 2)` (`d` the distance to the nearest other blade), smoothed along the outline, tips cut where a retreating edge meets its partner, refit on the outline's own extrema. Their outlines were already clean at review.
+
+| Size | Method | Target channel | Measured channels (px) | Blade moves |
+|---|---|---|---|---|
+| 16 | placement | 1.3 | 1.30 – 1.32 | ≤ 7.9 units, ≤ 4.3°, scale ≥ 0.97 |
+| 20 | placement | 1.15 | 1.15 – 1.34 | ≤ 7.6 units, ≤ 1.3°, scale ≥ 0.985 |
+| 24 | inset | 1.0 | 0.94 – 1.26 | |
+| 32 | inset | 1.0 | 1.05 – 1.67 | |
+
+**Chosen by device pixels.** A 16 px mark on a 2x screen covers 32 device pixels, where the 16 master (tuned for 16) looks thin and pinched and the 32 master keeps both the shape and the channels. `continuumDrawingSet(size)` returns the 1x drawing and the one for 1.5 dppx and up; `ContinuumMark`, `ThinkingMark` and the small lockup render both and `brand.css` shows one with `@media (min-resolution: 1.5dppx)`, so the switch holds before hydration. By width in device pixels: ≤ 17 → 16, ≤ 21 → 20, ≤ 27 → 24, ≤ 40 → 32, else the master. `CONTINUUM_OPTICAL[n].rows` is the band of whole pixel rows the ink occupies, the tight crop a lockup uses.
+
+Evidence: `/dev/brand` optical bench (each size beside what a 2x screen draws, and the 16 and 20 masters drawn large), `alevr-web/brand/r2/` screenshots.
 
 ## 7. Wordmark
 
 - **Face.** Newsreader, upright, wght 600, opsz 36: the display optical size keeps thin strokes sturdy down to the 72 px minimum width; opsz 72 was too fine there, opsz 16 too heavy at display sizes.
 - **Provenance.** `google/fonts`, `ofl/newsreader/Newsreader[opsz,wght].ttf`, last changed in commit `991ce1de6075188e6b8977a5aa9fcd3610a4e946` (2020-12-09), sha256 `8a08d13f8a6c0d51be379a60af84f945f65369a67e509ee3c3bdcc421254d7c1`. Copyright 2020 The Newsreader Project Authors (github.com/productiontype/Newsreader). **SIL Open Font License 1.1**, which permits using outlines in artwork; the outlines are not distributed as a font. Instanced and outlined with fontkit 2 in the temporary tools directory.
-- **Kerning.** The font's own kern feature, then optical adjustments in font units: A|l +70 (the foot serifs touch without it), l|e −10, e|v −20, v|r −30 (display tightening).
+- **Spacing, revision 2: the drawing, not the tracking.** Revision 1 kerned A|l +70 (the foot serifs touched without it, and the pair read open), e|v −20 (the v's serif overhung the e) and v|r −30 (the v and r top serifs fused into a bar at small sizes). Now the A's right foot serif is trimmed 50 units, the l's left foot serif 40 and the v's right top serif 20, so A|l, e|v and v|r all sit at 0; l|e keeps the font's kern plus −10. Tooling: `tools/fonts/wordmark-fix.mjs`.
+- **One clean outline per glyph.** The A's crossbar was a separate rectangle over the legs; the e's crossbar overlapped its own bowl; the r's flag overlapped its stem; the A apex and the v vertex had tiny self-crossing loops. Each glyph is now one outline (plus the A's counter and the e's eye as holes), so nonzero and even-odd fill render the same: 0 differing pixels at 2000 px wide in Chrome (revision 1: 17,415), and native outliners get clean contours.
 - **Never** italic, never "AleVR", never renamed Continuum.
 
 ## 8. Lockup
 
-Mark height 1.18 cap heights (an open, pointed silhouette reads smaller than serif capitals at equal height); the mark's visual centre (y = 1.75 units) on the middle of the cap height; gap 1.5 path widths measured from the right fin's extremum, where the mark's mass ends. The lower sweep's hairline tail reaches one path width further toward the word, which is the optical adjustment: 1.5 path widths of mass, with the tail leading into the A. Clear space one path width.
+Mark height **1.10 cap heights** (revision 1 drew 1.18, where the blades were about 1.8 times the word's stems and the mark outweighed the word; 1.05, 1.10 and 1.18 were compared at 120 and 24 px). The mark's visual centre (y = 1.75 units) sits on the middle of the cap height; the gap is 1.5 path widths from the right fin's extremum, where the mark's mass ends, the lower sweep's hairline tail leading into the A. Clear space one path width.
+
+At large sizes (mark wider than 40 px) `AlevrLockup` is one SVG with the master, scalable. At sidebar and header sizes it draws the mark as a `ContinuumMark` at a whole-pixel height (an optical master's tight crop height when one is within 20%: 11, 15, 17 or 22 px), with the device-pixel switch, and places the word beside it. Revision 1 drew the full master there, so at 20 to 28 px tall its channels were 0.5 to 0.8 px and the blades fused.
 
 ## 9. Orbit and Code glyphs
 
 Both follow the V3 icon grammar (1.25 px stroke at 16, 1.5 px from 18, round caps and joins, 24-unit grid, live area 3–21, continuous corners). Each size is drawn for its own pixel grid.
 
-- **Orbit.** Two separated open arcs of one ellipse: a = 9.375 grid units, **b = a / φ** (e = 0.786, the board's construction), major axis tilted 24° up to the right. The two gaps sit at the two ends of the major axis, 180° apart in the ellipse's parameter, so the arcs are in point symmetry, the same pairing the Continuum's blades have. The gap is the clear chord between round caps: 2 units, held at 1.5 px at 16. The proportions match the V3 icon set's Orbit draft (`rf/design-v3h`), so the product icon and the brand glyph are one drawing. Static.
+- **Orbit.** Two separated open arcs of one ellipse: a = 9.375 grid units at 24, **b = a / φ** (e = 0.786, the board's construction), major axis tilted 24° up to the right. The two gaps sit at the two ends of the major axis, 180° apart in the ellipse's parameter, so the arcs are in point symmetry, the same pairing the Continuum's blades have. The gap is the clear chord between round caps: 2 units, held at 1.5 px at 16. **Optical balance (revision 2):** an open, tilted ellipse reads shorter than a bracket pair, so Orbit is drawn larger below 24 px (a = 10.125 units at 16, 9.6 at 20) until it stands as tall as Code (12 px of ink at 16; revision 1 was 10). Static, with no selected form.
 - **Code.** Opposed square brackets (continuous corners, 2.25 at 24) with an inset cursor half their height, after the V3 icon set's Code draft. The axis sits half a pixel left of the box centre at every size so the cursor's stroke covers whole pixels; stems put one stroke edge on a whole pixel; the arms stop short enough to keep the draft's 3-unit clear gap across that shift.
+- **One registry.** Both are entered in the shared icon registry (`src/components/ui/juno-icons/drawings.ts`): `orbit` (new; the 24 master exactly, with the 16 px balance as its small cut; no `on` form, no motion) and `code` (redrawn from `</>` to the bracket pair; the brackets open a unit on hover, the cursor holds still). `tests/brand-icon-registry.test.ts` holds the registry and `brand-glyphs.ts` to the same drawing. `AppIcons.orbit` (`JunoOrbit`, house name `orbit`) is the Orbit destination; `AppIcons.agents` stays the mark of an agent itself; the command palette's Open Orbit uses `AppIcons.orbit`. Chat fills when selected; Orbit's selection is tonal, on the row. The Continuum is the brand mark, never an action glyph: the gallery's navigation rows now draw Chat's open conversation contour.
 
 ## 10. Thinking mark
 
-`ThinkingMark({ phase, eventKey, size, label })` implements MOTION_AND_THINKING.md:
+`ThinkingMark({ phase, eventKey, size, label })` implements MOTION_AND_THINKING.md. Revision 2 answers the critique (the pass was a sweep that blinked blue, repeated on a 1.6 s beat and cut to rest in one frame):
 
-- The silhouette never moves. A **pass** hands presence ink along the blades in order: each blade rises toward presence over 220 ms (`out-soft`) and returns over 220 ms (`in-out`), the next starting 70 ms later (650 ms per pass). The peak is presence mixed 85% with the ink, a shift rather than a swap.
-- One pass when work starts. A new `eventKey` asks for another; passes coalesce to **at most one per 1.6 s**, a request inside the window waits for it, and further requests add nothing.
-- No events: a quiet, stable pose. **Finished** settles once (560 ms, a unison breath to 40% presence and back). **Waiting** and **error** are static; any pass stops.
-- Pending states keep the loader contract: nothing for **200 ms**, then at least **400 ms** on screen before a status replaces it. Work that ends inside the delay never shows the mark; waiting or an error still shows it.
-- Off-screen (IntersectionObserver) or in a hidden tab (visibilitychange) nothing starts and nothing missed is replayed.
-- **Reduced motion:** the static mark; the 120 ms visibility fade is the only movement.
-- Hidden from assistive technology unless `label` is given; the adjacent words carry the state.
+- **A handoff, not a sweep.** Each blade rises toward presence ink over 120 ms (`fast`, out-soft) and falls over 220 ms (`base`, out-soft); the next starts 120 ms later, as this one peaks (pass 700 ms). Measured in Chrome by seeking the animations every 20 ms: one blade at a time above 75% of the peak, never more than two above 25%, in clockwise order.
+- **A gentle peak, tuned per theme.** The presence copy of each blade peaks at opacity 0.5 on light and 0.9 on dark, the same perceived change from the row's muted ink (OKLab distance 0.107 on light, 0.096 on dark, where presence ink sits much closer to the muted ink). Revision 1 mixed 85% presence, so light graphite became nearly full ultramarine.
+- **No fixed beat.** A step inside the coalescing window is absorbed, never queued into a trailing pass. While steps keep arriving the window backs off, 1.6 → 3.2 → 6.4 s, and it resets after 1.6 s with no step. `eventKey` means a new real step (a tool call, a new summary section), never a token; in development more than two changes a second logs a warning. Measured on the bench: a 12 s stream at 20 Hz drew passes 1.6, 3.3 and 6.6 s apart (revision 1: a 1.63 s loop).
+- **No hard cuts.** Each blade is drawn twice, in ink and above it in presence ink; Web Animations drive the upper copies, and every change of plan starts from the tone a blade shows at that moment. Waiting, error or reduced motion mid-pass fade each blade back over 120 ms from where it was; Finished settles once (560 ms) starting from where the pass left each blade; a tab hidden mid-pass lets the pass finish on its own clock. Measured by freezing a pass at 250 ms (tones 0.035, 0.434, 0.115, 0) and logging the animations that replaced it.
+- **Rest colour.** The mark takes the colour of its row (`currentColor`), so at rest it is never darker than its own label.
+- Loader contract, visibility and assistive technology are unchanged: nothing for 200 ms, at least 400 ms on screen, nothing starts or replays off-screen or in a hidden tab, hidden from assistive technology unless `label` is given. **Forced colours:** the system ink, no tonal layer. **Reduced motion:** no pass and no settle; the 120 ms visibility fade is the only movement.
 
-The timing is a pure state machine (`thinking-schedule.ts`) with 18 unit tests. Evidence (main checkout, `alevr-web/brand/`): `thinking-filmstrip-pass-light.png`, `thinking-filmstrip-pass-dark.png`, `thinking-filmstrip-settle-light.png` (animations paused and seeked every 35 or 40 ms), and recorded clips `thinking-light.webp`, `thinking-dark.webp`, `thinking-reduced-motion.webp` (Chrome screencast; the bench's own log shows passes at 0.29, 2.82, 4.42 and 6.05 s during a 20 Hz event burst, and none under reduced motion).
+Tests: 23 in `tests/thinking-mark-schedule.test.ts` (handoff order and overlap, absorption, backoff, quiet-gap reset, the critique's irregular stream, interruption, hidden tab, reduced motion, the loader contract). Evidence (main checkout, `alevr-web/brand/r2/`): `thinking-filmstrip-pass-light.png`, `thinking-filmstrip-pass-dark.png`, `thinking-report.json` (per-frame tones, interruption logs, stream timings).
 
 ## 11. Exports
 
-`npx tsx scripts/brand/export-brand-assets.ts` regenerates everything from the geometry modules, rendering rasters with Chrome through Playwright.
+`npx tsx scripts/brand/export-brand-assets.ts` regenerates everything from the geometry modules, rendering rasters with Chrome through Playwright (`BRAND_ICTOOL_OUT=dir` also renders the Icon Composer document with Apple's `ictool`).
 
 | File | Composition |
 |---|---|
 | `public/brand/symbol-{light,dark,mono}.svg` | Master in tight bounds; #191b1e, #e8e9eb, #000; blade ids kept |
-| `public/brand/wordmark-{light,dark}.svg`, `lockup-{light,dark}.svg` | Outlined, tight bounds |
+| `public/brand/wordmark-{light,dark}.svg`, `lockup-{light,dark}.svg` | Outlined, tight bounds, revision 2 outlines and 1.10 lockup |
 | `public/brand/orbit-{16,20,24}.svg`, `code-{16,20,24}.svg` | Per-size masters, `currentColor` stroke |
-| `src/app/favicon.ico` | PNG frames 16, 32, 48: charcoal tile (19% corner), pale mark at 14/26/38 px using the 16 and 24 optical masters and the master |
-| `src/app/icon.png`, `public/brand/icon-{192,512}.png` | Rounded tile (22% corner, the existing catalog's), transparent corners, hairline white rim (9%; 6% at 64 px) so the charcoal keeps an edge on dark surfaces |
-| `src/app/apple-icon.png` (180), `public/brand/icon-maskable-512.png` | Full-bleed opaque square without alpha; the mark's box stays inside the 80% safe circle |
-| macOS `AppIcon.appiconset` (16, 32, 64, 128, 256, 512, 1024), `public/brand/app-icon-mac.png` | Rounded full-bleed tile, as the existing catalog draws it, with the rim and the brief's optional macOS-only relief (#1e1f22 to #151618 top to bottom); file names kept |
-| iOS `AppIcon.appiconset/AppIcon.png` (1024) | Opaque square, no alpha, no pre-rounded corners |
+| `src/app/icon.svg` (new; replaces `icon.png`) | The browser-tab icon: the bare mark, graphite on a light tab strip and pale on dark (`prefers-color-scheme`), with the 16 master below 24 px, the 32 master to 47 px and the master above (media queries inside an SVG image see the size it is drawn at). Next declares it `sizes="any"`. Revision 1's 512 px `icon.png` was what Chrome picked for a 2x tab, downscaled: a smaller mark, fused channels, a halo |
+| `src/app/favicon.ico` | For browsers without SVG tab icons: a 19% corner charcoal tile. The **16 px frame is drawn by hand on the 16 px grid** (`favicon-frames.json`: started from a 14 px placement master rasterised by Chrome, edge pixels pushed to ink or tile, the head rounded by one soft pixel, the lower tail tapered); 32 uses a 26 px placement master (channels ≥ 1.2 px); 48 the master |
+| `public/brand/icon-{192,512}.png` | Manifest "any": rounded full-bleed tile (22%), hairline white rim (9%; 6% at 64 px) |
+| `src/app/apple-icon.png` (180), iOS `AppIcon.png` (1024) | Opaque square without alpha (the system masks it), mark 64% |
+| `public/brand/icon-maskable-512.png` | Opaque square, mark at **52%** of the width (revision 1: 64%, about 80% of the visible circle) |
+| macOS `AppIcon.appiconset` (16 to 1024), `public/brand/app-icon-mac.png` | **Apple's macOS grid**: an 824 continuous-corner squircle (corner 185.4, UIKit's curve) inside 1024 with the standard drop shadow (y 10, blur 10, black 30%), the relief (#1e1f22 to #151618) and the rim; mark 64% of the body. Revision 1 was full bleed with plain 22% corners, about 24% larger than grid icons in a Dock. The shadow is a separate blurred shape: a filter on the gradient body made Chrome paint the gradient in bands |
+| `native/Brand/Alevr.icon` (new) | Icon Composer document for macOS and iOS 26: charcoal fill, the four blades as separate glass layers in one group (neutral shadow, translucency 0.4), so the system draws Liquid Glass and the dark, tinted and clear renditions. Rendered by `ictool` for macOS Default and Dark, iOS Default, Dark, TintedDark and ClearLight (`alevr-web/brand/r2/ictool-sheet.png`). Not yet referenced by either Xcode project |
 
-The tile is V3 dark ground #18191b with the mark in V3 dark ink #e8e9eb at 64% of the width, more of the width below 128 px (66% at 64, 69% at 32, 75% at 16), always drawn with a master whose channels stay near a pixel or wider. `src/app/manifest.ts` now names the app Alevr and lists the any and maskable icons.
+`src/app/manifest.ts` names the app from the registry (`PRODUCT_NAME`) and lists the any and maskable icons.
 
 ## 12. Open items
 
-- The product still draws the old mark through `src/components/brand/logo.tsx` (`JunoMark`, `public/juno-mark.png`) in the sidebar, auth, share and other surfaces. Swapping those call sites to `ContinuumMark` and `AlevrLockup`, and the thinking row to `ThinkingMark`, belongs to the web lanes that own those files.
-- Native visible names, the in-app Mac and iOS marks, and native projection of the geometry belong to the native lanes; the data modules are Node-readable for that.
+- The product still draws the old mark through `src/components/brand/logo.tsx` (`JunoMark`, `public/juno-mark.png`) in the sidebar, auth, share and other surfaces. Swapping those call sites to `ContinuumMark` and `AlevrLockup`, the live work row to `ThinkingMark` (with `eventKey` per step), and the sidebar's Orbit destination to `AppIcons.orbit` belongs to the web lanes that own those files.
+- **One source of truth with the design gallery.** `rf/design-v3h` carries its own `brand.tsx` and `brand-geometry.ts` (a different ContinuumMark and a ThinkingMark whose last blade keeps a presence tone while work is live). The design lane should import the production modules in `src/components/brand/` instead; that worktree belongs to another workflow and was not touched here.
+- Native: adopt `native/Brand/Alevr.icon` in both Xcode projects (keep the PNG catalogs for older systems), visible names, the in-app marks, and a native projection of the geometry (the data modules are Node-readable).
 - The lower-right channel width (section 5) is an owner decision.
-- Installed-icon appearance on macOS and iOS, and the favicon in real browser chrome, still need checking on devices.
+- Installed-icon appearance on macOS and iOS, and the tab icon in real browser chrome (which drawing Chrome rasterises for a 2x tab strip), still need checking on devices.
 - Name availability remains unresolved (NAMING_SCREEN.md).
