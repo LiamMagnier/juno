@@ -12,7 +12,15 @@
 import * as React from "react";
 import { AttachmentTile, ImageTile } from "@/components/chat/attachment-tile";
 import { ReceiptGlyph } from "@/components/chat/tool-receipt";
-import { pendingRunAnnouncements, readToolRuns, type ToolRunFile, type ToolRunPhase, type ToolRunView } from "@/lib/chat/tool-run";
+import {
+  nextRunAnnouncement,
+  pendingRunAnnouncements,
+  readToolRuns,
+  type RunAnnouncementState,
+  type ToolRunFile,
+  type ToolRunPhase,
+  type ToolRunView,
+} from "@/lib/chat/tool-run";
 import { cn, formatBytes } from "@/lib/utils";
 import type { ClientActivityEvent, ClientAttachment } from "@/types/chat";
 
@@ -94,16 +102,18 @@ export function ToolRunFiles({
  */
 export function ToolRunAnnouncer({ views, live }: { views: readonly ToolRunView[]; live: boolean }) {
   const seen = React.useRef<Map<string, ToolRunPhase> | null>(null);
-  const [message, setMessage] = React.useState("");
+  const [message, setMessage] = React.useState<RunAnnouncementState>({ text: "", n: 0 });
   React.useEffect(() => {
     const first = seen.current === null;
     if (first) seen.current = new Map();
     const said = pendingRunAnnouncements(views, seen.current!, { initial: first, live });
-    if (said.length) setMessage(said.join(" "));
+    if (said.length) setMessage((previous) => nextRunAnnouncement(previous, said));
   }, [views, live]);
+  // The text re-mounts under each new batch (`key`): the region announces a
+  // repeated sentence ("Ran Python." for a second parallel run) as a change.
   return (
     <span role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-run-announcer>
-      {message}
+      <span key={message.n}>{message.text}</span>
     </span>
   );
 }

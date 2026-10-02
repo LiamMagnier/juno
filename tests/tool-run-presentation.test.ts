@@ -4,6 +4,7 @@ import {
   activeRunId,
   canonicalRunTool,
   formatRunLimit,
+  nextRunAnnouncement,
   pendingRunAnnouncements,
   readToolRun,
   readToolRuns,
@@ -567,4 +568,31 @@ test("a produced file is drawn as an image only when the image route can serve i
   const stored = sanitizeToolRunRecord((row as unknown as { call: { run: unknown } }).call.run)!;
   const reread = view({ ...row, call: { tool: "run_code", status: "succeeded", run: stored } } as unknown as ClientActivityEvent);
   assert.deepEqual(reread.files.map((f) => [f.kind, f.url]), v.files.map((f) => [f.kind, f.url]));
+});
+
+test("a second run finishing with the same sentence is announced again, not swallowed", () => {
+  // Two parallel runs start together and finish one after the other: both owe
+  // "Ran Python, 2 files." A live region set to the text it already holds says
+  // nothing, so each batch is a new state the region re-mounts.
+  const run = (id: string, status: string) =>
+    view({
+      id,
+      kind: "tool",
+      title: "Using Code",
+      detail: "run_code",
+      createdAt: "x",
+      call: { tool: "run_code", status, args: { language: "python" }, run: { status, exitCode: status === "succeeded" ? 0 : undefined } },
+    } as unknown as ClientActivityEvent, true);
+  const seen = new Map<string, ToolRunPhase>();
+  let state = { text: "", n: 0 };
+  state = nextRunAnnouncement(state, pendingRunAnnouncements([run("a", "running"), run("b", "running")], seen));
+  assert.equal(state.text, "Running Python. Running Python.");
+  state = nextRunAnnouncement(state, pendingRunAnnouncements([run("a", "succeeded"), run("b", "running")], seen));
+  const firstDone = state;
+  assert.equal(firstDone.text, "Ran Python.");
+  state = nextRunAnnouncement(state, pendingRunAnnouncements([run("a", "succeeded"), run("b", "succeeded")], seen));
+  assert.equal(state.text, "Ran Python.");
+  assert.notEqual(state.n, firstDone.n, "the same sentence for the second run is a new announcement");
+  // Nothing new to say leaves the region as it is.
+  assert.equal(nextRunAnnouncement(state, pendingRunAnnouncements([run("a", "succeeded"), run("b", "succeeded")], seen)), state);
 });

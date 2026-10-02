@@ -1092,6 +1092,22 @@ export function pendingRunAnnouncements(
   return out;
 }
 
+/**
+ * What the live region holds: the sentence, and how many times it has been
+ * set. A live region announces a CHANGE; set to the text it already holds, it
+ * says nothing. Two parallel runs that finish one after the other both owe
+ * "Ran Python.", and the second was silent. `n` changes with every new batch,
+ * and the region re-mounts its text under it, so a repeat is a change too.
+ */
+export interface RunAnnouncementState {
+  text: string;
+  n: number;
+}
+
+export function nextRunAnnouncement(previous: RunAnnouncementState, said: readonly string[]): RunAnnouncementState {
+  return said.length ? { text: said.join(" "), n: previous.n + 1 } : previous;
+}
+
 /* ── Sanitising a stored record ─────────────────────────────────────────── */
 
 /**
