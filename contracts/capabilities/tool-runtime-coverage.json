@@ -136,7 +136,7 @@
     {
       "id": "openai:gpt-6-astra",
       "provider": "openai",
-      "adapter": "openai-compatible",
+      "adapter": "openai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -161,7 +161,7 @@
     {
       "id": "openai:gpt-6-sol",
       "provider": "openai",
-      "adapter": "openai-compatible",
+      "adapter": "openai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -186,7 +186,7 @@
     {
       "id": "openai:gpt-6-luna",
       "provider": "openai",
-      "adapter": "openai-compatible",
+      "adapter": "openai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -211,7 +211,7 @@
     {
       "id": "openai:gpt-5.6-terra",
       "provider": "openai",
-      "adapter": "openai-compatible",
+      "adapter": "openai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -261,7 +261,7 @@
     {
       "id": "openai:gpt-5.4-mini",
       "provider": "openai",
-      "adapter": "openai-compatible",
+      "adapter": "openai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -286,7 +286,7 @@
     {
       "id": "openai:gpt-5.4-nano",
       "provider": "openai",
-      "adapter": "openai-compatible",
+      "adapter": "openai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -897,7 +897,7 @@
     {
       "id": "xai:grok-4.7",
       "provider": "xai",
-      "adapter": "openai-compatible",
+      "adapter": "xai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -947,7 +947,7 @@
     {
       "id": "xai:grok-build-0.1",
       "provider": "xai",
-      "adapter": "openai-compatible",
+      "adapter": "xai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -972,7 +972,7 @@
     {
       "id": "xai:grok-4.20-multi-agent-0309",
       "provider": "xai",
-      "adapter": "openai-compatible",
+      "adapter": "xai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,

@@ -87,13 +87,13 @@ export function createWebFetchSpec(deps: { fetchPage?: WebFetchBackend } = {}): 
     async execute(args, ctx) {
       const url = stringArg(args.url);
       if (!url) return failed("invalid_args", EMPTY_URL_TEXT);
-      if (!ctx.ledger) return failed("unavailable", FETCH_UNAVAILABLE_TEXT);
+      if (!ctx.ledger || !ctx.taint || !ctx.limits) return failed("unavailable", FETCH_UNAVAILABLE_TEXT);
       const offset = intArg(args.offset, 0, 0, Number.MAX_SAFE_INTEGER);
       const maxChars = intArg(args.max_chars, WEB_FETCH_DEFAULT_CHARS, WEB_FETCH_MIN_CHARS, WEB_FETCH_MAX_CHARS);
       const fetchPage = await backend();
       return fetchPage(
         { url, offset, maxChars },
-        { ledger: ctx.ledger, taint: ctx.taint, limits: ctx.limits, signal: ctx.signal, private: ctx.private },
+        { ledger: ctx.ledger, taint: ctx.taint, limits: ctx.limits, signal: ctx.signal, private: Boolean(ctx.private) },
       );
     },
   });

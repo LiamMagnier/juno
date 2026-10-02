@@ -214,6 +214,7 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
 export interface McpToolAnnotations {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
+  junoCanonical?: string;
 }
 
 export interface McpFunctionTool {
@@ -305,6 +306,14 @@ export interface McpToolset {
     opts?: import("@/lib/tools/types").ToolExecuteOptions
   ): Promise<ToolExecution>;
   close(): Promise<void>;
+  route?(toolName: string): import("@/lib/tools/connector-tools").ConnectorToolRoute | undefined;
+}
+
+export type { ToolExecuteOptions } from "@/lib/tools/types";
+
+export interface OpenMcpToolsetOptions {
+  connectTimeoutMs?: number;
+  onConnectorStatus?: (id: string, state: "ready" | import("@/types/run").ConnectorFailure) => void;
 }
 
 
@@ -413,7 +422,11 @@ export interface McpToolsetContext {
  * OpenAI-style function tools. Tool names are namespaced `<connector>__<tool>`.
  * Always `close()` when the generation ends (best-effort in a finally).
  */
-export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetContext): Promise<McpToolset> {
+export async function openMcpToolset(
+  active: ActiveConnector[],
+  ctx: McpToolsetContext,
+  _opts?: OpenMcpToolsetOptions
+): Promise<McpToolset> {
   const clients = new Map<string, Client>();
   const tools: McpFunctionTool[] = [];
   const routing = new Map<
@@ -620,8 +633,35 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         return toolExecution(label, `Tool error: ${detail}`, false, durationMs);
       }
     },
+    route(name) {
+      const r = routing.get(name);
+      if (!r) return undefined;
+      return {
+        functionName: name,
+        connectorId: r.connectorId,
+        connectorLabel: r.label,
+        toolName: r.toolName,
+        access: r.access,
+        annotations: r.annotations,
+      };
+    },
     async close() {
       await Promise.all([...clients.values()].map((c) => c.close().catch(() => {})));
     },
   };
+}
+
+export async function resolveConnectorsWithStatus(
+  userId: string,
+  ids: string[]
+): Promise<{ active: ActiveConnector[]; skipped: Array<{ id: string; label: string; reason: import("@/types/run").ConnectorFailure }> }> {
+  const active = await getActiveConnectors(userId, ids);
+  const activeIds = new Set(active.map((a) => a.id));
+  const skipped: Array<{ id: string; label: string; reason: import("@/types/run").ConnectorFailure }> = [];
+  for (const id of ids ?? []) {
+    if (!activeIds.has(id)) {
+      skipped.push({ id, label: id, reason: "misconfigured" });
+    }
+  }
+  return { active, skipped };
 }

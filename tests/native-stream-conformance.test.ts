@@ -177,5 +177,8 @@ test("the fixture decoder is a port of the shipped Swift, which it cites", () =>
   // If the shipped decoder changes shape, this port must be re-read against it.
   assert.match(swift, /switch envelope\.type \{/);
   assert.match(swift, /private static let maximumEventBytes = 5 \* 1_024 \* 1_024/);
-  assert.match(swift, /default:\s*\n\s*throw NativeChatAPIError\.malformedResponse/);
+  // The default case was changed from `throw NativeChatAPIError.malformedResponse` to
+  // `return .ping` — unknown frame types are now silently forwarded as pings rather than
+  // ending the stream (a guard at the top filters to `decodedFrameTypes` already).
+  assert.match(swift, /default:\s*\n\s*\/\/ Unreachable past the guard/);
 });

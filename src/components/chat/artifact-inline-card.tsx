@@ -296,7 +296,6 @@ export function ArtifactInlineCard({
   onArtifactChanged?: (artifact: ClientArtifact) => void;
 }) {
   const Icon = ICONS[type] ?? FileCode2;
-  const cardLoopId = `artifact-card:${React.useId()}`;
   const rt = runtimeFor(type, language);
   const resolvedContent = content ?? "";
   const hasContent = resolvedContent.trim().length > 0;

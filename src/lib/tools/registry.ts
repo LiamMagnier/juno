@@ -45,4 +45,4 @@ export function junoToolSpec(id: string): ToolSpec | undefined {
 }
 
 /** The registry's ids in offer order. */
-export const JUNO_TOOL_IDS: readonly JunoToolId[] = JUNO_TOOL_SPECS.map((spec) => spec.id);
+export const JUNO_TOOL_IDS: readonly JunoToolId[] = JUNO_TOOL_SPECS.map((spec) => spec.id as JunoToolId);

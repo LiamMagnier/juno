@@ -286,7 +286,7 @@ const SEQUENCE: Array<{ phase: string; event: ClientActivityEvent }> = [
   { phase: "running", event: { ...F.running, id: "seq" } },
   {
     phase: "running, more output",
-    event: { ...F.running, id: "seq", call: { ...(F.running as unknown as { call: Record<string, unknown> }).call, progress: { seq: 7, lines: ["West     24410.75"], stdoutBytes: 640, stderrBytes: 0 } } } as ClientActivityEvent,
+    event: { ...F.running, id: "seq", call: { ...(F.running as unknown as { call: Record<string, unknown> }).call, progress: { seq: 7, lines: ["West     24410.75"], stdoutBytes: 640, stderrBytes: 0 } } } as unknown as ClientActivityEvent,
   },
   { phase: "succeeded", event: { ...F.succeeded, id: "seq" } },
 ];

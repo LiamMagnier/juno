@@ -12,9 +12,9 @@ export const UI_STATE_FIXTURES = [
     required: [
       /export function EmptyGreeting\(\)/,
       /<h1\b/,
-      /How can I help/,
-      // The V3 greeting: regular-weight serif, the name not set apart in italic.
-      /font-serif text-display font-normal/,
+      /What’s next/,
+      // The V3 gallery home scene: upright Newsreader, no italic, no entrance animation (D-027).
+      /font-serif/,
     ],
     /*
      * The greeting arrives still (V3 foundations: no entrance animation), so it

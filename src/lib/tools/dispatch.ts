@@ -31,10 +31,14 @@
 
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import {
+  BROKER_UNAVAILABLE_TEXT,
   CACHED_RESULT_NOTE,
   CANCELLED_BEFORE_RUN_TEXT,
   CANCELLED_WHILE_RUNNING_EFFECT_TEXT,
   CANCELLED_WHILE_RUNNING_TEXT,
+  DENIED_TEXT,
+  EXPIRED_TEXT,
+  blockedText,
   internalToolErrorText,
   invalidJsonText,
   oversizedResultText,
@@ -43,6 +47,8 @@ import {
   toolErrorText,
   unknownToolText,
 } from "@/lib/tools/dispatch.prompt";
+import { auditArgsForJunoTool } from "@/lib/tools/audit-args";
+import { withoutEnvelope } from "@/lib/tools/specs/shared";
 import {
   TOOL_PROGRESS_MAX_LINES,
   TOOL_PROGRESS_MAX_LINE_CHARS,
@@ -51,10 +57,12 @@ import {
   type ChatToolset,
   type ResolvedTool,
   type ToolCallInput,
+  type ToolContext,
   type ToolErrorCode,
   type ToolOutcome,
   type ToolOutcomeStatus,
   type ToolProgress,
+  type ToolSpec,
 } from "@/lib/tools/types";
 import {
   coercePortableArguments,
@@ -98,15 +106,40 @@ const ERROR_MESSAGE_CHARS = 2_000;
  */
 export const MAX_TOOL_RESULT_CHARS = 100_000;
 
+export type { BatchResult, ToolCallInput };
+
+export type BrokeredActionAuthorization =
+  | { kind: "authorized"; receiptId: string | null; riskClass?: string }
+  | { kind: "replay"; receiptId: string; result: string; failed: boolean }
+  | { kind: "refused"; receiptId: string | null; reason: string; status?: string };
+
+export interface ToolBatchPorts {
+  authorizeExternalAction?: (request: Record<string, unknown>) => Promise<BrokeredActionAuthorization>;
+  completeExternalAction?: (request: Record<string, unknown>) => Promise<unknown>;
+  recordToolInvocation?: (request: Record<string, unknown>) => Promise<string | null>;
+  settleToolInvocation?: (id: string | null, outcome?: Record<string, unknown>) => Promise<unknown>;
+  resolvedPolicy?: unknown;
+  [key: string]: unknown;
+}
+
 export interface ToolBatchContext {
   toolset: ChatToolset;
   /** Per turn: identical calls return the first outcome (SPEC §4.5). */
-  cache: Map<string, ToolOutcome>;
+  cache?: Map<string, ToolOutcome>;
   /** The next provider request is the forced tools-off one. */
   nextIsFinal?: boolean;
   /** Injected clock, for the progress rate limit in tests. */
   now?: () => number;
+  /** Unique call IDs issued across rounds in this turn (SPEC §4.1). */
+  seenCallIds?: Set<string>;
+  toolContext?: Partial<ToolContext> | Record<string, unknown>;
+  fees?: unknown;
+  ports?: ToolBatchPorts;
 }
+
+export type BatchContext = ToolBatchContext & {
+  ports: ToolBatchPorts;
+};
 
 /** A call after parse, resolve and validate: ready to run, or already answered. */
 type PreparedCall =
@@ -294,6 +327,7 @@ export async function* executeToolBatch(
   let completed = false;
 
   try {
+    ctx.cache ??= new Map();
     const prepared = calls.map((call, i): PreparedCall =>
       i < MAX_CALLS_PER_ROUND ? prepare(call, ctx.toolset) : { call, ok: false, code: "budget", text: tooManyCallsText(MAX_CALLS_PER_ROUND) },
     );
@@ -390,11 +424,12 @@ async function runCall(
   if (!entry.ok) return finish(failedOutcome(entry.code, entry.text));
   if (signal.aborted) return finish(failedOutcome("cancelled", CANCELLED_BEFORE_RUN_TEXT, "cancelled"));
 
+  const cache = (ctx.cache ??= new Map());
   // A duplicate still running in this batch finishes first; then the cache decides.
   if (entry.dedupeKey) {
     const earlier = inflight.get(entry.dedupeKey);
     if (earlier) await earlier;
-    const cached = ctx.cache.get(entry.dedupeKey);
+    const cached = cache.get(entry.dedupeKey);
     // The first call was authorised and ran; a repeat runs nothing, and the
     // model is told so (CACHED_RESULT_NOTE) rather than handed a stale answer
     // as a fresh one.
@@ -409,12 +444,35 @@ async function runCall(
     // A call that may change state (a write, or a run that shares a
     // workspace) makes every earlier answer stale: "list, create, list" must
     // list again, not replay the first list.
-    if (!(entry.tool.parallelSafe && entry.tool.risk === "read")) ctx.cache.clear();
-    if (entry.dedupeKey && outcome.status === "succeeded") ctx.cache.set(entry.dedupeKey, outcome);
+    if (!(entry.tool.parallelSafe && entry.tool.risk === "read")) cache.clear();
+    if (entry.dedupeKey && outcome.status === "succeeded") cache.set(entry.dedupeKey, outcome);
     return finish(outcome);
   } finally {
     if (entry.dedupeKey) inflight.delete(entry.dedupeKey);
     release();
+  }
+}
+
+function auditArgs(spec: ToolSpec, args: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return auditArgsForJunoTool(spec, args) as unknown as Record<string, unknown>;
+  } catch {
+    return { tool: spec.id, n: Object.keys(args).length };
+  }
+}
+
+export function refusalOutcome(status: string | undefined, reason: string): ToolOutcome {
+  switch (status) {
+    case "denied":
+      return { status: "denied", text: DENIED_TEXT, body: reason, error: { code: "denied" } };
+    case "expired":
+      return { status: "expired", text: EXPIRED_TEXT, body: reason, error: { code: "expired" } };
+    case "blocked":
+      return { status: "failed", text: blockedText(reason), body: reason, error: { code: "blocked" } };
+    case "superseded":
+      return { status: "cancelled", text: CANCELLED_BEFORE_RUN_TEXT, body: reason, error: { code: "cancelled" } };
+    default:
+      return { status: "failed", text: reason, body: reason, error: { code: "not_permitted" } };
   }
 }
 
@@ -453,9 +511,9 @@ async function execute(
     timer = setTimeout(() => controller.abort(new ToolTimeout()), tool.timeoutMs);
     timer.unref?.();
   };
-  const onApprovalRequest = (_approval: ClientActionApproval) => {
+  const onApprovalRequest = (approval: ClientActionApproval) => {
     if (settled) return;
-    channel.push({ type: "tool", phase: "status", server, name: call.name, callId: call.callId, status: "awaiting_approval" });
+    channel.push({ type: "tool", phase: "status", server, name: call.name, callId: call.callId, status: "awaiting_approval", approval });
   };
   const reportProgress = (progress: ToolProgress) => {
     if (settled || controller.signal.aborted) return;
@@ -465,7 +523,116 @@ async function execute(
     channel.push({ type: "tool", phase: "progress", server, name: call.name, callId: call.callId, progress: boundedProgress(progress) });
   };
 
+  const spec = tool.spec && (tool.spec.broker === "juno_runtime" || tool.spec.broker === "none") ? tool.spec : null;
+
   try {
+    if (spec) {
+      const context = (ctx.toolContext ?? {}) as Record<string, unknown>;
+      const brokered = spec.broker === "juno_runtime" && !context.private;
+
+      let auditId: string | null = null;
+      let receiptId: string | null = null;
+      if (brokered) {
+        if (!ctx.ports?.authorizeExternalAction) {
+          return failedOutcome("not_permitted", BROKER_UNAVAILABLE_TEXT);
+        }
+
+        if (ctx.ports?.recordToolInvocation) {
+          auditId = await ctx.ports.recordToolInvocation({
+            userId: context.userId ?? "",
+            conversationId: context.conversationId ?? null,
+            connectorId: "juno_runtime",
+            toolName: spec.id,
+            functionName: spec.id,
+            access: spec.risk === "read" ? "read" : "write",
+            args: auditArgs(spec, args),
+            derivedFromUntrusted: true,
+            status: "executed",
+          });
+        }
+
+        const authorization = await ctx.ports.authorizeExternalAction({
+          userId: context.userId ?? "",
+          surface: "chat",
+          sessionId: context.generationId ?? "",
+          conversationId: context.conversationId ?? null,
+          projectId: context.projectId ?? null,
+          connectorId: "juno_runtime",
+          connectorLabel: "Juno",
+          toolName: spec.id,
+          functionName: spec.id,
+          args,
+          callId: call.callId,
+          provenance: {
+            source: context.conversationId ? `conversation:${context.conversationId}` : `session:${context.generationId}`,
+            sourceKind: "model_tool_call",
+            derivedFromUntrusted: true,
+          },
+          signal: turn,
+          onApprovalRequest,
+          unattended: false,
+          resolvedPolicy: ctx.ports.resolvedPolicy,
+        });
+        if (authorization.kind === "refused") {
+          await ctx.ports.settleToolInvocation?.(auditId, {
+            status: authorization.status === "denied" ? "denied" : "failed",
+            error: authorization.reason,
+          });
+          if (turn.aborted) throw abortReason(turn);
+          return refusalOutcome(authorization.status, authorization.reason);
+        }
+        if (authorization.kind === "replay") {
+          await ctx.ports.settleToolInvocation?.(auditId, {
+            status: authorization.failed ? "failed" : "executed",
+            ...(authorization.failed ? { error: authorization.result } : {}),
+          });
+          const body = withoutEnvelope(authorization.result);
+          return authorization.failed
+            ? { status: "failed", text: authorization.result, body, error: { code: "tool_error" } }
+            : { status: "succeeded", text: authorization.result, body };
+        }
+        receiptId = authorization.receiptId;
+      }
+
+      onAuthorized();
+      let outcome: ToolOutcome | undefined;
+      try {
+        const outcomeOrExec = await raceSignal(
+          spec.execute(args, {
+            userId: String(context.userId ?? ""),
+            conversationId: (context.conversationId as string | null) ?? null,
+            projectId: (context.projectId as string | null) ?? null,
+            ...context,
+            callId: call.callId,
+            round: call.round,
+            signal: controller.signal,
+            onApprovalRequest,
+          } as ToolContext),
+          controller.signal,
+        );
+        outcome = "status" in outcomeOrExec && typeof outcomeOrExec.status === "string" ? outcomeOrExec : outcomeFromExecution(outcomeOrExec as unknown as ToolExecution);
+        if (outcome.durationMs === undefined && startedAt !== null) {
+          outcome = { ...outcome, durationMs: now() - startedAt };
+        }
+      } finally {
+        if (brokered) {
+          const ok = outcome?.status === "succeeded";
+          await ctx.ports.completeExternalAction?.({
+            userId: context.userId ?? "",
+            receiptId,
+            ok,
+            result: (outcome?.text ?? "").slice(0, 30_000),
+          });
+          await ctx.ports.settleToolInvocation?.(auditId, {
+            status: ok ? "executed" : "failed",
+            ...(ok ? {} : { error: outcome?.body }),
+            ...(outcome?.durationMs === undefined ? {} : { durationMs: outcome.durationMs }),
+          });
+        }
+      }
+      return outcome!;
+    }
+
     const exec = await raceSignal(
       ctx.toolset.execute(call.name, args, controller.signal, call.callId, {
         onApprovalRequest,

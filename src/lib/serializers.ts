@@ -29,6 +29,7 @@ import { coerceChatOrigin } from "@/lib/chat-origin";
 import { readToolDetail } from "@/lib/chat/tool-detail";
 import { readContextReceipt } from "@/lib/chat/context-tokens";
 import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
+// import { serializeActivity } from "@/lib/chat/run-record";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",

@@ -514,13 +514,14 @@ export class TurnStream {
     const counted = this.nextIndex(round);
     const index = Number.isInteger(ev.index) && (ev.index as number) >= 0 ? (ev.index as number) : counted;
 
+    const canonical: CanonicalToolId = (identity.canonical as CanonicalToolId) ?? "mcp";
     const record: ToolCallRecord = {
       v: 1,
       callId: ev.callId,
       ...(ev.providerCallId ? { providerCallId: ev.providerCallId } : {}),
-      tool: identity.canonical,
+      tool: canonical,
       origin: identity.origin === "connector" ? "connector" : "juno",
-      title: line(identity.title, 200) ?? FALLBACK_TOOL_TITLES[identity.canonical],
+      title: line(identity.title, 200) ?? FALLBACK_TOOL_TITLES[canonical],
       ...(identity.connectorId ? { connectorId: identity.connectorId } : {}),
       ...(identity.connectorLabel ? { connectorLabel: identity.connectorLabel } : {}),
       ...(identity.toolTitle ? { toolTitle: identity.toolTitle } : {}),
@@ -648,12 +649,16 @@ export class TurnStream {
     // hide that bug behind a plausible-looking entry.
     if (!row || isTerminalToolCallStatus(row.record.status)) return;
     const { record, entry } = row;
-    const status: ToolCallStatus = ev.status ?? (ev.ok ? "succeeded" : "failed");
+    const outcomeStatus = ev.status;
+    const status: ToolCallStatus =
+      outcomeStatus === "outcome_unknown"
+        ? "failed"
+        : (outcomeStatus as ToolCallStatus) ?? (ev.ok ? "succeeded" : "failed");
     if (typeof ev.args === "string") row.args ??= ev.args;
 
     record.status = status;
     record.endedAt = new Date(this.now()).toISOString();
-    const code = ev.error?.code ?? defaultErrorCode(status);
+    const code = outcomeStatus === "outcome_unknown" ? "outcome_unknown" : ev.error?.code ?? defaultErrorCode(status);
     if (code && status !== "succeeded") record.error = { code };
     else delete record.error;
     if (typeof ev.durationMs === "number" && Number.isFinite(ev.durationMs) && ev.durationMs >= 0) {

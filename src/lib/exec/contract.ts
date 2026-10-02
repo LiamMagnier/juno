@@ -96,10 +96,10 @@ export interface ExecTurnOptions {
 /** L1's ToolContext → the runtime's call context. */
 export function execContextFrom(ctx: ToolContext, options: ExecTurnOptions): ExecCallContext {
   return {
-    surface: ctx.surface,
+    surface: ctx.surface ?? "chat",
     userId: ctx.userId,
-    sessionId: ctx.sessionId,
-    callId: ctx.callId,
+    sessionId: ctx.sessionId ?? ctx.generationId ?? "session",
+    callId: ctx.callId ?? "call",
     conversationId: ctx.conversationId,
     projectId: ctx.projectId,
     workRunId: options.workRunId ?? null,
@@ -107,6 +107,6 @@ export function execContextFrom(ctx: ToolContext, options: ExecTurnOptions): Exe
     vision: options.vision,
     ...(options.lockdown !== undefined ? { lockdown: options.lockdown } : {}),
     skills: options.skills?.() ?? [],
-    onProgress: (progress) => ctx.reportProgress(toToolProgress(progress)),
+    onProgress: (progress) => ctx.reportProgress?.(toToolProgress(progress)),
   };
 }

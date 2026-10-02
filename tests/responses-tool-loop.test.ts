@@ -86,7 +86,7 @@ function fakeDispatch(outcomes: Record<string, Outcome>) {
   const finals: boolean[] = [];
   const dispatch: typeof executeToolBatch = async function* (calls, _signal, ctx) {
     batches.push([...calls]);
-    finals.push(ctx.nextIsFinal);
+    finals.push(Boolean(ctx.nextIsFinal));
     const results: BatchResult[] = [];
     for (const call of calls) {
       const outcome = outcomes[call.name] ?? { text: "ok" };
@@ -108,6 +108,7 @@ function fakeDispatch(outcomes: Record<string, Outcome>) {
         ...(call.providerCallId === undefined ? {} : { providerCallId: call.providerCallId }),
         text: outcome.text,
         isError: !!outcome.isError,
+        status: outcome.isError ? "failed" : "succeeded",
         images: outcome.images ?? [],
       });
     }

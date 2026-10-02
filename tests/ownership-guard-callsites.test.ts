@@ -55,6 +55,9 @@ const REVIEWED: Record<string, string> = {
   "scripts/encrypt-columns.ts|ScheduledTask.findMany|pageArgs(cursor, take, { id: true, prompt: true })":
     "Same unguarded backfill client.",
   "scripts/encrypt-columns.ts|ScheduledTask.update|{ id }": "Same unguarded backfill client.",
+  "src/lib/research/completion.ts|Conversation.updateMany|{ id: conversationId }":
+    "Called only inside touchConversation, which is invoked after conversationExists has already " +
+    "verified ownership of that id in the same transaction.",
 };
 
 const sites = scanOwnershipCallSites(ROOT, OWNER_COLUMN);

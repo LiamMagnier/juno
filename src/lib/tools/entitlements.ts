@@ -27,6 +27,12 @@
  */
 
 import type { ToolCallingVerdict } from "@/lib/model-tool-probe";
+import { canonicalToolId } from "@/lib/tools/aliases";
+import { PLANS } from "@/lib/plans";
+import { workspacePermits } from "@/lib/projects/workspace-config";
+import { toolCapabilitiesFor } from "@/lib/model-tools";
+import { roundBudgetFor } from "@/lib/llm/loop";
+import { JUNO_TOOL_IDS } from "@/lib/tools/registry";
 import {
   CHECK_RUN_TOOL_ID,
   READ_SKILL_FILE_TOOL_ID,
@@ -134,4 +140,154 @@ export function executionEntitlements(input: ExecutionEntitlementInput): Executi
   else codeExecution = "unavailable";
 
   return { granted, legacyCodeInterpreter, codeExecution, withheld };
+}
+
+// ── Turn tool entitlements (chat rework) ──────────────────────────────────
+
+export interface EntitlementInput {
+  plan: import("@prisma/client").Plan;
+  private: boolean;
+  lockdown: boolean;
+  approvalPolicy: import("@/lib/action-approval").ActionPermissionPolicy;
+  voice: boolean;
+  regenerate: boolean;
+  artifactEdit: boolean;
+  researchActive: boolean;
+  researchArmed: boolean;
+  webToggle: boolean;
+  features: import("@/lib/chat/client-features").ClientFeatureSet;
+  workspace: import("@/lib/projects/workspace-config").WorkspaceConfig;
+  skill: import("@/lib/chat/skills").ChatSkillApplication | null;
+  model: import("@/lib/models").ModelInfo;
+  hasFileAttachment: boolean;
+  hasInspectable: boolean;
+  sandboxConfigured: boolean;
+  keyedSearchEngine: boolean;
+  saved: { userMessageId: string | null; conversationKind: "chat" | "code" } | null;
+  taskTool: boolean;
+  effort?: import("@/types/chat").ReasoningEffort | null;
+  researchEntitled?: boolean;
+  connectorsRequested?: boolean;
+}
+
+export interface ChatToolPlan {
+  juno: import("@/lib/tools/types").JunoToolId[];
+  nativeSearch: boolean;
+  connectors: boolean;
+  suggestResearch: boolean;
+  roundBudget: number;
+  notices: import("@/types/run").RunNoticeCode[];
+  citationStyle: "numbered" | "links";
+}
+
+function skillToolNames(skill: import("@/lib/chat/skills").ChatSkillApplication | null): ReadonlySet<string> | null {
+  if (!skill) return null;
+  const requested = [...skill.resolved.tools, ...skill.resolved.withheld.tools];
+  if (requested.length === 0) return null;
+  return new Set(requested.map((t: string) => canonicalToolId(t)));
+}
+
+function derivedResearchEntitled(input: EntitlementInput): boolean {
+  return (
+    PLANS[input.plan].webSearch &&
+    input.plan !== "FREE" &&
+    !input.private &&
+    !input.lockdown &&
+    !input.voice &&
+    workspacePermits(input.workspace, "deepResearch")
+  );
+}
+
+export function chatToolEntitlements(input: EntitlementInput): ChatToolPlan {
+  const caps = toolCapabilitiesFor(input.model);
+  const roundBudget = roundBudgetFor(input.effort, input.voice);
+  const notices: import("@/types/run").RunNoticeCode[] = [];
+  if (input.lockdown && input.webToggle) notices.push("web_off_lockdown");
+  if (input.private && input.connectorsRequested) notices.push("private_tools_limited");
+
+  if (input.artifactEdit) {
+    return { juno: [], nativeSearch: false, connectors: false, suggestResearch: false, roundBudget, notices, citationStyle: "links" };
+  }
+
+  const functions = caps.supported && input.model.modality === "chat";
+  const blocked = input.lockdown || input.approvalPolicy === "block";
+  const paid = input.plan !== "FREE";
+  const skillNames = skillToolNames(input.skill);
+  const skillAllows = (name: string) => !skillNames || skillNames.has(name);
+  const webWorkspace = workspacePermits(input.workspace, "webSearch");
+  const web = input.webToggle && PLANS[input.plan].webSearch && !blocked && webWorkspace && !input.researchActive;
+
+  const minimalBlocksHosted = input.effort === "minimal" && !!caps.hostedSearchMinEffort;
+  const nativeSearch = web && caps.nativeSearch && !minimalBlocksHosted && skillAllows("web_search");
+
+  const attached = new Set<import("@/lib/tools/types").JunoToolId>();
+  if (functions) {
+    if (web && !nativeSearch && input.keyedSearchEngine && !input.voice && skillAllows("web_search")) {
+      attached.add("web_search");
+    }
+    if (web && skillAllows("web_fetch") && (!input.voice || caps.nativeSearch)) attached.add("web_fetch");
+
+    if (!input.private && !blocked) {
+      if (input.hasFileAttachment && skillAllows("read_document")) attached.add("read_document");
+      if (input.hasInspectable && input.model.vision && skillAllows("inspect_image")) attached.add("inspect_image");
+      if (
+        input.sandboxConfigured &&
+        paid &&
+        !input.voice &&
+        input.workspace.allowedTools === undefined &&
+        skillAllows("run_code")
+      ) {
+        attached.add("run_code");
+      }
+      if (input.saved && !input.voice && workspacePermits(input.workspace, "memoryRecall") && skillAllows("search_chats")) {
+        attached.add("search_chats");
+      }
+    }
+
+    if (!input.voice) {
+      if (skillAllows("current_time")) attached.add("current_time");
+      if (skillAllows("calculate")) attached.add("calculate");
+    }
+
+    if (
+      input.taskTool &&
+      paid &&
+      !input.private &&
+      !blocked &&
+      !input.voice &&
+      !input.regenerate &&
+      input.model.agenticTools &&
+      skillAllows("start_task")
+    ) {
+      attached.add("start_task");
+    }
+  }
+
+  const researchEntitled = input.researchEntitled ?? derivedResearchEntitled(input);
+  const suggestResearch =
+    functions &&
+    web &&
+    paid &&
+    !input.private &&
+    !input.voice &&
+    researchEntitled &&
+    !input.researchArmed &&
+    input.features.has("suggest_research") &&
+    workspacePermits(input.workspace, "deepResearch") &&
+    skillAllows("suggest_research");
+  if (suggestResearch) attached.add("suggest_research");
+
+  const connectors =
+    functions && paid && !input.private && !blocked && workspacePermits(input.workspace, "connectors");
+
+  const juno = JUNO_TOOL_IDS.filter((id: import("@/lib/tools/types").JunoToolId) => attached.has(id));
+  return {
+    juno,
+    nativeSearch,
+    connectors,
+    suggestResearch,
+    roundBudget,
+    notices,
+    citationStyle: input.features.has("citations") && attached.has("web_search") ? "numbered" : "links",
+  };
 }

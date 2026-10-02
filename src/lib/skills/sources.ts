@@ -34,6 +34,7 @@ import {
   type GithubSkillCandidate,
 } from "@/lib/skills/github";
 import { titleFromSkillName } from "@/lib/skills/skill-md";
+import { canonicalToolId } from "@/lib/tools/aliases";
 import {
   permissionExpansion,
   permissionSurfaceOf,
@@ -240,11 +241,16 @@ export function partitionTools(names: readonly string[]): { carried: string[]; d
   const carried: string[] = [];
   const dropped: string[] = [];
   for (const name of names) {
-    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) carried.push(name);
-    else dropped.push(name);
+    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) {
+      const canonical = canonicalToolId(name);
+      if (!carried.includes(canonical)) carried.push(canonical);
+    } else dropped.push(name);
   }
   return { carried, dropped };
 }
+
+/** Stored tool names as the current names, so an old name never reads as a change (INV-23). */
+const canonicalTools = (names: readonly string[]) => names.map(canonicalToolId);
 
 /**
  * A fingerprint of instructions as they were read from upstream.
@@ -376,7 +382,7 @@ export function upstreamChanged(installed: InstalledSourceSkill, candidate: Gith
   return (
     instructionsMoved ||
     upstreamFilesChanged(installed, candidate) ||
-    !sameList(installed.requestedTools, partitionTools(candidate.skill.allowedTools).carried)
+    !sameList(canonicalTools(installed.requestedTools), partitionTools(candidate.skill.allowedTools).carried)
   );
 }
 
@@ -421,7 +427,7 @@ export function upstreamWidensPermissions(installed: InstalledSourceSkill, candi
   const next = githubSkillContract(candidate, installed.contract);
   return (
     permissionExpansion(
-      permissionSurfaceOf({ requestedTools: installed.requestedTools, contract: installed.contract }),
+      permissionSurfaceOf({ requestedTools: canonicalTools(installed.requestedTools), contract: installed.contract }),
       permissionSurfaceOf({ requestedTools: next.requestedTools, contract: next.contract })
     ).length > 0
   );

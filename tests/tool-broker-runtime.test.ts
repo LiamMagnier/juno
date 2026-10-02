@@ -155,7 +155,7 @@ function harness(broker: Broker, opts: { resolvedPolicy?: Snapshot | null } = {}
     nextIsFinal: false,
     seenCallIds: new Set(),
     ports: {
-      authorizeExternalAction: broker.port as NonNullable<BatchContext["ports"]["authorizeExternalAction"]>,
+      authorizeExternalAction: broker.port as unknown as NonNullable<BatchContext["ports"]["authorizeExternalAction"]>,
       completeExternalAction: async () => {},
       recordToolInvocation: async () => null,
       settleToolInvocation: async () => {},
@@ -242,7 +242,7 @@ test("refusals map to denied and expired records", async () => {
     // A Juno tool whose rule is not a read would ask; exercise the mapping with an unknown juno_runtime tool name.
     const port = broker.port;
     ctx.ports.authorizeExternalAction = (async (request: AuthorizeActionInput) =>
-      port({ ...request, toolName: "browser_agent" })) as NonNullable<BatchContext["ports"]["authorizeExternalAction"]>;
+      port({ ...request, toolName: "browser_agent" })) as unknown as NonNullable<BatchContext["ports"]["authorizeExternalAction"]>;
     const { events, results } = await run(ctx, [{ name: "web_fetch", callId: "x", round: 0, index: 0, argsText: '{"url":"https://a.example/"}' }]);
     assert.equal(results[0].errorCode, code);
     assert.equal(awaited(events), 1);

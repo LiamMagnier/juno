@@ -25,10 +25,6 @@
  * account as well as session: a chat session id is a client-chosen generation id.
  */
 
-import "server-only";
-
-import { loadSkillBundleTar } from "@/lib/skills/bundle-store";
-
 import type { SkillMount } from "@/lib/exec/types";
 
 export type { SkillMount };
@@ -47,7 +43,8 @@ export function skillMountFor(input: {
   load?: (columns: { bundleKey: string; bundleDigest: string }) => Promise<Uint8Array>;
 }): SkillMount {
   if (!MOUNT_SLUG.test(input.slug)) throw new Error("invalid skill mount name");
-  const load = input.load ?? loadSkillBundleTar;
+  const load =
+    input.load ?? ((cols: { bundleKey: string; bundleDigest: string }) => import("@/lib/skills/bundle-store").then((m) => m.loadSkillBundleTar(cols)));
   let pending: Promise<Uint8Array> | null = null;
   return {
     slug: input.slug,

@@ -133,6 +133,7 @@ export function legacyToolRunner(toolset: McpToolset, loop: LoopController): Too
         ...(call.providerCallId === undefined ? {} : { providerCallId: call.providerCallId }),
         text,
         isError: true,
+        status: code === "cancelled" ? "cancelled" : "failed",
         images: [],
         errorCode: code,
       });
@@ -178,6 +179,7 @@ export function legacyToolRunner(toolset: McpToolset, loop: LoopController): Too
         ...(call.providerCallId === undefined ? {} : { providerCallId: call.providerCallId }),
         text: exec.text,
         isError: !exec.ok,
+        status,
         images: exec.images ?? [],
       });
     }

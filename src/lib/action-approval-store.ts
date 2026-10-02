@@ -15,8 +15,7 @@ import {
   actionPreview,
   actionPreviewDetail,
   actionReceiptDigest,
-  classifyExternalAction,
-  decideActionPolicy,
+  decideAuthorization,
   mayCreateStandingApproval,
   normalizedActionArgs,
   type ActionApprovalDecision,
@@ -26,6 +25,7 @@ import {
   type ActionRiskClass,
   type ClientActionApproval,
 } from "@/lib/action-approval";
+import { canonicalToolId, toolIdAliasesOf } from "@/lib/tools/aliases";
 import type { ToolAccessHints } from "@/lib/tool-access";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -186,12 +186,13 @@ export interface AuthorizeActionInput {
    * and why it did not happen.
    */
   unattended?: boolean;
+  resolvedPolicy?: ResolvedActionPolicy | null;
 }
 
 export type ActionAuthorization =
   | { kind: "authorized"; receiptId: string | null; riskClass: ActionRiskClass }
   | { kind: "replay"; receiptId: string; result: string; failed: boolean }
-  | { kind: "refused"; receiptId: string | null; reason: string };
+  | { kind: "refused"; receiptId: string | null; reason: string; status?: ActionReceiptStatus };
 
 async function wait(ms: number, signal?: AbortSignal): Promise<boolean> {
   if (signal?.aborted) return false;
@@ -217,12 +218,14 @@ async function findStandingGrant(input: {
   riskClass: ActionRiskClass;
 }): Promise<boolean> {
   if (!mayCreateStandingApproval(input.riskClass)) return false;
+  const toolName = input.toolName;
+  const names = input.connectorId === "juno_runtime" ? toolIdAliasesOf(canonicalToolId(toolName)) : [toolName];
   return !!(await prisma.actionApprovalGrant.findFirst({
     where: {
       userId: input.userId,
       connectorId: input.connectorId,
       scopeKey: input.scopeKey,
-      toolName: input.toolName,
+      toolName: names.length === 1 ? names[0] : { in: names },
       maxRiskClass: "reversible_write",
       revokedAt: null,
     },
@@ -402,32 +405,22 @@ async function waitForDecision(input: {
 }
 
 export async function authorizeExternalAction(request: AuthorizeActionInput): Promise<ActionAuthorization> {
-  const classification = classifyExternalAction({
-    connectorId: request.connectorId,
-    toolName: request.toolName,
-    annotations: request.annotations,
-    args: request.args,
-  });
-  const policy = await resolveActionPolicy(request);
-  const hasStandingApproval = await findStandingGrant({
-    userId: request.userId,
-    connectorId: request.connectorId,
-    scopeKey: policy.scopeKey,
-    toolName: request.toolName,
-    riskClass: classification.riskClass,
-  });
-  const outcome = decideActionPolicy({
-    policy: policy.policy,
-    riskClass: classification.riskClass,
-    hasStandingApproval,
-    lockdown: policy.lockdown,
-    connectorBlocked: policy.connectorBlocked,
+  const { classification, policy, outcome, receiptless } = await decideAuthorization(request, {
+    resolvePolicy: () => resolveActionPolicy(request),
+    findStandingGrant: (riskClass, resolvedPolicy) =>
+      findStandingGrant({
+        userId: request.userId,
+        connectorId: request.connectorId,
+        scopeKey: resolvedPolicy.scopeKey,
+        toolName: request.toolName,
+        riskClass,
+      }),
   });
 
   // Reads need no receipt unless the user deliberately chose Always ask. Every
   // write or unknown call receives one even when an explicit policy auto-allows
   // it, so the audit can still name the policy that admitted it.
-  if (classification.riskClass === "read_only" && outcome === "allow") {
+  if (receiptless) {
     return { kind: "authorized", receiptId: null, riskClass: classification.riskClass };
   }
 
@@ -461,7 +454,7 @@ export async function authorizeExternalAction(request: AuthorizeActionInput): Pr
     };
   }
   if (["denied", "expired", "superseded", "blocked"].includes(initial.status)) {
-    return { kind: "refused", receiptId: initial.id, reason: initial.executionResult ?? `Action ${initial.status}.` };
+    return { kind: "refused", receiptId: initial.id, reason: initial.executionResult ?? `Action ${initial.status}.`, status: statusValue(initial.status) };
   }
 
   let decided = initial;
@@ -470,7 +463,7 @@ export async function authorizeExternalAction(request: AuthorizeActionInput): Pr
     decided = await waitForDecision({ userId: request.userId, receiptId: initial.id, signal: request.signal });
   }
   if (decided.status !== "allowed") {
-    return { kind: "refused", receiptId: decided.id, reason: decided.executionResult ?? `Action ${decided.status}.` };
+    return { kind: "refused", receiptId: decided.id, reason: decided.executionResult ?? `Action ${decided.status}.`, status: statusValue(decided.status) };
   }
 
   // Re-resolve current policy immediately before consumption. Any policy

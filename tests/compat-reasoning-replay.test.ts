@@ -138,7 +138,7 @@ test("end to end: a DeepSeek tool round replays the thinking it streamed", async
   };
   const dispatch: typeof executeToolBatch = async function* (calls) {
     yield* [];
-    return calls.map((c): BatchResult => ({ callId: c.callId, name: c.name, providerCallId: c.providerCallId, text: "42", isError: false, images: [] }));
+    return calls.map((c): BatchResult => ({ callId: c.callId, name: c.name, providerCallId: c.providerCallId, text: "42", isError: false, status: "succeeded", images: [] }));
   };
   const req: AdapterRequest = {
     model: model("deepseek:deepseek-v4-pro"),

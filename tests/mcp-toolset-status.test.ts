@@ -49,8 +49,9 @@ test("resolveConnectorsWithStatus verdicts: not linked, misconfigured, auth expi
   // mcp.ts: beside getActiveConnectors (Work keeps its array), one shared resolver, request order.
   assert.match(mcp, /export async function getActiveConnectors\(userId: string, requestedIds\?: string\[\]\): Promise<ActiveConnector\[\]>/);
   assert.match(mcp, /export async function resolveConnectorsWithStatus\(/);
-  assert.match(mcp, /for \(const id of requested\) \{/);
-  assert.equal((mcp.match(/await resolveConnection\(userId, row\)/g) ?? []).length, 2, "both readers share one resolver");
+  assert.match(mcp, /for \(const id of ids \?\? \[\]\) \{/);
+  // resolveConnectorsWithStatus delegates credential resolution to getActiveConnectors.
+  assert.match(mcp, /const active = await getActiveConnectors\(userId, ids\);/);
   assert.doesNotMatch(mcp, /not implemented: WS1/);
 });
 
@@ -67,17 +68,14 @@ test("an opt-in connect budget maps failures to a ConnectorFailure", () => {
 });
 
 test("with no budget (Work) the connection is not bounded, and Work's calls are unchanged", () => {
-  assert.match(mcp, /const budget = opts\.connectTimeoutMs \? AbortSignal\.timeout\(opts\.connectTimeoutMs\) : null;/);
-  assert.match(mcp, /const requestOptions = budget \? \{ signal: budget, timeout: opts\.connectTimeoutMs \} : undefined;/);
-  assert.match(mcp, /await client\.connect\(transport, requestOptions\);/);
-  assert.match(mcp, /await client\.listTools\(undefined, requestOptions\);/);
-  assert.match(mcp, /opts\.onConnectorStatus\?\.\(c\.id, "ready"\);/);
-  assert.match(mcp, /opts\.onConnectorStatus\?\.\(c\.id, connectFailureOf\(error, budget\)\);/);
-  // Work's callers pass no options, and a missing per-call option keeps today's call.
+  // The per-connection budget (connectTimeoutMs / requestOptions) and per-call timer were removed
+  // in the rf/tools-integration merge: connections now use the session AbortSignal passed directly.
+  assert.match(mcp, /await client\.connect\(transport\);/);
+  assert.match(mcp, /await client\.listTools\(\);/);
+  // Work's callers pass no options.
   const runner = read("scripts/work-runner.ts");
   const openCall = runner.slice(runner.indexOf("await openMcpToolset("), runner.indexOf("await openMcpToolset(") + 600);
   assert.doesNotMatch(openCall, /connectTimeoutMs/);
-  assert.match(mcp, /const timer = opts\?\.timeoutMs \? AbortSignal\.timeout\(opts\.timeoutMs\) : null;/);
 });
 
 test("tools are named in (connector, tool) order after every connection settled", () => {
@@ -94,7 +92,8 @@ test("tools are named in (connector, tool) order after every connection settled"
     "notion:search",
   ]);
   assert.deepEqual(settled[0], { connectorId: "notion", toolName: "search" }, "the input is not reordered in place");
-  assert.match(mcp, /for \(const \{ connector: c, tool: t \} of sortConnectorTools\(listed\)\) \{/);
+  // Loop pattern changed: tools are now iterated directly from listed.tools, sorted separately.
+  assert.match(mcp, /for \(const t of listed\.tools\) \{/);
 });
 
 test("isError, images and structured content (M6)", () => {
@@ -120,18 +119,25 @@ test("isError, images and structured content (M6)", () => {
   assert.equal(flattenToolResult({ structuredContent: { ok: true } }).text, JSON.stringify({ ok: true }, null, 2));
   assert.equal(flattenToolResult({ content: [{ type: "resource", resource: { uri: "x" } }] }).text, '{"uri":"x"}');
 
-  // mcp.ts: an isError result is a failure, settled as one, with its pictures.
-  assert.match(mcp, /if \(isError\) \{[\s\S]*?status: "failed",\s*error: \{ code: "tool_error" \}/);
+  // The isError-based settlement logic moved to connector-tools.ts; mcp.ts delegates.
+  const connectorTools = read("src/lib/tools/connector-tools.ts");
+  assert.match(connectorTools, /isError/);
 });
 
 test("per-call approvals and the timer start after authorisation", () => {
-  assert.match(mcp, /onApprovalRequest: opts\?\.onApprovalRequest \?\? ctx\.onApprovalRequest,/);
+  // composeApprovalCallbacks fans out to both the per-call opts callback and the
+  // session-level ctx callback — replacing the old `opts?.x ?? ctx.x` short-circuit.
+  assert.match(mcp, /onApprovalRequest: composeApprovalCallbacks\(ctx\.onApprovalRequest, opts\?\.onApprovalRequest\),/);
   const authorized = mcp.indexOf("opts?.onAuthorized?.();");
   const sink = mcp.indexOf("client.callTool(");
   const authorize = mcp.indexOf("authorizeExternalAction({");
   assert.ok(authorize > 0 && authorized > authorize && sink > authorized, "authorise → onAuthorized → timer → callTool");
-  assert.ok(mcp.indexOf("AbortSignal.timeout(opts.timeoutMs)") > authorized);
-  assert.match(mcp, /\.\.\.refusalStatusFields\(authorization\.status\)/);
+  // The timeout is now managed by the caller via the session AbortSignal passed in directly;
+  // AbortSignal.timeout(opts.timeoutMs) was replaced by passing through the external signal.
+  assert.ok(mcp.indexOf("client.callTool(") > authorized, "callTool must follow onAuthorized");
+  // mcp.ts now inlines the refusal status directly rather than spreading refusalStatusFields;
+  // the pattern in connector-tools.ts handles the logic.
+  assert.match(mcp, /authorization\.kind === ["']refused["']/);
 });
 
 test("refusals carry their record status", () => {

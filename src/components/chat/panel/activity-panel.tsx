@@ -19,6 +19,8 @@ import {
   hasDetails,
   isActivityTabId,
   panelHeaderModel,
+  panelLoopClaim,
+  panelLoopId,
   panelLoopItemKey,
   researchFactOf,
   resolveActivityTab,
@@ -161,6 +163,15 @@ export const ActivityPanel = React.memo(function ActivityPanel({
     [view, phase, message]
   );
   const loopKey = React.useMemo(() => panelLoopItemKey(view, live), [view, live]);
+  const loopId = React.useMemo(() => panelLoopId(renderKey), [renderKey]);
+  const claim = React.useMemo(() => panelLoopClaim(renderKey, loopKey), [renderKey, loopKey]);
+  React.useEffect(() => {
+    if (!claim) return;
+    return ports.claimLoop(claim.id, claim.priority);
+  }, [ports, claim]);
+  const panelLoopOwner = ports.useLoopOwner(loopId);
+  const itemLoopOwner = ports.useLoopOwner(loopKey ? `panel:${loopKey}` : "");
+  const loopOwner = panelLoopOwner || itemLoopOwner;
 
   useRightColumnChrome({
     label: PANEL_COPY.activity,
@@ -182,6 +193,8 @@ export const ActivityPanel = React.memo(function ActivityPanel({
           message={message}
           live={live}
           loopKey={loopKey}
+          loopId={loopId}
+          loopOwner={loopOwner}
           focusCallId={focusCallId}
           seedDraft={seedDraft}
           coversChat={coversChat}

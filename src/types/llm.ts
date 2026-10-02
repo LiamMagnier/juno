@@ -2,13 +2,37 @@ import type { Attachment, Role } from "@prisma/client";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ChatFinishReason, ClientSource } from "@/types/chat";
 import type { ToolErrorCode, ToolOutcomeStatus, ToolProgress, ToolRunRecord } from "@/lib/tools/types";
+import type {
+  ChatSourceOrigin,
+  ToolFigure,
+  ToolPresentArgs,
+  ToolWebDetail,
+} from "@/types/run";
 
 /** A persisted message reduced to what model adapters need. */
-export type MessageForModel = { role: Role; content: string; attachments: Attachment[] };
+export type MessageForModel = {
+  role: Role;
+  content: string;
+  attachments: Attachment[];
+  /** ASSISTANT rows only: the turn's reasoning text, for the compat labs that
+   *  must replay it on later tool turns (DeepSeek, MiMo, Kimi; SPEC §5.4). */
+  reasoning?: string | null;
+  /** ASSISTANT rows only: the model that wrote the row, so a replay rule can
+   *  tell its own lab's turns from a foreign one's. */
+  model?: string | null;
+};
 
 /** Events yielded by a provider stream. */
 export type LlmEvent =
-  | { type: "text"; text: string }
+  | {
+      type: "text";
+      text: string;
+      /** The model step this text belongs to: 0-based, +1 every time the model
+       *  resumes after tool results, whoever ran the tools. */
+      round?: number;
+      /** OpenAI Responses only: the message item's declared phase. */
+      phase?: "commentary" | "answer";
+    }
   /**
    * Visible chain-of-thought / thinking.
    *
@@ -24,8 +48,21 @@ export type LlmEvent =
    * "this provider has no steps" a fact carried by the pipeline rather than a
    * guess made by the UI.
    */
-  | { type: "reasoning"; text: string; part?: number }
-  | { type: "sources"; sources: ClientSource[] }
+  | { type: "reasoning"; text: string; part?: number; round?: number }
+  | {
+      type: "sources";
+      sources: ClientSource[];
+      /** Where they came from; drives the provenance ledger and is persisted on each source. */
+      origin?: ChatSourceOrigin;
+    }
+  /**
+   * A model step ended. `tools` counts the CLIENT tool calls (Juno, connector,
+   * native) that ended the request — 0 when the step ended with the answer, a
+   * stop, or a provider server-tool call inside the response. `serverTools`
+   * counts provider server-tool calls in this step. `final` = this step's
+   * request was the tools-off final request.
+   */
+  | { type: "round_end"; round: number; tools: number; serverTools: number; final: boolean; stop: string | null }
   /**
    * One connector tool call, in two acts.
    *
@@ -88,11 +125,14 @@ export type LlmEvent =
   | {
       type: "tool";
       phase: "status";
-      server: string;
-      name: string;
+      server?: string;
+      name?: string;
       callId: string;
       status: "queued" | "awaiting_approval" | "running";
+      approval?: ClientActionApproval;
       timeoutMs?: number;
+      present?: ToolPresentArgs;
+      argsText?: string;
     }
   /**
    * A running call's latest output (design §6.4): the last few lines and byte
@@ -102,8 +142,8 @@ export type LlmEvent =
   | {
       type: "tool";
       phase: "progress";
-      server: string;
-      name: string;
+      server?: string;
+      name?: string;
       callId: string;
       progress: ToolProgress;
     }
@@ -139,10 +179,30 @@ export type LlmEvent =
       /** The typed outcome. `ok` stays and equals `status === "succeeded"`. */
       status?: ToolOutcomeStatus;
       error?: { code: ToolErrorCode };
+      figure?: ToolFigure;
+      web?: ToolWebDetail;
       /** Execution tools: the run behind the call. */
       run?: ToolRunRecord;
       /** Served from the turn's duplicate cache: nothing ran a second time. */
       cached?: boolean;
+      /** Juno's own fee for this call in micro-USD; 0 or absent = tokens only. */
+      feeMicroUsd?: number;
+    }
+  /** A provider-run (server-side) tool: Anthropic web_search, OpenAI/xAI hosted search, xAI x_search. */
+  | {
+      type: "server_tool";
+      phase: "call" | "result";
+      tool: "provider_web_search" | "provider_x_search";
+      /** The provider's id (srvtoolu_…, ws_…) or `ps_${round}_${n}`. */
+      callId: string;
+      round: number;
+      /** call: the query as streamed. */
+      query?: string;
+      /** result: how many results came back. */
+      results?: number;
+      /** result */
+      ok?: boolean;
+      web?: ToolWebDetail;
     }
   /**
    * A connector action is waiting for the person to answer.
@@ -183,6 +243,8 @@ export type LlmEvent =
        *  honored, false = it fell back to (or ran at) standard speed. Lets the
        *  route bill the real rate even when a fast request degrades. */
       fast?: boolean;
+      round?: number;
+      groundingQueries?: number;
     }
   | {
       type: "finish";

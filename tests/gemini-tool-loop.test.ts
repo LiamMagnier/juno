@@ -156,9 +156,10 @@ function fakeRunner(answerFor: (call: ToolCallInput) => Partial<BatchResult> = (
         ...(call.providerCallId ? { providerCallId: call.providerCallId } : {}),
         text: wrapUntrusted("GitHub", `body of ${call.name}`),
         isError: false,
+        status: "succeeded",
         images: [],
         ...answerFor(call),
-      });
+      } as BatchResult);
     }
     const lastResult = results.at(-1);
     if (nextIsFinal && lastResult) lastResult.text = `${lastResult.text}\n\n${FINAL_ROUND_NOTE}`;
@@ -524,6 +525,7 @@ test("pictures ride in the function response on Gemini 3 and in a separate turn 
     providerCallId: "fc-1",
     text: "A chart.",
     isError: false,
+    status: "succeeded",
     images: [{ mimeType: "image/png", base64: "AAAA" }],
   };
   const three = geminiToolResponses([call], [result], { vision: true, gemini3: true });

@@ -132,6 +132,7 @@ export function probeToolset(opts: { image?: boolean } = {}): ChatToolset & { ca
         images: [{ mimeType: "image/png", base64: solidPng(64, 64, [220, 20, 20]).toString("base64"), label: "swatch" }],
       };
     },
+    connectors: [],
     close: async () => {},
   };
 }

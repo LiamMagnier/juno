@@ -98,7 +98,6 @@ const registry = new Map();
   const flatten = (path, value) => {
     if (typeof value === "string") {
       registry.set(path, value);
-      add(value);
     } else if (value && typeof value === "object") {
       for (const [key, child] of Object.entries(value)) flatten(`${path}.${key}`, child);
     }
@@ -232,7 +231,7 @@ function collectNode(strings, root) {
   // catalogued as one: {`${PRODUCT_NAME} can make mistakes.`}.
   if (ts.isTemplateExpression(node) && isDirectJsxChildExpression(node)) {
     const value = staticText(node);
-    if (value) add(value);
+    if (value) add1(value);
   }
 
   ts.forEachChild(node, visit);
@@ -252,6 +251,11 @@ export function collectFromSource(content, path, strings = new Set()) {
 /** Every UI string under `dir` (`.ts`/`.tsx`, recursively), skipping `skip` paths. */
 export function collectCatalogStrings(dir, { skip = [] } = {}) {
   const strings = new Set();
+  if (dir === sourceRoot) {
+    for (const value of registry.values()) {
+      add(strings, value);
+    }
+  }
   const walk = (current) => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const path = join(current, entry.name);

@@ -983,7 +983,7 @@ export function AppSidebar({
                 className={cn(
                   "jicon-trigger shrink-0 coarse:size-11",
                   collapsed ? "size-11" : "size-8",
-                  inbox.count > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <SidebarMotionIcon kind="notifications" className="size-4" />

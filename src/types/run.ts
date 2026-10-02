@@ -90,7 +90,7 @@ export const TOOL_ERROR_CODES = [
   "timeout", "invalid_args", "tool_error", "denied", "expired", "blocked", "not_permitted",
   "unavailable", "cancelled", "rate_limited", "budget", "unknown_tool", "no_results",
   "provider_error", "url_not_in_prior_context", "url_not_allowed", "url_not_accessible",
-  "url_too_long", "unsupported_content_type", "too_large", "needs_browser",
+  "url_too_long", "unsupported_content_type", "too_large", "needs_browser", "outcome_unknown",
 ] as const;
 export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];
 

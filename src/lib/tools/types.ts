@@ -24,8 +24,25 @@
  * at runtime: the dispatcher, the adapters' loops and their tests import it.
  */
 
+import type { Plan } from "@prisma/client";
+
 import type { ClientActionApproval } from "@/lib/action-approval";
-import type { McpToolset, ToolResultImage } from "@/lib/mcp";
+import type { ConversationAttachment } from "@/lib/agent/attachment-match";
+import type { SourceRegistry } from "@/lib/chat/source-registry";
+import type { McpFunctionTool, McpToolset, ToolExecution, ToolResultImage } from "@/lib/mcp";
+import type { ToolAccess } from "@/lib/tool-access";
+import type { TurnTaint } from "@/lib/web/taint";
+import type { LazyUrlLedger, PrivateSpanSet, TurnWebLimits } from "@/lib/web/types";
+import type { ClientSource } from "@/types/chat";
+import type {
+  CanonicalToolId,
+  ConnectorFailure,
+  RunNotice,
+  ToolErrorCode as RunToolErrorCode,
+  ToolFigure,
+  ToolPresentArgs,
+  ToolWebDetail,
+} from "@/types/run";
 
 // ── Identity ────────────────────────────────────────────────────────────────
 
@@ -56,6 +73,7 @@ export const EXECUTION_TOOL_IDS: readonly string[] = Object.freeze([
 /** Old tool ids still found in stored skill grants, activity rows and native builds. */
 export const TOOL_ID_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   code_interpreter: RUN_CODE_TOOL_ID,
+  browser_agent: "web_fetch",
 });
 
 /** The alias target, or the id unchanged. */
@@ -67,6 +85,12 @@ export function canonicalToolId(id: string): string {
 
 /** Server-side risk vocabulary. Only `ActionRiskClass` ever reaches the wire. */
 export type ToolRisk = "read" | "write" | "external" | "destructive";
+
+export type ToolIconKind =
+  | "search" | "globe" | "document" | "image" | "code" | "chats" | "clock" | "calculator"
+  | "task" | "research" | "connector";
+
+export type JunoToolId = Exclude<CanonicalToolId, "provider_web_search" | "provider_x_search" | "mcp">;
 
 /** The portable schema subset every provider accepts untranslated (SPEC DECISIONS T2). */
 export type PortableSchema = {
@@ -154,20 +178,7 @@ export function portableSchemaProblem(schema: unknown, path = "input"): string |
 export type ToolOutcomeStatus = "succeeded" | "failed" | "denied" | "expired" | "cancelled" | "outcome_unknown";
 
 /** Why a call did not succeed. The model reads the text; the UI reads the code. */
-export type ToolErrorCode =
-  | "invalid_args"
-  | "unknown_tool"
-  | "timeout"
-  | "cancelled"
-  | "tool_error"
-  | "denied"
-  | "expired"
-  | "blocked"
-  | "not_permitted"
-  | "unavailable"
-  | "rate_limited"
-  | "budget"
-  | "outcome_unknown";
+export type ToolErrorCode = RunToolErrorCode | "outcome_unknown";
 
 /** Where an execution ran (design §6.1). Named on every run, so a hosted run never implies the user's machine. */
 export type ToolExecutionContext = "hosted_sandbox" | "agent_computer" | "task_container" | "local_host";
@@ -221,8 +232,12 @@ export interface ToolOutcome {
   /** Panel-facing: the same content without the envelope. */
   body: string;
   images?: readonly ToolResultImage[];
+  sources?: ClientSource[];
+  figure?: ToolFigure;
+  web?: ToolWebDetail;
   error?: { code: ToolErrorCode };
   durationMs?: number;
+  feeMicroUsd?: number;
   /** Execution tools only. */
   run?: ToolRunRecord;
 }
@@ -232,18 +247,30 @@ export interface ToolOutcome {
 export interface ToolContext {
   userId: string;
   /** Which product surface is acting. Recorded on receipts and runs. */
-  surface: "chat" | "work" | "voice";
+  surface?: "chat" | "work" | "voice";
   /** The chat generation id (or Work run id). With `callId` it is the replay key. */
-  sessionId: string;
+  sessionId?: string;
   conversationId: string | null;
   projectId: string | null;
+  generationId?: string;
   /** The stable Alevr call id (`ToolCallInput.callId`). */
-  callId: string;
-  round: number;
+  callId?: string;
+  round?: number;
   /** The turn's abort and the per-tool timeout, combined. */
   signal: AbortSignal;
+  private?: boolean;
+  privateSpans?: PrivateSpanSet | readonly string[];
+  plan?: Plan | string;
+  locale?: string;
+  timeZone?: string;
+  citationsNumbered?: boolean;
+  sources?: SourceRegistry;
+  ledger?: LazyUrlLedger | null;
+  taint?: TurnTaint;
+  limits?: TurnWebLimits;
+  attachments?: () => Promise<ConversationAttachment[]>;
   /** Forward a running call's latest output; rate-limited by the dispatcher. */
-  reportProgress(progress: ToolProgress): void;
+  reportProgress?(progress: ToolProgress): void;
   /** Per-call approval callback, for a spec that asks a person itself. */
   onApprovalRequest?: (approval: ClientActionApproval) => void;
 }
@@ -265,15 +292,17 @@ export interface ToolSpec<A extends Record<string, unknown> = Record<string, unk
   parallelSafe: boolean;
   /** Bound on one execution, excluding any approval wait. */
   timeoutMs: number;
+  icon?: ToolIconKind;
   /**
    * How the call is authorised. `juno_runtime`: the runtime asks the approval
    * broker before `execute` (exact rules in `action-approval.ts`). `none`: pure,
    * never brokered — allowed for a `read` only; any other risk is brokered
    * whatever it declares. A spec never authorises itself.
    */
-  broker: "juno_runtime" | "none";
+  broker?: "juno_runtime" | "none" | "self";
   /** Identical calls in one turn return the first outcome. */
-  dedupe: boolean;
+  dedupe?: boolean;
+  present?(args: A): ToolPresentArgs;
   execute(args: A, ctx: ToolContext): Promise<ToolOutcome>;
 }
 
@@ -304,13 +333,19 @@ export function defineTool<A extends Record<string, unknown>>(spec: ToolSpec<A>)
 export interface ResolvedTool {
   /** Function name sent to the provider. */
   name: string;
-  origin: "alevr" | "connector" | "native";
+  origin: "alevr" | "connector" | "native" | "juno";
+  canonical?: CanonicalToolId | string;
   title: string;
   risk: ToolRisk;
   parallelSafe: boolean;
   /** Started only once the call is authorised; never covers an approval wait. */
   timeoutMs: number;
   dedupe: boolean;
+  spec?: ToolSpec;
+  connectorId?: string;
+  connectorLabel?: string;
+  toolTitle?: string;
+  present?(args: Record<string, unknown>): ToolPresentArgs;
   /** Alevr tools: validated strictly (required, primitive types, enum, unknown keys refused). */
   input?: PortableSchema;
   /** Connector and native tools: their own schema, checked shallowly (required, primitive types). */
@@ -339,10 +374,35 @@ export interface ToolExecuteOptions {
   round?: number;
 }
 
+/**
+ * A tool the chat route builds for one turn and runs itself.
+ *
+ * Not a registry tool, and deliberately so. A native tool is a closure over
+ * the turn it belongs to (the account, the conversation, the user message it
+ * answers) and decides for itself when a person has to be asked. `start_task`
+ * (src/lib/chat/task-tool.ts) is the one that exists. Moved here from
+ * `src/lib/llm.ts`, which is `server-only` and re-exports it.
+ */
+export interface NativeChatTool {
+  tool: McpFunctionTool;
+  /** The name the activity row and the thought-process panel show for it. */
+  label: string;
+  access: ToolAccess;
+  execute(args: Record<string, unknown>, signal?: AbortSignal, opts?: ToolExecuteOptions): Promise<ToolExecution>;
+}
+
 /** The toolset a turn runs with: the provider-facing tools plus what the dispatcher needs to know. */
 export interface ChatToolset extends McpToolset {
   /** Undefined for a name the turn does not carry: the call is refused, never guessed. */
   resolve(name: string): ResolvedTool | undefined;
+  /** Per requested connector, in request order (RC-3). */
+  connectors?: Array<{ id: string; label: string; state: "ready" | ConnectorFailure; tools: number }>;
+  /**
+   * What opening the toolset had to tell the turn: `tools_capped` with
+   * `params.dropped` when tools past the cap were not offered (SPEC §3.4
+   * item 3). Optional so a hand-built toolset (tests, adapters) need not say.
+   */
+  notices?: RunNotice[];
 }
 
 // ── Providers (the execution and skill lanes plug in here) ──────────────────

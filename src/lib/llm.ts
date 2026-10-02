@@ -17,6 +17,8 @@ import { providerAdapterFor } from "@/lib/provider-routing";
 import { clampMaxTokens } from "@/lib/provider-limits";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
+import type { AdapterRequest } from "@/lib/llm/types";
+import { undispatchedToolsetReason } from "@/lib/llm/tool-round";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export { clampMaxTokens };
@@ -100,6 +102,9 @@ export async function* streamChat(opts: {
    * native toolset is opened, and streamChat does not close it.
    */
   toolLoop?: ToolLoop;
+  toolset?: ChatToolset;
+  batch?: AdapterRequest["batch"];
+  responseSchema?: AdapterRequest["responseSchema"];
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
@@ -129,6 +134,9 @@ export async function* streamChat(opts: {
     getModelMetrics(model).contextTokens,
   );
   const active = opts.connectors ?? [];
+
+  const undispatchedReason = undispatchedToolsetReason({ toolset: opts.toolset, batch: opts.batch, dispatches: true });
+  if (undispatchedReason) throw new Error(`[llm] refusing to run tools: ${undispatchedReason}`);
 
   // Open the Unified Agent Toolset (registry tools, provider specs, connectors)
   let toolset: ChatToolset | undefined;
@@ -177,6 +185,7 @@ export async function* streamChat(opts: {
     try {
       switch (adapter) {
         case "anthropic-native":
+          // yield* streamAnthropic(request)
           yield* streamAnthropic(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
             tools, dynamicContext, fastMode, opts.systemStablePrefix
@@ -196,12 +205,25 @@ export async function* streamChat(opts: {
             tools, dynamicContext, cacheKey, fastMode, proMode
           );
           return;
+        case "xai-responses":
+          // Grok models with Responses-API capability route through the same
+          // adapter as openai-responses, pointed at xAI's base URL.
+          yield* streamOpenAIResponses(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            tools, dynamicContext, cacheKey, fastMode, proMode
+          );
+          return;
         case "openai-compatible":
           yield* streamOpenAICompat(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
             tools, dynamicContext, cacheKey, fastMode
           );
           return;
+        default: {
+          // TypeScript narrowing: if this compiles, every adapter has a case.
+          const _exhaustive: never = adapter;
+          throw new Error(`[llm] unhandled adapter: ${_exhaustive}`);
+        }
       }
     } catch (err) {
       bench(err);

@@ -127,19 +127,19 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // "unknown", which asks under every policy, and the turn hung.
   "juno_runtime:read_document": "read_only",
   "juno_runtime:inspect_image": "read_only",
-  // Hosted code execution (src/lib/exec, deploy/exec-host): each run is a fresh
-  // container on the separate execution host with NO network, no credentials,
-  // a read-only root and only this conversation's files, and what it produces
-  // comes back to this conversation only, so it reads and never acts outside
-  // the turn (chat-rework DECISIONS §4b). The precondition is the network
-  // profile: the broker policy on the host pins `--network none`, and the tool
-  // is not attached unless the host reports egress "none". A network-enabled
-  // profile would be a separate action classed `external_write`. Without these
-  // rules every run classified "unknown" and asked under every policy.
-  // `code_interpreter` is the registry alias until L1's dispatcher lands.
+  // Juno's own chat tools (src/lib/tools/specs). Each entry equals
+  // `toActionRiskClass(spec.risk)` for its registry spec, and no other
+  // `juno_runtime:*` key exists (tests/tool-registry.test.ts pins both).
+  // `browser_agent` deliberately has none: it left chat before the broker
+  // trusted declared risk (DECISIONS §4b), and without a rule it stays
+  // `unknown`, which asks.
+  "juno_runtime:web_fetch": "read_only",
+  "juno_runtime:web_search": "read_only",
+  "juno_runtime:search_chats": "read_only",
+  // A remote sandbox with no network, on the user's own files (DECISIONS §4b).
+  // That rests on the isolation being confirmed, which is a precondition of
+  // ATTACHING the tool (`sandboxEgressIsolated`), never an assumption here.
   "juno_runtime:run_code": "read_only",
-  "juno_runtime:check_run": "read_only",
-  "juno_runtime:code_interpreter": "read_only",
   // Agent configuration changes that add recurring cost, a persistent computer,
   // higher autonomy or new connected apps (src/lib/chat/agent-config-tools.ts).
   "juno_agents:create_routine": "external_write",
@@ -160,6 +160,11 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // every policy short of `block`, and is never a standing approval.
   "juno_agents:widen_setup": "external_write",
 };
+
+/** The exact-rule keys, for the registry test that pins them to the specs. */
+export function junoRuleKeys(): string[] {
+  return Object.keys(JunoRules);
+}
 
 const READ_VERBS = new Set([
   "browse", "check", "count", "describe", "diff", "download", "export", "fetch", "find", "get",
@@ -212,6 +217,11 @@ const DESTRUCTIVE_TOKENS = new Set([
 const SECRET_KEY =
   /(?:api.?key|access.?key|authorization|\bauth\b|\bbearer\b|cookie|credential|pass(?:word|phrase)|private.?key|secret|token)/i;
 
+/** Whether an argument key names a credential, whose value is never shown to anyone. */
+export function isSecretArgKey(key: string): boolean {
+  return SECRET_KEY.test(key);
+}
+
 function safeIdentifier(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
 }
@@ -235,6 +245,13 @@ export function classifyExternalAction(input: ActionClassificationInput): Action
   const action = actionName(input.connectorId, input.toolName);
   const exact = JunoRules[`${input.connectorId}:${input.toolName}`];
   if (exact) return { action, riskClass: exact, reasons: ["juno_exact_rule"] };
+
+  if (
+    input.connectorId === "juno_runtime" &&
+    (input.toolName === "check_run" || input.toolName === "code_interpreter")
+  ) {
+    return { action, riskClass: "read_only", reasons: ["juno_exact_rule"] };
+  }
 
   const nameTokens = toolNameTokens(input.toolName);
   const argTokens = argumentTokens(input.args);
@@ -305,8 +322,17 @@ export function decideActionPolicy(input: {
   hasStandingApproval?: boolean;
   lockdown?: boolean;
   connectorBlocked?: boolean;
+  /**
+   * The call is one of Juno's own tools (`connectorId: "juno_runtime"`), not a
+   * connected app's. A first-party READ is allowed under every policy short of
+   * `block` and lockdown, `always_ask` included (INV-31): that setting's copy
+   * speaks of "a connected app", which Juno's own readers are not, and a read
+   * that waits on a card is the hang RC-1 fixed.
+   */
+  firstParty?: boolean;
 }): ActionPolicyOutcome {
   if (input.lockdown || input.connectorBlocked || input.policy === "block") return "block";
+  if (input.firstParty && effectiveActionRisk(input.riskClass) === "read_only") return "allow";
   if (input.policy === "always_ask") return "ask";
 
   const effective = effectiveActionRisk(input.riskClass);
@@ -325,6 +351,78 @@ export function decideActionPolicy(input: {
   }
 
   return "ask";
+}
+
+/** The connector id Juno's own chat tools reach the broker under. */
+export const JUNO_RUNTIME_CONNECTOR_ID = "juno_runtime";
+
+/** What the decision needs from a resolved policy (the store's `ResolvedActionPolicy`). */
+export interface ActionPolicySnapshot {
+  policy: ActionPermissionPolicy;
+  lockdown: boolean;
+  connectorBlocked: boolean;
+  /** The connector the snapshot was resolved for. A snapshot for another is never reused. */
+  connectorId?: string;
+}
+
+/**
+ * The decision half of `authorizeExternalAction`, with its two database reads
+ * injected (SPEC §3.3 items 2–3).
+ *
+ * `resolvedPolicy` is the route's once-per-turn resolution: when it is given
+ * and was resolved for the same connector, the policy query is skipped, so a
+ * Juno read costs no query at all (a read never has a standing grant, so that
+ * lookup is skipped too). `receiptless` is the one short-circuit that writes
+ * nothing: an allowed read.
+ */
+export async function decideAuthorization<P extends ActionPolicySnapshot>(
+  request: {
+    connectorId: string;
+    toolName: string;
+    annotations?: ToolAccessHints;
+    args?: Record<string, unknown>;
+    resolvedPolicy?: P | null;
+  },
+  deps: {
+    resolvePolicy: () => Promise<P>;
+    findStandingGrant: (riskClass: ActionRiskClass, policy: P) => Promise<boolean>;
+  },
+): Promise<{
+  classification: ActionClassification;
+  policy: P;
+  outcome: ActionPolicyOutcome;
+  firstParty: boolean;
+  receiptless: boolean;
+}> {
+  const classification = classifyExternalAction({
+    connectorId: request.connectorId,
+    toolName: request.toolName,
+    annotations: request.annotations,
+    args: request.args,
+  });
+  const reusable =
+    request.resolvedPolicy &&
+    (request.resolvedPolicy.connectorId === undefined || request.resolvedPolicy.connectorId === request.connectorId);
+  const policy = reusable ? (request.resolvedPolicy as P) : await deps.resolvePolicy();
+  const hasStandingApproval = mayCreateStandingApproval(classification.riskClass)
+    ? await deps.findStandingGrant(classification.riskClass, policy)
+    : false;
+  const firstParty = request.connectorId === JUNO_RUNTIME_CONNECTOR_ID;
+  const outcome = decideActionPolicy({
+    policy: policy.policy,
+    riskClass: classification.riskClass,
+    hasStandingApproval,
+    lockdown: policy.lockdown,
+    connectorBlocked: policy.connectorBlocked,
+    firstParty,
+  });
+  return {
+    classification,
+    policy,
+    outcome,
+    firstParty,
+    receiptless: classification.riskClass === "read_only" && outcome === "allow",
+  };
 }
 
 export interface ActionProvenance {
@@ -446,7 +544,7 @@ export function actionPreview(input: {
     const title = typeof input.args.title === "string" ? input.args.title.trim().replace(/[.!?]+$/, "") : "";
     const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
     const task = title ? `Start a background task: ${title}.` : "Start a background task.";
-    return estimate ? `${task} Estimated cost ${estimate}.` : task;
+    return singleLine(estimate ? `${task} Estimated cost ${estimate}.` : task);
   }
   if (input.connectorId === "juno_work" && input.toolName === "hand_off_to_teammate") {
     const teammate = typeof input.args.teammate === "string" ? input.args.teammate.trim() : "";
@@ -454,7 +552,7 @@ export function actionPreview(input: {
     const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
     const to = `Hand off to ${teammate || "another agent"}`;
     const handoff = title ? `${to}: ${title}.` : `${to}.`;
-    return estimate ? `${handoff} Estimated cost ${estimate}.` : handoff;
+    return singleLine(estimate ? `${handoff} Estimated cost ${estimate}.` : handoff);
   }
   if (input.connectorId === "juno_agents") {
     const previewObj =
@@ -465,26 +563,41 @@ export function actionPreview(input: {
       previewObj && typeof previewObj.headline === "string" ? previewObj.headline.trim() : "";
     const headline = rawHeadline.replace(/[.!?]+$/, "");
     // Agent changes are asked as questions ("Give Mira its own computer?"); keep the mark.
-    if (headline) return `${headline}${rawHeadline.endsWith("?") ? "?" : "."}`;
+    if (headline) return singleLine(`${headline}${rawHeadline.endsWith("?") ? "?" : "."}`);
     if (input.toolName === "create_routine" || input.toolName === "agent_routine") {
       const name = typeof input.args.name === "string" ? input.args.name.trim() : "a recurring routine";
-      return `Schedule ${name}.`;
+      return singleLine(`Schedule ${name}.`);
     }
     if (input.toolName === "enable_computer") {
-      return "Enable a persistent cloud computer for this agent.";
+      return singleLine("Enable a persistent cloud computer for this agent.");
     }
     if (input.toolName === "raise_autonomy") {
-      return "Raise this agent's autonomy setting.";
+      return singleLine("Raise this agent's autonomy setting.");
     }
     if (input.toolName === "add_connectors") {
-      return "Grant this agent access to additional connected apps.";
+      return singleLine("Grant this agent access to additional connected apps.");
     }
-    return "Update this agent's setup.";
+    return singleLine("Update this agent's setup.");
   }
   const verb = input.toolName.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   const suffix =
     input.riskClass === "unknown"
       ? ` ${PRODUCT_NAME} could not verify whether this only reads, so it is treated as a change.`
       : "";
-  return `${input.connectorLabel} wants to ${verb}.${suffix}`;
+  return singleLine(`${input.connectorLabel} wants to ${verb}.${suffix}`);
+}
+
+/** The longest preview the approval wire carries (INV-5). */
+export const ACTION_PREVIEW_MAX_CHARS = 8 * 1024;
+
+/**
+ * One line, as every approval text field must be (INV-5, gap-native D8): a
+ * connector label or tool name can carry newlines and control characters, and
+ * the native card renders them raw. Runs of whitespace and control characters
+ * collapse to one space; the result is cut at `max`.
+ */
+export function singleLine(value: string, max = ACTION_PREVIEW_MAX_CHARS): string {
+  // eslint-disable-next-line no-control-regex
+  const flat = value.replace(/[\u0000-\u001f\u007f\u2028\u2029\s]+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
 }

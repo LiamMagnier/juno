@@ -37,11 +37,13 @@ export const INSPECT_IMAGE_TOOL_ID = "inspect_image";
 
 /** Registry id of the sandboxed Python tool (`src/lib/agent/code.ts`). */
 export const CODE_INTERPRETER_TOOL_ID = "code_interpreter";
+export const RUN_CODE_TOOL_ID = "run_code";
 
 /** An explicit empty allowlist: no runtime tool at all. */
 export const NO_RUNTIME_TOOLS: readonly string[] = Object.freeze([]);
 
 export interface RuntimeToolToggles {
+  /** Read for the skill layer's grant; it attaches no runtime tool (see the header). */
   webSearch: boolean;
   /**
    * This turn's history carries at least one indexed document.
@@ -80,7 +82,6 @@ export interface RuntimeToolToggles {
  */
 export function chatRuntimeToolAllowlist(toggles: RuntimeToolToggles): string[] {
   const allowed: string[] = [];
-  if (toggles.webSearch) allowed.push(BROWSER_TOOL_ID);
   if (toggles.documents) allowed.push(READ_DOCUMENT_TOOL_ID);
   if (toggles.images) allowed.push(INSPECT_IMAGE_TOOL_ID);
   if (toggles.code) allowed.push(CODE_INTERPRETER_TOOL_ID);

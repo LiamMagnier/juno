@@ -1,7 +1,6 @@
 "use client";
 
 import { useApp } from "@/components/app/app-provider";
-import "./composer.css";
 
 /**
  * The home's one line (V3 gallery, home scene): upright Newsreader at its

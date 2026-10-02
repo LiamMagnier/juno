@@ -29,6 +29,7 @@ import { failed, intArg, oneLine, stringArg, succeeded } from "@/lib/tools/specs
 import { defineTool, type ToolSpec } from "@/lib/tools/types";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import type { ChatSearchResult, EngineReport, PrivateSpanSet, TurnWebLimits } from "@/lib/web/types";
+import { createPrivateSpanSet } from "@/lib/web/private-spans";
 import { TOOL_ERROR_CODES, type ToolErrorCode, type ToolWebDetail } from "@/types/run";
 import type { ClientSource } from "@/types/chat";
 
@@ -123,6 +124,7 @@ export function createWebSearchSpec(deps: { search?: WebSearchBackend; now?: () 
       const count = intArg(args.count, WEB_SEARCH_DEFAULT_COUNT, 1, WEB_SEARCH_MAX_COUNT);
       const recency = typeof args.recency === "string" && args.recency !== "any" ? args.recency : undefined;
 
+      if (!ctx.limits || !ctx.sources) return failed("unavailable", searchUnavailableText(null));
       let found: Awaited<ReturnType<WebSearchBackend>>;
       try {
         const search = await backend();
@@ -130,8 +132,13 @@ export function createWebSearchSpec(deps: { search?: WebSearchBackend; now?: () 
           { query, count, ...(recency ? { recency } : {}) },
           {
             signal: ctx.signal,
-            private: ctx.private,
-            privateSpans: ctx.privateSpans ?? NO_PRIVATE_SPANS,
+            private: Boolean(ctx.private),
+            privateSpans:
+              ctx.privateSpans && typeof (ctx.privateSpans as PrivateSpanSet).matches === "function"
+                ? (ctx.privateSpans as PrivateSpanSet)
+                : Array.isArray(ctx.privateSpans)
+                ? createPrivateSpanSet({ texts: ctx.privateSpans })
+                : NO_PRIVATE_SPANS,
             limits: ctx.limits,
           },
         );
@@ -170,7 +177,7 @@ export function createWebSearchSpec(deps: { search?: WebSearchBackend; now?: () 
       }));
       // One numbering for the turn: the number the model cites is the source's
       // position in the list `Message.sources` persists (SPEC §2.11).
-      const registered = ctx.sources.register(sources, { cited: ctx.citationsNumbered, origin: "juno_search" });
+      const registered = ctx.sources.register(sources, { cited: Boolean(ctx.citationsNumbered), origin: "juno_search" });
       const numbered = results.map((result, i) => ({ result, n: numberFor(registered, result.url, i) }));
 
       // Every result joins the provenance ledger, so `web_fetch` may open it.

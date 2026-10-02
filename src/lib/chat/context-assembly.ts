@@ -278,7 +278,7 @@ export function buildAttachmentContext(knowledge: AttachmentKnowledge | null | u
       `## Attached files still being indexed\n${knowledge.pendingFiles
         .map(
           (file) =>
-            `- ${file.fileName} (${file.state}): its text is not in this prompt. Do not claim to have read it — open it with read_document, or with code_interpreter if you need to parse it yourself.`
+            `- ${file.fileName} (${file.state}): its text is not in this prompt. Do not claim to have read it — open it with read_document, or with run_code if you need to parse it yourself.`
         )
         .join("\n")}`
     );
@@ -289,7 +289,7 @@ export function buildAttachmentContext(knowledge: AttachmentKnowledge | null | u
       `## Attached files that could not be indexed\n${knowledge.unavailableFiles
         .map(
           (file) =>
-            `- ${file.fileName} (${file.state}): no text could be extracted from it, which usually means it is a scan or an image-only PDF. Do not invent contents and do not report it as unreadable: look at its pages with inspect_image, or open it with code_interpreter.`
+            `- ${file.fileName} (${file.state}): no text could be extracted from it, which usually means it is a scan or an image-only PDF. Do not invent contents and do not report it as unreadable: look at its pages with inspect_image, or open it with run_code.`
         )
         .join("\n")}`
     );

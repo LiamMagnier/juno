@@ -5,6 +5,7 @@
    those components under tsx, which cannot load a stylesheet). */
 @import "../components/brand/brand.css";
 @import "../components/brand/thinking-mark.css";
+@import "../components/chat/composer.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

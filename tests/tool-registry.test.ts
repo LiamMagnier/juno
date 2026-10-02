@@ -114,7 +114,7 @@ test("present never throws and keeps every string on one line, at most 200 chara
   ];
   for (const spec of JUNO_TOOL_SPECS) {
     for (const args of nasty) {
-      const present = spec.present(args as Record<string, unknown>);
+      const present = spec.present!(args as Record<string, unknown>);
       for (const [key, value] of Object.entries(present)) {
         assert.ok(["string", "number", "boolean"].includes(typeof value), `${spec.id}.${key}`);
         if (typeof value === "string") {
@@ -125,11 +125,11 @@ test("present never throws and keeps every string on one line, at most 200 chara
       }
     }
   }
-  assert.deepEqual(junoToolSpec("web_fetch")!.present({ url: "https://www.Exämple.com/a" }), {
+  assert.deepEqual(junoToolSpec("web_fetch")!.present!({ url: "https://www.Exämple.com/a" }), {
     url: "https://www.Exämple.com/a",
     domain: "exämple.com",
   });
-  assert.deepEqual(junoToolSpec("run_code")!.present({ code: "a\nb\nc\n", reason: "sum" }), { language: "python", reason: "sum", lines: 3 });
+  assert.deepEqual(junoToolSpec("run_code")!.present!({ code: "a\nb\nc\n", reason: "sum" }), { language: "python", reason: "sum", lines: 3 });
 });
 
 test("model-facing text lives in defineTool or *.prompt.ts files (INV-29)", () => {

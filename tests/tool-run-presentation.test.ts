@@ -123,7 +123,7 @@ test("a record that says succeeded over a non-zero exit is believed as failed", 
   const lying = {
     ...F.succeeded,
     call: { ...(F.succeeded as unknown as { call: Record<string, unknown> }).call, run: { status: "succeeded", exitCode: 2, language: "python" } },
-  } as ClientActivityEvent;
+  } as unknown as ClientActivityEvent;
   assert.equal(view(lying).phase, "failed");
 });
 

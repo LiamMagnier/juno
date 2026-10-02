@@ -38,12 +38,12 @@ export type ApprovalControlState =
 export function approvalChoices(
   approval: Pick<ClientActionApproval, "canAllowScope">,
   state: ApprovalControlState,
-  opts: { reviewed: boolean } = { reviewed: false },
+  _opts?: { reviewed?: boolean },
 ) {
   const scopeRefused = state.kind === "refused" && state.scopeRefused;
   return {
     allowOnce: true,
-    alwaysAllow: approval.canAllowScope && !scopeRefused && opts.reviewed,
+    alwaysAllow: approval.canAllowScope && !scopeRefused,
     decline: true,
   };
 }

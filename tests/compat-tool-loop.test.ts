@@ -86,6 +86,7 @@ function fakeDispatch(outcomes: Record<string, { text: string; isError?: boolean
         ...(call.providerCallId === undefined ? {} : { providerCallId: call.providerCallId }),
         text: outcome.text,
         isError: !!outcome.isError,
+        status: outcome.isError ? "failed" : "succeeded",
         images: outcome.images ?? [],
       });
     }

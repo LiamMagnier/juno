@@ -198,7 +198,7 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
 
   /** The searches Google ran inside the request, as provider-search calls (SPEC §5.3 items 7, 11). */
   function* searchEvents(state: GeminiRoundState): Generator<LlmEvent> {
-    const queries = state.webSearchQueries;
+    const queries = state.webSearchQueries ?? [];
     const html = state.searchEntryPoint ? capBytes(state.searchEntryPoint, SEARCH_SUGGESTIONS_MAX_BYTES) : null;
     for (let i = 0; i < queries.length; i++) {
       // Gemini gives its searches no ids; one per query, unique in the turn.

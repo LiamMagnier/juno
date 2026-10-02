@@ -42,14 +42,14 @@ export type StreamEffect =
   /** The dispatcher's queued / awaiting_approval / running act for a call. */
   | {
       kind: "tool_status";
-      server: string;
-      name: string;
+      server?: string;
+      name?: string;
       callId: string;
       status: "queued" | "awaiting_approval" | "running";
       timeoutMs?: number;
     }
   /** A running call's latest output. */
-  | { kind: "tool_progress"; server: string; name: string; callId: string; progress: ToolProgress }
+  | { kind: "tool_progress"; server?: string; name?: string; callId: string; progress: ToolProgress }
   | {
       kind: "tool_result";
       server: string;
@@ -250,14 +250,20 @@ export class GenerationAccumulator {
           case "status":
             return {
               kind: "tool_status",
-              server: event.server,
-              name: event.name,
               callId: event.callId,
               status: event.status,
+              ...(event.server !== undefined ? { server: event.server } : {}),
+              ...(event.name !== undefined ? { name: event.name } : {}),
               ...(event.timeoutMs === undefined ? {} : { timeoutMs: event.timeoutMs }),
             };
           case "progress":
-            return { kind: "tool_progress", server: event.server, name: event.name, callId: event.callId, progress: event.progress };
+            return {
+              kind: "tool_progress",
+              callId: event.callId,
+              progress: event.progress,
+              ...(event.server !== undefined ? { server: event.server } : {}),
+              ...(event.name !== undefined ? { name: event.name } : {}),
+            };
           case "result":
             return {
               kind: "tool_result",

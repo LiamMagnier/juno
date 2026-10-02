@@ -11,7 +11,6 @@ import type {
   ToolExecutionResult,
   AgentMode,
 } from "@/lib/agent/types";
-import { browserTool } from "@/lib/agent/browser";
 import { runCodeTool } from "@/lib/agent/code";
 import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
@@ -136,7 +135,7 @@ export function resolvedSpecTool(spec: ToolSpec): ResolvedTool {
     risk: spec.risk,
     parallelSafe: runsInParallel(spec.risk, spec.parallelSafe, specIsBrokered(spec)),
     timeoutMs: spec.timeoutMs,
-    dedupe: spec.dedupe,
+    dedupe: Boolean(spec.dedupe),
     input: spec.input,
   };
 }
@@ -149,7 +148,6 @@ export class UnifiedAgentRegistry {
     // Deliberately no host-Python registration here. `sandbox/python.ts` uses a
     // child process and is retained only for local migration/tests; it is not a
     // tenant isolation boundary and must never be exposed by the hosted toolset.
-    this.registerTool(browserTool as unknown as ToolDefinition<unknown, unknown>);
     // Both read-only and both scoped to what the person attached to the
     // conversation they are running in (`agent/attachments.ts`). Registering
     // them here does not attach them to anything: `chatRuntimeToolAllowlist`

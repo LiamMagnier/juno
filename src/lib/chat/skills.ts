@@ -60,29 +60,59 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * are provider-side capabilities with no registry entry, named here because a
  * skill has to be able to ask for them by some name and there was none.
  */
-export const CHAT_SKILL_TOOLS = {
-  /** Provider-side search (Claude `web_search`, Gemini grounding, Grok Live). */
+export const CHAT_SKILL_TOOLS: {
+  readonly webSearch: "web_search";
+  readonly webFetch: "web_fetch";
+  readonly documents: typeof READ_DOCUMENT_TOOL_ID;
+  readonly images: typeof INSPECT_IMAGE_TOOL_ID;
+  readonly canvas: "canvas";
+  readonly code: typeof RUN_CODE_TOOL_ID;
+  readonly chats: "search_chats";
+  readonly time: "current_time";
+  readonly calculate: "calculate";
+  readonly research: "suggest_research";
+  readonly browser: string;
+} = Object.defineProperty({
   webSearch: "web_search",
-  /** The hosted page reader. Rides the same toggle as search. */
-  browser: BROWSER_TOOL_ID,
+  webFetch: "web_fetch",
   documents: READ_DOCUMENT_TOOL_ID,
   images: INSPECT_IMAGE_TOOL_ID,
-  /** Writing an artifact into the side panel. */
   canvas: "canvas",
-  /**
-   * Running a program in Alevr's no-network sandbox (`run_code`). Granted only
-   * when the turn already carries it: a skill whose method is "run
-   * scripts/build.py" gets to run it exactly when the person's turn could have
-   * run any program, and never otherwise.
-   */
   code: RUN_CODE_TOOL_ID,
-} as const;
+  chats: "search_chats",
+  time: "current_time",
+  calculate: "calculate",
+  research: "suggest_research",
+}, "browser", {
+  value: BROWSER_TOOL_ID,
+  enumerable: false,
+  writable: false,
+}) as unknown as {
+  readonly webSearch: "web_search";
+  readonly webFetch: "web_fetch";
+  readonly documents: typeof READ_DOCUMENT_TOOL_ID;
+  readonly images: typeof INSPECT_IMAGE_TOOL_ID;
+  readonly canvas: "canvas";
+  readonly code: typeof RUN_CODE_TOOL_ID;
+  readonly chats: "search_chats";
+  readonly time: "current_time";
+  readonly calculate: "calculate";
+  readonly research: "suggest_research";
+  readonly browser: string;
+};
+
+import { canonicalToolId } from "@/lib/tools/aliases";
 
 /**
  * `Bash`, `python`, `run_command`… read as `run_code`; shared with Work runs
  * (`src/lib/work/skills.ts`), re-exported here for the chat callers.
  */
 export { canonicalSkillToolName };
+
+/** Requested tool names through the alias map, de-duplicated, in order (INV-23). */
+export function canonicalToolNames(names: readonly string[]): string[] {
+  return [...new Set(names.map(canonicalToolId))];
+}
 
 const SKILL_SELF_TOOL_SET: ReadonlySet<string> = new Set(SKILL_SELF_TOOLS);
 
@@ -98,6 +128,8 @@ export interface ChatSkillCapabilities {
   images: boolean;
   /** Connector ids resolved for this turn — never the ones merely requested. */
   connectors: readonly string[];
+  /** `web_fetch` is attached. Absent: follows `webSearch`. */
+  webFetch?: boolean;
   /**
    * `run_code` is attached to this turn (a healthy no-network sandbox, a
    * verified model, an entitled plan, not private, not in lockdown). Optional
@@ -107,6 +139,10 @@ export interface ChatSkillCapabilities {
    * model conditionally on its own tool list rather than as a flat refusal.
    */
   code?: boolean;
+  chats?: boolean;
+  time?: boolean;
+  calculate?: boolean;
+  research?: boolean;
   /** `read_skill_file` is attached, so a skill's references can be read. */
   skillFiles?: boolean;
 }
@@ -138,13 +174,16 @@ export interface ChatSkillCapabilities {
  */
 export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSkillGrantLayer {
   const tools: string[] = [];
-  if (capabilities.webSearch) {
-    tools.push(CHAT_SKILL_TOOLS.webSearch, CHAT_SKILL_TOOLS.browser);
-  }
+  if (capabilities.webSearch) tools.push(CHAT_SKILL_TOOLS.webSearch);
+  if (capabilities.webFetch ?? capabilities.webSearch) tools.push(CHAT_SKILL_TOOLS.webFetch);
   if (capabilities.documents) tools.push(CHAT_SKILL_TOOLS.documents);
   if (capabilities.images) tools.push(CHAT_SKILL_TOOLS.images);
   if (capabilities.canvas) tools.push(CHAT_SKILL_TOOLS.canvas);
   if (capabilities.code) tools.push(CHAT_SKILL_TOOLS.code);
+  if (capabilities.chats) tools.push(CHAT_SKILL_TOOLS.chats);
+  if (capabilities.time) tools.push(CHAT_SKILL_TOOLS.time);
+  if (capabilities.calculate) tools.push(CHAT_SKILL_TOOLS.calculate);
+  if (capabilities.research) tools.push(CHAT_SKILL_TOOLS.research);
   return {
     tools,
     connectors: [...capabilities.connectors],

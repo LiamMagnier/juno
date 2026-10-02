@@ -1636,8 +1636,6 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         )
         .catch(() => {});
     }
-
-    return moved;
   };
 
   /**

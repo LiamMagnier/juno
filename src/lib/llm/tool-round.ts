@@ -18,7 +18,7 @@
 import { FINAL_ROUND_NOTE } from "@/lib/llm/loop";
 import type { AdapterRequest } from "@/lib/llm/types";
 import type { McpToolset } from "@/lib/mcp";
-import { executeToolBatch, type BatchResult, type ToolCallInput } from "@/lib/tools/dispatch";
+import { executeToolBatch, type BatchContext, type BatchResult, type ToolCallInput } from "@/lib/tools/dispatch";
 import type { ChatToolset, ResolvedTool, ToolRisk } from "@/lib/tools/types";
 import type { LlmEvent } from "@/types/llm";
 import type { ToolErrorCode } from "@/types/run";
@@ -47,7 +47,7 @@ export type ToolRoundRunner = (
  */
 export function toolRoundRunner(
   req: Pick<AdapterRequest, "toolset" | "batch">,
-  execute: typeof executeToolBatch = executeToolBatch,
+  execute: (calls: readonly ToolCallInput[], signal: AbortSignal, ctx: BatchContext) => AsyncGenerator<LlmEvent, BatchResult[]> = executeToolBatch,
 ): ToolRoundRunner | null {
   const toolset = req.toolset;
   if (!toolset || toolset.tools.length === 0) return null;
@@ -57,7 +57,7 @@ export function toolRoundRunner(
     if (reason) throw new Error(`[llm] refusing to run tools: ${reason}`);
     return legacyToolRound(toolset);
   }
-  return (calls, signal, nextIsFinal) => execute(calls, signal, { ...batch, toolset, nextIsFinal });
+  return (calls, signal, nextIsFinal) => execute(calls, signal, { ...batch, toolset, nextIsFinal } as BatchContext);
 }
 
 /**
@@ -171,6 +171,7 @@ export function legacyToolRound(toolset: McpToolset): ToolRoundRunner {
         ...(call.providerCallId === undefined ? {} : { providerCallId: call.providerCallId }),
         text: exec.text,
         isError: status !== "succeeded",
+        status,
         images: exec.images ?? [],
         ...(code ? { errorCode: code } : {}),
       });

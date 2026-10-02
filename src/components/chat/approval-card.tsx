@@ -6,7 +6,6 @@ import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton, tellInstead } from "@/components/chat/decision";
 import { Collapse } from "@/components/ui/collapse";
-import { PhraseWithArgs } from "@/lib/i18n-phrase";
 import type { PhraseLine } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
 import type {

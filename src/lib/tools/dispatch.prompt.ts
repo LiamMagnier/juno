@@ -90,3 +90,20 @@ export const CACHED_RESULT_NOTE =
   "[This is the result of an identical call made earlier in this reply; it was not run again. To see a newer state, change the request or do something else first.]";
 
 export const NO_RESULT_TEXT = "The call returned no result, so nothing is known about its outcome.";
+
+export const DENIED_TEXT =
+  "The user declined this call. Nothing was run. Do not call it again with the same arguments; answer without it, or ask the user what they want instead.";
+
+export const EXPIRED_TEXT =
+  "The approval request for this call expired before the user answered. Nothing was run. Answer without it, or ask the user whether to try again.";
+
+export function blockedText(reason: string): string {
+  return `This call is blocked by the user's settings (${reason}). Nothing was run. Answer without it.`;
+}
+
+export function notPermittedText(reason: string): string {
+  return `This call was not permitted (${reason}). Nothing was run. Answer without it.`;
+}
+
+export const BROKER_UNAVAILABLE_TEXT =
+  "Juno could not verify permission for this call, so it was not run. Answer without it.";

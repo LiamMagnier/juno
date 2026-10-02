@@ -13,13 +13,6 @@ import {
   researchEngine,
   researchStartCheck,
 } from "@/lib/research/run";
-import {
-  RESEARCH_TERMINAL_STATES,
-  isResearchState,
-  isTerminalResearchState,
-  stageForState,
-} from "@/lib/research/domain";
-import { PRODUCT_NAME } from "@/lib/brand/names";
 import { RESEARCH_REFUSAL_COPY, researchEntitlement, type ResearchRefusal } from "@/lib/research/entitlement";
 import { startResearchSchema, validLocale, validTimeZone } from "@/app/api/research/protocol";
 

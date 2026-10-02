@@ -1,11 +1,7 @@
-import type { SseSender } from "@/lib/chat-stream";
-import { parseClientFeatures, type ClientFeature } from "@/lib/chat/client-features";
-import { SourceRegistry } from "@/lib/chat/source-registry";
-import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
-import { TurnStream } from "@/lib/chat/turn-stream";
-import { TurnTaint } from "@/lib/web/taint";
-import type { ClientActivityEvent, ClientMessage, StreamChunk } from "@/types/chat";
+import type { ClientFeature } from "@/lib/chat/client-features";
+import type { ClientMessage, StreamChunk } from "@/types/chat";
 
+import { playTurnScript, SCRIPT_EPOCH_MS } from "../../../../tests/fixtures/turn-player";
 import { TURN_SCRIPTS, type TurnScript } from "../../../../tests/fixtures/turn-scripts";
 
 /*
@@ -44,31 +40,7 @@ export type FixtureResult =
   | { ok: false; number: number; id: string; title: string; error: string };
 
 /** The fixtures' shared start: a fixed instant, so every build of a fixture is identical. */
-export const FIXTURE_EPOCH = Date.parse("2026-09-23T19:07:00.000Z");
-
-function recordingSender(clock: { atMs: number }, frames: RunFixture["frames"]): SseSender {
-  const activityLog: ClientActivityEvent[] = [];
-  let counter = 0;
-  const send = (chunk: StreamChunk) => {
-    frames.push({ atMs: clock.atMs, chunk });
-  };
-  return {
-    send,
-    sendActivity(event) {
-      counter += 1;
-      const entry: ClientActivityEvent = {
-        ...event,
-        id: `activity-${FIXTURE_EPOCH + clock.atMs}-${counter}`,
-        createdAt: new Date(FIXTURE_EPOCH + clock.atMs).toISOString(),
-        seq: event.seq ?? counter,
-      };
-      activityLog.push(entry);
-      send({ type: "activity", event: entry });
-      return entry;
-    },
-    activityLog,
-  };
-}
+export const FIXTURE_EPOCH = SCRIPT_EPOCH_MS;
 
 function legacyFixture(script: TurnScript): RunFixture {
   const row = script.legacy!;
@@ -99,65 +71,20 @@ function legacyFixture(script: TurnScript): RunFixture {
 /** Plays one script through `TurnStream`. Never throws: a stub that is not built yet is reported. */
 export function buildFixture(script: TurnScript): FixtureResult {
   if (script.legacy) return { ok: true, fixture: legacyFixture(script) };
-  const frames: RunFixture["frames"] = [];
-  const clock = { atMs: 0 };
   try {
-    const features = parseClientFeatures(script.features);
-    const sender = recordingSender(clock, frames);
-    const acc = new GenerationAccumulator();
-    const sources = new SourceRegistry();
-    const stream = new TurnStream({
-      sender,
-      features,
-      acc,
-      sources,
-      ledger: null,
-      taint: new TurnTaint({ staticContent: false }),
-      toolDetailEnabled: true,
-      onToolActivityChange: () => {},
-      onApproval: (approval) => sender.send({ type: "approval", approval }),
-      onUsage: () => {},
-      onProviderSearch: () => {},
-      artifactEdit: false,
-    });
-    for (const step of script.steps) {
-      clock.atMs = step.atMs;
-      stream.apply(step.event);
-    }
-    const lastAt = script.steps.at(-1)?.atMs ?? 0;
-    clock.atMs = lastAt + 10;
-    const { answer, activity } = stream.finish(script.end === "aborted" ? "aborted" : "completed");
-    const done: ClientMessage = {
+    const played = playTurnScript(script, { features: script.features });
+    const done: ClientMessage = played.done ?? {
       id: `msg_${script.fixture}`,
       role: "ASSISTANT",
-      content: answer,
-      reasoning: acc.reasoning || null,
-      reasoningParts: acc.reasoningParts.length ? [...acc.reasoningParts] : null,
-      sources: [...sources.all()],
-      activity,
+      content: played.answer,
+      reasoning: null,
+      reasoningParts: null,
+      sources: [...(played.record.sources ?? [])],
+      activity: played.activity,
       createdAt: new Date(FIXTURE_EPOCH).toISOString(),
       attachments: [],
-      finishReason: script.end === "aborted" ? "user_stopped" : script.end === "failed" ? "error" : acc.finishReason,
+      finishReason: script.end === "aborted" ? "user_stopped" : script.end === "failed" ? "error" : "stop",
     };
-    if (script.handoffRunId) {
-      frames.push({ atMs: clock.atMs, chunk: { type: "handoff", to: "research", runId: script.handoffRunId, userMessageId: null } });
-    } else if (script.end === "completed") {
-      frames.push({
-        atMs: clock.atMs,
-        chunk: { type: "done", message: done, artifacts: [], memoryUpdated: false, quota: {} as never, finishReason: done.finishReason ?? "stop" },
-      });
-    } else {
-      // A Stop keeps the partial answer; a dropped connection shows the error card.
-      frames.push({
-        atMs: clock.atMs,
-        chunk: {
-          type: "error",
-          message: script.end === "aborted" ? "Stopped." : "The connection dropped before the answer finished.",
-          finishReason: script.end === "aborted" ? "user_stopped" : "error",
-          preservePartial: true,
-        },
-      });
-    }
     return {
       ok: true,
       fixture: {
@@ -165,7 +92,7 @@ export function buildFixture(script: TurnScript): FixtureResult {
         id: script.id,
         title: script.title,
         features: script.features,
-        frames,
+        frames: played.frames.map((frame) => ({ atMs: frame.atMs, chunk: frame.chunk })),
         done,
         legacy: false,
         needsMessageList: Boolean(script.handoffRunId),
@@ -189,3 +116,8 @@ export function runFixtures(): FixtureResult[] {
   cache ??= TURN_SCRIPTS.map(buildFixture);
   return cache;
 }
+
+export const RUN_FIXTURES: RunFixture[] = TURN_SCRIPTS
+  .map(buildFixture)
+  .filter((r): r is { ok: true; fixture: RunFixture } => r.ok)
+  .map((r) => r.fixture);

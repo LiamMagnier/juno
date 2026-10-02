@@ -318,25 +318,107 @@ for (const { relativePath, sourceFile, record: sink } of directMcpSinks) {
   }
 }
 
+// -------------------------------------------------------------------------
+// Chat's own tools: the dispatcher runs Juno ToolSpecs itself.
+// -------------------------------------------------------------------------
+//
+// `executeToolBatch` (src/lib/tools/dispatch.ts) is the only place a Juno
+// ToolSpec's `execute` runs. The broker reaches it as a port
+// (`ctx.ports.authorizeExternalAction`) so the module stays importable offline,
+// which means the import check above cannot see it: here the sink itself is
+// found and the awaited authorisation, with its refused/replay handling, must
+// sit in front of it in the same function. A private chat and a `broker:
+// "none"` tool skip the broker by design, and the function must say so in the
+// condition that guards the call.
+
+const dispatchPath = "src/lib/tools/dispatch.ts";
+const dispatchSource = parse(dispatchPath);
+const specSinks = callRecords(dispatchSource).filter((record) => record.name === "execute" && record.receiver === "spec");
+if (specSinks.length === 0) {
+  fail(`${dispatchPath} no longer contains its spec.execute sink; update this gate for the new dispatch path`);
+}
+for (const sink of specSinks) {
+  const owner = enclosingFunction(sink.node);
+  if (!owner) {
+    fail(`${dispatchPath} spec.execute must stay inside a function`);
+    continue;
+  }
+  const ownerCalls = callsInside(owner, dispatchSource);
+  const authorization = ownerCalls.find((record) => record.name === "authorizeExternalAction" && record.start < sink.start);
+  if (!authorization) {
+    fail(`${dispatchPath} ${functionName(owner)}() reaches spec.execute without authorizeExternalAction first`);
+    continue;
+  }
+  if (!unwrapAwaited(authorization.node).awaited) {
+    fail(`${dispatchPath} ${functionName(owner)}() must await authorizeExternalAction before spec.execute`);
+  }
+  const authorizationName = variableReceiving(authorization.node);
+  let readsKind = false;
+  const handledKinds = new Set();
+  if (authorizationName) {
+    visit(owner.body, (node) => {
+      const start = node.getStart(dispatchSource);
+      if (start < authorization.end || start >= sink.start) return;
+      if (
+        (ts.isPropertyAccessExpression(node) || ts.isPropertyAccessChain(node)) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === authorizationName &&
+        node.name.text === "kind"
+      ) {
+        readsKind = true;
+      }
+      if (ts.isStringLiteral(node) && (node.text === "refused" || node.text === "replay")) handledKinds.add(node.text);
+    });
+  }
+  if (!authorizationName || !readsKind || !handledKinds.has("refused") || !handledKinds.has("replay")) {
+    fail(`${dispatchPath} ${functionName(owner)}() must return on refused/replayed authorization before spec.execute`);
+  }
+  // The only ways past the broker are the two the spec names: a pure tool
+  // (`broker: "none"`) and a private chat, which has no durable identity to
+  // broker against (INV-32). Both must be spelled in the guard.
+  const guard = owner.body.getText(dispatchSource).slice(0, sink.start - owner.body.getStart(dispatchSource));
+  if (!/spec\.broker === "juno_runtime" && !context\.private/.test(guard)) {
+    fail(`${dispatchPath} ${functionName(owner)}() must broker every juno_runtime spec outside private chats`);
+  }
+  const completions = ownerCalls.filter((call) => call.name === "completeExternalAction" && call.start > sink.start);
+  if (completions.length === 0) {
+    fail(`${dispatchPath} ${functionName(owner)}() must settle the receipt with completeExternalAction after spec.execute`);
+  }
+}
+
 // The receipt store must keep using the shared classification, argument digest,
 // and policy domain. A local look-alike broker would otherwise satisfy the MCP
 // import while silently implementing a different permission system.
+//
+// The classification and the policy decision reach the store through
+// `decideAuthorization`, the pure decision half that lives beside them in the
+// domain module (so the chat dispatcher's tests can drive it with fake queries).
+// It must itself call both, or the store would be deciding with something else.
 const storePath = "src/lib/action-approval-store.ts";
 const storeSource = parse(storePath);
 const domainBindings = importBindings(storeSource, "@/lib/action-approval");
-for (const symbol of [
-  "classifyExternalAction",
-  "decideActionPolicy",
-  "actionArgsHash",
-  "actionReceiptDigest",
-]) {
+const storeDomainSymbols = ["decideAuthorization", "actionArgsHash", "actionReceiptDigest"];
+for (const symbol of storeDomainSymbols) {
   if (!domainBindings.has(symbol)) fail(`${storePath} must import ${symbol} from @/lib/action-approval`);
 }
 const storeCalls = callRecords(storeSource);
-for (const symbol of ["classifyExternalAction", "decideActionPolicy", "actionArgsHash", "actionReceiptDigest"]) {
+for (const symbol of storeDomainSymbols) {
   const local = domainBindings.get(symbol);
   if (local && !storeCalls.some((record) => record.name === local)) {
     fail(`${storePath} imports ${symbol} but no production broker path calls it`);
+  }
+}
+const domainPath = "src/lib/action-approval.ts";
+const domainSource = parse(domainPath);
+const decideAuthorizationFunction = findFunction(domainSource, "decideAuthorization");
+if (!decideAuthorizationFunction) {
+  fail(`${domainPath} must define decideAuthorization`);
+} else {
+  const decideCalls = callsInside(decideAuthorizationFunction, domainSource);
+  for (const symbol of ["classifyExternalAction", "decideActionPolicy"]) {
+    if (!decideCalls.some((record) => record.name === symbol)) {
+      fail(`${domainPath} decideAuthorization() must call ${symbol}`);
+    }
   }
 }
 const authorizeFunction = findFunction(storeSource, "authorizeExternalAction");
@@ -672,58 +754,6 @@ if (
   fail(`native tool.execute inventory changed; expected ${expectedNativeToolCallers.join(", ")}, found ${nativeToolCallers.join(", ") || "none"}`);
 }
 
-// -------------------------------------------------------------------------
-// Chat runtime: registry tools and provider specs (run_code, check_run,
-// use_skill, read_skill_file) run behind the receipt broker in the runtime.
-// The tool dispatcher (src/lib/tools/dispatch.ts) only ever calls a toolset's
-// execute — it never runs a tool or a spec itself — so authorisation stays in
-// these two functions and in the MCP chokepoint above.
-// -------------------------------------------------------------------------
-
-const runtimePath = "src/lib/agent/runtime.ts";
-const runtimeSource = parse(runtimePath);
-for (const [runtimeFunction, sinkReceiver] of [
-  ["executeToolCall", "tool"],
-  ["executeSpec", "spec"],
-]) {
-  const owner = findFunction(runtimeSource, runtimeFunction);
-  requireOrderedCalls(runtimePath, owner, runtimeSource, [
-    { description: "authorizeExternalAction", matches: (call) => call.name === "authorizeExternalAction" },
-    {
-      description: `the ${sinkReceiver}.execute sink`,
-      matches: (call) => call.name === "execute" && call.receiver === sinkReceiver,
-    },
-    { description: "completeExternalAction", matches: (call) => call.name === "completeExternalAction" },
-  ]);
-  if (owner) {
-    const handled = new Set();
-    visit(owner.body, (node) => {
-      if (ts.isStringLiteral(node) && (node.text === "refused" || node.text === "replay")) handled.add(node.text);
-    });
-    if (!handled.has("refused") || !handled.has("replay")) {
-      fail(`${runtimePath} ${runtimeFunction}() must return on refused/replayed authorization before its sink`);
-    }
-  }
-}
-const runtimeSinks = callRecords(runtimeSource).filter(
-  (record) => record.name === "execute" && (record.receiver === "tool" || record.receiver === "spec")
-);
-for (const sink of runtimeSinks) {
-  const owner = enclosingFunction(sink.node);
-  const name = owner ? functionName(owner) : "<none>";
-  if (name !== "executeToolCall" && name !== "executeSpec") {
-    fail(`${runtimePath} has a tool/spec execute sink outside executeToolCall/executeSpec (in ${name})`);
-  }
-}
-for (const [relativePath, sourceFile] of parsedProduction) {
-  if (!relativePath.startsWith("src/lib/tools/")) continue;
-  for (const record of callRecords(sourceFile)) {
-    if (record.name === "execute" && (record.receiver === "spec" || record.receiver === "tool")) {
-      fail(`${relativePath} runs a tool or spec directly; route it through the toolset's brokered execute`);
-    }
-  }
-}
-
 if (failures.length) {
   console.error("\n[approval-dispatch] FAIL\n");
   for (const message of failures) console.error(`  - ${message}`);
@@ -732,5 +762,5 @@ if (failures.length) {
 }
 
 console.log(
-  "[approval-dispatch] Chat connectors use the receipt broker; Anthropic has no native connector bypass; Work and Code sinks remain permission/receipt-gated"
+  "[approval-dispatch] Chat connectors and Juno's own chat tools use the receipt broker; Anthropic has no native connector bypass; Work and Code sinks remain permission/receipt-gated"
 );

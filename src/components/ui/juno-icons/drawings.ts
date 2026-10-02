@@ -632,19 +632,36 @@ function ellWalk(a: number, b: number, t0: number, s: number, dir: 1 | -1): numb
   for (let acc = 0; acc < s; t += 0.05 * dir) acc += ellSpeed(a, b, t) * 0.05;
   return Math.round(t * 100) / 100;
 }
-const orbitArcs = (): string[] => {
-  // Centreline lengths: the clear space plus one line (half a round cap each side).
-  const open = 3.25 * LINE16;
-  const close = 2.25 * LINE16;
-  const openFrom = ellWalk(ORBIT_A, ORBIT_B, 0, open / 2, -1);
-  const openTo = ellWalk(ORBIT_A, ORBIT_B, 0, open / 2, 1);
-  const closeFrom = ellWalk(ORBIT_A, ORBIT_B, 175, close / 2, -1);
-  const closeTo = ellWalk(ORBIT_A, ORBIT_B, 175, close / 2, 1);
-  return [
-    ellArc(ORBIT_CX, ORBIT_CY, n3(ORBIT_A * ORBIT_FRONT), n3(ORBIT_B * ORBIT_FRONT), ORBIT_TILT, openTo, closeFrom),
-    ellArc(ORBIT_CX, ORBIT_CY, ORBIT_A, ORBIT_B, ORBIT_TILT, closeTo, openFrom + 360),
-  ];
-};
+function orbitArcs(a: number, chord: number): string[] {
+  const b = a / ((1 + Math.sqrt(5)) / 2);
+  const th = (-24 * Math.PI) / 180;
+  const at = (deg: number): [number, number] => {
+    const t = (deg * Math.PI) / 180;
+    const x = a * Math.cos(t);
+    const y = b * Math.sin(t);
+    return [12 + x * Math.cos(th) - y * Math.sin(th), 12 + x * Math.sin(th) + y * Math.cos(th)];
+  };
+  const half = (g: number): number => {
+    let lo = 0;
+    let hi = 60;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      const p0 = at(g - mid);
+      const q0 = at(g + mid);
+      if (Math.hypot(q0[0] - p0[0], q0[1] - p0[1]) < chord) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  };
+  return [0, 180].map((g) => {
+    const [x0, y0] = at(g + half(g));
+    const [x1, y1] = at(g + 180 - half(g + 180));
+    return `M${P(x0, y0)}A${fmt(a)} ${fmt(b)} -24 0 1 ${P(x1, y1)}`;
+  });
+}
+
+const ORBIT_ARCS = orbitArcs(9.375, 3.5);
+const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
 
 /**
  * Code (revision 2, the Code board's construction): opposed square brackets
@@ -818,14 +835,14 @@ export const ICONS = {
     hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
     motion: "The bubble speaks: a small pop from the tail.",
   }),
-  orbit: I({
+  orbit: {
+    viewBox: 24,
+    line: 1.5,
     group: "Navigation",
-    // Optical size: an open, tilted ellipse reads shorter and lighter than Code's brackets beside it. 1.08 is as far as
-    // the live area allows (the ink then spans 1.83 to 22.17 keyline units); at 16 px it stands 11.3 px to Code's 12.5.
-    optical: 1.08,
-    elements: orbitArcs().map((d) => p(d)),
+    elements: ORBIT_ARCS.map((d) => p(d)),
+    small: { elements: ORBIT_ARCS_SMALL.map((d) => p(d)) },
     motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
-  }),
+  },
   code: I({
     group: "Navigation",
     elements: [g([p(BRACKET)], { x: -1 }), g([p(flipX(BRACKET))], { x: 1 }), p(CURSOR)],

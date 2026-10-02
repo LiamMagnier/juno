@@ -68,7 +68,7 @@ export function withoutEnvelope(text: string): string {
 export function agentContextFor(ctx: ToolContext): AgentExecutionContext {
   return {
     userId: ctx.userId,
-    sessionId: ctx.generationId,
+    sessionId: ctx.sessionId ?? ctx.generationId ?? "session",
     ...(ctx.conversationId ? { conversationId: ctx.conversationId } : {}),
     ...(ctx.projectId ? { projectId: ctx.projectId } : {}),
     mode: "chat",

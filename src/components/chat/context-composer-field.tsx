@@ -31,7 +31,6 @@ import {
 } from "./context-editor-dom";
 import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type PaletteStatus } from "./context-composer-layers";
 import { ContextTokenMark } from "./context-token-mark";
-import "./composer.css";
 
 /*
  * THE COMPOSER'S FIELD: a contenteditable sentence with context tokens in it

@@ -124,9 +124,10 @@ function fakeRunner(answer: (call: ToolCallInput) => Partial<BatchResult> = () =
         ...(call.providerCallId ? { providerCallId: call.providerCallId } : {}),
         text: wrapUntrusted("GitHub", body),
         isError: false,
+        status: "succeeded",
         images: [],
         ...answer(call),
-      });
+      } as BatchResult);
     }
     const lastResult = results.at(-1);
     if (nextIsFinal && lastResult) lastResult.text = `${lastResult.text}\n\n${FINAL_ROUND_NOTE}`;
