@@ -19,6 +19,8 @@ export type UsageAccumulator = {
   cacheWrite1h?: number;
   webSearchRequests?: number;
   xSearchRequests?: number;
+  /** Gemini grounding queries so far (`webSearchQueries`), before the free-quota split (SPEC §3.9). */
+  groundingQueries?: number;
   fast?: boolean;
 };
 
@@ -47,6 +49,7 @@ export function mergeUsage(acc: UsageAccumulator, ev: UsageAccumulator): UsageAc
     cacheWrite1h: preferHigher(acc.cacheWrite1h, ev.cacheWrite1h),
     webSearchRequests: preferHigher(acc.webSearchRequests, ev.webSearchRequests),
     xSearchRequests: preferHigher(acc.xSearchRequests, ev.xSearchRequests),
+    groundingQueries: preferHigher(acc.groundingQueries, ev.groundingQueries),
     fast: ev.fast != null ? ev.fast : acc.fast,
   };
 }

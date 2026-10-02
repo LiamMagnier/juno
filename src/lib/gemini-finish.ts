@@ -74,6 +74,12 @@ export interface GeminiFinishDecision {
   /** Only meaningful when `decidedOnEvidence`; kept for the operator log. */
   atCap: boolean;
   truncated: boolean;
+  /**
+   * The turn ended over its TOOLS (`UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`),
+   * not its output budget. Its `length` is a tool-budget stop: it is never
+   * continued as a cut-off answer and never blamed on the thinking level.
+   */
+  toolBudget: boolean;
 }
 
 /**
@@ -126,21 +132,38 @@ export function geminiFinishNote(
   );
 }
 
+/**
+ * Gemini's two ways of ending a turn over its TOOLS rather than its text:
+ * `UNEXPECTED_TOOL_CALL` (it called a tool the request did not offer — the
+ * final request's, whose tools are off) and `TOO_MANY_TOOL_CALLS`. Both leave a
+ * turn that stopped using tools before it answered, which is what `length`
+ * (and its Continue) means; the route adds the `tool_budget` notice (SPEC §5.3
+ * item 8). `finish-reason.ts` still reads the first as a tool-call finish for
+ * every other caller.
+ *
+ * Neither is an answer that ran out of room, whatever the thinking share: the
+ * decision marks them `toolBudget`, so the loop does not resume them with "your
+ * previous message was cut off" and the note does not blame the thinking level.
+ */
+const TOOL_BUDGET_FINISHES = new Set(["UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS"]);
+
 export function decideGeminiFinish(input: GeminiFinishInput): GeminiFinishDecision {
   const atCap = geminiAtCap(input);
 
   if (input.lastFinishReason) {
-    const reason = normalizeFinishReason(input.lastFinishReason);
+    const toolBudget = TOOL_BUDGET_FINISHES.has(input.lastFinishReason.toUpperCase());
+    const reason = toolBudget ? "length" : normalizeFinishReason(input.lastFinishReason);
     return {
       raw: input.lastFinishReason,
       reason,
       // The provider naming the reason does not make the reason useful: a
       // Google-sent MAX_TOKENS over a thinking-starved answer needs the same
       // sentence as one we inferred.
-      note: geminiFinishNote(reason, input),
+      note: toolBudget ? undefined : geminiFinishNote(reason, input),
       decidedOnEvidence: false,
       atCap,
       truncated: false,
+      toolBudget,
     };
   }
 
@@ -159,7 +182,7 @@ export function decideGeminiFinish(input: GeminiFinishInput): GeminiFinishDecisi
   const truncated = looksTruncated(input.answerTail);
   const raw = atCap || truncated ? "MAX_TOKENS" : "STOP";
   const reason = normalizeFinishReason(raw);
-  return { raw, reason, note: geminiFinishNote(reason, input), decidedOnEvidence: true, atCap, truncated };
+  return { raw, reason, note: geminiFinishNote(reason, input), decidedOnEvidence: true, atCap, truncated, toolBudget: false };
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

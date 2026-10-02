@@ -26,6 +26,55 @@ export function roundBudgetFor(effort: ReasoningEffort | null | undefined, voice
   }
 }
 
+/**
+ * The turn's provider-search cap: how many searches the provider may run over
+ * the whole turn (SPEC §4.1, the `web_search` row of §6.6). 3 / 6 / 10 / 16 for
+ * budgets 4 / 10 / 16 / 24; voice's 7 counts as 10.
+ *
+ * Anthropic's `max_uses` is this number on EVERY request of the turn. It bounds
+ * one request, so it cannot be the round budget (24 searches × 23 requests would
+ * be ≈ 550 searches on a `max` turn), and it must not change between requests,
+ * because a changed `tools` array invalidates preserved thinking and the tools
+ * cache. The turn-wide bound is the route's: every provider search counts, and
+ * at the cap it calls `requestFinal("searches")`.
+ */
+export function providerSearchCapFor(budget: number): number {
+  if (budget <= 4) return 3;
+  if (budget <= 10) return 6;
+  if (budget <= 16) return 10;
+  return 16;
+}
+
+/** The round budget of a turn that carries the opened chat toolset and no budget of its own (SPEC §5.0). */
+export const DEFAULT_TOOL_BUDGET = 10;
+/**
+ * Today's six tool rounds plus the forced final request: the budget of a turn on
+ * the toolset `streamChat` still opens from its deprecated options (removed in
+ * WS9a), and of a turn with provider search — Claude's search can pause a long
+ * turn and ask for it back (`pause_turn`), and each continuation is a request.
+ */
+export const LEGACY_TOOL_BUDGET = 7;
+/** A structured call: one answer and one corrective retry (SPEC §5.0 `responseSchema`). */
+export const STRUCTURED_BUDGET = 2;
+
+/**
+ * Requests a `streamChat` call gets when its caller passes no loop controller.
+ * The reworked route always passes its own, sized by `roundBudgetFor`; the
+ * other callers get what their kind of call needs and no more — one request
+ * for a plain completion.
+ */
+export function defaultLoopBudget(input: {
+  toolset: boolean;
+  legacyTools: boolean;
+  webSearch: boolean;
+  structured: boolean;
+}): number {
+  if (input.structured) return STRUCTURED_BUDGET;
+  if (input.toolset) return DEFAULT_TOOL_BUDGET;
+  if (input.legacyTools || input.webSearch) return LEGACY_TOOL_BUDGET;
+  return 1;
+}
+
 export interface LoopController {
   readonly budget: number;
   readonly requests: number;

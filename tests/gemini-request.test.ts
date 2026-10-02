@@ -6,6 +6,7 @@ import {
   geminiGenerationConfig,
   geminiRequestBody,
   geminiThinkingConfig,
+  geminiToolConfig,
   geminiToolsPayload,
   isGemini3OrLater,
 } from "@/lib/gemini-core";
@@ -121,46 +122,81 @@ test("a search-only turn still sends google_search — on its one and only round
   // THE G4 REPRODUCTION. A turn with no function tools runs exactly one round,
   // which is also the final round; the old `!isFinalRound` gate meant `tools`
   // was never attached and the grounding the UI announced never happened.
-  const tools = geminiToolsPayload({ model: model("gemini-3.8-flash"), webSearch: true, isFinalRound: true });
+  const tools = geminiToolsPayload({ model: model("gemini-3.8-flash"), webSearch: true });
   assert.deepEqual(tools, [{ google_search: {} }]);
   const body = geminiRequestBody({
     contents: [{ role: "user", parts: [{ text: "hi" }] }],
     generationConfig: { maxOutputTokens: 4096 },
     system: "You are Juno.",
     tools,
+    // The final request's tools-off switch is for FUNCTION calls: with none
+    // declared there is nothing to switch off, and search stays on.
+    toolConfig: geminiToolConfig({ final: true, declarations: false }),
   });
   assert.deepEqual(Object.keys(body).sort(), ["contents", "generationConfig", "systemInstruction", "tools"]);
   assert.deepEqual(body.tools, [{ google_search: {} }]);
 });
 
-test("Gemini 3 combines built-in and custom tools; 2.5 may not", () => {
-  const declarations = [{ name: "browser_agent", description: "", parameters: { type: "object" } }];
+test("Gemini 3 combines built-in and custom tools; before 3 the functions win", () => {
+  const declarations = [{ name: "web_fetch", description: "", parameters: { type: "object" } }];
   assert.deepEqual(
     geminiToolsPayload({ model: model("gemini-3.8-flash"), functionDeclarations: declarations, webSearch: true }),
     [{ functionDeclarations: declarations }, { google_search: {} }],
   );
-  // Gemini 2.5 rejects a request mixing search with function declarations, so
-  // the explicitly requested search wins.
+  // Gemini 2.5 rejects a request mixing search with function declarations.
+  // The FUNCTIONS are kept (SPEC §5.3 item 6, RC-4): chat never asks for both
+  // on these models, and a caller that does must not lose every tool it has
+  // to a search it could get from Juno's own web_search instead.
   assert.deepEqual(
     geminiToolsPayload({ model: model("gemini-2.5-pro"), functionDeclarations: declarations, webSearch: true }),
-    [{ google_search: {} }],
+    [{ functionDeclarations: declarations }],
   );
-  // Without search there is nothing to conflict with, on either line.
+  // Without functions there is nothing to conflict with, on either line.
+  assert.deepEqual(geminiToolsPayload({ model: model("gemini-2.5-pro"), webSearch: true }), [{ google_search: {} }]);
   assert.deepEqual(
     geminiToolsPayload({ model: model("gemini-2.5-pro"), functionDeclarations: declarations }),
     [{ functionDeclarations: declarations }],
   );
-  // The forced-answer round withholds function declarations but not grounding.
+  // The probe-P2 fallback for the final request withholds function
+  // declarations but never grounding.
   assert.deepEqual(
     geminiToolsPayload({
       model: model("gemini-3.8-flash"),
       functionDeclarations: declarations,
       webSearch: true,
-      isFinalRound: true,
+      withholdDeclarations: true,
     }),
     [{ google_search: {} }],
   );
   assert.deepEqual(geminiToolsPayload({ model: model("gemini-3.8-flash") }), []);
+});
+
+test("the final request keeps its declarations and turns calling off with mode NONE", () => {
+  // SPEC §4.6: withholding the declarations while the history still holds
+  // functionCall parts invites UNEXPECTED_TOOL_CALL; mode NONE keeps them
+  // described and forbids a new call.
+  const declarations = [{ name: "web_fetch", description: "", parameters: { type: "object" } }];
+  const tools = geminiToolsPayload({ model: model("gemini-3.8-flash"), functionDeclarations: declarations, webSearch: true });
+  const final = geminiRequestBody({
+    contents: [],
+    generationConfig: {},
+    tools,
+    toolConfig: geminiToolConfig({ final: true, declarations: true }),
+  });
+  assert.deepEqual(final.tools, [{ functionDeclarations: declarations }, { google_search: {} }]);
+  assert.deepEqual(final.toolConfig, { functionCallingConfig: { mode: "NONE" } });
+  // Earlier requests leave Google's default (AUTO) alone.
+  assert.equal(geminiToolConfig({ final: false, declarations: true }), undefined);
+  const earlier = geminiRequestBody({ contents: [], generationConfig: {}, tools, toolConfig: geminiToolConfig({ final: false, declarations: true }) });
+  assert.equal("toolConfig" in earlier, false);
+  // A toolConfig with no function declarations to govern is never sent.
+  const searchOnly = geminiRequestBody({
+    contents: [],
+    generationConfig: {},
+    tools: [{ google_search: {} }],
+    toolConfig: { functionCallingConfig: { mode: "NONE" } },
+  });
+  assert.equal("toolConfig" in searchOnly, false);
 });
 
 test("the request body carries no key the native surface does not define", () => {
