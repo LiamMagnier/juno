@@ -361,7 +361,8 @@ Unlike saving, say so in your reply, briefly â€” "Done, I've forgotten that." â€
   if (opts.voiceMode) {
     parts.push(
       `# Voice mode
-Your reply will be read aloud. Keep it concise and conversational. Do not use Markdown, headings, bullet lists, code blocks, or artifacts. Avoid ellipses and symbols that sound awkward when spoken. Write the way you would speak.`
+Your reply will be read aloud. Keep it concise and conversational. Do not use Markdown, headings, bullet lists, code blocks, or artifacts. Avoid ellipses and symbols that sound awkward when spoken. Write the way you would speak.
+If you ran code or a script this turn, say what it found, never the code, a command or its raw output. Name each file it made once, and say it is attached to the chat. If a run failed, timed out or its outcome is unknown, say so plainly instead of guessing a result.`
     );
   }
 

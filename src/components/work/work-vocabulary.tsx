@@ -429,6 +429,14 @@ const TOOL_PRESENT: Record<string, string> = {
   web_research: "Searching the web",
   fetch_page: "Reading a web page",
   read_page: "Reading a web page",
+  // The execution and skill tools (TOOL_RUNTIME_DESIGN.md §6.5, §6.8). A run
+  // event normally carries its own sentence ("Running Python"); these are the
+  // floor for one that does not.
+  run_code: "Running code",
+  code_interpreter: "Running code",
+  check_run: "Checking on a run",
+  use_skill: "Reading a skill",
+  read_skill_file: "Reading a skill file",
 };
 
 const TOOL_PAST: Record<string, string> = {
@@ -446,6 +454,11 @@ const TOOL_PAST: Record<string, string> = {
   web_research: "Searched the web",
   fetch_page: "Read a web page",
   read_page: "Read a web page",
+  run_code: "Ran code",
+  code_interpreter: "Ran code",
+  check_run: "Checked on a run",
+  use_skill: "Read a skill",
+  read_skill_file: "Read a skill file",
 };
 
 /** The name of the thing an approval would authorise. */

@@ -26,6 +26,7 @@ import {
   receiptLabelForCall,
   type ReceiptIconKind,
 } from "@/lib/chat/tool-receipt";
+import { activeRunId, readToolRun, runReceiptParts, type ToolRunView } from "@/lib/chat/tool-run";
 import type { ClientActivityEvent, ClientMemoryReceipt, ClientSource, ClientToolDetail } from "@/types/chat";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -222,6 +223,13 @@ interface Call {
    * it just does not open. See TOOLS_NO_DETAIL_NOTE.
    */
   tool?: ClientToolDetail;
+  /**
+   * The run behind the call, when the call is one of the execution or skill
+   * tools (`run_code`, `check_run`, `use_skill`, `read_skill_file`). Read once
+   * here by `readToolRun`, so the strip, the panel and the run detail say one
+   * run one way (lib/chat/tool-run).
+   */
+  run?: ToolRunView;
 }
 
 /**
@@ -279,6 +287,7 @@ export interface Step {
   icon?: ReceiptIconKind;
   body?:
     | { type: "tool"; tool: ClientToolDetail }
+    | { type: "run"; run: ToolRunView }
     | { type: "prose"; text: string }
     | { type: "memory"; memory: ClientMemoryReceipt };
   source?: { url: string; domain: string; access: SourceAccess; citeIndex: number | null };
@@ -439,6 +448,10 @@ export function buildRun(
         // budgeted it, and a second opinion formed here could only disagree
         // with the one the label is describing.
         ...(e.kind === "tool" && e.tool ? { tool: e.tool } : {}),
+        ...(e.kind === "tool" ? (() => {
+          const run = readToolRun(e, { live: streaming });
+          return run ? { run } : {};
+        })() : {}),
       };
     });
 
@@ -603,6 +616,12 @@ function buildSteps(input: {
   } = input;
 
   const steps: Step[] = [];
+  // THE active run, if one is working: it is the turn's one running row, so
+  // the generic "Thinking" placeholder and the write row stand down for it.
+  const liveRun = activeRunId(
+    calls.flatMap((c) => (c.run ? [c.run] : [])),
+    streaming,
+  );
 
   // ── RESEARCH: the searches the run ran, then the pages it came back with ──
   for (const e of searchEvs) {
@@ -721,6 +740,25 @@ function buildSteps(input: {
       });
       continue;
     }
+    if (call.run) {
+      // A real run says what it did and how it ended (lib/chat/tool-run):
+      // "Ran Python", "Python failed", "Outcome unknown". Never "Used a tool".
+      const run = call.run;
+      const parts = runReceiptParts(run);
+      steps.push({
+        id: call.id,
+        kind: "tool",
+        phase: "think",
+        label: [parts.label, parts.object].filter(Boolean).join(" · "),
+        detail: [parts.figure, parts.reason].filter(Boolean).join(" · ") || null,
+        icon: run.tool === "use_skill" || run.tool === "read_skill_file" ? "skill" : "code",
+        ms: parts.durationMs,
+        running: run.id === liveRun,
+        failed: parts.status === "failed" || parts.status === "unknown",
+        body: { type: "run" as const, run },
+      });
+      continue;
+    }
     const tool = call.tool;
     // The one receipt vocabulary: "Searched the web", "Linear · Create issue".
     // A failure says why in one line under it; a success says nothing more.
@@ -767,10 +805,10 @@ function buildSteps(input: {
       // A running step shows no figure at all: absence is this panel's idiom
       // for "not yet measured", and the header clock is the only clock.
       ms: writeRunning ? null : span(tWrite, tEnd),
-      running: writeRunning,
+      running: writeRunning && liveRun === null,
       failed: false,
     });
-  } else if (streaming) {
+  } else if (streaming && liveRun === null) {
     /* THE RUNNING ROW, when the run has not started writing yet.
      *
      * Its label is the PHASE, not an invented action — "Researching", not

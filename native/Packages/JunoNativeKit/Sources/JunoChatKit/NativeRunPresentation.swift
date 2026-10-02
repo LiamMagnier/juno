@@ -99,7 +99,9 @@ public enum NativeToolPresentation {
             return NativeRunPhraseLine(phrases)
         case "inspect_image":
             return file(call).map { line(["Looking closer at"], .file($0)) } ?? single("Looking closer at an image")
-        case "run_code": return single("Running code")
+        case "run_code", "check_run", "use_skill", "read_skill_file":
+            // A real run says what it runs (NativeToolRunPresentation): "Running Python".
+            return single(NativeToolRunPresentation.label(call))
         case "search_chats":
             return query(call).map { line(["Searching your chats for"], .quote($0)) } ?? single("Searching your chats")
         case "current_time": return single("Checking the time")
@@ -144,7 +146,8 @@ public enum NativeToolPresentation {
             return file(call).map { line(["Read"], .file($0)) } ?? single("Read a document")
         case "inspect_image":
             return file(call).map { line(["Looked closer at"], .file($0)) } ?? single("Looked closer at an image")
-        case "run_code": return single("Ran code")
+        case "run_code", "check_run", "use_skill", "read_skill_file":
+            return single(NativeToolRunPresentation.label(call))
         case "search_chats": return single("Searched your chats")
         case "current_time": return single("Checked the time")
         case "calculate": return single("Calculated")
@@ -196,13 +199,20 @@ public enum NativeToolPresentation {
                 return NativeRunPhraseLine([subject])
             }
             return NativeRunPhraseLine([subject, reason])
-        case "run_code":
+        case "run_code", "check_run", "use_skill", "read_skill_file":
+            // The run's own words and evidence: "Python failed · exit 1",
+            // "Timed out after 2 min", "Stopped", "Outcome unknown".
+            // The exit code rides the row's figure slot ("exit 1"), not the line.
+            if call.run != nil || NativeToolRunPresentation.language(call) != nil || call.tool != "run_code" {
+                return single(NativeToolRunPresentation.label(call))
+            }
             if call.status == .failed {
                 if let name = call.figure?.value, call.figure?.kind == "exit", !name.isEmpty, name != "0" {
                     return NativeRunPhraseLine([NativeRunPhrase("Code failed"), NativeRunPhrase([.label(name)])])
                 }
                 return NativeRunPhraseLine(reason.text == "Failed" ? [NativeRunPhrase("Code failed")] : [NativeRunPhrase("Code failed"), reason])
             }
+            if call.status == .outcomeUnknown { return single("Outcome unknown") }
             return NativeRunPhraseLine(runningLine(call).phrases + [reason])
         case "start_task":
             return call.status == .failed ? single("Task not started") : NativeRunPhraseLine(runningLine(call).phrases + [reason])
@@ -218,6 +228,7 @@ public enum NativeToolPresentation {
         case .denied: return NativeRunPhrase("You declined this")
         case .expired: return NativeRunPhrase("Approval expired")
         case .cancelled: return NativeRunPhrase("Cancelled")
+        case .outcomeUnknown: return NativeRunPhrase("Outcome unknown")
         default: break
         }
         switch call.errorCode {
@@ -248,7 +259,7 @@ public enum NativeToolPresentation {
         switch call.status {
         case .queued, .running, .awaitingApproval: runningLine(call)
         case .succeeded: doneLine(call)
-        case .failed, .denied, .expired, .cancelled: failedLine(call)
+        case .failed, .denied, .expired, .cancelled, .outcomeUnknown: failedLine(call)
         }
     }
 
@@ -260,13 +271,18 @@ public enum NativeToolPresentation {
     /// Whether the call's row wears the failure ink: failures and expiries,
     /// never a denial the reader chose (SPEC §7.6.1).
     public static func readsAsFailure(_ call: NativeToolCall) -> Bool {
-        call.status == .failed || call.status == .expired
+        // An unknown outcome wears the same attention ink: it is not a success.
+        call.status == .failed || call.status == .expired || call.status == .outcomeUnknown
     }
 
     /// The figure — "8 results", "12,480 characters", "Exit code 0" — only
     /// what the server measured, never invented.
     public static func figurePhrase(_ call: NativeToolCall) -> NativeRunPhrase? {
-        guard let figure = call.figure else { return nil }
+        guard let figure = call.figure else {
+            // A run's evidence when no figure was sent: "2 files", "exit 1".
+            guard NativeToolRunPresentation.isRunTool(call.tool) else { return nil }
+            return NativeToolRunPresentation.figure(call).map { NativeRunPhrase([.label($0)]) }
+        }
         switch figure.kind {
         case "results":
             guard let n = figure.n else { return nil }
@@ -312,7 +328,8 @@ public enum NativeToolPresentation {
         case "web_fetch": "web"
         case "read_document": "file"
         case "inspect_image": "image"
-        case "run_code": "codeBrackets"
+        case "run_code", "check_run": "codeBrackets"
+        case "use_skill", "read_skill_file": "skills"
         case "search_chats": "chats"
         case "current_time": "clock"
         case "calculate": "calculator"

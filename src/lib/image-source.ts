@@ -15,11 +15,14 @@
  * these URLs must skip the optimizer and be loaded directly by the browser,
  * which does send the cookie. Pass the result as `unoptimized` on `<Image>`.
  *
- * Deliberately narrow: it matches only the credentialed route, so when S3 is
- * configured (`S3_PUBLIC_URL`, absolute and anonymously readable) optimization
- * still applies. `getViewUrl` in `src/lib/storage.ts` decides which form a given
+ * Deliberately narrow: it matches only the app's own routes, every one of which
+ * reads the session (`/api/files/…`, and `/api/attachments/<id>`, the
+ * owner-scoped image route a run's produced chart is drawn from when its
+ * record carries an attachment id and no link), so when S3 is configured
+ * (`S3_PUBLIC_URL`, absolute and anonymously readable) optimization still
+ * applies. `getViewUrl` in `src/lib/storage.ts` decides which form a given
  * deployment produces.
  */
 export function requiresViewerCredentials(url: string | null | undefined): boolean {
-  return typeof url === "string" && url.startsWith("/api/files/");
+  return typeof url === "string" && url.startsWith("/api/");
 }
