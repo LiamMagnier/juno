@@ -24,12 +24,13 @@ The documenter verified these entries from local `git log`:
 
 | Commit | Meaning |
 | --- | --- |
+| `e90549ecaafaee325a5cdb8205f7e4f89f931907` | `Complete Alevr public email identity and preserve continuation evidence`; shared mail envelope and exact lockup PNGs, new OG card and asset generator, escaped-mail tests, Markdown preview notice correction, and the initial continuation record. |
 | `b1b51fd94d2d13566d6c181a765723c5470f37a3` | `Carry Alevr V3 across public reading and marketing pages`; shares and owner reading, landing/download imagery and compact platform cells, legal/engineering layouts, and related regression fixtures. |
 | `c92dc27146598fa191ba1f862ea1c1edc17d033f` | `Rework public authentication and recovery with Alevr V3`; auth layout/forms/skeletons, local auth-error/check-email routes, root recovery/offline surfaces, scoped public styling and the authorized onboarding exception, authored image, licensed fallback fonts, ignore rules. |
 | `97c30ab9` | Immediate base: `Merge branch 'rf/brand-assets' into rework/refoundation`. |
 | `c9f03acd` | Earlier inherited Continuum geometry revision 2 documentation/assets; not a new public-pages commit. |
 
-The final commit containing this record groups the email envelope/lockups, OG generator/output, email tests, and a share-view correction that suppresses the static-runtime warning for working Markdown previews. Obtain that commit's hash from `git log`; this record cannot embed its own commit hash. All three requested checks passed before each implementation commit. No push, deploy, or merge was performed.
+The three implementation commits above preserve the requested public-page work. A subsequent documentation-only checkpoint records the final live-browser evidence, dependency isolation, and completed check results. Obtain its hash from `git log`; a record cannot embed its own commit hash. No push, deploy, or merge was performed.
 
 ## Implemented scope and source map
 
@@ -131,13 +132,15 @@ The implementation owner reported these completed Node 24 checks before planned 
 | Chained helpers in `npm test` | Auth/locale, message crypto, moderation, skill-package, custom-MCP helpers passed | Their exercised integration contracts, not configured external OAuth or mail delivery. |
 | Targeted local log `.public-targeted.log` | 33 tests, 33 pass, 0 fail | The documented focused run’s regression coverage. |
 
-These are completed validation runs by the implementation owner, not an independent rerun by the documenter. The same three checks were repeated before the authentication commit and the public-reading/marketing commit, each with process exit 0. The final email/assets commit also requires completed runs of all three; the final result is recorded below. Do not treat a log containing only command headers or partial passing tests as proof of process exit 0.
+These are completed validation runs by the implementation owner, not an independent rerun by the documenter. The same three checks were repeated before the authentication commit and the public-reading/marketing commit, each with process exit 0. The final rerun after isolating the branch's generated Prisma client is recorded below. Do not treat a log containing only command headers or partial passing tests as proof of process exit 0.
+
+**Final rerun, 2026-10-02:** `npm run typecheck`, `npm run lint`, and the entire `npm test` chain each completed with exit 0 after dependency isolation. The test runner reported 4,547 tests, 4,475 passing, 72 skipped, zero failures; all chained helpers passed. Lint reported the same seven inherited gallery warnings and zero errors. No source change was needed for the generated-client mismatch. The documentation checkpoint was committed after these results.
 
 Local logs and artifacts are ignored: `.public-*.log`, `.next-public-dev.log`, `.public-signin.html`, `.validation/`, `.impeccable/`, and `public/_review*` previews. They may not travel with a branch checkout or PR. Preserve needed review evidence separately when handing work to another machine.
 
 ### Browser and review evidence
 
-The owner’s live `npx next dev -p 3175` session rendered the initial auth page and exercised required-field validation. Severe resource contention then prevented final interactive browser navigation. A temporary Turbopack experiment reached startup but failed on an inherited `::highlight(juno-find)` CSS parser incompatibility; its temporary configuration was restored and is not committed. The normal webpack dev server was restarted on port 3175. This limited live result does not establish successful sign-in, sign-up, reset, OAuth, native handoff, or onboarding completion.
+The owner's live `npx next dev -p 3175` session rendered the initial auth page and exercised required-field validation. Severe resource contention then delayed compilation and browser navigation. The final normal webpack run compiled sign-in in 224 seconds and returned HTTP 200; its live page was inspected and captured in light/dark, and theme switching plus the password-visibility pressed state were exercised. A temporary Turbopack experiment reached startup but failed on an inherited `::highlight(juno-find)` CSS parser incompatibility; its temporary configuration was restored and is not committed. These live checks do not establish successful sign-in, sign-up, reset, OAuth, native handoff, or onboarding completion.
 
 The final visual review used **real component server rendering and real streamed form HTML with compiled CSS**. Animations were disabled for captures. Phone evidence used a same-origin viewport iframe at 390×844 after browser-controller timeouts. This is useful settled-layout evidence, not a complete browser interaction, standalone phone navigation, runtime animation, or authenticated acceptance matrix.
 
@@ -145,6 +148,7 @@ Key local evidence:
 
 - `.impeccable/review/auth-desktop-v2.png` and `auth-desktop-dark.png`: desktop auth in light/dark.
 - `.impeccable/review/auth-mobile-light-final.png` and `auth-mobile-dark.png`: phone auth; final light capture shows the full sculpture caption and legal footer.
+- `.impeccable/review/auth-live-light.png` and `auth-live-dark.png`: final live sign-in at the actual 842px browser width, after interactive theme/password-control checks. These supplement the settled desktop/phone captures; they do not establish a completed authentication journey.
 - `.impeccable/review/landing-light-final.png` and `landing-light-hero-final.png`: substantial photographic landing focal region, real heading/actions, nonblank full-page capture.
 - `.impeccable/review/download-light-top-final.png`, `download-light-hero-final.png`, and `download-platforms-final.png`: photographic download stage and the final compact three-platform row.
 - `.impeccable/review/privacy-final.png`: the real legal layout and unchanged French document body.
@@ -161,7 +165,11 @@ The reviewer cleared: (1) missing landing/download imagery, (2) the onboarding b
 
 The local Next dev origin used during work was `http://localhost:3175`. Ignored `_review` HTML/CSS files served visual snapshots from that origin, including sign-in light/dark, phone viewports, landing/download light/dark, and email variants. They are ephemeral QA files and must not be published as product routes.
 
+The temporary public `_review` HTML/CSS files were removed at closeout. Captures remain in the ignored review directory. The normal `npx next dev -p 3175` preview uses the unchanged committed Next configuration and isolated validation database; it may require cold route compilation when resumed.
+
 The validation database is an isolated PostgreSQL cluster under `.validation/postgres`, port **54385**, database **`alevr_public_validation`**. It contains synthetic auth/share/read fixtures only. No production database was used for this validation. Do not copy synthetic credentials into this document, commit them, or seed an account into production. Synthetic rows establish fixture setup; they do not establish an authenticated browser session. Check the database process and exported validation environment before resuming; process liveness is not promised by the existence of the data directory.
+
+The worktree helper initially linked all of `node_modules` to the refoundation checkout. Another concurrent Prisma generation then changed the shared client, making this branch's unchanged `WorkSkillVersion` test fixture fail typechecking on three fields absent from its schema. Only this worktree's dependency link was replaced: ordinary dependencies remain linked, while `@prisma/client` and `.prisma/client` are local. A temporary copy of the unchanged branch schema, with its generator output directed explicitly to this worktree's `node_modules/.prisma/client`, regenerated the matching client. No other checkout or schema was modified, and no unrelated fixture was patched to accommodate another branch. A normal independent dependency install and `prisma generate` from this branch produce the same schema contract.
 
 Reproducible checks, after selecting Node 24 and pointing any database-dependent helpers only at the isolated validation target:
 
