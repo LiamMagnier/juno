@@ -249,7 +249,7 @@ function OrbitMoment() {
 
 const MEMBER_SEQ: { at: number; state: CrewState; words?: string }[] = [
   { at: 0, state: "thinking" },
-  { at: 1700, state: "working", words: "Reading seat usage…" },
+  { at: 1700, state: "working", words: "Reading seat usage" },
   { at: 5200, state: "available", words: "Ready" },
 ];
 
@@ -305,7 +305,7 @@ function MemberMoment({ tall }: { tall?: boolean }) {
         <div className="jn-dock">
           <div className="jn-composer" data-variant="dock">
             <div className="jn-field">
-              {draft ? <div className="jn-sentence">{draft}</div> : <div className="jn-field__placeholder"><span>Message Mira…</span></div>}
+              {draft ? <div className="jn-sentence">{draft}</div> : <div className="jn-field__placeholder"><span>Message Mira</span></div>}
             </div>
             <div className="jn-crow">
               <span className="jib"><Icon name="plus" size={20} /></span>

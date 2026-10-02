@@ -1076,7 +1076,7 @@ export function ModelPopover({
       </div>
       <div className="jn-pop__sep" />
       <button type="button" className="jn-pop__row jicon-trigger">
-        <span className="jn-pop__text">All models…</span>
+        <span className="jn-pop__text">All models</span>
         <Icon name="chevron-right" size={16} className="ink-3" />
       </button>
     </motion.div>

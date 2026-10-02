@@ -427,7 +427,7 @@ export function MemberScene({ id, top }: { id: string; top?: boolean }) {
           ) : null}
         </div>
         <div className="jn-dock">
-          <Composer variant="dock" initial={MEMBER_DRAFT} placeholder={`Message ${m.name}…`} label={`Message ${m.name}`} onType={onType} />
+          <Composer variant="dock" initial={MEMBER_DRAFT} placeholder={`Message ${m.name}`} label={`Message ${m.name}`} onType={onType} />
         </div>
       </div>
       <AnimatePresence>{sheet ? <CrewSheet key="customize" sheet={sheet} onClose={() => setSheet(null)} /> : null}</AnimatePresence>
