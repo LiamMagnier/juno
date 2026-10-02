@@ -71,9 +71,17 @@ export function accumulateToolCallDeltas(
   }
 }
 
-/** Complete calls in wire order. A fragment with no id or name is not a call. */
+/**
+ * Complete calls in wire order. A fragment with no NAME is not a call.
+ *
+ * A call with a name and no id IS one: some hosts stream whole calls without
+ * an id, and dropping them (what this used to do) answered the model's request
+ * with silence. The adapter gives such a call a synthesized Alevr id
+ * (`jc_<round>_<index>`, src/lib/tools/call-ids.ts) and uses that id on the
+ * wire too, since the replayed assistant message needs one.
+ */
 export function finalizeToolCalls(acc: ReadonlyMap<string, CompatToolCall>): CompatToolCall[] {
-  return [...acc.values()].filter((call) => call.id && call.name);
+  return [...acc.values()].filter((call) => call.name);
 }
 
 /**

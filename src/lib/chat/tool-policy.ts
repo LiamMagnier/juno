@@ -60,12 +60,15 @@ export interface RuntimeToolToggles {
    */
   images?: boolean;
   /**
-   * A file is attached AND a remote sandbox exists to run code against it.
+   * A file is attached AND a remote sandbox exists to run code against it AND
+   * the turn is entitled to an execution tool — above all, the model's tool
+   * calling has been VERIFIED by the round-trip probe (src/lib/tools/
+   * entitlements.ts decides; the route passes the verdict here).
    *
-   * Both halves, and the second is a safety condition rather than a
-   * convenience: with no sandbox configured the only backend available is a
-   * child process on this host, which must never run model-written code. The
-   * tool is simply not offered instead.
+   * The sandbox half is a safety condition rather than a convenience: with no
+   * sandbox configured the only backend available is a child process on this
+   * host, which must never run model-written code. The tool is simply not
+   * offered instead, and the turn is told plainly that code cannot run.
    */
   code?: boolean;
 }

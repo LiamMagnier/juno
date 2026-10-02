@@ -258,3 +258,37 @@ test("a chat attachment is not read when it is uploaded", () => {
   const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
   assert.match(route, /await ensureAttachmentText\(/, "reading happens when the turn does");
 });
+
+/*
+ * L1 review: which runtime calls may run beside others. Every registry tool
+ * passes the broker, which asks about a read too under "Always ask", and two
+ * approval cards at once break the stall watchdog (its pause is a flag); two
+ * of the registry reads also load whole files into an 887 MB web process. So
+ * registry tools are never parallel, and a provider spec is parallel only as
+ * a pure, unbrokered read.
+ */
+test("registry tools run one at a time; only an unbrokered read spec runs in parallel", async () => {
+  const { resolvedRegistryTool, resolvedSpecTool, specIsBrokered } = await import("../src/lib/agent/runtime");
+  const registry = new UnifiedAgentRegistry();
+  for (const tool of registry.listTools()) {
+    assert.equal(resolvedRegistryTool(tool).parallelSafe, false, `${tool.id} must not run in parallel`);
+  }
+  const spec = {
+    id: "read_skill_file",
+    title: "Read a skill file",
+    description: "Reads a file.",
+    input: { type: "object" as const, properties: {} },
+    risk: "read" as const,
+    parallelSafe: true,
+    timeoutMs: 1_000,
+    broker: "none" as const,
+    dedupe: true,
+    execute: async () => ({ status: "succeeded" as const, text: "", body: "" }),
+  };
+  assert.equal(resolvedSpecTool(spec).parallelSafe, true);
+  assert.equal(resolvedSpecTool({ ...spec, broker: "juno_runtime" }).parallelSafe, false, "a brokered read can ask a person");
+  // A provider never waives its own authorisation: only a read may skip the broker.
+  assert.equal(specIsBrokered(spec), false);
+  assert.equal(specIsBrokered({ ...spec, risk: "write" }), true);
+  assert.equal(specIsBrokered({ ...spec, risk: "destructive" }), true);
+});

@@ -112,8 +112,13 @@ export function addAnthropicUsage(total: AnthropicRoundUsage, round: AnthropicRo
 }
 
 export interface AnthropicToolUse {
+  /** Anthropic's own id (`toolu_…`): what `tool_result.tool_use_id` echoes. */
   id: string;
+  /** The Alevr call id (src/lib/tools/call-ids.ts); equal to `id` unless it had to be suffixed. */
+  callId: string;
   name: string;
+  /** Position among this round's tool_use blocks, 0-based. */
+  index: number;
   /** The accumulated `input_json_delta` fragments, unparsed. */
   json: string;
 }
@@ -132,13 +137,12 @@ export interface AnthropicRoundResult {
 }
 
 /**
- * Parse streamed `input_json_delta` fragments into tool arguments.
+ * Parse streamed `input_json_delta` fragments into an object for the REPLAYED
+ * `tool_use` block, which the Messages API requires to carry an object.
  *
- * A truncated or malformed accumulation becomes `{}` rather than throwing: the
- * approval broker classifies and previews whatever it is handed, and an empty
- * object is both honest about what arrived and safe — `classifyExternalAction`
- * reads the absence of argument tokens as LESS evidence, never as more
- * permission.
+ * Never used to decide what a tool runs with: the dispatcher parses the raw
+ * text itself and answers a malformed call with an error result, so nothing
+ * executes with this `{}` (it used to — the call ran with empty input).
  */
 export function safeToolInput(json: string): Record<string, unknown> {
   if (!json.trim()) return {};
@@ -160,7 +164,17 @@ export function safeToolInput(json: string): Record<string, unknown> {
  */
 export async function* readAnthropicRound(
   stream: AsyncIterable<Anthropic.RawMessageStreamEvent>,
-  opts: { labelFor?: (toolName: string) => string; seen: Set<string> }
+  opts: {
+    labelFor?: (toolName: string) => string;
+    seen: Set<string>;
+    /**
+     * The Alevr id for the call at `index` in this round, from the turn's tool
+     * loop. Absent (tests of the reassembly alone), the provider id is used.
+     */
+    issueCallId?: (providerCallId: string | undefined, index: number) => string;
+    /** The model step this round is, for the call event. */
+    round?: number;
+  }
 ): AsyncGenerator<LlmEvent, AnthropicRoundResult> {
   /*
    * The assistant turn, keyed by WIRE INDEX rather than by arrival order.
@@ -176,7 +190,11 @@ export async function* readAnthropicRound(
   const blockByIndex = new Map<number, Anthropic.Messages.ContentBlockParam>();
   // Open blocks by wire index. Anthropic may interleave deltas for several
   // indices, so they cannot be accumulated into a single "current" block.
-  const partial = new Map<number, { block: Anthropic.Messages.ContentBlockParam; json: string }>();
+  const partial = new Map<
+    number,
+    { block: Anthropic.Messages.ContentBlockParam; json: string; callId?: string; toolIndex?: number }
+  >();
+  let toolIndex = 0;
   const toolUses: AnthropicToolUse[] = [];
   const usage = emptyAnthropicUsage();
   let stopReason: string | null = null;
@@ -195,16 +213,24 @@ export async function* readAnthropicRound(
         // replayed turn fails signature verification.
         blockByIndex.set(event.index, event.content_block as Anthropic.Messages.ContentBlockParam);
       } else if (raw.type === "tool_use") {
+        const index = toolIndex++;
+        const providerId = raw.id || undefined;
+        const callId = opts.issueCallId ? opts.issueCallId(providerId, index) : (raw.id ?? "");
         partial.set(event.index, {
           block: { type: "tool_use", id: raw.id ?? "", name: raw.name ?? "", input: {} },
           json: "",
+          callId,
+          toolIndex: index,
         });
         yield {
           type: "tool",
           server: opts.labelFor?.(raw.name ?? "") ?? "connector",
           name: raw.name ?? "tool",
           phase: "call",
-          callId: raw.id ?? "",
+          callId,
+          ...(providerId && providerId !== callId ? { providerCallId: providerId } : {}),
+          ...(opts.round === undefined ? {} : { round: opts.round }),
+          index,
           // NO `args` HERE, AND THIS IS NOT AN OVERSIGHT. `content_block_start`
           // carries the tool's id and name and nothing else: the arguments
           // arrive afterwards as `input_json_delta` fragments and are only
@@ -256,8 +282,17 @@ export async function* readAnthropicRound(
       if (open) {
         partial.delete(event.index);
         if (open.block.type === "tool_use") {
+          // The REPLAYED block needs an object, so a malformed accumulation is
+          // `{}` here — but the dispatcher receives the raw `json` and answers
+          // a malformed call with an error instead of running it with `{}`.
           open.block.input = safeToolInput(open.json);
-          toolUses.push({ id: open.block.id, name: open.block.name, json: open.json });
+          toolUses.push({
+            id: open.block.id,
+            callId: open.callId ?? open.block.id,
+            name: open.block.name,
+            index: open.toolIndex ?? toolUses.length,
+            json: open.json,
+          });
         }
         // A text block that opened but never received a delta is a real wire
         // event (Claude often opens one before deciding to call a tool). It
