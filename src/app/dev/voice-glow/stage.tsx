@@ -361,8 +361,7 @@ const THREAD: ChatMessage[] = [
 ];
 const NO_ARTIFACTS = new Map();
 
-function StateView({ state, play, clock, extra }: { state: Exclude<GlowState, "lab">; play?: GlowPlay; clock: GlowClock; extra: Partial<VoiceGlowStage> }) {
-  const scene = play ? PLAY_SCENES[play] : SCENES[state];
+function StateView({ scene, clock, extra }: { scene: Scene; clock: GlowClock; extra: Partial<VoiceGlowStage> }) {
   return (
     <main className="app-main-canvas flex min-h-dvh flex-col bg-background text-foreground">
       <div className="page-gutter mx-auto flex w-full max-w-3xl flex-1 flex-col pt-10">
@@ -533,7 +532,7 @@ export function VoiceGlowGallery({
       {/* Stills and clips: no Next.js dev badge over the composer. */}
       <style>{"nextjs-portal{display:none!important}"}</style>
       <VoiceGlowStageContext.Provider value={extra}>
-        {state === "lab" && !play ? <Lab clock={clock} base={extra} stills={!!still && t === undefined} rows={rows} /> : <StateView state={state} play={play} clock={clock} extra={extra} />}
+        {scene ? <StateView scene={scene} clock={clock} extra={extra} /> : <Lab clock={clock} base={extra} stills={!!still && t === undefined} rows={rows} />}
       </VoiceGlowStageContext.Provider>
     </AppProvider>
   );

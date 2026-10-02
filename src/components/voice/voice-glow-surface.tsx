@@ -187,20 +187,21 @@ export function VoiceGlowSurface({
     const tick: Tick = (now) => {
       const dt = lastNow.current ? (now - lastNow.current) / 1000 : 1 / 60;
       lastNow.current = now;
-      const { clock: c, reduced: r, mode: m } = live.current;
+      const { clock: c, reduced: r } = live.current;
       const input = inputAt(c ? c.now() : now);
       const s = stepGlow(state.current, input, dt);
       const vector = frameVector(glowFrame(s, r));
       const settledBefore = sameFrame(drawn.current, vector);
       draw(vector);
       // Nothing more can change without new props: stop until they arrive.
-      // Off and muted hear nothing; reduced motion ignores levels altogether.
-      if (settledBefore && (m === "off" || m === "muted" || r) && s.thinkT < 0) stop();
+      // Off and muted hear nothing; reduced motion ignores levels and holds
+      // even thinking still. (A new mode re-renders and restarts the loop.)
+      const m = input.mode;
+      if (settledBefore && (r || ((m === "off" || m === "muted") && s.thinkT < 0))) stop();
     };
     tickRef.current = tick;
     schedule(tick);
   }, [draw, inputAt, stop]);
-
 
   // Geometry: the wrapped element's border box and radius, measured on resize only.
   React.useLayoutEffect(() => {
