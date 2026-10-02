@@ -186,12 +186,16 @@ if (!DB_URL) {
   async function verify(id: string) {
     const modelId = await catalogId(id);
     const now = new Date();
+    // Evidence names the adapter it was gathered through, and only verifies a
+    // turn that runs through the same one (model-tool-probe.ts).
+    const { providerAdapterFor } = await import("@/lib/provider-routing");
+    const { getModel } = await import("@/lib/models");
     const tools = {
       probeVersion: 2,
       verdict: "verified",
       checkedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
-      adapter: "anthropic-native",
+      adapter: providerAdapterFor(getModel(id)!),
       checks: { roundTrip: "passed", parallel: "passed", toolImage: "skipped" },
     };
     await prisma.modelCapabilityProbe.upsert({
