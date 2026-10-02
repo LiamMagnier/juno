@@ -64,7 +64,9 @@ function lineupPage(S, theme) {
   const t = THEMES[theme];
   const ink = theme === "dark" ? "#f6f5f2" : "#141418";
   const halo = theme === "dark" ? "text-shadow:0 0 42px rgba(255,255,255,.16)" : "";
-  const body = `<div style="position:relative;width:2000px;height:1125px;overflow:hidden;background:${t.bg}">
+  // Pure black and pure white, like the reference key art (the other sheets keep the V3 neutrals).
+  const keyBg = theme === "dark" ? "#000000" : "#ffffff";
+  const body = `<div style="position:relative;width:2000px;height:1125px;overflow:hidden;background:${keyBg}">
     <div style="position:absolute;left:0;right:0;top:300px;text-align:center;font-family:Newsreader,serif;font-size:236px;font-weight:600;letter-spacing:-.025em;line-height:1;color:${ink};${halo}">Alevr Orbit</div>
     <img src="${f(path.join(passDir, S, `lineup_${S}.png`))}" style="position:absolute;left:0;bottom:0;width:2000px;display:block">
   </div>`;
@@ -134,7 +136,7 @@ function comparePage(list) {
       <div style="position:relative"><img src="${f(dotsRef)}" style="width:1000px;height:562px;object-fit:cover;display:block"><div class="cap">reference · OpenAI dots key art</div></div>
       <div style="position:relative"><img src="${f(path.join(outDir, `lineup_${S}_dark.png`))}" style="width:1000px;height:562px;display:block"><div class="cap">ours · Alevr Orbit · ${SHEET_TITLE[S][0]} ${SHEET_TITLE[S][1]}</div></div>
     </div>`).join("");
-  return page("dark", 2000, rows, `.cap{position:absolute;left:24px;top:18px;font-size:20px;color:#8d8c93}`);
+  return page("dark", 2000, rows, `.cap{position:absolute;left:24px;top:18px;font-size:20px;color:#8d8c93} html,body{background:#000}`);
 }
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -170,19 +172,25 @@ async function small(file) {
   console.log("WROTE", out);
 }
 
+// ONLY=lineup,compare (page kinds) composes a subset, e.g. while renders are still running
+const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;
+const want = (k) => !ONLY || ONLY.has(k);
 for (const S of sheets) {
   for (const theme of ["dark", "light"]) {
-    await shoot(lineupPage(S, theme), path.join(outDir, `lineup_${S}_${theme}.png`), 2000, 1125);
-    await small(path.join(outDir, `lineup_${S}_${theme}.png`));
+    if (want("lineup")) {
+      await shoot(lineupPage(S, theme), path.join(outDir, `lineup_${S}_${theme}.png`), 2000, 1125);
+      await small(path.join(outDir, `lineup_${S}_${theme}.png`));
+    }
+    if (!want("sheets")) continue;
     await shoot(portraitsPage(S, theme), path.join(outDir, `portraits_${S}_${theme}.png`), 2000);
     if (theme === "light") await small(path.join(outDir, `portraits_${S}_${theme}.png`));
     await shoot(iconsPage(S, theme), path.join(outDir, `icons_${S}_${theme}.png`), 2000);
     if (cast[`${S}_variants`]) await shoot(variantsPage(S, theme), path.join(outDir, `variants_${S}_${theme}.png`), 2000);
     if (cast[`${S}_states`] && fs.existsSync(path.join(passDir, S, cast[`${S}_states`].items[0].file))) await shoot(statesPage(S, theme), path.join(outDir, `states_${S}_${theme}.png`), 2000);
   }
-  if (dotsRef) await shoot(comparePage([S]), path.join(outDir, `compare_${S}.png`), 2000, 562);
+  if (dotsRef && want("compare")) await shoot(comparePage([S]), path.join(outDir, `compare_${S}.png`), 2000, 562);
 }
-if (dotsRef) {
+if (dotsRef && want("compare") && sheets.length > 1) {
   await shoot(comparePage(sheets), path.join(outDir, `compare_all.png`), 2000, 562 * sheets.length);
   await small(path.join(outDir, `compare_all.png`));
 }
