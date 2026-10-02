@@ -25,7 +25,7 @@ import { AVAILABLE_SKILL_WHERE } from "@/lib/skills/sources";
 import { parseBundleManifest } from "@/lib/skills/bundle-manifest";
 import { unpackTar } from "@/lib/skills/bundle";
 import { loadSkillBundleTar } from "@/lib/skills/bundle-store";
-import { addSkillMount, clearSkillMounts, skillMountFor } from "@/lib/skills/mount";
+import { clearSkillMounts, mountSkill, skillMountFor } from "@/lib/skills/mount";
 import {
   consentReasonsOf,
   discoverableSkills,
@@ -183,7 +183,8 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
 
   const mount = (row: SkillLibraryRow, version: SkillVersionForUse): boolean => {
     if (input.code === false || !version.bundle) return false;
-    addSkillMount(
+    return mountSkill(
+      input.surface,
       input.sessionId,
       skillMountFor({
         slug: row.slug,
@@ -193,7 +194,6 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
         load: loadTar,
       })
     );
-    return true;
   };
 
   // The armed skill: the route applied its instructions already (and audited
@@ -352,7 +352,7 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
     },
 
     async close() {
-      clearSkillMounts(input.sessionId);
+      clearSkillMounts(input.surface, input.sessionId);
       tars.clear();
     },
   };

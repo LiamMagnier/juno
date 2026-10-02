@@ -228,7 +228,7 @@ if (!URL) {
       code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
     });
     assert.equal(armed.armed, null);
-    assert.deepEqual(skillMountsFor(sessionId), []);
+    assert.deepEqual(skillMountsFor("chat", sessionId), []);
 
     // Even vouched for and opted in, the version still waits on its scripts.
     await db.workSkill.update({ where: { id: skillId }, data: { trust: "user_authored", autoSelect: true } });
@@ -241,7 +241,7 @@ if (!URL) {
       assert.equal(loaded.status, "failed");
       assert.equal(loaded.error?.code, "not_permitted");
       assert.match(loaded.text, /none of its scripts ran/);
-      assert.deepEqual(skillMountsFor(sessionId), [], "nothing mounted");
+      assert.deepEqual(skillMountsFor("chat", sessionId), [], "nothing mounted");
       const read = await discovered.readSkillFile({ skill: "quarterly-summary", path: "scripts/build.py" });
       assert.equal(read.status, "failed", "an unloaded skill's files are not readable");
       await discovered.close();
@@ -325,7 +325,7 @@ if (!URL) {
       assert.ok(style.text.includes(UNTRUSTED_OPEN), "an imported skill's file is enveloped");
       assert.match(style.body, /named \*\*Summary\*\*/);
 
-      const mounts = skillMountsFor(sessionId);
+      const mounts = skillMountsFor("chat", sessionId);
       assert.equal(mounts.length, 1);
       assert.equal(mounts[0].bundleDigest, digest);
       const version = await db.workSkillVersion.findFirstOrThrow({ where: { skillId, bundleDigest: digest }, orderBy: { version: "desc" } });
@@ -351,7 +351,7 @@ if (!URL) {
     } finally {
       await opened.close?.();
     }
-    assert.deepEqual(skillMountsFor(sessionId), [], "closing the turn drops its mounts");
+    assert.deepEqual(skillMountsFor("chat", sessionId), [], "closing the turn drops its mounts");
   });
 
   sandboxTest("use_skill: opted in, the model finds it by name, loads it, it is audited with its digest, and its script runs", async () => {
@@ -388,7 +388,7 @@ if (!URL) {
       assert.equal(detail.skillSlug, "quarterly-summary");
       assert.equal(detail.generationId, sessionId);
 
-      const run = await runInSandbox({ mounts: skillMountsFor(sessionId), inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
+      const run = await runInSandbox({ mounts: skillMountsFor("chat", sessionId), inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
       try {
         assert.equal(run.exitCode, 0, run.stderr);
         assert.deepEqual((await readSummarySheet(new Uint8Array(readFileSync(join(run.work, "out.xlsx"))))).rows, EXPECTED_ROWS);
@@ -414,7 +414,7 @@ if (!URL) {
       assert.doesNotMatch(loaded.output, /<<untrusted/, "the Work session envelopes by provenance; the tool does not");
       const style = await readSkillFile.execute({ skill: "quarterly-summary", path: "reference/style.md" });
       assert.match(style.output, /Freeze the header row/);
-      const mounts = skillMountsFor(runId);
+      const mounts = skillMountsFor("work", runId);
       assert.equal(mounts.length, 1);
       const run = await runInSandbox({ mounts, inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
       try {
@@ -426,7 +426,7 @@ if (!URL) {
     } finally {
       await tools.close();
     }
-    assert.deepEqual(skillMountsFor(runId), []);
+    assert.deepEqual(skillMountsFor("work", runId), []);
   });
 
   sandboxTest("a skill asking for network and connectors gets neither: the grant is the turn's and a socket fails in the sandbox", async () => {
@@ -489,7 +489,7 @@ if (!URL) {
       userId: owner, surface: "chat", sessionId, projectId: null, armedSlug: "phone-home", code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
     });
     try {
-      const run = await runInSandbox({ mounts: skillMountsFor(sessionId), inputs: {}, language: "bash", code: "python3 /skills/phone-home/scripts/call.py" });
+      const run = await runInSandbox({ mounts: skillMountsFor("chat", sessionId), inputs: {}, language: "bash", code: "python3 /skills/phone-home/scripts/call.py" });
       run.cleanup();
       assert.equal(run.exitCode, 7, `${run.stdout}\n${run.stderr}`);
       assert.match(run.stderr, /refused \('1\.1\.1\.1', 80\)/);

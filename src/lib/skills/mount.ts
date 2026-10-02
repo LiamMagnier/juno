@@ -5,7 +5,7 @@
  * A turn (a chat generation, or a Work run) is one sandbox session. The skills
  * it loads, whether the person armed one with `/slug` or the model loaded one
  * through `use_skill`, are registered here under the session id, and the
- * execution runtime reads `skillMountsFor(sessionId)` when it builds each
+ * execution runtime reads `skillMountsFor(surface, sessionId)` when it builds each
  * `run_code` call, so a skill loaded earlier in the turn is present at
  * `/skills/<slug>` for every run after it. The runtime uploads each bundle once
  * per session (the host keys it by digest) and records which mount a run's
@@ -45,7 +45,8 @@ export interface SkillMount {
 }
 
 const MOUNT_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const MOUNT_TTL_MS = 2 * 60 * 60 * 1000;
+/** As long as the sandbox keeps the session's workspace. */
+const MOUNT_TTL_MS = 30 * 60 * 1000;
 
 /**
  * A mount for one stored bundle. The bytes are read (and verified against the
@@ -75,6 +76,19 @@ export function skillMountFor(input: {
   };
 }
 
+/*
+ * The per-session registry below has the exact signatures of the execution
+ * lane's `src/lib/exec/mounts.ts` (`mountSkill`, `skillMountsFor`,
+ * `clearSkillMounts`, keyed by surface and session, at most 8 mounts), which is
+ * the one `run_code` reads. It stands in until that file is on the trunk; when
+ * it is, these three are deleted and `session.ts` imports that module instead,
+ * so there is exactly one registry and `run_code` sees every mount.
+ */
+
+type MountSurface = "chat" | "work" | "voice";
+
+const MAX_MOUNTS_PER_SESSION = 8;
+
 interface SessionMounts {
   mounts: Map<string, SkillMount>;
   touchedAt: number;
@@ -82,35 +96,41 @@ interface SessionMounts {
 
 const sessions = new Map<string, SessionMounts>();
 
+function key(surface: MountSurface, sessionId: string): string {
+  return `${surface}:${sessionId}`;
+}
+
 function sweep(now: number): void {
-  for (const [sessionId, entry] of sessions) {
-    if (now - entry.touchedAt > MOUNT_TTL_MS) sessions.delete(sessionId);
+  for (const [name, entry] of sessions) {
+    if (now - entry.touchedAt > MOUNT_TTL_MS) sessions.delete(name);
   }
 }
 
 /**
- * Registers a mount for a session. A second skill under the same slug in one
- * session replaces nothing: slugs are unique per account, and a mount already
- * there for that slug is the one the session's earlier runs used.
+ * Arms a skill bundle for a session. False when the mount name or digest is
+ * invalid or the session already holds the maximum. A slug already mounted is
+ * replaced by the same skill's mount: slugs are unique per account.
  */
-export function addSkillMount(sessionId: string, mount: SkillMount): void {
+export function mountSkill(surface: MountSurface, sessionId: string, mount: SkillMount): boolean {
+  if (!MOUNT_SLUG.test(mount.slug) || !/^[0-9a-f]{64}$/.test(mount.bundleDigest)) return false;
   const now = Date.now();
   sweep(now);
-  const entry = sessions.get(sessionId) ?? { mounts: new Map(), touchedAt: now };
+  const entry = sessions.get(key(surface, sessionId)) ?? { mounts: new Map<string, SkillMount>(), touchedAt: now };
+  if (!entry.mounts.has(mount.slug) && entry.mounts.size >= MAX_MOUNTS_PER_SESSION) return false;
+  entry.mounts.set(mount.slug, mount);
   entry.touchedAt = now;
-  if (!entry.mounts.has(mount.slug)) entry.mounts.set(mount.slug, mount);
-  sessions.set(sessionId, entry);
+  sessions.set(key(surface, sessionId), entry);
+  return true;
 }
 
 /** Every mount registered for a session, in the order the skills were loaded. */
-export function skillMountsFor(sessionId: string): SkillMount[] {
-  const entry = sessions.get(sessionId);
-  if (!entry) return [];
-  entry.touchedAt = Date.now();
+export function skillMountsFor(surface: MountSurface, sessionId: string): SkillMount[] {
+  const entry = sessions.get(key(surface, sessionId));
+  if (!entry || Date.now() - entry.touchedAt > MOUNT_TTL_MS) return [];
   return [...entry.mounts.values()];
 }
 
 /** Forgets a session's mounts. Called when its tool session closes. */
-export function clearSkillMounts(sessionId: string): void {
-  sessions.delete(sessionId);
+export function clearSkillMounts(surface: MountSurface, sessionId: string): void {
+  sessions.delete(key(surface, sessionId));
 }
