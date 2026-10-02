@@ -19,7 +19,7 @@ import { Collapse } from "@/components/ui/collapse";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { ThinkingMark } from "@/components/brand/thinking-mark";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -735,16 +735,12 @@ export function ThoughtProcessPanel({
             <TooltipContent side="bottom">Back to chat</TooltipContent>
           </Tooltip>
 
-          {/* THE ONE LOOP IN THIS PANEL. Everything else that used to move —
-              a shimmering sentence, a crossfading eyebrow, a second 1Hz clock,
-              a translating trace viewport — is gone. The resting mark occupies
-              the same 16px box so the title never shifts between states. */}
+          {/* The Continuum thinking mark while the run works (it moves only
+              when the run's phase changes, never on a loop), and nothing at
+              rest: a settled run needs no status mark, and a decorative dot is
+              not one. The box is kept so the title never shifts. */}
           <span className="hidden w-4 shrink-0 items-center justify-center @[50rem]/split:flex">
-            {streaming ? (
-              <ThinkingDots className="text-muted-foreground/70" />
-            ) : (
-              <span className="size-1.5 rounded-full bg-muted-foreground/45" aria-hidden="true" />
-            )}
+            {streaming ? <ThinkingMark phase={!live || live.message === "Thinking" ? "thinking" : "working"} size={16} eventKey={live?.message} className="text-muted-foreground" /> : null}
           </span>
 
           <h2 id={`${id}-title`} className="min-w-0 truncate text-ui font-medium text-foreground">
@@ -1193,7 +1189,7 @@ export function ThoughtProcessPanel({
             className="absolute inset-x-0 bottom-3 z-popper mx-auto inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-popover px-3 py-1 text-caption text-foreground shadow-float transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-pop-in motion-reduce:transition-none"
           >
             <ArrowDown className="size-3.5" aria-hidden="true" />
-            Live
+            Jump to latest
           </button>
         )}
       </div>

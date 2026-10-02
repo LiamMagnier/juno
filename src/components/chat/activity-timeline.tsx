@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { Brain, ChevronRight, Globe, Wrench } from "@/components/ui/icons";
+import { ChevronRight } from "@/components/ui/icons";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {
   buildRun,
@@ -31,7 +31,7 @@ const ThoughtProcessPanel = nextDynamic(
   { ssr: false },
 );
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { Pressable } from "@/components/ui/pressable";
+import { LiveLine, useHeldPhase } from "@/components/chat/live-line";
 import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
@@ -106,25 +106,17 @@ function liveCopy(
  * The collapsed run strip in the message list. Live reasoning is intentionally
  * not previewed here: provider summaries often contain code, media queries and
  * half-finished sentences, which made the primary transcript look broken. The
- * strip communicates the useful contract instead — phase, current action and
- * elapsed time — while the full provider text remains one click away.
+ * strip communicates the useful contract instead (phase, current action and
+ * elapsed time) while the full provider text remains one click away.
  *
- *   live    3×3 matrix  Thinking · 4s
- *   rest           THOUGHT PROCESS  4 searches · 9 sources      8.4s  ›
+ *   live    [Continuum] Searching the web · 4s
+ *   rest    Worked 8.4s, searched the web 4 times and read 9 sources  ›
  *
- * The duration occupies the SAME node, slot and typeface in both states, so the
- * eye tracks one continuous object from meter to receipt. Completion is four
- * discrete signals — the tick freezes, the number demotes, nouns appear, coral
- * leaves — and motion stopping is the least of them.
- *
- * IT IS ONE TRIGGER WHOSE TENSE CHANGES, not two controls. The live state is a
- * present-tense sentence under a shimmer; the resting state is the same row
- * rewritten in the past tense with the same number in the same slot. What the
- * resting row does NOT say is "Thought for 2.7s": that string was the panel's
- * old third opinion on the run's duration, printed next to the strip's and the
- * ledger's, and all three could disagree because two formatters were involved.
- * There is now one formatter (`formatSpan`) and one figure, and the label above
- * it names the run rather than re-timing it.
+ * IT IS ONE TRIGGER WHOSE TENSE CHANGES, not two controls. The live state is
+ * the live line (live-line.tsx) in the present tense; the resting state is one
+ * sentence in the past tense, set as type in the third ink, with the caret
+ * that opens the dock. There is one formatter (`formatSpan`) and one figure,
+ * so the line, the panel and the ledger can never time the run three ways.
  */
 export function ActivityTimeline({
   messageId,
@@ -233,60 +225,60 @@ export function ActivityTimeline({
   // one kind of run whose panel now carries the most. Warnings are excluded;
   // they already have their own slot in `run.note`.
   const toolCalls = run.calls.filter((c) => !c.warn).length;
-  // The connectors this run reached, by name, for the resting label. "Run" was
+  // The connectors this run reached, by name, for the resting line. "Run" was
   // the one word the row could say about a turn that used GitHub and Linear,
   // and it named the mechanism rather than what happened.
   const toolServers = [
     ...new Set(list.filter((e) => e.kind === "tool" && e.title.startsWith("Using ")).map((e) => e.title.slice(6).trim())),
   ].filter(Boolean);
-  const restingTitle = hasReasoning
-    ? "Thought process"
-    : toolServers.length
-      ? `Used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} and ${toolServers.length - 2} more` : toolServers.join(" and ")}`
-      : run.searches
-        ? "Searched the web"
-        : "Run";
-  // The resting mark says what KIND of work the row holds, in the place a
-  // decorative grey dot used to sit.
-  // It follows the title: a thought process is reasoning first, whatever
-  // else the run did on the way.
-  const RestingIcon = hasReasoning ? Brain : toolCalls ? Wrench : run.searches || run.sourceCount ? Globe : Brain;
-  const restingDetail = [
-    run.searches ? `${run.searches} ${run.searches === 1 ? "search" : "searches"}` : null,
-    run.sourceCount ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
-    toolCalls ? `${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  /*
+   * THE RESTING LINE IS ONE SENTENCE (INTERACTION_SPEC M4, M5): "Thought for
+   * 12s", or "Worked 12s, searched the web and read 3 sources". Typography,
+   * not a row: no glyph, no fill, no second column for the clock. The figure
+   * is the one formatter's (`formatSpan`), so the line and the panel cannot
+   * disagree about how long the run took.
+   */
+  const span = run.elapsedMs === null ? null : formatSpan(run.elapsedMs);
+  const did = [
+    run.searches ? (run.searches === 1 ? "searched the web" : `searched the web ${run.searches} times`) : null,
+    run.sourceCount ? `read ${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
+    toolServers.length
+      ? `used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} and ${toolServers.length - 2} more` : toolServers.join(" and ")}`
+      : toolCalls
+        ? `made ${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}`
+        : null,
+  ].filter((part): part is string => !!part);
+  const didSentence = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did[did.length - 1]}` : did[0] ?? null;
+  const lead = did.length
+    ? span
+      ? `Worked ${span}`
+      : "Worked"
+    : hasReasoning
+      ? span
+        ? `Thought for ${span}`
+        : "Thought process"
+      : null;
+  const restingLine = [lead, didSentence].filter(Boolean).join(", ");
   // A settled run with no reasoning, no searches, no sources and no tool calls
-  // has nothing to open: the row would read "Run · See how this response was
-  // made" over a panel that is empty. ChatGPT and Claude show no trace line for
-  // a plain completion, and neither does this. Live runs always render — the
-  // shimmering status IS the feedback while the first token is on its way.
-  if (!streaming && !hasReasoning && !restingDetail) return null;
-  // A phase change should animate once. Reasoning-token growth never changes
-  // this key, so the collapsed UI stays calm during long streams.
+  // has nothing to open: the line would invite a reader into an empty panel.
+  // ChatGPT and Claude show no trace line for a plain completion, and neither
+  // does this. Live runs always render: the live line IS the feedback while
+  // the first token is on its way.
+  if (!streaming && !restingLine) return null;
+  // A phase change asks the mark for one pass. Reasoning-token growth never
+  // changes this key, so the collapsed UI stays calm during long streams.
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
+  // Only the model reasoning is "thinking"; a search, a read or a tool call is
+  // work with a name (MOTION_AND_THINKING.md).
+  const livePhase = !latest || latest.kind === "reasoning" || live.message === "Thinking" ? "thinking" : "working";
 
   // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. The elapsed number alone rewrites
-  // once a second. While message-item still mounted this strip inside the
-  // turn's `aria-live="polite"` region (the region is the answer body now),
-  // every mutating text node underneath was announced, and a screen reader
-  // read "4.2s, 4.3s, 4.4s…" for the whole pre-first-token wait, which
-  // route.ts documents as lasting MINUTES on hidden-reasoning models, with no
-  // way to reach the answer. A stable aria-label on the button does not help
-  // while the tree can still see the text nodes inside it — so the visual
-  // content is hidden from the tree outright and the label carries the full
-  // state instead. It changes exactly once per run, on settle, which is the
-  // one announcement actually worth making, and it stays the control's one
-  // name now that the region has moved: a ticking text node is noise on every
-  // path a reader takes through the strip.
+  // once a second, so the visual content is hidden from the tree and the label
+  // carries the state instead. It changes once per run, on settle; the live
+  // phase itself is announced by the live line's own region, once per phase.
   const label = streaming
     ? "Open thought process, in progress"
-    : [
-        hasReasoning ? "Open thought process, complete" : "Open run details, complete",
-        run.elapsedMs === null ? null : formatSpan(run.elapsedMs),
-      ]
+    : [hasReasoning ? "Open thought process, complete" : "Open run details, complete", restingLine, run.note]
         .filter(Boolean)
         .join(", ");
 
@@ -298,98 +290,72 @@ export function ActivityTimeline({
 
   return (
     <>
-      {/* A selectable row, so it uses the row primitive. Open used to differ from
-          hovered by 10% of one alpha (bg-muted/55 vs bg-muted/45), and since the
-          pointer is by definition resting on the row you just clicked, opening
-          the panel produced no perceptible change in its own trigger. Pressable's
-          selected treatment — primary tint plus an inset ring — exists precisely
-          because a selected row and a hovered row must not be the same fill.
-          Focus is left to the global :focus-visible rule, which this had
-          overridden with a local ring. */}
-      <Pressable
-        ref={triggerRef}
-        kind="row"
-        selected={open}
-        onClick={() => panel?.setOpenId(open ? null : messageId)}
-        aria-expanded={open}
-        /* No aria-haspopup: this is no longer a dialog, it is a disclosure that
-           docks a region. aria-controls is set only while the panel is mounted,
-           so it never points at an id that is not in the document. */
-        aria-controls={open ? panelDomId : undefined}
-        aria-label={label}
-        className={cn(
-          // No `transition-*` utility: `.pressable` (inside Pressable) already
-          // times the tonal hover on --dur-fast and the press on --dur-press,
-          // and a utility here replaced that list and let the press snap.
-          "group/thought relative -mx-2 w-[calc(100%+1rem)] overflow-hidden rounded-field px-2 py-1",
-          "motion-reduce:transition-none coarse:min-h-11",
-          // One compact line, directly above the answer it describes. The
-          // resting row used to be a two-line block at min-h-12 with a 12px
-          // margin, which put a 60px hole between the user's turn and the
-          // reply on every answer that had a trace.
-          streaming ? "min-h-9 gap-3" : "min-h-8 gap-2.5",
-          // The gap to the answer belongs to whatever is last. With live blocks
-          // below, this row's own margin would open a hole between the label and
-          // the trace it labels.
-          hasLiveBlocks ? "mb-0.5" : "mb-1.5"
-        )}
-      >
-        {/* aria-hidden: see `label`. The button is named by aria-label; its
-            visible content is a clock the tree has no reason to see. */}
-        {streaming ? (
-          <>
-            {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep, a second
-                looping thing beside the matrix, moving a valley of alpha
-                through a sentence the reader is trying to read. The matrix
-                already says "still here"; the sentence's job is to say WHAT.
-
-                At the reply's size and in muted ink, the same as the
-                transcript's status line: it was `text-body-lg` in foreground
-                ink, a size above the answer and a voice competing with it, so
-                the first token shrank the line and changed its colour. Keyed on
-                the copy, so a phase change fades in once and a clock tick does
-                not. */}
-            <span
-              key={copyKey}
-              aria-hidden="true"
-              className={cn(
-                "min-w-0 truncate text-reading duration-fast motion-safe:animate-fade-in",
-                live.warning ? "text-warning" : "text-muted-foreground"
-              )}
-            >
-              {live.message}
-              {!live.warning && liveSources && (
-                <span className="whitespace-nowrap tabular-nums"> · {liveSources}</span>
-              )}
-              {run.elapsedMs !== null && (
-                <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
-              )}
-            </span>
-          </>
-        ) : (
-          <>
-            {/* A glyph, not a status dot: it names the kind of work (tools,
-                the web, reasoning), and inks up with the row on hover. */}
-            <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
-              <RestingIcon className="size-4 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/thought:text-foreground motion-reduce:transition-none" />
-            </span>
-            {/* One line: the label, then the nouns. "Thought process" only when
-                there WAS one — plenty of models emit no reasoning at all, and
-                labelling their turn with a thought process invites the reader to
-                open a panel that has nothing in it. `hasReasoning` is computed
-                above; a run with neither reasoning nor nouns returned early. */}
-            <span aria-hidden="true" className="min-w-0 flex-1 truncate text-ui leading-5 text-muted-foreground">
-              <span className="font-medium text-foreground/80">{restingTitle}</span>
-              {restingDetail && <span> · {restingDetail}</span>}
-              {run.note && <span className="text-warning"> · {run.note}</span>}
-            </span>
-            {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground">{formatSpan(run.elapsedMs)}</span>}
-            {/* Ink only on hover. A caret is a state mark and does not travel
-                before it is pressed (ICONS_AND_MOTION.md §1.3). */}
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/thought:text-foreground motion-reduce:transition-none" aria-hidden="true" />
-          </>
-        )}
-      </Pressable>
+      {streaming && <PhaseAnnouncer text={live.message} />}
+      {streaming ? (
+        /*
+         * LIVE: the live line (live-line.tsx), the same drawing as the reply's
+         * own status, so the strip and the line never describe one wait in two
+         * voices. It stays a button: the full trace opens in the dock from
+         * here at any moment of the run. Plain text, no sweep: the mark is the
+         * one thing that moves, and only when a real step arrives.
+         */
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => panel?.setOpenId(open ? null : messageId)}
+          aria-expanded={open}
+          aria-controls={open ? panelDomId : undefined}
+          aria-label={label}
+          className={cn(
+            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center rounded-md px-2 text-left",
+            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none coarse:min-h-11",
+            open && "bg-accent",
+            hasLiveBlocks ? "mb-0.5" : "mb-1.5"
+          )}
+        >
+          <LiveLine
+            text={live.message}
+            phase={live.warning ? "error" : livePhase}
+            eventKey={copyKey}
+            detail={!live.warning ? liveSources : null}
+            seconds={run.elapsedMs === null ? null : Math.floor(run.elapsedMs / 1000)}
+            // A region inside a button is read as its name, not announced:
+            // the phase is spoken by the announcer beside it instead.
+            announce={false}
+          />
+        </button>
+      ) : (
+        /*
+         * RESTING: one quiet sentence and a caret, set as type in the third
+         * ink. It inks up under the pointer and while its panel is open; the
+         * caret turns a quarter when the dock is open. Nothing else changes.
+         */
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => panel?.setOpenId(open ? null : messageId)}
+          aria-expanded={open}
+          aria-controls={open ? panelDomId : undefined}
+          aria-label={label}
+          className={cn(
+            "group/thought -ml-2 mb-1.5 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md pl-2 pr-1.5 text-left text-nav text-muted-foreground",
+            "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-11",
+            open && "bg-accent text-foreground"
+          )}
+        >
+          <span aria-hidden="true" className="min-w-0 truncate">
+            {restingLine}
+            {run.note ? <span className="text-warning">{`. ${run.note}`}</span> : null}
+          </span>
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-4 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              open && "rotate-90"
+            )}
+          />
+        </button>
+      )}
 
       {/* LIVE REASONING STAYS OUT OF THE TRANSCRIPT. Summary first, detail on
           demand (Claude Code / Codex): the strip above is the whole live status
@@ -435,5 +401,20 @@ export function ActivityTimeline({
           )
         : null}
     </>
+  );
+}
+
+/**
+ * The run's phase, spoken politely and at most once every three seconds
+ * (INTERACTION_SPEC M5). Separate from the trigger, because a region inside a
+ * button is read as the button's name rather than announced, and separate from
+ * the clock, which is never spoken.
+ */
+function PhaseAnnouncer({ text }: { text: string }) {
+  const spoken = useHeldPhase(text, 3000);
+  return (
+    <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
+      {spoken}
+    </span>
   );
 }

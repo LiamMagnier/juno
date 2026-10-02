@@ -7,8 +7,9 @@
  *   ─────────────────────────────────────────────────────────────────
  *   (in-flow disclosure: args / result / diff / log)
  *
- * Hairline top border, 20-22px icon slot (muted while running with a single
- * motivated pulse on the ACTIVE row only; settled rows fully still), one
+ * Hairline top border, 20-22px icon slot (the Continuum thinking mark on the
+ * ACTIVE row only, handing its tone on once per real step; settled rows fully
+ * still), one
  * truncating label line, right-aligned duration/status in text-label. The
  * disclosure opens in-flow below, never a modal. Multiple receipts stack as a
  * tight list with hairlines, not floating cards.
@@ -51,7 +52,7 @@ import {
 } from "@/components/ui/icons";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Collapse } from "@/components/ui/collapse";
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { ThinkingMark } from "@/components/brand/thinking-mark";
 import { formatSpan } from "@/lib/run-receipt";
 import {
   churnLabel,
@@ -161,11 +162,12 @@ export function ToolReceiptRow({
 
   const row = (
     <>
-      {/* 20-22px icon slot. Muted while running with a single motivated pulse
-          only on the active one; settled rows fully still. */}
+      {/* 20-22px icon slot. The thinking mark while running (it takes the
+          row's ink at rest and moves only when the call's label changes);
+          settled rows fully still. */}
       <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
         {running ? (
-          <PhaseOrb state="working" className="-my-0.5 -ml-0.5" />
+          <ThinkingMark phase="working" size={16} eventKey={label} />
         ) : failed ? (
           <STATUS_ICONS.error className="size-4 text-warning" />
         ) : denied ? (

@@ -27,7 +27,8 @@ import * as React from "react";
 // `TextSearch` is taken from the set directly rather than from a registry: the
 // registries name concepts the product draws in more than one place, and "point
 // at this sentence in the text above" is drawn here and nowhere else.
-import { ChevronDown, Loader2, TextSearch } from "@/components/ui/icons";
+import { ChevronDown, TextSearch } from "@/components/ui/icons";
+import { LiveLine } from "@/components/chat/live-line";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -485,17 +486,9 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
 
   if (state.phase === "loading") {
     return (
-      <p
-        aria-live="polite"
-        className={cn("mt-3 flex items-center gap-1.5 font-mono text-caption text-muted-foreground", className)}
-      >
-        {/* The one loop here, and only while the check is actually running.
-            Plain `animate-spin`, not `motion-safe:`: globals.css turns this
-            exact class into a fade in place under reduced motion, so the
-            spinner still says "working" instead of freezing. */}
-        <Loader2 aria-hidden="true" className="size-3 shrink-0 animate-spin" />
-        Checking citations…
-      </p>
+      // The live line every working row uses (live-line.tsx), only while the
+      // check is actually running.
+      <LiveLine text="Checking the citations" phase="working" size={16} className={cn("mt-3 text-ui", className)} />
     );
   }
 

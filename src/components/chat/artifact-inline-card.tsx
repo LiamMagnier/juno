@@ -32,7 +32,7 @@ const SandboxFrame = nextDynamic(
   () => import("@/components/canvas/sandbox-frame").then((m) => m.SandboxFrame),
   { ssr: false },
 );
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { LiveLine } from "@/components/chat/live-line";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { DesignPoster } from "@/components/artifacts/artifact-preview";
 import { SuggestionBar } from "@/components/artifacts/suggestion-bar";
@@ -631,14 +631,11 @@ export function ArtifactInlineCard({
           )}
         </div>
       ) : streaming ? (
-        <div className="grid min-h-[180px] place-items-center p-5">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <ThinkingDots className="text-primary" />
-            <div>
-              <p className="font-sans text-heading">Writing artifact</p>
-              <p className="pt-0.5 text-ui text-muted-foreground">The source will stream in here.</p>
-            </div>
-          </div>
+        // The live line every working row uses (live-line.tsx): the mark
+        // beside the truthful words, then the source streams in under it.
+        <div className="flex min-h-[180px] flex-col justify-center gap-1 p-5">
+          <LiveLine text={title?.trim() && title.trim() !== "Artifact" ? `Writing ${title.trim()}` : "Writing"} phase="working" />
+          <p className="pl-7 text-ui text-muted-foreground">The source will stream in here.</p>
         </div>
       ) : (
         /* A failure, not a placeholder. This was the same centred block on the
