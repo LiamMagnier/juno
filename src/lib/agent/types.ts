@@ -63,6 +63,11 @@ export interface ToolDefinition<TParams = Record<string, unknown>, TResult = unk
 export interface AgentExecutionContext {
   userId: string;
   sessionId: string;
+  /**
+   * The provider's call id for this tool call, when the caller has one. With
+   * `sessionId` it is the replay key of a run (src/lib/exec/store.ts).
+   */
+  callId?: string;
   conversationId?: string;
   mode: AgentMode;
   environment: ExecutionEnvironment;
