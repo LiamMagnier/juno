@@ -156,7 +156,7 @@ function runSettle(root: HTMLElement) {
  * and it is honest: it runs only while a reply is actually in progress, stops
  * when the tab is hidden, and is absent under reduced motion.
  */
-const LOOP = { rise: 280, fall: 620, stagger: 210, gap: 380, peak: 0.92 } as const;
+const LOOP = { rise: 260, fall: 600, stagger: 200, gap: 340, peak: 1 } as const;
 const LOOP_MS = LOOP.stagger * 3 + LOOP.rise + LOOP.fall + LOOP.gap;
 
 function runLoopPass(root: HTMLElement) {
@@ -316,6 +316,7 @@ export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion,
       data-visible={view.visible ? "true" : "false"}
       data-phase={view.shown}
       data-pass={view.passId}
+      data-looping={looping ? "" : undefined}
       data-reduced={view.reduced ? "" : undefined}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
     >

@@ -134,6 +134,7 @@ export function ActivityTimeline({
   events,
   reasoning,
   reasoningParts,
+  topic,
   sources,
   streaming,
   finishNote,
@@ -144,6 +145,8 @@ export function ActivityTimeline({
   messageId: string;
   events?: ClientActivityEvent[];
   reasoning?: string | null;
+  /** The chat's title: what the live row says the model is thinking about when it streams no readable reasoning. */
+  topic?: string | null;
   /** Discrete summary parts, when the provider sent them. Passed straight
    *  through — this component derives nothing from them. */
   reasoningParts?: string[] | null;
@@ -210,7 +213,15 @@ export function ActivityTimeline({
   // instance inside the panel would calibrate whenever the sheet was opened and
   // read 0.0s next to this row's 8.4s.
   const { nowServer, anchorT0 } = useRunClock(list, streaming);
-  const headline = React.useMemo(() => (streaming ? reasoningHeadline(reasoning) : null), [streaming, reasoning]);
+  const headline = React.useMemo(() => {
+    if (!streaming) return null;
+    const fromReasoning = reasoningHeadline(reasoning);
+    if (fromReasoning) return fromReasoning;
+    const subject = topic?.trim();
+    // A title is a name the server gave the chat, not reasoning, so it is
+    // phrased as the topic: "Thinking about Lisbon vs Porto 3-day trip".
+    return subject && subject !== "New chat" ? `Thinking about ${subject}` : null;
+  }, [streaming, reasoning, topic]);
   const run = React.useMemo(
     () => buildRun(list, nowServer, anchorT0, { sources, reasoning, reasoningParts }),
     [list, nowServer, anchorT0, sources, reasoning, reasoningParts],

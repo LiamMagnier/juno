@@ -44,6 +44,21 @@ function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * Title Case → sentence case ("Analyzing User Requests" → "Analyzing user
+ * requests"), the voice every other line in the product uses. Only when the
+ * title really is Title Case (every word capitalised); acronyms and words
+ * with inner capitals (API, GitHub) keep their spelling.
+ */
+function sentenceCase(text: string): string {
+  const words = text.split(" ");
+  const titled = words.length > 1 && words.every((w) => !/^[a-z]/.test(w));
+  if (!titled) return text;
+  return words
+    .map((w, i) => (i === 0 || /[A-Z].*[A-Z]/.test(w) || /\d/.test(w) ? w : w.toLowerCase()))
+    .join(" ");
+}
+
 export function reasoningHeadline(reasoning: string | null | undefined): string | null {
   if (!reasoning) return null;
   const tail = reasoning.slice(-6000);
@@ -57,7 +72,7 @@ export function reasoningHeadline(reasoning: string | null | undefined): string 
     .filter((t) => readable(t.text))
     .sort((a, b) => a.at - b.at);
   const title = titles.at(-1)?.text;
-  if (title) return shorten(capitalise(title.replace(/[.!?]+$/, "")));
+  if (title) return shorten(capitalise(sentenceCase(title.replace(/[.!?]+$/, ""))));
 
   // 2. The newest complete sentence of the newest paragraph that has one.
   const paragraphs = tail.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).reverse();

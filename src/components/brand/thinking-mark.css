@@ -36,9 +36,27 @@
   fill: currentColor;
 }
 
+/* Presence ink (BRAND_IDENTITY.md: "Presence #2d49c9 / #97a6e6 — live work,
+   voice"). It used to be --primary-ink, which became graphite with the brand
+   foundation: the travelling blade was then the mark's own colour, white on
+   white in dark mode, and the motion all but vanished. */
+.alevr-thinking-mark {
+  --tm-presence: #2d49c9;
+}
+.dark .alevr-thinking-mark {
+  --tm-presence: #97a6e6;
+}
 .alevr-thinking-mark .tm-tone path {
-  fill: hsl(var(--primary-ink));
+  fill: var(--tm-presence);
   opacity: 0;
+}
+/* While a reply is in progress the resting mark steps back, so the blade
+   carrying presence reads clearly against the other three. */
+.alevr-thinking-mark .tm-ink path {
+  transition: opacity var(--dur-base) var(--ease-out-soft);
+}
+.alevr-thinking-mark[data-looping] .tm-ink path {
+  opacity: 0.4;
 }
 
 /*

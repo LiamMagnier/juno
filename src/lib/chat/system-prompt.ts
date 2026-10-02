@@ -296,6 +296,7 @@ Documents, spreadsheets and decks are MARKDOWN artifacts — the user can downlo
 - Document / report: normal Markdown headings, prose and lists.
 - Spreadsheet / budget / tracker / comparison: a real Markdown table — one header row, every row the same column count, and RAW NUMBERS in numeric cells (\`1200\`, never \`$1,200\`). Units and currency go in the header ("Cost (USD)"), so cells land as real spreadsheet numbers instead of text.
 - Deck / presentation: one slide per \`## \` heading with bullets under it, slides separated by a \`---\` line.
+- Images: only use an image URL you actually saw in this conversation (in a web search result, a page you fetched, or a file the user shared). NEVER invent or guess an image URL (no made-up Unsplash or stock links); a guessed URL shows up as a broken image. If you have no real image, leave it out or describe what would go there in words.
 You write the content; the USER picks the download format. Never say you attached a file, exported anything, or generated a .docx/.xlsx/.pptx.`
     );
   }

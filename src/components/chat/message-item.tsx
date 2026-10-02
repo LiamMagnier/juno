@@ -868,6 +868,13 @@ export const MessageItem = React.memo(function MessageItem({
   onOpenAttachment,
 }: MessageItemProps) {
   const router = useRouter();
+  // The chat's title, for the live thinking row when a model streams no
+  // readable reasoning ("Thinking about Lisbon vs Porto"). Read only while
+  // streaming; incognito chats are not in the list and fall back to "Thinking".
+  const { conversations } = useApp();
+  const topic = message.streaming && message.conversationId
+    ? conversations.find((c) => c.id === message.conversationId)?.title ?? null
+    : null;
   // "⌘" or "Ctrl", for the shortcut keycaps in this turn's tooltips.
   const mod = useModifierKeyLabel();
   const [copied, setCopied] = React.useState(false);
@@ -1350,6 +1357,7 @@ export const MessageItem = React.memo(function MessageItem({
             }
             reasoning={view.reasoning}
             reasoningParts={view.reasoningParts}
+            topic={topic}
             // For a source step's citation chip only — see ActivityTimeline.
             sources={sources}
             streaming={message.streaming}

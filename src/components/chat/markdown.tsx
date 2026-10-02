@@ -688,6 +688,24 @@ const APP_ORIGIN = (() => {
   }
 })();
 
+/**
+ * An image that leaves cleanly when its URL is dead. Models sometimes write
+ * image links that do not exist (an invented Unsplash id); the browser then
+ * drew a blank or broken box in the middle of the document. A failed load now
+ * removes the picture and keeps its description as a quiet caption.
+ */
+function FailSafeImage({ src, alt, title }: { src?: string; alt: string; title?: string }) {
+  const [failed, setFailed] = React.useState(false);
+  const ref = React.useRef<HTMLImageElement>(null);
+  // A load that failed before hydration never fires onError on our handler.
+  React.useEffect(() => {
+    const img = ref.current;
+    if (img?.complete && img.naturalWidth === 0) setFailed(true);
+  }, [src]);
+  if (failed) return alt ? <span className="text-caption text-muted-foreground">{alt}</span> : null;
+  return <img ref={ref} src={src} alt={alt} title={title} onError={() => setFailed(true)} />;
+}
+
 function GuardedImage({
   src,
   alt,
@@ -700,7 +718,7 @@ function GuardedImage({
   allowedKeys: ReadonlySet<string>;
 }) {
   const decision = imageDecision(src, allowedKeys, APP_ORIGIN);
-  if (decision.kind === "render") return <img src={src} alt={alt ?? ""} title={title} />;
+  if (decision.kind === "render") return <FailSafeImage src={src} alt={alt ?? ""} title={title} />;
   if (decision.kind === "drop") return alt ? <span>{alt}</span> : null;
   return (
     <a

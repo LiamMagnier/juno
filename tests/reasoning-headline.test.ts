@@ -30,3 +30,9 @@ test("long lines are cut at a word with an ellipsis", () => {
   assert.ok(out.length <= 85, out);
   assert.ok(out.endsWith("…"), out);
 });
+
+test("Title Case summary titles read in sentence case, keeping acronyms", () => {
+  assert.equal(reasoningHeadline("**Analyzing User Requests**"), "Analyzing user requests");
+  assert.equal(reasoningHeadline("**Checking The GitHub API Limits**"), "Checking the GitHub API limits");
+  assert.equal(reasoningHeadline("**Comparing layout options**"), "Comparing layout options");
+});
