@@ -435,10 +435,22 @@ export function applyChatSkill(input: {
     return { applied: false, reason: row.consentFor?.includes("scripts") ? "scripts_unreviewed" : "consent_required" };
   }
 
-  const resolved = resolveSkillPermissions({
+  const granted = resolveSkillPermissions({
     request: skillRequestFrom({ contract: row.contract, requestedTools: row.requestedTools.map(canonicalSkillToolName) }),
     granted: [chatSkillGrantLayer(input.capabilities)],
   });
+  // Granted under the names this product uses (`Bash` is granted as
+  // `run_code`), but what was WITHHELD is reported in the skill's own words:
+  // "it asked for Bash" is the sentence the model and the reader can match to
+  // the skill's text.
+  const withheldCanonical = new Set(granted.withheld.tools);
+  const resolved: ResolvedSkillPermissions = {
+    ...granted,
+    withheld: {
+      ...granted.withheld,
+      tools: [...new Set(row.requestedTools.filter((tool) => withheldCanonical.has(canonicalSkillToolName(tool))))],
+    },
+  };
 
   const block = skillSystemSuffix({
     slug: selection.candidate.slug,

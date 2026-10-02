@@ -582,7 +582,7 @@ function applied(requestedTools: string[], code: boolean, contract = emptySkillC
 test("a skill asking for a shell, network or connectors never widens the turn", () => {
   const withoutCode = applied(["Bash", "web_search"], false, { ...emptySkillContract(), requestedConnectors: ["gmail"], requestedDomains: ["example.com"] });
   assert.deepEqual(withoutCode.resolved.tools, [], "nothing the turn did not have");
-  assert.deepEqual(withoutCode.resolved.withheld.tools.sort(), [RUN_CODE_TOOL_ID, "web_search"]);
+  assert.deepEqual(withoutCode.resolved.withheld.tools.sort(), ["Bash", "web_search"], "withheld in the skill's own words");
   assert.deepEqual(withoutCode.resolved.withheld.connectors, ["gmail"]);
   assert.deepEqual(withoutCode.resolved.withheld.domains, ["example.com"]);
   assert.match(withoutCode.systemSuffix, /does not have/);
