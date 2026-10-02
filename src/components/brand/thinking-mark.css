@@ -1,79 +1,59 @@
 /*
  * The Continuum thinking mark (thinking-mark.tsx; timing in thinking-schedule.ts).
  *
- * The silhouette never moves. A pass hands presence ink along the four blades
- * in their clockwise order: each blade rises toward presence over `base`
- * (220 ms, out-soft) and falls back over `base` (in-out), the next starting one
- * `press` (70 ms) later. Finished settles once over `emphasis`: the blades
- * take a little presence together (`fast`) and exhale to rest. Visibility fades
- * on `fast`; under reduced motion that fade is the only movement left.
+ * The silhouette never moves. Each blade is drawn in ink and, above it, in
+ * presence ink at opacity 0 (.tm-tone); a pass raises one upper blade at a
+ * time toward --tm-peak over `fast` and lets it fall over `base`, the next
+ * starting as this one peaks (Web Animations in thinking-mark.tsx). At rest
+ * the mark is the colour of its row (currentColor), never darker than its own
+ * label. Visibility fades on `fast`; under reduced motion that fade is the
+ * only movement left, and in forced colours the tone layer is not drawn.
  */
 .alevr-thinking-mark {
-  --tm-ink: currentColor;
-  --tm-presence: hsl(var(--primary-ink));
-  /* A gentle shift toward presence, not a swap: some of the ink stays in it. */
-  --tm-hot: color-mix(in oklab, var(--tm-presence) 85%, var(--tm-ink));
-  --tm-soft: color-mix(in oklab, var(--tm-presence) 40%, var(--tm-ink));
+  /*
+   * The peak, tuned so light and dark change by the same amount (OKLab
+   * distance from the row's muted ink: 0.107 at 0.5 on light, 0.096 at 0.9 on
+   * dark, where presence ink sits much closer to the muted ink).
+   */
+  --tm-peak: 0.5;
   display: inline-flex;
   flex-shrink: 0;
   line-height: 0;
-  color: hsl(var(--foreground));
+  color: inherit;
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out-soft);
+}
+
+.dark .alevr-thinking-mark {
+  --tm-peak: 0.9;
 }
 
 .alevr-thinking-mark[data-visible="true"] {
   opacity: 1;
 }
 
-.alevr-thinking-mark path {
-  fill: var(--tm-ink);
+.alevr-thinking-mark .tm-ink path {
+  fill: currentColor;
 }
 
-.alevr-thinking-mark [data-mode="pass"] path {
-  animation: alevr-continuum-handoff calc(2 * var(--dur-base)) both;
-  animation-delay: calc(var(--blade, 0) * var(--dur-press));
+.alevr-thinking-mark .tm-tone path {
+  fill: hsl(var(--primary-ink));
+  opacity: 0;
 }
 
-.alevr-thinking-mark [data-mode="settle"] path {
-  animation: alevr-continuum-settle var(--dur-emphasis) both;
-}
+/*
+ * Reduced motion needs no rule here: the schedule never starts a pass or a
+ * settle under it, and a pass running when the setting turns on fades back
+ * over `fast` (the brief fade reduced motion permits) instead of cutting.
+ */
 
-@keyframes alevr-continuum-handoff {
-  0% {
-    fill: var(--tm-ink);
-    animation-timing-function: var(--ease-out-soft);
+/* Forced colours: the system ink, no tonal layer; the words carry the state. */
+@media (forced-colors: active) {
+  .alevr-thinking-mark {
+    color: CanvasText;
   }
-  50% {
-    fill: var(--tm-hot);
-    animation-timing-function: var(--ease-in-out);
-  }
-  100% {
-    fill: var(--tm-ink);
-  }
-}
 
-@keyframes alevr-continuum-settle {
-  0% {
-    fill: var(--tm-ink);
-    animation-timing-function: var(--ease-out-soft);
-  }
-  21% {
-    fill: var(--tm-soft);
-    animation-timing-function: var(--ease-in-out);
-  }
-  100% {
-    fill: var(--tm-ink);
-  }
-}
-
-/* Reduced motion: the static mark; only the brief visibility fade remains. */
-.alevr-thinking-mark[data-reduced] [data-mode] path {
-  animation: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .alevr-thinking-mark [data-mode] path {
-    animation: none;
+  .alevr-thinking-mark .tm-tone {
+    display: none;
   }
 }

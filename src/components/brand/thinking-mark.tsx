@@ -1,11 +1,14 @@
 "use client";
 
 import "./thinking-mark.css";
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { continuumDrawing } from "./continuum-geometry";
+import { continuumDrawingSet } from "./continuum-geometry";
+import { ContinuumDrawings, outerViewBox } from "./continuum-mark";
 import {
+  THINKING_TIMING,
   initThinking,
+  isPendingPhase,
   nextWake,
   passActive,
   settleActive,
@@ -21,8 +24,11 @@ export type ThinkingMarkProps = {
   /** The truthful runtime phase of the row this mark sits in. */
   phase: ThinkingPhase;
   /**
-   * Changes whenever a real batch of reasoning or tool activity arrives. Each
-   * change may ask for another pass; passes coalesce to one per 1.6 s.
+   * Changes once per real STEP of work: a tool call starting, a new section
+   * of a supplied progress summary, a batch of search results. Never per
+   * token or delta. A change may ask for another pass; inside the window it is
+   * absorbed, and while steps keep coming the window backs off (1.6, 3.2,
+   * 6.4 s). In development, more than two changes a second logs a warning.
    */
   eventKey?: string | number;
   /** CSS px; 16 to 20 beside a work row's text. */
@@ -59,12 +65,97 @@ const viewOf = (s: ThinkingState, now: number): View => ({
 
 const clock = (): number => (typeof performance === "undefined" ? 0 : performance.now());
 
+/* ———————————————— The tone layer (Web Animations) ————————————————
+ *
+ * Each blade is drawn twice: in ink, and above it in presence ink at opacity
+ * 0. A pass animates the upper copies' opacity. Every change of plan starts
+ * from the tone a blade is at RIGHT NOW (read from its computed style), so
+ * nothing ever cuts to rest in one frame: an interrupted pass fades back over
+ * `release`, the finished settle begins where the pass left each blade, and a
+ * pass that is running when the tab hides simply finishes on its own clock.
+ */
+
+const OUT_SOFT = "cubic-bezier(0.33, 1, 0.68, 1)";
+const IN_OUT = "cubic-bezier(0.65, 0, 0.35, 1)";
+
+function tonePaths(root: HTMLElement): SVGPathElement[][] {
+  const byBlade: SVGPathElement[][] = [[], [], [], []];
+  root.querySelectorAll<SVGPathElement>("[data-tone-blade]").forEach((p) => byBlade[Number(p.dataset.toneBlade)]?.push(p));
+  return byBlade;
+}
+
+/** Cancel whatever a path is doing and return the opacity it was showing. */
+function takeTone(p: SVGPathElement): number {
+  const v = Number.parseFloat(getComputedStyle(p).opacity);
+  for (const a of p.getAnimations()) a.cancel();
+  return Number.isFinite(v) ? v : 0;
+}
+
+function tokens(root: HTMLElement) {
+  const cs = getComputedStyle(root);
+  const read = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+  const peak = Number.parseFloat(read("--tm-peak", "0.5"));
+  return {
+    outSoft: read("--ease-out-soft", OUT_SOFT),
+    inOut: read("--ease-in-out", IN_OUT),
+    peak: Number.isFinite(peak) ? peak : 0.5,
+  };
+}
+
+function runPass(root: HTMLElement) {
+  const T = THINKING_TIMING;
+  const { outSoft, peak } = tokens(root);
+  const crest = T.rise / (T.rise + T.fall);
+  tonePaths(root).forEach((paths, i) => {
+    for (const p of paths) {
+      const from = takeTone(p);
+      p.animate(
+        [
+          { opacity: from, easing: outSoft },
+          { opacity: peak, offset: crest, easing: outSoft },
+          { opacity: 0 },
+        ],
+        { duration: T.rise + T.fall, delay: i * T.stagger, fill: "backwards" },
+      );
+    }
+  });
+}
+
+function runRelease(root: HTMLElement) {
+  const { outSoft } = tokens(root);
+  for (const paths of tonePaths(root)) {
+    for (const p of paths) {
+      if (!p.getAnimations().length) continue;
+      const from = takeTone(p);
+      if (from > 0.004) p.animate([{ opacity: from }, { opacity: 0 }], { duration: THINKING_TIMING.release, easing: outSoft });
+    }
+  }
+}
+
+function runSettle(root: HTMLElement) {
+  const { outSoft, inOut, peak } = tokens(root);
+  for (const paths of tonePaths(root)) {
+    for (const p of paths) {
+      const from = takeTone(p);
+      p.animate(
+        [
+          { opacity: from, easing: outSoft },
+          { opacity: Math.max(from, peak * 0.5), offset: 0.21, easing: inOut },
+          { opacity: 0 },
+        ],
+        { duration: THINKING_TIMING.settle },
+      );
+    }
+  }
+}
+
 /**
  * The Continuum thinking mark (MOTION_AND_THINKING.md): the stationary mark,
- * with presence ink handed along its four blades when real work starts and
- * when new real activity arrives. It never spins, pulses on a loop or measures
- * anything; the words beside it carry the state. Timing lives in
- * thinking-schedule.ts.
+ * with presence ink handed from blade to blade, clockwise, when real work
+ * starts and when a new real step arrives. It never spins, pulses on a loop
+ * or measures anything; the words beside it carry the state. At rest it takes
+ * the colour of the row it sits in (currentColor), so it is never darker than
+ * its own label. Timing lives in thinking-schedule.ts.
  */
 export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion, className }: ThinkingMarkProps) {
   const machine = useRef<ThinkingState>(initThinking(phase, 0, { reducedMotion: reducedMotion ?? false }));
@@ -97,10 +188,22 @@ export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion,
   }, [phase, dispatch]);
 
   const lastEvent = useRef(eventKey);
+  const recent = useRef<number[]>([]);
+  const warned = useRef(false);
   useEffect(() => {
     if (lastEvent.current === eventKey) return;
     lastEvent.current = eventKey;
-    dispatch({ type: "event", now: clock() });
+    const now = clock();
+    if (process.env.NODE_ENV !== "production" && !warned.current) {
+      recent.current = [...recent.current.filter((t) => now - t < 1000), now];
+      if (recent.current.length > 2) {
+        warned.current = true;
+        console.warn(
+          "ThinkingMark: eventKey changed more than twice in a second. Change it once per real step of work (a tool call, a new summary section), never per token or delta.",
+        );
+      }
+    }
+    dispatch({ type: "event", now });
   }, [eventKey, dispatch]);
 
   // Reduced motion: the explicit prop wins, otherwise the OS preference, live.
@@ -137,23 +240,53 @@ export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion,
     };
   }, [dispatch]);
 
-  const drawing = continuumDrawing(size);
-  const mode = view.passing ? "pass" : view.settling ? "settle" : "rest";
+  // Drive the tone layer from the machine's view. Each branch starts from the current tone.
+  const drawn = useRef({ passId: 0, settleId: 0 });
+  useEffect(() => {
+    const el = root.current;
+    if (!el || typeof el.animate !== "function") return;
+    if (view.settling && view.settleId !== drawn.current.settleId) {
+      drawn.current.settleId = view.settleId;
+      runSettle(el);
+      return;
+    }
+    if (view.passing && view.passId !== drawn.current.passId) {
+      drawn.current.passId = view.passId;
+      runPass(el);
+      return;
+    }
+    if (!isPendingPhase(view.shown) || view.reduced || !view.visible) runRelease(el);
+  }, [view.passing, view.passId, view.settling, view.settleId, view.shown, view.reduced, view.visible]);
+
+  const set = continuumDrawingSet(size);
   return (
     <span
       ref={root}
       className={cn("alevr-thinking-mark", className)}
       data-visible={view.visible ? "true" : "false"}
       data-phase={view.shown}
+      data-pass={view.passId}
       data-reduced={view.reduced ? "" : undefined}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
     >
-      <svg viewBox={drawing.viewBox} width={size} height={size} focusable="false" aria-hidden="true">
-        <g key={mode === "pass" ? `pass-${view.passId}` : mode === "settle" ? `settle-${view.settleId}` : "rest"} data-mode={mode}>
-          {drawing.paths.map((p, i) => (
-            <path key={p.id} data-blade={p.id} d={p.d} style={{ "--blade": i } as CSSProperties} />
-          ))}
-        </g>
+      <svg viewBox={outerViewBox(set, size, size)} width={size} height={size} focusable="false" aria-hidden="true">
+        <ContinuumDrawings
+          set={set}
+          render={(d) => (
+            <>
+              <g className="tm-ink">
+                {d.paths.map((p) => (
+                  <path key={p.id} data-blade={p.id} d={p.d} />
+                ))}
+              </g>
+              <g className="tm-tone">
+                {d.paths.map((p, i) => (
+                  <path key={p.id} data-tone-blade={i} d={p.d} />
+                ))}
+              </g>
+            </>
+          )}
+        />
       </svg>
     </span>
   );
