@@ -35,6 +35,7 @@ out_dir = args[1]
 sheet = args[2] if len(args) > 2 else "A"
 only = args[3:]
 os.makedirs(out_dir, exist_ok=True)
+T0 = time.time()
 RES = int(os.environ.get("RES", 1000))
 SPP = int(os.environ.get("SPP", 128))
 Q = float(os.environ.get("Q", 1.0))
@@ -184,6 +185,7 @@ elif mode == "lineup":
     mid = 0.5 * (left + right)
     objs = []
     placed = []  # (index, depth y, root, objects) for the layered render
+    print(f"PHASE meshed {time.time() - T0:.0f}s", flush=True)
     for i, m in enumerate(members):
         x = pos[i] - mid
         yaw = -x * float(os.environ.get("TURN", 5))
@@ -232,6 +234,7 @@ elif mode == "lineup":
                 if ob.type == "MESH" and ob.name != "floor":
                     ob.visible_camera = ob in ob_k
             path = os.path.join(out_dir, f".layer_{sheet}_{k}.png")
+            print(f"PHASE layer {k} {m['id']} {time.time() - T0:.0f}s", flush=True)
             render(sc, path)
             layers.append((y, path))
             # back to a bare stand-in for the next layer

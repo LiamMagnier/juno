@@ -132,6 +132,12 @@ def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=
                 nd = vert_normals(ob) @ v
                 cut = float(os.environ.get("FUZZ_VIEW_CUT", -0.4))
                 w = w * S.sstep(cut - 0.15, cut + 0.1, nd)
+                # FUZZ_FACE < 1 thins the fibres that face the camera (seen end-on they
+                # only add grain, which the sheen and bump already give) and keeps the
+                # silhouette band, where the soft fuzzy rim is, at full density.
+                face = float(os.environ.get("FUZZ_FACE", 1.0))
+                if face < 1.0:
+                    w = w * (face + (1.0 - face) * (1.0 - S.sstep(0.45, 0.85, nd)))
             if w.min() < 0.999:
                 B.set_group(ob, "dens", w)
                 group = "dens"

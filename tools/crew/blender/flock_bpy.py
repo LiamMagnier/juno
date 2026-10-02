@@ -291,12 +291,21 @@ def setup_render(scene, res_x, res_y, spp=128, transparent=True):
         prefs = bpy.context.preferences.addons["cycles"].preferences
         prefs.compute_device_type = "METAL"
         prefs.get_devices()
+        if os.environ.get("KOL"):
+            prefs.kernel_optimization_level = os.environ["KOL"]
+        if os.environ.get("METALRT"):
+            prefs.metalrt = os.environ["METALRT"]
+        if os.environ.get("DEVICE") == "CPU":
+            prefs.compute_device_type = "NONE"
         for d in prefs.devices:
             d.use = d.type == "METAL"
-        scene.cycles.device = "GPU"
+        scene.cycles.device = "CPU" if os.environ.get("DEVICE") == "CPU" else "GPU"
     except Exception as e:  # pragma: no cover
         print("GPU setup failed", e)
     scene.cycles.samples = spp
+    if os.environ.get("TILE"):
+        scene.cycles.use_auto_tile = True
+        scene.cycles.tile_size = int(os.environ["TILE"])
     scene.cycles.use_denoising = True
     try:
         scene.cycles.denoiser = "OPENIMAGEDENOISE"

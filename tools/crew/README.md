@@ -62,3 +62,18 @@ SMALL_DIR=public/crew/renders node tools/crew/flock/compose.mjs <out_dir> <out_d
 - `flock_build.py`  one character into the scene; `flock_render.py` the Cycles stills
 - `flock_montage.py` quick contact sheets with Blender's image API (no PIL)
 - Look-dev knobs (env): `FUZZ_LEN FUZZ_DENSITY FUZZ_SPREAD FUZZ_ROOT FUZZ_SHEEN FUZZ_TIP SHEEN_LIFT KEY FILL EYE_SCALE`
+- Agent states: `flock_render.py -- states <out> <sheet>` renders Ready, Thinking, Working,
+  Needs your answer, Blocked, Finished on one character (`STATES` in `flock_cast.py`): a brief
+  eye/pose change only; the words always sit beside it.
+
+### Memory (the owner's Mac has 24 GB; a guard kills Blender above 10 GB)
+
+Measured on the M4 Pro with Blender 5.2 (per-process footprint, `top -pid`):
+- Cycles on Metal with MetalRT (hardware ray tracing, the default) holds ~7 GB for any scene,
+  and its curve acceleration structures grow with the fibre count; a 3.5M-fibre portrait peaks
+  at ~9 GB. `METALRT=OFF` keeps a portrait at ~3.5 GB but renders curves 10x slower.
+- Fibres are only grown where the camera sees them (`FUZZ_VIEW`, on by default; the back of a
+  character held half the hair and none of the look), `HAIR_BUDGET` (3.6M) caps a render by
+  thinning children, `FUZZ_FACE` < 1 thins camera-facing fibres and keeps the silhouette band.
+- Denoising runs on the CPU (`DENOISE_GPU=1` to override); `DEVICE=CPU`, `TILE`, `KOL` exist for
+  experiments. Wrap heavy runs in the machine gate (`GATE=... render_pass.sh`).
