@@ -530,3 +530,13 @@ test("clean evidence does not put a run behind an approval", () => {
   assert.equal(plan.derivedFromUntrusted, false);
   assert.equal(plan.requiresApproval, false);
 });
+
+test("chat reads Work's connector verdict, narrowed to its own vocabulary", async () => {
+  // resolveConnectorsWithStatus (mcp.ts) reuses evaluateConnector rather than
+  // a second copy of the ordering: deny-first, cheapest-first.
+  const { connectorFailureFor } = await import("@/lib/tools/connector-tools");
+  assert.equal(connectorFailureFor({ linked: false, configured: false, credential: "usable" }), "misconfigured");
+  assert.equal(connectorFailureFor({ linked: false, configured: true, credential: "refresh_failed" }), "not_linked");
+  assert.equal(connectorFailureFor({ linked: true, configured: true, credential: "refresh_failed" }), "auth_expired");
+  assert.equal(connectorFailureFor({ linked: true, configured: true, credential: "usable" }), null);
+});

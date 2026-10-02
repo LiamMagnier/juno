@@ -16,18 +16,19 @@ test("UnifiedAgentRegistry exposes only hosted-safe tools and emits valid provid
   const registry = new UnifiedAgentRegistry();
 
   assert.equal(registry.getTool("python_interpreter"), undefined);
-  assert.ok(registry.getTool("browser_agent"));
+  // The page reader left chat before the broker began trusting declared risk
+  // (DECISIONS §4b); `web_fetch` replaces it through the chat toolset.
+  assert.equal(registry.getTool(BROWSER_TOOL_ID), undefined);
   assert.equal(registry.getTool("computer_use"), undefined);
 
-  // The two attachment tools are registered but, like the browser tool, are
-  // only ever ATTACHED by an explicit allowlist — see the tests below.
+  // The attachment tools are registered but only ever ATTACHED by an explicit
+  // allowlist — see the tests below.
   assert.ok(registry.getTool(READ_DOCUMENT_TOOL_ID));
   assert.ok(registry.getTool(INSPECT_IMAGE_TOOL_ID));
   assert.ok(registry.getTool(CODE_INTERPRETER_TOOL_ID));
 
   const schemas = registry.toProviderToolSchemas();
   assert.deepEqual(schemas.map((schema) => schema.function.name), [
-    "browser_agent",
     READ_DOCUMENT_TOOL_ID,
     INSPECT_IMAGE_TOOL_ID,
     CODE_INTERPRETER_TOOL_ID,
@@ -112,12 +113,14 @@ test("a saved chat with no connectors and no web toggle attaches zero tools", as
   }
 });
 
-test("switching web access on is what attaches the browser tool", async () => {
+test("switching web access on no longer attaches the retired page reader", async () => {
+  // Web tools arrive through the chat toolset (`web_search`, `web_fetch`), not
+  // through this runtime; even a stale allowlist naming it attaches nothing.
   const allow = chatRuntimeToolAllowlist({ webSearch: true });
-  assert.deepEqual(allow, [BROWSER_TOOL_ID]);
-  const toolset = await openUnifiedAgentToolset([], agentContext, { allowedToolIds: allow });
+  assert.deepEqual(allow, []);
+  const toolset = await openUnifiedAgentToolset([], agentContext, { allowedToolIds: [BROWSER_TOOL_ID] });
   try {
-    assert.deepEqual(toolset.tools.map((t) => t.function.name), [BROWSER_TOOL_ID]);
+    assert.deepEqual(toolset.tools.map((t) => t.function.name), []);
   } finally {
     await toolset.close();
   }
@@ -140,7 +143,7 @@ test("each attachment tool is attached only by its own condition", async () => {
   ]);
   assert.deepEqual(
     chatRuntimeToolAllowlist({ webSearch: true, documents: true, images: true, code: true }),
-    [BROWSER_TOOL_ID, READ_DOCUMENT_TOOL_ID, INSPECT_IMAGE_TOOL_ID, CODE_INTERPRETER_TOOL_ID],
+    [READ_DOCUMENT_TOOL_ID, INSPECT_IMAGE_TOOL_ID, CODE_INTERPRETER_TOOL_ID],
   );
 
   const toolset = await openUnifiedAgentToolset([], agentContext, {

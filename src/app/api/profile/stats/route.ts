@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { resolveModel } from "@/lib/models";
 import { recomputeCostMicroUsd } from "@/lib/pricing";
 import { eurPerUsd } from "@/lib/spend";
+import { JUNO_TOOL_MODEL_PREFIX, isJunoToolSpendModel, usageModelLabel } from "@/lib/tools/metering";
 
 export const runtime = "nodejs";
 
@@ -39,8 +40,18 @@ export async function GET() {
        * heatmap by a multiple that has nothing to do with how much the user
        * wrote. Their COST is still theirs and still shows: the lifetime card
        * below reads every row, and breaks the utility spend out by kind.
+       *
+       * Juno's own tool fees (`juno-tool:*` rows: a search engine's price, a
+       * sandbox's time) are not replies either — a turn that searched three
+       * times is one reply — and carry no tokens, so they leave this window
+       * too. Their cost stays in the lifetime card.
        */
-      where: { userId: user.id, createdAt: { gte: since }, kind: { not: "utility" } },
+      where: {
+        userId: user.id,
+        createdAt: { gte: since },
+        kind: { not: "utility" },
+        model: { not: { startsWith: JUNO_TOOL_MODEL_PREFIX } },
+      },
       select: {
         model: true,
         promptTokens: true,
@@ -123,7 +134,8 @@ export async function GET() {
     kindRow.tokensOut += tokensOut;
     byKindMap.set(kind, kindRow);
 
-    const modelKey = spend.model?.trim() || "unknown";
+    // Tool fees fold into one "Tools" line rather than one per tool id.
+    const modelKey = usageModelLabel(spend.model);
     const modelRow = byModelMap.get(modelKey) ?? {
       count: 0,
       costMicroUsd: 0,
@@ -147,10 +159,13 @@ export async function GET() {
     .slice(0, 12);
 
   const lifetimeTokens = lifetimeTokensIn + lifetimeTokensOut;
-  // Row count minus the background walk, for the same reason the year window
-  // excludes it: this number is rendered under the word "Replies". Its cost,
-  // its tokens and its own line in the by-kind breakdown all stay.
-  const lifetimeMessages = lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility").length;
+  // Row count minus the background walk and the tool fees, for the same reason
+  // the year window excludes them: this number is rendered under the word
+  // "Replies". Their cost, their tokens and their lines in the by-kind and
+  // by-model breakdowns all stay.
+  const lifetimeMessages =
+    lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility").length -
+    lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility" && isJunoToolSpendModel(s.model)).length;
 
   // Persist repairs so plan budget (which sums costMicroUsd) matches the
   // honest recompute — fire-and-forget, capped so a huge ledger can't stall.

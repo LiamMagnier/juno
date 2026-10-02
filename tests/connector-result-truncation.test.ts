@@ -182,3 +182,15 @@ test("mcp.ts truncates through the annotated cut, not a bare slice", () => {
     "a bare 30,000-character slice is back in mcp.ts — it cuts without telling the model"
   );
 });
+
+test("a connector's pictures never count against, or ride inside, the text the cap measures", async () => {
+  const { flattenToolResult } = await import("@/lib/tools/connector-tools");
+  const huge = "A".repeat(200_000);
+  const flattened = flattenToolResult({ content: [{ type: "text", text: "Chart:" }, { type: "image", data: huge, mimeType: "image/png" }] });
+  assert.equal(flattened.text, "Chart:");
+  assert.equal(flattened.images.length, 1);
+  assert.equal(truncateConnectorResult(flattened.text).truncated, false);
+  // mcp.ts still cuts the flattened text with the annotated cut.
+  const source = readFileSync(new URL("../src/lib/mcp.ts", import.meta.url), "utf8");
+  assert.match(source, /result: truncateConnectorResult\(flattened\.text\)/);
+});

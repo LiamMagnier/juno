@@ -433,7 +433,15 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
 /**
  * Flat server-tool fees (USD), on top of token usage.
  * Sources (2026-07): Anthropic $10/1k web searches; OpenAI $10/1k web search;
- * xAI $5/1k web_search and $5/1k x_search. Google grounding is token-only.
+ * xAI $5/1k web_search and $5/1k x_search. Google grounding is $14/1k queries
+ * beyond the deployment's monthly free quota (SPEC §3.9): the chat route splits
+ * a turn's grounded queries against that quota and passes only the BILLABLE
+ * count here as `webSearchRequests` (`splitGroundingQueries`, tools/metering.ts),
+ * so free queries stay free.
+ *
+ * Juno's own tool fees (a keyed engine's price, sandbox time) are NOT this:
+ * they are separate `juno-tool:<id>` ledger rows, never passed as
+ * `toolFeesUsd`, which would override the provider fee computed here.
  */
 export function toolFeesUsd(
   provider: ModelInfo["provider"] | string,
@@ -456,6 +464,9 @@ export function toolFeesUsd(
     case "xai":
       // Web Search + X Search: $5 / 1k each
       return web * 0.005 + x * 0.005;
+    case "google":
+      // Grounding with Google Search: $14 / 1k billable queries.
+      return web * 0.014;
     default:
       return 0;
   }

@@ -454,3 +454,28 @@ test("the approval-dispatch gate passes over the current tree", () => {
     `scripts/check-approval-dispatch.mjs failed; a tool dispatch path is no longer behind the broker:\n${result.stderr}${result.stdout}`
   );
 });
+
+test("the gate covers Juno's own chat tools, whose broker is a port", () => {
+  /*
+   * The dispatcher (src/lib/tools/dispatch.ts) runs Juno ToolSpecs itself and
+   * reaches the broker through `BatchContext.ports` so it can be tested
+   * offline (SPEC §3.3 item 3). The import check the MCP chokepoint uses
+   * cannot see a port, so the gate finds the `spec.execute` sink instead and
+   * requires the awaited port call, its refused/replay handling and the
+   * receipt settlement around it. This pins both halves: the gate still
+   * inventories that sink, and the sink is still behind the port.
+   */
+  const gate = readFileSync(new URL("../scripts/check-approval-dispatch.mjs", import.meta.url), "utf8");
+  assert.match(gate, /const dispatchPath = "src\/lib\/tools\/dispatch\.ts";/);
+  assert.match(gate, /record\.name === "execute" && record\.receiver === "spec"/);
+
+  const dispatch = readFileSync(new URL("../src/lib/tools/dispatch.ts", import.meta.url), "utf8");
+  const authorize = dispatch.indexOf("await ctx.ports.authorizeExternalAction({");
+  const sink = dispatch.indexOf("spec.execute(args,");
+  assert.ok(authorize > 0 && sink > authorize, "the port call must come before the sink");
+  const between = dispatch.slice(authorize, sink);
+  assert.match(between, /authorization\.kind === "refused"/);
+  assert.match(between, /authorization\.kind === "replay"/);
+  assert.match(between, /derivedFromUntrusted: true/, "model-authored arguments are marked untrusted here too");
+  assert.match(dispatch.slice(sink), /ctx\.ports\.completeExternalAction\?\.\(/);
+});

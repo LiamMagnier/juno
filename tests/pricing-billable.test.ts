@@ -206,8 +206,12 @@ test("OpenAI web search fee is $10/1k", () => {
   assert.equal(toolFeesUsd("openai", { webSearchRequests: 10 }), 0.1);
 });
 
-test("Google grounding has no per-call tool fee", () => {
-  assert.equal(toolFeesUsd("google", { webSearchRequests: 100 }), 0);
+test("Google grounding is $14/1k billable queries; free-quota queries are never passed in", () => {
+  // The route passes only the queries beyond the deployment's monthly free
+  // quota as webSearchRequests (SPEC §3.9), so none means nothing is billed.
+  assert.equal(toolFeesUsd("google", {}), 0);
+  assert.equal(toolFeesUsd("google", { webSearchRequests: 0 }), 0);
+  assert.ok(Math.abs(toolFeesUsd("google", { webSearchRequests: 100 }) - 1.4) < 1e-9);
 });
 
 test("fast mode multiplies token rates but not tool fees", () => {
