@@ -53,6 +53,8 @@ public struct NativeToolRunFilesView: View {
         if let onOpen, file.path != nil {
             Button { onOpen(file) } label: { content }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
                 .accessibilityLabel("Open \(file.name)")
         } else {
             content.accessibilityElement(children: .combine)
@@ -72,12 +74,22 @@ public struct NativeToolRunFilesView: View {
 /// the web's `ToolRunDetail`. No status pills; the row above carries the words.
 public struct NativeToolRunDetailView: View {
     private let call: NativeToolCall
+    private let showsReason: Bool
     private let onOpenFile: ((NativeToolRunFile) -> Void)?
     private let onRunAgain: ((String) -> Void)?
     @State private var showProgram = false
 
-    public init(call: NativeToolCall, onOpenFile: ((NativeToolRunFile) -> Void)? = nil, onRunAgain: ((String) -> Void)? = nil) {
+    /// - Parameter showsReason: false where the host already prints the
+    ///   failure phrase above this view (the Mac Activity panel), so the
+    ///   reason is not said twice.
+    public init(
+        call: NativeToolCall,
+        showsReason: Bool = true,
+        onOpenFile: ((NativeToolRunFile) -> Void)? = nil,
+        onRunAgain: ((String) -> Void)? = nil
+    ) {
         self.call = call
+        self.showsReason = showsReason
         self.onOpenFile = onOpenFile
         self.onRunAgain = onRunAgain
     }
@@ -89,7 +101,7 @@ public struct NativeToolRunDetailView: View {
                     .junoCaption()
                     .foregroundStyle(Color.junoMutedForeground)
             }
-            if let reason = NativeToolRunPresentation.reason(call) {
+            if showsReason, let reason = NativeToolRunPresentation.reason(call) {
                 Text(reason)
                     .junoCaption()
                     .foregroundStyle(NativeToolPresentation.readsAsFailure(call) ? Color.junoWarningInk : Color.junoMutedForeground)
@@ -102,7 +114,7 @@ public struct NativeToolRunDetailView: View {
                         .buttonStyle(.plain)
                         .junoCaption()
                         .foregroundStyle(Color.junoMutedForeground)
-                        .frame(minHeight: 28)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
                         .contentShape(.rect)
                 }
             }
@@ -129,9 +141,13 @@ public struct NativeToolRunDetailView: View {
                     .foregroundStyle(Color.junoMutedForeground)
             }
             if let onRunAgain, NativeToolRunPresentation.canRunAgain(call) {
+                // Opaque, like every control in a transcript: glass is chrome.
                 Button("Run again") { onRunAgain(NativeToolRunPresentation.runAgainDraft(call)) }
-                    .buttonStyle(.glass)
-                    .frame(minHeight: 28)
+                    .buttonStyle(.plain)
+                    .junoCaption()
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    .contentShape(.rect)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

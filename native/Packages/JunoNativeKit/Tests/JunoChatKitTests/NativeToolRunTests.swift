@@ -199,7 +199,7 @@ final class NativeToolRunTests: XCTestCase {
     /// `outcome` and `errorCode`, and `run` with files that have no link.
     func testTheToolContractShapeOnTheDetailDecodes() throws {
         let running = try legacyCall(#"""
-        {"server":"Code","name":"run_code","args":"{"language":"python","code":"print(1)"}","resultNote":"pending",
+        {"server":"Code","name":"run_code","args":"{\"language\":\"python\",\"code\":\"print(1)\"}","resultNote":"pending",
          "callId":"jc_1_0","phase":"running","timeoutMs":600000,
          "progress":{"lines":[{"stream":"stdout","text":"region"},{"stream":"stderr","text":"warning: 2 rows dropped"}],"stdoutBytes":512},
          "run":{"runId":"run_c1","context":"hosted_sandbox","language":"python","status":"running","files":[]}}
@@ -222,7 +222,7 @@ final class NativeToolRunTests: XCTestCase {
 
         let unknown = try legacyCall(#"""
         {"server":"Code","name":"run_code","status":"failed","outcome":"outcome_unknown","errorCode":"outcome_unknown",
-         "args":"{"language":"bash"}","run":{"runId":"run_c3","context":"hosted_sandbox","language":"bash","status":"outcome_unknown","files":[]}}
+         "args":"{\"language\":\"bash\"}","run":{"runId":"run_c3","context":"hosted_sandbox","language":"bash","status":"outcome_unknown","files":[]}}
         """#)
         XCTAssertEqual(unknown.status, .outcomeUnknown, "a failure carrying outcome_unknown is unknown, never a failure")
         XCTAssertEqual(NativeToolRunPresentation.summary(unknown), "Outcome unknown, the server restarted while this ran")

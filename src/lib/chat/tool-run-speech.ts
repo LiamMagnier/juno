@@ -29,19 +29,25 @@ export const VOICE_RUN_LABEL = {
   unknown: "I can't tell whether that run finished, so I haven't run it again.",
   unavailable: "I can't run code right now.",
   declined: "Okay, I won't run that.",
+  waiting: "I need your go-ahead on screen before I run that.",
 } as const;
 
 /**
  * The one phase a voice turn speaks while a run works, or null.
  * Said once per turn (`alreadySpoken`), and only past the few-seconds mark:
- * a two-second run is over before the sentence would be.
+ * a two-second run is over before the sentence would be. An approval wait is
+ * the exception, said at once.
  */
 export function voiceRunCue(
   views: readonly ToolRunView[],
   elapsedMs: number,
   alreadySpoken: boolean,
 ): string | null {
-  if (alreadySpoken || elapsedMs < VOICE_RUN_PHASE_AFTER_MS) return null;
+  if (alreadySpoken) return null;
+  // An approval blocks the turn until the person answers on screen, and a
+  // listener may not be looking: that is said at once, not after a delay.
+  if (views.some((v) => v.phase === "awaiting_approval")) return VOICE_RUN_LABEL.waiting;
+  if (elapsedMs < VOICE_RUN_PHASE_AFTER_MS) return null;
   const live = [...views].reverse().find((v) => v.phase === "running" || v.phase === "queued");
   if (!live) return null;
   if (live.tool === "use_skill" || live.tool === "read_skill_file") return VOICE_RUN_LABEL.phaseSkill;

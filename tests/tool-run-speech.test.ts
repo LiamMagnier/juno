@@ -26,6 +26,7 @@ test("one spoken phase, only past the few-seconds mark, once per turn", () => {
   const script = readToolRuns([{ ...F.running, call: { ...(F.running as unknown as { call: object }).call, run: { language: "bash" } } } as never], { live: true });
   assert.equal(voiceRunCue(script, 10_000, false), VOICE_RUN_LABEL.phaseScript);
   assert.equal(voiceRunCue(readToolRuns([F.succeeded]), 10_000, false), null, "nothing is running");
+  assert.equal(voiceRunCue(readToolRuns([F.awaitingApproval], { live: true }), 0, false), VOICE_RUN_LABEL.waiting, "an approval is said at once");
 });
 
 test("outcomes are spoken plainly, never as code or output", () => {

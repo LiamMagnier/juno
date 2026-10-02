@@ -249,7 +249,7 @@ function VoiceSection() {
         <thead className="text-caption text-muted-foreground">
           <tr>
             <th className="py-1 pr-4 font-medium">Phase</th>
-            <th className="py-1 pr-4 font-medium">Spoken phase (after 4 s)</th>
+            <th className="py-1 pr-4 font-medium">Spoken phase (after 4 s; an approval at once)</th>
             <th className="py-1 font-medium">Spoken outcome</th>
           </tr>
         </thead>

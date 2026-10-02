@@ -128,36 +128,52 @@ once (`src/lib/chat/tool-run-speech.ts`).
 
 ## What the surfaces read
 
-The surfaces are built against the wire the design specifies, read tolerantly by
-`readToolRun` (`src/lib/chat/tool-run.ts`) and its Swift twin (`NativeToolRunPresentation`,
-`NativeActivityWire.CallWire`). The producing lanes emit, on the activity row of a call:
+The surfaces read whatever the producing lanes send, tolerantly, through `readToolRun`
+(`src/lib/chat/tool-run.ts`) on the web and `NativeActivityWire` plus
+`NativeToolRunPresentation` in JunoChatKit. Two shapes are accepted, field by field, and a value
+of the wrong type costs that field, never the row:
 
-```ts
-call: {
-  callId, tool,               // "run_code" | "check_run" | "use_skill" | "read_skill_file" ("code_interpreter" is an alias)
-  status,                     // ToolCallStatus, plus "outcome_unknown" (and "timed_out" on the run record)
-  durationMs?, timeoutMs?, startedAt?,
-  args?: { language?, reason?, name?, skill?, path?, run_id? },   // ToolSpec.present, safe to show
-  error?: { code, detail? },  // "timeout" | "cancelled" | "unavailable" | "blocked" | "not_permitted" | "invalid_args" | ...
-  run?: {                     // the client projection of ToolOutcome.run (§6.4); persisted via sanitizeToolRunRecord
-    runId?, status?, context?, language?, exitCode?, durationMs?,
-    stdout?: { head, tail?, omittedBytes, totalBytes? }, stderr?: { ... },
-    code?, codeTruncated?, files?: [{ attachmentId, name, mime, bytes, url? }],
-    filesDiscarded?, skill?: { name, slug? }, agentName?, logUrl?, finishedLater?
-  },
-  progress?: { seq, lines (at most 20), stdoutBytes, stderrBytes }   // live only
-}
-```
+1. **The tool contract's shape** (rf/tools-L1-tool-contract): the fields ride on the row's
+   `tool` detail (`ClientToolDetail`). This is what the chat route sends.
 
-Two producer obligations follow from this:
+   ```ts
+   tool: {
+     server, name,             // name: "run_code" | "check_run" | "use_skill" | "read_skill_file" ("code_interpreter" is an alias)
+     args?, result?, status?, resultNote?, durationMs?,   // the existing redacted detail
+     callId?, timeoutMs?,
+     phase?: "queued" | "awaiting_approval" | "running",  // live only
+     progress?: { lines: { stream, text }[], stdoutBytes?, stderrBytes? },   // live only
+     outcome?: "succeeded" | "failed" | "denied" | "expired" | "cancelled" | "outcome_unknown",
+     errorCode?,               // "timeout" | "cancelled" | "unavailable" | "outcome_unknown" | ...
+     run?: { runId, context, language?, status, exitCode?, durationMs?, stdoutBytes?, stderrBytes?,
+             files: { attachmentId, name, mime, bytes }[], skill?: { slug, versionId?, bundleDigest? } }
+   }
+   ```
 
-1. `serializeActivity` (`src/lib/serializers.ts`) must keep `call` on reload, passing `call.run`
-   through `sanitizeToolRunRecord`, or a reloaded conversation loses its exit codes and file
-   cards. Until then a stored run falls back to the legacy detail.
-2. Orbit task runs use `workToolStartedPayload`, `workToolFinishedEvents` and
-   `workRunCapabilityDegraded` (`src/lib/work/tool-run-events.ts`): the existing event kinds
-   `tool_started`, `tool_finished`, `artifact_created` and `degraded` (`capability_unavailable`)
-   with additive `run` and `runPhase` keys, so shipped clients keep decoding.
+   `outcome_unknown` also arrives as `status: "failed"` with `errorCode: "outcome_unknown"`;
+   both read as unknown, never as a failure or a success. A run record status of `timed_out`
+   reads as a time-out.
+
+2. **The typed record** `call` (chat-rework SPEC §2.4, which native already decodes), with
+   `call.run`, `call.progress` and `error.code: "outcome_unknown"` meaning the same things. The
+   run record may also carry `stdout` / `stderr` heads and tails with `omittedBytes`, the program
+   `code`, `filesDiscarded`, `logUrl` (same-origin only) and `finishedLater`; when it carries no
+   streams, the run detail shows the call's `result` text, which is what the model read.
+
+Facts the producers should know:
+
+- **File links.** The contract's run files carry no URL. Images open through
+  `/api/attachments/{id}`; other files show as cards that say they are in the conversation's
+  files, without a link, until the record carries a same-origin `url` or the reply is saved and
+  the message's own attachment tiles take over (the run strip then stops drawing them, so a
+  file is never shown twice).
+- **Orbit task runs** use `workToolStartedPayload`, `workToolFinishedEvents` and
+  `workRunCapabilityDegraded` (`src/lib/work/tool-run-events.ts`): the existing event kinds
+  `tool_started`, `tool_finished`, `artifact_created` and `degraded` (`capability_unavailable`)
+  with additive `summary`, `run` and `runPhase` keys, so shipped clients keep decoding.
+- **Wire status.** Until the contract lands on the trunk, `contracts/chat/juno-chat-wire-v1.status.json`
+  lists the eight `ClientToolDetail` keys native decodes under `nativeOnly`. When the contract
+  lands, those entries move into `fields` as `native` (the check fails until they do).
 
 ## V7 acceptance status
 
