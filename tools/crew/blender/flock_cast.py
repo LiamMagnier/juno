@@ -55,7 +55,7 @@ PAL = {
     "sky": "#8ccbff",
     "peach": "#ffb08a",
     "mint": "#9eeac7",
-    "rice": "#f6f1e6",
+    "rice": "#f1e5cc",
     "crust": "#e7a03c",
     "crumb": "#ffe0a0",
     "cocoa": "#8a5636",
