@@ -61,8 +61,8 @@ test("a text-only round returns one text block and streams its deltas", async ()
   assert.deepEqual(
     yielded.filter((e) => e.type === "text"),
     [
-      { type: "text", text: "Hel" },
-      { type: "text", text: "lo" },
+      { type: "text", text: "Hel", round: 0 },
+      { type: "text", text: "lo", round: 0 },
     ]
   );
   assert.equal(round.stopReason, "end_turn");
@@ -94,7 +94,7 @@ test("a thinking block keeps its signature and stays ahead of the tool_use it pr
   // `callId` is the provider id unless the turn's tool loop issued another
   // (src/lib/tools/call-ids.ts); `index` is the call's position in the round.
   assert.deepEqual(round.toolUses, [
-    { id: "toolu_1", callId: "toolu_1", name: "github__list_issues", index: 0, json: '{"repo":"juno"}' },
+    { id: "toolu_1", callId: "toolu_1", name: "github__list_issues", index: 0, json: '{"repo":"juno"}', round: 0, complete: true },
   ]);
   assert.equal(round.stopReason, "tool_use");
 });
@@ -144,7 +144,7 @@ test("every tool_use yields a call event, labelled through the toolset", async (
   // No `args`: the call event is yielded from content_block_start, where the
   // arguments have not begun streaming. Anthropic attaches them to the result.
   assert.deepEqual(yielded, [
-    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call", callId: "a", index: 0 },
+    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call", callId: "a", round: 0, index: 0 },
   ]);
 });
 

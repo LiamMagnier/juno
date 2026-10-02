@@ -36,7 +36,6 @@
 import { actionPreviewDetail } from "@/lib/action-approval";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import type { ClientToolDetail } from "@/types/chat";
-import { readToolContractFields } from "@/lib/tools/wire";
 
 /**
  * Redacted arguments, pretty-printed. 2,000 chars is ~60 rendered lines in the
@@ -69,10 +68,10 @@ export const MAX_TOOL_RESULT_CHARS = 4_000;
  * projects micro-USD from token counts, so nothing else on this stream measures
  * bytes at all. Tool detail is the first payload that can grow without one.
  */
-export const MAX_TOOL_DETAIL_CHARS_PER_RUN = 32_000;
+export const MAX_TOOL_DETAIL_CHARS_PER_RUN = 96_000;
 
-export const TOOL_ARGS_NOTES = ["unavailable", "empty", "unparsable", "over_budget"] as const;
-export const TOOL_RESULT_NOTES = ["pending", "unfinished", "empty", "over_budget"] as const;
+/** The read side (and its note vocabularies) lives with the persisted run record. */
+export { readToolDetail, TOOL_ARGS_NOTES, TOOL_RESULT_NOTES } from "@/lib/chat/run-record";
 
 /** One generation's remaining allowance. Created by the route, spent in order. */
 export interface ToolDetailBudget {
@@ -279,57 +278,3 @@ export function closeToolDetail(
   return detail;
 }
 
-function readEnum<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
-  return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
-}
-
-function readCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-/**
- * Rebuild a persisted tool detail from the `Message.activity` JSON.
- *
- * As tolerant as `serializeActivity` itself, and for the same reason: a row
- * written by a LATER build must still load here. An unrecognised note degrades
- * that one field to `undefined` — never the whole event, and never a thrown
- * conversation load. A row written BEFORE this shipped has no `tool` at all and
- * returns `undefined`, which is what lets replay degrade to the old name-only
- * row with no version check anywhere.
- */
-export function readToolDetail(raw: unknown): ClientToolDetail | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const record = raw as Record<string, unknown>;
-  const server = typeof record.server === "string" ? record.server : "";
-  const name = typeof record.name === "string" ? record.name : "";
-  if (!server || !name) return undefined;
-
-  const detail: ClientToolDetail = { server, name };
-  if (typeof record.args === "string") detail.args = record.args;
-  const argsNote = readEnum(record.argsNote, TOOL_ARGS_NOTES);
-  if (argsNote) detail.argsNote = argsNote;
-  if (record.argsTruncated === true) detail.argsTruncated = true;
-
-  if (typeof record.result === "string") detail.result = record.result;
-  const resultNote = readEnum(record.resultNote, TOOL_RESULT_NOTES);
-  // "pending" is a claim about the present tense, and it is only ever true
-  // while a stream is open. A run stopped mid-call persists its row as it
-  // stood, so anything read back from the database has a run that is over by
-  // definition — telling someone that last Tuesday's call is "still running"
-  // would be the panel lying with a field rather than with a number.
-  if (resultNote) detail.resultNote = resultNote === "pending" ? "unfinished" : resultNote;
-  if (record.resultTruncated === true) detail.resultTruncated = true;
-  const resultChars = readCount(record.resultChars);
-  if (resultChars !== undefined) detail.resultChars = resultChars;
-
-  const status = readEnum(record.status, ["ok", "failed"] as const);
-  if (status) detail.status = status;
-  const durationMs = readCount(record.durationMs);
-  if (durationMs !== undefined) detail.durationMs = durationMs;
-
-  // The tool contract's fields (call id, typed outcome, run record), read by
-  // their owner in src/lib/tools/wire.ts.
-  Object.assign(detail, readToolContractFields(record));
-
-  return detail;
-}

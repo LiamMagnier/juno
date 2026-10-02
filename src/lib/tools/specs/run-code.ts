@@ -23,7 +23,7 @@ import type { ToolPresentArgs } from "@/types/run";
  * running, run id …") before the dispatcher would abort it — an abort is read
  * as Stop and cancels the run.
  */
-export const RUN_CODE_TIMEOUT_MS = 130_000;
+export const RUN_CODE_TIMEOUT_MS = 180_000;
 
 export const RUN_CODE_INPUT: PortableSchema = {
   type: "object",

@@ -2008,7 +2008,7 @@ export type NativeSymbol = {
  * optical cut where it has one. Aliases are listed separately (`ICON_ALIASES`):
  * a native call site resolves a label to the same symbol the web draws.
  *
- *   import { nativeIconTable, ICON_ALIASES } from "../src/app/dev/design/juno/icons/drawings.ts";
+ *   (the native generator reads nativeIconTable and ICON_ALIASES from the design lane drawings module)
  *   for (const s of nativeIconTable()) outline(s.symbol, s.regular, s.small); // and s.fill
  */
 export function nativeIconTable(): NativeSymbol[] {

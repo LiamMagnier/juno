@@ -158,7 +158,9 @@ test("the landing parses the query and hands it to the composer", () => {
   const landing = read(LANDING);
   assert.match(landing, /searchParams: Promise</, "Next hands searchParams as a promise");
   assert.match(landing, /parseCodePrefill\(await searchParams\)/);
-  assert.match(landing, /<CodeComposer prefill=\{prefill\}/);
+  // The page hands the parsed prefill to the landing, which hands it to the composer.
+  assert.match(landing, /<CodeLanding prefill=\{prefill\}/);
+  assert.match(read("src/components/code/code-landing.tsx"), /<CodeComposer prefill=\{prefill\}/);
 });
 
 test("the composer fills its field from the link and paints it filled", () => {

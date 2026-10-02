@@ -141,7 +141,7 @@ test("the default windows are generous enough for a slow reasoning model", () =>
   assert.ok(PROVIDER_STARTUP_TIMEOUT_MS > PROVIDER_IDLE_TIMEOUT_MS);
 });
 
-test("a pending approval pauses the idle clock; resume() after the result re-arms it", (t: TestContext) => {
+test("a pending approval pauses the idle clock; the result event re-arms it", (t: TestContext) => {
   /*
    * While `toolset.execute` blocks on a person answering an approval card, the
    * generator yields nothing and nothing touches the watchdog — so a 200s
@@ -158,28 +158,25 @@ test("a pending approval pauses the idle clock; resume() after the result re-arm
   assert.equal(fired, 0, "a person taking 200s to decide is not a stalled provider");
   assert.equal(wd.stalled, false);
 
-  wd.touch(); // the tool result event arrives (approved or refused)…
-  assert.equal(wd.paused, true, "…and an event alone does not end the pause (INV-33)");
-  wd.resume(); // …the turn stream's active count fell to 0
-  assert.equal(wd.paused, false);
+  wd.touch(); // the tool result event arrives (approved or refused): the provider is back
+  assert.equal(wd.paused, false, "an event ends the approval pause (a held call keeps the clock off instead)");
   t.mock.timers.tick(25);
   assert.equal(fired, 1, "silence AFTER the result is a stall again");
   wd.stop();
 });
 
-test("a paused watchdog stays paused through touch() (INV-33)", (t: TestContext) => {
+test("a hold (not the pause) keeps the clock off through touch()", (t: TestContext) => {
   let fired = 0;
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const wd = createStallWatchdog(() => fired++, 20, 1_000);
   wd.touch();
-  wd.pause();
+  const release = wd.hold();
   for (let i = 0; i < 5; i++) {
     wd.touch();
     t.mock.timers.tick(100);
   }
-  assert.equal(wd.paused, true);
-  assert.equal(fired, 0, "no touch re-armed the clock");
-  wd.resume();
+  assert.equal(fired, 0, "no touch re-armed the clock while a call holds it");
+  release();
   t.mock.timers.tick(25);
   assert.equal(fired, 1);
   wd.stop();

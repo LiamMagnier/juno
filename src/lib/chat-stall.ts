@@ -181,10 +181,10 @@ export function createStallWatchdog(
   return {
     touch: () => {
       started = true;
-      // A paused watchdog stays paused until `resume()` (INV-33): an event
-      // received while a tool runs is the tool's own status, not the provider
-      // coming back, and must not re-arm the provider's idle clock.
-      if (paused) return;
+      // An event clears an approval pause (the provider is talking again).
+      // Silence while a call runs or waits for a person is covered by a
+      // counted hold (trackToolActivity), which a touch never clears.
+      paused = false;
       arm(idleMs);
     },
     get startedStreaming() {

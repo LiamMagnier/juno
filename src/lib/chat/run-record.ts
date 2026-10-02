@@ -25,6 +25,7 @@
 
 import type { ActionApprovalDecision, ActionReceiptStatus, ActionRiskClass } from "@/lib/action-approval";
 import { clampChars, clampUtf8, normalizeSource, singleLine, utf8Length } from "@/lib/chat/source-registry";
+import { readToolContractFields } from "@/lib/tools/wire";
 import type {
   ActivityKind,
   ClientActivityEvent,
@@ -201,6 +202,10 @@ export function readToolDetail(raw: unknown): ClientToolDetail | undefined {
   if (status) detail.status = status;
   const durationMs = readCount(raw.durationMs);
   if (durationMs !== undefined) detail.durationMs = durationMs;
+
+  // The tool contract's fields (call id, typed outcome, run record), read by
+  // their owner in src/lib/tools/wire.ts.
+  Object.assign(detail, readToolContractFields(raw));
 
   return detail;
 }

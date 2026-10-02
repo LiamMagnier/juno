@@ -18,6 +18,7 @@ import {
 } from "@/lib/user-mcp";
 import { safeMcpFetch, userMcpUrlProblem } from "@/lib/mcp-safe-fetch";
 import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
+import { flattenToolResult } from "@/lib/tools/connector-tools";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
@@ -360,18 +361,10 @@ function uniqueToolName(base: string, taken: (name: string) => boolean): string 
  * the model is missing is measured in the text it was actually going to read.
  */
 function stringifyToolResult(res: unknown): TruncatedForModel {
-  const content = (res as { content?: unknown })?.content;
-  const text = Array.isArray(content)
-    ? content
-        .map((p) => {
-          const part = p as { type?: string; text?: string; resource?: unknown };
-          if (part?.type === "text") return part.text ?? "";
-          if (part?.type === "resource") return JSON.stringify(part.resource);
-          return JSON.stringify(part);
-        })
-        .join("\n")
-    : JSON.stringify(res);
-  return truncateConnectorResult(text);
+  // Image parts are pixels, not base64 in the text: a connector's chart must
+  // never count against (or ride inside) the text the cap measures.
+  const flattened = flattenToolResult(res);
+  return truncateConnectorResult(flattened.text);
 }
 
 /**

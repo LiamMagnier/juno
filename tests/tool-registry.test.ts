@@ -81,7 +81,7 @@ test("risk, parallelism, timeouts, icons, brokers and dedupe are as the spec tab
     web_fetch: ["read", true, 20_000, "globe", "juno_runtime", true],
     read_document: ["read", true, 30_000, "document", "juno_runtime", true],
     inspect_image: ["read", true, 30_000, "image", "juno_runtime", true],
-    run_code: ["read", false, 130_000, "code", "juno_runtime", true],
+    run_code: ["read", false, 180_000, "code", "juno_runtime", true],
     search_chats: ["read", true, 10_000, "chats", "juno_runtime", true],
     current_time: ["read", true, 1_000, "clock", "none", false],
     calculate: ["read", true, 1_000, "calculator", "none", true],

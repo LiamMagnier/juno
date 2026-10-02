@@ -192,5 +192,5 @@ test("a connector's pictures never count against, or ride inside, the text the c
   assert.equal(truncateConnectorResult(flattened.text).truncated, false);
   // mcp.ts still cuts the flattened text with the annotated cut.
   const source = readFileSync(new URL("../src/lib/mcp.ts", import.meta.url), "utf8");
-  assert.match(source, /result: truncateConnectorResult\(flattened\.text\)/);
+  assert.match(source, /truncateConnectorResult\(flattened\.text\)/);
 });
