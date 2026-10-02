@@ -1,0 +1,42 @@
+# The Python libraries baked into the juno-exec image: the complete resolved set,
+# every transitive dependency pinned, installed with --no-deps and wheels only
+# (Dockerfile), so a rebuild cannot silently pick up a newer release and the
+# manifest the model reads (GET /v1/manifest) names what is really there. The
+# sandbox has no network, so nothing else can be installed at run time.
+# Top level: numpy pandas scipy matplotlib seaborn openpyxl xlsxwriter python-docx
+# python-pptx pypdf pdfplumber pillow reportlab tabulate. The rest are their
+# dependencies as resolved on 2026-10-02.
+cffi==2.1.1
+chardet==7.6.0
+charset-normalizer==3.5.2
+contourpy==1.4.0
+cryptography==50.0.2
+cycler==0.12.1
+et_xmlfile==2.0.0
+fonttools==4.66.1
+kiwisolver==1.5.1
+lxml==6.1.3
+matplotlib==3.9.2
+numpy==2.1.3
+openpyxl==3.1.5
+packaging==26.3
+pandas==2.2.3
+pdfminer.six==20231228
+pdfplumber==0.11.4
+pillow==11.0.0
+pycparser==3.0
+pyparsing==3.3.3
+pypdf==5.1.0
+pypdfium2==5.13.0
+python-dateutil==2.9.0.post0
+python-docx==1.1.2
+python-pptx==1.0.2
+pytz==2026.4
+reportlab==4.2.5
+scipy==1.14.1
+seaborn==0.13.2
+six==1.17.0
+tabulate==0.9.0
+typing_extensions==4.16.0
+tzdata==2026.4
+xlsxwriter==3.2.0
