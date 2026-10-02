@@ -1199,3 +1199,33 @@ and spot-checked the lanes' rows. Words only; no status pills.
   `~/.juno/agents` can no longer replace a built-in agent (the review pass
   parses the built-in reviewer's JSON), and Lane E's test fixture runs with
   the stop check off.
+
+## Design round 3 (Alevr) landed (2026-10-02)
+
+`rf/design-v3h` merged into `rework/refoundation` (no-ff). Contents: Alevr
+foundations revisions 1 and 2 (production Continuum, wordmark, Orbit and Code
+glyphs from `src/components/brand/` replace the stand-in; motion on the V3
+scale), icon revision 2, the Orbit agents (character pipeline under
+`tools/crew/`, Orbit page and phone frames with Ready/Thinking/Working/Needs
+your answer/Blocked/Finished words), voice (`src/app/dev/design/juno/voice/`:
+channel, Continuum, peek) and the naming pass. All design routes stay
+dev-only (`page.dev.tsx`). Gates: typecheck passes on the lane and on the
+trunk after the merge; `eslint src/app/dev/design` 0 errors, 7 type-scale
+and a11y warnings.
+
+Pages for the owner (in `.claude/local-tools/refoundation-artifacts/` of the
+main folder):
+
+- `alevr-design-v3.html` (interim render today: `alevr-design-v3-interim.html`)
+- `alevr-voice-design.html` (interim render today: `alevr-voice-light-peek.html`)
+- `alevr-naming.html`
+
+### Still open
+
+- Final renders of `alevr-design-v3.html` and `alevr-voice-design.html` are
+  not written yet; the interim pages above are the latest.
+- The 7 eslint warnings in `canvas/composer.tsx`, `porcelain/motion.tsx` and
+  `porcelain/system.tsx` (off-scale text sizes, `aria-expanded` on a textbox).
+- Production port of the revised screens, Orbit agents and voice into the
+  real routes (web Phase 3), then native.
+- Owner's sign-off on the agent characters and the naming choices.
