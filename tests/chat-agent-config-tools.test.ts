@@ -332,7 +332,7 @@ test("approval classification: cost and authority changes require approval; beni
   assert.equal(isStaleAgentApproval(t0, t1), true);
 });
 
-test("actionPreview and approval-card render structured juno_agents diffs with Deny first and Allow once", () => {
+test("actionPreview and approval-card render structured juno_agents diffs with the action verb and a quiet Deny", () => {
   const preview = actionPreview({
     connectorId: "juno_agents",
     connectorLabel: "Agents",
@@ -350,8 +350,15 @@ test("actionPreview and approval-card render structured juno_agents diffs with D
   const cardSource = read("../src/components/chat/approval-card.tsx");
   assert.match(cardSource, /function isAgentConfig\(/);
   assert.match(cardSource, /approval\.connectorId === "juno_agents"/);
-  assert.match(cardSource, /agentConfig \? "Not now" : "Don’t allow"/);
+  // The primary button names what will happen (Apply setup change for an
+  // agent's setup, the tool's own verb otherwise), Deny is the quiet ghost
+  // beside it, and a setup change is never offered a standing grant.
+  assert.match(cardSource, /onClick=\{\(\) => decide\("allow_once"\)\}[^>]*>\s*\{handoff \? "Hand off" : task \? "Start task" : agentConfig \? "Apply setup change" : approvalVerb\(current\.toolName\)\}/);
+  assert.match(cardSource, /<Button variant="ghost"[^>]*onClick=\{\(\) => decide\("deny"\)\}[^>]*>Deny<\/Button>/);
   assert.match(cardSource, /canAllowScope && !agentConfig/);
+  // Both answers wait for the card to arm, so a click meant for something
+  // else cannot land on a card that has just appeared.
+  assert.equal(cardSource.match(/disabled=\{sending \|\| !armed\}/g)?.length, 3);
 });
 
 test("describeAgentPatchChanges, summarizeAgentConfigToolInput, serializer whitelist and privacy of note events", () => {

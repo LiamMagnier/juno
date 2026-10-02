@@ -5,6 +5,7 @@ import { Globe } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Hostname without the `www.` noise — the label a reader actually recognises. */
 export function hostOf(url: string): string {
@@ -204,7 +205,7 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem]">
           <span className="block truncate font-medium">{title}</span>
-          <span className="block text-[0.9em] opacity-65">Juno did not link this: it is not a web address.</span>
+          <span className="block text-[0.9em] opacity-65">{`${PRODUCT_NAME} did not link this: it is not a web address.`}</span>
           {snippet && (
             // Clamped: a snippet is a scent of the page, not the page. It
             // matters MOST on this unlinkable chip — hovering is the only way

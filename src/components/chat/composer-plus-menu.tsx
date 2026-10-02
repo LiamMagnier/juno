@@ -79,6 +79,10 @@ export type PlusMenuItem =
       note?: string;
       /** A short mono figure before the check — what turning it on will do. */
       detail?: string;
+      /** A plain second line under a branded name: its descriptor (D-038). */
+      description?: string;
+      /** The name a screen reader hears when it differs from the label. */
+      ariaLabel?: string;
     }
   | {
       kind: "sub";
@@ -349,6 +353,8 @@ export function PlusMenu({
                         disabled={item.disabled}
                         note={item.note}
                         detail={item.detail}
+                        description={item.description}
+                        aria-label={item.ariaLabel}
                         onSelect={item.onToggle}
                       >
                         {item.label}

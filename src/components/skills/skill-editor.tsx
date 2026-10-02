@@ -11,6 +11,7 @@ import { useUploads } from "@/hooks/use-uploads";
 import { DOC_MIME } from "@/lib/uploads";
 import { CodeIcons } from "@/lib/app-icons";
 import { MAX_SKILL_RESOURCES, type SkillResource } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What the file picker offers: documents only.
@@ -136,7 +137,7 @@ export function SkillEditor({
             disabled={saving}
             className="mt-1.5"
           />
-          <p className="mt-1.5 text-caption text-muted-foreground">One line. Juno matches requests against it.</p>
+          <p className="mt-1.5 text-caption text-muted-foreground">{`One line. ${PRODUCT_NAME} matches requests against it.`}</p>
         </div>
       </div>
 
@@ -175,7 +176,7 @@ export function SkillEditor({
           </Button>
         </div>
         <p className="mt-0.5 text-caption text-muted-foreground">
-          Templates and references the skill works from. Juno reads them, never runs them.
+          {`Templates and references the skill works from. ${PRODUCT_NAME} reads them, never runs them.`}
         </p>
         <input
           ref={picker}

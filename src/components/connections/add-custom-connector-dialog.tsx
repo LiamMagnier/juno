@@ -18,6 +18,7 @@ import {
 } from "@/components/connections/custom-connector-api";
 import { staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type Ready = Extract<ProbeResponse, { ok: true }>;
 
@@ -82,7 +83,7 @@ function AddCustomConnectorFlow() {
       setName(result.existing?.name ?? result.suggestedName);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      setRefusal(err instanceof CustomConnectorError ? err.message : "Juno couldn't check that server. Try again.");
+      setRefusal(err instanceof CustomConnectorError ? err.message : `${PRODUCT_NAME} couldn't check that server. Try again.`);
     } finally {
       if (inflight.current === controller) setChecking(false);
     }
@@ -108,7 +109,7 @@ function AddCustomConnectorFlow() {
           <div className="pr-10">
             <DialogTitle>Add an MCP server</DialogTitle>
             <DialogDescription className="mt-1 text-ui">
-              Paste the server’s address. Juno checks it before anything is saved.
+              {`Paste the server’s address. ${PRODUCT_NAME} checks it before anything is saved.`}
             </DialogDescription>
           </div>
 
@@ -155,8 +156,7 @@ function AddCustomConnectorFlow() {
           </div>
 
           <p className="mt-5 text-caption leading-5 text-muted-foreground">
-            Servers sign in with OAuth, so Juno never sees your password. Only add servers you trust: their tools can
-            read and act on whatever you connect them to.
+            {`Servers sign in with OAuth, so ${PRODUCT_NAME} never sees your password. Only add servers you trust: their tools can read and act on whatever you connect them to.`}
           </p>
         </SkillDialogStep>
       ) : (
@@ -202,12 +202,12 @@ function ReadyStep({
       icon: KeyRound,
       text: (
         <>
-          You’ll sign in on <span className="font-medium text-foreground">{ready.authHost}</span> and approve Juno there.
+          You’ll sign in on <span className="font-medium text-foreground">{ready.authHost}</span>{` and approve ${PRODUCT_NAME} there.`}
         </>
       ),
     },
-    { icon: SlidersHorizontal, text: "Then choose which of its tools Juno may use." },
-    { icon: ShieldCheck, text: "Juno asks before any tool that changes something, as it does for every app." },
+    { icon: SlidersHorizontal, text: `Then choose which of its tools ${PRODUCT_NAME} may use.` },
+    { icon: ShieldCheck, text: `${PRODUCT_NAME} asks before any tool that changes something, as it does for every app.` },
   ];
 
   return (

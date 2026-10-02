@@ -27,6 +27,7 @@ import type { DesignEditorHandle } from "@/components/design/design-editor";
 import type { NodeId } from "@/lib/design/types";
 import { variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface AskJunoBarHandle {
   /** Put the caret in the field — what the toolbar's "Ask Juno" button does. */
@@ -95,7 +96,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
       onProposal(proposal);
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof DesignEditRequestError ? err.message : "Juno could not reach the design.");
+      setError(err instanceof DesignEditRequestError ? err.message : `${PRODUCT_NAME} could not reach the design.`);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setBusy(false);
@@ -150,7 +151,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
             type="button"
             onClick={() => setScopeToSelection((on) => !on)}
             aria-pressed={scopeToSelection}
-            title={scopeToSelection ? "Only this selection will change" : "Juno may change anything in the document"}
+            title={scopeToSelection ? "Only this selection will change" : `${PRODUCT_NAME} may change anything in the document`}
             className={cn(
               // `.pressable` eases the fill and ink itself; a `transition-*`
               // utility here replaced its shorthand and snapped the press.
@@ -198,12 +199,12 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           onKeyDown={(event) => event.stopPropagation()}
           placeholder={
             blocked
-              ? "Apply or reject Juno's change first"
+              ? `Apply or reject ${PRODUCT_NAME}'s change first`
               : scoped
                 ? `Change ${scopeLabel}…`
-                : "Ask Juno to change this design…"
+                : `Ask ${PRODUCT_NAME} to change this design…`
           }
-          aria-label="Ask Juno to change this design"
+          aria-label={`Ask ${PRODUCT_NAME} to change this design`}
           className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-ui outline-none placeholder:text-muted-foreground disabled:opacity-60"
         />
 
@@ -215,7 +216,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
               type="submit"
               size="icon-sm"
               disabled={!draft.trim() || busy || blocked}
-              aria-label={busy ? "Juno is working" : "Ask Juno"}
+              aria-label={busy ? `${PRODUCT_NAME} is working` : `Ask ${PRODUCT_NAME}`}
               // `control` (10), not `field` (12): the bar is a 16px shell with
               // `p-1.5` (6), so its seated controls are 16 − 6 = 10. The same
               // arithmetic the dropdown shell and the segmented track already use.
@@ -231,7 +232,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
               />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{busy ? "Juno is working" : "Ask Juno"}</TooltipContent>
+          <TooltipContent>{busy ? `${PRODUCT_NAME} is working` : `Ask ${PRODUCT_NAME}`}</TooltipContent>
         </Tooltip>
       </form>
     </div>

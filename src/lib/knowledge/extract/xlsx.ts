@@ -20,6 +20,7 @@
 import { Workbook } from "exceljs";
 import { openOoxml } from "./ooxml";
 import { BlockCollector, EXTRACT_LIMITS, type ExtractionResult } from "./types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const XLSX_PARSER = "xlsx";
 export const XLSX_PARSER_VERSION = "1";
@@ -148,7 +149,7 @@ export async function extractXlsx(input: { bytes: Uint8Array; fileName: string }
 
   const truncated = truncatedRows || collector.hitLimit;
   const reason = truncated
-    ? "This workbook is larger than Juno's indexing limit, so only its first rows were indexed."
+    ? `This workbook is larger than ${PRODUCT_NAME}'s indexing limit, so only its first rows were indexed.`
     : missingResults > 0
       ? `${missingResults} formula${missingResults === 1 ? "" : "s"} in this workbook have no calculated value stored, so only the formula itself was indexed. Open and re-save the file in Excel or Numbers to fix that.`
       : undefined;

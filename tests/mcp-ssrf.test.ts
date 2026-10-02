@@ -488,7 +488,7 @@ test("the probe never echoes what the upstream said", async () => {
   const secret = "root:x:0:0 internal-service-banner hunter2";
   for (const [status, expected] of [
     [500, "The server had a problem (HTTP 500). Try again later."],
-    [401, "The server turned down Juno's credentials. Check the Authorization header."],
+    [401, "The server turned down Alevr's credentials. Check the Authorization header."],
     [404, "Nothing at that address answered as an MCP server. Check the URL, which usually ends in /mcp."],
     [418, "The server refused the connection (HTTP 418)."],
   ] as const) {
@@ -503,10 +503,10 @@ test("the probe never echoes what the upstream said", async () => {
 
 test("probe failures map to fixed sentences, and only Juno's own refusals pass their text through", () => {
   const upstream = new Error("Error POSTing to endpoint: SECRET BODY");
-  assert.equal(describeProbeFailure(upstream, false), "Juno couldn't connect to that server.");
+  assert.equal(describeProbeFailure(upstream, false), "Alevr couldn't connect to that server.");
   assert.equal(
     describeProbeFailure(Object.assign(new Error("getaddrinfo ENOTFOUND x"), { code: "ENOTFOUND" }), false),
-    "Juno couldn't find that server. Check the address."
+    "Alevr couldn't find that server. Check the address."
   );
   assert.equal(
     describeProbeFailure(Object.assign(new Error("fetch failed"), { cause: { code: "CERT_HAS_EXPIRED" } }), false),
@@ -522,11 +522,24 @@ test("probe failures map to fixed sentences, and only Juno's own refusals pass t
 
 test("every user MCP request path uses the safe fetcher and re-checks the stored URL", () => {
   const mcp = src("src/lib/mcp.ts");
-  // The chat/Work/agent transport: user servers get the safe fetcher, and a
-  // URL that fails today's rules is not dialled even if it was saved earlier.
-  assert.match(mcp, /const userServer = isUserMcpConnectorId\(c\.id\);\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) return;/);
+  // The chat/Work/agent transport: user servers and custom connectors (both a
+  // URL typed into a form) get the safe fetcher, decided by the id rather than
+  // by an optional field a caller rebuilding ActiveConnector can drop (the Work
+  // runner does), and a URL that fails today's rules is not dialled even if it
+  // was saved earlier.
+  assert.match(
+    mcp,
+    /const userServer = isUserMcpConnectorId\(c\.id\) \|\| isCustomConnectorId\(c\.id\);\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) return;/
+  );
   assert.match(mcp, /\.\.\.\(userServer \? \{ fetch: safeMcpFetch \} : \{\}\)/);
+  assert.doesNotMatch(mcp, /c\.custom \? \{ fetch/, "the fetcher is not chosen by the optional `custom` field");
   assert.match(mcp, /if \(userMcpUrlProblem\(server\.url\)\) continue;/);
+  assert.match(mcp, /if \(userMcpUrlProblem\(connector\.url\)\) continue;/, "a saved custom connector URL is re-judged too");
+  // The Work runner rebuilds each connector from parts; it carries a custom
+  // connector's switched-off tools so a run never offers them.
+  const runner = src("scripts/work-runner.ts");
+  assert.match(runner, /\.\.\.\(endpoint\.custom \? \{ custom: endpoint\.custom \} : \{\}\)/);
+  assert.match(runner, /\.\.\.\(entry\.custom \? \{ custom: entry\.custom \} : \{\}\)/);
   // …and a sealed header that no longer opens is not dialled anonymously.
   assert.match(mcp, /if \(server\.authHeader && !authHeader\) continue;/);
   // Exactly one transport in mcp.ts, so there is no second, unguarded one.

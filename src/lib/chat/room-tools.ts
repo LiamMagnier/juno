@@ -32,7 +32,7 @@ import {
 
 export const ROOM_TOOL_LABELS = {
   create_room: "Opening a room",
-  ask_room_member: "Asking a teammate",
+  ask_room_member: "Asking another agent",
 } as const;
 
 /** Rooms one account may open from chat in an hour. */

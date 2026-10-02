@@ -13,6 +13,7 @@ import { OUTLINE_HEADING_SELECTOR } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * A finished research report as a DOCUMENT, not a chat bubble.
@@ -254,7 +255,7 @@ export function ReportReader({
           buttons. */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 print:hidden">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-          <span>Research report</span>
+          <span>{`${FEATURE_NAMES.research.label} report`}</span>
           <span>·</span>
           <span>{wordCount.toLocaleString()} words</span>
           <span>·</span>

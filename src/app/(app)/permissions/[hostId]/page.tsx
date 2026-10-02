@@ -33,6 +33,7 @@ import {
   type WorkHostToggleKey,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * One Mac: whether it is there, what it may do, and how to take that away.
@@ -194,8 +195,7 @@ export default function HostPermissionsPage() {
     return (
       <HostFrame heading="Mac not found">
         <WorkStateNote tone="error">
-          This Mac is no longer registered with Juno Work. Signing out of Juno on a Mac, or removing
-          the app, takes it off this list.
+          {`This Mac is no longer registered with ${PRODUCT_NAME} Work. Signing out of ${PRODUCT_NAME} on a Mac, or removing the app, takes it off this list.`}
         </WorkStateNote>
       </HostFrame>
     );
@@ -227,7 +227,7 @@ export default function HostPermissionsPage() {
   return (
     <HostFrame
       heading={host.displayName}
-      lede={`${host.platform} · Juno ${host.appVersion} · last seen ${workTimeAgo(host.lastSeenAt)}`}
+      lede={`${host.platform} · ${PRODUCT_NAME} ${host.appVersion} · last seen ${workTimeAgo(host.lastSeenAt)}`}
       actions={
         revokedAt !== null ? (
           <Button
@@ -307,8 +307,7 @@ export default function HostPermissionsPage() {
               </Button>
             }
           >
-            This is what Juno last knew about this Mac. The most recent check failed, so it may have
-            woken, gone away or been changed from another device since.
+            {`This is what ${PRODUCT_NAME} last knew about this Mac. The most recent check failed, so it may have woken, gone away or been changed from another device since.`}
           </WorkStateNote>
         )}
       </div>
@@ -399,7 +398,7 @@ function HostFrame({
  * ever sends one at a time.
  */
 const TOGGLE_NOUN: Record<WorkHostToggleKey, string> = {
-  enabled: "Juno Work",
+  enabled: `${PRODUCT_NAME} Work`,
   allowsFileWork: "file access",
   allowsBrowser: "your browser",
   allowsComputerUse: "screen control",
@@ -413,5 +412,5 @@ function refusalSentence(refused: readonly WorkHostToggleKey[]): string {
     names.length === 1
       ? names[0]
       : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `This Mac has not offered ${list}, so it stays off. Switch it on in Juno on the Mac itself first.`;
+  return `This Mac has not offered ${list}, so it stays off. Switch it on in ${PRODUCT_NAME} on the Mac itself first.`;
 }

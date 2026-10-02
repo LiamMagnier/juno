@@ -35,7 +35,7 @@ export default function AutomationError({
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="This automation couldn’t load"
+        title="This routine couldn’t load"
         description="Nothing has been changed by the attempt, and it is still running to whatever clock it was set to."
         action={
           <>
@@ -44,7 +44,7 @@ export default function AutomationError({
               Try again
             </Button>
             <Button asChild size="sm" variant="outline">
-              <Link href="/automations">Back to automations</Link>
+              <Link href="/automations">Back to routines</Link>
             </Button>
           </>
         }

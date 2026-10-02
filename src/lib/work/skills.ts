@@ -47,6 +47,7 @@ import {
   type WorkDegradation,
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -1041,7 +1042,7 @@ export function skillSystemSuffix(input: {
   const provenance =
     input.via === "slash"
       ? "The user invoked this skill by name."
-      : "Juno matched this skill to the request; the user did not name it, and may not know it exists. If its instructions do not fit what was actually asked, do the task as asked and say the skill did not apply.";
+      : `${PRODUCT_NAME} matched this skill to the request; the user did not name it, and may not know it exists. If its instructions do not fit what was actually asked, do the task as asked and say the skill did not apply.`;
 
   const header = `# Skill: ${input.slug} (version ${input.version})`;
   const authority =

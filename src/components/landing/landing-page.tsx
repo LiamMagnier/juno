@@ -11,6 +11,7 @@ import { Pricing } from "@/components/landing/pricing";
 import { Closing } from "@/components/landing/closing";
 import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
 import { LandingColumn } from "@/components/landing/section";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The public front door (signed-out "/"). Server-rendered: model names, counts
@@ -83,7 +84,7 @@ export function LandingPage({ nonce }: { nonce?: string }) {
             >
               <Button asChild size="lg">
                 <Link href="/sign-up">
-                  Start with Juno
+                  {`Start with ${PRODUCT_NAME}`}
                   <ArrowRight aria-hidden />
                 </Link>
               </Button>

@@ -32,6 +32,7 @@ import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export default function CodeCustomizeError({
   error,
@@ -50,7 +51,7 @@ export default function CodeCustomizeError({
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="Couldn’t open your Juno Code settings"
+        title={`Couldn’t open your ${PRODUCT_NAME} Code settings`}
         description="This screen failed to draw. Nothing was changed: this page only shows what your runs use, and sets none of it."
         action={
           <>

@@ -12,9 +12,14 @@ fi
 if [ "${1:-}" != "--without-migrations" ]; then
   node scripts/check-local-migrations.mjs
 fi
-if [ "${SKIP_CHECKS:-0}" = "1" ]; then
-  echo "SKIP_CHECKS=1: bypassing offline gates"
-  exit 0
+# No bypass here, on purpose. CI, the Mac release and the Mac deploy all call
+# this script, and an inherited SKIP_CHECKS=1 used to turn every one of them
+# into a silent exit 0 (a leftover export was enough). The one emergency path
+# is deploy-from-mac.sh --skip-checks=<reason>, which never calls this script,
+# still runs the fast security gates, and records the bypass on this Mac and
+# on the VM. See docs/rework/SECURITY_REVIEW_2026-10-02.md.
+if [ -n "${SKIP_CHECKS:-}" ]; then
+  echo "SKIP_CHECKS is set in the environment and is ignored: the shared gates always run." >&2
 fi
 step() { printf '\n--> %s\n' "$*"; }
 step "Generated runtime inputs"

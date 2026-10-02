@@ -33,6 +33,7 @@ import {
   type ActionPermissionPolicy,
 } from "@/lib/action-approval";
 import type { AppApprovalPreview, ApprovalVerdict } from "@/lib/chat/context-tokens";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The stored setting as a policy, defaulting exactly as the broker does. */
 export function actionPolicyFromSetting(value: string | null | undefined): ActionPermissionPolicy {
@@ -103,18 +104,18 @@ export function appApprovalPreview(input: AppApprovalPreviewInput): AppApprovalP
   const label = oneLine(input.label);
   let summary: string;
   if (input.lockdown) {
-    summary = `Lockdown is on, so Juno won't use ${label}.`;
+    summary = `Lockdown is on, so ${PRODUCT_NAME} won't use ${label}.`;
   } else if (input.blocked) {
-    summary = `${label} is turned off in Settings, so Juno won't use it.`;
+    summary = `${label} is turned off in Settings, so ${PRODUCT_NAME} won't use it.`;
   } else if (reads === "block") {
-    summary = `Your approval settings stop Juno acting in apps, so it won't use ${label}.`;
+    summary = `Your approval settings stop ${PRODUCT_NAME} acting in apps, so it won't use ${label}.`;
   } else if (reads === "ask") {
-    summary = `Juno will ask you before anything it does in ${label}, even reading.`;
+    summary = `${PRODUCT_NAME} will ask you before anything it does in ${label}, even reading.`;
   } else if (changes === "ask") {
     summary = `Sending, posting or changing anything in ${label} will ask you first.`;
   } else if (verdict({ ...input, standingGrants: false }, "reversible_write") === "ask") {
     // Allowed only through a grant: the other changes still ask.
-    summary = `Sending, posting or deleting in ${label} will ask you first, and so will changes, except the ones you've told Juno not to ask about again.`;
+    summary = `Sending, posting or deleting in ${label} will ask you first, and so will changes, except the ones you've told ${PRODUCT_NAME} not to ask about again.`;
   } else {
     summary = `Sending, posting or deleting in ${label} will ask you first. Changes you can undo won't.`;
   }

@@ -3,7 +3,8 @@
  *
  * Runs with `--conditions=react-server` because the modules under test are
  * `server-only`. Spins up a throwaway OAuth-protected MCP server on loopback
- * (allowed only through the dev override, which this script sets) and walks
+ * (allowed only when NODE_ENV is explicitly development or test, which this
+ * script sets; see allowsLocalDevelopment in src/lib/mcp-safe-fetch.ts) and walks
  * the whole path a person's server takes: probe → discovery → dynamic client
  * registration → token exchange → a streamed tools/list and tools/call
  * through the SSRF-safe fetcher. Then checks the fetcher refuses what it
@@ -19,8 +20,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
+// Next declares NODE_ENV read-only on ProcessEnv; the policy reads it per call.
+const env = process.env as Record<string, string | undefined>;
+
 async function main() {
-  process.env.JUNO_DEV_ALLOW_LOCAL_MCP = "1";
+  // The loopback exception fails closed: only an explicit development or test
+  // NODE_ENV opens it, so a hand-started worker without NODE_ENV cannot dial
+  // the VM's own services.
+  env.NODE_ENV = "test";
 
   const {
     canonicalMcpUrl,
@@ -237,17 +244,72 @@ async function main() {
     });
 
     await check("without the override, loopback is refused too", async () => {
-      process.env.JUNO_DEV_ALLOW_LOCAL_MCP = "0";
-      try {
-        await assert.rejects(safeMcpFetch(mcpUrl), /Blocked/);
-        const probe = await probeCustomMcpServer(mcpUrl);
-        assert.equal(probe.ok, false);
-      } finally {
-        process.env.JUNO_DEV_ALLOW_LOCAL_MCP = "1";
+      for (const mode of ["production", undefined]) {
+        if (mode === undefined) delete env.NODE_ENV;
+        else env.NODE_ENV = mode;
+        try {
+          assert.match(customMcpUrlProblem(mcpUrl) ?? "", /own machine/, `NODE_ENV=${mode}`);
+          await assert.rejects(safeMcpFetch(mcpUrl), /Blocked/);
+          const probe = await probeCustomMcpServer(mcpUrl);
+          assert.equal(probe.ok, false);
+        } finally {
+          env.NODE_ENV = "test";
+        }
       }
     });
   } finally {
     http.close();
+  }
+
+  // A hostile authorization server: huge metadata and a token endpoint that
+  // trickles forever. Neither may be buffered whole or hold a request open.
+  const { MAX_OAUTH_RESPONSE_BYTES } = await import("../../src/lib/mcp-oauth");
+  const hostile = createServer((req, res) => {
+    if (req.url?.startsWith("/.well-known/oauth-authorization-server")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      const chunk = Buffer.alloc(64 * 1024, 0x20);
+      let sent = 0;
+      const pump = () => {
+        while (sent < 16 * 1024 * 1024) {
+          sent += chunk.byteLength;
+          if (!res.write(chunk)) return void res.once("drain", pump);
+        }
+        res.end("{}");
+      };
+      pump();
+      return;
+    }
+    if (req.url === "/slow-token") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write("{");
+      return; // never finishes
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => hostile.listen(0, resolve));
+  const hostileUrl = `http://localhost:${(hostile.address() as AddressInfo).port}`;
+  try {
+    await check("an oversized authorization server answer is refused, not buffered", async () => {
+      assert.ok(MAX_OAUTH_RESPONSE_BYTES <= 1024 * 1024);
+      const before = process.memoryUsage().arrayBuffers;
+      await assert.rejects(discoverEndpoints(`${hostileUrl}/mcp`, safeMcpFetch), /too large/);
+      assert.ok(process.memoryUsage().arrayBuffers - before < 8 * 1024 * 1024, "the body was not read whole");
+    });
+
+    await check("a token endpoint that never finishes times out", async () => {
+      const started = Date.now();
+      await assert.rejects(
+        exchangeMcpCode(
+          { tokenEndpoint: `${hostileUrl}/slow-token`, client: { clientId: "c" }, code: "x", codeVerifier: "v", redirectUri: "https://juno.test/cb", resource: `${hostileUrl}/mcp` },
+          safeMcpFetch
+        ),
+        /abort|timeout/i
+      );
+      assert.ok(Date.now() - started < 30_000);
+    });
+  } finally {
+    hostile.closeAllConnections();
+    hostile.close();
   }
 
   console.log(`\n${passed} custom MCP checks passed`);

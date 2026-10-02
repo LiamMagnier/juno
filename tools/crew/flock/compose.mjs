@@ -72,7 +72,7 @@ function portraitsPage(S, theme) {
 function iconsPage(S, theme) {
   const t = THEMES[theme];
   const m = cast[S];
-  const rows = m.map((c, i) => `<div class="row">
+  const rows = m.map((c) => `<div class="row">
     <div class="nm">${c.name}</div>
     ${[20, 32, 64].map((s) => `<div class="cell"><canvas data-src="${f(path.join(passDir, S, `${c.id}_icon.png`))}" data-size="${s}" width="${s}" height="${s}"></canvas><i>${s}px</i></div>`).join("")}
     <div class="sep"></div>

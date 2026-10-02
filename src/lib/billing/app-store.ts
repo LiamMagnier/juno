@@ -2,6 +2,7 @@ import { Plan, SubStatus } from "@prisma/client";
 import { Environment, SignedDataVerifier } from "@apple/app-store-server-library";
 import { env } from "@/lib/env";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface AppStoreTransactionPayload {
   transactionId: string;
@@ -221,7 +222,7 @@ export async function syncAppStoreTransaction({
       select: { userId: true },
     });
     if (existingOwner && existingOwner.userId !== targetUserId) {
-      throw new Error("This App Store subscription is already linked to another Juno account.");
+      throw new Error(`This App Store subscription is already linked to another ${PRODUCT_NAME} account.`);
     }
   }
 

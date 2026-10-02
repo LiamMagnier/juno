@@ -41,6 +41,7 @@ import {
   MAX_LIVE_TASKS_PER_CONVERSATION,
   conversationAtCapMessage,
 } from "@/lib/work/conversation-tasks";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const START_TASK_TOOL_ID = "start_task";
@@ -56,7 +57,7 @@ export const START_TASK_TOOL_ID = "start_task";
 export const TASK_APPROVAL_CONNECTOR_ID = "juno_work";
 
 /** How the tool is named in the activity row and on the approval receipt. */
-export const TASK_TOOL_LABEL = "Juno";
+export const TASK_TOOL_LABEL = PRODUCT_NAME;
 
 /** Longest title kept. The schema asks for 60; this leaves room for a model that overshoots a little. */
 const MAX_TITLE_CHARS = 80;
@@ -315,7 +316,7 @@ export const TASK_REFUSALS = {
   stopped: "The reply was stopped before the task started, so nothing was started.",
   already_tried: "This message already tried to start a task and it did not start. Nothing new was started.",
   agent_paused: "This agent is paused. Resume it before starting a task. Nothing was started.",
-  internal_error: "Juno could not start the task because of a problem on its side. Nothing was started.",
+  internal_error: `${PRODUCT_NAME} could not start the task because of a problem on its side. Nothing was started.`,
 } as const;
 
 export type TaskRefusalReason = keyof typeof TASK_REFUSALS;

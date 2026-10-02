@@ -15,6 +15,7 @@
  */
 
 import { isTerminalStatus, type WorkStatus } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Typing at a run that is already going
@@ -76,7 +77,7 @@ export function delegatedComposerPlaceholder(mode: DelegatedComposerMode, taskTi
     return mode.kind === "answer" ? `Answer the question from “${title}”…` : `Add an instruction to “${title}”…`;
   }
   return mode.kind === "answer"
-    ? "Answer Juno’s question…"
+    ? `Answer ${PRODUCT_NAME}’s question…`
     : "Add an instruction to the running task…";
 }
 

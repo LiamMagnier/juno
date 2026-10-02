@@ -1,5 +1,6 @@
 import type { ClientToolDetail } from "@/types/chat";
 import type { RunModel, Step } from "@/components/chat/thought-process-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE RUN, AS TEXT — the panel's two copy buttons and its one span formatter.
@@ -134,13 +135,13 @@ export const TOOL_RESULT_NOTE: Record<NonNullable<ClientToolDetail["resultNote"]
  * — silently, and only discoverable by diffing the generated catalog.
  */
 export const TOOLS_DESCRIPTION =
-  "Exactly what Juno sent each connector and exactly what came back. Credentials are removed and long results are cut; nothing else is edited.";
+  `Exactly what ${PRODUCT_NAME} sent each connector and exactly what came back. Credentials are removed and long results are cut; nothing else is edited.`;
 
 /** Shown when at least one row carries no payload at all. Two causes, and the
  *  client genuinely cannot tell them apart — so it names both rather than
  *  picking one and sounding certain. */
 export const TOOLS_NO_DETAIL_NOTE =
-  "Some of these calls carry no recorded detail — they ran before Juno kept it, or with it turned off.";
+  `Some of these calls carry no recorded detail — they ran before ${PRODUCT_NAME} kept it, or with it turned off.`;
 
 /**
  * The last-resort sentences, for a payload that is absent with no reason given.

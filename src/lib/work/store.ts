@@ -39,6 +39,7 @@ import {
   type SpendReservationResult,
 } from "@/lib/spend";
 import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ceiling";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -1437,7 +1438,7 @@ export async function reclaimStalledRuns(
       userId: run.userId,
       reason: "interrupted",
       detail:
-        "The executor stopped reporting and its lease expired. Juno does not " +
+        `The executor stopped reporting and its lease expired. ${PRODUCT_NAME} does not ` +
         "restart an interrupted run on its own, because it may already have " +
         "changed something.",
       now,

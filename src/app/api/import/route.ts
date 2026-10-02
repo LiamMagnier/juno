@@ -25,6 +25,7 @@ import {
   parseHistoryExport,
   HistoryImportError,
 } from "@/lib/history-import";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 // Vercel-only directive (`next start` ignores it) — a big export can take a while.
@@ -106,11 +107,11 @@ function assertArchiveDigest(value: unknown, bytes: Uint8Array, label: string): 
   const expected = stringValue(value, 128);
   if (!expected) return;
   if (!/^[a-f0-9]{64}$/i.test(expected)) {
-    throw new HistoryImportError(`Juno restore aborted: ${label} has an invalid SHA-256 digest.`);
+    throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: ${label} has an invalid SHA-256 digest.`);
   }
   const actual = createHash("sha256").update(bytes).digest("hex");
   if (actual !== expected.toLowerCase()) {
-    throw new HistoryImportError(`Juno restore aborted: ${label} failed its SHA-256 integrity check.`);
+    throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: ${label} failed its SHA-256 integrity check.`);
   }
 }
 
@@ -148,7 +149,7 @@ export async function POST(req: Request) {
       if (isRecord(decoded) && parsed.format === "juno") junoPayload = decoded;
     } else {
       const zip = await JSZip.loadAsync(bytes).catch(() => null);
-      if (!zip) throw new HistoryImportError("That file isn't a readable ZIP — upload a ChatGPT, Claude, Gemini, or Juno export.");
+      if (!zip) throw new HistoryImportError(`That file isn't a readable ZIP — upload a ChatGPT, Claude, Gemini, or ${PRODUCT_NAME} export.`);
       const budgetProblems = importArchiveBudgetProblems(
         Object.values(zip.files).map((entry) => {
           const data = (entry as unknown as { _data?: { uncompressedSize?: number; compressedSize?: number } })._data;
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
 
   if (junoPayload?.messagesTruncated === true) {
     return NextResponse.json(
-      { error: "This Juno export is incomplete because its message cap was reached. Export the full account again before importing." },
+      { error: `This ${PRODUCT_NAME} export is incomplete because its message cap was reached. Export the full account again before importing.` },
       { status: 422 },
     );
   }
@@ -259,7 +260,7 @@ export async function POST(req: Request) {
         : [];
     if (parsed.format === "juno" && attachmentManifest.length > 0 && (!sourceZip || !isStorageAvailable())) {
       throw new HistoryImportError(
-        "Juno restore aborted: this export contains attachments but no complete attachment archive is available. Upload the Juno ZIP export instead of the metadata-only JSON export.",
+        `${PRODUCT_NAME} restore aborted: this export contains attachments but no complete attachment archive is available. Upload the ${PRODUCT_NAME} ZIP export instead of the metadata-only JSON export.`,
       );
     }
     const existingAttachmentByImportKey = new Map<string, string>();
@@ -371,7 +372,7 @@ export async function POST(req: Request) {
 
     for (const rawValue of attachmentManifest) {
       if (!isRecord(rawValue)) {
-        throw new HistoryImportError("Juno restore aborted: an attachment manifest entry is malformed.");
+        throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: an attachment manifest entry is malformed.`);
       }
       const sourceAttachmentId = stringValue(rawValue.idempotencyKey, 200) ?? stringValue(rawValue.id, 200);
       const importKey = sourceAttachmentId
@@ -384,12 +385,12 @@ export async function POST(req: Request) {
       const archivePath = safeArchivePath(rawValue.archivePath);
       if (!archivePath || !archivePath.startsWith("attachments/")) {
         throw new HistoryImportError(
-          `Juno restore aborted: attachment ${sourceAttachmentId ?? "without an id"} has no safe archived byte path. Export the account again with the complete Juno ZIP.`,
+          `${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? "without an id"} has no safe archived byte path. Export the account again with the complete ${PRODUCT_NAME} ZIP.`,
         );
       }
       const bytes = await readArchiveBytes(archivePath);
       if (!bytes) {
-        throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} is missing or unreadable in the archive.`);
+        throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? archivePath} is missing or unreadable in the archive.`);
       }
       assertArchiveDigest(rawValue.archiveSha256, bytes, `attachment ${sourceAttachmentId ?? archivePath}`);
       const planned = planAttachmentUpload({
@@ -400,12 +401,12 @@ export async function POST(req: Request) {
         maxUploadMb: PLANS[plan].maxUploadMb,
       });
       if (!planned.ok) {
-        throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} failed validation.`);
+        throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? archivePath} failed validation.`);
       }
       const capacity = await libraryCapacity(user.id, plan, bytes.length + importStorageBytes);
       if (!capacity.allowed) {
         throw new HistoryImportError(
-          `Juno restore aborted: restoring attachment ${sourceAttachmentId ?? archivePath} would exceed the account Library quota.`,
+          `${PRODUCT_NAME} restore aborted: restoring attachment ${sourceAttachmentId ?? archivePath} would exceed the account Library quota.`,
         );
       }
 
@@ -434,17 +435,17 @@ export async function POST(req: Request) {
       const priorVersions = Array.isArray(rawValue.versions) ? rawValue.versions.slice(0, 100) : [];
       for (const rawVersion of priorVersions) {
         if (!isRecord(rawVersion)) {
-          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} has a malformed version entry.`);
+          throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? archivePath} has a malformed version entry.`);
         }
         const version = positiveInt(rawVersion.version, 0);
         const path = safeArchivePath(rawVersion.archivePath);
         if (!version || version === currentVersion) continue;
         if (!path || !path.startsWith("attachments/")) {
-          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} has an unsafe archived version path.`);
+          throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? archivePath} has an unsafe archived version path.`);
         }
         const versionBytes = await readArchiveBytes(path);
         if (!versionBytes) {
-          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} version ${version} is missing from the archive.`);
+          throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? archivePath} version ${version} is missing from the archive.`);
         }
         assertArchiveDigest(rawVersion.archiveSha256, versionBytes, `attachment ${sourceAttachmentId ?? archivePath} version ${version}`);
         const versionPlan = planAttachmentUpload({
@@ -455,12 +456,12 @@ export async function POST(req: Request) {
           maxUploadMb: PLANS[plan].maxUploadMb,
         });
         if (!versionPlan.ok) {
-          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} version ${version} failed validation.`);
+          throw new HistoryImportError(`${PRODUCT_NAME} restore aborted: attachment ${sourceAttachmentId ?? archivePath} version ${version} failed validation.`);
         }
         const versionCapacity = await libraryCapacity(user.id, plan, versionBytes.length + importStorageBytes);
         if (!versionCapacity.allowed) {
           throw new HistoryImportError(
-            `Juno restore aborted: restoring attachment ${sourceAttachmentId ?? archivePath} version ${version} would exceed the account Library quota.`,
+            `${PRODUCT_NAME} restore aborted: restoring attachment ${sourceAttachmentId ?? archivePath} version ${version} would exceed the account Library quota.`,
           );
         }
         const versionObject = await stageObject({

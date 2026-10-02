@@ -57,6 +57,7 @@
 
 import { createHash, randomBytes } from "crypto";
 import type { WorkAuditIntent } from "@/lib/work/connectors";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Default handle lifetime.
@@ -401,7 +402,7 @@ export class WorkTokenBroker {
   ): Promise<WorkExchangeResult> {
     const entry = this.entries.get(key(request.handle));
     if (!entry) {
-      return this.refuse("unknown_handle", request, undefined, "This handle is not one Juno issued, or it was issued long enough ago to have been forgotten.");
+      return this.refuse("unknown_handle", request, undefined, `This handle is not one ${PRODUCT_NAME} issued, or it was issued long enough ago to have been forgotten.`);
     }
     if (entry.connectorId !== request.connectorId) {
       return this.refuse("connector_mismatch", request, entry, `This handle is for ${entry.connectorId}, not ${request.connectorId}.`);
@@ -449,7 +450,7 @@ export class WorkTokenBroker {
         "credential_unavailable",
         request,
         entry,
-        `Juno could not retrieve the authorisation for ${entry.connectorId}. It may need to be reconnected.`
+        `${PRODUCT_NAME} could not retrieve the authorisation for ${entry.connectorId}. It may need to be reconnected.`
       );
     }
 

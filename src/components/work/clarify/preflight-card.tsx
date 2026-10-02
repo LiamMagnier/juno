@@ -11,6 +11,7 @@ import {
   recommendedOption,
   type WorkPreflightQuestion,
 } from "@/components/work/clarify/preflight";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * "Before it starts" — the pre-flight card under the Work composer.
@@ -123,8 +124,8 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
               only moment they are cheap to change. */}
           <p className="mt-1 max-w-prose text-ui leading-relaxed text-muted-foreground">
             {questions.length === 1
-              ? "Juno would decide this on its own. Its answer is already chosen."
-              : `Juno would decide these ${questions.length} on its own. Its answers are already chosen.`}
+              ? `${PRODUCT_NAME} would decide this on its own. Its answer is already chosen.`
+              : `${PRODUCT_NAME} would decide these ${questions.length} on its own. Its answers are already chosen.`}
           </p>
         </div>
         <Tooltip>

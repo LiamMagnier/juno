@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Stage: which model actually answers a turn.
  *
@@ -152,7 +154,7 @@ export function selectModel<M extends SelectableModel>(
     if (cheapest && cheapest.id !== model.id && cheapest.cost < model.cost) {
       warning =
         warning
-        ?? `Answered with ${cheapest.name} — Juno is at its daily spending limit.`;
+        ?? `Answered with ${cheapest.name} — ${PRODUCT_NAME} is at its daily spending limit.`;
       model = cheapest;
       reason = "budget_degraded";
     }

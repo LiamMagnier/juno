@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import type { useRealtimeVoice } from "@/hooks/use-realtime-voice";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What a spoken conversation about Work LOOKS like, for both of the places that
@@ -89,8 +90,8 @@ function sendButtonLabel(intent: WorkVoiceSendIntent): string {
 /** What the words do once they leave the call, said before the press. */
 function landingSentence(intent: WorkVoiceSendIntent): string {
   return intent.kind === "compose"
-    ? "These exact words go into the task box, where you can change them. Juno’s side of this call does not."
-    : "These exact words go to the task. Juno’s side of this call does not.";
+    ? `These exact words go into the task box, where you can change them. ${PRODUCT_NAME}’s side of this call does not.`
+    : `These exact words go to the task. ${PRODUCT_NAME}’s side of this call does not.`;
 }
 
 export interface WorkVoiceSend {

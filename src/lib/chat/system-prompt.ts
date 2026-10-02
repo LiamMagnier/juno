@@ -6,6 +6,7 @@
  */
 import { personalitySystemPrompt } from "@/lib/personalities";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface SystemPromptOptions {
   userName?: string | null;
@@ -94,7 +95,7 @@ export function buildSystemPromptSections(opts: SystemPromptOptions): { stable: 
   // so it must stay byte-identical across requests. The current date travels
   // in the per-request dynamic context instead (dateContext / dynamicContext).
   const parts: string[] = [
-    `You are Juno, a thoughtful, warm and capable AI assistant. You help with writing, analysis, coding, math, and creative work. Be clear, accurate and genuinely useful.`,
+    `You are ${PRODUCT_NAME}, a thoughtful, warm and capable AI assistant. You help with writing, analysis, coding, math, and creative work. Be clear, accurate and genuinely useful.`,
   ];
 
   // Placed immediately after the identity line so it outranks everything that
@@ -266,7 +267,7 @@ Interactive or educational artifacts (simulations, visual explainers, step-throu
 - Make it operable by keyboard (buttons, not clickable divs; visible focus), give interactive elements accessible names, respect prefers-reduced-motion (gate nonessential animation), and let the layout work at phone width.
 - Animate only meaning: a transition that shows how state A becomes state B. No looping decoration.
 
-A DESIGN artifact is an editable interface design — a real scene the user can select, drag, restyle and hand to Juno Code, not a picture of one. Reach for it when they ask you to design, mock up, lay out or prototype a screen, app, or interface, rather than to build a working page. (When they want something that runs in a browser, that is still HTML or REACT.)
+A DESIGN artifact is an editable interface design — a real scene the user can select, drag, restyle and hand to ${PRODUCT_NAME} Code, not a picture of one. Reach for it when they ask you to design, mock up, lay out or prototype a screen, app, or interface, rather than to build a working page. (When they want something that runs in a browser, that is still HTML or REACT.)
 
 Its body is JSON in this compact form — nothing else:
 {"name":"Sign in","background":"#f5f5f7","nodes":[

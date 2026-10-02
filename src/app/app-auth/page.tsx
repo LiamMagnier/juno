@@ -5,6 +5,7 @@ import { isValidBrowserAuthorization } from "@/lib/native-auth-core";
 import { issueNativeAuthorizationCode } from "@/lib/native-auth";
 import { JunoMark } from "@/components/brand/logo";
 import { AppAuthHandoff, LegacyAppAuthHandoff } from "./handoff";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function AppAuthPage({ searchParams }: { searchParams: Prom
   }
 
   if (!isValidBrowserAuthorization(authorization)) {
-    return <AuthFailure message="This sign-in request is invalid or came from an unsupported version of Juno." />;
+    return <AuthFailure message={`This sign-in request is invalid or came from an unsupported version of ${PRODUCT_NAME}.`} />;
   }
 
   const callback = `/app-auth?${new URLSearchParams({
@@ -75,7 +76,7 @@ function AuthFailure({ message }: { message: string }) {
       >
         <JunoMark className="mx-auto size-10" />
         <p className="mt-6 font-mono text-label text-destructive">Sign-in failed</p>
-        <h1 className="mt-2 text-balance font-serif text-title">Juno couldn’t start sign-in</h1>
+        <h1 className="mt-2 text-balance font-serif text-title">{`${PRODUCT_NAME} couldn’t start sign-in`}</h1>
         <p className="mt-3 text-body text-muted-foreground">{message}</p>
       </div>
     </main>

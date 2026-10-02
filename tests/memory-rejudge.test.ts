@@ -224,7 +224,7 @@ test("history judged in reading order is judged again by when it was said", () =
   assert.equal(byId.get(porto.id)?.supersededById, null);
   assert.equal(byId.get(lisbon.id)?.status, "superseded");
   assert.equal(byId.get(lisbon.id)?.supersededById, porto.id);
-  assert.match(byId.get(lisbon.id)?.reason ?? "", /Juno re-read your chats/);
+  assert.match(byId.get(lisbon.id)?.reason ?? "", /Alevr re-read your chats/);
 });
 
 test("a timeline that is already right produces no writes", () => {

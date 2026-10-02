@@ -50,6 +50,7 @@ import {
 import { WORK_NOTIFY_POLICIES } from "@/lib/work/notifications";
 import { WORK_SCHEDULE_RUN_KINDS, codeRoutineInputSchema } from "@/lib/work/code-routine";
 import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // ---------------------------------------------------------------------------
 // Wall clock in a zone
@@ -1016,7 +1017,7 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
       outcome: "delayed",
       cause: "account_concurrency",
       retryAt: new Date(now.getTime() + CONCURRENCY_RETRY_MS),
-      explanation: "You already have as many scheduled runs going as Juno will run at once.",
+      explanation: `You already have as many scheduled runs going as ${PRODUCT_NAME} will run at once.`,
     };
   }
 
@@ -1058,8 +1059,8 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
         dropped: missed.dropped,
         explanation:
           missed.dropped === 1
-            ? "One run was missed while Juno was not dispatching, and this schedule skips missed runs."
-            : `${missed.dropped} runs were missed while Juno was not dispatching, and this schedule skips missed runs.`,
+            ? `One run was missed while ${PRODUCT_NAME} was not dispatching, and this schedule skips missed runs.`
+            : `${missed.dropped} runs were missed while ${PRODUCT_NAME} was not dispatching, and this schedule skips missed runs.`,
       };
     }
     return {

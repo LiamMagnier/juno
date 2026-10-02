@@ -10,8 +10,8 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 159,
-    "planned": 113,
+    "native": 166,
+    "planned": 108,
     "web-only": 43,
     "unclassified": 0
   },
@@ -442,20 +442,20 @@
                   "chat",
                   "artifact"
                 ],
-                "x-native": "planned"
+                "x-native": "native"
               },
               "id": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 128,
-                "x-native": "planned"
+                "x-native": "native"
               },
               "label": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 120,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
-                "x-native": "planned"
+                "x-native": "native"
               },
               "range": {
                 "type": "object",
@@ -464,20 +464,20 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 2000000,
-                    "x-native": "planned"
+                    "x-native": "native"
                   },
                   "end": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 2000000,
-                    "x-native": "planned"
+                    "x-native": "native"
                   }
                 },
                 "required": [
                   "start",
                   "end"
                 ],
-                "x-native": "planned"
+                "x-native": "native"
               },
               "meta": {
                 "type": "object",
@@ -494,7 +494,8 @@
                     "x-native": "planned"
                   }
                 },
-                "x-native": "planned"
+                "x-native": "planned",
+                "x-native-note": "Drawing hints (icon key, subtitle) so another client can draw the token the same way; never authority. NativeContextToken does not send them yet, and the server re-reads every name and kind from the account's rows either way."
               }
             },
             "required": [
@@ -503,8 +504,8 @@
               "label"
             ]
           },
-          "x-native": "planned",
-          "x-native-note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, crew, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers gain inline tokens in the UI phase and send it on the append-then-regenerate turn."
+          "x-native": "native",
+          "x-native-note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, agents, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers look tokens up through /api/mentions and send them on the append-then-regenerate turn (GenerationRequestWire.context)."
         },
         "skillSlug": {
           "type": "string",
@@ -521,6 +522,22 @@
         "workHandoff": {
           "type": "boolean",
           "x-native": "native"
+        },
+        "roomTurn": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string",
+              "format": "cuid",
+              "pattern": "^[cC][0-9a-z]{6,}$",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "agentId"
+          ],
+          "x-native": "planned",
+          "x-native-note": "A follow-up agent turn in a room (src/lib/agents/rooms.ts): the web asks the next planned or asked member to answer the room's newest message. The apps do not show rooms yet, so they never send it."
         },
         "privateMode": {
           "type": "boolean",

@@ -57,8 +57,68 @@ function add(raw) {
   strings.add(value);
 }
 
+/**
+ * The display-name registry (src/lib/brand/names.ts), evaluated. Its exports
+ * flatten to "PRODUCT_NAME" → "Alevr", "BRAND.orbit.label" → "Orbit" and so
+ * on. Copy built from those names — `${PRODUCT_NAME} could not reach the
+ * server.` — resolves through this map to the sentence as it renders, so the
+ * catalog holds it whole and renaming the product is still one edit. The
+ * registry imports nothing, which is what lets it be evaluated here.
+ */
+const registryPath = join(sourceRoot, "lib", "brand", "names.ts");
+const registry = new Map();
+{
+  const { outputText } = ts.transpileModule(readFileSync(registryPath, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  });
+  const names = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+  const flatten = (path, value) => {
+    if (typeof value === "string") {
+      registry.set(path, value);
+      add(value);
+    } else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) flatten(`${path}.${key}`, child);
+    }
+  };
+  for (const [name, value] of Object.entries(names)) flatten(name, value);
+}
+
+function unwrapExpression(node) {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current)
+    || ts.isAsExpression(current)
+    || ts.isSatisfiesExpression(current)
+    || ts.isNonNullExpression(current)
+  ) current = current.expression;
+  return current;
+}
+
+/**
+ * The text an expression always renders: a literal, a registry name, or a
+ * template or `+` concatenation made only of those. Anything that depends on
+ * runtime data is null, so it never reaches the catalog.
+ */
 function staticText(node) {
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  const bare = unwrapExpression(node);
+  if (ts.isStringLiteral(bare) || ts.isNoSubstitutionTemplateLiteral(bare)) return bare.text;
+  if (ts.isIdentifier(bare) || ts.isPropertyAccessExpression(bare)) {
+    return registry.get(bare.getText().replace(/\s+/g, "").replace(/\?\./g, ".")) ?? null;
+  }
+  if (ts.isTemplateExpression(bare)) {
+    let text = bare.head.text;
+    for (const span of bare.templateSpans) {
+      const value = staticText(span.expression);
+      if (value === null) return null;
+      text += value + span.literal.text;
+    }
+    return text;
+  }
+  if (ts.isBinaryExpression(bare) && bare.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = staticText(bare.left);
+    const right = left === null ? null : staticText(bare.right);
+    return left === null || right === null ? null : left + right;
+  }
   return null;
 }
 
@@ -138,6 +198,13 @@ function visit(node) {
 
   if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && isDirectJsxChildExpression(node)) {
     add(node.text);
+  }
+
+  // A sentence that names the product renders as one text node, so it is
+  // catalogued as one: {`${PRODUCT_NAME} can make mistakes.`}.
+  if (ts.isTemplateExpression(node) && isDirectJsxChildExpression(node)) {
+    const value = staticText(node);
+    if (value) add(value);
   }
 
   ts.forEachChild(node, visit);

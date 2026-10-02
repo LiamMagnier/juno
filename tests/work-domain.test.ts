@@ -179,7 +179,7 @@ test("a Mac switched off for Work is not a host, however online it is", () => {
 
   assert.equal(selection.target, null);
   assert.equal(selection.hostId, null);
-  assert.match(selection.explanation, /No Mac is both switched on for Juno Work and reachable\./);
+  assert.match(selection.explanation, /No Mac is both switched on for Alevr Work and reachable\./);
   assert.doesNotMatch(selection.explanation, /Mac Studio is online/, "an opted-out Mac is not named as if it were nearly usable");
 });
 
@@ -192,7 +192,7 @@ test("a revoked Mac is not a host, however online and enabled it is", () => {
     "revocation is the user withdrawing consent; an online flag must never outvote it"
   );
   assert.equal(selection.hostId, null);
-  assert.match(selection.explanation, /No Mac is both switched on for Juno Work and reachable\./);
+  assert.match(selection.explanation, /No Mac is both switched on for Alevr Work and reachable\./);
 });
 
 test("capability beats preference order when only the second Mac can serve the task", () => {
@@ -235,7 +235,7 @@ test("no Mac at all is a different sentence from a Mac that is asleep", () => {
   const selection = select("local", ["local_apps"], []);
 
   assert.equal(selection.target, null);
-  assert.match(selection.explanation, /No Mac has been switched on for Juno Work\./);
+  assert.match(selection.explanation, /No Mac has been switched on for Alevr Work\./);
 });
 
 test("a cloud-only task with the cloud closed returns no target and says so", () => {

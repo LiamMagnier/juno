@@ -20,6 +20,7 @@ import { SettingRow, SettingRowSkeleton, SettingsGroup, SettingsInlineError } fr
 // the browser bundle. POLICY_OPTIONS below is keyed by the union, so adding a
 // policy and forgetting it here is a type error, not a silently missing option.
 import type { ActionPermissionPolicy } from "@/lib/action-approval";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface ConnectorPolicy {
   actionApprovalPolicy: ActionPermissionPolicy;
@@ -36,7 +37,7 @@ export interface ConnectorPolicy {
 const POLICY_COPY: Record<ActionPermissionPolicy, { label: string; description: string }> = {
   always_ask: {
     label: "Ask every time",
-    description: "Juno asks before every action in a connected app, including ones that only read.",
+    description: `${PRODUCT_NAME} asks before every action in a connected app, including ones that only read.`,
   },
   ask_for_any_change: {
     label: "Ask before any change",
@@ -208,7 +209,7 @@ export function ConnectorsView({
     <>
       <SettingsGroup
         title="Connected apps"
-        description="Turn one off to block everything Juno would do in it, reading included."
+        description={`Turn one off to block everything ${PRODUCT_NAME} would do in it, reading included.`}
         aside={
           <Button asChild variant="outline" size="sm">
             <Link href="/connections">Browse apps</Link>
@@ -230,7 +231,7 @@ export function ConnectorsView({
               size="panel"
               icon={AppIcons.connections}
               title="No apps connected"
-              description="Connect GitHub, your calendar, mail or notes and Juno can work inside them."
+              description={`Connect GitHub, your calendar, mail or notes and ${PRODUCT_NAME} can work inside them.`}
               action={
                 <Button asChild size="sm">
                   <Link href="/connections">Browse apps</Link>
@@ -255,7 +256,7 @@ export function ConnectorsView({
                   !row.connected
                     ? "Not connected. Still blocked if you connect it again."
                     : blocked
-                      ? "Blocked. Juno can’t use this app."
+                      ? `Blocked. ${PRODUCT_NAME} can’t use this app.`
                       : (row.account ?? undefined)
                 }
                 status={status(`app:${row.id}`)}
@@ -279,7 +280,7 @@ export function ConnectorsView({
 
       <SettingsGroup
         title="Permissions"
-        description="Juno checks these before every action in a connected app, so a change applies to chats already open."
+        description={`${PRODUCT_NAME} checks these before every action in a connected app, so a change applies to chats already open.`}
       >
         {policyFailed ? (
           <SettingsInlineError onRetry={onRetryPolicy}>
@@ -293,7 +294,7 @@ export function ConnectorsView({
         ) : (
           <>
             <SettingRow
-              label="When Juno acts in an app"
+              label={`When ${PRODUCT_NAME} acts in an app`}
               description={
                 lockdown
                   ? "Lockdown is on, so every action is refused. This applies again when you turn it off."
@@ -303,7 +304,7 @@ export function ConnectorsView({
               status={status("policy")}
               control={
                 <ChoiceMenu
-                  label="When Juno acts in an app"
+                  label={`When ${PRODUCT_NAME} acts in an app`}
                   value={policy.actionApprovalPolicy}
                   options={POLICY_OPTIONS}
                   onChange={onPolicy}

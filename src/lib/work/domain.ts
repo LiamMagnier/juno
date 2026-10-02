@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * The Juno Work vocabulary.
  *
@@ -387,8 +389,8 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
     const why = offlineHost
       ? `${offlineHost.displayName} is ${offlineHost.state}.`
       : input.hosts.length === 0
-        ? "No Mac has been switched on for Juno Work."
-        : "No Mac is both switched on for Juno Work and reachable.";
+        ? `No Mac has been switched on for ${PRODUCT_NAME} Work.`
+        : `No Mac is both switched on for ${PRODUCT_NAME} Work and reachable.`;
 
     if (input.requested === "local" || cloudOnly.length === 0 || !input.cloudAvailable) {
       return {
@@ -423,7 +425,7 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
           explanation: `The parts that need ${localNeeded.map(describeCapability).join(", ")} will not run.`,
         },
       ],
-      explanation: `${why} Juno will do the cloud part only and leave the rest undone.`,
+      explanation: `${why} ${PRODUCT_NAME} will do the cloud part only and leave the rest undone.`,
     };
   }
 
@@ -476,7 +478,7 @@ export function describeCapability(capability: string): string {
     case "connectors":
       return "your connected apps";
     case "cloud_files":
-      return "files stored with Juno";
+      return `files stored with ${PRODUCT_NAME}`;
     case "deliverables":
       return "document and spreadsheet creation";
     case "background_continuation":
@@ -548,10 +550,10 @@ export const WORK_APPROVAL_MODE_LABEL: Record<WorkPermissionPolicy, string> = {
  * folding them into Skip's line alone would read as a caveat on one option.
  */
 export const WORK_APPROVAL_MODE_SUMMARY: Record<WorkPermissionPolicy, string> = {
-  conservative: "Juno asks before it changes a file or runs anything. Reading and research go ahead.",
-  balanced: "Juno makes changes it can undo, and asks before running anything or touching anything private.",
+  conservative: `${PRODUCT_NAME} asks before it changes a file or runs anything. Reading and research go ahead.`,
+  balanced: `${PRODUCT_NAME} makes changes it can undo, and asks before running anything or touching anything private.`,
   permissive:
-    "Juno gets on with the work without asking, except for what it cannot take back (sending, publishing, paying, deleting, account and security changes) and running commands or typing on a crew member's computer, which always ask.",
+    `${PRODUCT_NAME} gets on with the work without asking, except for what it cannot take back (sending, publishing, paying, deleting, account and security changes) and running commands or typing on an agent's computer, which always ask.`,
 };
 
 /**
@@ -750,14 +752,14 @@ export function approvalRuling(input: {
       ask: true,
       reason: "never_silent",
       explanation:
-        "Juno cannot take this one back, so it asks whichever approval mode you picked. There is no setting that turns this off.",
+        `${PRODUCT_NAME} cannot take this one back, so it asks whichever approval mode you picked. There is no setting that turns this off.`,
     };
   }
   if (input.risk === "irreversible") {
     return {
       ask: true,
       reason: "irreversible",
-      explanation: "This cannot be undone — not by Juno, and not from this page afterwards.",
+      explanation: `This cannot be undone — not by ${PRODUCT_NAME}, and not from this page afterwards.`,
     };
   }
   if (input.risk === "sensitive") {
@@ -790,8 +792,8 @@ export function approvalRuling(input: {
         reason: "mode",
         explanation:
           input.risk === "edit"
-            ? "This task is set to ask before every change, so Juno asks before it changes anything."
-            : "This task is set to ask before every change, so Juno asks before it runs anything.",
+            ? `This task is set to ask before every change, so ${PRODUCT_NAME} asks before it changes anything.`
+            : `This task is set to ask before every change, so ${PRODUCT_NAME} asks before it runs anything.`,
       };
     case "balanced":
       if (input.risk === "safe" || input.risk === "edit") break;
@@ -799,7 +801,7 @@ export function approvalRuling(input: {
         ask: true,
         reason: "mode",
         explanation:
-          "Running a program can do more than Juno can predict, so it counts as a risky step and Juno asks first even though nothing here is marked dangerous.",
+          `Running a program can do more than ${PRODUCT_NAME} can predict, so it counts as a risky step and ${PRODUCT_NAME} asks first even though nothing here is marked dangerous.`,
       };
     case "permissive":
       break;

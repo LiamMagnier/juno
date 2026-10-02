@@ -9,6 +9,7 @@ import { formatEur } from "@/components/landing/eur";
 import { Plate } from "@/components/landing/plate";
 import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The differentiator, shown rather than claimed: a receipt priced with the
@@ -72,7 +73,7 @@ export function Metering() {
       id="metering"
       eyebrow="Honest metering"
       heading="See what every answer costs."
-      lede="Most subscriptions sell a vague number of messages. Juno meters your plan in the only unit that is real: what the model providers charge."
+      lede={`Most subscriptions sell a vague number of messages. ${PRODUCT_NAME} meters your plan in the only unit that is real: what the model providers charge.`}
     >
       <div className="mt-10 grid items-stretch gap-10 lg:grid-cols-12 lg:gap-14">
         <Reveal className="lg:col-span-7">

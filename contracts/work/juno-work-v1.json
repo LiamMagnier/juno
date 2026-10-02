@@ -165,7 +165,7 @@
       "values": [
         {
           "value": "cloud",
-          "summary": "Juno's own executor, which keeps going when every user device is offline.",
+          "summary": "Alevr's own executor, which keeps going when every user device is offline.",
           "isEffective": true
         },
         {
@@ -175,7 +175,7 @@
         },
         {
           "value": "automatic",
-          "summary": "Let Juno choose from the capabilities the task requires. A request, never an outcome.",
+          "summary": "Let Alevr choose from the capabilities the task requires. A request, never an outcome.",
           "isEffective": false
         }
       ]
@@ -245,9 +245,9 @@
         },
         {
           "value": "cloud_files",
-          "summary": "Read and write files held by Juno or a cloud drive rather than a local disk.",
+          "summary": "Read and write files held by Alevr or a cloud drive rather than a local disk.",
           "requiresLocalHost": false,
-          "userPhrase": "files stored with Juno"
+          "userPhrase": "files stored with Alevr"
         },
         {
           "value": "deliverables",

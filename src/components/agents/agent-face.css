@@ -65,6 +65,18 @@
 .agent-face__rig { transition: transform 420ms var(--face-spring); }
 .agent-face__eyes { transition: transform 260ms var(--face-spring); }
 
+/* ---------- Listening: the pupils follow the caller's voice ---------- */
+/* Feedback, not an idle loop (MOTION_AND_THINKING: voice shows the actual
+   audio envelope): an open call writes `--level` (0..1) on an ancestor
+   (agent-thread-header.tsx). The still 1.15 above is what reduced motion keeps. */
+@media (prefers-reduced-motion: no-preference) {
+  .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-face :is(.agent-face__gaze, .agent-face__lids, .agent-face__eye, .agent-face__rig, .agent-face__eyes, .agent-face__happy) { transition: none; }
+}
+
 @keyframes agent-face-breathe {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.014, 1.022); }

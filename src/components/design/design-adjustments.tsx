@@ -27,6 +27,7 @@ import type { DesignOperation } from "@/lib/design/operations";
 import { hexToRgba } from "@/lib/design/variables";
 import type { DesignDocument, Paint } from "@/lib/design/types";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 interface Props {
   adjustments: DesignAdjustment[];
@@ -55,7 +56,7 @@ export function DesignAdjustments({ adjustments, editor, onDismiss }: Props) {
     // /95 blurred fill, a third recipe for the same tier.
     <div className="pointer-events-auto mx-auto w-full max-w-2xl overlay-glass rounded-card p-3 motion-safe:animate-rise-in">
       <div className="flex items-center justify-between pb-2">
-        <h2 className="font-mono text-micro text-muted-foreground">Tune Juno’s change</h2>
+        <h2 className="font-mono text-micro text-muted-foreground">{`Tune ${PRODUCT_NAME}’s change`}</h2>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Hide these controls" className="text-muted-foreground hover:text-foreground">

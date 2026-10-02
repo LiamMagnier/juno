@@ -13,6 +13,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export function DeleteSkillDialog({
   open,
@@ -95,7 +96,7 @@ export function MoveSkillDialog({
         <DialogHeader>
           <DialogTitle>Move to a project</DialogTitle>
           <DialogDescription>
-            Juno picks a filed skill only for that project’s tasks. Typing{" "}
+            {`${PRODUCT_NAME} picks a filed skill only for that project’s tasks. Typing`}{" "}
             <span className="font-mono text-foreground" translate="no">
               /{slug}
             </span>{" "}

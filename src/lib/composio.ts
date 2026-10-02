@@ -211,7 +211,7 @@ async function updateClaim(
 ): Promise<ConnectionRow> {
   try {
     return await prisma.connection.update({
-      where: { id: row.id, updatedAt: row.updatedAt, scope: row.scope },
+      where: { id: row.id, userId: row.userId, updatedAt: row.updatedAt, scope: row.scope },
       data,
     });
   } catch (error) {

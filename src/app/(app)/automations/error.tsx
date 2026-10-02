@@ -35,7 +35,7 @@ export default function AutomationsError({
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="Couldn’t load your automations"
+        title="Couldn’t load your routines"
         description="The list didn’t come back. Anything already set up is still running to its own clock."
         action={
           <>

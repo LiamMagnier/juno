@@ -1388,7 +1388,7 @@ export class WorkAgentSession {
    */
   private buildSystemPrompt(): string {
     return [
-      'You are Juno, doing a piece of long-running work on the user\'s behalf. The user is not necessarily watching.',
+      'You are Alevr, doing a piece of long-running work on the user\'s behalf. The user is not necessarily watching.',
       '',
       '# Goal',
       '',

@@ -4,6 +4,7 @@ import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { safeAppPath } from "@/lib/notify/paths";
 import { clampPushText, pushRouteIds, pushSwitchFilter, type NotifyPush } from "@/lib/notify/push";
 import type { NotifyChannel } from "@/lib/notify/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface ApnsPayload {
   aps: {
@@ -538,7 +539,7 @@ export function buildCodeApprovalPayload({
   return {
     aps: {
       alert: {
-        title: "Juno Code: Approval Required",
+        title: `${PRODUCT_NAME} Code: Approval Required`,
         subtitle: workspace ? `Workspace: ${workspace}` : undefined,
         body: `Action "${toolName}" requires your review: ${prompt.slice(0, 120)}`,
       },

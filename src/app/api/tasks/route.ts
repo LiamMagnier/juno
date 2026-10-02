@@ -104,7 +104,7 @@ export async function POST() {
     {
       error: "moved_to_automations",
       message:
-        "Scheduled tasks are now Automations, which do everything these did and more — event triggers, real timezones and a proper catch-up policy. Your existing tasks have already moved. Create new ones at /automations.",
+        "Scheduled tasks are now Routines, which do everything these did and more — event triggers, real timezones and a proper catch-up policy. Your existing tasks have already moved. Create new ones at /automations.",
     },
     { status: 410 }
   );

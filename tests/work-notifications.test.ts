@@ -198,7 +198,7 @@ test("an interrupted run says it was not restarted, and why", () => {
 
 test("an empty title still produces something readable", () => {
   const message = describeNotification({ title: "   ", status: "completed" });
-  assert.match(message.subject, /Your Juno task/);
+  assert.match(message.subject, /Your Alevr task/);
 });
 
 
@@ -312,15 +312,15 @@ test("only a person starting a run makes it attended", () => {
 // An agent's task speaks as the agent
 // ---------------------------------------------------------------------------
 
-test("an agent's name replaces Juno in every sentence, and Juno stays the default", () => {
+test("an agent's name replaces Alevr in every sentence, and Alevr stays the default", () => {
   for (const status of WORK_STATUSES) {
     const asAgent = describeNotification({ title: "Organise Downloads", status, actorName: "Quill" });
-    assert.doesNotMatch(asAgent.summary, /\bJuno\b/, `${status} still says Juno for an agent's task`);
+    assert.doesNotMatch(asAgent.summary, /\bAlevr\b/, `${status} still says Alevr for an agent's task`);
     const asJuno = describeNotification({ title: "Organise Downloads", status });
     assert.doesNotMatch(asJuno.summary, /Quill/);
   }
   const waiting = describeNotification({ title: "Organise Downloads", status: "waiting_input", actorName: "Quill" });
   assert.equal(waiting.summary, "Quill needs an answer before it can carry on.");
   const blank = describeNotification({ title: "Organise Downloads", status: "completed", actorName: "  " });
-  assert.match(blank.summary, /^Juno finished/);
+  assert.match(blank.summary, /^Alevr finished/);
 });

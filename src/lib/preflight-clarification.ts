@@ -1,5 +1,6 @@
 import type { ClientAttachment } from "@/types/chat";
 import type { ContextToken } from "@/lib/chat/context-tokens";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type PreflightClarificationQuestionType = "single-choice" | "multi-choice" | "text" | "text-long";
 export type PreflightClarificationAnswerSource = "option" | "else" | "skip";
@@ -90,7 +91,7 @@ export function quickPreflightSkip(input: {
 }): string | null {
   const message = input.message.trim();
   if (!message) return "Empty message.";
-  if (NO_CLARIFY_RE.test(message)) return "User asked Juno to answer without clarification.";
+  if (NO_CLARIFY_RE.test(message)) return `User asked ${PRODUCT_NAME} to answer without clarification.`;
   if (SIMPLE_MATH_RE.test(message) && wordCount(message) <= 12) return "Simple direct question.";
   // Character-based, not word-based: CJK and Thai messages don't use spaces,
   // so a real request would count as "one word" and be wrongly skipped.

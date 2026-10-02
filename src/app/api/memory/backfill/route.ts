@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { backfillMemories, pendingBackfill, reconcileMemoryTimeline, utilityModelCandidates } from "@/lib/memory";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,7 +32,7 @@ export async function POST() {
   });
   if (settings?.memoryEnabled === false) {
     return NextResponse.json(
-      { error: "Memory is paused, so Juno isn’t learning from chats. Resume it to read past chats." },
+      { error: `Memory is paused, so ${PRODUCT_NAME} isn’t learning from chats. Resume it to read past chats.` },
       { status: 409 }
     );
   }

@@ -67,6 +67,7 @@ import {
   snapshotPage,
   submitsFormOnPage,
 } from "./browser-page";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The three shapes below mirror `BrowserElement`, `BrowserPageState` and
@@ -331,7 +332,7 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
           });
         }
         if (request.isNavigationRequest()) {
-          navigationFailure = `That page asked for more than ${MAX_REQUESTS_PER_ACTION} resources, so Juno stopped loading it.`;
+          navigationFailure = `That page asked for more than ${MAX_REQUESTS_PER_ACTION} resources, so ${PRODUCT_NAME} stopped loading it.`;
         }
         await route.abort("blockedbyclient");
         return;
@@ -424,7 +425,7 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       // first call is the one that discovers the deployment has no browser, and
       // a first call that says only "could not start" is a model told a thing
       // failed and not told what to do instead.
-      unavailable = `Juno could not start a browser on this deployment: ${
+      unavailable = `${PRODUCT_NAME} could not start a browser on this deployment: ${
         error instanceof Error ? error.message : String(error)
       }. Use web_search and web_fetch, and say in your answer that you could not use a browser.`;
       options.log?.("work browser unavailable", { error: unavailable });

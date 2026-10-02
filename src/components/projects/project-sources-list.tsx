@@ -24,6 +24,7 @@ import { staggerDelay } from "@/lib/motion";
 import type { ArtifactType } from "@/lib/message-content";
 import type { KnowledgeIndexState } from "@/components/library/index-status";
 import { ARTIFACT_NOUN, artifactPath } from "@/lib/artifact-links";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface ProjectFileItem {
   id: string;
@@ -180,7 +181,7 @@ export function ProjectSourcesList({
           {uploading ? "Uploading…" : dragging ? "Drop to add to this project" : onDropFiles ? "Drop files here, or click to browse" : "Click to upload files"}
         </span>
         <span className="text-caption text-muted-foreground">
-          PDFs, documents, code and data, indexed so Juno can cite them.
+          {`PDFs, documents, code and data, indexed so ${PRODUCT_NAME} can cite them.`}
         </span>
       </button>
 
@@ -232,7 +233,7 @@ export function ProjectSourcesList({
             query
               ? "Try another search term."
               : filter === "artifacts"
-                ? "Artifacts Juno builds in this project’s chats will collect here."
+                ? `Artifacts ${PRODUCT_NAME} builds in this project’s chats will collect here.`
                 : "Add PDFs, documents, code or data to ground every answer in this project."
           }
           action={

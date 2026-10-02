@@ -10,6 +10,7 @@ import { buildMemoryRecap, recapIsEmpty, type RecapPeriod } from "@/lib/memory-r
 import { cn } from "@/lib/utils";
 import type { Memory } from "@/components/memory/memory-model";
 import { relativeTime } from "@/components/memory/memory-time";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The recap: what changed in what Juno knows, over a period you choose.
@@ -107,12 +108,12 @@ export function RecapView({
 
         {empty ? (
           <p className="py-6 text-center text-ui text-muted-foreground">
-            Juno didn’t learn, change or use anything in this stretch. Try a longer period.
+            {`${PRODUCT_NAME} didn’t learn, change or use anything in this stretch. Try a longer period.`}
           </p>
         ) : (
           <>
             {recap.learned.length > 0 && (
-              <RecapSection title="What Juno learned">
+              <RecapSection title={`What ${PRODUCT_NAME} learned`}>
                 <ul className="divide-y divide-border/70">
                   {learnedFirst.map((row) => (
                     <RecapLine key={row.id} text={row.content} meta={memoryCategoryLabel(row.category)} when={row.createdAt} />
@@ -161,7 +162,7 @@ export function RecapView({
                     <li key={row.id} className="py-2.5">
                       <p className="text-ui text-muted-foreground">{row.content}</p>
                       <p className="mt-0.5 text-caption text-muted-foreground">
-                        {row.reason ?? "It clashed with something you told Juno, so it isn’t used."}
+                        {row.reason ?? `It clashed with something you told ${PRODUCT_NAME}, so it isn’t used.`}
                       </p>
                     </li>
                   ))}
@@ -170,10 +171,10 @@ export function RecapView({
             )}
 
             {letGo > 0 && (
-              <RecapSection title="What Juno let go of">
+              <RecapSection title={`What ${PRODUCT_NAME} let go of`}>
                 <ul className="divide-y divide-border/70">
                   {recap.forgotten.map((row) => (
-                    <RecapLine key={row.id} icon={EyeOff} text={row.content} meta="You asked Juno to forget this" when={row.createdAt} />
+                    <RecapLine key={row.id} icon={EyeOff} text={row.content} meta={`You asked ${PRODUCT_NAME} to forget this`} when={row.createdAt} />
                   ))}
                   {recap.expired.map((row) => (
                     <RecapLine key={row.id} icon={CalendarClock} text={row.content} meta="Only true for a while" />
@@ -197,7 +198,7 @@ export function RecapView({
             )}
 
             {recap.leanedOn.length > 0 && (
-              <RecapSection title="What Juno leaned on">
+              <RecapSection title={`What ${PRODUCT_NAME} leaned on`}>
                 <ul className="divide-y divide-border/70">
                   {recap.leanedOn.map((row) => (
                     <RecapLine key={row.id} text={row.content} meta="Last used" when={row.lastUsedAt ?? row.createdAt} />

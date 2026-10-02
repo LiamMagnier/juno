@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * What is happening in a voice call, as distinct from whether the socket is up.
  *
@@ -104,7 +106,7 @@ export const PHASE_ANNOUNCEMENT: Record<VoicePhase, string> = {
   listening: "Connected. Listening.",
   "user-speaking": "Listening.",
   thinking: "Thinking about your answer.",
-  speaking: speakingAnnouncement("Juno"),
+  speaking: speakingAnnouncement(PRODUCT_NAME),
   muted: "Your microphone is muted.",
   error: "There is a problem with the call.",
 };
@@ -125,7 +127,7 @@ export function speakingAnnouncement(speaker: string): string {
  * is mid-sentence does not want their own speech narrated back at them, so
  * the two collapse and only the first is spoken.
  */
-export function announcementFor(phase: VoicePhase, previous: VoicePhase | null, speaker = "Juno"): string | null {
+export function announcementFor(phase: VoicePhase, previous: VoicePhase | null, speaker = PRODUCT_NAME): string | null {
   if (phase === previous) return null;
   if (phase === "user-speaking" && previous === "listening") return null;
   if (phase === "listening" && previous === "user-speaking") return null;

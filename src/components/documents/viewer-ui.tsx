@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, MessageCircleQuestion, Sparkles } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* ─── The action row that follows a selection ──────────────────────────────
  * The canvas's selection bar, verbatim in material and size, so selecting in a
@@ -46,7 +47,7 @@ export function SelectionActions({
     >
       <Button type="button" variant="ghost" size="sm" onClick={onAsk} className={ACTION}>
         <MessageCircleQuestion className="size-3.5" aria-hidden />
-        Ask Juno
+        {`Ask ${PRODUCT_NAME}`}
       </Button>
       {onExplain && (
         <>

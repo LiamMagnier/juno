@@ -6,6 +6,7 @@ import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { Progress } from "@/components/ui/progress";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The page's announcements: memory is off, a policy refused the work, Juno is
@@ -57,7 +58,7 @@ export function PausedNotice({ open, onTurnOn }: { open: boolean; onTurnOn: () =
         }
       >
         <span className="font-medium">Memory is off.</span>{" "}
-        <span className="text-muted-foreground">Juno isn’t using or saving memories. What’s here is kept.</span>
+        <span className="text-muted-foreground">{`${PRODUCT_NAME} isn’t using or saving memories. What’s here is kept.`}</span>
       </Notice>
     </Collapse>
   );
@@ -106,7 +107,7 @@ export function BackfillNotice({
       {running ? (
         <Notice live icon={<Loader2 className="size-4 animate-spin" aria-hidden="true" />}>
           <span className="font-medium">Reading your past chats.</span>{" "}
-          <span className="text-muted-foreground">You can leave this page; Juno picks up where it left off.</span>
+          <span className="text-muted-foreground">{`You can leave this page; ${PRODUCT_NAME} picks up where it left off.`}</span>
           <Progress value={pct} aria-label="Past chats read" className="mt-2.5 h-1.5 max-w-xs" />
         </Notice>
       ) : (
@@ -127,7 +128,7 @@ export function BackfillNotice({
               </>
             )}
           </span>{" "}
-          <span className="text-muted-foreground">Juno can learn from them now.</span>
+          <span className="text-muted-foreground">{`${PRODUCT_NAME} can learn from them now.`}</span>
         </Notice>
       )}
     </Collapse>

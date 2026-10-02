@@ -43,7 +43,7 @@ struct DesktopStageCPagesTests {
 
     @Test
     func theNewDestinationsNameThemselvesWithTheWebsMarks() {
-        #expect(DesktopDestination.automations.label == "Automations")
+        #expect(DesktopDestination.automations.label == "Routines")
         #expect(DesktopDestination.permissions.label == "Permissions")
         #expect(DesktopDestination.automations.junoIcon == .automations)
         #expect(DesktopDestination.permissions.junoIcon == .permissions)

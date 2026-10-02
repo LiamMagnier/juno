@@ -14,6 +14,7 @@ import {
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import { nested, readEvent, str, strings, type Payload } from "@/components/work/work-payload";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The two things that stop a run dead: a question, and an approval.
@@ -269,7 +270,7 @@ export function deriveApprovals(events: readonly ClientWorkEvent[]): WorkApprova
         id,
         action: str(payload, "action") ?? "an action",
         risk: riskOf(str(payload, "risk")),
-        summary: str(payload, "summary", "description") ?? "Juno wants to do something.",
+        summary: str(payload, "summary", "description") ?? `${PRODUCT_NAME} wants to do something.`,
         detail: nested(payload, "detail"),
         actionDigest: digest !== null && DIGEST_PATTERN.test(digest) ? digest : null,
         decision: "pending",

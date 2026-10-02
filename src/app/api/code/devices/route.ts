@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ONLINE_WINDOW_MS, requireUser, serializeDevice } from "@/lib/code-remote";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -49,7 +50,7 @@ function remoteSafeWorkspaces(value: unknown): unknown {
     if (!item || typeof item !== "object" || Array.isArray(item)) return item;
     const workspace = item as Record<string, unknown>;
     if (typeof workspace.key !== "string" || workspace.key.length === 0) return workspace;
-    return { ...workspace, path: "Shared by Juno Code" };
+    return { ...workspace, path: `Shared by ${PRODUCT_NAME} Code` };
   });
 }
 

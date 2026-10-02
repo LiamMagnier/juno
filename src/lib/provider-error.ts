@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * One place that decides what a provider failure *means*.
  *
@@ -294,7 +296,7 @@ export function normalizeProviderError(err: unknown, subject?: ErrorSubject): No
     default:
       // Never echo a raw provider body: on Anthropic the SDK message is the
       // whole JSON error envelope, which then rendered into the transcript.
-      userMessage = "Juno ran into a problem generating a response. Please try again.";
+      userMessage = `${PRODUCT_NAME} ran into a problem generating a response. Please try again.`;
   }
 
   /*

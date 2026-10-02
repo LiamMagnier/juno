@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // The Juno mark: a transparent black glyph (chat-bubble "G" + spark). `dark:invert`
 // flips it to light so it stays legible on the dark theme.
@@ -21,7 +22,7 @@ export function JunoMark({ className }: { className?: string }) {
   return (
     <Image
       src="/juno-mark.png"
-      alt="Juno"
+      alt={PRODUCT_NAME}
       width={512}
       height={512}
       priority
@@ -35,7 +36,7 @@ export function JunoLogo({ className, showWordmark = true }: { className?: strin
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <JunoMark className="size-6" />
-      {showWordmark && <span className="text-heading">Juno</span>}
+      {showWordmark && <span className="text-heading">{PRODUCT_NAME}</span>}
     </span>
   );
 }

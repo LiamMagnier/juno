@@ -39,6 +39,7 @@ import {
   WORK_PERMISSION_POLICIES,
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const SETUP_CHANGE_KINDS = [
   "notify",
@@ -218,7 +219,7 @@ export function planSetupChange(
     linkedApps?: readonly string[];
   } = {}
 ): SetupPlanResult {
-  const name = snapshot.name.trim() || "This crew member";
+  const name = snapshot.name.trim() || "This agent";
   switch (kind) {
     case "notify": {
       const level = str(args, "level");
@@ -387,7 +388,7 @@ export function planSetupChange(
         // person asked for, and the column cannot hold more.
         return refuse(
           "invalid_arguments",
-          `The largest weekly budget a crew member can have is ${formatBudget(MAX_MEMBER_BUDGET_MICRO_USD)}. For more, remove ${name}'s own budget so only your usage windows apply.`
+          `The largest weekly budget an agent can have is ${formatBudget(MAX_MEMBER_BUDGET_MICRO_USD)}. For more, remove ${name}'s own budget so only your usage windows apply.`
         );
       }
       const next = asked;
@@ -415,10 +416,10 @@ export function planSetupChange(
     case "model": {
       const rawModel = str(args, "model");
       const model = rawModel ? agentModelChoice(rawModel) : null;
-      if (rawModel && !model) return refuse("invalid_arguments", "That is not a chat model Juno offers.");
+      if (rawModel && !model) return refuse("invalid_arguments", `That is not a chat model ${PRODUCT_NAME} offers.`);
       const rawEffort = str(args, "reasoningEffort");
       const effort = rawEffort ? agentReasoningEffort(rawEffort) : null;
-      if (rawEffort && !effort) return refuse("invalid_arguments", "That is not a reasoning effort Juno offers.");
+      if (rawEffort && !effort) return refuse("invalid_arguments", `That is not a reasoning effort ${PRODUCT_NAME} offers.`);
       const nextModel = model ?? snapshot.model;
       const nextEffort = effort ?? snapshot.reasoningEffort;
       if (!model && !effort) return refuse("invalid_arguments", "Name a model or a reasoning effort.");
@@ -466,7 +467,7 @@ export function planSetupChange(
       };
     }
     default:
-      return refuse("invalid_arguments", `"${kind}" is not a setup change Juno knows.`);
+      return refuse("invalid_arguments", `"${kind}" is not a setup change ${PRODUCT_NAME} knows.`);
   }
 }
 
@@ -569,7 +570,7 @@ export function appsAtApply(input: {
 
 /** What the card says about the direction, in one line. */
 export function setupDirectionSentence(direction: SetupDirection, name: string): string {
-  const who = name.trim() || "This crew member";
+  const who = name.trim() || "This agent";
   switch (direction) {
     case "narrowing":
       return `Narrows what ${who} can do. Applied at once; Undo puts it back.`;

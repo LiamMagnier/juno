@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { useApp } from "@/components/app/app-provider";
 import { titleForPath, truncateTitle } from "@/lib/route-title";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Sets `document.title` for every authenticated route. Renders nothing.
@@ -37,12 +38,12 @@ export function DocumentTitle() {
   React.useEffect(() => {
     const name = titleForPath(pathname);
     const desired = conversationTitle
-      ? `${truncateTitle(conversationTitle)} · Juno`
+      ? `${truncateTitle(conversationTitle)} · ${PRODUCT_NAME}`
       : // "Juno · Juno" is what the template would produce for the new-chat
         // screen, which has no subject of its own yet.
-        name === "Juno"
-        ? "Juno"
-        : `${name} · Juno`;
+        name === PRODUCT_NAME
+        ? PRODUCT_NAME
+        : `${name} · ${PRODUCT_NAME}`;
 
     const apply = () => {
       if (document.title !== desired) document.title = desired;

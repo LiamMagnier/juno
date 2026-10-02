@@ -5,6 +5,7 @@ import type { Readable } from "node:stream";
 import { parseSkillMd, type ParsedSkillMd, type SkillMdRefusal, MAX_SKILL_MD_CHARS, serializeSkillMd } from "@/lib/skills/skill-md";
 import { instructionsDigest, PROVENANCE_DIGEST_KEY, partitionTools } from "@/lib/skills/sources";
 import { emptySkillContract, type WorkSkillContract } from "@/lib/work/skills";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Skills that arrive as FILES rather than as a repository: a `SKILL.md`
@@ -57,7 +58,7 @@ export const PACKAGE_REFUSAL_MESSAGES: Record<PackageRefusal, string> = {
   not_a_package: "That isn't a skill. Upload a SKILL.md, or a .zip or .skill package with a SKILL.md inside.",
   no_skills: "There's no SKILL.md in that package, so there is no skill in it to add.",
   corrupt_zip: "That archive couldn't be opened. Zip the skill's folder again and try once more.",
-  zip_too_large: "That archive unpacks to far more than a skill needs, so Juno didn't open it.",
+  zip_too_large: `That archive unpacks to far more than a skill needs, so ${PRODUCT_NAME} didn't open it.`,
 };
 
 export function isZipBytes(bytes: Uint8Array): boolean {

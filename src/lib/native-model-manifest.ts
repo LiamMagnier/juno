@@ -7,6 +7,7 @@ import { effectiveMinPlan, planRank } from "@/lib/plans";
 import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
 import { decideModelCapability, type ModelCapabilityEvidence } from "@/lib/model-capability-policy";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * `canUseModel` re-looks-the-model-up in the global registry. Here the manifest
@@ -105,7 +106,7 @@ export function nativeModelCatalog(
       // Auto is Juno's own routing product, not the fallback provider its
       // ModelInfo borrows for a logo.
       provider: auto
-        ? { id: "juno", displayName: "Juno" }
+        ? { id: "juno", displayName: PRODUCT_NAME }
         : { id: model.provider, displayName: PROVIDERS[model.provider].label },
       displayName: model.name,
       description: model.description ?? null,

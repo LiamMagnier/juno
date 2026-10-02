@@ -155,13 +155,22 @@ describe("(a) running code or typing on a crew computer always asks", () => {
     }
     assert.equal(docker.isAgentWorkAreaPath("/home/agent/work/report.csv"), true);
     assert.equal(docker.isAgentWorkAreaPath("/home/agent/work/downloads/a.pdf"), true);
+    // In the provider, the resolved-path check comes before ANY docker exec
+    // in writeFile: the parent mkdir and the stdin write alike.
     const source = readFileSync("src/lib/computer/docker.ts", "utf8");
-    const write = source.slice(source.indexOf("async writeFile("));
-    assert.ok(write.indexOf("isAgentWorkAreaPath(resolved)") < write.indexOf("spawnDockerWithStdin("));
+    const start = source.indexOf("async writeFile(");
+    const write = source.slice(start, source.indexOf("\n  async ", start + 1));
+    const check = write.indexOf("if (!isAgentWorkAreaPath(resolved))");
+    assert.ok(check > 0, "writeFile re-checks the resolved path");
+    for (const call of ["runDockerText(", "spawnWithStdin("]) {
+      assert.ok(write.indexOf(call) > check, `${call} runs only after the check`);
+    }
+    // spawnWithStdin is the docker stdin path, with its errors scrubbed.
+    assert.match(source, /function spawnWithStdin\([^)]*\): Promise<void> \{\s*return spawnDockerWithStdin\(/);
   });
 
   it("Skip's own sentence no longer promises the floor covers everything", () => {
-    assert.match(domain.WORK_APPROVAL_MODE_SUMMARY.permissive, /running commands or typing on a crew member's computer, which always ask/);
+    assert.match(domain.WORK_APPROVAL_MODE_SUMMARY.permissive, /running commands or typing on an agent's computer, which always ask/);
     assert.doesNotMatch(domain.WORK_APPROVAL_MODE_SUMMARY.permissive, /four things/);
   });
 });
@@ -312,7 +321,8 @@ describe("(c) view links are not reusable bearers", () => {
   it("the CDP token is never part of the container's configuration", () => {
     const docker = readFileSync("src/lib/computer/docker.ts", "utf8");
     assert.doesNotMatch(docker, /env: \{ JUNO_CDP_TOKEN/);
-    assert.match(docker, /cat > \/tmp\/\.juno-cdp-token\.part && mv -f/);
+    assert.match(docker, /set -C && cat > \/run\/juno\/cdp-token\.part && mv -f/);
+    assert.doesNotMatch(docker, /\/tmp\/\.juno-(cdp-token|vncpass)/, "handover files never go through the shared /tmp");
     const gate = readFileSync("deploy/agent-computers/cdp-gate.py", "utf8");
     assert.doesNotMatch(gate, /os\.environ\["JUNO_CDP_TOKEN"\]/);
     assert.match(gate, /PR_SET_DUMPABLE/);

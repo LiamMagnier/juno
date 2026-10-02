@@ -7,6 +7,7 @@ import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 import { pinnedLookup } from "@/lib/search/pinned-fetch";
 import { isDisallowedAddress, isDisallowedHost, isLoopbackAddress } from "@/lib/search/url-safety";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The network path for MCP servers a USER added by URL.
@@ -79,8 +80,8 @@ const CROSS_ORIGIN_HEADERS = new Set([
 const httpAgent = new http.Agent({ keepAlive: true });
 const httpsAgent = new https.Agent({ keepAlive: true });
 
-const PRIVATE_NETWORK = "That address is on a private network Juno can't reach.";
-const REDIRECT_REFUSED = "The server redirected Juno to an address it won't follow.";
+const PRIVATE_NETWORK = `That address is on a private network ${PRODUCT_NAME} can't reach.`;
+const REDIRECT_REFUSED = `The server redirected ${PRODUCT_NAME} to an address it won't follow.`;
 
 /**
  * Refused by policy before anything was sent. The message is Juno's own
@@ -137,7 +138,7 @@ export function userMcpUrlProblem(raw: string): string | null {
   if (isLoopbackHostname(url.hostname)) {
     return allowsLocalDevelopment()
       ? null
-      : "Juno can't connect to servers on its own machine. Use the server's public https:// address.";
+      : `${PRODUCT_NAME} can't connect to servers on its own machine. Use the server's public https:// address.`;
   }
   if (url.protocol !== "https:") return "Use an https:// address.";
   if (isDisallowedHost(url.href)) return PRIVATE_NETWORK;
@@ -383,7 +384,7 @@ export function createSafeMcpFetch(options: SafeMcpFetchOptions = {}): FetchLike
       if (!location) return response;
       await response.body?.cancel().catch(() => undefined);
       if (method !== "GET" && method !== "HEAD") throw new McpRequestBlockedError(REDIRECT_REFUSED);
-      if (hop >= MAX_MCP_REDIRECTS) throw new McpRequestBlockedError("The server redirected Juno too many times.");
+      if (hop >= MAX_MCP_REDIRECTS) throw new McpRequestBlockedError(`The server redirected ${PRODUCT_NAME} too many times.`);
       let next: URL;
       try {
         next = new URL(location, target);

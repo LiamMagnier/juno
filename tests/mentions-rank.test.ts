@@ -166,7 +166,7 @@ test("every app row says what using it will ask first, blocked apps included", (
   assert.equal(byId.get("github")?.approval?.summary, "Sending, posting or deleting in GitHub will ask you first. Changes you can undo won't.");
   assert.equal(byId.get("github")?.approval?.sends, "ask");
   assert.equal(byId.get("composio:slack")?.approval?.sends, "block");
-  assert.equal(byId.get("composio:slack")?.approval?.summary, "Slack is turned off in Settings, so Juno won't use it.");
+  assert.equal(byId.get("composio:slack")?.approval?.summary, "Slack is turned off in Settings, so Alevr won't use it.");
 });
 
 test("apps: Composio rows vanish when Composio is not configured, and `only` narrows to exact ids", () => {

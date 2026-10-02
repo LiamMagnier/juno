@@ -17,6 +17,7 @@ import {
   isTerminalResearchState,
   stageForState,
 } from "@/lib/research/domain";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -51,13 +52,13 @@ export async function POST(req: Request) {
   const plan = await getUserPlan(user.id);
   if (!PLANS[plan].webSearch) {
     return NextResponse.json(
-      { error: "Research is available on a paid Juno plan." },
+      { error: `Research is available on a paid ${PRODUCT_NAME} plan.` },
       { status: 402 }
     );
   }
   if (!researchSearchConfigured()) {
     return NextResponse.json(
-      { error: "Research is not configured on this Juno deployment." },
+      { error: `Research is not configured on this ${PRODUCT_NAME} deployment.` },
       { status: 503 }
     );
   }

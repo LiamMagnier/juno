@@ -14,6 +14,7 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Pressable } from "@/components/ui/pressable";
 import { AppIcons } from "@/lib/app-icons";
 import type { MemoryScopeOption } from "@/components/memory/memory-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * WHOSE MEMORY: the whole account, or one project.
@@ -104,7 +105,7 @@ export function ScopeBar({
         // Keyed on the project so the line re-enters with the subject it
         // describes, rather than swapping its words in place.
         <p key={selected.id} className="text-caption text-muted-foreground motion-safe:animate-fade-in">
-          <span>Only chats in this project use these memories, and they use nothing else Juno remembers.</span>{" "}
+          <span>{`Only chats in this project use these memories, and they use nothing else ${PRODUCT_NAME} remembers.`}</span>{" "}
           <Link
             href={`/projects/${encodeURIComponent(selected.id)}`}
             className="inline-flex items-center gap-1 rounded-xs font-medium text-foreground underline-offset-2 hover:underline"

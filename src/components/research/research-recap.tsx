@@ -12,6 +12,7 @@ import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isResearchState, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "@/components/research/use-research-run";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
  * What a finished run leaves in the conversation: a report cover.
@@ -36,7 +37,7 @@ import type { ResearchRunView } from "@/components/research/use-research-run";
  */
 
 const RECAP_COPY = {
-  kicker: "Research report",
+  kicker: `${FEATURE_NAMES.research.label} report`,
   complete: "Research complete",
   read: "sources read",
   oneRead: "source read",

@@ -381,7 +381,7 @@ struct DesktopNavigationStateTests {
             DesktopNavigationState.windowTitle(
                 destination: .artifacts,
                 conversationTitle: "ignored"
-            ) == "Artifacts"
+            ) == "Made by Alevr"
         )
     }
 

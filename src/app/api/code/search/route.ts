@@ -5,6 +5,7 @@ import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { rateLimit } from "@/lib/rate-limit";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -32,13 +33,13 @@ export async function POST(req: Request) {
   const plan = await getUserPlan(user.id);
   if (!PLANS[plan].webSearch) {
     return NextResponse.json(
-      { error: "Web search is available on a paid Juno plan." },
+      { error: `Web search is available on a paid ${PRODUCT_NAME} plan.` },
       { status: 402 },
     );
   }
   if (!isWebSearchConfigured()) {
     return NextResponse.json(
-      { error: "Web search is not configured on this Juno deployment." },
+      { error: `Web search is not configured on this ${PRODUCT_NAME} deployment.` },
       { status: 503 },
     );
   }

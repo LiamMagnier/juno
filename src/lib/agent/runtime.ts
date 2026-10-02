@@ -16,6 +16,7 @@ import { browserTool } from "@/lib/agent/browser";
 import { runCodeTool } from "@/lib/agent/code";
 import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export class UnifiedAgentRegistry {
   private tools = new Map<string, ToolDefinition<unknown, unknown>>();
@@ -85,7 +86,7 @@ export class UnifiedAgentRegistry {
       return {
         success: false,
         error: `Unknown tool: ${toolId}`,
-        summary: `Error: Tool '${toolId}' is not registered in the Juno Agent Runtime.`,
+        summary: `Error: Tool '${toolId}' is not registered in the ${PRODUCT_NAME} Agent Runtime.`,
       };
     }
 
@@ -101,7 +102,7 @@ export class UnifiedAgentRegistry {
         conversationId: context.conversationId || null,
         projectId: context.projectId || null,
         connectorId: "juno_runtime",
-        connectorLabel: "Juno Runtime",
+        connectorLabel: `${PRODUCT_NAME} Runtime`,
         toolName: tool.id,
         functionName: tool.id,
         args: params,

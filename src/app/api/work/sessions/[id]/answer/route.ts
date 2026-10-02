@@ -15,6 +15,7 @@ import {
 } from "@/lib/work/store";
 import { runCommandKey } from "@/lib/work/relay";
 import { answerSchema } from "@/app/api/work/protocol";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -57,7 +58,7 @@ const steerSchema = z.object({
  * either way.
  */
 const STEER_DELIVERED =
-  "Juno reads this before its next step and works to it from there. What it has already done " +
+  `${PRODUCT_NAME} reads this before its next step and works to it from there. What it has already done ` +
   "stands.";
 
 /**
@@ -260,7 +261,7 @@ async function recordInstruction({
       {
         error: "answer_expected",
         message:
-          "Juno is waiting for an answer to the question it asked, and nothing else will restart " +
+          `${PRODUCT_NAME} is waiting for an answer to the question it asked, and nothing else will restart ` +
           "it. Answer that, and say the rest of this in the same reply.",
         status: run.status,
       },

@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Sensitive topics — the categories Juno does not remember unless asked to.
  *
@@ -195,7 +197,7 @@ export function sensitiveWriteDecision(
  * sounding like one promise.
  */
 const REFUSAL = {
-  lead: "Juno doesn’t remember",
+  lead: `${PRODUCT_NAME} doesn’t remember`,
   tail: "unless you turn that topic on in Settings → Memory. Nothing was saved.",
 };
 

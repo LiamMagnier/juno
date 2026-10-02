@@ -24,6 +24,7 @@ import {
   filterLibrary,
   listedSkillCount,
 } from "@/components/skills/skill-library-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface SkillsLibraryActions {
   onToggleSkill: (skill: LibrarySkill, enabled: boolean) => void;
@@ -171,7 +172,7 @@ export function SkillsLibraryView({
       <CustomizeNav current="skills" />
       <AppPageHeader
         heading="Skills"
-        lede="Instructions Juno follows for a specific job. Type / in chat to use one."
+        lede={`Instructions ${PRODUCT_NAME} follows for a specific job. Type / in chat to use one.`}
         actions={
           <AddSkillMenu
             onImport={() => actions.onImport()}

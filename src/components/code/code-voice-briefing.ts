@@ -30,6 +30,7 @@
  */
 
 import type { VoiceHistoryEntry } from "@/lib/voice-relay-protocol";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /** Per-turn ceiling. The wire allows 2,000; the gap is the safety margin. */
 const MAX_ENTRY_CHARS = 1_400;
@@ -100,7 +101,7 @@ function placeSentence(input: CodeVoiceBriefingInput): string {
   }
   if (input.target === "device") {
     const where = input.place ? `my project "${input.place}"` : "a project I have not picked yet";
-    return `It runs with Juno Code on my own Mac, in ${where}.`;
+    return `It runs with ${PRODUCT_NAME} Code on my own Mac, in ${where}.`;
   }
   return "I have not settled where it runs yet — it is either my own Mac or a fresh cloud machine.";
 }
@@ -112,8 +113,8 @@ function sections(input: CodeVoiceBriefingInput): string[] {
     // 1 — the arrangement and the rules of this call. Never dropped.
     [
       input.stage === "new"
-        ? "I am about to start a Juno Code session and I want to talk through what to ask it for."
-        : "I am looking at one of my Juno Code sessions and I want to talk it through out loud.",
+        ? `I am about to start a ${PRODUCT_NAME} Code session and I want to talk through what to ask it for.`
+        : `I am looking at one of my ${PRODUCT_NAME} Code sessions and I want to talk it through out loud.`,
       "",
       placeSentence(input),
       input.blocked ? `The app is telling me: ${oneLine(input.blocked, 200)}` : null,
@@ -134,7 +135,7 @@ function sections(input: CodeVoiceBriefingInput): string[] {
       ? [
           "How the session has gone so far, oldest first:",
           ...recent.map(
-            (turn) => `- ${turn.role === "user" ? "I asked" : "Juno Code replied"}: "${oneLine(turn.text, MAX_TURN_CHARS)}"`,
+            (turn) => `- ${turn.role === "user" ? "I asked" : `${PRODUCT_NAME} Code replied`}: "${oneLine(turn.text, MAX_TURN_CHARS)}"`,
           ),
         ].join("\n")
       : null,
@@ -204,7 +205,7 @@ export function codeVoiceCatchUp(input: CodeVoiceBriefingInput): string {
       placeSentence(input),
       input.blocked ? `The app is telling me: ${oneLine(input.blocked, 200)}` : null,
       ...last.map(
-        (turn) => `${turn.role === "user" ? "I asked" : "Juno Code replied"}: "${oneLine(turn.text, MAX_TURN_CHARS)}"`,
+        (turn) => `${turn.role === "user" ? "I asked" : `${PRODUCT_NAME} Code replied`}: "${oneLine(turn.text, MAX_TURN_CHARS)}"`,
       ),
     ]
       .filter((line) => line !== null)

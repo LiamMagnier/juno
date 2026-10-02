@@ -169,7 +169,7 @@ export async function GET() {
     void Promise.all(
       repairs.map((r) =>
         prisma.apiSpend
-          .update({ where: { id: r.id }, data: { costMicroUsd: r.costMicroUsd } })
+          .update({ where: { id: r.id, userId: user.id }, data: { costMicroUsd: r.costMicroUsd } })
           .catch(() => null)
       )
     ).catch(() => null);

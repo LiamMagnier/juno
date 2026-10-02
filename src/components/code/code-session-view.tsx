@@ -7,6 +7,7 @@ import nextDynamic from "next/dynamic";
 import { MessageList } from "@/components/chat/message-list";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { splitEngaged } from "@/components/chat/split-layout";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Split, exactly as chat-view.tsx splits it, and for the same reason: the
@@ -304,7 +305,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       ? "Preparing this cloud session…"
       : null
     : presence.state === "none"
-      ? "No Mac has synced this project. Open the folder in the Juno app on your Mac and this session can run it."
+      ? `No Mac has synced this project. Open the folder in the ${PRODUCT_NAME} app on your Mac and this session can run it.`
       : presence.state === "error"
         ? "Can't reach the server to find your Mac. Your prompt is safe here — retry when you're ready."
         : presence.state === "checking"
@@ -561,7 +562,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       blockedReason: sendBlockedReason
         ? sendBlockedReason
         : session.isBusy && !session.canSteer
-          ? "Juno Code is working on this. Wait for it to finish, or stop it first."
+          ? `${PRODUCT_NAME} Code is working on this. Wait for it to finish, or stop it first.`
           : isUploading
             ? "Still uploading the attached files."
             : null,
@@ -618,7 +619,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     ? "Review the changes before you ship them."
     : isCloud
       ? "Runs in the cloud and pushes a branch — read the diff, then open the pull request yourself."
-      : "Runs with Juno Code on your Mac — review the changes before you ship them.";
+      : `Runs with ${PRODUCT_NAME} Code on your Mac — review the changes before you ship them.`;
 
   /*
    * THE RUN TRACE HAD NO WAY TO OPEN.
@@ -1198,10 +1199,10 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                     </h1>
                     <p className="mt-2 max-w-md text-body-lg leading-6 text-muted-foreground">
                       {resolving
-                        ? "Describe what to build or fix — Juno Code streams the work here."
+                        ? `Describe what to build or fix — ${PRODUCT_NAME} Code streams the work here.`
                         : isCloud
                           ? "Describe what to build or fix — the run happens in the cloud and pushes a branch you can read here, then turn into a pull request."
-                          : "Describe what to build or fix — Juno Code runs it on your Mac and streams the work here."}
+                          : `Describe what to build or fix — ${PRODUCT_NAME} Code runs it on your Mac and streams the work here.`}
                     </p>
                   </div>
                   <div className="z-10 w-full max-w-[44rem]">{composer}</div>

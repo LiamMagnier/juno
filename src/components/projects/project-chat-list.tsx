@@ -20,6 +20,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export interface ProjectConversationItem {
   id: string;
@@ -96,7 +97,7 @@ export function ProjectChatList({
           description={
             query
               ? "Try another search term."
-              : "Start one above. Juno reads the project’s instructions and files first."
+              : `Start one above. ${PRODUCT_NAME} reads the project’s instructions and files first.`
           }
           action={
             query ? (

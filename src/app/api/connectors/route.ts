@@ -6,6 +6,7 @@ import { isComposioConfigured } from "@/lib/env";
 import { listConnectedComposioApps } from "@/lib/composio";
 import { serializeUserMcpServer, userMcpConnectorId } from "@/lib/user-mcp";
 import { toCustomConnectorView } from "@/lib/custom-connectors";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
 
@@ -101,7 +102,7 @@ export async function GET() {
       id: app.id,
       kind: "composio_app",
       label: app.label,
-      description: `Use ${app.label} through Juno.`,
+      description: `Use ${app.label} through ${PRODUCT_NAME}.`,
       capability: `Let the model use your connected ${app.label} account.`,
       configured: true,
       connected: true,

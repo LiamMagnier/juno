@@ -128,6 +128,7 @@ test("UI state fixtures keep their semantic, responsive, and preference contract
       .join("\n");
     for (const marker of fixture.required) assert.match(source, marker, `${fixture.id} lost ${marker}`);
     for (const marker of fixture.responsive) assert.match(source, marker, `${fixture.id} lost ${marker}`);
+    for (const marker of fixture.forbidden) assert.doesNotMatch(source, marker, `${fixture.id} regained ${marker}`);
   }
 
   const preferenceSource = readFileSync(path.join(process.cwd(), UI_SHARED_PREFERENCE_CONTRACT.source), "utf8");

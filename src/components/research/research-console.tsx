@@ -18,6 +18,7 @@ import { RollingNumber } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * A run being watched.
@@ -47,7 +48,7 @@ const CONSOLE_COPY = {
   hide: "Hide research details",
   noActivity: "Nothing yet — steps appear here as researchers search and read.",
   noEvidence: "Nothing yet — what each question rests on appears here as sources are read.",
-  noPlan: "The plan appears here once Juno has worked out what to look up.",
+  noPlan: `The plan appears here once ${PRODUCT_NAME} has worked out what to look up.`,
 };
 export function stageYields(run: ResearchRunView): StageYield {
   const read = run.sources.filter((source) => source.read).length;
@@ -122,13 +123,13 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
   // literal inside a variable whose name ends in Note/Copy/Label, class lists
   // included. The copy this draws lives in CONSOLE_COPY, where it belongs.
   const emptyLine = (text: string) => <p className="text-ui text-muted-foreground">{text}</p>;
-  return <section aria-label="Research" className={cn("research-surface research-enter relative min-w-0", className)}>
+  return <section aria-label={FEATURE_NAMES.research.accessibleLabel} className={cn("research-surface research-enter relative min-w-0", className)}>
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         {atGate
           // The gate labels earn their line: "Before Juno starts" says something
           // the question does not, and the gates print the question themselves.
-          ? <p className="text-ui font-medium">{awaitingClarify ? "Before Juno starts" : "Your research plan"}</p>
+          ? <p className="text-ui font-medium">{awaitingClarify ? `Before ${PRODUCT_NAME} starts` : "Your research plan"}</p>
           : <h3 className="line-clamp-2 text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground">{run.goal}</h3>}
         <p role="status" className="mt-1 text-caption text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>
       </div>

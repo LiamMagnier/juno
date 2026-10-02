@@ -168,7 +168,7 @@ export function createSetupChangeTool(ctx: SetupChangeToolContext): NativeChatTo
       return (await store.findSetupChange(ctx.user.id, ctx.agent.id, id))!;
     };
     const agent = await agents.findAgent(ctx.user.id, ctx.agent.id);
-    if (!agent) return refused("not_found", "This crew member no longer exists.");
+    if (!agent) return refused("not_found", "This agent no longer exists.");
     if (agent.status !== "active") return refused("agent_paused", PAUSED_CONFIG_REFUSAL_MESSAGE);
     const limit = await rateLimit({ key: `agents:config:${ctx.user.id}`, ...AGENT_CONFIG_RATE_LIMIT });
     if (!limit.success) return refused("rate_limited", "Too many setup changes this hour. Try again shortly.");

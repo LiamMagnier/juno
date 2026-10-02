@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 import { prisma } from "@/lib/prisma";
 import { decryptMessageText, encryptMessageText } from "@/lib/message-crypto";
 import { generateSecret, otpauthUrl, verifyTotp } from "@/lib/totp";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The server side of account security: two-step verification, single-use
@@ -20,7 +21,7 @@ import { generateSecret, otpauthUrl, verifyTotp } from "@/lib/totp";
 // ----------------------------------------------------------------------------
 
 /** The label an authenticator app shows above the code. */
-const TOTP_ISSUER = "Juno";
+const TOTP_ISSUER = PRODUCT_NAME;
 
 /**
  * Secrets are sealed with the message keyring rather than stored in the clear.

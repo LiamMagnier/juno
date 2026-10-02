@@ -12,6 +12,7 @@ import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/wo
 import type { WorkStatus } from "@/lib/work/domain";
 import type { AppBootstrap } from "@/types/app";
 import type { ReasoningEffort } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Fixture data. Only what the rendered components read is filled in; the rest
@@ -234,7 +235,7 @@ export function ComposerLandingFixture() {
             <Composer
               {...common}
               frame="dock"
-              footnote={<p className="hidden sm:block">Juno can make mistakes. Check important info.</p>}
+              footnote={<p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>}
             />
           </div>
         </section>

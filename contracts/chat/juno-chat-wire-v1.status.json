@@ -60,12 +60,26 @@
     "request.reasoningEffort": "native",
     "request.connectors": "native",
     "request.context": {
+      "status": "native",
+      "note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, agents, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers look tokens up through /api/mentions and send them on the append-then-regenerate turn (GenerationRequestWire.context)."
+    },
+    "request.context[].kind": "native",
+    "request.context[].id": "native",
+    "request.context[].label": "native",
+    "request.context[].range": "native",
+    "request.context[].range.start": "native",
+    "request.context[].range.end": "native",
+    "request.context[].meta": {
       "status": "planned",
-      "note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, crew, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers gain inline tokens in the UI phase and send it on the append-then-regenerate turn."
+      "note": "Drawing hints (icon key, subtitle) so another client can draw the token the same way; never authority. NativeContextToken does not send them yet, and the server re-reads every name and kind from the account's rows either way."
     },
     "request.skillSlug": "native",
     "request.generationId": "native",
     "request.workHandoff": "native",
+    "request.roomTurn": {
+      "status": "planned",
+      "note": "A follow-up agent turn in a room (src/lib/agents/rooms.ts): the web asks the next planned or asked member to answer the room's newest message. The apps do not show rooms yet, so they never send it."
+    },
     "request.privateMode": "native",
     "request.client": "native",
     "request.timeZone": "native",

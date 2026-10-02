@@ -29,6 +29,7 @@ import { diffLines } from "@/lib/line-diff";
 import type { ArtifactType } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 import type { ClientArtifact } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Apply and Dismiss, shared by the bar and the dialog so both surfaces reach
@@ -174,7 +175,7 @@ function SourceDiff({ from, to, fromLabel }: { from: string; to: string; fromLab
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <GitCompare className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
-          {fromLabel} → Juno’s suggestion
+          {fromLabel}{` → ${PRODUCT_NAME}’s suggestion`}
         </span>
         {(added > 0 || removed > 0) && (
           <>
@@ -191,7 +192,7 @@ function SourceDiff({ from, to, fromLabel }: { from: string; to: string; fromLab
         <div
           tabIndex={0}
           role="region"
-          aria-label={`Changes from ${fromLabel} to Juno’s suggestion`}
+          aria-label={`Changes from ${fromLabel} to ${PRODUCT_NAME}’s suggestion`}
           className="max-h-[min(52dvh,28rem)] overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <div className="min-w-max py-2 font-mono text-caption leading-relaxed">
@@ -302,12 +303,12 @@ export function SuggestionCompareDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(88dvh,48rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b border-border/50 p-6 pb-4 pr-14">
-          <DialogTitle>Juno’s suggestion</DialogTitle>
+          <DialogTitle>{`${PRODUCT_NAME}’s suggestion`}</DialogTitle>
           <DialogDescription>
             {view?.proposal.summary ||
               (view?.proposal.title
                 ? `A revision of “${view.proposal.title}” that has not been applied.`
-                : "A revision Juno made that has not been applied.")}
+                : `A revision ${PRODUCT_NAME} made that has not been applied.`)}
           </DialogDescription>
         </DialogHeader>
 
@@ -374,10 +375,10 @@ export function SuggestionCompareDialog({
                       alt={`v${view.current.version}, first page`}
                     />
                   </PosterFigure>
-                  <PosterFigure caption="Juno’s suggestion">
+                  <PosterFigure caption={`${PRODUCT_NAME}’s suggestion`}>
                     <SuggestedPoster
                       src={suggestionUrl(artifactId, suggestionId, "poster")}
-                      alt="Juno’s suggestion, first page"
+                      alt={`${PRODUCT_NAME}’s suggestion, first page`}
                     />
                   </PosterFigure>
                 </div>

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { THEME_COLOR } from "@/components/ui/theme-color";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The web app manifest — what "Add to Home Screen" and the install prompt
@@ -11,10 +12,10 @@ import { THEME_COLOR } from "@/components/ui/theme-color";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Alevr",
-    short_name: "Alevr",
+    name: PRODUCT_NAME,
+    short_name: PRODUCT_NAME,
     description:
-      "Every frontier AI model — Claude, GPT, Gemini and a dozen more labs — in one calm workspace, metered by what answers actually cost.",
+      "Every frontier AI model (Claude, GPT, Gemini and a dozen more labs) in one calm workspace, metered by what answers actually cost.",
     start_url: "/",
     display: "standalone",
     background_color: THEME_COLOR.light,

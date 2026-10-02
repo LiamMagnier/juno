@@ -29,3 +29,7 @@ The goal is a consistent tool experience across providers, not a promise that ev
 - The relevant real web/native/voice surfaces show the output and task state correctly. Capability coverage is recorded per provider/runtime/surface; an untested model is not marked compatible.
 
 Deliver the architecture/source map, provider capability matrix, implementation and meaningful regression/workflow evidence when the owner later resumes development. This brief itself implements none of those runtime changes.
+
+## Audit and design (2026-10-02)
+
+The audit, source map, provider capability matrix, target design and implementation lanes are in [TOOL_RUNTIME_DESIGN.md](TOOL_RUNTIME_DESIGN.md). It is a design only; no runtime code changed.

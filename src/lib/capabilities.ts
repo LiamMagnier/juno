@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Juno Release Truth & Capability Registry
  *
@@ -100,21 +102,21 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   },
   juno_code_local: {
     id: "juno_code_local",
-    name: "Juno Code Local Workbench",
+    name: `${PRODUCT_NAME} Code Local Workbench`,
     summary: "Native macOS software engineering workspace with subagents, diffs, terminal execution, and approvals.",
     status: "stable",
     platforms: ["macos"],
   },
   juno_code_remote: {
     id: "juno_code_remote",
-    name: "Juno Code Remote Supervision",
+    name: `${PRODUCT_NAME} Code Remote Supervision`,
     summary: "Cross-device monitoring and supervision of running Code tasks.",
     status: "stable",
     platforms: ["web", "macos", "ios", "ipados"],
   },
   juno_work_agent: {
     id: "juno_work_agent",
-    name: "Juno Work Agent Engine",
+    name: `${PRODUCT_NAME} Work Agent Engine`,
     summary: "Multi-step autonomous task execution with structured deliverables and action approval plane.",
     status: "stable",
     platforms: ["web", "macos", "ios", "ipados"],

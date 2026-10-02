@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionBan } from "@/lib/session";
 import { JunoMark } from "@/components/brand/logo";
 import { SuspendedActions } from "./actions";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function SuspendedPage() {
         <p className="mt-6 font-mono text-label text-destructive">Account suspended</p>
         <h1 className="mt-2 text-balance font-serif text-title">Your access has been paused</h1>
         <p className="mt-3 text-body text-muted-foreground">
-          This account has been suspended for violating Juno&rsquo;s{" "}
+          {`This account has been suspended for violating ${PRODUCT_NAME}’s`}{" "}
           <a
             href="/legal/cgu"
             className="rounded-xs text-foreground underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary focus-visible:text-primary"

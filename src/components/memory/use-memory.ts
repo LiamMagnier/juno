@@ -17,6 +17,7 @@ import {
   type ProjectSummaryData,
   type SummaryData,
 } from "@/components/memory/memory-model";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * The memory page's whole state machine, in one place.
@@ -199,8 +200,8 @@ export function useMemory(): MemoryState {
       // the pause toggle forget itself on reload.
       const ok = await saveSettings({ memoryEnabled: !nextPaused });
       if (!ok) return;
-      if (nextPaused) toast.success("Memory is off. Juno won’t use or save memories.");
-      else toast.success("Memory is on. Juno will learn from your chats.");
+      if (nextPaused) toast.success(`Memory is off. ${PRODUCT_NAME} won’t use or save memories.`);
+      else toast.success(`Memory is on. ${PRODUCT_NAME} will learn from your chats.`);
     },
     [saveSettings]
   );
@@ -470,7 +471,7 @@ export function useMemory(): MemoryState {
         });
         if (!res.ok) throw new Error();
         await reload();
-        if (!opts?.silent) toast.success("Forgotten. Juno won’t learn this again.");
+        if (!opts?.silent) toast.success(`Forgotten. ${PRODUCT_NAME} won’t learn this again.`);
         return true;
       } catch {
         toast.error("Couldn’t forget that. Nothing was changed.");
@@ -495,7 +496,7 @@ export function useMemory(): MemoryState {
         // the chat it came from is still there, so a later backfill may learn
         // the same fact again. "Forget" is the one that also blocks it, and
         // this is the moment the difference matters.
-        if (!opts?.silent) toast.success("Deleted. Juno may learn it again from the chat it came from.");
+        if (!opts?.silent) toast.success(`Deleted. ${PRODUCT_NAME} may learn it again from the chat it came from.`);
         return true;
       } catch {
         toast.error("Couldn’t delete that. Nothing was changed.");
@@ -547,7 +548,7 @@ export function useMemory(): MemoryState {
       setSummary(null);
       setProjectSummaries([]);
       setEdits([]);
-      toast.success("Memory reset. Juno starts fresh.");
+      toast.success(`Memory reset. ${PRODUCT_NAME} starts fresh.`);
       return true;
     } catch {
       toast.error("Couldn’t reset memory. Nothing was deleted.");

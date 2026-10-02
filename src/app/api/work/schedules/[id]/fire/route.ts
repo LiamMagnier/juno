@@ -76,12 +76,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const unauthorized = NextResponse.json(
     {
       error: "unauthorized",
-      message: "This automation's fire URL needs the bearer token issued for it.",
+      message: "This routine's fire URL needs the bearer token issued for it.",
     },
     { status: 401 }
   );
   const tooMany = NextResponse.json(
-    { error: "rate_limited", message: "Too many fires for this automation. Try again shortly." },
+    { error: "rate_limited", message: "Too many fires for this routine. Try again shortly." },
     { status: 429 }
   );
   if (!presented) return unauthorized;
@@ -136,14 +136,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       {
         error: "no_api_trigger",
         message:
-          "This automation no longer has an API trigger, so nothing here starts it. The token can be revoked.",
+          "This routine no longer has an API trigger, so nothing here starts it. The token can be revoked.",
       },
       { status: 409 }
     );
   }
   if (!trigger.enabled) {
     return NextResponse.json(
-      { error: "trigger_disabled", message: "This automation's API trigger is switched off." },
+      { error: "trigger_disabled", message: "This routine's API trigger is switched off." },
       { status: 409 }
     );
   }
@@ -163,7 +163,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         {
           error: "text_not_accepted",
           message:
-            "This automation runs a task, and a task's goal is fixed when it starts — so a fire cannot add to it. Only a Code automation reads text sent with a fire.",
+            "This routine runs a task, and a task's goal is fixed when it starts — so a fire cannot add to it. Only a Code routine reads text sent with a fire.",
         },
         { status: 422 }
       );
@@ -177,7 +177,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         {
           error: "text_not_accepted",
           message:
-            "This automation does not take text with a fire. Its own instructions decide what it does, and it has not been set up to read anything a caller sends.",
+            "This routine does not take text with a fire. Its own instructions decide what it does, and it has not been set up to read anything a caller sends.",
         },
         { status: 422 }
       );

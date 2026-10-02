@@ -13,6 +13,7 @@ import { PhaseOrb } from "@/components/effects/phase-orb";
 import type { UserMcpServerStatus } from "@/components/connections/types";
 import { ease, transition, duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
  * Add (or edit) a user-registered remote MCP server: name, Streamable HTTP
@@ -163,8 +164,7 @@ export function AddMcpServerDialog({
                   {isEdit ? "Edit MCP server" : "Add MCP server"}
                 </DialogPrimitive.Title>
                 <DialogPrimitive.Description className="mt-1 text-ui text-muted-foreground">
-                  Point Juno at a remote MCP server. Juno stores any Authorization header encrypted and never shows it
-                  again.
+                  {`Point ${PRODUCT_NAME} at a remote MCP server. ${PRODUCT_NAME} stores any Authorization header encrypted and never shows it again.`}
                 </DialogPrimitive.Description>
               </div>
               <DialogCloseButton className="static shrink-0" />

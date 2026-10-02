@@ -65,7 +65,7 @@ test("a call whose token asked for memory is told what Juno remembers", async ()
     assert.deepEqual(asked, [{ projectId: null }]);
     assert.equal(seeds.length, 1);
     assert.equal(seeds[0].instructions, voiceInstructions(MEMORY));
-    assert.ok(seeds[0].instructions.startsWith("You are Juno"));
+    assert.ok(seeds[0].instructions.startsWith("You are Alevr"));
     assert.ok(seeds[0].instructions.endsWith("The user likes tea."));
     assert.equal(ws.ready()[0]?.memory, true);
   } finally {

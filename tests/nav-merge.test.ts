@@ -6,6 +6,8 @@ import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
 import { designCardFace } from "@/components/chat/artifact-inline-card";
 import { readSession } from "@/components/chat/session-outputs";
 import type { ClientArtifact } from "@/types/chat";
+import * as BrandNames from "@/lib/brand/names";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /*
  * DESIGN IS A TYPE, NOT A PLACE (docs/design/artifacts-design/04-MERGE-PLAN.md
@@ -13,9 +15,10 @@ import type { ClientArtifact } from "@/types/chat";
  *
  * What the chat shell owes the merge at First light, held in one place:
  *
- *   - the sidebar has no Design door: Chat's destinations are Library,
- *     Projects and Artifacts, on the panel and the rail alike (they are one
- *     list, drawn twice);
+ *   - the sidebar has no Design door: Chat's destinations are Projects,
+ *     Library and Customize (shell contract v2; Artifacts live inside
+ *     Library), on the panel and the rail alike (they are one list, drawn
+ *     twice);
  *   - ⌘K still answers the word "design", and every design row lands on
  *     Artifacts filtered to designs, never on the retired `/design` page;
  *   - no word keys two destinations, which is how "canvas" used to offer two
@@ -33,17 +36,19 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-test("Chat's destinations are Library, Projects, Artifacts and Agents, with no Design row", () => {
+test("Chat's destinations are Projects, Library and Customize, with no Design row", () => {
   const sidebar = withoutComments(SIDEBAR);
   // The Chat list is the second array in the `isCode ? [...] : [...]` choice,
   // after Code's; read it from its first row to its close.
-  const start = sidebar.indexOf('{ href: "/library"');
-  assert.ok(start >= 0, "the Chat list starts with Library");
+  const start = sidebar.indexOf('{ href: "/projects"');
+  assert.ok(start >= 0, "the Chat list starts with Projects");
   const chat = sidebar.slice(start, sidebar.indexOf("] as const)", start));
   const hrefs = [...chat.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  // Agents (docs/design/AGENTS.md §3.1) is a place that holds things, like
-  // Projects; what this guards is that Design is not one.
-  assert.deepEqual(hrefs, ["/library", "/projects", "/artifacts", "/agents"]);
+  // The shell contract's Chat destinations, in its order (v2: Artifacts are a
+  // view of Library, agents are a section of the list, not a door).
+  assert.deepEqual(hrefs, ["/projects", "/library", "/customize"]);
+  // Library stays lit on /artifacts, so a design opened from it keeps its place.
+  assert.match(chat, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library" \|\| pathname === "\/artifacts"/);
 
   // Nowhere else in the column either: not a pinned row, not the rail.
   assert.ok(!sidebar.includes('"/design"'), "no sidebar row links to /design");
@@ -52,12 +57,27 @@ test("Chat's destinations are Library, Projects, Artifacts and Agents, with no D
 
 type PaletteRow = { id: string; label: string; keywords: string; href: string };
 
+/** A name the palette reads from the registry (src/lib/brand/names.ts). */
+function registryText(path: string): string {
+  let value: unknown = BrandNames;
+  for (const key of path.split(".")) value = (value as Record<string, unknown>)?.[key];
+  assert.equal(typeof value, "string", `${path} is a registry name`);
+  return value as string;
+}
+
+/** A label as written: "Literal", `Open ${FEATURE_NAMES.x.label}` or FEATURE_NAMES.x.label. */
+function labelText(written: string): string {
+  if (written.startsWith('"')) return written.slice(1, -1);
+  if (written.startsWith("`")) return written.slice(1, -1).replace(/\$\{([\w.]+)\}/g, (_, path) => registryText(path));
+  return registryText(written);
+}
+
 /** The palette's one-line navigation rows, as data. */
 function paletteRows(): PaletteRow[] {
   const source = withoutComments(PALETTE);
   const rows: PaletteRow[] = [];
-  const pattern = /\{ id: "([^"]+)", group: "[^"]+", label: "([^"]+)",[^\n]*?keywords: "([^"]*)",[^\n]*?go\("([^"]+)"\)/g;
-  for (const m of source.matchAll(pattern)) rows.push({ id: m[1], label: m[2], keywords: m[3], href: m[4] });
+  const pattern = /\{ id: "([^"]+)", group: "[^"]+", label: ("[^"]+"|`[^`]+`|[A-Z_]+(?:\.\w+)+),[^\n]*?keywords: "([^"]*)",[^\n]*?go\("([^"]+)"\)/g;
+  for (const m of source.matchAll(pattern)) rows.push({ id: m[1], label: labelText(m[2]), keywords: m[3], href: m[4] });
   return rows;
 }
 
@@ -77,7 +97,7 @@ test("⌘K sends every design row to Artifacts, and New design opens its presets
   const byLabel = new Map(rows.map((r) => [r.label, r]));
   assert.equal(byLabel.get("New design")?.href, "/artifacts?type=DESIGN&new=design");
   assert.equal(byLabel.get("Open Designs")?.href, "/artifacts?type=DESIGN");
-  assert.equal(byLabel.get("Open Artifacts")?.href, "/artifacts");
+  assert.equal(byLabel.get(FEATURE_NAMES.artifacts.label)?.href, "/artifacts");
 
   // "Design" is still a word that finds designs: typing it offers the list
   // and the way to make one, and nothing that leads anywhere else.

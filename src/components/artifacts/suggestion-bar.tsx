@@ -8,6 +8,7 @@ import { suggestionIsBehind } from "@/lib/artifact-card-state";
 import type { ArtifactType } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 import type { ClientArtifact, ClientArtifactSuggestion } from "@/types/chat";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export { SuggestionCompareDialog } from "@/components/artifacts/suggestion-compare-dialog";
 
@@ -80,7 +81,7 @@ export function SuggestionBar({
   return (
     <div
       role="group"
-      aria-label="Juno’s suggestion"
+      aria-label={`${PRODUCT_NAME}’s suggestion`}
       className={cn(
         // One quiet accent wash: a waiting suggestion is STATE, which is what
         // the accent is spent on, and the tint is what separates the strip
@@ -100,7 +101,7 @@ export function SuggestionBar({
       <div className={cn("flex min-w-0 flex-1 gap-2", card ? "items-start" : "basis-60 items-center")}>
         <GitCompare className={cn("size-4 shrink-0 text-primary", card && "mt-0.5")} aria-hidden />
         <p className={cn("min-w-0", card ? "text-ui" : "truncate text-caption")}>
-          <span className="font-medium text-foreground">Juno’s suggestion is waiting</span>
+          <span className="font-medium text-foreground">{`${PRODUCT_NAME}’s suggestion is waiting`}</span>
           {suggestion.summary &&
             (card ? (
               <span className="block truncate pt-0.5 text-caption text-muted-foreground">{suggestion.summary}</span>
@@ -115,7 +116,7 @@ export function SuggestionBar({
           size="sm"
           onClick={() => setCompareOpen(true)}
           disabled={busy !== null}
-          aria-label="Compare Juno’s suggestion"
+          aria-label={`Compare ${PRODUCT_NAME}’s suggestion`}
           className={control}
         >
           Compare
@@ -125,7 +126,7 @@ export function SuggestionBar({
           onClick={onApply}
           loading={busy === "apply"}
           disabled={busy !== null}
-          aria-label={behind ? "Apply Juno’s suggestion, which opens Compare first" : "Apply Juno’s suggestion"}
+          aria-label={behind ? `Apply ${PRODUCT_NAME}’s suggestion, which opens Compare first` : `Apply ${PRODUCT_NAME}’s suggestion`}
           className={control}
         >
           Apply
@@ -136,7 +137,7 @@ export function SuggestionBar({
           onClick={() => void dismiss()}
           loading={busy === "dismiss"}
           disabled={busy !== null}
-          aria-label="Dismiss Juno’s suggestion"
+          aria-label={`Dismiss ${PRODUCT_NAME}’s suggestion`}
           className={control}
         >
           Dismiss

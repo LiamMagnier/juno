@@ -62,6 +62,7 @@ import {
   type SearchWindow,
   type UnifiedSearchResult,
 } from "@/lib/search/types";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * What `decryptMessageTextSafe` returns for a body it cannot read. Duplicated
@@ -573,7 +574,7 @@ export async function runUnifiedSearch(
             title: row.conversationTitle || "New chat",
             snippet,
             href: href(`/chat/${row.conversationId}`, { m: row.id }),
-            locator: row.role === "USER" ? "You" : "Juno",
+            locator: row.role === "USER" ? "You" : PRODUCT_NAME,
             projectId: row.projectId,
             updatedAt: row.createdAt.toISOString(),
             score: 0,
@@ -603,7 +604,7 @@ export async function runUnifiedSearch(
           coverage: scanCapped
             ? partial(
                 "message",
-                `Message text is encrypted at rest, so Juno searched your ${MESSAGE_CONVERSATION_SCAN} most recent chats rather than all of them. Open a chat and press ⌘F to search it in full.`
+                `Message text is encrypted at rest, so ${PRODUCT_NAME} searched your ${MESSAGE_CONVERSATION_SCAN} most recent chats rather than all of them. Open a chat and press ⌘F to search it in full.`
               )
             : complete("message"),
         };

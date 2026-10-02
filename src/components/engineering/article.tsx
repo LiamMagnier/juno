@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * Primitives for Juno's public engineering writing.
@@ -44,8 +45,8 @@ const EVIDENCE: Record<EvidenceKind, { label: string; title: string; className: 
     className: "bg-muted text-muted-foreground",
   },
   juno: {
-    label: "In Juno",
-    title: "A fact about Juno’s own source, not about anyone else’s system.",
+    label: `In ${PRODUCT_NAME}`,
+    title: `A fact about ${PRODUCT_NAME}’s own source, not about anyone else’s system.`,
     className: "bg-primary/10 text-primary",
   },
 };
@@ -75,8 +76,7 @@ export function EvidenceKey() {
     <div className="mt-8 rounded-card border border-border bg-card p-5">
       <p className="font-mono text-label text-muted-foreground">How to read this page</p>
       <p className="mt-2 text-body text-muted-foreground">
-        Every claim about a system Juno does not own is tagged. Mixing these up is how an
-        architecture note turns into folklore.
+        {`Every claim about a system ${PRODUCT_NAME} does not own is tagged. Mixing these up is how an architecture note turns into folklore.`}
       </p>
       <dl className="mt-4 grid gap-4 sm:grid-cols-2">
         {(Object.keys(EVIDENCE) as EvidenceKind[]).map((kind) => (

@@ -60,8 +60,12 @@ try {
       });
     });
     const data = path.join(checkout, 'pgdata');
-    run(pg('initdb'), ['-U', 'postgres', '--auth=trust', '--no-locale', '-D', data]);
-    run(pg('pg_ctl'), ['start', '-D', data, '-l', path.join(checkout, 'postgres.log'), '-o', `-h 127.0.0.1 -p ${port} -F`, '-w']);
+    // UTF8 like the Docker image and production: `--no-locale` alone gives a
+    // SQL_ASCII cluster, which refuses the migrations' non-ASCII literals.
+    run(pg('initdb'), ['-U', 'postgres', '--auth=trust', '--no-locale', '--encoding=UTF8', '-D', data]);
+    // macOS postmaster refuses to start without a valid LC_ALL ("became
+    // multithreaded during startup"); C is enough for a replay.
+    run(pg('pg_ctl'), ['start', '-D', data, '-l', path.join(checkout, 'postgres.log'), '-o', `-h 127.0.0.1 -p ${port} -F`, '-w'], { env: { ...process.env, LC_ALL: process.env.LC_ALL || 'C' } });
     pgStarted = true;
     run(pg('createdb'), ['-h', '127.0.0.1', '-p', String(port), '-U', 'postgres', 'shadow']);
     url = `postgresql://postgres@127.0.0.1:${port}/shadow`;
