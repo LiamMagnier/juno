@@ -17,7 +17,7 @@ import "server-only";
  * keyring, like every other piece of conversation content at rest.
  */
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { decryptMessageTextSafe, encryptMessageText } from "@/lib/message-crypto";
 import { EXEC_LIMITS } from "@/lib/exec/config";
 import {
@@ -32,6 +32,7 @@ export type ToolRunRow = Prisma.ToolRunGetPayload<Record<string, never>>;
 
 export interface Lease {
   id: string;
+  userId: string;
   until: Date;
 }
 
@@ -74,6 +75,11 @@ export interface CreateToolRunInput {
 export async function claimToolRun(
   input: CreateToolRunInput,
 ): Promise<{ row: ToolRunRow; lease: Lease | null; created: boolean }> {
+  // The common replay is found by a read; the unique index settles a race.
+  const found = await prisma.toolRun.findFirst({
+    where: { userId: input.userId, sessionId: input.sessionId, callId: input.callId, argsDigest: input.argsDigest },
+  });
+  if (found) return existingClaim(found);
   const until = leaseUntil();
   try {
     const row = await prisma.toolRun.create({
@@ -96,58 +102,59 @@ export async function claimToolRun(
         leaseUntil: until,
       },
     });
-    return { row, lease: { id: row.id, until }, created: true };
+    return { row, lease: { id: row.id, userId: row.userId, until }, created: true };
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
   }
-  const existing = await prisma.toolRun.findUnique({
-    where: {
-      sessionId_callId_argsDigest: { sessionId: input.sessionId, callId: input.callId, argsDigest: input.argsDigest },
-    },
+  const existing = await prisma.toolRun.findFirst({
+    where: { userId: input.userId, sessionId: input.sessionId, callId: input.callId, argsDigest: input.argsDigest },
   });
-  if (!existing || existing.userId !== input.userId) {
-    throw new Error("A tool run with this key belongs to another account.");
-  }
+  if (!existing) throw new Error("A tool run with this key belongs to another account.");
+  return existingClaim(existing);
+}
+
+async function existingClaim(existing: ToolRunRow): Promise<{ row: ToolRunRow; lease: Lease | null; created: boolean }> {
   if (isTerminal(existing.status)) return { row: existing, lease: null, created: false };
-  const lease = await takeExpiredLease(existing.id);
-  return { row: (await prisma.toolRun.findUnique({ where: { id: existing.id } })) ?? existing, lease, created: false };
+  const lease = await takeExpiredLease(existing.id, existing.userId);
+  return { row: (await getToolRun(existing.id, existing.userId)) ?? existing, lease, created: false };
 }
 
 /** Take a non-terminal row whose lease lapsed (or was released). */
-export async function takeExpiredLease(id: string, now = new Date()): Promise<Lease | null> {
+export async function takeExpiredLease(id: string, userId: string, now = new Date()): Promise<Lease | null> {
   const until = leaseUntil(now.getTime());
   const result = await prisma.toolRun.updateMany({
     where: {
       id,
+      userId,
       status: { in: ["queued", "running"] },
       OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
     },
     data: { leaseUntil: until },
   });
-  return result.count === 1 ? { id, until } : null;
+  return result.count === 1 ? { id, userId, until } : null;
 }
 
 /** Extend the lease; null when somebody else took it over. */
 export async function renewLease(lease: Lease): Promise<Lease | null> {
   const until = leaseUntil();
   const result = await prisma.toolRun.updateMany({
-    where: { id: lease.id, leaseUntil: lease.until, status: { in: ["queued", "running"] } },
+    where: { id: lease.id, userId: lease.userId, leaseUntil: lease.until, status: { in: ["queued", "running"] } },
     data: { leaseUntil: until },
   });
-  return result.count === 1 ? { id: lease.id, until } : null;
+  return result.count === 1 ? { id: lease.id, userId: lease.userId, until } : null;
 }
 
 /** Let go so check_run or the sweep can take over (a call answered "still running"). */
 export async function releaseLease(lease: Lease): Promise<void> {
   await prisma.toolRun.updateMany({
-    where: { id: lease.id, leaseUntil: lease.until },
+    where: { id: lease.id, userId: lease.userId, leaseUntil: lease.until },
     data: { leaseUntil: new Date(Date.now() - 1) },
   });
 }
 
 export async function markStarted(lease: Lease, remoteRunId: string): Promise<boolean> {
   const result = await prisma.toolRun.updateMany({
-    where: { id: lease.id, leaseUntil: lease.until },
+    where: { id: lease.id, userId: lease.userId, leaseUntil: lease.until },
     data: { remoteRunId, status: "running", startedAt: new Date() },
   });
   return result.count === 1;
@@ -181,11 +188,14 @@ export interface SettleInput {
   finishedLate?: boolean;
 }
 
-/** Settle the row. Only the lease holder can (null lease: an unstarted refusal). */
-export async function settleToolRun(lease: Lease | null, id: string, input: SettleInput): Promise<boolean> {
-  const where: Prisma.ToolRunWhereInput = lease
-    ? { id, leaseUntil: lease.until, status: { in: ["queued", "running"] } }
-    : { id, status: { in: ["queued", "running"] } };
+/** Settle the row. Only the lease holder can. */
+export async function settleToolRun(lease: Lease, input: SettleInput): Promise<boolean> {
+  const where: Prisma.ToolRunWhereInput = {
+    id: lease.id,
+    userId: lease.userId,
+    leaseUntil: lease.until,
+    status: { in: ["queued", "running"] },
+  };
   const result = await prisma.toolRun.updateMany({
     where,
     data: {
@@ -208,8 +218,11 @@ export async function settleToolRun(lease: Lease | null, id: string, input: Sett
   return result.count === 1;
 }
 
-export async function recordInputs(id: string, inputs: unknown[]): Promise<void> {
-  await prisma.toolRun.update({ where: { id }, data: { inputs: inputs as Prisma.InputJsonValue } });
+export async function recordInputs(lease: Lease, inputs: unknown[]): Promise<void> {
+  await prisma.toolRun.updateMany({
+    where: { id: lease.id, userId: lease.userId },
+    data: { inputs: inputs as Prisma.InputJsonValue },
+  });
 }
 
 export function readOutputs(row: Pick<ToolRunRow, "outputs">): StoredOutputs {
@@ -242,17 +255,21 @@ export async function findOwnRun(input: {
   return null;
 }
 
-export async function getToolRun(id: string): Promise<ToolRunRow | null> {
-  return prisma.toolRun.findUnique({ where: { id } });
+export async function getToolRun(id: string, userId: string): Promise<ToolRunRow | null> {
+  return prisma.toolRun.findFirst({ where: { id, userId } });
 }
 
-export async function countSessionRuns(sessionId: string): Promise<number> {
-  return prisma.toolRun.count({ where: { sessionId } });
+export async function countSessionRuns(sessionId: string, userId: string): Promise<number> {
+  return prisma.toolRun.count({ where: { sessionId, userId } });
 }
 
-/** Non-terminal rows whose lease lapsed: the sweep's work list. */
+/**
+ * Non-terminal rows whose lease lapsed: the sweep's work list. Across accounts
+ * by design (the scheduler holds no user), so through `prismaUnguarded`; every
+ * write the sweep then makes is scoped to the row's own userId.
+ */
 export async function findAbandonedRuns(now: Date, limit: number): Promise<ToolRunRow[]> {
-  return prisma.toolRun.findMany({
+  return prismaUnguarded.toolRun.findMany({
     where: {
       status: { in: ["queued", "running"] },
       OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
@@ -263,8 +280,8 @@ export async function findAbandonedRuns(now: Date, limit: number): Promise<ToolR
 }
 
 /** Mark metered once (the ledger row also carries an idempotency key). */
-export async function claimMetering(id: string): Promise<boolean> {
-  const result = await prisma.toolRun.updateMany({ where: { id, meteredAt: null }, data: { meteredAt: new Date() } });
+export async function claimMetering(id: string, userId: string): Promise<boolean> {
+  const result = await prisma.toolRun.updateMany({ where: { id, userId, meteredAt: null }, data: { meteredAt: new Date() } });
   return result.count === 1;
 }
 

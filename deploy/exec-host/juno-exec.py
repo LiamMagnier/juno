@@ -397,8 +397,10 @@ class Service:
         root = self.session_dir(session)
         target = os.path.join(root, "skills", slug)
         marker = os.path.join(root, "skills", "." + slug + ".digest")
-        if os.path.isdir(target) and os.path.isfile(marker) and open(marker, encoding="utf-8").read() == digest:
-            return {"slug": slug, "sha256": digest, "files": None, "reused": True}
+        if os.path.isdir(target) and os.path.isfile(marker):
+            with open(marker, encoding="utf-8") as file:
+                if file.read() == digest:
+                    return {"slug": slug, "sha256": digest, "files": None, "reused": True}
         if len([entry for entry in os.listdir(os.path.join(root, "skills")) if not entry.startswith(".")]) >= LIMITS["maxSkills"] and not os.path.isdir(target):
             raise Refused(413, "too_many_skills", "Too many skill bundles in this session")
         staging = os.path.join(root, "skills", ".staging-" + secrets.token_hex(6))

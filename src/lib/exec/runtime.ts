@@ -358,7 +358,7 @@ async function drive(input: DriveInput): Promise<ExecToolOutcome> {
       await sleep(1000, input.signal);
     }
     lease = await renewLease(lease);
-    if (!lease) return waitForOtherHolder(row.id, input);
+    if (!lease) return waitForOtherHolder(row.id, row.userId, input);
     if (snapshot && input.onProgress && Date.now() - lastProgress >= 1000 && !isHostTerminal(snapshot.status)) {
       lastProgress = Date.now();
       input.onProgress({
@@ -378,7 +378,7 @@ async function drive(input: DriveInput): Promise<ExecToolOutcome> {
     // Still running (or the host stopped answering): let go, say so, and let
     // check_run or the sweep settle it. Never a success claim.
     await releaseLease(lease);
-    const current = (await getToolRun(row.id)) ?? row;
+    const current = (await getToolRun(row.id, row.userId)) ?? row;
     const elapsed = Date.now() - startedAt;
     const outcome = await outcomeFromRow({ ...current, status: "running", durationMs: elapsed }, {
       checkRunAvailable: input.checkRunAvailable,
@@ -421,7 +421,7 @@ async function cancelAndSettle(input: DriveInput, lease: Lease): Promise<ExecToo
 }
 
 async function settleUnknown(lease: Lease, row: ToolRunRow, reason: string, input: Pick<DriveInput, "checkRunAvailable">): Promise<ExecToolOutcome> {
-  await settleToolRun(lease, row.id, {
+  await settleToolRun(lease, {
     status: "outcome_unknown",
     exitCode: null,
     durationMs: row.startedAt ? Date.now() - row.startedAt.getTime() : null,
@@ -433,15 +433,19 @@ async function settleUnknown(lease: Lease, row: ToolRunRow, reason: string, inpu
     logKey: row.logKey,
     outputs: readOutputs(row),
   });
-  const settled = (await getToolRun(row.id)) ?? row;
+  const settled = (await getToolRun(row.id, row.userId)) ?? row;
   return outcomeFromRow(settled, { checkRunAvailable: input.checkRunAvailable });
 }
 
-async function waitForOtherHolder(id: string, input: Pick<DriveInput, "deadline" | "signal" | "checkRunAvailable" | "vision">): Promise<ExecToolOutcome> {
-  let row = await getToolRun(id);
+async function waitForOtherHolder(
+  id: string,
+  userId: string,
+  input: Pick<DriveInput, "deadline" | "signal" | "checkRunAvailable" | "vision">,
+): Promise<ExecToolOutcome> {
+  let row = await getToolRun(id, userId);
   while (row && !isTerminal(row.status) && Date.now() < input.deadline && !input.signal?.aborted) {
     await sleep(1000, input.signal);
-    row = await getToolRun(id);
+    row = await getToolRun(id, userId);
   }
   if (!row) return refused("not_found", "That run no longer exists.");
   if (!isTerminal(row.status)) {
@@ -479,7 +483,7 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
     images = captured.images;
   }
   const logKey = await storeFullLogs({ client, run: snapshot, userId: row.userId, toolRunId: row.id }).catch(() => null);
-  const settledOk = await settleToolRun(lease, row.id, {
+  const settledOk = await settleToolRun(lease, {
     status,
     exitCode: snapshot.exitCode,
     durationMs: snapshot.durationMs,
@@ -492,7 +496,7 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
     outputs: { files, skipped, images: files.filter((file) => file.kind === "IMAGE").map((file) => file.attachmentId) },
     finishedLate: input.finishedLate,
   });
-  const settled = (await getToolRun(row.id)) ?? row;
+  const settled = (await getToolRun(row.id, row.userId)) ?? row;
   if (!settledOk && !isTerminal(settled.status)) {
     return outcomeFromRow({ ...settled, status: "running" }, { checkRunAvailable: input.checkRunAvailable });
   }
@@ -501,7 +505,7 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
 }
 
 async function meter(row: ToolRunRow): Promise<void> {
-  if (!row.startedAt || !(await claimMetering(row.id))) return;
+  if (!row.startedAt || !(await claimMetering(row.id, row.userId))) return;
   const microUsd = feeFor(row);
   await recordSpend({
     userId: row.userId,
@@ -585,12 +589,12 @@ export async function executeRunCode(
   if (!claim.created && isTerminal(claim.row.status)) {
     return outcomeFromRow(claim.row, { vision, checkRunAvailable, replayed: true });
   }
-  if (!claim.lease) return waitForOtherHolder(claim.row.id, { deadline, signal: ctx.signal, checkRunAvailable, vision });
+  if (!claim.lease) return waitForOtherHolder(claim.row.id, ctx.userId, { deadline, signal: ctx.signal, checkRunAvailable, vision });
   let lease: Lease = claim.lease;
   let row = claim.row;
 
-  if (claim.created && (await countSessionRuns(ctx.sessionId)) > runBudget) {
-    await settleToolRun(lease, row.id, refusedSettlement(`More than ${runBudget} runs in one turn.`));
+  if (claim.created && (await countSessionRuns(ctx.sessionId, ctx.userId)) > runBudget) {
+    await settleToolRun(lease, refusedSettlement(`More than ${runBudget} runs in one turn.`));
     return refused("capability_unavailable", `This turn has already run code ${runBudget} times, which is the limit. Nothing more was run; answer with what you have.`);
   }
 
@@ -598,7 +602,7 @@ export async function executeRunCode(
   if (!row.remoteRunId) {
     try {
       const inputRecord = await uploadInputs(client, remoteSession, inputs, ctx.signal);
-      await recordInputs(row.id, inputRecord);
+      await recordInputs(lease, inputRecord);
       const skillSlugs: string[] = [];
       for (const mount of ctx.skills ?? []) {
         await client.putSkill(remoteSession, mount.slug, await mount.openBundle(), ctx.signal);
@@ -620,7 +624,7 @@ export async function executeRunCode(
       if (ctx.signal?.aborted) {
         // Stopped before the host confirmed a start. The same key is safe to
         // reuse, but nobody is waiting, so nothing is started on our behalf.
-        await settleToolRun(lease, row.id, refusedSettlement("Stopped before the run started."));
+        await settleToolRun(lease, refusedSettlement("Stopped before the run started."));
         const text = "Stopped before the run started. Nothing was run.";
         return { status: "cancelled", text, body: text, error: { code: "cancelled" } };
       }
@@ -637,11 +641,11 @@ export async function executeRunCode(
           : error instanceof ExecUnavailableError
             ? "The code sandbox is not reachable right now, so nothing was run."
             : `The run could not be started: ${error instanceof Error ? error.message : String(error)}`;
-      await settleToolRun(lease, row.id, refusedSettlement(reason));
+      await settleToolRun(lease, refusedSettlement(reason));
       return refused(error instanceof ExecUnavailableError ? "capability_unavailable" : "sandbox_error", `${reason} Tell the user plainly; nothing was run.`);
     }
-    if (!(await markStarted(lease, snapshot.id))) return waitForOtherHolder(row.id, { deadline, signal: ctx.signal, checkRunAvailable, vision });
-    row = (await getToolRun(row.id)) ?? row;
+    if (!(await markStarted(lease, snapshot.id))) return waitForOtherHolder(row.id, ctx.userId, { deadline, signal: ctx.signal, checkRunAvailable, vision });
+    row = (await getToolRun(row.id, row.userId)) ?? row;
     lease = (await renewLease(lease)) ?? lease;
   }
 
@@ -716,14 +720,14 @@ export async function executeCheckRun(raw: Record<string, unknown>, ctx: ExecCal
   }
 
   const deadline = Date.now() + parsed.wait_seconds * 1000;
-  const lease = await takeExpiredLease(row.id);
+  const lease = await takeExpiredLease(row.id, row.userId);
   const endpoint = execEndpoint();
   if (!lease || !endpoint || !row.remoteRunId) {
-    return waitForOtherHolder(row.id, { deadline, signal: ctx.signal, checkRunAvailable: true, vision });
+    return waitForOtherHolder(row.id, row.userId, { deadline, signal: ctx.signal, checkRunAvailable: true, vision });
   }
   return drive({
     client: new JunoExecClient(endpoint),
-    row: (await getToolRun(row.id)) ?? row,
+    row: (await getToolRun(row.id, row.userId)) ?? row,
     lease,
     snapshot: null,
     surface: row.surface as ExecSurface,
@@ -791,10 +795,10 @@ export async function sweepToolRuns(options: { now?: Date; limit?: number } = {}
   const rows = await findAbandonedRuns(now, options.limit ?? 20);
   const endpoint = execEndpoint();
   for (const candidate of rows) {
-    const lease = await takeExpiredLease(candidate.id, now);
+    const lease = await takeExpiredLease(candidate.id, candidate.userId, now);
     if (!lease) continue;
     result.examined += 1;
-    const row = (await getToolRun(candidate.id)) ?? candidate;
+    const row = (await getToolRun(candidate.id, candidate.userId)) ?? candidate;
     if (!endpoint || !row.remoteRunId) {
       await settleUnknown(lease, row, row.remoteRunId
         ? "The code sandbox is no longer configured, so this run's outcome is unknown."
