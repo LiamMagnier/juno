@@ -112,6 +112,27 @@ const EXPECTED_ROWS: (string | number)[][] = [
   ["All regions", 4700.5, 4971.15, 5020.85, 5610, 20302.5],
 ];
 
+// No database needed: the registry run_code reads is keyed by account, because a
+// chat session id is the client-chosen generation id.
+test("skill mounts are keyed by account: the same session id under another account sees and clears nothing", async () => {
+  const { clearSkillMounts, mountSkill, skillMountFor, skillMountsFor } = await import("@/lib/skills/mount");
+  const sessionId = `gen_${randomUUID()}`;
+  const mount = skillMountFor({
+    slug: "quarterly-summary",
+    skillVersionId: "v1",
+    bundleKey: "skill-bundles/a/x.tar",
+    bundleDigest: "a".repeat(64),
+    load: async () => new Uint8Array(0),
+  });
+  assert.equal(mountSkill("chat", "account-a", sessionId, mount), true);
+  assert.equal(mountSkill("chat", "", sessionId, mount), false, "no account, no mount");
+  assert.deepEqual(skillMountsFor("chat", "account-b", sessionId), []);
+  clearSkillMounts("chat", "account-b", sessionId);
+  assert.equal(skillMountsFor("chat", "account-a", sessionId).length, 1);
+  clearSkillMounts("chat", "account-a", sessionId);
+  assert.deepEqual(skillMountsFor("chat", "account-a", sessionId), []);
+});
+
 if (!URL) {
   test("skill workflows database suite is skipped without JUNO_SKILLS_TEST_DATABASE_URL", { skip: true }, () => {});
 } else {
@@ -243,7 +264,7 @@ if (!URL) {
       code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
     });
     assert.equal(armed.armed, null);
-    assert.deepEqual(skillMountsFor("chat", sessionId), []);
+    assert.deepEqual(skillMountsFor("chat", owner, sessionId), []);
 
     // Even vouched for and opted in, the version still waits on its scripts.
     await db.workSkill.update({ where: { id: skillId }, data: { trust: "user_authored", autoSelect: true } });
@@ -256,7 +277,7 @@ if (!URL) {
       assert.equal(loaded.status, "failed");
       assert.equal(loaded.error?.code, "not_permitted");
       assert.match(loaded.text, /none of its scripts ran/);
-      assert.deepEqual(skillMountsFor("chat", sessionId), [], "nothing mounted");
+      assert.deepEqual(skillMountsFor("chat", owner, sessionId), [], "nothing mounted");
       const read = await discovered.readSkillFile({ skill: "quarterly-summary", path: "scripts/build.py" });
       assert.equal(read.status, "failed", "an unloaded skill's files are not readable");
       await discovered.close();
@@ -340,11 +361,12 @@ if (!URL) {
       assert.ok(style.text.includes(UNTRUSTED_OPEN), "an imported skill's file is enveloped");
       assert.match(style.body, /named \*\*Summary\*\*/);
 
-      const mounts = skillMountsFor("chat", sessionId);
+      const mounts = skillMountsFor("chat", owner, sessionId);
       assert.equal(mounts.length, 1);
       assert.equal(mounts[0].bundleDigest, digest);
       const version = await db.workSkillVersion.findFirstOrThrow({ where: { skillId, bundleDigest: digest }, orderBy: { version: "desc" } });
       assert.equal(mounts[0].skillVersionId, version.id);
+      assert.deepEqual(skillMountsFor("chat", stranger, sessionId), [], "another account with the same session id sees no mounts");
 
       const run = await runInSandbox({ mounts, inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
       try {
@@ -366,7 +388,7 @@ if (!URL) {
     } finally {
       await opened.close?.();
     }
-    assert.deepEqual(skillMountsFor("chat", sessionId), [], "closing the turn drops its mounts");
+    assert.deepEqual(skillMountsFor("chat", owner, sessionId), [], "closing the turn drops its mounts");
   });
 
   sandboxTest("use_skill: opted in, the model finds it by name, loads it, it is audited with its digest, and its script runs", async () => {
@@ -403,7 +425,7 @@ if (!URL) {
       assert.equal(detail.skillSlug, "quarterly-summary");
       assert.equal(detail.generationId, sessionId);
 
-      const run = await runInSandbox({ mounts: skillMountsFor("chat", sessionId), inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
+      const run = await runInSandbox({ mounts: skillMountsFor("chat", owner, sessionId), inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
       try {
         assert.equal(run.exitCode, 0, run.stderr);
         assert.deepEqual((await readSummarySheet(new Uint8Array(readFileSync(join(run.work, "out.xlsx"))))).rows, EXPECTED_ROWS);
@@ -429,7 +451,7 @@ if (!URL) {
       assert.doesNotMatch(loaded.output, /<<untrusted/, "the Work session envelopes by provenance; the tool does not");
       const style = await readSkillFile.execute({ skill: "quarterly-summary", path: "reference/style.md" });
       assert.match(style.output, /Freeze the header row/);
-      const mounts = skillMountsFor("work", runId);
+      const mounts = skillMountsFor("work", owner, runId);
       assert.equal(mounts.length, 1);
       const run = await runInSandbox({ mounts, inputs: { "sales.csv": salesCsv }, language: "bash", code: RUN_SCRIPT });
       try {
@@ -441,7 +463,7 @@ if (!URL) {
     } finally {
       await tools.close();
     }
-    assert.deepEqual(skillMountsFor("work", runId), []);
+    assert.deepEqual(skillMountsFor("work", owner, runId), []);
 
     // The runner applied the skill itself (by /slug in the goal) and pinned a
     // version: that version is armed, readable and mounted, even though the
@@ -454,7 +476,7 @@ if (!URL) {
       assert.equal(pinned.session.armed?.version.version, 1);
       assert.match(pinned.promptSection ?? "", /About the \/quarterly-summary skill in force/);
       const version1 = await db.workSkillVersion.findUniqueOrThrow({ where: { skillId_version: { skillId, version: 1 } } });
-      assert.deepEqual(skillMountsFor("work", pinnedRun).map((mount) => mount.skillVersionId), [version1.id]);
+      assert.deepEqual(skillMountsFor("work", owner, pinnedRun).map((mount) => mount.skillVersionId), [version1.id]);
       const readSkillFile = pinned.tools.find((tool) => tool.spec.name === "read_skill_file")!;
       assert.match((await readSkillFile.execute({ skill: "quarterly-summary", path: "reference/style.md" })).output, /Freeze the header row/);
     } finally {
@@ -522,7 +544,7 @@ if (!URL) {
       userId: owner, surface: "chat", sessionId, projectId: null, armedSlug: "phone-home", code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
     });
     try {
-      const run = await runInSandbox({ mounts: skillMountsFor("chat", sessionId), inputs: {}, language: "bash", code: "python3 /skills/phone-home/scripts/call.py" });
+      const run = await runInSandbox({ mounts: skillMountsFor("chat", owner, sessionId), inputs: {}, language: "bash", code: "python3 /skills/phone-home/scripts/call.py" });
       run.cleanup();
       assert.equal(run.exitCode, 7, `${run.stdout}\n${run.stderr}`);
       assert.match(run.stderr, /refused \('1\.1\.1\.1', 80\)/);

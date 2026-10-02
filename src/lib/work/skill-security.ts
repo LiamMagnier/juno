@@ -312,7 +312,10 @@ const BUNDLE_SCRIPT_RULES: Array<{ code: string; pattern: RegExp; message: strin
   },
   {
     code: "bundle_encoded_payload",
-    pattern: /(?:b64decode|base64\s+-d|atob\s*\(|Buffer\.from\([^)]{0,80}["']base64["']|codecs\.decode\([^)]{0,80}rot|[A-Za-z0-9+/]{400,}={0,2})/,
+    // The long-run half (400+ base64 characters) is `hasLongBase64Run`, not a
+    // `{400,}` alternative here: that alternative is retried at every offset,
+    // so a crafted 5 MB bundle of 399-character runs cost seconds of CPU per scan.
+    pattern: /(?:b64decode|base64\s+-d|atob\s*\(|Buffer\.from\([^)]{0,80}["']base64["']|codecs\.decode\([^)]{0,80}rot)/,
     message: "A script decodes an encoded payload or carries a long encoded string.",
   },
 ];
@@ -327,6 +330,24 @@ const BUNDLE_SCRIPT_RULES: Array<{ code: string; pattern: RegExp; message: strin
  * enveloped when read, and a style guide that happens to say "do not tell" is
  * not an attack.
  */
+const LONG_ENCODED_RUN = 400;
+
+/** One pass: whether `text` holds 400 or more base64 characters in a row. */
+export function hasLongBase64Run(text: string, min = LONG_ENCODED_RUN): boolean {
+  let run = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    const base64 =
+      (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 43 || c === 47;
+    if (base64) {
+      if (++run >= min) return true;
+    } else {
+      run = 0;
+    }
+  }
+  return false;
+}
+
 function scanBundleFiles(files: readonly SkillSecurityBundleFile[]): { findings: SkillSecurityFinding[]; scanned: number } {
   const findings: SkillSecurityFinding[] = [];
   let scanned = 0;
@@ -338,7 +359,7 @@ function scanBundleFiles(files: readonly SkillSecurityBundleFile[]): { findings:
     if (file.kind === "script") {
       const hits = new Set<string>();
       for (const rule of BUNDLE_SCRIPT_RULES) {
-        if (rule.pattern.test(text)) {
+        if (rule.pattern.test(text) || (rule.code === "bundle_encoded_payload" && hasLongBase64Run(text))) {
           hits.add(rule.code);
           findings.push({ code: rule.code, severity: "warning", field: "bundle", message: rule.message, path: file.path });
         }

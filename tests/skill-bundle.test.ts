@@ -33,7 +33,7 @@ import {
   unpackTar,
   type SkillBundleInputFile,
 } from "@/lib/skills/bundle";
-import { bundleRequiresConsent, carriedBundleScan, scanSkillVersion } from "@/lib/work/skill-security";
+import { bundleRequiresConsent, carriedBundleScan, hasLongBase64Run, scanSkillVersion } from "@/lib/work/skill-security";
 import {
   emptySkillContract,
   resolveSkillPermissions,
@@ -734,4 +734,37 @@ test("the two specs are portable, read-only, and answer bad arguments without ca
   await use.execute({ name: "quarterly-summary" }, ctx);
   await read.execute({ skill: "quarterly-summary", path: "reference/style.md", offset: 12.7 }, ctx);
   assert.deepEqual(calls, ["load:quarterly-summary", "read:quarterly-summary:reference/style.md:12"]);
+});
+
+test("a long encoded string is still found, and a crafted bundle of near-miss runs scans in linear time", () => {
+  assert.equal(hasLongBase64Run("x = '" + "QUJD".repeat(125) + "'"), true, "500 base64 characters in a row");
+  assert.equal(hasLongBase64Run("A".repeat(399) + "!" + "A".repeat(399)), false, "two runs of 399 are not one of 400");
+  const payload = scanSkillVersion({
+    name: "x",
+    description: "x",
+    instructions: "x",
+    requestedTools: [],
+    contract: emptySkillContract(),
+    bundle: { digest: "0".repeat(64), files: [{ path: "scripts/a.py", kind: "script", text: `blob = "${"QUJD".repeat(150)}"` }] },
+  });
+  assert.ok(payload.findings.some((finding) => finding.code === "bundle_encoded_payload"));
+
+  // 200 scripts of 25,000 characters made of 399-character runs: the shape
+  // that made a `{400,}` alternative retry at every offset (about 2 s a scan).
+  const nearMiss = ("A".repeat(399) + "!").repeat(62);
+  const started = Date.now();
+  const scan = scanSkillVersion({
+    name: "x",
+    description: "x",
+    instructions: "x",
+    requestedTools: [],
+    contract: emptySkillContract(),
+    bundle: {
+      digest: "0".repeat(64),
+      files: Array.from({ length: 200 }, (_, i) => ({ path: `scripts/s${i}.py`, kind: "script" as const, text: nearMiss })),
+    },
+  });
+  const elapsed = Date.now() - started;
+  assert.ok(!scan.findings.some((finding) => finding.code === "bundle_encoded_payload"));
+  assert.ok(elapsed < 600, `scanned in ${elapsed} ms`);
 });

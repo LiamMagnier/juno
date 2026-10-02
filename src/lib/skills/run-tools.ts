@@ -7,7 +7,7 @@
  * writes `skill_applied`. `skillToolsFor` adds what a run could not do before:
  * the applied skill's folder becomes readable and, when the run carries
  * `run_code`, mounted read-only at `/skills/<slug>` in the run's sandbox
- * session (keyed by the run id, `skillMountsFor("work", runId)`); and any other skill
+ * session (keyed by the run id, `skillMountsFor("work", userId, runId)`); and any other skill
  * offered to the run can be loaded by name, with the same rules and sentences
  * as chat (`workflow.ts`).
  *

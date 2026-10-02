@@ -191,6 +191,7 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
     if (input.code === false || !version.bundle) return false;
     return mountSkill(
       input.surface,
+      input.userId,
       input.sessionId,
       skillMountFor({
         slug: row.slug,
@@ -358,7 +359,7 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
     },
 
     async close() {
-      clearSkillMounts(input.surface, input.sessionId);
+      clearSkillMounts(input.surface, input.userId, input.sessionId);
       tars.clear();
     },
   };
