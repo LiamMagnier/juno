@@ -49,7 +49,9 @@ function SettingsPageContent() {
         </div>
       </aside>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div className="@container/pane mx-auto w-full max-w-[44rem] px-5 pb-16 pt-8 sm:px-10 md:pt-12">
+        {/* Keyed on the section: a new section rises in under a still rail,
+            rather than its rows swapping in place. */}
+        <div key={section} className="@container/pane mx-auto w-full max-w-[44rem] px-5 pb-16 pt-8 motion-safe:animate-rise-in sm:px-10 md:pt-12">
           <SettingsPane section={section} />
         </div>
       </main>

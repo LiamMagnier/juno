@@ -117,13 +117,21 @@ async function readRefusal(res: Response): Promise<{ message: string; code?: str
   return { message: data?.error || GENERIC_FAILURE, code: data?.code };
 }
 
+/**
+ * The last list this tab loaded, kept across mounts. Writes go through the
+ * hook and end in a reload, which refreshes it; a full page load starts clean.
+ */
+let lastLoad: { memories: Memory[]; summary: SummaryData | null; projectSummaries: ProjectSummaryData[] } | null = null;
+
 export function useMemory(): MemoryState {
   const { user, settings } = useApp();
   const saveSettings = useSettingsSave();
 
-  const [memories, setMemories] = React.useState<Memory[] | null>(null);
-  const [summary, setSummary] = React.useState<SummaryData | null>(null);
-  const [projectSummaries, setProjectSummaries] = React.useState<ProjectSummaryData[]>([]);
+  // Seeded from the last load this tab made: coming back to Memory from
+  // another Customize tab shows it at once and refreshes behind.
+  const [memories, setMemories] = React.useState<Memory[] | null>(() => lastLoad?.memories ?? null);
+  const [summary, setSummary] = React.useState<SummaryData | null>(() => lastLoad?.summary ?? null);
+  const [projectSummaries, setProjectSummaries] = React.useState<ProjectSummaryData[]>(() => lastLoad?.projectSummaries ?? []);
   const [edits, setEdits] = React.useState<MemoryEditRecord[]>([]);
   const [loadError, setLoadError] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -150,7 +158,7 @@ export function useMemory(): MemoryState {
   // reload behind an edit, a forget, a move) must not swap a page of rows the
   // reader can see for "Couldn't load your memory. Nothing has been changed",
   // which is false the moment the change it followed went through.
-  const loadedOnce = React.useRef(false);
+  const loadedOnce = React.useRef(lastLoad !== null);
 
   const reload = React.useCallback(async () => {
     try {
@@ -160,6 +168,11 @@ export function useMemory(): MemoryState {
       setMemories(data.memories ?? []);
       setSummary(data.summary ?? null);
       setProjectSummaries(data.projectSummaries ?? []);
+      lastLoad = {
+        memories: data.memories ?? [],
+        summary: data.summary ?? null,
+        projectSummaries: data.projectSummaries ?? [],
+      };
       setLoadError(false);
       loadedOnce.current = true;
     } catch {

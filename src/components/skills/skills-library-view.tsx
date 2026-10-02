@@ -10,7 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GitHubMark } from "@/components/connections/connector-logos";
-import { AppPageHeader } from "@/components/app/app-page";
+import { EditorialSection, PageHero } from "@/components/app/editorial";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { staggerDelay } from "@/lib/motion";
@@ -167,9 +167,18 @@ export function SkillsLibraryView({
   const filtered = library ? filterLibrary(library, query) : null;
   const hasAny = library !== null && (library.yours.length > 0 || library.sources.length > 0);
 
+  const allSkills = library ? [...library.yours, ...library.sources.flatMap((source) => source.skills)] : [];
+  const figures = hasAny
+    ? [
+        { label: "Skills", value: library?.total ?? allSkills.length },
+        { label: "Turned on", value: allSkills.filter((skill) => skill.enabled).length },
+        { label: "Sources", value: library?.sources.length ?? 0 },
+      ]
+    : undefined;
+
   return (
     <CustomizeFrame current="skills">
-      <AppPageHeader
+      <PageHero
         heading="Skills"
         lede={`Instructions ${PRODUCT_NAME} follows for a specific job. Type / in chat to use one.`}
         actions={
@@ -179,7 +188,9 @@ export function SkillsLibraryView({
             onCreateWithJuno={actions.onCreateWithJuno}
           />
         }
+        figures={figures}
       />
+      <div className="h-14" aria-hidden="true" />
 
       {error !== null && library === null ? (
         <LoadError
@@ -193,7 +204,7 @@ export function SkillsLibraryView({
         <SkillsEmptyState onImport={actions.onImport} onWrite={actions.onWrite} />
       ) : (
         <>
-          <label className="relative mb-7 block">
+          <label className="relative mb-10 block @container/search">
             <span className="sr-only">Search skills</span>
             <Search
               aria-hidden="true"
@@ -310,19 +321,14 @@ function LibrarySection({
   count: number;
   children: React.ReactNode;
 }) {
-  const id = React.useId();
   return (
-    <section aria-labelledby={id} className="mb-8 last:mb-0">
-      <h2 id={id} className="mb-2.5 flex items-baseline gap-2 text-body font-semibold text-foreground">
-        {title}
-        <span className="text-ui font-normal tabular-nums text-muted-foreground">{count}</span>
-      </h2>
+    <EditorialSection title={title} meta={<span className="tabular-nums">{count}</span>} className="mb-16 last:mb-0">
       {/* The container draws the hairlines and clips the rows' hover fill to
           its corners; the rows themselves stay square and flat. */}
-      <div role="list" className="overflow-hidden rounded-card border border-border divide-y divide-border/70">
+      <div role="list" className="overflow-hidden rounded-card border border-border/70 divide-y divide-border/60">
         {children}
       </div>
-    </section>
+    </EditorialSection>
   );
 }
 

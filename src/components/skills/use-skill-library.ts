@@ -34,6 +34,9 @@ function nextTicket(sequence: Map<string, number>, key: string): number {
   return ticket;
 }
 
+/** The last library this tab loaded, kept across mounts (see useSkillLibrary). */
+let lastLibrary: SkillLibrary | null = null;
+
 /**
  * The library, read once and kept in step with what the reader switches.
  *
@@ -49,12 +52,21 @@ function nextTicket(sequence: Map<string, number>, key: string): number {
  * and "Juno could not find out" are different pages.
  */
 export function useSkillLibrary() {
-  const [library, setLibrary] = React.useState<SkillLibrary | null>(null);
+  // Seeded from the last load this tab made, so returning to Skills shows the
+  // library at once and refreshes it behind.
+  const [library, setLibraryState] = React.useState<SkillLibrary | null>(() => lastLibrary);
+  const setLibrary = React.useCallback((next: React.SetStateAction<SkillLibrary | null>) => {
+    setLibraryState((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      if (value !== null) lastLibrary = value;
+      return value;
+    });
+  }, []);
   const [error, setError] = React.useState<string | null>(null);
   const sequence = React.useRef(new Map<string, number>());
 
   // Whether a library is on screen, read by `load` without depending on it.
-  const shown = React.useRef(false);
+  const shown = React.useRef(lastLibrary !== null);
 
   const load = React.useCallback(async (): Promise<SkillLibrary | null> => {
     setError(null);
@@ -74,7 +86,7 @@ export function useSkillLibrary() {
     // quietly go on showing what was there before the change.
     if (shown.current) toast.error(skillsFailureMessage(result, "Couldn’t refresh your skills. The list may be out of date."));
     return null;
-  }, []);
+  }, [setLibrary]);
 
   React.useEffect(() => {
     void load();
@@ -92,7 +104,7 @@ export function useSkillLibrary() {
     }
     setLibrary((current) => (current ? mapSkills(current, skill.id, { enabled: skill.enabled }) : current));
     toast.error(skillsFailureMessage(result, "Couldn’t change that. The skill is as it was."));
-  }, []);
+  }, [setLibrary]);
 
   const setSourceEnabled = React.useCallback(async (source: LibrarySource, enabled: boolean) => {
     const key = `source:${source.id}`;
@@ -108,7 +120,7 @@ export function useSkillLibrary() {
     }
     setLibrary((current) => (current ? mapSource(current, source.id, { enabled: source.enabled }) : current));
     toast.error(skillsFailureMessage(result, "Couldn’t change that. The repository is as it was."));
-  }, []);
+  }, [setLibrary]);
 
   const removeSource = React.useCallback(async (source: LibrarySource): Promise<boolean> => {
     const result = await removeSkillSource(source.id);
@@ -120,7 +132,7 @@ export function useSkillLibrary() {
     }
     toast.error(skillsFailureMessage(result, "Couldn’t remove that repository. Its skills are still installed."));
     return false;
-  }, []);
+  }, [setLibrary]);
 
   return { library, error, reload: load, setSkillEnabled, setSourceEnabled, removeSource };
 }

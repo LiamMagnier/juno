@@ -8,8 +8,8 @@ import { LoadError } from "@/components/ui/load-error";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
-import { AppPageHeader } from "@/components/app/app-page";
-import { WorkList } from "@/components/work/shell/work-section";
+import { EditorialSection, PageHero } from "@/components/app/editorial";
+import { RoutinesWeek } from "@/components/work/routines-week";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
@@ -34,8 +34,22 @@ import { FEATURE_NAMES } from "@/lib/brand/names";
  * disconnected jobs. Live and paused automations stay split so `nextRunAt` never
  * makes a paused row look like it is about to fire.
  */
+/**
+ * The last list this tab loaded, kept for the next visit: switching Customize
+ * tabs shows the routines at once and refreshes them behind, instead of a
+ * skeleton every time the reader comes back.
+ */
+let lastSchedules: ClientWorkSchedule[] | null = null;
+
 export default function AutomationsPage() {
-  const [schedules, setSchedules] = React.useState<ClientWorkSchedule[] | null>(null);
+  const [schedules, setSchedulesState] = React.useState<ClientWorkSchedule[] | null>(lastSchedules);
+  const setSchedules = React.useCallback((next: React.SetStateAction<ClientWorkSchedule[] | null>) => {
+    setSchedulesState((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      if (value !== null) lastSchedules = value;
+      return value;
+    });
+  }, []);
   const [failed, setFailed] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -47,7 +61,7 @@ export default function AutomationsPage() {
     }
     setFailed(true);
     setSchedules(null);
-  }, []);
+  }, [setSchedules]);
 
   React.useEffect(() => {
     void load();
@@ -59,7 +73,7 @@ export default function AutomationsPage() {
         ? current
         : current.map((schedule) => (schedule.id === saved.id ? saved : schedule))
     );
-  }, []);
+  }, [setSchedules]);
 
   const active = (schedules ?? []).filter((schedule) => schedule.enabled);
   const paused = (schedules ?? []).filter((schedule) => !schedule.enabled);
@@ -72,13 +86,37 @@ export default function AutomationsPage() {
     </Button>
   );
 
+  const next = active
+    .map((schedule) => schedule.nextRunAt)
+    .filter((at): at is string => at !== null)
+    .sort()[0];
+
+  const list = (rows: ClientWorkSchedule[], offset: number) => (
+    <div className="ed-stagger -mx-3 space-y-0.5">
+      {rows.map((schedule, index) => (
+        <WorkScheduleRow key={schedule.id} schedule={schedule} index={offset + index} onChanged={replace} />
+      ))}
+    </div>
+  );
+
   return (
     <CustomizeFrame current="routines">
-      <AppPageHeader
+      <PageHero
         heading={FEATURE_NAMES.routines.label}
         lede="Tasks that start themselves, on a schedule or when something changes."
         actions={action}
+        figures={
+          schedules && schedules.length > 0
+            ? [
+                { label: "Active", value: active.length },
+                { label: "Paused", value: paused.length },
+                { label: "Next run", value: next ? nextIn(next) : "None set", small: true },
+              ]
+            : undefined
+        }
+        aside={schedules && active.some((schedule) => schedule.nextRunAt) ? <RoutinesWeek schedules={schedules} /> : undefined}
       />
+      <div className="h-14" aria-hidden="true" />
       {failed ? (
         <LoadError
           title="Couldn’t load your routines"
@@ -86,9 +124,11 @@ export default function AutomationsPage() {
           onRetry={() => void load()}
         />
       ) : schedules === null ? (
-        <WorkList>
-          <WorkRowSkeletons />
-        </WorkList>
+        <EditorialSection title="Active">
+          <div className="-mx-3">
+            <WorkRowSkeletons />
+          </div>
+        </EditorialSection>
       ) : schedules.length === 0 ? (
         <EmptyState
           icon={AppIcons.automations}
@@ -97,39 +137,40 @@ export default function AutomationsPage() {
           action={action}
         />
       ) : (
-        <>
+        <div className="space-y-16">
           {active.length > 0 && (
-            <section>
-              {paused.length > 0 && <h2 className="mb-3 text-heading">Active</h2>}
-              <WorkList>
-                {active.map((schedule, index) => (
-                  <WorkScheduleRow
-                    key={schedule.id}
-                    schedule={schedule}
-                    index={index}
-                    onChanged={replace}
-                  />
-                ))}
-              </WorkList>
-            </section>
+            <EditorialSection
+              title="Active"
+              meta={<span>{active.length === 1 ? "1 routine" : `${active.length} routines`}</span>}
+            >
+              {list(active, 0)}
+            </EditorialSection>
           )}
           {paused.length > 0 && (
-            <section className={active.length > 0 ? "mt-8" : undefined}>
-              {active.length > 0 && <h2 className="mb-3 text-heading">Paused</h2>}
-              <WorkList>
-                {paused.map((schedule, index) => (
-                  <WorkScheduleRow
-                    key={schedule.id}
-                    index={active.length + index}
-                    schedule={schedule}
-                    onChanged={replace}
-                  />
-                ))}
-              </WorkList>
-            </section>
+            <EditorialSection
+              title="Paused"
+              meta={<span>{paused.length === 1 ? "1 routine" : `${paused.length} routines`}</span>}
+            >
+              <p className="mb-4 max-w-[34rem] text-ui text-muted-foreground">
+                These keep their history and start again from their next run when you turn them back on.
+              </p>
+              {list(paused, active.length)}
+            </EditorialSection>
           )}
-        </>
+        </div>
       )}
     </CustomizeFrame>
   );
+}
+
+/** "in 3 hours", "tomorrow": the next run as a reader says it. */
+function nextIn(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 60_000) return "Now";
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `In ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `In ${hours} h`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "Tomorrow" : `In ${days} days`;
 }

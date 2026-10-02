@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import {
   DEFAULT_SETTINGS_SECTION,
   resolveSettingsSection,
@@ -102,9 +103,13 @@ export function SettingsModalLazy() {
     };
   }, [router]);
 
-  // Settings opens as a page; warm its route's chunk while idle.
+  // Settings opens as a page; warm the whole route while idle. A default
+  // prefetch of a dynamic route stops at its loading boundary, so opening
+  // Settings still waited on the server behind a skeleton; the full kind
+  // brings the page itself, and opening it is instant.
   React.useEffect(() => {
-    const load = () => router.prefetch(settingsHref(DEFAULT_SETTINGS_SECTION));
+    const load = () =>
+      router.prefetch(settingsHref(DEFAULT_SETTINGS_SECTION), { kind: PrefetchKind.FULL });
     if (typeof window.requestIdleCallback === "function") {
       const id = window.requestIdleCallback(load, { timeout: 4000 });
       return () => window.cancelIdleCallback(id);

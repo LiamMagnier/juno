@@ -1,0 +1,104 @@
+/*
+ * The editorial page kit: the language Memory set (src/components/memory/
+ * memory.css), shared by every page built on PageHero and EditorialSection.
+ * Newsreader for the few things meant to be read as a page, mono annotations
+ * for figures, presence blue only for the one live object on a page.
+ */
+.ed {
+  --ed-line: hsl(var(--foreground) / 0.12);
+  --ed-hair: hsl(var(--foreground) / 0.07);
+  --ed-presence: #2d49c9;
+  --ed-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dark .ed {
+  --ed-line: hsl(var(--foreground) / 0.14);
+  --ed-hair: hsl(var(--foreground) / 0.08);
+  --ed-presence: #97a6e6;
+}
+
+.ed-display {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: clamp(40px, 4.6vw, 60px);
+  line-height: 1.02;
+  letter-spacing: -0.032em;
+  font-optical-sizing: auto;
+}
+.ed-h2 {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.018em;
+}
+.ed-h3 {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+.ed-lead {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 21px;
+  line-height: 1.45;
+  letter-spacing: -0.006em;
+  text-wrap: pretty;
+}
+.ed-figure {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.ed-figure-sm { font-size: 22px; letter-spacing: -0.012em; }
+.ed-annot {
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.ed-presence { color: var(--ed-presence); }
+.ed-rule { border-color: var(--ed-hair); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ed-rise {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: ed-rise 900ms var(--ed-ease) forwards;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .ed-reveal { opacity: 0; transform: translateY(18px); transition: opacity 800ms var(--ed-ease), transform 800ms var(--ed-ease); }
+  .ed-reveal[data-on] { opacity: 1; transform: none; }
+  .ed-stagger > * { opacity: 0; transform: translateY(8px); animation: ed-rise 700ms var(--ed-ease) forwards; }
+  .ed-stagger > :nth-child(2) { animation-delay: 50ms; }
+  .ed-stagger > :nth-child(3) { animation-delay: 100ms; }
+  .ed-stagger > :nth-child(4) { animation-delay: 150ms; }
+  .ed-stagger > :nth-child(5) { animation-delay: 200ms; }
+  .ed-stagger > :nth-child(n + 6) { animation-delay: 250ms; }
+}
+@keyframes ed-rise { to { opacity: 1; transform: none; } }
+
+/* Routines: the week ahead (routines-week.tsx). */
+.rw-tick { fill: hsl(var(--muted-foreground)); font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 12px; letter-spacing: 0.02em; }
+.rw-day { stroke: var(--ed-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.rw-hour { stroke: var(--ed-hair); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.rw-now { stroke: hsl(var(--foreground)); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rw-point { fill: hsl(var(--foreground)); }
+.rw-live { fill: var(--ed-presence); }
+.rw-ring { fill: none; stroke: var(--ed-presence); stroke-width: 1; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; }
+.rw-trajectory { fill: none; stroke: var(--ed-presence); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rw-label { fill: hsl(var(--foreground)); font-size: 13px; font-weight: 500; }
+@media (prefers-reduced-motion: no-preference) {
+  .rw-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ed-draw 1600ms var(--ed-ease) forwards; animation-delay: calc(var(--i, 0) * 70ms + 120ms); }
+  .rw-pop { opacity: 0; animation: ed-pop 700ms var(--ed-ease) forwards; animation-delay: calc(var(--i, 0) * 70ms + 400ms); transform-box: fill-box; transform-origin: center; }
+  .rw-breathe { animation: ed-breathe 3200ms ease-in-out infinite; }
+}
+@keyframes ed-draw { to { stroke-dashoffset: 0; } }
+@keyframes ed-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes ed-breathe { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.15; transform: scale(1.6); } }
