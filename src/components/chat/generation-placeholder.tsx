@@ -90,7 +90,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
         <LiveLine text={detail} phase="working" seconds={seconds} immediate />
       </div>
       {longWait && (
-        <p className="mt-2 text-ui text-muted-foreground motion-safe:animate-fade-in" role="status">
+        <p className="mt-2 text-ui text-muted-foreground motion-safe:animate-fade-in" role="status" aria-live="polite">
           {isVideo ? "Longer clips can take a couple of minutes." : "Still working. Detailed images can take a minute."}
         </p>
       )}

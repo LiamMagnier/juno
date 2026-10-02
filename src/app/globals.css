@@ -1,5 +1,10 @@
 @import "../components/agents/agents.css";
 @import "../components/agents/agent-face.css";
+/* The Continuum mark and its thinking treatment: loaded here, like the agent
+   sheets, so a component module carries no CSS import (the unit tests render
+   those components under tsx, which cannot load a stylesheet). */
+@import "../components/brand/brand.css";
+@import "../components/brand/thinking-mark.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

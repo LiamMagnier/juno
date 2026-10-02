@@ -191,7 +191,7 @@ function approval(overrides: Partial<ClientActionApproval>): ClientActionApprova
 }
 
 function messagesFor(scene: "thread" | "thinking" | "settled"): ChatMessage[] {
-  const base = { conversationId: "c-q3", attachments: [] } as const;
+  const base = { conversationId: "c-q3", attachments: [] as ChatMessage["attachments"] };
   const user: ChatMessage = { ...base, id: "u1", role: "USER", content: ASK, createdAt: at(0) };
   if (scene === "thinking") {
     return [
@@ -302,7 +302,7 @@ export function ThreadScene({ scene }: { scene: "thread" | "thinking" | "settled
             messages={messages}
             inlineRuns={[{ id: "w-mira", createdAt: at(12), node: <WorkRunPanel work={work} actor="Mira" className="mt-5" /> }]}
             busy={scene === "thinking"}
-            status={scene === "thinking" ? "submitted" : "idle"}
+            status={scene === "thinking" ? "thinking" : "idle"}
             artifacts={[]}
             onOpenArtifact={noop}
             onRegenerate={noop}

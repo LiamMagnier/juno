@@ -1118,10 +1118,7 @@ export const MessageItem = React.memo(function MessageItem({
   const copy = async () => {
     // Stripped, not raw: the stored reply ends in the memory tags the model
     // wrote, and copying an answer must not paste the user's profile with it.
-    const ok = await navigator.clipboard
-      .writeText(stripMemoryTags(view.content).trimEnd())
-      .then(() => true)
-      .catch(() => false);
+    const ok = await navigator.clipboard.writeText(stripMemoryTags(view.content).trimEnd()).then(() => true, () => false);
     // The button is its own receipt (the glyph swaps to a check and the
     // tooltip reads "Copied"), so no toast.
     setCopied(ok);
