@@ -773,7 +773,7 @@ ACCESSORIES = {
     "halo": lambda c, a, e: acc_halo(c, a.get("color", PAL["butter"])),
     "clip": lambda c, a, e: acc_clip(c, a.get("color", INK), a.get("x", 0.2)),
     "band": lambda c, a, e: acc_band(c, a.get("color", INK), a["z0"], a["z1"]),
-    "nori": lambda c, a, e: acc_nori(c, a.get("color", PAL["nori"])),
+    "nori": lambda c, a, e: acc_nori(c, a.get("color", PAL["nori"]), z1=a.get("z1", 0.2)),
 }
 
 
@@ -791,7 +791,7 @@ CAST = {
     ],
     # B — snack bar, sticker eyes and arcs
     "B": [
-        dict(id="nori", name="Nori", shape="onigiri", color=PAL["rice"], eyes=dict(style="dot", z=0.47), acc=[dict(id="nori", color=PAL["nori"])]),
+        dict(id="nori", name="Nori", shape="onigiri", color=PAL["rice"], eyes=dict(style="dot", z=0.47), acc=[dict(id="nori", color=PAL["nori"], z1=0.27)], lift=0.1),
         dict(id="toasty", name="Toasty", shape="toast", color=PAL["crust"], crumb=PAL["crumb"], eyes=dict(style="sticker", look=(0.3, 0.2)), acc=[dict(id="butter")]),
         dict(id="jelly", name="Jelly", shape="bean", color=PAL["magenta"], eyes=dict(style="sticker", look=(-0.35, 0.1)), acc=[]),
         dict(id="mac", name="Mac", shape="macaron", color=PAL["lilac"], eyes=dict(style="arc"), acc=[], lift=0.06),

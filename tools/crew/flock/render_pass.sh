@@ -4,7 +4,8 @@
 # Env: RES (portraits), SPP, Q (fuzz quality), LQ (lineup fuzz quality: 6 characters at
 #      once need far more hair memory; 0.45 is plenty at key-art scale), LINEUP_ONLY,
 #      SKIP_PORTRAITS=1 (lineup + variants only), STATES=1 (the six agent states, SRES),
-#      LAYERED=1 (lineup one character's fibres per render, composited: memory), SKIP_LINEUP=1
+#      LAYERED=1 (lineup one character's fibres per render, composited: memory), SKIP_LINEUP=1,
+#      NOVAR=1 (no customization variants), VARONLY=1 (variants and states only)
 set -u
 OUT=$1; shift
 SHEETS=${@:-A B C}
@@ -14,11 +15,11 @@ BL="${GATE:-} /Applications/Blender.app/Contents/MacOS/Blender"
 cd "$HERE"
 mkdir -p "$OUT"
 for S in $SHEETS; do
-  if [ -z "${LINEUP_ONLY:-}" ] && [ -z "${SKIP_PORTRAITS:-}" ]; then
+  if [ -z "${LINEUP_ONLY:-}" ] && [ -z "${SKIP_PORTRAITS:-}" ] && [ -z "${VARONLY:-}" ]; then
     RES=${RES:-900} SPP=${SPP:-160} Q=${Q:-1} $BL --background --factory-startup --python flock_render.py -- portraits "$OUT/$S" $S 2>&1 | grep --line-buffered -E "WROTE|Error|rror:|line [0-9]"
   fi
-  [ -z "${SKIP_LINEUP:-}" ] && SPP=${LSPP:-128} Q=${LQ:-0.45} CROP=${CROP:-0.08} $BL --background --factory-startup --python flock_render.py -- lineup "$OUT/$S" $S 2>&1 | grep --line-buffered -E "WROTE|Error|rror:|line [0-9]"
-  if [ -z "${LINEUP_ONLY:-}" ]; then
+  [ -z "${SKIP_LINEUP:-}" ] && [ -z "${VARONLY:-}" ] && SPP=${LSPP:-128} Q=${LQ:-0.45} CROP=${CROP:-0.08} $BL --background --factory-startup --python flock_render.py -- lineup "$OUT/$S" $S 2>&1 | grep --line-buffered -E "WROTE|Error|rror:|line [0-9]"
+  if [ -z "${LINEUP_ONLY:-}" ] && [ -z "${NOVAR:-}" ]; then
     RES=${RES:-900} SPP=${SPP:-160} Q=${Q:-1} $BL --background --factory-startup --python flock_render.py -- variants "$OUT/$S" $S 2>&1 | grep --line-buffered -E "WROTE|Error|rror:|line [0-9]"
   fi
   if [ -n "${STATES:-}" ]; then
