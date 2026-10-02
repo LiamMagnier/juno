@@ -579,6 +579,19 @@ jobs:
               missing=1
             fi
           done
+          # The server refuses to boot in production without these (src/lib/boot.ts
+          # asserts both keyrings). Missing here means a crash loop after upload
+          # and an automatic rollback ten minutes later; fail in seconds instead.
+          for name in TOKEN_ENCRYPTION_KEYS TOKEN_ENCRYPTION_PRIMARY; do
+            if ! printf '%s\n' "$PROD_ENV" | grep -Eq "^${name}=.+$"; then
+              echo "::error::PROD_ENV is missing ${name}; the app will not boot in production without it (copy it from the VM's ~/juno/.env)."
+              missing=1
+            fi
+          done
+          if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^DATA_ENCRYPTION_KEY(RING)?=.+$'; then
+            echo "::error::PROD_ENV is missing DATA_ENCRYPTION_KEY or DATA_ENCRYPTION_KEYRING; the app will not boot in production without one (copy it from the VM's ~/juno/.env)."
+            missing=1
+          fi
           if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_EMAIL=.+$' && \
              ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_TOKEN=.+$' && \
              ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_COOKIE=.+$'; then
