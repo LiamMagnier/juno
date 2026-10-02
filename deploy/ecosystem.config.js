@@ -132,6 +132,27 @@ function pooledDatabaseEnv(appName) {
   }
 }
 
+/**
+ * One Node process per worker. These used to start as `npm run <task>`, and
+ * npm → tsx → the worker is three Node processes per app: on the 1 GB VM the
+ * eight workers carried sixteen idle launchers (~450 MB) and the box lived in
+ * swap until the site stopped answering (2026-10-02). PM2 now runs the
+ * script itself with tsx as an import hook, and each heap is capped so V8
+ * collects instead of growing into memory the server does not have. The
+ * flags are the ones the package.json scripts used (`--conditions=react-server`
+ * for everything but the code-task sweeper).
+ */
+function tsxWorker(script, heapMb, { reactServer = true, args } = {}) {
+  const flags = [`--max-old-space-size=${heapMb}`, "--import", "tsx"];
+  if (reactServer) flags.unshift("--conditions=react-server");
+  return {
+    script: path.join(runRoot, script),
+    interpreter: "node",
+    interpreter_args: flags.join(" "),
+    ...(args ? { args } : {}),
+  };
+}
+
 module.exports = {
   // Every app here is named juno-*. deploy.sh treats that prefix as this
   // file's namespace: it verifies exactly the apps a release declares, and
@@ -205,8 +226,7 @@ module.exports = {
       // of any deliverable it is packing, and MAX_CONCURRENT_RUNS is 3.
       name: "juno-work",
       cwd: runRoot,
-      script: "npm",
-      args: "run work:runner",
+      ...tsxWorker("scripts/work-runner.ts", 448),
       watch: false,
       max_memory_restart: "900M",
       env: {
@@ -231,8 +251,7 @@ module.exports = {
       //
       name: "juno-work-scheduler",
       cwd: runRoot,
-      script: "npm",
-      args: "run work:scheduler",
+      ...tsxWorker("scripts/work-scheduler.ts", 160),
       watch: false,
       max_memory_restart: "400M",
       env: {
@@ -253,8 +272,7 @@ module.exports = {
       // durable backstop after deploys, crashes and machine restarts.
       name: "juno-research",
       cwd: runRoot,
-      script: "npm",
-      args: "run research:worker",
+      ...tsxWorker("scripts/research-worker.ts", 288),
       watch: false,
       max_memory_restart: "600M",
       env: {
@@ -288,8 +306,7 @@ module.exports = {
       // two minutes.
       name: "juno-work-triggers",
       cwd: runRoot,
-      script: "npm",
-      args: "run work:trigger-poller",
+      ...tsxWorker("scripts/work-trigger-poller.ts", 160),
       watch: false,
       max_memory_restart: "400M",
       env: {
@@ -311,8 +328,7 @@ module.exports = {
       // only within each account's usage windows.
       name: "juno-memory-dreamer",
       cwd: runRoot,
-      script: "npm",
-      args: "run memory:dreamer",
+      ...tsxWorker("scripts/memory-dreamer.ts", 192),
       watch: false,
       max_memory_restart: "400M",
       env: {
@@ -334,8 +350,7 @@ module.exports = {
       // Single instance; the per-agent claim makes a second harmless anyway.
       name: "juno-agent-reflector",
       cwd: runRoot,
-      script: "npm",
-      args: "run agents:reflector",
+      ...tsxWorker("scripts/agent-reflector.ts", 192),
       watch: false,
       max_memory_restart: "400M",
       env: {
@@ -354,8 +369,7 @@ module.exports = {
       // this safe across restarts and multiple cleanup attempts.
       name: "juno-import-recovery",
       cwd: runRoot,
-      script: "npm",
-      args: "run import:recovery",
+      ...tsxWorker("scripts/sweep-import-runs.ts", 160),
       watch: false,
       max_memory_restart: "300M",
       env: {
@@ -375,8 +389,7 @@ module.exports = {
       // that stays `running` forever is a broken product surface.
       name: "juno-code-sweeper",
       cwd: runRoot,
-      script: "npm",
-      args: "run tasks:sweep -- --daemon",
+      ...tsxWorker("scripts/sweep-stuck-code-tasks.ts", 160, { reactServer: false, args: "--daemon" }),
       watch: false,
       max_memory_restart: "400M",
       env: {

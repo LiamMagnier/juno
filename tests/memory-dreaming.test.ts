@@ -122,14 +122,14 @@ test("the worker logs counts, never content", () => {
 test("the worker is deployed, verified by deploy, and runnable by name", () => {
   const ecosystem = src("deploy/ecosystem.config.js");
   assert.match(ecosystem, /name: "juno-memory-dreamer"/);
-  assert.match(ecosystem, /args: "run memory:dreamer"/);
+  assert.match(ecosystem, /tsxWorker\("scripts\/memory-dreamer\.ts"/);
   // deploy.sh verifies, repairs and keeps exactly the apps the ecosystem
   // declares (tests/release-gates.test.ts), so being declared is what gets the
   // worker verified. Read it as deploy.sh does, by loading the file.
   const { apps } = createRequire(import.meta.url)("../deploy/ecosystem.config.js") as {
-    apps: { name: string; args?: string }[];
+    apps: { name: string; script?: string }[];
   };
-  assert.equal(apps.find((app) => app.name === "juno-memory-dreamer")?.args, "run memory:dreamer");
+  assert.match(apps.find((app) => app.name === "juno-memory-dreamer")?.script ?? "", /scripts\/memory-dreamer\.ts$/);
   const pkg = JSON.parse(src("package.json")) as { scripts: Record<string, string> };
   assert.equal(
     pkg.scripts["memory:dreamer"],

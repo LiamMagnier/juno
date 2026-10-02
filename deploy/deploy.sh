@@ -254,8 +254,17 @@ reload_release() {
   # is off when rollback_release calls this. Nothing touches PM2 until the
   # list of apps this release declares has been read.
   declared_apps="$(declared_pm2_apps "$config_file")" || return 1
-  # Keep in-memory PM2 in sync with local binary to avoid warning noise on stdout.
-  pm2 update 2>/dev/null || true
+  # Keep in-memory PM2 in sync with the local binary, but only when they
+  # differ: `pm2 update` respawns the daemon and resurrects every app, and on
+  # the 1 GB VM that second boot storm on top of the reload below is what
+  # pushed the box into swap (2026-10-02).
+  if ! pm2_daemon_matches_binary; then
+    pm2 update 2>/dev/null || true
+  fi
+  # PM2 reloads an app with the script and interpreter it was first started
+  # with: `startOrReload` cannot change how an app is launched. An app whose
+  # launch changed is deleted first so the reload below starts it fresh.
+  delete_relaunched_pm2_apps "$config_file" || true
   # `pm2 start`/`pm2 reload` can throw when an older dump contains a process
   # id whose process object has disappeared.  Keep the bulk reconciliation
   # best-effort; verify_pm2_ecosystem repairs each missing service below from
@@ -270,6 +279,46 @@ reload_release() {
   # the dump from before this reload may still name apps that do not.
   pm2 save || status=1
   return "$status"
+}
+
+# True unless PM2 reports its in-memory daemon is older than the binary
+# (it prints "In-memory PM2 is out-of-date" on every command until updated).
+pm2_daemon_matches_binary() {
+  ! pm2 ping 2>&1 | grep -qi "out-of-date"
+}
+
+# Deletes every declared app whose running script or interpreter differs from
+# what the ecosystem now declares (e.g. `npm run <task>` → the script itself).
+delete_relaunched_pm2_apps() {
+  PM2_CONFIG="$1" node -e '
+    const path = require("path");
+    const { execFileSync, spawnSync } = require("child_process");
+    const configFile = path.resolve(process.env.PM2_CONFIG);
+    const apps = require(configFile).apps;
+    const lines = execFileSync("pm2", ["jlist"], { encoding: "utf8" }).split("\n").reverse();
+    let rows = [];
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        if (Array.isArray(parsed)) { rows = parsed; break; }
+      } catch {}
+    }
+    const wantsInterpreter = (app) => app.interpreter ?? "node";
+    for (const app of apps) {
+      const running = rows.find((row) => row?.name === app.name);
+      if (!running || !app.script) continue;
+      const env = running.pm2_env ?? {};
+      const declaredScript = path.isAbsolute(app.script) ? app.script : path.resolve(app.cwd ?? ".", app.script);
+      const scriptChanged = path.basename(env.pm_exec_path ?? "") !== path.basename(declaredScript);
+      const interpreterChanged =
+        app.interpreter !== undefined && path.basename(env.exec_interpreter ?? "") !== path.basename(wantsInterpreter(app));
+      const argsChanged = (env.node_args ?? []).join(" ") !== (app.interpreter_args ?? "").split(" ").filter(Boolean).join(" ");
+      if (scriptChanged || interpreterChanged || (app.interpreter_args !== undefined && argsChanged)) {
+        console.log(`Relaunching PM2 app ${app.name}: its launch command changed.`);
+        spawnSync("pm2", ["delete", app.name], { stdio: "inherit" });
+      }
+    }
+  '
 }
 
 # Prints the names of the apps an ecosystem file declares, as a JSON array:

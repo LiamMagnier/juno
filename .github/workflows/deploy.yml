@@ -540,7 +540,7 @@ jobs:
     # Deploys now queue rather than cancel each other (see `concurrency` above),
     # so a hung ssh/rsync would otherwise hold the single deploy slot for
     # GitHub's 360-minute default. Healthy runs finish well inside this.
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 

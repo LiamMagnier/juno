@@ -32,7 +32,7 @@ test("research production topology has a restart-safe worker", () => {
     "NODE_OPTIONS=--conditions=react-server tsx scripts/research-worker.ts"
   );
   assert.match(ecosystem, /name: "juno-research"/);
-  assert.match(ecosystem, /args: "run research:worker"/);
+  assert.match(ecosystem, /tsxWorker\("scripts\/research-worker\.ts"/);
   assert.match(schema, /workerLeaseOwner\s+String\?/);
   assert.match(schema, /@@index\(\[state, workerLeaseUntil\]\)/);
   assert.match(migration, /ResearchRun_state_workerLeaseUntil_idx/);
