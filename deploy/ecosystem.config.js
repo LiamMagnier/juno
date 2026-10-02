@@ -118,6 +118,7 @@ const releaseEnv = process.env.GIT_SHA ? { GIT_SHA: process.env.GIT_SHA } : {};
 const POOL_BUDGET = {
   "juno-backend": 4,
   "juno-work": 2,
+  "juno-sweepers": 2,
 };
 function pooledDatabaseEnv(appName) {
   const raw = process.env.DATABASE_URL || rootEnv.DATABASE_URL;
@@ -266,23 +267,26 @@ module.exports = {
       merge_logs: true,
     },
     {
-      // Restart-safe research executor: adopts accepted and working research
-      // rows whose lease is absent or expired (scripts/research-worker.ts).
-      // The API still nudges fresh runs for low latency; this process is the
-      // durable backstop after deploys, crashes and machine restarts.
-      name: "juno-research",
+      // The five small background loops in one process (scripts/sweepers.ts):
+      // restart-safe research adoption (rows whose lease is absent or
+      // expired; the API still nudges fresh runs), nightly memory dreaming,
+      // proactive agents' reflection, stale import recovery, and the Cloud
+      // Code sweeper for tasks whose runner stopped reporting. Separately they
+      // were five Node processes and five Prisma engines on a 1 GB VM.
+      name: "juno-sweepers",
       cwd: runRoot,
-      ...tsxWorker("scripts/research-worker.ts", 288),
+      ...tsxWorker("scripts/sweepers.ts", 384, { args: "--daemon" }),
       watch: false,
       max_memory_restart: "600M",
+      // The agent reflector lets a reflection in hand finish writing its ideas.
+      kill_timeout: 20_000,
       env: {
         ...releaseEnv,
-        ...pooledDatabaseEnv("juno-research"),
+        ...pooledDatabaseEnv("juno-sweepers"),
         NODE_ENV: "production",
-        NODE_OPTIONS: "--conditions=react-server",
       },
-      error_file: "logs/research-err.log",
-      out_file: "logs/research-out.log",
+      error_file: "logs/sweepers-err.log",
+      out_file: "logs/sweepers-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
@@ -320,91 +324,9 @@ module.exports = {
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
-    {
-      // Distils older conversations into memory between sessions — ChatGPT's
-      // "Dreaming", Juno's version (scripts/memory-dreamer.ts). Single
-      // instance: two dreamers would draw the same accounts and double the
-      // model calls. Small by design — a few accounts per ten-minute tick,
-      // only within each account's usage windows.
-      name: "juno-memory-dreamer",
-      cwd: runRoot,
-      ...tsxWorker("scripts/memory-dreamer.ts", 192),
-      watch: false,
-      max_memory_restart: "400M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-memory-dreamer"),
-        NODE_ENV: "production",
-      },
-      error_file: "logs/memory-dreamer-err.log",
-      out_file: "logs/memory-dreamer-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
-    {
-      // Lets proactive agents think between visits (scripts/agent-reflector.ts,
-      // docs/design/AGENTS.md §8): every ten minutes, a few agents whose last
-      // reflection is over six hours old look over their goals and raise ideas,
-      // within each account's usage windows. Its own process for the reason the
-      // trigger poller has one: a model call must never hold up a cron tick.
-      // Single instance; the per-agent claim makes a second harmless anyway.
-      name: "juno-agent-reflector",
-      cwd: runRoot,
-      ...tsxWorker("scripts/agent-reflector.ts", 192),
-      watch: false,
-      max_memory_restart: "400M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-agent-reflector"),
-        NODE_ENV: "production",
-      },
-      error_file: "logs/agent-reflector-err.log",
-      out_file: "logs/agent-reflector-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
-    {
-      // Reclaims staged/imported objects after a request or VM dies before the
-      // relational import transaction can mark them attached. The ledger keeps
-      // this safe across restarts and multiple cleanup attempts.
-      name: "juno-import-recovery",
-      cwd: runRoot,
-      ...tsxWorker("scripts/sweep-import-runs.ts", 160),
-      watch: false,
-      max_memory_restart: "300M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-import-recovery"),
-        NODE_ENV: "production",
-      },
-      error_file: "logs/import-recovery-err.log",
-      out_file: "logs/import-recovery-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
-    {
-      // Reconciles Cloud Code tasks whose runner stopped reporting before it
-      // could post a terminal event. This is intentionally a long-lived,
-      // single-instance loop rather than a best-effort manual command: a task
-      // that stays `running` forever is a broken product surface.
-      name: "juno-code-sweeper",
-      cwd: runRoot,
-      ...tsxWorker("scripts/sweep-stuck-code-tasks.ts", 160, { reactServer: false, args: "--daemon" }),
-      watch: false,
-      max_memory_restart: "400M",
-      env: {
-        ...releaseEnv,
-        ...pooledDatabaseEnv("juno-code-sweeper"),
-        NODE_ENV: "production",
-      },
-      error_file: "logs/code-sweeper-err.log",
-      out_file: "logs/code-sweeper-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
     // Artifact maintenance runs inside juno-work-scheduler: one bounded idle
     // draft pass per minute and one trash page per six hours, dry unless armed.
-    // Keep the 10-process ceiling and existing total 14-slot pooler budget.
+    // Six PM2 apps in all; the pooler budget above stays under its 15 slots.
     {
       name: "juno-voice-relay",
       // The relay is its own package inside the release, so it is the one app

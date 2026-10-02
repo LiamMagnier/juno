@@ -281,11 +281,14 @@ test("the worker ticks one at a time, waits a little before the first, and stops
 
 test("the worker is deployed and runnable by name", () => {
   const ecosystem = src("deploy/ecosystem.config.js");
-  assert.match(ecosystem, /name: "juno-agent-reflector"/);
+  // It runs inside juno-sweepers (scripts/sweepers.ts), one process for the
+  // small loops.
+  assert.match(ecosystem, /name: "juno-sweepers"/);
+  assert.match(src("scripts/sweepers.ts"), /import "\.\/agent-reflector";/);
   const { apps } = createRequire(import.meta.url)("../deploy/ecosystem.config.js") as {
     apps: { name: string; script?: string }[];
   };
-  assert.match(apps.find((app) => app.name === "juno-agent-reflector")?.script ?? "", /scripts\/agent-reflector\.ts$/);
+  assert.match(apps.find((app) => app.name === "juno-sweepers")?.script ?? "", /scripts\/sweepers\.ts$/);
   const pkg = JSON.parse(src("package.json")) as { scripts: Record<string, string> };
   // react-server, so the `server-only` modules it reaches load.
   assert.equal(pkg.scripts["agents:reflector"], "NODE_OPTIONS=--conditions=react-server tsx scripts/agent-reflector.ts");

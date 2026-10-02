@@ -667,11 +667,8 @@ test("production activation verifies every PM2 service, including workers and th
       "juno-backend",
       "juno-work",
       "juno-work-scheduler",
-      "juno-research",
+      "juno-sweepers",
       "juno-work-triggers",
-      "juno-memory-dreamer",
-      "juno-import-recovery",
-      "juno-code-sweeper",
       "juno-voice-relay",
     ]) {
       assert.ok(declared.includes(name), `the ecosystem no longer declares ${name}, so the next deploy would delete it`);

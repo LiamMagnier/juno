@@ -31,8 +31,8 @@ test("research production topology has a restart-safe worker", () => {
     packageJson.scripts?.["research:worker"],
     "NODE_OPTIONS=--conditions=react-server tsx scripts/research-worker.ts"
   );
-  assert.match(ecosystem, /name: "juno-research"/);
-  assert.match(ecosystem, /tsxWorker\("scripts\/research-worker\.ts"/);
+  assert.match(ecosystem, /name: "juno-sweepers"/);
+  assert.match(readFileSync("scripts/sweepers.ts", "utf8"), /import "\.\/research-worker";/);
   assert.match(schema, /workerLeaseOwner\s+String\?/);
   assert.match(schema, /@@index\(\[state, workerLeaseUntil\]\)/);
   assert.match(migration, /ResearchRun_state_workerLeaseUntil_idx/);
