@@ -43,6 +43,10 @@ final class JunoCapabilityContractTests: XCTestCase {
             // client that cannot name this degradation shows a turn that simply
             // stopped, with no reason a reader could act on.
             "action_approval_unavailable",
+            // v4: running code was asked for and nothing ran (no sandbox for
+            // this chat), or the model's tool calling is not verified.
+            "code_execution_unavailable",
+            "tool_calling_unverified",
         ] {
             XCTAssertTrue(kinds.contains(expected), "missing degradation kind \(expected)")
         }
@@ -117,7 +121,8 @@ final class JunoCapabilityContractTests: XCTestCase {
     }
 
     /// v2 added `proMode` and `pro_mode_unavailable`; v3 added `actionApproval`
-    /// and `action_approval_unavailable`.
+    /// and `action_approval_unavailable`; v4 added `codeExecution`,
+    /// `code_execution_unavailable` and `tool_calling_unverified`.
     ///
     /// Pinned to an exact number rather than `>= 1` on purpose: the version is
     /// the one thing a client can gate a feature on, so it must move when the
@@ -125,7 +130,7 @@ final class JunoCapabilityContractTests: XCTestCase {
     /// the point at which someone editing the manifest is made to notice they
     /// changed a cross-platform contract.
     func testTheContractReportsTheManifestItWasBuiltFrom() {
-        XCTAssertEqual(JunoCapabilityContract.version, 3)
+        XCTAssertEqual(JunoCapabilityContract.version, 4)
         XCTAssertEqual(JunoCapabilityContract.digest.count, 64, "a SHA-256 hex digest")
         XCTAssertTrue(
             JunoCapabilityContract.digest.allSatisfy { $0.isHexDigit },
@@ -142,5 +147,26 @@ final class JunoCapabilityContractTests: XCTestCase {
             JunoDegradationKind.proModeUnavailable.rawValue,
             "pro_mode_unavailable"
         )
+    }
+
+    /// The capability added in v4, and the flag an older server never sends.
+    func testCodeExecutionIsPartOfTheContractAndDefaultsOff() throws {
+        XCTAssertEqual(JunoCapability.codeExecution.rawValue, "codeExecution")
+        XCTAssertEqual(JunoDegradationKind.codeExecutionUnavailable.rawValue, "code_execution_unavailable")
+        XCTAssertEqual(JunoDegradationKind.toolCallingUnverified.rawValue, "tool_calling_unverified")
+        let old = try JSONDecoder().decode(
+            JunoEffectiveCapabilities.self,
+            from: Data(#"{"version":3,"modelId":"m","provider":"p","degradations":[]}"#.utf8)
+        )
+        XCTAssertFalse(old.codeExecution)
+        let unverified = try JSONDecoder().decode(
+            JunoEffectiveCapabilities.self,
+            from: Data(#"""
+            {"version":4,"modelId":"kimi-k3","provider":"moonshot","codeExecution":false,
+             "degradations":[{"kind":"tool_calling_unverified","requested":"on","effective":"off",
+             "reason":"kimi-k3's tool calling has not been verified yet, so it can't run code."}]}
+            """#.utf8)
+        )
+        XCTAssertEqual(unverified.degradations.map(\.kind), [.toolCallingUnverified])
     }
 }

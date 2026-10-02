@@ -126,6 +126,9 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
     public let fastMode: Bool
     public let vision: Bool
     public let connectors: Bool
+    /// v4: the turn may run code in the sandbox. Absent on an older server,
+    /// which reads as false: no older server could run code.
+    public let codeExecution: Bool
     public let degradations: [JunoDegradation]
 
     /// True when anything the user asked for did not happen.
@@ -140,6 +143,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         case fastMode
         case vision
         case connectors
+        case codeExecution
         case degradations
     }
 
@@ -152,6 +156,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         fastMode: Bool,
         vision: Bool,
         connectors: Bool,
+        codeExecution: Bool = false,
         degradations: [JunoDegradation]
     ) {
         self.version = version
@@ -162,6 +167,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         self.fastMode = fastMode
         self.vision = vision
         self.connectors = connectors
+        self.codeExecution = codeExecution
         self.degradations = degradations
     }
 
@@ -181,6 +187,7 @@ public struct JunoEffectiveCapabilities: Codable, Hashable, Sendable {
         fastMode = try container.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
         vision = try container.decodeIfPresent(Bool.self, forKey: .vision) ?? false
         connectors = try container.decodeIfPresent(Bool.self, forKey: .connectors) ?? false
+        codeExecution = try container.decodeIfPresent(Bool.self, forKey: .codeExecution) ?? false
         degradations =
             (try container.decodeIfPresent([LenientDegradation].self, forKey: .degradations) ?? [])
             .compactMap(\\.value)
