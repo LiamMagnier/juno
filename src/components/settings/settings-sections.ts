@@ -1,4 +1,4 @@
-import type { IconComponent } from "@/components/ui/icons";
+import { Bell, Keyboard, Sparkles, Sun, type IconComponent } from "@/components/ui/icons";
 import { CodeIcons, SettingsIcons } from "@/lib/app-icons";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 
@@ -31,7 +31,56 @@ export const SETTINGS_SECTIONS = [
   { id: "billing", label: "Plan & usage", icon: SettingsIcons.billing },
 ] as const satisfies readonly { id: string; label: string; icon: IconComponent }[];
 
-export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
+/**
+ * Sections the web draws that the shared shell contract does not carry yet.
+ *
+ * SETTINGS_SECTIONS is the contract (contracts/product/juno-shell-v1.json,
+ * mirrored into the Mac app); these are web-only panes for per-device
+ * preferences. They sit in the same rail, in their groups, and resolve before
+ * the contract's aliases (so `/settings?section=appearance` opens Appearance
+ * here, while the Mac keeps routing it to General).
+ */
+export const WEB_SETTINGS_SECTIONS = [
+  { id: "appearance", label: "Appearance", icon: Sun },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "capabilities", label: "Capabilities", icon: Sparkles },
+  { id: "keyboard", label: "Keyboard", icon: Keyboard },
+] as const satisfies readonly { id: string; label: string; icon: IconComponent }[];
+
+type SharedSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
+type WebSectionId = (typeof WEB_SETTINGS_SECTIONS)[number]["id"];
+export type SettingsSectionId = SharedSectionId | WebSectionId;
+export type SettingsSectionMeta = { id: SettingsSectionId; label: string; icon: IconComponent };
+
+/**
+ * The rail, grouped the way ChatGPT and Claude group theirs: you and this
+ * screen, what the assistant can do and reach, then the account.
+ */
+export const SETTINGS_GROUPS: { label: string; ids: SettingsSectionId[] }[] = [
+  { label: "Personal", ids: ["general", "appearance", "notifications", "personalization", "keyboard"] },
+  { label: "Assistant", ids: ["capabilities", "memory", "models", "connectors", "voice", "devices"] },
+  { label: "Account", ids: ["account", "data", "billing"] },
+];
+
+/** Words a search in the rail should find each section by (its rows' labels). */
+export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
+  general: "language interface locale send enter shortcut",
+  appearance: "theme light dark system mode accent color colour text size font chat font serif mono width transcript motion animation reduce",
+  notifications: "notify notification alert sound chime email budget digest background reply",
+  personalization: "name instructions custom personality style tone response language about you",
+  keyboard: "shortcuts keys hotkeys keyboard send enter",
+  capabilities: "tools follow-up suggestions code wrap memory apps models voice",
+  memory: "memory remember saved memories sensitive learn background",
+  models: "model default favourite favorite fast mode pinned",
+  connectors: "apps connectors integrations mcp permissions github google",
+  voice: "voice read aloud speech dictation tts",
+  devices: "devices mac computer host permissions code",
+  account: "profile picture name email password security two-step sign out delete account sessions",
+  data: "export import data privacy shared links delete conversations chatgpt claude",
+  billing: "plan upgrade billing usage spend limit invoice subscription",
+};
+
+export const ALL_SETTINGS_SECTIONS: readonly SettingsSectionMeta[] = [...SETTINGS_SECTIONS, ...WEB_SETTINGS_SECTIONS];
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "general";
 
@@ -67,7 +116,7 @@ const ALIASES: Record<string, SettingsSectionId> = {
 };
 
 export function isSettingsSectionId(value: unknown): value is SettingsSectionId {
-  return typeof value === "string" && SETTINGS_SECTIONS.some((s) => s.id === value);
+  return typeof value === "string" && ALL_SETTINGS_SECTIONS.some((s) => s.id === value);
 }
 
 export function resolveSettingsSection(value: unknown): SettingsSectionId {
@@ -76,8 +125,8 @@ export function resolveSettingsSection(value: unknown): SettingsSectionId {
   return DEFAULT_SETTINGS_SECTION;
 }
 
-export function settingsSection(id: SettingsSectionId) {
-  return SETTINGS_SECTIONS.find((s) => s.id === id) ?? SETTINGS_SECTIONS[0];
+export function settingsSection(id: SettingsSectionId): SettingsSectionMeta {
+  return ALL_SETTINGS_SECTIONS.find((s) => s.id === id) ?? SETTINGS_SECTIONS[0];
 }
 
 /** The `/settings` URL for a section: General is the bare page. */

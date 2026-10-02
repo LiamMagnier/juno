@@ -81,7 +81,7 @@ export const UI_STATE_FIXTURES = [
       /status=\{/,
     ],
     forbidden: [],
-    responsive: [/w-full/, /max-w-3xl/, /coarse:/],
+    responsive: [/w-full/, /transcript-column/, /coarse:/],
   },
   {
     id: "success",

@@ -31,6 +31,7 @@ import {
 } from "./context-editor-dom";
 import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type PaletteStatus } from "./context-composer-layers";
 import { ContextTokenMark } from "./context-token-mark";
+import { uiPref } from "@/lib/ui-prefs";
 
 /*
  * THE COMPOSER'S FIELD: a contenteditable sentence with context tokens in it
@@ -693,6 +694,23 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     if (selectedToken.current && event.key !== "Shift") selectToken(null);
 
     if (event.key === "Enter" && event.shiftKey) {
+      event.preventDefault();
+      if (!editCommand(document, "insertText", "\n")) editCommand(document, "insertHTML", "<br>");
+      publish();
+      return;
+    }
+    // Settings › Keyboard: "Send with ⌘ Enter". A plain Enter is offered to
+    // the composer first (an open command palette still claims it), and if
+    // nothing took it, it is a new line.
+    if (
+      event.key === "Enter" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.nativeEvent.isComposing &&
+      uiPref("sendKey") === "mod-enter"
+    ) {
+      onKeyDown?.(event as unknown as React.KeyboardEvent<HTMLTextAreaElement>);
+      if (event.defaultPrevented) return;
       event.preventDefault();
       if (!editCommand(document, "insertText", "\n")) editCommand(document, "insertHTML", "<br>");
       publish();

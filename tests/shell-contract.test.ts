@@ -6,7 +6,7 @@ import ts from "typescript";
 import * as Icons from "@/components/ui/icons";
 import * as Registries from "@/lib/app-icons";
 import { PRODUCTS } from "@/components/app/product-switch";
-import {
+import { WEB_SETTINGS_SECTIONS,
   DEFAULT_SETTINGS_SECTION,
   SETTINGS_SECTIONS,
   resolveSettingsSection,
@@ -718,8 +718,11 @@ test("the Settings aliases are settings-sections.ts's, every one", () => {
     aliases[key] = stringOf(member.initializer) ?? "";
   }
   assert.deepEqual(aliases, CONTRACT.settings.aliases);
+  // A web-only pane with the alias's name (Appearance) opens itself on the
+  // web; the Mac, which has no such pane, still follows the contract's alias.
+  const webOnly = new Set<string>(WEB_SETTINGS_SECTIONS.map((section) => section.id));
   for (const [alias, target] of Object.entries(CONTRACT.settings.aliases)) {
-    assert.equal(resolveSettingsSection(alias), target, `?section=${alias}`);
+    assert.equal(resolveSettingsSection(alias), webOnly.has(alias) ? alias : target, `?section=${alias}`);
   }
   assert.equal(resolveSettingsSection("not-a-section"), CONTRACT.settings.default);
 });

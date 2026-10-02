@@ -85,6 +85,7 @@ import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
 import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
+import { announceReplyFinished } from "@/lib/ui-prefs";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -452,6 +453,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     },
     onDone: (_assistant, meta) => {
       const id = createdIdRef.current ?? conversationId;
+      // Settings › Notifications: a system notification and/or chime when the
+      // reply finished while the reader was in another tab or app.
+      if (meta?.finishReason !== "user_stopped") {
+        announceReplyFinished(meta?.title ?? "Open the chat to read it.");
+      }
       if (!privateMode && id && meta?.title) {
         updateConversation(id, { title: meta.title, lastMessageAt: new Date().toISOString() });
       }
@@ -2496,7 +2502,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // edge while it is centred under them, and the two never line
                 // up. Both now take `.page-gutter`, so "the same" is a shared
                 // declaration rather than two copies of one number.
-                <div className="page-gutter mx-auto w-full max-w-3xl shrink-0 pb-2">
+                <div className="page-gutter mx-auto w-full transcript-column shrink-0 pb-2">
                   <FollowUpSuggestions
                     conversationId={currentConversationId}
                     onPick={(t) => void sendFromComposer(t, [])}

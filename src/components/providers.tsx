@@ -7,6 +7,14 @@ import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { AutoTranslate } from "@/components/i18n/auto-translate";
+import { MotionConfig } from "framer-motion";
+import { useUiPref } from "@/lib/ui-prefs";
+
+/** Settings › Appearance › Motion: "Reduced" holds framer-motion still too, not only CSS. */
+function MotionPreference({ children }: { children: React.ReactNode }) {
+  const [motion] = useUiPref("motion");
+  return <MotionConfig reducedMotion={motion === "reduced" ? "always" : "user"}>{children}</MotionConfig>;
+}
 
 export function Providers({
   children,
@@ -39,7 +47,7 @@ export function Providers({
     <SessionProvider session={session} refetchOnWindowFocus={false}>
       <ThemeProvider attribute="class" defaultTheme={defaultTheme} enableSystem disableTransitionOnChange nonce={nonce}>
         <TooltipProvider delayDuration={200}>
-          {children}
+          <MotionPreference>{children}</MotionPreference>
           <AutoTranslate locale={locale} autoDetect={autoDetect} />
           {/*
             Position, offsets and the close button now live in sonner.tsx, with

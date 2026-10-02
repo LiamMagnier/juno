@@ -138,6 +138,7 @@ import type {
   GenerationStatus,
   ReasoningEffort,
 } from "@/types/chat";
+import { uiPref } from "@/lib/ui-prefs";
 
 /**
  * The chat field's id, so a card in the transcript can put the cursor in it.
@@ -1860,6 +1861,9 @@ export function Composer({
       return;
     }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      // "Send with ⌘ Enter" (Settings › Keyboard): a plain Enter is a new
+      // line, which the field inserts when this leaves the event alone.
+      if (uiPref("sendKey") === "mod-enter" && !e.metaKey && !e.ctrlKey) return;
       e.preventDefault();
       void submit(e.currentTarget.value);
     }
@@ -2655,7 +2659,7 @@ export function Composer({
       data-layer-below={layerBelow ? "" : undefined}
       className={cn(
         "w-full",
-        frame === "dock" && "page-gutter mx-auto max-w-3xl",
+        frame === "dock" && "page-gutter mx-auto transcript-column",
         // With a footnote the line takes the inset's 16 / 24px itself (see
         // the slot below), so only the home indicator stays as padding.
         frame === "dock" &&

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Plus, Sun } from "@/components/ui/icons";
+import { Plus } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -12,12 +12,15 @@ import { useApp } from "@/components/app/app-provider";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { useSaveStates } from "@/components/settings/save-status";
-import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { FONT_SIZES, readFontSize, writeFontSize, type FontSizeId } from "@/components/settings/font-size";
 import { ACCENTS, swatchInk } from "@/lib/accents";
 import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
+import { useUiPref, type ChatFont, type MotionPref, type TranscriptWidth } from "@/lib/ui-prefs";
+import { openSettings } from "@/components/settings/settings-sections";
+import { ChevronRight } from "@/components/ui/icons";
 
 /** The accents' names, for their swatches' accessible names (they used to announce the raw id). */
 const ACCENT_NAMES: { id: (typeof ACCENTS)[number]["id"]; label: string }[] = [
@@ -133,13 +136,7 @@ const CustomPickerButton = React.forwardRef<
   );
 });
 
-const THEME_OPTIONS: { value: ClientSettings["theme"]; label: string; icon: React.ReactNode }[] = [
-  { value: "light", label: "Light", icon: <Sun className="size-4" /> },
-  { value: "dark", label: "Dark", icon: <Moon className="size-4" /> },
-  { value: "system", label: "System", icon: <Monitor className="size-4" /> },
-];
-
-export function GeneralSection() {
+export function AppearanceSection() {
   const { settings, setSettings } = useApp();
   const { setTheme } = useTheme();
   const save = useSettingsSave();
@@ -199,9 +196,6 @@ export function GeneralSection() {
   // A full reload, not router.refresh(): the locale decides `<html lang>`/`dir`
   // server-side, and the already-translated DOM has to come back from the
   // source catalog rather than be translated a second time in place.
-  const setUiLocale = async (uiLocale: string) => {
-    if (await save({ uiLocale })) window.location.reload();
-  };
 
   const accentIsPreset = ACCENTS.some((a) => a.id === settings.accent);
   const customAccent = !accentIsPreset && settings.accent.startsWith("#");
@@ -216,22 +210,10 @@ export function GeneralSection() {
 
   return (
     <>
-      <SettingsGroup title="Appearance" description="Theme and accent follow your account. Text size is set for this device.">
-        <SettingRow
-          label="Theme"
-          wide
-          status={saves.status("theme")}
-          control={
-            <SegmentedControl
-              ariaLabel="Theme"
-              value={settings.theme}
-              onChange={setThemePref}
-              options={THEME_OPTIONS}
-              className="w-full @[34rem]/pane:w-auto"
-            />
-          }
-        />
-
+      <SettingsGroup title="Visual style" description="Mode and accent follow your account everywhere you sign in.">
+        <SettingBlock label="Mode" status={saves.status("theme")}>
+          <ThemeCards value={settings.theme} onChange={setThemePref} />
+        </SettingBlock>
         <SettingRow
           label="Accent color"
           description="Buttons, selection and focus."
@@ -305,6 +287,156 @@ export function GeneralSection() {
         />
       </SettingsGroup>
 
+      <ReadingGroup />
+    </>
+  );
+}
+
+
+/* ——— Mode cards ——————————————————————————————————————————————————————— */
+
+const MODE_CARDS: { value: ClientSettings["theme"]; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
+/** A thumbnail of the app in one mode: a sidebar, two lines of reply and a composer. */
+function ModeThumb({ tone }: { tone: "light" | "dark" }) {
+  const dark = tone === "dark";
+  return (
+    <span className={cn("flex h-full w-full", dark ? "bg-[#1b1b1d]" : "bg-[#fcfcfc]")}>
+      <span className={cn("flex w-[30%] flex-col gap-1 p-1.5", dark ? "bg-[#232326]" : "bg-[#f1f1f2]")}>
+        <span className={cn("h-1 w-3/4 rounded-full", dark ? "bg-white/25" : "bg-black/20")} />
+        <span className={cn("h-1 w-1/2 rounded-full", dark ? "bg-white/15" : "bg-black/10")} />
+        <span className={cn("h-1 w-2/3 rounded-full", dark ? "bg-white/15" : "bg-black/10")} />
+      </span>
+      <span className="flex flex-1 flex-col justify-between p-2">
+        <span className="flex flex-col gap-1">
+          <span className={cn("h-1 w-4/5 rounded-full", dark ? "bg-white/30" : "bg-black/25")} />
+          <span className={cn("h-1 w-3/5 rounded-full", dark ? "bg-white/20" : "bg-black/15")} />
+        </span>
+        <span className={cn("flex h-2.5 items-center justify-end rounded-sm border px-0.5", dark ? "border-white/15 bg-white/5" : "border-black/10 bg-white")}>
+          <span className="size-1.5 rounded-full bg-primary" />
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function ThemeCards({ value, onChange }: { value: ClientSettings["theme"]; onChange: (v: ClientSettings["theme"]) => void }) {
+  const option = useRadioGroup(MODE_CARDS, MODE_CARDS.findIndex((m) => m.value === value), (m) => onChange(m.value));
+  return (
+    <div role="radiogroup" aria-label="Mode" className="grid max-w-md grid-cols-3 gap-3">
+      {MODE_CARDS.map((mode, i) => {
+        const selected = mode.value === value;
+        return (
+          <button
+            key={mode.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(mode.value)}
+            {...option(i)}
+            className="group flex flex-col gap-2 text-left outline-none"
+          >
+            <span
+              className={cn(
+                "relative block aspect-[16/10] overflow-hidden rounded-field border transition-[box-shadow,border-color] duration-fast ease-out-soft",
+                selected
+                  ? "border-primary shadow-[0_0_0_1px_hsl(var(--primary))]"
+                  : "border-border group-hover:border-foreground/25",
+                "group-focus-visible:shadow-[0_0_0_2px_hsl(var(--ring))]"
+              )}
+            >
+              {mode.value === "system" ? (
+                <span className="absolute inset-0 flex">
+                  <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 w-[200%]"><ModeThumb tone="light" /></span></span>
+                  <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 -left-full w-[200%]"><ModeThumb tone="dark" /></span></span>
+                </span>
+              ) : (
+                <ModeThumb tone={mode.value} />
+              )}
+            </span>
+            <span className={cn("text-ui transition-colors duration-fast", selected ? "font-medium text-foreground" : "text-muted-foreground group-hover:text-foreground")}>
+              {mode.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ——— Reading: chat font, width, motion (this device) ——————————————————— */
+
+const FONT_OPTIONS: { value: ChatFont; label: string }[] = [
+  { value: "default", label: "Default" },
+  { value: "system", label: "System" },
+  { value: "serif", label: "Serif" },
+  { value: "mono", label: "Mono" },
+];
+const WIDTH_OPTIONS: { value: TranscriptWidth; label: string }[] = [
+  { value: "narrow", label: "Narrow" },
+  { value: "medium", label: "Medium" },
+  { value: "wide", label: "Wide" },
+];
+const MOTION_OPTIONS: { value: MotionPref; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "reduced", label: "Reduced" },
+];
+
+function ReadingGroup() {
+  const [chatFont, setChatFont] = useUiPref("chatFont");
+  const [width, setWidth] = useUiPref("transcriptWidth");
+  const [motion, setMotion] = useUiPref("motion");
+  return (
+    <SettingsGroup title="Reading" description="Set for this device only.">
+      <SettingRow
+        label="Chat font"
+        description="The typeface replies and your messages are set in."
+        wide
+        control={
+          <SegmentedControl
+            ariaLabel="Chat font"
+            value={chatFont}
+            onChange={setChatFont}
+            options={FONT_OPTIONS}
+            className="w-full @[34rem]/pane:w-auto"
+          />
+        }
+      />
+      <SettingRow
+        label="Transcript width"
+        description="How wide the conversation and the composer can grow."
+        wide
+        control={
+          <SegmentedControl ariaLabel="Transcript width" value={width} onChange={setWidth} options={WIDTH_OPTIONS} className="w-full @[34rem]/pane:w-auto" />
+        }
+      />
+      <SettingRow
+        label="Motion"
+        description="Reduce animation in streaming replies and across the interface."
+        wide
+        control={
+          <SegmentedControl ariaLabel="Motion" value={motion} onChange={setMotion} options={MOTION_OPTIONS} className="w-full @[34rem]/pane:w-auto" />
+        }
+      />
+    </SettingsGroup>
+  );
+}
+
+/* ——— General ——————————————————————————————————————————————————————————— */
+
+
+export function GeneralSection() {
+  const { settings } = useApp();
+  const save = useSettingsSave();
+  const setUiLocale = async (uiLocale: string) => {
+    if (await save({ uiLocale })) window.location.reload();
+  };
+  return (
+    <>
       <SettingsGroup title="Language">
         <SettingRow
           label="Interface language"
@@ -328,6 +460,26 @@ export function GeneralSection() {
             </Select>
           }
         />
+      </SettingsGroup>
+      <SettingsGroup title="More">
+        {[
+          { id: "appearance", label: "Appearance", description: "Mode, accent, chat font, width and motion." },
+          { id: "notifications", label: "Notifications", description: "When a reply finishes, and what reaches your inbox." },
+          { id: "keyboard", label: "Keyboard", description: "Send with Enter or ⌘ Enter, and every shortcut." },
+        ].map((link) => (
+          <button
+            key={link.id}
+            type="button"
+            onClick={() => openSettings(link.id)}
+            className="group flex w-full items-center gap-4 py-4 text-left"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-medium text-foreground">{link.label}</span>
+              <span className="mt-0.5 block text-ui text-muted-foreground">{link.description}</span>
+            </span>
+            <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground" />
+          </button>
+        ))}
       </SettingsGroup>
     </>
   );

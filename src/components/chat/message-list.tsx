@@ -340,7 +340,7 @@ export function MessageList(props: MessageListProps) {
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
         className={cn(
-          "page-gutter mx-auto w-full max-w-3xl space-y-6 py-6",
+          "page-gutter mx-auto w-full transcript-column space-y-6 py-6",
           !entered && "motion-safe:animate-rise-in",
         )}
       >
