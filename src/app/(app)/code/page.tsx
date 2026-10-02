@@ -1,4 +1,6 @@
 import { requireUser } from "@/lib/session";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
+import { BRAND } from "@/lib/brand/names";
 import { CodeComposer } from "@/components/code/code-composer";
 import { parseCodePrefill, type PrefillParams } from "@/lib/code-prefill";
 
@@ -77,8 +79,7 @@ export const dynamic = "force-dynamic";
  * window on a click. Prefill, focus, wait.
  */
 export default async function CodePage({ searchParams }: { searchParams: Promise<PrefillParams> }) {
-  const user = await requireUser();
-  const firstName = user.name?.trim().split(/\s+/)[0];
+  await requireUser();
   const prefill = parseCodePrefill(await searchParams);
 
   return (
@@ -111,14 +112,15 @@ export default async function CodePage({ searchParams }: { searchParams: Promise
         not the viewport's.
       */}
       <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">
-        <h1 className="mb-6 text-balance text-center font-serif text-display font-normal text-foreground motion-safe:animate-rise-in sm:mb-8">
-          What should we build
-          {firstName ? (
-            <>
-              , <span className="italic">{firstName}</span>
-            </>
-          ) : null}
-          ?
+        {/* Alevr Code's entry line (CODE_SYSTEM.md): the product's lockup at
+            identity size, then the question. No name in italics, no hero. */}
+        <p className="mb-3 flex items-center gap-1.5 text-muted-foreground">
+          <AlevrLockup height={16} tone="muted" decorative />
+          <span className="font-serif text-body leading-none">{BRAND.code.label}</span>
+          <span className="sr-only">{BRAND.code.title}</span>
+        </p>
+        <h1 className="mb-6 text-balance text-center font-serif text-display font-normal text-foreground sm:mb-8">
+          What will you build?
         </h1>
         <div className="w-full">
           <CodeComposer prefill={prefill} />
