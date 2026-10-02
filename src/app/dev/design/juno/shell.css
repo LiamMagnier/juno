@@ -389,9 +389,17 @@
   background: var(--fill-press);
   transition-duration: var(--d-press);
 }
+/* Selected, the whole row takes the fill (the + included), exactly as Library or Customize. */
+.jn .jn-side__label--dest {
+  position: relative;
+  border-radius: var(--r-row);
+}
+.jn .jn-side__label--dest[data-current] {
+  background: var(--fill-selected);
+}
 .jn .jn-side__labellink[aria-current="page"] {
   color: var(--ink);
-  background: var(--fill-selected);
+  background: transparent;
 }
 .jn .jn-side__labellink:focus-visible {
   outline: 2px solid var(--focus);

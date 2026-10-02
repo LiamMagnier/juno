@@ -287,7 +287,7 @@ export function CrewRowItem({ m, current, onSelect, quiet }: { m: CrewRow; curre
  */
 export function OrbitLabel({ current, onSelect }: { current?: boolean; onSelect?: () => void }) {
   return (
-    <div className="jn-side__label jn-side__label--dest">
+    <div className="jn-side__label jn-side__label--dest" data-current={current ? "" : undefined}>
       <a
         href="#"
         className="jn-side__labellink"

@@ -108,11 +108,13 @@ export function CodeStartScene() {
               <AlevrLogo size={15} product="Code" className="jn-codehome__lockup" />
               <h1 className="t-title jn-codehome__title">What will you build?</h1>
             </div>
-            <Composer variant="code" placeholder="Describe the change, or paste an error" context={<ContextRow mode={mode} onMode={setMode} />} fieldId="jn-message" />
-            {/* The chosen mode says what it allows, in one line under the composer (Revision 2: the modes were unexplained). */}
-            <p className="jn-codehome__mode" aria-live="polite">
-              <b>{mode}</b> {MODE_LINE[mode].charAt(0).toLowerCase() + MODE_LINE[mode].slice(1)}.
-            </p>
+            <div className="jn-home__composer">
+              <Composer variant="code" placeholder="Describe the change, or paste an error" context={<ContextRow mode={mode} onMode={setMode} />} fieldId="jn-message" />
+              {/* The chosen mode says what it allows, in one line under the composer (Revision 2: the modes were unexplained). */}
+              <p className="jn-codehome__mode" aria-live="polite">
+                <b>{mode}</b> {MODE_LINE[mode].charAt(0).toLowerCase() + MODE_LINE[mode].slice(1)}.
+              </p>
+            </div>
             <div className="jn-home__suggest jn-codehome__recent">
               <p className="t-label jn-codehome__label">From this repository</p>
               <button type="button" className="jrow jicon-trigger jicon-quiet">
