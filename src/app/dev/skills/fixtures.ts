@@ -170,6 +170,16 @@ export const FIXTURE_PREVIEW: SkillImportPreview = {
       slugTaken: slug === "pdf",
       suggestedSlug: slug === "pdf" ? "anthropics-pdf" : null,
       securityStatus: slug === "slack-gif-creator" ? "blocked" : "clear",
+      bundle:
+        index === 4
+          ? { kind: "kept" as const, files: 3, scripts: 1 }
+          : index === 6
+            ? {
+                kind: "refused" as const,
+                reason: "symlink",
+                message: "“scripts/run” is a symbolic link. A skill folder has to hold its own files, so this skill was not imported.",
+              }
+            : null,
     };
   }),
   problems: [{ path: "skills/broken/SKILL.md", reason: "missing_frontmatter", message: "It has no frontmatter." }],

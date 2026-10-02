@@ -202,7 +202,15 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
   // slash invocation always has been, not only among the offered.
   let armed: LoadedSkill | null = null;
   if (input.armedSlug) {
-    const row = library.find((candidate) => candidate.slug === input.armedSlug) ?? null;
+    // Past the library read's cap, the armed skill is looked up on its own.
+    const row =
+      library.find((candidate) => candidate.slug === input.armedSlug) ??
+      (await prisma.workSkill
+        .findFirst({
+          where: { userId: input.userId, slug: input.armedSlug, deletedAt: null, kind: "skill", ...AVAILABLE_SKILL_WHERE },
+          select: LIBRARY_COLUMNS,
+        })
+        .then((found) => (found ? { ...found, enabled: true } : null)));
     if (row) {
       const version = await readVersion(row.id, row.currentVersion, row);
       if (version && skillLoadRefusal(version) === null) {
