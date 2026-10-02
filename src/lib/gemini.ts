@@ -65,11 +65,6 @@ export function toGeminiFunctionDeclarations(toolset: McpToolset) {
 }
 
 /**
- * Stream chat completions from Google Generative Language API (Gemini).
- * Supports turns, multimodality (images, PDFs), thinking / reasoning, tool loops,
- * Google search grounding, and usage tokens.
- */
-/**
  * The seam the scripted-transport tests replace: one streamGenerateContent
  * request returning the SSE response. Production leaves it absent and uses
  * `requestGeminiStream` with the configured keys.
@@ -78,6 +73,11 @@ export interface GeminiTransport {
   request(input: { url: string; body: unknown; signal?: AbortSignal }): Promise<Response>;
 }
 
+/**
+ * Stream chat completions from Google Generative Language API (Gemini).
+ * Supports turns, multimodality (images, PDFs), thinking / reasoning, tool loops,
+ * Google search grounding, and usage tokens.
+ */
 export async function* streamGemini(
   model: ModelInfo,
   system: string,
