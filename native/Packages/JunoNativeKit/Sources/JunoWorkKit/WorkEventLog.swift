@@ -798,6 +798,23 @@ extension WorkEventLog {
                 string(payload, "target", "detail"), .tool, .normal
             )
         case .toolFinished:
+            // A run (`run_code`, `check_run`, the skill tools) carries its
+            // ending as `runPhase` and its reason under `detail.summary`
+            // (src/lib/work/tool-run-events.ts): a failed or unknown run never
+            // wears the check mark a success does.
+            if let phase = string(payload, "runPhase") {
+                let reason: String? = {
+                    if case .object(let detail)? = payload["detail"] { return string(detail, "summary") }
+                    return nil
+                }()
+                let title = string(payload, "summary") ?? vocabulary.toolPast(string(payload, "tool", "name"))
+                switch phase {
+                case "succeeded": return entry(event, title, reason, .check, .quiet)
+                case "cancelled": return entry(event, title, reason, .paused, .quiet)
+                case "outcome_unknown": return entry(event, title, reason, .problem, .warning)
+                default: return entry(event, title, reason, .problem, .bad)
+                }
+            }
             // Past tense here, present tense on `toolStarted`: a log that says
             // "Reading a file" under a finished run describes nothing happening.
             return entry(

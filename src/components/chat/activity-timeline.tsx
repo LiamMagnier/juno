@@ -36,7 +36,7 @@ import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
 import { activeRunId, runReceiptParts } from "@/lib/chat/tool-run";
 import { ToolRunOutputs } from "@/components/chat/tool-run-files";
-import type { ClientActivityEvent, ClientSource } from "@/types/chat";
+import type { ClientActivityEvent, ClientAttachment, ClientSource } from "@/types/chat";
 
 /**
  * WHAT THE RUN IS DOING, RIGHT NOW — one sentence, computed once.
@@ -136,6 +136,7 @@ export function ActivityTimeline({
   sources,
   streaming,
   finishNote,
+  attachments,
 }: {
   /** Identifies THIS run's panel in the chat-scoped open state, so only one
    *  dock is open at a time across the whole thread. */
@@ -156,6 +157,9 @@ export function ActivityTimeline({
    *  strip already carries `run.note`, and two wordings of "it stopped early"
    *  in one line is how a strip becomes a paragraph). */
   finishNote?: string | null;
+  /** The message's own attachments: run files already among them are drawn
+   *  by the message, so the strip leaves them out. */
+  attachments?: readonly ClientAttachment[];
 }) {
   // Open/close lives in chat-view (see thought-panel-context): the panel is a
   // docked column and cannot be painted from inside this scrolling row. The RUN
@@ -418,7 +422,7 @@ export function ActivityTimeline({
       {/* What the turn's runs made (lib/chat/tool-run): the chart or the
           workbook, above the answer that talks about it, and the polite
           announcement of each run's phase change. Nothing when no run. */}
-      <ToolRunOutputs events={list} streaming={!!streaming} />
+      <ToolRunOutputs events={list} streaming={!!streaming} attachments={attachments} />
 
       {showSearch && (
         <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">

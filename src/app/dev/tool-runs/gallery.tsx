@@ -82,6 +82,11 @@ const PHASES: Array<{ name: ToolRunFixtureName; title: string; live: boolean }> 
   { name: "skillScript", title: "A skill's script, with its file (V3)", live: false },
   { name: "longOutput", title: "Long output, head and tail", live: false },
   { name: "legacyCodeInterpreter", title: "Pre-rework code_interpreter row", live: false },
+  { name: "contractRunning", title: "Tool contract shape: running, progress on the detail", live: true },
+  { name: "contractSucceeded", title: "Tool contract shape: succeeded, result text, files without links", live: false },
+  { name: "contractOutcomeUnknown", title: "Tool contract shape: failed + outcome_unknown", live: false },
+  { name: "contractTimedOut", title: "Tool contract shape: shell script timed out", live: false },
+  { name: "contractSkillScript", title: "Tool contract shape: a skill's script by slug", live: false },
 ];
 
 const T = Date.parse("2026-10-02T09:00:00.000Z");

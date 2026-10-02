@@ -118,17 +118,26 @@ export function ToolRunAnnouncer({ views, live }: { views: readonly ToolRunView[
 export function ToolRunOutputs({
   events,
   streaming,
+  attachments,
   onOpenFile,
   className,
 }: {
   events: readonly ClientActivityEvent[] | null | undefined;
   streaming: boolean;
+  /** The message's own attachments. A run file already among them is drawn by
+   *  the message (as an image or a tile), so it is not drawn here again; one
+   *  that is not yet (the reply is still streaming) is drawn here, with the
+   *  message's link when it has one. */
+  attachments?: readonly ClientAttachment[];
   onOpenFile?: (attachment: ClientAttachment) => void;
   className?: string;
 }) {
   const views = React.useMemo(() => readToolRuns(events, { live: streaming }), [events, streaming]);
   if (views.length === 0) return null;
-  const files = views.flatMap((view) => (view.phase === "succeeded" || view.phase === "failed" ? view.files : []));
+  const owned = new Set((attachments ?? []).map((a) => a.id));
+  const files = views
+    .flatMap((view) => (view.phase === "succeeded" || view.phase === "failed" ? view.files : []))
+    .filter((file) => !file.attachmentId || !owned.has(file.attachmentId));
   return (
     <>
       <ToolRunAnnouncer views={views} live={streaming} />

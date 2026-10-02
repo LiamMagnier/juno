@@ -18,6 +18,19 @@ public struct NativeToolDetail: Equatable, Sendable {
     /// `ok` or `failed`; absent while the call has no ending to report.
     public let status: String?
     public let durationMs: Int?
+    /// The tool contract's additions (TOOL_RUNTIME_DESIGN.md §6.4): the Alevr
+    /// call id, the live phase (`queued`, `awaiting_approval`, `running`),
+    /// the bound, the typed outcome (`outcome_unknown` included), the error
+    /// code, the duplicate-cache flag, and for execution tools the run record
+    /// and its live progress. All absent on a row from an older server.
+    public let callID: String?
+    public let phase: String?
+    public let timeoutMs: Int?
+    public let outcome: String?
+    public let errorCode: String?
+    public let cached: Bool
+    public let run: NativeToolRun?
+    public let progress: NativeToolRunProgress?
 
     public init(
         server: String,
@@ -30,7 +43,15 @@ public struct NativeToolDetail: Equatable, Sendable {
         resultTruncated: Bool = false,
         resultChars: Int? = nil,
         status: String? = nil,
-        durationMs: Int? = nil
+        durationMs: Int? = nil,
+        callID: String? = nil,
+        phase: String? = nil,
+        timeoutMs: Int? = nil,
+        outcome: String? = nil,
+        errorCode: String? = nil,
+        cached: Bool = false,
+        run: NativeToolRun? = nil,
+        progress: NativeToolRunProgress? = nil
     ) {
         self.server = server
         self.name = name
@@ -43,6 +64,14 @@ public struct NativeToolDetail: Equatable, Sendable {
         self.resultChars = resultChars
         self.status = status
         self.durationMs = durationMs
+        self.callID = callID
+        self.phase = phase
+        self.timeoutMs = timeoutMs
+        self.outcome = outcome
+        self.errorCode = errorCode
+        self.cached = cached
+        self.run = run
+        self.progress = progress
     }
 
     /// The sentence the panel prints in place of a missing argument box.
@@ -86,20 +115,28 @@ public struct NativeMemoryReceipt: Equatable, Sendable, Identifiable {
 /// sends it; a profile-1 server sends none, and ``NativeRunView`` builds the
 /// same shape from the legacy rows instead.
 public struct NativeToolCall: Equatable, Sendable {
-    /// The eight `ToolCallStatus` values (SPEC §2.5).
+    /// The eight `ToolCallStatus` values (SPEC §2.5), plus the tool runtime's
+    /// `outcome_unknown` (TOOL_RUNTIME_DESIGN.md §6.4): a run whose end nobody
+    /// saw. It is terminal, never a success, and never re-run.
     public enum Status: String, Equatable, Sendable, CaseIterable {
         case queued
         case awaitingApproval = "awaiting_approval"
         case running, succeeded, failed, denied, expired, cancelled
+        case outcomeUnknown = "outcome_unknown"
 
         /// Unknown statuses read as running, as the SPEC's mirror checklist asks.
+        /// A run record's `timed_out` is a failure (its code says why).
         public init(wire: String?) {
+            if wire == "timed_out" {
+                self = .failed
+                return
+            }
             self = wire.flatMap(Status.init(rawValue:)) ?? .running
         }
 
         public var isTerminal: Bool {
             switch self {
-            case .succeeded, .failed, .denied, .expired, .cancelled: true
+            case .succeeded, .failed, .denied, .expired, .cancelled, .outcomeUnknown: true
             case .queued, .awaitingApproval, .running: false
             }
         }
@@ -235,6 +272,11 @@ public struct NativeToolCall: Equatable, Sendable {
     public let web: Web?
     /// Served from the turn's duplicate cache.
     public let cached: Bool
+    /// What a `run_code` / `check_run` call left behind (`call.run`): where it
+    /// ran, its exit, its output, its files. Nil on every other tool.
+    public let run: NativeToolRun?
+    /// The last lines of a run still going (`call.progress`). Live only.
+    public let progress: NativeToolRunProgress?
 
     /// The approval receipt's status as of the call's end.
     public var approvalStatus: String? { approval?.status }
@@ -261,7 +303,9 @@ public struct NativeToolCall: Equatable, Sendable {
         errorDetail: String? = nil,
         approval: Approval? = nil,
         web: Web? = nil,
-        cached: Bool = false
+        cached: Bool = false,
+        run: NativeToolRun? = nil,
+        progress: NativeToolRunProgress? = nil
     ) {
         self.callID = callID
         self.providerCallID = providerCallID
@@ -285,6 +329,8 @@ public struct NativeToolCall: Equatable, Sendable {
         self.approval = approval
         self.web = web
         self.cached = cached
+        self.run = run
+        self.progress = progress
     }
 }
 
@@ -637,13 +683,33 @@ public struct NativeRunView: Equatable, Sendable {
                     index += 1
                 } else if event.title.hasPrefix("Using "), let detail = event.tool {
                     let label = String(event.title.dropFirst("Using ".count))
-                    let status: NativeToolCall.Status
+                    var status: NativeToolCall.Status
+                    var contractCode: String?
+                    let canonical = canonicalToolID(detail.name)
+                    let isRun = NativeToolRunPresentation.isRunTool(canonical)
                     switch (detail.status, detail.resultNote) {
                     case ("ok", _): status = .succeeded
                     case ("failed", _): status = .failed
                     case (_, "pending"): status = .running
-                    case (_, "unfinished"): status = .cancelled
+                    // A run whose call never returned: nobody saw its end, so
+                    // the end is unknown (never "cancelled", which would be a
+                    // claim about who stopped it).
+                    case (_, "unfinished"): status = isRun ? .outcomeUnknown : .cancelled
                     default: status = .succeeded
+                    }
+                    // The tool contract's fields, when the server sent them,
+                    // are the better witness than the legacy pair.
+                    if let typed = NativeToolRunWire.status(of: detail) {
+                        status = typed.status
+                        contractCode = typed.errorCode
+                    }
+                    var runArgs: [String: String] = [:]
+                    if isRun {
+                        // The pre-rework tool ran one language.
+                        if detail.name == "code_interpreter" { runArgs["language"] = "python" }
+                        if let language = detail.run?.language?.rawValue ?? NativeToolRunWire.language(fromArgs: detail.argsTruncated ? nil : detail.args) {
+                            runArgs["language"] = language
+                        }
                     }
                     let isConnector = detail.name.contains("__")
                     items.append(.tool(id: event.id, call: NativeToolCall(
@@ -656,8 +722,13 @@ public struct NativeRunView: Equatable, Sendable {
                         status: status,
                         index: index,
                         startedAt: event.createdAt,
-                        durationMs: detail.durationMs,
-                        errorCode: status == .failed ? "tool_error" : (status == .cancelled ? "cancelled" : nil)
+                        durationMs: detail.run?.durationMs ?? detail.durationMs,
+                        timeoutMs: detail.timeoutMs,
+                        args: runArgs,
+                        errorCode: contractCode ?? (status == .failed ? "tool_error" : (status == .cancelled ? "cancelled" : nil)),
+                        cached: detail.cached,
+                        run: detail.run,
+                        progress: detail.progress
                     ), detail: detail))
                     index += 1
                 }
@@ -793,7 +864,11 @@ public struct NativeRunView: Equatable, Sendable {
                 case "web_search", "provider_web_search", "provider_x_search": counts.searches += 1
                 case "run_code":
                     counts.codeRuns += 1
-                    if call.figure?.kind == "files" { counts.filesCreated += call.figure?.n ?? 0 }
+                    if let files = call.run?.files, !files.isEmpty {
+                        counts.filesCreated += files.count
+                    } else if call.figure?.kind == "files" {
+                        counts.filesCreated += call.figure?.n ?? 0
+                    }
                 case "web_fetch":
                     if call.status == .succeeded, let final = call.web?.finalURL { urls.insert(final) }
                 case "read_document":

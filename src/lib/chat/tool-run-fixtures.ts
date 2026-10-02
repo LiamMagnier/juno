@@ -56,6 +56,18 @@ function row(id: string, call: Extra, extra: Partial<ClientActivityEvent> & Extr
 
 const SANDBOX = { context: "hosted_sandbox" };
 
+/** A row in the tool contract's shape: everything on the `tool` detail. */
+function contract(id: string, detail: Extra): ClientActivityEvent {
+  return {
+    id,
+    kind: "tool",
+    title: "Using Code",
+    detail: "run_code",
+    createdAt: T0,
+    tool: { server: "Code", name: "run_code", args: JSON.stringify({ language: (detail.run as Extra | undefined)?.language ?? "python", code: "print(1)" }, null, 2), ...detail },
+  } as ClientActivityEvent;
+}
+
 /** Every phase, keyed by a name the gallery and the tests share. */
 export const TOOL_RUN_FIXTURES = {
   queued: row("queued", { tool: "run_code", status: "queued", args: { language: "python" }, run: { ...SANDBOX, language: "python", code: CODE_SALES } }),
@@ -223,6 +235,75 @@ export const TOOL_RUN_FIXTURES = {
       code: "for i in range(200000):\n    print(i)",
       stdout: { head: "0\n1\n2\n3\n4", tail: "199995\n199996\n199997\n199998\n199999", omittedBytes: 5_240_000, totalBytes: 5_240_020 },
       logUrl: "/dev/tool-runs/sample/log.txt",
+    },
+  }),
+  /*
+   * THE TOOL CONTRACT'S SHAPE (rf/tools-L1-tool-contract, `ClientToolDetail`
+   * additions): the run, the live phase, the progress and the typed outcome
+   * ride on the row's `tool` detail rather than on a `call` record. The reader
+   * takes either; these are the frames the chat route sends today on that lane.
+   */
+  contractRunning: contract("c-running", {
+    status: undefined,
+    resultNote: "pending",
+    callId: "jc_1_0",
+    phase: "running",
+    timeoutMs: 600_000,
+    progress: { lines: [{ stream: "stdout", text: "region" }, { stream: "stdout", text: "West     24410.75" }, { stream: "stderr", text: "warning: 2 rows dropped" }], stdoutBytes: 512, stderrBytes: 24 },
+    run: { runId: "run_c1", context: "hosted_sandbox", language: "python", status: "running", files: [] },
+  }),
+  contractSucceeded: contract("c-succeeded", {
+    status: "ok",
+    durationMs: 2_412,
+    result: "exit 0 · 2.4s\nstdout:\nregion\nWest     24410.75\nFiles attached to this conversation: chart.png (image/png, 48 KB), summary.csv (text/csv, 96 B)",
+    outcome: "succeeded",
+    callId: "jc_1_1",
+    run: {
+      runId: "run_c2",
+      context: "hosted_sandbox",
+      language: "python",
+      status: "succeeded",
+      exitCode: 0,
+      durationMs: 2_412,
+      stdoutBytes: 74,
+      stderrBytes: 0,
+      files: [
+        { attachmentId: "att_c_chart", name: "chart.png", mime: "image/png", bytes: 48_211 },
+        { attachmentId: "att_c_summary", name: "summary.csv", mime: "text/csv", bytes: 96 },
+      ],
+    },
+  }),
+  contractOutcomeUnknown: contract("c-unknown", {
+    status: "failed",
+    result: "The server restarted while this ran; whether it finished is unknown. It was not run again.",
+    outcome: "outcome_unknown",
+    errorCode: "outcome_unknown",
+    run: { runId: "run_c3", context: "hosted_sandbox", language: "python", status: "outcome_unknown", files: [] },
+  }),
+  contractTimedOut: contract("c-timeout", {
+    status: "failed",
+    durationMs: 120_000,
+    timeoutMs: 120_000,
+    result: "Timed out after 120 s. Nothing more was collected.",
+    outcome: "failed",
+    errorCode: "timeout",
+    run: { runId: "run_c4", context: "hosted_sandbox", language: "bash", status: "timed_out", durationMs: 120_000, files: [] },
+  }),
+  contractSkillScript: contract("c-skill", {
+    status: "ok",
+    durationMs: 3_920,
+    outcome: "succeeded",
+    args: JSON.stringify({ language: "bash", code: "python /skills/quarterly-summary/scripts/build.py inputs/sales.csv out.xlsx" }, null, 2),
+    result: "exit 0 · 3.9s\nstdout:\nWrote out.xlsx (sheet Summary, 4 regions)",
+    run: {
+      runId: "run_c5",
+      context: "hosted_sandbox",
+      language: "bash",
+      status: "succeeded",
+      exitCode: 0,
+      durationMs: 3_920,
+      skill: { slug: "quarterly-summary", versionId: "skv_1", bundleDigest: "sha256:ab12" },
+      files: [{ attachmentId: "att_c_xlsx", name: "out.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes: 6_120 }],
     },
   }),
   /** A pre-rework row: the old tool name, the legacy detail, no typed record. */

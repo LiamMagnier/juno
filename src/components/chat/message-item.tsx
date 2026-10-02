@@ -1387,6 +1387,9 @@ export const MessageItem = React.memo(function MessageItem({
             // For a source step's citation chip only — see ActivityTimeline.
             sources={sources}
             streaming={message.streaming}
+            // So the run strip does not draw a file twice: once the reply is
+            // saved, its runs' files are this message's own attachments below.
+            attachments={message.attachments}
             // Threaded down to the panel's Notice block. Resolved here, once, so
             // the inline finish row below and the panel cannot word it differently.
             finishNote={finishNote}

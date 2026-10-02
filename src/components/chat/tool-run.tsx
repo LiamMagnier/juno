@@ -163,6 +163,18 @@ export function ToolRunDetail({
 
       {view.stdout ? <StreamBlock label="Output" stream={view.stdout} logUrl={view.logUrl} /> : null}
       {view.stderr ? <StreamBlock label="Errors" stream={view.stderr} logUrl={view.logUrl} /> : null}
+      {!view.stdout && !view.stderr && view.detail?.result ? (
+        // The run record carries no streams of its own: the result the model
+        // read (output head and tail, exit, files) is the evidence, verbatim.
+        <div className="mt-2">
+          <AicssCodeBlock label="Result" code={view.detail.result} maxBodyHeight={220} className="bg-secondary" />
+          {view.detail.resultTruncated && view.detail.resultChars ? (
+            <p className="mt-1 font-mono text-caption text-muted-foreground">
+              {`First ${view.detail.result.length.toLocaleString()} of ${view.detail.resultChars.toLocaleString()} characters`}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {exit ? <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground">{exit}</p> : null}
 
@@ -209,7 +221,13 @@ export function ToolRunReceipt({
   const [open, setOpen] = React.useState(defaultOpen ?? view.phase === "failed");
   const icon = view.tool === "use_skill" || view.tool === "read_skill_file" ? "skill" : receiptIconKind("run_code");
   const hasDetail =
-    !!view.code || !!view.stdout || !!view.stderr || view.files.length > 0 || !!view.context || (view.progress?.lines.length ?? 0) > 0;
+    !!view.code ||
+    !!view.stdout ||
+    !!view.stderr ||
+    !!view.detail?.result ||
+    view.files.length > 0 ||
+    !!view.context ||
+    (view.progress?.lines.length ?? 0) > 0;
   const mark = parts.status === "running"
     ? active
       ? <RunMark phase={runMarkPhase(view.phase)} eventKey={runMarkEventKey(view)} />

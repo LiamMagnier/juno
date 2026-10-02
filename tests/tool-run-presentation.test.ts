@@ -307,3 +307,39 @@ test("the stored record is bounded and keeps only what a reload needs", () => {
   assert.deepEqual(record.files, [{ attachmentId: "att_a", name: "a.png", mime: "image/png", url: "/api/attachments/att_a" }]);
   assert.equal(sanitizeToolRunRecord("nope"), undefined);
 });
+
+/*
+ * The tool contract lane (rf/tools-L1-tool-contract) carries the run on the
+ * row's `tool` detail: `phase` while live, `outcome` and `errorCode` once it
+ * ends, `progress` lines as { stream, text }, `run.skill` by slug. The reader
+ * takes that shape as well as the typed record.
+ */
+test("the tool contract's detail fields: live phase, progress lines, typed outcome", () => {
+  const live = view(F.contractRunning, true);
+  assert.equal(live.phase, "running");
+  assert.equal(live.callId, "jc_1_0");
+  assert.equal(live.timeoutMs, 600_000);
+  assert.deepEqual(live.progress?.lines, ["region", "West     24410.75", "warning: 2 rows dropped"]);
+  assert.equal(runReceiptParts(live).label, "Running Python");
+  assert.equal(view(F.contractRunning, false).phase, "outcome_unknown", "a stored live row is over");
+
+  const ok = view(F.contractSucceeded);
+  assert.equal(ok.phase, "succeeded");
+  assert.equal(ok.source, "typed");
+  assert.equal(runSummaryLine(ok), "Ran Python · 2.4s · 2 files");
+  assert.deepEqual(ok.files.map((f) => [f.name, f.url]), [["chart.png", "/api/attachments/att_c_chart"], ["summary.csv", null]]);
+
+  const unknown = view(F.contractOutcomeUnknown);
+  assert.equal(unknown.phase, "outcome_unknown", "status failed + outcome_unknown is unknown, never a failure or a success");
+  assert.equal(runSummaryLine(unknown), "Outcome unknown, the server restarted while this ran");
+
+  const timedOut = view(F.contractTimedOut);
+  assert.equal(timedOut.phase, "timed_out");
+  assert.equal(runReceiptParts(timedOut).label, "Timed out after 2 min");
+  assert.equal(runReceiptParts(timedOut).object, "Shell script");
+
+  const skill = view(F.contractSkillScript);
+  assert.equal(skill.skill?.name, "quarterly-summary");
+  assert.equal(runReceiptParts(skill).label, "Ran a shell script");
+  assert.match(skill.code ?? "", /scripts\/build\.py/);
+});

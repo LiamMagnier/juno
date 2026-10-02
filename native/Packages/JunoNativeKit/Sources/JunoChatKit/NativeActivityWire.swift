@@ -88,6 +88,46 @@ struct NativeActivityWire: Decodable {
         let resultChars: Int?
         let status: String?
         let durationMs: Double?
+        // The tool contract's additions (TOOL_RUNTIME_DESIGN.md §6.4, the
+        // `ClientToolDetail` fields): each optional and read on its own, so a
+        // value of the wrong type costs that field and never the detail.
+        let callId: String?
+        let phase: String?
+        let timeoutMs: Double?
+        let outcome: String?
+        let errorCode: String?
+        let cached: Bool?
+        let run: JunoJSONValue?
+        let progress: JunoJSONValue?
+
+        private enum CodingKeys: String, CodingKey {
+            case server, name, args, argsNote, argsTruncated, result, resultNote, resultTruncated, resultChars, status,
+                 durationMs, callId, phase, timeoutMs, outcome, errorCode, cached, run, progress
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            server = try container.decode(String.self, forKey: .server)
+            name = try container.decode(String.self, forKey: .name)
+            args = try? container.decodeIfPresent(String.self, forKey: .args)
+            argsNote = try? container.decodeIfPresent(String.self, forKey: .argsNote)
+            argsTruncated = try? container.decodeIfPresent(Bool.self, forKey: .argsTruncated)
+            result = try? container.decodeIfPresent(String.self, forKey: .result)
+            resultNote = try? container.decodeIfPresent(String.self, forKey: .resultNote)
+            resultTruncated = try? container.decodeIfPresent(Bool.self, forKey: .resultTruncated)
+            let chars: Double? = try? container.decodeIfPresent(Double.self, forKey: .resultChars)
+            resultChars = chars.map { Int($0.rounded()) }
+            status = try? container.decodeIfPresent(String.self, forKey: .status)
+            durationMs = try? container.decodeIfPresent(Double.self, forKey: .durationMs)
+            callId = try? container.decodeIfPresent(String.self, forKey: .callId)
+            phase = try? container.decodeIfPresent(String.self, forKey: .phase)
+            timeoutMs = try? container.decodeIfPresent(Double.self, forKey: .timeoutMs)
+            outcome = try? container.decodeIfPresent(String.self, forKey: .outcome)
+            errorCode = try? container.decodeIfPresent(String.self, forKey: .errorCode)
+            cached = try? container.decodeIfPresent(Bool.self, forKey: .cached)
+            run = try? container.decodeIfPresent(JunoJSONValue.self, forKey: .run)
+            progress = try? container.decodeIfPresent(JunoJSONValue.self, forKey: .progress)
+        }
 
         var detail: NativeToolDetail {
             NativeToolDetail(
@@ -101,7 +141,15 @@ struct NativeActivityWire: Decodable {
                 resultTruncated: resultTruncated ?? false,
                 resultChars: resultChars,
                 status: status,
-                durationMs: durationMs.map { Int($0.rounded()) }
+                durationMs: durationMs.map { Int($0.rounded()) },
+                callID: callId.map { String($0.prefix(200)) },
+                phase: phase,
+                timeoutMs: timeoutMs.map { Int($0.rounded()) },
+                outcome: outcome,
+                errorCode: errorCode.map { String($0.prefix(80)) },
+                cached: cached ?? false,
+                run: run.flatMap(NativeToolRunWire.run(from:)),
+                progress: progress.flatMap(NativeToolRunWire.progress(from:))
             )
         }
     }
@@ -314,10 +362,17 @@ struct NativeActivityWire: Decodable {
         let approval: ApprovalWire?
         let web: WebWire?
         let cached: Bool?
+        /// `call.run` and `call.progress` (TOOL_RUNTIME_DESIGN.md §6.4), read as
+        /// plain JSON and projected by ``NativeToolRunWire``: a run record from
+        /// a newer server costs the fields this build does not know, never the
+        /// call.
+        let run: JunoJSONValue?
+        let progress: JunoJSONValue?
 
         private enum CodingKeys: String, CodingKey {
             case callId, providerCallId, tool, origin, title, connectorId, connectorLabel, toolTitle, status, round,
-                 index, startedAt, endedAt, durationMs, timeoutMs, args, figure, error, approval, web, cached
+                 index, startedAt, endedAt, durationMs, timeoutMs, args, figure, error, approval, web, cached, run,
+                 progress
         }
 
         init(from decoder: any Decoder) throws {
@@ -343,6 +398,8 @@ struct NativeActivityWire: Decodable {
             approval = try? container.decodeIfPresent(ApprovalWire.self, forKey: .approval)
             web = try? container.decodeIfPresent(WebWire.self, forKey: .web)
             cached = try? container.decodeIfPresent(Bool.self, forKey: .cached)
+            run = try? container.decodeIfPresent(JunoJSONValue.self, forKey: .run)
+            progress = try? container.decodeIfPresent(JunoJSONValue.self, forKey: .progress)
         }
 
         /// The eight statuses; anything else reads as running.
@@ -378,7 +435,29 @@ struct NativeActivityWire: Decodable {
                     expiresAt: wire.expiresAt.flatMap(parseDate)
                 )
             }
-            let code = error.map { Self.knownErrorCodes.contains($0.code) ? $0.code : "tool_error" }
+            var code = error.map { Self.knownErrorCodes.contains($0.code) ? $0.code : "tool_error" }
+            // The tool contract sends an unknown outcome as a failure with this
+            // code, because shipped builds read an unknown status as running.
+            let unknownOutcome = error?.code == "outcome_unknown"
+            let runRecord = run.flatMap(NativeToolRunWire.run(from:))
+            let progressRecord = progress.flatMap(NativeToolRunWire.progress(from:))
+            // The run record is the most specific witness of how a run ended.
+            var resolved = NativeToolCall.Status(wire: status)
+            if unknownOutcome { resolved = .outcomeUnknown }
+            switch runRecord?.status {
+            case "outcome_unknown": resolved = .outcomeUnknown
+            case "timed_out":
+                resolved = .failed
+                code = "timeout"
+            case "cancelled": resolved = .cancelled
+            default: break
+            }
+            if status == "timed_out" { code = "timeout" }
+            // An exit code is evidence: "succeeded" over a non-zero exit is a failure.
+            if resolved == .succeeded, let exit = runRecord?.exitCode, exit != 0 {
+                resolved = .failed
+                code = code ?? "tool_error"
+            }
             return NativeToolCall(
                 callID: callId,
                 providerCallID: providerCallId,
@@ -388,7 +467,7 @@ struct NativeActivityWire: Decodable {
                 connectorID: connectorId,
                 connectorLabel: connectorLabel,
                 toolTitle: toolTitle,
-                status: NativeToolCall.Status(wire: status),
+                status: resolved,
                 round: max(0, round ?? 0),
                 index: max(0, index ?? 0),
                 startedAt: startedAt.flatMap(parseDate),
@@ -417,8 +496,180 @@ struct NativeActivityWire: Decodable {
                         injection: web.injection == "suspicious" || web.injection == "hostile" ? web.injection : nil
                     )
                 },
-                cached: cached ?? false
+                cached: cached ?? false,
+                run: runRecord,
+                progress: progressRecord
             )
         }
+    }
+}
+
+/// Projects the run record and the progress frame from plain JSON, bounded,
+/// the way `readToolRun` does on the web (`src/lib/chat/tool-run.ts`).
+enum NativeToolRunWire {
+    private static func string(_ value: JunoJSONValue?, max: Int = 4_000) -> String? {
+        guard case .string(let text)? = value else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(max))
+    }
+
+    private static func raw(_ value: JunoJSONValue?, max: Int = 64_000) -> String? {
+        guard case .string(let text)? = value, !text.isEmpty else { return nil }
+        return String(text.prefix(max))
+    }
+
+    private static func int(_ value: JunoJSONValue?) -> Int? {
+        guard case .number(let number)? = value, number.isFinite else { return nil }
+        return Int(number.rounded(.towardZero))
+    }
+
+    private static func count(_ value: JunoJSONValue?) -> Int? {
+        guard let n = int(value), n >= 0 else { return nil }
+        return n
+    }
+
+    /// Same-origin paths only: a file card never leaves the app by default.
+    private static func path(_ value: JunoJSONValue?) -> String? {
+        guard let text = string(value, max: 2_000), text.hasPrefix("/"), !text.hasPrefix("//") else { return nil }
+        return text
+    }
+
+    private static func stream(_ value: JunoJSONValue?) -> NativeToolRunStream? {
+        switch value {
+        case .string(let text)?:
+            return text.isEmpty ? nil : NativeToolRunStream(head: String(text.prefix(64_000)))
+        case .object(let fields)?:
+            let head = raw(fields["head"]) ?? raw(fields["text"]) ?? ""
+            let tail = raw(fields["tail"])
+            if head.isEmpty && tail == nil { return nil }
+            return NativeToolRunStream(
+                head: head,
+                tail: tail,
+                omittedBytes: count(fields["omittedBytes"]) ?? 0,
+                totalBytes: count(fields["totalBytes"]) ?? count(fields["bytes"])
+            )
+        default:
+            return nil
+        }
+    }
+
+    static func run(from value: JunoJSONValue) -> NativeToolRun? {
+        guard case .object(let fields) = value else { return nil }
+        var files: [NativeToolRunFile] = []
+        if case .array(let entries)? = fields["files"] {
+            for entry in entries.prefix(50) {
+                guard case .object(let file) = entry,
+                      let name = string(file["name"], max: 255) ?? string(file["fileName"], max: 255) else { continue }
+                let mime = string(file["mime"], max: 160) ?? string(file["mimeType"], max: 160) ?? "application/octet-stream"
+                let attachmentID = string(file["attachmentId"], max: 200) ?? string(file["id"], max: 200)
+                let isImage = mime.lowercased().hasPrefix("image/")
+                files.append(NativeToolRunFile(
+                    attachmentID: attachmentID,
+                    name: name,
+                    mime: mime,
+                    bytes: count(file["bytes"]) ?? count(file["size"]),
+                    path: path(file["url"]) ?? (isImage ? attachmentID.map { "/api/attachments/\($0)" } : nil),
+                    width: count(file["width"]),
+                    height: count(file["height"])
+                ))
+            }
+        }
+        let language: NativeToolRun.Language? = switch string(fields["language"])?.lowercased() {
+        case "python", "python3", "py": .python
+        case "javascript", "js", "node", "nodejs": .javascript
+        case "bash", "sh", "shell": .bash
+        default: nil
+        }
+        var skill: String?
+        if case .object(let skillFields)? = fields["skill"] {
+            skill = string(skillFields["name"], max: 120) ?? string(skillFields["slug"], max: 120)
+        }
+        return NativeToolRun(
+            runID: string(fields["runId"], max: 200) ?? string(fields["id"], max: 200),
+            status: string(fields["status"], max: 40),
+            context: string(fields["context"]).flatMap(NativeToolRun.Context.init(rawValue:)),
+            language: language,
+            exitCode: int(fields["exitCode"]),
+            durationMs: count(fields["durationMs"]),
+            stdout: stream(fields["stdout"] ?? fields["stdoutTail"]),
+            stderr: stream(fields["stderr"] ?? fields["stderrTail"]),
+            code: raw(fields["code"]),
+            codeTruncated: fields["codeTruncated"] == .bool(true),
+            files: files,
+            filesDiscarded: count(fields["filesDiscarded"]) ?? 0,
+            skillName: skill,
+            agentName: string(fields["agentName"], max: 120),
+            logPath: path(fields["logUrl"]),
+            finishedLater: fields["finishedLater"] == .bool(true)
+        )
+    }
+
+    /// How a call on the legacy row (its `tool` detail) ended, from the tool
+    /// contract's fields first: the run record, the typed `outcome` and
+    /// `errorCode`, the live `phase`; then the legacy `status`/`resultNote`.
+    /// Returns nil when the detail carries none of the contract's fields.
+    static func status(of detail: NativeToolDetail) -> (status: NativeToolCall.Status, errorCode: String?)? {
+        var code = detail.errorCode
+        if code == "outcome_unknown" { return (.outcomeUnknown, nil) }
+        switch detail.run?.status {
+        case "outcome_unknown": return (.outcomeUnknown, nil)
+        case "timed_out": return (.failed, "timeout")
+        case "cancelled": return (.cancelled, code ?? "cancelled")
+        default: break
+        }
+        let status: NativeToolCall.Status?
+        switch detail.outcome {
+        case "succeeded": status = .succeeded
+        case "failed": status = .failed
+        case "denied": status = .denied
+        case "expired": status = .expired
+        case "cancelled": status = .cancelled
+        case "outcome_unknown": status = .outcomeUnknown
+        default:
+            switch detail.phase {
+            case "queued": status = .queued
+            case "awaiting_approval": status = .awaitingApproval
+            case "running": status = .running
+            default: status = nil
+            }
+        }
+        guard var resolved = status else { return nil }
+        if resolved == .succeeded, let exit = detail.run?.exitCode, exit != 0 {
+            resolved = .failed
+            code = code ?? "tool_error"
+        }
+        if resolved == .failed, code == nil { code = "tool_error" }
+        return (resolved, code)
+    }
+
+    /// The program's language from a whole (uncut) argument JSON.
+    static func language(fromArgs args: String?) -> String? {
+        guard let data = args?.data(using: .utf8),
+              let object = try? JSONDecoder().decode([String: JunoJSONValue].self, from: data),
+              case .string(let language)? = object["language"] else { return nil }
+        return language
+    }
+
+    static func progress(from value: JunoJSONValue) -> NativeToolRunProgress? {
+        guard case .object(let fields) = value else { return nil }
+        var lines: [String] = []
+        if case .array(let entries)? = fields["lines"] {
+            // Strings, or `{ stream, text }` (the tool contract's `ToolProgress`).
+            lines = entries.compactMap { entry -> String? in
+                switch entry {
+                case .string(let line): return String(line.prefix(400))
+                case .object(let line): return string(line["text"], max: 400)
+                default: return nil
+                }
+            }
+        } else if case .string(let text)? = fields["text"] {
+            lines = text.components(separatedBy: "\n").map { String($0.prefix(400)) }
+        }
+        return NativeToolRunProgress(
+            seq: int(fields["seq"]) ?? 0,
+            lines: Array(lines.suffix(20)),
+            stdoutBytes: count(fields["stdoutBytes"]),
+            stderrBytes: count(fields["stderrBytes"])
+        )
     }
 }

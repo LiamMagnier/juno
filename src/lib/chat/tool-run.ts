@@ -283,8 +283,17 @@ function files(value: unknown): ToolRunFile[] {
 function progress(value: unknown): ToolRunProgress | null {
   const r = rec(value);
   if (!r) return null;
+  // Lines arrive as strings, or as `{ stream, text }` (the tool contract's
+  // `ToolProgress`); stderr lines keep their stream so the reader can tell.
   const lines = Array.isArray(r.lines)
-    ? r.lines.filter((line): line is string => typeof line === "string").slice(-20).map((line) => line.slice(0, 400))
+    ? r.lines
+        .flatMap((line): string[] => {
+          if (typeof line === "string") return [line];
+          const entry = rec(line);
+          return typeof entry?.text === "string" ? [entry.text] : [];
+        })
+        .slice(-20)
+        .map((line) => line.slice(0, 400))
     : typeof r.text === "string"
       ? r.text.split("\n").slice(-20).map((line) => line.slice(0, 400))
       : [];
@@ -362,14 +371,21 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
   const run = rec(call?.run) ?? rec(ev.run) ?? rec(detailRec?.run);
   const prog = progress(call?.progress ?? run?.progress ?? ev.progress ?? detailRec?.progress);
   const error = rec(call?.error);
-  const errorCode = str(error?.code, 80) ?? str(run?.errorCode, 80);
+  const errorCode = str(error?.code, 80) ?? str(detailRec?.errorCode, 80) ?? str(run?.errorCode, 80);
   const args = rec(call?.args);
   const legacy = legacyArgs(detail);
 
   // The run record's own status is the most specific witness (a host that
-  // said `timed_out`), then the call's, then the legacy detail.
+  // said `timed_out`), then the typed record's, then the tool contract's
+  // fields on the detail (`outcome`, then the live `phase`), then the legacy
+  // detail. `outcome_unknown` also travels as a failure with that error code,
+  // because shipped native builds read an unknown status as running.
   let phase =
-    phaseFromStatus(str(run?.status, 40), errorCode) ?? phaseFromStatus(str(call?.status, 40), errorCode);
+    (errorCode === "outcome_unknown" ? ("outcome_unknown" as const) : null) ??
+    phaseFromStatus(str(run?.status, 40), errorCode) ??
+    phaseFromStatus(str(call?.status, 40), errorCode) ??
+    phaseFromStatus(str(detailRec?.outcome, 40), errorCode) ??
+    phaseFromStatus(str(detailRec?.phase, 40), errorCode);
   const typed = phase !== null || !!run;
   if (phase === null) {
     if (detail?.status === "ok") phase = "succeeded";
@@ -399,12 +415,12 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
 
   const skillRec = rec(run?.skill) ?? rec(call?.skill);
   const skillName =
-    str(skillRec?.name, 120) ?? str(args?.skill, 120) ?? str(args?.name, 120) ?? str(legacy?.skill, 120) ?? str(legacy?.name, 120);
+    str(skillRec?.name, 120) ?? str(skillRec?.slug, 120) ?? str(args?.skill, 120) ?? str(args?.name, 120) ?? str(legacy?.skill, 120) ?? str(legacy?.name, 120);
   const skillSlug = str(skillRec?.slug, 120);
 
   return {
     id: event.id,
-    callId: str(call?.callId, 200),
+    callId: str(call?.callId, 200) ?? str(detailRec?.callId, 200),
     tool,
     phase,
     language:
@@ -420,7 +436,7 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
     runId: str(run?.runId, 200) ?? str(run?.id, 200),
     exitCode,
     durationMs: count(run?.durationMs) ?? count(call?.durationMs) ?? (detail ? (count(detail.durationMs) ?? null) : null),
-    timeoutMs: count(call?.timeoutMs) ?? count(run?.timeoutMs),
+    timeoutMs: count(call?.timeoutMs) ?? count(detailRec?.timeoutMs) ?? count(run?.timeoutMs),
     startedAt: str(call?.startedAt, 40) ?? str(run?.startedAt, 40) ?? event.createdAt ?? null,
     files: files(run?.files),
     filesDiscarded: count(run?.filesDiscarded) ?? 0,
