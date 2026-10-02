@@ -1,6 +1,6 @@
-import { AppPage } from "@/components/ui/app-page";
+import { PublicDocumentNav } from "@/components/public/document-nav";
 import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
-import { staggerDelay } from "@/lib/motion";
+
 
 
 /** The prose treatment, as plain `[&_…]` selectors on the article. */
@@ -29,13 +29,12 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
   return (
     <div className="alevr-public relative min-h-dvh bg-background text-foreground">
       <SiteHeader />
-      <AppPage scroll={false} measure="reading" contentClassName="pb-8 pt-12 sm:pt-24">
-        {/* The documents are French (the service is operated from France);
-            the chrome around them is the site's English. */}
-        <main lang="fr" style={staggerDelay(1, "loose")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
+      <div className="alevr-document-layout">
+        <PublicDocumentNav />
+        <main lang="fr" className="alevr-document-main">
           <article className={ARTICLE}>{children}</article>
         </main>
-      </AppPage>
+      </div>
       <SiteFooter />
     </div>
   );

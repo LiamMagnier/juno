@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
 import { headers } from "next/headers";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { PLAN_LIST } from "@/lib/plans";
@@ -49,14 +49,12 @@ function structuredData(): string {
 export default async function HomePage() {
   const user = await getCurrentUser();
   if (user) redirect("/chat");
-  // The CSP nonce the middleware minted for this request — the landing's one
-  // inline script (the hero-entrance gate) has to carry it or the policy
-  // drops it silently.
+  // Structured data retains the request CSP nonce.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <>
       <script nonce={nonce} suppressHydrationWarning type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData() }} />
-      <LandingPage nonce={nonce} />
+      <LandingPage />
     </>
   );
 }

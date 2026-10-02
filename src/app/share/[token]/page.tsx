@@ -123,12 +123,12 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
 
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
-    <div className={cn("alevr-public flex flex-col bg-background text-foreground", artifact ? "h-dvh overflow-hidden" : "min-h-dvh")}>
+    <div className={cn("alevr-public alevr-share flex flex-col bg-background text-foreground", artifact ? "alevr-share-artifact h-dvh overflow-hidden" : "alevr-share-chat min-h-dvh")}>
       {/* A slim bar on the card rung with a hairline — no glass, because what
           scrolls under it is a reading surface (SOFT_UI.md §1.4). The one
           primary action on the page lives here, where it is always reachable. */}
-      <header className="sticky top-0 z-toolbar shrink-0 border-b border-border/60 bg-card">
-        <AppPage scroll={false} measure="reading" contentClassName="flex min-h-16 flex-wrap items-center gap-3 py-3">
+      <header className="alevr-reading-header sticky top-0 z-toolbar shrink-0 bg-background">
+        <AppPage scroll={false} measure="wide" contentClassName="flex min-h-16 flex-wrap items-center gap-4 py-3">
           <Link
             href="/"
             aria-label={PRODUCT_NAME}
@@ -137,8 +137,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             <AlevrLockup height={24} decorative />
           </Link>
           <div className="min-w-0 flex-1 basis-32">
-            <h1 className="truncate font-serif text-title font-medium">{title}</h1>
-            <p className="truncate text-caption text-muted-foreground">{subject.dateLine}</p>
+            {artifact && <><h1 className="truncate font-serif text-title font-medium">{title}</h1><p className="truncate text-caption text-muted-foreground">{subject.dateLine}</p></>}
           </div>
           <Button size="sm" asChild>
             <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
@@ -146,11 +145,12 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         </AppPage>
       </header>
 
-      <main className={cn("min-h-0 flex-1", artifact && "flex flex-col")}>
-      <SandboxProfileProvider profile={publicShareProfile()}>
+      <main className={cn("alevr-share-main min-h-0 flex-1", artifact && "flex flex-col")}>
+        <SandboxProfileProvider profile={publicShareProfile()}>
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
-          <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
+          <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="alevr-shared-prose">
+            <header className="alevr-shared-title"><p className="text-ui text-muted-foreground">{subject.dateLine}</p><h1 className="mt-4 font-serif">{title}</h1></header>
             <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
             {/* The end of a shared conversation is where a reader decides what
                 Juno is: one quiet invitation on the front door's own art. */}
@@ -183,7 +183,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             />
           </AppPage>
         ) : null}
-      </SandboxProfileProvider>
+        </SandboxProfileProvider>
       </main>
 
       <footer className="shrink-0 border-t border-border/60">

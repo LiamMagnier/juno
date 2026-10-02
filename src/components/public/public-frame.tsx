@@ -1,5 +1,5 @@
 import { PublicThemeToggle } from "./theme-toggle";
-import Image from "next/image";
+import { ContinuumMark } from "@/components/brand/continuum-mark";
 import Link from "next/link";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -19,20 +19,20 @@ export function PublicFrame({ children, className = "" }: { children: React.Reac
 
 export function PublicState({ title, description, code, children }: { title: string; description: string; code?: string; children?: React.ReactNode }) {
   return (
-    <PublicFrame className="alevr-public-state flex flex-col">
-      <header className="flex items-center justify-between px-6 py-5 sm:px-10"><PublicBrand /><PublicThemeToggle /></header>
-      <main className="alevr-state-layout mx-auto w-full max-w-6xl flex-1 px-6 py-12 sm:px-10 sm:py-16">
-        <div className="alevr-state-copy">
-          {code && <p className="alevr-state-code mb-6 text-ui text-muted-foreground">{code}</p>}
-          <h1 className="text-balance font-serif text-display font-medium tracking-tight sm:text-hero">{title}</h1>
-          <p className="mt-5 max-w-md text-pretty text-body-lg leading-relaxed text-muted-foreground">{description}</p>
-          {children && <div className="alevr-state-actions mt-8 flex flex-wrap items-center gap-3">{children}</div>}
+    <PublicFrame className="alevr-public-state">
+      <header className="alevr-access-header"><PublicBrand /><PublicThemeToggle /></header>
+      <main className="alevr-state-layout">
+        <div className="alevr-state-identifier" aria-hidden="true">
+          {code ? <span>{code}</span> : <ContinuumMark size={132} />}
         </div>
-        <div className="alevr-state-image relative aspect-square overflow-hidden rounded-menu" aria-hidden="true">
-          <Image src="/brand/home-continuity.webp" alt="" fill unoptimized sizes="(max-width:767px) 100vw, 40vw" className="object-cover" />
+        <div className="alevr-state-copy">
+          {code && <p className="sr-only">Error {code}</p>}
+          <h1 className="font-serif">{title}</h1>
+          <p className="mt-6 max-w-md text-pretty text-body-lg leading-relaxed text-muted-foreground">{description}</p>
+          {children && <div className="alevr-state-actions mt-9 flex flex-wrap items-center gap-3">{children}</div>}
         </div>
       </main>
-      <footer className="px-6 pb-6 text-center text-caption text-muted-foreground">Go further.</footer>
+      <footer className="alevr-state-footer text-ui text-muted-foreground"><span>Go further.</span><Link href="/" className="inline-flex min-h-11 items-center rounded-lg hover:text-foreground">Alevr home</Link></footer>
     </PublicFrame>
   );
 }

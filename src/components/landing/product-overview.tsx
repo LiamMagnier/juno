@@ -19,18 +19,18 @@ const DIFF: DiffRow[] = [
   { old: 3, cur: 5, type: "ctx", text: "}" },
 ];
 
-export function ProductOverview() {
+export function ProductOverview({ hero = false }: { hero?: boolean }) {
   return (
-    <section id="features" className="alevr-overview scroll-mt-20">
-      <LandingColumn contentClassName="py-16 sm:py-24">
-        <Reveal>
-          <h2 className="max-w-2xl font-serif text-display font-medium tracking-tight sm:text-hero">From a question to work that lasts.</h2>
-          <p className="mt-5 max-w-xl text-body-lg leading-relaxed text-muted-foreground">Three ways to go further, with your context and control intact.</p>
-        </Reveal>
-        <Reveal className="mt-10 sm:mt-14" amount={0.15}>
-          <ProductStudy
-            chat={<SharedChatTranscript messages={CONVERSATION} artifacts={[]} />}
-            orbit={<OrbitExample />}
+    <section id="features" className={hero ? "alevr-hero-stage scroll-mt-20" : "alevr-overview scroll-mt-20"}>
+      <LandingColumn contentClassName={hero ? "pb-10" : "alevr-section-space"}>
+        {!hero && <Reveal>
+          <h2 className="alevr-section-heading font-serif">Think. Delegate. Build.</h2>
+          <p className="mt-5 max-w-xl text-body-lg leading-relaxed text-muted-foreground">One workspace, three ways to move your work forward.</p>
+        </Reveal>}
+        <Reveal className={hero ? "" : "mt-12 sm:mt-16"} amount={0.15}>
+          <ProductStudy compact={hero}
+            chat={<SharedChatTranscript messages={hero ? [CONVERSATION[0], { ...CONVERSATION[1], content: "## Make the next decision clear\n\nGroup the interviews around the problem people are trying to solve. Then compare the evidence before choosing what to build.\n\n- What keeps coming up?\n- What is the smallest change worth testing?" }] : CONVERSATION} artifacts={[]} />}
+            orbit={<OrbitExample compact={hero} />}
             code={<div><FileDiff file="publish.ts" rows={DIFF} /><p className="mt-6 text-body text-muted-foreground">Review the proposed change before applying it.</p></div>}
           />
         </Reveal>
@@ -39,9 +39,9 @@ export function ProductOverview() {
   );
 }
 
-function OrbitExample() {
+function OrbitExample({ compact = false }: { compact?: boolean }) {
   return (
-    <div>
+    <div className={compact ? "alevr-orbit-compact" : ""}>
       <div className="flex items-center gap-5">
         <AgentFace avatar={{ shape: "prism", tone: "teal", eyes: "soft", mark: "none" }} state="idle" size={64} live={false} />
         <div><p className="font-serif text-page-title">Mira</p><p className="mt-1 text-ui text-muted-foreground">Research agent</p></div>

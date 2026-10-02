@@ -3,7 +3,7 @@
 import * as React from "react";
 import { LazyMotion, MotionConfig, domAnimation, m, useInView, type Variants } from "framer-motion";
 
-import { staggerDelay, transition, variants, type StaggerRung } from "@/lib/motion";
+import { staggerDelay, type StaggerRung } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -47,14 +47,14 @@ import { cn } from "@/lib/utils";
  * reads as a flicker inside the reader's own scroll; a reveal crosses that
  * scroll and needs the longer rung.
  */
-const RISE = variants.stage.hidden.x;
+const RISE = 28;
 
 const PRINT = "print:!transform-none print:!opacity-100";
 
 const SELF: Variants = {
   // Only ever set below the fold, where there is nothing to watch: instant.
   hidden: { opacity: 0, y: RISE, transition: { duration: 0 } },
-  visible: (delay: number = 0) => ({ opacity: 1, y: 0, transition: { ...transition.slow, delay } }),
+  visible: (delay: number = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.65, ease: [0.16, 1, 0.3, 1], delay } }),
 };
 
 /** The parent only orchestrates: its children carry the motion. */

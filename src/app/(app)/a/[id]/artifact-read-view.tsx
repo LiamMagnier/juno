@@ -84,7 +84,7 @@ export function ArtifactReadView({
   const { previous, next } = adjacentVersions(versions, version);
 
   return (
-    <div className="alevr-public flex h-full min-h-0 flex-col overflow-hidden bg-background">
+    <div className="alevr-public alevr-owner-read flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {/* `@container/window`: the row collapses by its own width, not the
           window's (PREMIUM rule 11) — beside the app sidebar the header is
           what the sidebar leaves. Under 36rem "Open in chat" keeps its mark
@@ -232,7 +232,7 @@ function VersionStepper({
 }
 
 function StepLink({ href, label, children }: { href: string | null; label: string; children: React.ReactNode }) {
-  const className = "size-7 shrink-0 text-muted-foreground hover:text-foreground";
+  const className = "size-11 shrink-0 text-muted-foreground hover:text-foreground";
   if (href === null) {
     return (
       <Button variant="ghost" size="icon-sm" className={className} disabled aria-label={label}>

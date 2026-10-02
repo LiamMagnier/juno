@@ -15,9 +15,8 @@ const STYLES = `
   header { padding:24px 32px; }
   header a { display:inline-flex; align-items:center; min-height:44px; color:inherit; }
   header a > span { position:relative; display:inline-block; flex-shrink:0; vertical-align:middle; }
-  main { min-height:calc(100dvh - 100px); max-width:1152px; margin:auto; padding:64px 32px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:64px; align-items:center; }
-  .continuity { display:block; width:100%; aspect-ratio:1; object-fit:cover; border-radius:14px; }
-  .code { margin:0 0 24px; letter-spacing:.08em; }
+  main { min-height:calc(100dvh - 100px); max-width:1120px; margin:auto; padding:64px 32px; display:grid; grid-template-columns:minmax(0,.7fr) minmax(0,1fr); gap:96px; align-items:center; }
+  .code { margin:0; font-family:Newsreader,Georgia,serif; font-size:220px; line-height:1; letter-spacing:-.07em; color:currentColor; opacity:.28; }
   h1 { margin:0; font-family:Newsreader,Georgia,serif; font-size:48px; line-height:1.1; font-weight:400; letter-spacing:-.02em; text-wrap:balance; }
   p { margin:20px 0 0; color:#686b70; font-size:14px; line-height:1.6; }
   .actions { margin-top:32px; display:flex; flex-wrap:wrap; gap:12px; }
@@ -36,9 +35,9 @@ const STYLES = `
     .actions > :first-child { background:#e8e9eb; color:#18191b; } .actions > :first-child:hover { background:#b4b6ba; }
     :focus-visible { outline-color:#97a6e6; }
   }
-  @media(max-width:767px) { header { padding:20px 24px; } main { grid-template-columns:minmax(0,1fr); padding:48px 24px; gap:40px; } h1 { font-size:40px; } .continuity { aspect-ratio:4/3; } }
-  @keyframes public-enter { from { opacity:.5; transform:translateY(6px); } to { opacity:1; transform:none; } }
-  @media(prefers-reduced-motion:no-preference) { main h1 { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) both; } main p { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; } .actions { animation:public-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; } }
+  @media(max-width:767px) { header { padding:20px 24px; } main { grid-template-columns:minmax(0,1fr); padding:48px 24px; gap:40px; } h1 { font-size:40px; } .code { font-size:140px; } }
+  @keyframes public-enter { from { opacity:.5; transform:translateY(24px); } to { opacity:1; transform:none; } }
+  @media(prefers-reduced-motion:no-preference) { main h1 { animation:public-enter 650ms cubic-bezier(.33,1,.68,1) both; } main p { animation:public-enter 650ms cubic-bezier(.33,1,.68,1) 70ms both; } .actions { animation:public-enter 650ms cubic-bezier(.33,1,.68,1) 140ms both; } }
   @media(prefers-reduced-motion:reduce) { .actions a,button { transition:none; } }
 `;
 
@@ -50,16 +49,13 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
         <style dangerouslySetInnerHTML={{ __html: STYLES }} />
         <header><a href="/" aria-label={`${PRODUCT_NAME} home`}><AlevrLockup height={26} tone="current" decorative /></a></header>
         <main>
+          <div aria-hidden="true"><p className="code">500</p></div>
           <div>
-          <p className="code">500</p>
           <h1>Something went wrong</h1>
           <p>We couldn’t load this page. Try again in a moment. Your saved work is still there.</p>
           <div className="actions"><button type="button" onClick={reset}>Try again</button><a href="/">Go to the home page</a></div>
           {error.digest && <p className="reference">Reference {error.digest}</p>}
           </div>
-          {/* Plain HTML keeps root recovery independent of the image runtime. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="continuity" src="/brand/home-continuity.webp" alt="" width="900" height="900" />
         </main>
       </body>
     </html>

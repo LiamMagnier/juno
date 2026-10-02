@@ -1,5 +1,3 @@
-import { AppPage } from "@/components/ui/app-page";
-import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/landing/reveal";
 
@@ -34,9 +32,9 @@ export function Section({
     // these ids (#models, #pricing, …) would otherwise land the heading directly
     // underneath the bar.
     <section id={id} className={cn("scroll-mt-20", className)}>
-      <LandingColumn contentClassName="py-14 sm:py-16">
+      <LandingColumn contentClassName="alevr-section-space">
         <Reveal>
-          <PageHeader heading={heading} lede={lede} />
+          <header><h2 className="alevr-section-heading font-serif">{heading}</h2>{lede && <p className="mt-5 max-w-xl text-body-lg leading-relaxed text-muted-foreground">{lede}</p>}</header>
         </Reveal>
         {children}
       </LandingColumn>
@@ -45,8 +43,7 @@ export function Section({
 }
 
 /**
- * The landing's column: the app page frame, unscrolled, at the `wide`
- * measure. The header, hero, sections and footer all sit on it, so the
+ * The public site's wide editorial measure, independent of the app shell. The header, hero, sections and footer all sit on it, so the
  * wordmark in the bar, the hero's left edge and every section heading share
  * one x-coordinate. `contentClassName` sets the vertical rhythm per use.
  */
@@ -60,8 +57,8 @@ export function LandingColumn({
   contentClassName?: string;
 }) {
   return (
-    <AppPage scroll={false} measure="wide" className={className} contentClassName={cn("py-0", contentClassName)}>
-      {children}
-    </AppPage>
+    <div className={className}>
+      <div className={cn("alevr-site-column", contentClassName)}>{children}</div>
+    </div>
   );
 }

@@ -34,7 +34,6 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
   const macFacts = mac?.available
     ? [mac.version && `Version ${mac.version}`, mac.size && formatBytes(mac.size), "macOS 26 or later"]
         .filter(Boolean)
-        .join("  ·  ")
     : null;
   const blocked = Boolean(mac?.available && mac.notarized === false);
 
@@ -43,8 +42,8 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
       <SiteHeader />
 
       <main>
-        <LandingColumn contentClassName="flex flex-col items-center pb-10 pt-10 text-center sm:pb-14 sm:pt-16">
-          <h1 style={staggerDelay(0, "loose")} className={`text-balance font-serif text-hero font-medium tracking-tight ${ENTER}`}>
+        <LandingColumn contentClassName="alevr-download-intro"><div className="alevr-download-copy">
+          <h1 style={staggerDelay(0, "loose")} className={`alevr-download-title font-serif ${ENTER}`}>
             {`Download ${PRODUCT_NAME} for Mac`}
           </h1>
           <p
@@ -53,7 +52,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
           >
             {`Chat and ${PRODUCT_NAME} Code in one native app. Same account, same conversations, same projects.`}
           </p>
-          <div style={staggerDelay(2, "loose")} className={`mt-8 flex flex-col items-center ${ENTER}`}>
+          <div style={staggerDelay(2, "loose")} className={`mt-8 flex flex-col items-start ${ENTER}`}>
             {macLink ? (
               <Button asChild size="lg">
                 <a {...macLink}>
@@ -66,7 +65,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
                 {mac?.note ?? "Mac build not published yet"}
               </span>
             )}
-            {macFacts && <p className="mt-3 font-mono text-caption text-muted-foreground">{macFacts}</p>}
+            {macFacts && <div className="alevr-release-facts mt-4">{macFacts.map(fact => <p key={String(fact)} className="text-caption text-muted-foreground">{fact}</p>)}</div>}
           </div>
           {blocked && (
             <p
@@ -81,15 +80,12 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
               </span>
             </p>
           )}
+          </div><div className="alevr-download-material"><MacStage /></div>
         </LandingColumn>
-
-        <div style={staggerDelay(3, "loose")} className={`mx-auto w-full max-w-[80rem] px-3 sm:px-6 ${ENTER}`}>
-          <MacStage />
-        </div>
 
         <LandingColumn contentClassName="py-16 sm:py-24">
           <h2 className="font-serif text-display font-medium tracking-tight">Also on your other devices</h2>
-          <div className="mt-8 grid gap-x-10 gap-y-8 lg:grid-cols-3">
+          <div className="alevr-download-platforms mt-10">
             <OtherCell
               icon={Smartphone}
               title="iPhone and iPad"
@@ -119,7 +115,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
           </div>
 
           <details className="group mt-10 rounded-card border border-border/70 px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-xs text-body font-medium">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 rounded-xs text-body font-medium">
               Verify your download
               <ChevronDown
                 className="size-4 text-muted-foreground transition-transform duration-fast ease-out-soft group-open:rotate-180 motion-reduce:transition-none"
@@ -161,7 +157,7 @@ function OtherCell({
   action: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col justify-between gap-5 border-t border-border py-6">
+    <div className="alevr-download-platform border-t border-border py-8">
       <div className="flex items-start gap-3.5">
         <Icon className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
         <div>
@@ -180,9 +176,8 @@ function OtherCell({
  * server-only, and this page is also rendered by the feed tests.
  */
 function MacStage() {
-  return <div className="relative aspect-[16/7] overflow-hidden rounded-menu bg-muted" aria-hidden="true">
-    <Image src="/brand/home-horizon-light.webp" alt="" fill sizes="(max-width:1023px) 100vw, 80vw" className="alevr-download-art-light object-cover" />
-    <Image src="/brand/home-horizon-dark.webp" alt="" fill sizes="(max-width:1023px) 100vw, 80vw" className="alevr-download-art-dark object-cover" />
+  return <div className="relative h-full min-h-80 overflow-hidden rounded-menu bg-muted" aria-hidden="true">
+    <Image src="/brand/public-aperture.webp" alt="" fill priority sizes="(max-width:767px) 100vw, 40vw" className="object-cover" />
   </div>;
 }
 

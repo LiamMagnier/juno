@@ -46,56 +46,120 @@
 [role="dialog"]:has(#onboarding-name) .font-mono { font-family: var(--font-sans), Inter, sans-serif; }
 [role="dialog"]:has(#onboarding-name) .field-well { box-shadow: none; }
 
-/* An authored image and one finite entrance sequence. The form is present
-   before animation starts; no idle loops, pointer parallax or fake activity. */
-.alevr-auth-form h1 { font-weight: 500; }
-.alevr-auth-form input { background: hsl(var(--card)); border-radius: 8px; transition: border-color 120ms cubic-bezier(.33,1,.68,1), background-color 120ms cubic-bezier(.33,1,.68,1); }
-.alevr-auth-form input:hover:not(:disabled) { border-color: hsl(var(--foreground) / .55); }
-.alevr-auth-form input:focus-visible { outline-offset: 2px; }
-.alevr-auth-form button[type="submit"] { border-radius: 8px; }
-@keyframes alevr-auth-enter {
-  from { opacity: .5; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Access is an open, asymmetric composition on a single theme ground. */
+.alevr-auth { display:flex; flex-direction:column; }
+.alevr-access-header { display:flex; align-items:center; justify-content:space-between; gap:24px; width:100%; max-width:1408px; margin:0 auto; padding:20px 48px; }
+.alevr-access-layout { position:relative; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:28px; width:100%; max-width:464px; margin:auto; padding:32px; flex:1; }
+.alevr-access-story { width:100%; max-width:400px; }
+.alevr-access-material { position:relative; width:100%; height:96px; margin-bottom:0; overflow:hidden; border-radius:14px; }
+.alevr-auth-form { width:100%; max-width:400px; }
+.alevr-auth-form h1 { font-size:44px; line-height:1.08; font-weight:400; letter-spacing:-.025em; }
+.alevr-auth-form > div > div:first-child { margin-bottom:32px; }
+.alevr-auth-form input { min-height:48px; padding-top:12px; padding-bottom:12px; background:hsl(var(--background)); border-radius:8px; border-color:hsl(var(--foreground) / .3); transition:border-color 160ms cubic-bezier(.33,1,.68,1),background-color 160ms; }
+.alevr-auth-form input::placeholder { color:hsl(var(--muted-foreground)); opacity:1; }
+.alevr-auth-form input:hover:not(:disabled) { border-color:hsl(var(--foreground) / .6); }
+.alevr-auth-form input:focus-visible { outline-offset:3px; }
+.alevr-auth-form button[type="submit"] { min-height:48px; border-radius:8px; margin-top:24px; }
+.alevr-auth-form form label { font-size:13px; }
+.alevr-access-footer { display:flex; width:100%; max-width:1408px; margin:auto; padding:20px 48px 24px; justify-content:space-between; align-items:center; gap:24px; border-top:1px solid hsl(var(--border)); }
+.alevr-public :is(a,button) { transition-duration:160ms; transition-timing-function:cubic-bezier(.33,1,.68,1); }
+.alevr-public button:active:not(:disabled) { transform:translateY(1px); }
+.alevr-public-state { display:flex; flex-direction:column; }
+.alevr-state-layout { display:grid; grid-template-columns:minmax(0,.7fr) minmax(0,1fr); align-items:center; gap:96px; width:100%; max-width:1120px; margin:auto; padding:64px 40px 96px; flex:1; }
+.alevr-state-identifier { font-family:var(--font-serif),Georgia,serif; font-size:clamp(150px,18vw,240px); line-height:1; letter-spacing:-.07em; color:hsl(var(--foreground) / .28); }
+.alevr-state-identifier > span { display:block; }
+.alevr-state-copy h1 { max-width:560px; font-size:48px; font-weight:400; line-height:1.08; letter-spacing:-.025em; }
+.alevr-state-actions :is(a,button) { min-height:48px; }
+.alevr-state-footer { display:flex; justify-content:space-between; align-items:center; max-width:1408px; width:100%; margin:auto; padding:16px 48px; border-top:1px solid hsl(var(--border)); }
+.alevr-public-media { position:relative; overflow:hidden; border-radius:14px; }
+.alevr-public-media-inner { position:absolute; inset:-24px 0; }
+.alevr-public-action { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:12px 24px; border:1px solid hsl(var(--foreground)); border-radius:8px; color:hsl(var(--background)); background:hsl(var(--foreground)); text-decoration:none; white-space:nowrap; font-size:14px; font-weight:500; }
+.alevr-public-action > span { display:inline-flex; gap:16px; align-items:center; }
+.alevr-public-action:hover { background:hsl(var(--foreground) / .88); }
+.alevr-public-action-secondary { background:transparent; color:hsl(var(--foreground)); border-color:hsl(var(--foreground) / .25); }
+.alevr-public-action-secondary:hover { background:hsl(var(--muted)); }
+@keyframes alevr-public-rise { from { opacity:.55; transform:translateY(24px); } to { opacity:1; transform:none; } }
+@keyframes alevr-public-settle { from { opacity:.6; transform:translateX(-24px) scale(.96); } to { opacity:1; transform:none; } }
+@media(prefers-reduced-motion:no-preference) {
+  .alevr-access-header { animation:alevr-public-rise 500ms cubic-bezier(.16,1,.3,1) both; }
+  .alevr-access-story { animation:alevr-public-settle 800ms cubic-bezier(.16,1,.3,1) 80ms both; }
+  .alevr-auth-form > div > div:first-child { animation:alevr-public-rise 650ms cubic-bezier(.16,1,.3,1) 100ms both; }
+  .alevr-auth-form form { animation:alevr-public-rise 650ms cubic-bezier(.16,1,.3,1) 180ms both; }
+  .alevr-access-footer { animation:alevr-public-rise 600ms cubic-bezier(.16,1,.3,1) 260ms both; }
+  .alevr-state-identifier { animation:alevr-public-settle 800ms cubic-bezier(.16,1,.3,1) both; }
+  .alevr-state-copy h1 { animation:alevr-public-rise 650ms cubic-bezier(.16,1,.3,1) 80ms both; }
+  .alevr-state-copy > p:not(.sr-only) { animation:alevr-public-rise 650ms cubic-bezier(.16,1,.3,1) 160ms both; }
+  .alevr-state-actions { animation:alevr-public-rise 650ms cubic-bezier(.16,1,.3,1) 240ms both; }
+  [role="dialog"]:has(#onboarding-name) h2 { animation:alevr-public-rise 650ms cubic-bezier(.16,1,.3,1) both; }
 }
-@keyframes alevr-auth-image-enter {
-  from { opacity: .7; transform: scale(1.025); }
-  to { opacity: 1; transform: scale(1); }
+@media(max-width:1023px) {
+  .alevr-access-layout { grid-template-columns:minmax(0,1fr); max-width:464px; padding:48px 32px; }
+  .alevr-access-story { display:block; }
+  .alevr-access-footer { justify-content:center; text-align:center; flex-direction:column; gap:12px; }
 }
-@media (prefers-reduced-motion: no-preference) {
-  .alevr-auth-header { animation: alevr-auth-enter 220ms cubic-bezier(.33,1,.68,1) both; }
-  .alevr-auth-form > div > div:first-child { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; }
-  .alevr-auth-form form { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; }
-  .alevr-auth-footer { animation: alevr-auth-enter 220ms cubic-bezier(.33,1,.68,1) 220ms both; }
-  .alevr-auth-image, .alevr-auth-mobile-art { animation: alevr-auth-image-enter 560ms cubic-bezier(.16,1,.3,1) both; }
-  .alevr-auth-art-title { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 160ms both; }
-  .alevr-auth-art-copy { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 220ms both; }
+@media(max-width:767px) {
+  .alevr-access-header { padding:16px 24px; gap:12px; }
+  .alevr-access-layout { padding:32px 24px 40px; }
+  .alevr-access-story { display:none; }
+  .alevr-auth-form h1 { font-size:36px; }
+  .alevr-access-footer { padding:20px 24px; }
+  .alevr-state-layout { grid-template-columns:minmax(0,1fr); padding:32px 24px 64px; gap:24px; align-content:center; }
+  .alevr-state-identifier { font-size:140px; }
+  .alevr-state-identifier svg { width:72px; height:72px; }
+  .alevr-state-copy h1 { font-size:36px; }
+  .alevr-state-footer { padding:16px 24px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .alevr-auth-form input { transition: none; }
+@media(prefers-reduced-motion:reduce) {
+  .alevr-public :is(a,button,input) { transition:none; }
+  .alevr-public button:active:not(:disabled) { transform:none; }
+  .alevr-public-media-inner { transform:none!important; }
+}
+@media print { .alevr-public-media-inner { transform:none!important; } }
+
+/* Documents have orientation and a generous reading measure. */
+.alevr-document-layout { display:grid; grid-template-columns:200px minmax(0,760px); gap:96px; max-width:1280px; margin:0 auto; padding:88px 64px 64px; }
+.alevr-document-nav { position:sticky; top:104px; align-self:start; display:grid; gap:4px; }
+.alevr-document-nav > p { margin-bottom:16px; }
+.alevr-document-nav a { display:flex; align-items:center; min-height:44px; padding:8px 12px; margin-left:-12px; border-radius:8px; font-size:14px; color:hsl(var(--muted-foreground)); }
+.alevr-document-nav a[aria-current="page"] { color:hsl(var(--foreground)); background:hsl(var(--muted)); }
+.alevr-document-nav a:hover { color:hsl(var(--foreground)); }
+.alevr-document-main { min-width:0; }
+.alevr-document-main h1 { font-size:48px; line-height:1.08; font-weight:400; margin-top:20px; }
+.alevr-engineering-document { max-width:1120px; margin:0 auto; padding:80px 48px 96px; }
+.alevr-reading-header { border-bottom:1px solid hsl(var(--border)); }
+.alevr-share-chat .alevr-share-main { width:100%; max-width:900px; margin:0 auto; }
+.alevr-shared-prose { padding-top:64px; padding-bottom:48px; }
+.alevr-shared-title { margin-bottom:56px; padding-bottom:32px; border-bottom:1px solid hsl(var(--border)); }
+.alevr-shared-title h1 { font-size:48px; line-height:1.1; letter-spacing:-.025em; font-weight:400; overflow-wrap:anywhere; }
+.alevr-owner-read > header { min-height:64px; padding:12px 24px; }
+.alevr-owner-read [role="tab"] { min-height:44px; }
+@media(prefers-reduced-motion:no-preference) {
+  .alevr-document-main > article,.alevr-engineering-document > article,.alevr-shared-title { animation:alevr-public-rise 700ms cubic-bezier(.16,1,.3,1) both; }
+}
+@media(max-width:767px) {
+  .alevr-document-layout { grid-template-columns:minmax(0,1fr); padding:32px 24px 48px; gap:32px; }
+  .alevr-document-nav { position:static; display:flex; flex-wrap:wrap; gap:4px 20px; align-items:center; }
+  .alevr-document-nav > p { width:100%; margin:0; }
+  .alevr-document-nav a { margin:0; padding:8px 0; }
+  .alevr-document-nav a[aria-current="page"] { background:none; text-decoration:underline; text-underline-offset:6px; }
+  .alevr-document-main h1 { font-size:36px; }
+  .alevr-engineering-document { padding:40px 24px 64px; }
+  .alevr-shared-prose { padding-top:32px; padding-bottom:32px; }
+  .alevr-shared-title { margin-bottom:32px; padding-bottom:24px; }
+  .alevr-shared-title h1 { font-size:36px; }
+  .alevr-owner-read > header { padding:8px 12px; }
 }
 
-/* One tempo across the public site. Reading stays stable; only its opening
-   hierarchy enters. Existing landing reveals handle content below the fold. */
-.alevr-public :is(a, button) { transition-duration: 120ms; transition-timing-function: cubic-bezier(.33,1,.68,1); }
-.alevr-public button:active:not(:disabled) { transform: translateY(1px); }
-@media (prefers-reduced-motion: no-preference) {
-  .alevr-state-copy h1, .alevr-public article > header, .alevr-public main > header { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
-  .alevr-state-copy > p:not(.alevr-state-code) { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 70ms both; }
-  .alevr-state-actions { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) 140ms both; }
-  .alevr-state-image { animation: alevr-auth-image-enter 560ms cubic-bezier(.16,1,.3,1) both; }
-  [role="dialog"]:has(#onboarding-name) h2 { animation: alevr-auth-enter 360ms cubic-bezier(.33,1,.68,1) both; }
-}
-.alevr-state-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:64px; align-items:center; }
-.alevr-public .alevr-state-actions :is(a,button) { min-height:44px; }
-.alevr-public .alevr-state-code { letter-spacing:.08em; }
-.alevr-download-art-dark { display:none; }
-.dark .alevr-download-art-light { display:none; }
-.dark .alevr-download-art-dark { display:block; }
+.alevr-download-intro { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr); align-items:center; gap:80px; padding-top:48px; padding-bottom:72px; }
+.alevr-download-title { max-width:600px; font-size:64px; line-height:1.05; letter-spacing:-.03em; font-weight:400; }
+.alevr-download-material { height:440px; }
+.alevr-release-facts { display:flex; flex-wrap:wrap; gap:6px 20px; }
+.alevr-download-platforms { display:grid; }
+.alevr-download-platform { display:grid; grid-template-columns:minmax(0,1fr) minmax(160px,.4fr); align-items:center; gap:48px; }
 @media(max-width:767px) {
-  .alevr-state-layout { grid-template-columns:minmax(0,1fr); gap:40px; }
-  .alevr-state-image { aspect-ratio:4/3; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .alevr-public :is(a, button) { transition: none; }
-  .alevr-public button:active:not(:disabled) { transform: none; }
+  .alevr-download-intro { grid-template-columns:minmax(0,1fr); gap:32px; padding-top:40px; padding-bottom:40px; }
+  .alevr-download-title { font-size:44px; }
+  .alevr-download-material { height:220px; }
+  .alevr-download-material > div { min-height:0; }
+  .alevr-download-platform { grid-template-columns:minmax(0,1fr); gap:20px; }
 }
