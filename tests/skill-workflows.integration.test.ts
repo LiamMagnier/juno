@@ -499,6 +499,76 @@ if (!URL) {
     }
   });
 
+  routeTest("a GitHub import keeps the folder too: fetched at the commit the preview read, scanned, held for consent", async () => {
+    const commit = "d".repeat(40);
+    const files: Record<string, { text: string; mode?: string }> = Object.fromEntries(
+      ["SKILL.md", "reference/style.md", "scripts/build.py"].map((path) => [
+        `skills/quarterly-summary/${path}`,
+        { text: readFileSync(`tests/fixtures/skills/quarterly-summary/${path}`, "utf8").replace("name: quarterly-summary", "name: gh-quarterly-summary") },
+      ])
+    );
+    files["skills/linked/SKILL.md"] = { text: "---\nname: linked\ndescription: Has a link.\n---\nBody." };
+    files["skills/linked/secrets"] = { text: "../../../.ssh/id_rsa", mode: "120000" };
+    const realFetch = globalThis.fetch;
+    const contentReads: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (!url.startsWith("https://api.github.com/")) throw new Error(`unexpected fetch ${url}`);
+      if (url.endsWith("/repos/acme/skills")) return json({ default_branch: "main", name: "skills", owner: { login: "acme" } });
+      if (url.includes("/commits/")) return json({ sha: commit, html_url: `https://github.com/acme/skills/commit/${commit}` });
+      if (url.includes("/git/trees/")) {
+        return json({
+          truncated: false,
+          tree: Object.entries(files).map(([path, file]) => ({
+            path, type: "blob", mode: file.mode ?? "100644", size: Buffer.byteLength(file.text), sha: createHash("sha1").update(file.text).digest("hex"),
+          })),
+        });
+      }
+      const match = /\/contents\/(.+)\?ref=([0-9a-f]+)/.exec(url);
+      if (match) {
+        const path = match[1].split("/").map(decodeURIComponent).join("/");
+        contentReads.push(`${path}@${match[2]}`);
+        return files[path] ? new Response(files[path].text, { status: 200 }) : new Response("", { status: 404 });
+      }
+      return new Response("", { status: 404 });
+    }) as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/skills/import/github/route");
+      const preview = await POST(new Request("http://localhost", { method: "POST", body: JSON.stringify({ source: "acme/skills" }) }));
+      assert.equal(preview.status, 200);
+      const previewBody = (await preview.json()) as { skills: Array<{ path: string; bundle: Record<string, unknown> | null }>; repository: { commit: string } };
+      const byPath = Object.fromEntries(previewBody.skills.map((skill) => [skill.path, skill.bundle]));
+      assert.deepEqual(byPath["skills/quarterly-summary/SKILL.md"], { files: 2, scripts: 1, totalBytes: byPath["skills/quarterly-summary/SKILL.md"]?.totalBytes });
+      assert.equal(byPath["skills/linked/SKILL.md"]?.refused, "symlink", "the preview already says the linked folder is refused");
+      assert.ok(contentReads.every((read) => read.endsWith("SKILL.md@" + commit)), "the preview reads only SKILL.md files");
+
+      const imported = await POST(new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ source: "acme/skills", commit: previewBody.repository.commit, paths: ["skills/quarterly-summary/SKILL.md", "skills/linked/SKILL.md"] }),
+      }));
+      assert.equal(imported.status, 201);
+      const body = (await imported.json()) as { imported: Array<{ id: string; slug: string; requiresConsent: boolean }>; skipped: Array<{ path: string; reason: string; message: string }> };
+      assert.deepEqual(body.imported.map((skill) => [skill.slug, skill.requiresConsent]), [["gh-quarterly-summary", true]]);
+      assert.equal(body.skipped[0]?.reason, "bundle_refused");
+      assert.match(body.skipped[0]?.message ?? "", /symbolic link/);
+      const version = await db.workSkillVersion.findFirstOrThrow({ where: { skillId: body.imported[0].id } });
+      const { buildSkillBundle } = await import("@/lib/skills/bundle");
+      const upstream = buildSkillBundle(
+        Object.entries(files)
+          .filter(([path]) => path.startsWith("skills/quarterly-summary/"))
+          .map(([path, file]) => ({ path: path.slice("skills/quarterly-summary/".length), bytes: new TextEncoder().encode(file.text) }))
+      );
+      assert.ok(upstream.ok);
+      assert.equal(version.bundleDigest, upstream.ok ? upstream.bundle.digest : null, "the stored folder is exactly the upstream folder at that commit");
+      assert.ok(contentReads.filter((read) => !read.endsWith("SKILL.md@" + commit)).every((read) => read.endsWith("@" + commit)));
+      const provenance = (version.contract as { provenance: Record<string, string> }).provenance;
+      assert.match(provenance["source.files"] ?? "", /^2:[a-f0-9]{16}$/, "the folder's identity is recorded for update checks");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   routeTest("export carries the folder; a restore restores the files that version kept", async () => {
     const { GET } = await import("@/app/api/work/skills/[id]/export/route");
     const exported = await GET(new Request(`http://localhost/api/work/skills/${skillId}/export?format=zip`), { params: Promise.resolve({ id: skillId }) });
