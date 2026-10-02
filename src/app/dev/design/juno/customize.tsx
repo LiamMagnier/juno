@@ -6,19 +6,20 @@ import { APP_ORDER_AVAILABLE, APP_ORDER_CONNECTED, APPS, POLICY_LABEL, type Poli
 import { Icon } from "./icons";
 import { AppMark } from "./marks";
 import { Segmented } from "./composer";
-import { useDialogFocus } from "./layers";
-import { R, SHEET_OUT, T, useReduced } from "./motion";
+import { useDialogFocus, usePhone } from "./layers";
+import { R, SHEET_IN, SHEET_OUT, sheetFrom, T, useReduced } from "./motion";
 import { AppFrame, ChatSidebar, MobileBar } from "./shell";
 
 /*
- * Customize › Apps. A directory that reads as a list of the services Juno can
+ * Customize › Apps. A directory that reads as a list of the services Alevr can
  * act in: connected first (with when each was last used), then the rest. An
- * app's sheet says, per action, whether Juno may do it, asks first or never
- * does, in the three words Allow, Ask, Off; reads are a plain on/off.
+ * app's sheet says, per action, whether Alevr may do it, asks first or never
+ * does, in the three words Allow, Ask, Off (the same words as a token's panel
+ * and an agent's sheet); reads are a plain on/off.
  */
 
 const SUBNAV = [
-  { id: "apps", label: "Apps", icon: "app" },
+  { id: "apps", label: "Apps", icon: "apps" },
   { id: "skills", label: "Skills", icon: "skill" },
   { id: "routines", label: "Routines", icon: "routine" },
   { id: "memory", label: "Memory", icon: "memory" },
@@ -40,6 +41,7 @@ function Switch({ on: initial }: { on: boolean }) {
 
 export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) {
   const reduced = useReduced();
+  const phone = usePhone();
   const ref = React.useRef<HTMLElement | null>(null);
   const close = React.useCallback(() => onClose?.(), [onClose]);
   // A sheet is the whole conversation while it is open: focus moves in, Tab stays in, Escape closes, focus returns.
@@ -57,10 +59,10 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
         role="dialog"
         aria-modal="true"
         aria-label={`${app.name} settings`}
-        initial={reduced ? { opacity: 0 } : { x: 40, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={reduced ? { opacity: 0, transition: R } : { x: 24, opacity: 0, transition: SHEET_OUT }}
-        transition={reduced ? R : T.sheet}
+        initial={reduced ? { opacity: 0 } : sheetFrom(phone)}
+        animate={{ x: 0, y: 0, opacity: 1 }}
+        exit={reduced ? { opacity: 0, transition: R } : phone ? { y: "100%", transition: SHEET_OUT } : { opacity: 0, transition: SHEET_OUT }}
+        transition={reduced ? R : SHEET_IN}
       >
         <header className="jn-sheet__head">
           <AppMark id={id} size={32} />
@@ -83,7 +85,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
             </div>
           </section>
           <section className="jn-sheet__section">
-            <h3 className="jn-sheet__label">What Juno can read</h3>
+            <h3 className="jn-sheet__label">What Alevr can read</h3>
             {reads.map((a) => (
               <div key={a.label} className="jn-sheet__row">
                 <span className="jn-sheet__rowtext">{a.label}</span>
@@ -92,7 +94,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
             ))}
           </section>
           <section className="jn-sheet__section">
-            <h3 className="jn-sheet__label">What Juno can change</h3>
+            <h3 className="jn-sheet__label">What Alevr can change</h3>
             <p className="jn-sheet__hint">Allow runs without asking. Ask shows you the exact message first. Off never happens.</p>
             {changes.map((a) => (
               <div key={a.label} className="jn-sheet__row">
@@ -114,7 +116,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
           <button type="button" className="jb jb--link jn-sheet__disconnect">
             Disconnect {app.name}
           </button>
-          <p className="t-meta">Juno loses access at once. Mira’s renewal check stops posting. Nothing in {app.name} is deleted.</p>
+          <p className="t-meta">Alevr loses access at once. Mira’s renewal check stops posting. Nothing in {app.name} is deleted.</p>
         </footer>
       </motion.aside>
     </>
@@ -165,7 +167,7 @@ export function CustomizeScene({ app }: { app?: string }) {
           <header className="jn-page__head">
             <div>
               <h1 className="t-title">Apps</h1>
-              <p className="jn-page__lede">The services Juno can work in. You decide what each one may do.</p>
+              <p className="jn-page__lede">The services Alevr can work in. You decide what each one may do.</p>
             </div>
             <button type="button" className="jb jb--secondary jicon-trigger jicon-quiet">
               <Icon name="plus" size={16} />

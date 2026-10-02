@@ -8,14 +8,14 @@
  * second, each a soft bump of its own loudness; words separated by short
  * dips; phrases of about 2.6 s with real silence between them, where the
  * signature must go still. The product replaces this with the analyser's
- * RMS of the microphone (you) or of the reply's audio (Juno), smoothed the
+ * RMS of the microphone (you) or of the reply's audio (Alevr or the agent), smoothed the
  * same way (`smoothed`: a 100 ms window, which is what an AnalyserNode with
  * smoothingTimeConstant 0.8 feels like at 60 fps).
  */
 
-export type Talker = "you" | "juno" | "member";
+export type Talker = "you" | "alevr" | "member";
 
-const SEED: Record<Talker, number> = { you: 1, juno: 2, member: 3 };
+const SEED: Record<Talker, number> = { you: 1, alevr: 2, member: 3 };
 
 function hash(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
@@ -31,7 +31,7 @@ function smoothstep(a: number, b: number, x: number): number {
 export function speech(ms: number, who: Talker = "you"): number {
   const seed = SEED[who];
   const t = ms / 1000;
-  const rate = who === "juno" ? 4.9 : 4.4;
+  const rate = who === "alevr" ? 4.9 : 4.4;
   const syl = t * rate + seed * 13.37;
   const i = Math.floor(syl);
   const f = syl - i;
@@ -41,7 +41,7 @@ export function speech(ms: number, who: Talker = "you"): number {
   const word = Math.floor(syl / 3.4);
   const dip = hash(word * 7 + seed) < 0.2 ? 0.3 : 1;
   // Phrases: about 2.6 s of speech, then silence.
-  const period = who === "juno" ? 3.6 : 3.3;
+  const period = who === "alevr" ? 3.6 : 3.3;
   const ph = (t + seed * 0.7) % period;
   const gate = smoothstep(0, 0.14, ph) * (1 - smoothstep(period - 0.75, period - 0.5, ph));
   const grain = 0.05 * Math.sin(t * 37.1 + seed) + 0.03 * Math.sin(t * 61.7 + seed * 2);
@@ -65,4 +65,4 @@ export function smoothed(ms: number, who: Talker = "you"): number {
  * Chosen by sampling the signal (the loudest moments in the first 6 s); a still frozen
  * here shows the signature carrying a voice, not a pause.
  */
-export const LOUD_AT: Record<Talker, number> = { you: 3920, juno: 4880, member: 4900 };
+export const LOUD_AT: Record<Talker, number> = { you: 3920, alevr: 4880, member: 4900 };

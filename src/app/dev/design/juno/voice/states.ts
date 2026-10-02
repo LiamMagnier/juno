@@ -16,9 +16,11 @@ export const STATES = [
   "voice-tool-approval",
   "voice-error",
   "voice-ended",
+  "orbit-voice",
+  /** Round 3's name for orbit-voice, kept so old links resolve. */
   "crew-voice",
 ] as const;
 export type VoiceState = (typeof STATES)[number];
 
-export const PLAYS = ["voice", "dictation", "interrupt", "mute", "crew"] as const;
+export const PLAYS = ["voice", "dictation", "interrupt", "mute", "approval", "reconnect", "orbit", "crew"] as const;
 export type Play = (typeof PLAYS)[number];

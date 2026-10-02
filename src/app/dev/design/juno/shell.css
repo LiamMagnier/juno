@@ -125,16 +125,10 @@
   padding: 0 2px 0 10px;
   flex: none;
 }
-.jn .jn-wordmark {
-  font-family: var(--font-serif);
-  font-weight: 500;
-  font-size: 21px;
-  line-height: 24px;
-  letter-spacing: -0.012em;
-  color: var(--ink);
-  font-variation-settings: "opsz" 24;
-  /* Newsreader's caps sit high in their box; nudge to the optical centre of the 44 px head. */
-  transform: translateY(-0.5px);
+/* The head's lockup: the Continuum and "Alevr" (Newsreader 600, upright), the mark's left edge on the
+   icons' edge (x = 18) and the pair centred on the head's centre line (y = 30). */
+.jn .jn-side__head .jn-wordmark {
+  transform: translateY(0.5px);
 }
 .jn .jn-side__headtools {
   margin-left: auto;
@@ -155,6 +149,15 @@
   /* On the frame the track is a translucent step of the frame itself, so it
      reads as carved into the frame in both themes rather than a grey slab. */
   background: light-dark(rgb(25 27 30 / 0.05), rgb(255 255 255 / 0.045));
+}
+.jn .jn-side__switchlabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jn .jn-side__switch .jseg__opt[aria-selected="false"] .jn-side__switchlabel > svg {
+  color: var(--ink-3);
 }
 .jn .jn-side__switch .jseg__opt[aria-selected="true"]::before {
   background: light-dark(#ffffff, #2a2b2e);
@@ -348,6 +351,60 @@
 .jn .jn-side__labelbtn:not(:hover):not(:focus-visible) {
   color: var(--ink-3);
 }
+/* Orbit's head is a destination (the Orbit page, "Your agents"): the label is a link with the Orbit glyph on
+   the icons' edge. At rest it reads as the other section labels; hover brings a tone and the second ink. */
+.jn .jn-side__label--dest {
+  padding-left: 4px;
+}
+/* Revision 2: the link is the whole row (less the + on its right), so selecting Orbit fills a full-width
+   row exactly as Library or Customize do; the tight pill around the 12 px label read as a badge. */
+.jn .jn-side__labellink {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--r-row);
+  color: var(--ink-3);
+  text-decoration: none;
+  transition:
+    color var(--d-fast) var(--e-out),
+    background-color var(--d-fast) var(--e-out);
+}
+.jn .jn-side__labelglyph {
+  width: 14px;
+  height: 14px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-side__labellink:hover {
+    color: var(--ink-2);
+    background: var(--fill-hover);
+  }
+}
+.jn .jn-side__labellink:active {
+  background: var(--fill-press);
+  transition-duration: var(--d-press);
+}
+/* Selected, the whole row takes the fill (the + included), exactly as Library or Customize. */
+.jn .jn-side__label--dest {
+  position: relative;
+  border-radius: var(--r-row);
+}
+.jn .jn-side__label--dest[data-current] {
+  background: var(--fill-selected);
+}
+.jn .jn-side__labellink[aria-current="page"] {
+  color: var(--ink);
+  background: transparent;
+}
+.jn .jn-side__labellink:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
 .jn .jn-side__crew {
   gap: 10px;
 }
@@ -369,14 +426,10 @@
 .jn .jn-side__crew[data-state="offline"] {
   color: var(--ink-3);
 }
-.jn .jn-side__glyph[data-state="working"] {
-  color: var(--presence);
-}
-.jn .jn-side__glyph[data-state="waiting"] {
-  color: var(--attn);
-}
-.jn .jn-side__glyph[data-state="failed"] {
-  color: var(--danger);
+/* Revision 2: no traffic light. A working session leads with the ThinkingMark (the one live thing), the
+   others carry a quiet glyph in the third ink; only "Needs your approval" takes the attention words. */
+.jn .jn-side__glyph {
+  color: var(--ink-3);
 }
 /* A Code session is two lines: its title, and what it is doing in words. */
 .jn .jn-side .jrow.jn-side__session {
@@ -552,6 +605,9 @@
   justify-content: space-between;
   height: 44px;
   padding: 0 8px 0 10px;
+  /* Concentric with the panel, so the blur never samples the frame through the
+     rounded corner (Revision 2: grey smudges at the top right). */
+  border-radius: var(--r-panel) var(--r-panel) 0 0;
   background: var(--mat-bar);
   -webkit-backdrop-filter: var(--mat-filter-bar);
   backdrop-filter: var(--mat-filter-bar);
@@ -789,7 +845,7 @@
 }
 @media (max-width: 760px) {
   html:has(.jn-frame) body {
-    background: #fcfcfd;
+    background: #fbfbfc;
   }
   html:has(.jn[data-theme="dark"] .jn-frame) body {
     background: #18191b;

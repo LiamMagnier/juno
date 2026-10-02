@@ -5,22 +5,23 @@
  * mount at /dev/design/juno?scene=icons; also served on its own at
  * /dev/design/juno/icons.
  *
- *   view   sheet (default) | proof | lab | context | reel | states
+ *   view   sheet (default) | inventory | proof | lab | context | shell | reel | states | focus | pixels
  *   group  a group name, to show one section only (reel and sheet)
  */
 import * as React from "react";
-import { ICONS, type IconDrawing, type IconGroup } from "./drawings";
+import { ICONS, resolveIcon, type IconDrawing, type IconGroup } from "./drawings";
 import { Icon, iconStrokePx } from "./index";
+import { SEMANTIC_INVENTORY } from "./inventory";
 import "./gallery.css";
 
-const GROUPS: IconGroup[] = ["Navigation", "Composer", "Message", "States", "Files", "Apps", "Crew and time", "Code", "Library", "Arrows", "Theme"];
+const GROUPS: IconGroup[] = ["Navigation", "Composer", "Message", "States", "Work and evidence", "Files", "Apps", "Agents and time", "Code", "Library", "Arrows", "Theme", "System"];
 
 /** The F2 destinations whose glyph may articulate on hover (INTERACTION_SPEC I-7, revision 1). */
 const DESTINATIONS = new Set(["new-chat", "folder", "library", "customize"]);
 
 const byGroup = (group: IconGroup) => Object.entries(ICONS).filter(([, d]) => d.group === group) as [string, IconDrawing][];
 
-export type GalleryView = "sheet" | "proof" | "lab" | "context" | "shell" | "reel" | "states" | "focus" | "pixels";
+export type GalleryView = "sheet" | "inventory" | "proof" | "lab" | "context" | "shell" | "reel" | "states" | "focus" | "pixels";
 
 export function IconGallery({
   view = "sheet",
@@ -42,6 +43,7 @@ export function IconGallery({
 }) {
   if (view === "pixels") return <Pixels names={names} size={size ?? 16} fit={fit} />;
   if (view === "focus") return <Focus names={names} on={on} />;
+  if (view === "inventory") return <Inventory />;
   if (view === "proof") return <Proof />;
   if (view === "lab") return <StrokeLab />;
   if (view === "context") return <Context />;
@@ -61,9 +63,11 @@ function Sheet({ group }: { group?: string }) {
       <header className="jig-head">
         <h1 className="jig-title">Icons</h1>
         <p className="jig-lede">
-          {count} drawings on one 24 unit grid, one optically sized line (1.25 px at 16, 1.5 px from 18), fitted to the pixel grid at every size, with a
-          small cut below 18 px where detail would turn to mud, and one motion each. In the product, hover motion is opt-in (destinations only); here
-          every cell opts in. Hover any of them; the right-hand three show the hover pose, the on state and the disabled state.
+          Alevr&apos;s own set: {count} drawings on one 24 unit grid, drawn on a construction lattice and set on the family&apos;s keyline (the size
+          Lucide, Phosphor and SF Symbols draw at), one optically sized line (1.25 px at 16, 1.5 px from 18), fitted to the pixel grid at every size,
+          with a small cut below 18 px where detail would turn to mud, and at most one motion each. In the product, hover motion is
+          opt-in (low-frequency destinations only) and Orbit never moves; here every cell opts in. Hover any of them; the right-hand three show the
+          hover pose, the on state and the disabled state. The brand&apos;s semantic inventory is at ?view=inventory.
         </p>
       </header>
       {groups.map((g) => (
@@ -108,6 +112,48 @@ function Cell({ name, d }: { name: string; d: IconDrawing }) {
   );
 }
 
+/* —————————————————————————————— Semantic inventory (Alevr, NAMES_AND_ICONS.md) —————————————————————————————— */
+
+/** Every row of the brand's semantic icon inventory, each label drawn from this set at 16 and 20 px, light beside dark. */
+function Inventory() {
+  const total = SEMANTIC_INVENTORY.reduce((n, r) => n + r.items.length, 0);
+  const missing = SEMANTIC_INVENTORY.flatMap((r) => r.items).filter((it) => !resolveIcon(it.icon));
+  return (
+    <main className="jig jig--inv">
+      <div className="jig-split">
+        {(["light", "dark"] as const).map((t) => (
+          <div key={t} className="jn jig-pane" data-theme={t}>
+            <header className="jig-invhead">
+              <h1 className="jig-invtitle">Semantic inventory</h1>
+              <p className="jig-invlede">
+                {SEMANTIC_INVENTORY.length} groups, {total} labels, {missing.length === 0 ? "every one drawn" : `${missing.length} missing`}. The name under each
+                label is what a call site asks for.
+              </p>
+            </header>
+            {SEMANTIC_INVENTORY.map((row) => (
+              <section key={row.group} className="jig-invrow">
+                <h2 className="jig-invgroup">{row.group}</h2>
+                <div className="jig-invitems">
+                  {row.items.map((it) => (
+                    <div key={it.label} className="jig-invitem" data-missing={resolveIcon(it.icon) ? undefined : ""}>
+                      <span className="jig-invglyphs">
+                        <Icon name={it.icon} size={16} />
+                        <Icon name={it.icon} size={20} />
+                      </span>
+                      <span className="jig-invlabel">{it.label}</span>
+                      <span className="jig-invname">{it.icon}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}
+
 /* —————————————————————————————— Focus (drawing review) —————————————————————————————— */
 
 function FocusGrid() {
@@ -125,7 +171,7 @@ function FocusGrid() {
 }
 
 function Focus({ names, on }: { names?: string; on?: boolean }) {
-  const list = (names ?? "crew,research,auto,attach").split(",").filter(Boolean);
+  const list = (names ?? "orbit,code,memory,apps").split(",").filter(Boolean);
   return (
     <main className="jig jig--focus">
       {list.map((n) => (
@@ -261,7 +307,7 @@ function ContextBody() {
     <>
       <aside className="jig-side">
         <div className="jig-sidehead">
-          <span className="jig-wordmark">Juno</span>
+          <span className="jig-wordmark">Alevr</span>
           <span className="jig-sidetools">
             <button type="button" className="jig-ib jicon-trigger" aria-label="Activity">
               <Icon name="bell" size={16} />
@@ -290,8 +336,8 @@ function ContextBody() {
           </a>
         ))}
         <p className="jig-sidelabel">
-          Crew
-          <button type="button" className="jig-ib jig-ib--sm jicon-trigger" aria-label="Add to crew">
+          Orbit
+          <button type="button" className="jig-ib jig-ib--sm jicon-trigger" aria-label="Create agent">
             <Icon name="plus" size={16} />
           </button>
         </p>
@@ -337,7 +383,7 @@ function ContextBody() {
         </div>
 
         <div className="jig-composer jicon-quiet">
-          <p className="jig-placeholder">Ask Juno, or type @ to add a file, app or teammate</p>
+          <p className="jig-placeholder">Ask Alevr, or type @ to add a file, app or agent</p>
           <div className="jig-crow">
             <button type="button" className="jig-ib jicon-trigger" aria-label="Add" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
               <Icon name="plus" size={20} state={menu ? "active" : "rest"} />
@@ -447,7 +493,7 @@ function ShellBody() {
     <div className="jig-sh-frame">
       <aside className="jig-sh-side">
         <div className="jig-sh-head">
-          <span className="jig-wordmark">Juno</span>
+          <span className="jig-wordmark">Alevr</span>
           <span className="jig-sidetools">
             <button type="button" className="jig-ib jicon-trigger" aria-label="Activity">
               <Icon name="bell" size={16} />
@@ -463,6 +509,8 @@ function ShellBody() {
           ["folder", "Projects"],
           ["library", "Library"],
           ["customize", "Customize"],
+          ["orbit", "Orbit"],
+          ["code", "Code"],
         ].map(([icon, label, kbd], i) => (
           <a
             key={icon}

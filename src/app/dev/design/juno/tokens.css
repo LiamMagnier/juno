@@ -25,7 +25,7 @@
      The framed shell (D-033): the window is the frame tone (`side`) and the
      sidebar sits directly on it; the main area is an inset panel on `ground`,
      8 px in from the top, right and bottom edges, with a low-contrast edge. */
-  --ground: light-dark(#fcfcfd, #18191b);
+  --ground: light-dark(#fbfbfc, #18191b);
   --side: light-dark(#f3f4f5, #111213);
   --panel-edge: light-dark(rgb(25 27 30 / 0.08), rgb(255 255 255 / 0.065));
   --panel-lift: light-dark(rgb(25 27 30 / 0.035), transparent);
@@ -51,13 +51,17 @@
      the raised tone and less saturation so colour behind never glows through.
      A solid fallback replaces it under Reduce Transparency. */
   --mat-pop: light-dark(rgb(255 255 255 / 0.7), rgb(40 41 44 / 0.72));
-  --mat-sheet: light-dark(rgb(255 255 255 / 0.82), rgb(36 37 40 / 0.84));
-  --mat-bar: light-dark(rgb(252 252 253 / 0.8), rgb(24 25 27 / 0.78));
+  /* Sheets carry rows of controls: nearly opaque (Revision 2: at 82% the page behind printed through the
+     Create agent sheet as ghost portraits); the blur is felt at the edges, the scrim does the receding. */
+  --mat-sheet: light-dark(rgb(255 255 255 / 0.95), rgb(36 37 40 / 0.96));
+  /* Bars: opaque enough that blurred text under them reads as a tone, never as
+     grey smudges (Revision 2: 0.8 left clouds at the header's right). */
+  --mat-bar: light-dark(rgb(251 251 252 / 0.92), rgb(24 25 27 / 0.9));
   /* The member's peek band sits over coloured bubbles: more opaque and barely
      saturated, so a thread colour never turns into a haze behind the character. */
-  --mat-band: light-dark(rgb(252 252 253 / 0.9), rgb(24 25 27 / 0.9));
+  --mat-band: light-dark(rgb(251 251 252 / 0.985), rgb(24 25 27 / 0.985));
   /* The dock's backdrop: nearly the panel, so nothing reads through as a slab. */
-  --mat-dock: light-dark(rgb(252 252 253 / 0.95), rgb(24 25 27 / 0.96));
+  --mat-dock: light-dark(rgb(251 251 252 / 0.95), rgb(24 25 27 / 0.96));
   --mat-toast: light-dark(rgb(25 27 30 / 0.86), rgb(58 59 63 / 0.82));
   --mat-edge: light-dark(rgb(25 27 30 / 0.085), rgb(255 255 255 / 0.1));
   --mat-sheen: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.05));
@@ -80,6 +84,9 @@
   --line-2: light-dark(rgb(25 27 30 / 0.13), rgb(255 255 255 / 0.1));
   --line-3: light-dark(rgb(25 27 30 / 0.3), rgb(255 255 255 / 0.24));
   --line-ui: light-dark(#86898d, #707276);
+  /* The composer's edge in light: the composer is white on a near-white panel,
+     so its hairline carries the object (1.5:1); dark rises by tone instead. */
+  --line-composer: light-dark(rgb(25 27 30 / 0.16), rgb(255 255 255 / 0.1));
 
   /* Tonal states. Hover is tone only; press is one step darker. */
   --fill-hover: light-dark(rgb(25 27 30 / 0.045), rgb(255 255 255 / 0.05));
@@ -92,6 +99,10 @@
   --presence-soft: light-dark(rgb(45 73 201 / 0.12), rgb(151 166 230 / 0.2));
   --presence-wash: light-dark(rgb(45 73 201 / 0.06), rgb(151 166 230 / 0.09));
   --presence-ring: light-dark(rgb(45 73 201 / 0.34), rgb(151 166 230 / 0.42));
+  /* The keyboard focus indicator: one 2 px ring hugging the edge (no gap, no
+     second line), in the presence ink mixed a little toward the panel so it is
+     restrained but still 3:1 or more against every plane (light 4.4:1, dark 6.1:1). */
+  --focus-ring: light-dark(color-mix(in oklab, #2d49c9 82%, #fbfbfc), color-mix(in oklab, #97a6e6 86%, #18191b));
 
   /* Attention: the words that say someone needs you. Nowhere else. Dark is a
      quieter honey at regular weight (light text on charcoal reads heavier), so
@@ -185,7 +196,7 @@
 
 /* The page behind the stage, for overscroll and the dev chrome. */
 html:has(.jn) body {
-  background: #fcfcfd;
+  background: #fbfbfc;
 }
 html:has(.jn[data-theme="dark"]) body {
   background: #18191b;
@@ -846,6 +857,10 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   }
   .jn .jtip:is([data-tip-align="end"], [data-tip-align="start"]):hover::after {
     translate: 0 0;
+  }
+  /* A tooltip group: once one has shown, its neighbours show at once (stage.tsx). */
+  .jn[data-tip-warm] .jtip:hover::after {
+    transition-delay: 0ms;
   }
 }
 .jn .jtip:focus-visible::after {

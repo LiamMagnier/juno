@@ -8,8 +8,8 @@ import { AppFrame, ChatSidebar, usePanelAtEnd } from "./shell";
 import { Answer, UserMessage } from "./thread";
 
 /*
- * Home: Chat at rest, empty, so the placeholder teaches @ and / (a new viewer
- * never mistakes a pre-typed draft for their own words). `draft=1` shows the
+ * Home: Chat at rest, empty (a new viewer never mistakes a pre-typed draft for
+ * their own words; the + menu and the palette teach @ and /). `draft=1` shows the
  * sentence written with tokens; `focus=1` the focused composer; `app=stripe`
  * opens its panel; `model=1` the model list; `plus=1` the + menu.
  */
@@ -38,6 +38,7 @@ export function HomeScene({
 /* Thread: after send. Newest at the bottom, as a live chat sits. */
 export function ThreadScene({ top, planOpen, stage, menu }: { top?: boolean; planOpen?: boolean; stage?: string; menu?: boolean }) {
   usePanelAtEnd(!top);
+  const early = stage === "thinking" || stage === "streaming";
   const still =
     stage === "thinking"
       ? { stage: "thinking" as const, presence: 1, seconds: 4 }
@@ -45,7 +46,14 @@ export function ThreadScene({ top, planOpen, stage, menu }: { top?: boolean; pla
         ? { stage: "streaming" as const, revealed: 38 }
         : undefined;
   return (
-    <AppFrame sidebar={<ChatSidebar current="thread" threadNeeds />} skip={{ href: "#jn-message", label: "Skip to message" }}>
+    <AppFrame
+      sidebar={
+        // Before the hand-off Mira has nothing from this chat to ask; after it, her question is the task card on
+        // screen, so her row keeps its words without the amber: one ask, coloured in one place (Revision 2).
+        early ? <ChatSidebar current="thread" status={{ mira: "ready" }} /> : <ChatSidebar current="thread" askOnScreen={["mira"]} />
+      }
+      skip={{ href: "#jn-message", label: "Skip to message" }}
+    >
       <ChatSurface initialPhase="thread" initialStage="approval" auto={false} planOpen={planOpen} stillStage={still} approvalMenu={menu} />
     </AppFrame>
   );
@@ -69,7 +77,7 @@ export function MenusScene() {
   ];
   return (
     <div className="jn-board jn-board--menus">
-      <MenuCell cap="Typing @ puts a teammate, file, project, app or chat in the sentence" label="Add context with @">
+      <MenuCell cap="Typing @ puts an agent, file, project, app or chat in the sentence" label="Add context with @">
         <Composer variant="dock" initial={atDraft} still={{ palette: { query: "", active: 0 } }} />
       </MenuCell>
       <MenuCell cap="Auto, four models with one line each, effort, then every model" label="Model">
