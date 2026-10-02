@@ -54,6 +54,7 @@ import {
   sourceCommitsAfter,
   suggestSkillSlug,
   trustAfterUpstreamChange,
+  upstreamBundleChanged,
   upstreamChanged,
   upstreamFilesChanged,
 } from "@/lib/skills/sources";
@@ -194,7 +195,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         description: candidate.skill.description,
         trust: trustAfterUpstreamChange(
           row.trust,
-          candidate.skill.instructions !== skill.instructions || upstreamFilesChanged(skill, candidate)
+          candidate.skill.instructions !== skill.instructions ||
+            upstreamFilesChanged(skill, candidate) ||
+            upstreamBundleChanged(skill, fetched.bundle)
         ),
       },
       // Upstream's folder at this commit, or none when it holds nothing but the SKILL.md.

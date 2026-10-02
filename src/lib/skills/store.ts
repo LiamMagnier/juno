@@ -654,7 +654,7 @@ export async function readInstalledSourceSkills(
   const versions = rows.length
     ? await prisma.workSkillVersion.findMany({
         where: { OR: rows.map((row) => ({ skillId: row.id, version: row.currentVersion })) },
-        select: { skillId: true, instructions: true, requestedTools: true, contract: true },
+        select: { skillId: true, instructions: true, requestedTools: true, contract: true, bundleDigest: true },
       })
     : [];
   const bySkill = new Map(versions.map((version) => [version.skillId, version]));
@@ -671,6 +671,7 @@ export async function readInstalledSourceSkills(
       instructions: version?.instructions ?? "",
       requestedTools: parseRequestedTools(version?.requestedTools),
       contract: parseSkillContract(version?.contract),
+      bundleDigest: version?.bundleDigest ?? null,
     } satisfies InstalledSourceSkill;
   });
   return { rows, installed };

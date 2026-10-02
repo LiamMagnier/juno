@@ -351,6 +351,8 @@ export interface InstalledSourceSkill {
   instructions: string;
   requestedTools: readonly string[];
   contract: WorkSkillContract;
+  /** sha256 of the installed version's kept folder, or null when it keeps none. */
+  bundleDigest?: string | null;
 }
 
 const sameList = (a: readonly string[], b: readonly string[]) => {
@@ -391,6 +393,23 @@ export function upstreamFilesChanged(
 ): boolean {
   const recorded = installed.contract.provenance[PROVENANCE_FILES_KEY] ?? "";
   return recorded !== companionTreeDigest(candidate);
+}
+
+/**
+ * Whether the folder an update would store is not, byte for byte, the one
+ * installed: the sha256 of the fetched bundle against the installed version's.
+ *
+ * This, not `upstreamFilesChanged`, decides whether trust is withdrawn. The
+ * tree digest is a fast non-cryptographic change detector over paths and blob
+ * ids, and upstream controls both: a crafted file name can make a changed
+ * folder hash the same, which would keep the reader's "verified" on scripts
+ * nobody read, and a vouched-for skill's scripts run without asking.
+ */
+export function upstreamBundleChanged(
+  installed: Pick<InstalledSourceSkill, "bundleDigest">,
+  fetched: { digest: string } | null
+): boolean {
+  return (installed.bundleDigest ?? null) !== (fetched?.digest ?? null);
 }
 
 /**

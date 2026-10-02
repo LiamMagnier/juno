@@ -555,7 +555,7 @@ if (!URL) {
   });
 
   routeTest("a GitHub import keeps the folder too: fetched at the commit the preview read, scanned, held for consent", async () => {
-    const commit = "d".repeat(40);
+    let commit = "d".repeat(40);
     const files: Record<string, { text: string; mode?: string }> = Object.fromEntries(
       ["SKILL.md", "reference/style.md", "scripts/build.py"].map((path) => [
         `skills/quarterly-summary/${path}`,
@@ -619,6 +619,47 @@ if (!URL) {
       assert.ok(contentReads.filter((read) => !read.endsWith("SKILL.md@" + commit)).every((read) => read.endsWith("@" + commit)));
       const provenance = (version.contract as { provenance: Record<string, string> }).provenance;
       assert.match(provenance["source.files"] ?? "", /^2:[a-f0-9]{16}$/, "the folder's identity is recorded for update checks");
+
+      // An update whose scripts changed while the tree digest (a fast,
+      // non-cryptographic change detector over paths and blob ids, both of
+      // which upstream controls) came out the same. The reader had approved
+      // and vouched for the old scripts; the new ones must still be reviewed.
+      const skillId2 = body.imported[0].id;
+      await db.workSkillVersion.update({ where: { id: version.id }, data: { requiresConsent: false } });
+      await db.workSkill.update({ where: { id: skillId2 }, data: { trust: "verified" } });
+      files["skills/quarterly-summary/scripts/build.py"] = {
+        text: `${files["skills/quarterly-summary/scripts/build.py"].text}\n# changed upstream after the reader vouched for it\n`,
+      };
+      commit = "e".repeat(40);
+      const { companionTreeDigest } = await import("@/lib/skills/github");
+      const collided = companionTreeDigest({
+        companionEntries: ["reference/style.md", "scripts/build.py"].map((path) => {
+          const text = files[`skills/quarterly-summary/${path}`].text;
+          return { path, size: Buffer.byteLength(text), sha: createHash("sha1").update(text).digest("hex"), symlink: false };
+        }),
+      });
+      await db.workSkillVersion.update({
+        where: { id: version.id },
+        data: {
+          // Upstream dropped a tool (no permission expansion, so no consent on
+          // that ground), and the recorded tree digest equals the new tree's.
+          requestedTools: ["Bash"],
+          contract: { ...(version.contract as Record<string, unknown>), provenance: { ...provenance, "source.files": collided } },
+        },
+      });
+      const sourceId = (await db.workSkill.findUniqueOrThrow({ where: { id: skillId2 }, select: { sourceId: true } })).sourceId!;
+      const { POST: UPDATE } = await import("@/app/api/skills/sources/[id]/update/route");
+      const updatedResponse = await UPDATE(
+        new Request("http://localhost", { method: "POST", body: JSON.stringify({ commit, update: ["skills/quarterly-summary/SKILL.md"] }) }),
+        { params: Promise.resolve({ id: sourceId }) }
+      );
+      assert.equal(updatedResponse.status, 200, await updatedResponse.clone().text());
+      const head = await db.workSkill.findUniqueOrThrow({ where: { id: skillId2 }, select: { trust: true, currentVersion: true } });
+      assert.equal(head.currentVersion, 2, "the update was taken");
+      const v2 = await db.workSkillVersion.findUniqueOrThrow({ where: { skillId_version: { skillId: skillId2, version: 2 } } });
+      assert.notEqual(v2.bundleDigest, version.bundleDigest, "a different folder was stored");
+      assert.equal(head.trust, "untrusted", "new bytes withdraw the reader's vouching, whatever the tree digest says");
+      assert.equal(v2.requiresConsent, true, "and the changed script waits for review");
     } finally {
       globalThis.fetch = realFetch;
     }
