@@ -2,7 +2,15 @@ import type { ClientActionApproval } from "@/lib/action-approval";
 import { WEB_CLIENT_FEATURES, type ClientFeature } from "@/lib/chat/client-features";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import type { LlmEvent } from "@/types/llm";
-import type { ChatSourceOrigin, ToolErrorCode, ToolFigure, ToolPresentArgs, ToolWebDetail } from "@/types/run";
+import type {
+  ChatSourceOrigin,
+  RunFact,
+  RunNotice,
+  ToolErrorCode,
+  ToolFigure,
+  ToolPresentArgs,
+  ToolWebDetail,
+} from "@/types/run";
 
 /*
  * THE TURNS THE REWORK IS CHECKED AGAINST: one provider event script per
@@ -42,6 +50,17 @@ export interface TurnScript {
   /** A message persisted before the rework: no stream runs, and the gallery renders this row at rest. */
   legacy?: LegacyTurnRecord;
   steps: readonly TurnScriptStep[];
+  /**
+   * What the route knows before the provider stream and sends as turn-start
+   * facts (SPEC §2.12). The player fills in the model, context and tools facts;
+   * a script names only what makes it different.
+   */
+  start?: {
+    connectors?: Extract<RunFact, { key: "connectors" }>;
+    notices?: readonly RunNotice[];
+  };
+  /** Notices the route sends mid-turn (a `tool_budget` when the loop goes final), at their time. */
+  notices?: ReadonlyArray<{ atMs: number; notice: RunNotice }>;
 }
 
 /**
@@ -409,6 +428,9 @@ const connectorUnavailable: TurnScript = {
   // the provider stream itself is an ordinary answer.
   features: WEB,
   end: "completed",
+  start: {
+    connectors: { key: "connectors", ready: [], failed: [{ id: "github", label: GITHUB, reason: "unreachable" }] },
+  },
   steps: [
     at(600, text(0, "I can't reach GitHub this turn, so I can't list your open issues. ")),
     at(700, text(0, "Reconnecting it in Settings should fix that.")),
@@ -597,6 +619,8 @@ const budgetReached: TurnScript = {
   // A low-effort turn: a budget of 4 requests, the fourth tools-off.
   features: WEB,
   end: "completed",
+  // The route says so when the loop's next request is the final one.
+  notices: [{ atMs: 4_320, notice: { code: "tool_budget", params: { rounds: 4 } } }],
   steps: [
     ...[0, 1, 2].flatMap((round) => {
       const id = `jc_${round}_0`;

@@ -105,13 +105,20 @@ export interface StallWatchdog {
    * "Model stopped responding". The approval receipt has its own TTL
    * (ACTION_APPROVAL_TTL_MS), which is what bounds the wait now.
    *
-   * The next `touch()` — the tool result arriving, approved or refused — or an
-   * explicit `resume()` re-arms the idle window. No-op once stopped or stalled.
+   * Only `resume()` re-arms the idle window (INV-33). `touch()` does not: the
+   * dispatcher streams its own status events while a tool runs — `queued`,
+   * `running`, a second call's `awaiting_approval` — and every one of them
+   * touches the watchdog, so a touch that cleared the pause re-armed a
+   * two-minute clock under a `run_code` allowed 130 s, or under a person still
+   * reading an approval card. The turn stream reports how many calls are
+   * running or waiting, and the route pauses and resumes on that count. Each
+   * tool is bounded by its own `timeoutMs` meanwhile. No-op once stopped or
+   * stalled.
    */
   pause(): void;
-  /** Re-arm after `pause()` without waiting for the next event. */
+  /** Re-arm after `pause()`; the one way out of a pause. */
   resume(): void;
-  /** True between `pause()` and the next `touch()`/`resume()`. */
+  /** True between `pause()` and `resume()`. */
   readonly paused: boolean;
   /**
    * Suspend the clock while a TOOL is running, not the provider.
@@ -174,7 +181,10 @@ export function createStallWatchdog(
   return {
     touch: () => {
       started = true;
-      paused = false;
+      // A paused watchdog stays paused until `resume()` (INV-33): an event
+      // received while a tool runs is the tool's own status, not the provider
+      // coming back, and must not re-arm the provider's idle clock.
+      if (paused) return;
       arm(idleMs);
     },
     get startedStreaming() {

@@ -313,3 +313,25 @@ test("a row from a LATER build degrades one field, never the whole event", () =>
 
   assert.deepEqual(detail, { server: "S", name: "t", result: "ok" });
 });
+
+// ------------------------------------------------------- the chat rework (§2.5)
+
+test("the run budget is 96,000 characters: a dozen page reads keep their detail", () => {
+  assert.equal(MAX_TOOL_DETAIL_CHARS_PER_RUN, 96_000);
+  const budget = fresh();
+  const rows: ClientToolDetail[] = [];
+  // A web turn: 16 reads, each a short argument and a full 4,000-character head.
+  for (let i = 0; i < 16; i++) {
+    const open = openToolDetail({ server: "Juno", name: "web_fetch", args: JSON.stringify({ url: `https://example.com/${i}` }) }, budget);
+    rows.push(closeToolDetail(open, { server: "Juno", name: "web_fetch", result: "p".repeat(10_000), ok: true }, budget));
+  }
+  assert.ok(rows.every((row) => row.result?.length === MAX_TOOL_RESULT_CHARS), "every read keeps its head");
+});
+
+test("the read side lives with the persisted run record and is re-exported unchanged", async () => {
+  const record = await import("@/lib/chat/run-record");
+  assert.equal(readToolDetail, record.readToolDetail);
+  const detail = await import("@/lib/chat/tool-detail");
+  assert.equal(detail.TOOL_RESULT_NOTES, record.TOOL_RESULT_NOTES);
+  assert.equal(detail.TOOL_ARGS_NOTES, record.TOOL_ARGS_NOTES);
+});

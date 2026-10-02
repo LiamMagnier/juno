@@ -34,8 +34,15 @@ export const STREAM_LOG_FLUSH_MS = 250;
 export const STREAM_LOG_FLUSH_EVERY = 32;
 export const STREAM_LOG_MAX_EVENTS = 20_000;
 
-/** Frame kinds whose last occurrence ends a generation's log. */
-export const TERMINAL_FRAME_KINDS: readonly string[] = ["done", "error"];
+/**
+ * Frame kinds whose last occurrence ends a generation's log.
+ *
+ * `handoff` is terminal everywhere (SPEC §2.3 rule 6): a chat request that
+ * started a background research run ends with it instead of `done`, and a
+ * replay, a sweep or a reader that did not know that would wait on a `done`
+ * that never comes. The replay and the log sweep read this one list.
+ */
+export const TERMINAL_FRAME_KINDS: readonly string[] = ["done", "error", "handoff"];
 
 export function isTerminalFrameKind(kind: string): boolean {
   return TERMINAL_FRAME_KINDS.includes(kind);

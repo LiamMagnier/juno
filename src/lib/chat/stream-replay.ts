@@ -7,8 +7,9 @@
  *
  *  - Only frames with `seq > after` are replayed. The client sends the last
  *    seq it rendered; sending it the same frame twice would double a delta.
- *  - A `done`/`error` frame is the end of the log. Nothing follows it, so the
- *    tail stops the moment one is replayed.
+ *  - A terminal frame (`done`, `error` or `handoff`: `isTerminalFrameKind`)
+ *    is the end of the log. Nothing follows it, so the tail stops the moment
+ *    one is replayed.
  *  - Between frames the generation's liveness decides whether to keep
  *    waiting. "running" waits; "terminal" — the receipt finished, or the
  *    process no longer has the generation registered — waits one short grace
@@ -20,6 +21,8 @@
  *  - Nothing tails forever: MAX_TAIL_MS bounds the wait for a generation that
  *    never reports an end.
  */
+
+import { isTerminalFrameKind } from "@/lib/chat/stream-log";
 
 export interface ReplayEventRow {
   seq: number;
@@ -63,10 +66,6 @@ export const REPLAY_TERMINAL_GRACE_MS = 3_000;
 export const REPLAY_MAX_TAIL_MS = 65 * 60_000;
 export const REPLAY_BATCH_LIMIT = 500;
 
-function isTerminal(kind: string): boolean {
-  return kind === "done" || kind === "error";
-}
-
 export async function* replayStream(port: StreamReplayPort, options: ReplayOptions): AsyncGenerator<ReplayEvent> {
   const pollMs = options.pollMs ?? REPLAY_POLL_MS;
   const heartbeatMs = options.heartbeatMs ?? REPLAY_HEARTBEAT_MS;
@@ -96,7 +95,7 @@ export async function* replayStream(port: StreamReplayPort, options: ReplayOptio
       lastFrameAt = now();
       lastHeartbeatAt = lastFrameAt;
       yield { type: "frame", seq: row.seq, kind: row.kind, payload: row.payload };
-      if (isTerminal(row.kind)) {
+      if (isTerminalFrameKind(row.kind)) {
         yield { type: "end", reason: "terminal" };
         return;
       }

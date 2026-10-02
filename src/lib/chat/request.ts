@@ -7,9 +7,15 @@
  * reasoning tiers are accepted, what the idempotency pair requires — was
  * reachable only through a live request.
  *
- * Behaviour is unchanged. This is the same schema, in a file a test can read.
+ * The schema is NOT strict (INV-9): a key it does not know is stripped, never
+ * refused, so a newer client talking to an older deploy loses the new field
+ * rather than the whole request. Every field a shipped native build sends is
+ * accepted forever, and the three fields the rework adds (`clientFeatures`,
+ * `timeZone`, `locale`, SPEC §2.1) are lenient: an invalid value is dropped,
+ * never a 400.
  */
 import { z } from "zod";
+import { CLIENT_FEATURES, MAX_CLIENT_FEATURES, type ClientFeature } from "@/lib/chat/client-features";
 import { HISTORY_LIMIT } from "@/lib/chat/context-assembly";
 import {
   chatOriginSchema,
@@ -66,6 +72,87 @@ export const artifactEditSchema = z.object({
   selector: z.string().trim().min(1).max(1_000).optional(),
 });
 
+// ── Lenient fields (SPEC §2.1) ───────────────────────────────────────────────
+
+/** How many entries of a `clientFeatures` array are looked at before the rest is ignored. */
+const MAX_CLIENT_FEATURE_ENTRIES_READ = 256;
+const KNOWN_CLIENT_FEATURES: ReadonlySet<string> = new Set(CLIENT_FEATURES);
+
+/**
+ * `clientFeatures`: not an array → `undefined` (profile 1); otherwise the known
+ * feature names, de-duplicated, at most 16. Unknown strings — a newer client's
+ * features — are dropped, never refused.
+ */
+export function lenientClientFeatures(value: unknown): ClientFeature[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const list: ClientFeature[] = [];
+  for (const item of value.slice(0, MAX_CLIENT_FEATURE_ENTRIES_READ)) {
+    if (list.length >= MAX_CLIENT_FEATURES) break;
+    if (typeof item !== "string" || !KNOWN_CLIENT_FEATURES.has(item)) continue;
+    const feature = item as ClientFeature;
+    if (!list.includes(feature)) list.push(feature);
+  }
+  return list;
+}
+
+/**
+ * `timeZone`: a trimmed IANA zone of at most 64 characters that `Intl` accepts,
+ * else `undefined`. Every later consumer (`current_time`, the research date
+ * line) passes it to `Intl` and must never meet a `RangeError`.
+ */
+export function lenientTimeZone(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const zone = value.trim();
+  if (!zone || zone.length > 64) return undefined;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone });
+    return zone;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `locale`: a trimmed BCP-47 tag of at most 35 characters, kept in its
+ * canonical form ("pt-br" → "pt-BR"), else `undefined`. Never used to format
+ * UI copy (SPEC §10).
+ */
+export function lenientLocale(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const tag = value.trim();
+  if (!tag || tag.length > 35) return undefined;
+  try {
+    return Intl.getCanonicalLocales(tag)[0] ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `researchEffort`: accepted forever (a shipped native build sends it) and
+ * ignored (R1, SPEC §9.4). A value this build does not know is dropped rather
+ * than refused, like the other lenient fields.
+ */
+function lenientResearchEffort(value: unknown): (typeof RESEARCH_EFFORTS)[number] | undefined {
+  return typeof value === "string" && (RESEARCH_EFFORTS as readonly string[]).includes(value)
+    ? (value as (typeof RESEARCH_EFFORTS)[number])
+    : undefined;
+}
+
+/**
+ * Logs, once per request, that a `researchEffort` arrived and was ignored
+ * (SPEC §2.1). The route calls it once after parsing; returns whether it
+ * logged, so the call site needs no condition of its own.
+ */
+export function noteIgnoredResearchEffort(
+  input: { researchEffort?: unknown; client?: unknown },
+  log: (message: string, detail: { value: unknown; client: unknown }) => void = console.info
+): boolean {
+  if (input.researchEffort === undefined) return false;
+  log("[research] ignored researchEffort", { value: input.researchEffort, client: input.client ?? null });
+  return true;
+}
+
 export const chatBodySchema = z
   .object({
     conversationId: z.string().cuid().optional(),
@@ -90,9 +177,9 @@ export const chatBodySchema = z
     voiceMode: z.boolean().optional(),
     // LEGACY, native-only. No web client sends this since canvas became a
     // model decision; the server default is ON, so only an explicit `false`
-    // from an older Mac/iOS build does anything. Do not remove — dropping it
-    // from this .strict() schema would 400 every request from a shipped
-    // native binary.
+    // from an older Mac/iOS build does anything. Do not remove: the schema is
+    // not strict, so dropping the key would not 400 a shipped native binary,
+    // but it would silently turn its explicit `false` back into the default.
     canvasEnabled: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     // Premium "fast mode" (Anthropic speed:"fast" / OpenAI service_tier:
@@ -112,9 +199,9 @@ export const chatBodySchema = z
     // Deep research mode: plan → search → read → cited report (saved chats only;
     // ignored in private mode, where the toggle is hidden client-side).
     deepResearch: z.boolean().optional(),
-    // How hard a deep-research turn works (quick | standard | deep | max).
-    // Optional; the research adapter's default applies when absent.
-    researchEffort: z.enum(RESEARCH_EFFORTS).optional(),
+    // Deprecated: research has no levels any more (R1). Accepted and ignored
+    // (INV-9); `noteIgnoredResearchEffort` logs its presence once per request.
+    researchEffort: z.unknown().optional().transform(lenientResearchEffort),
     // Built from REASONING_TIERS, never repeated literals: this enum listed only
     // low|medium|high|max while reasoningOptions() advertised "minimal" (gpt-5,
     // gpt-5-mini, the Gemini flash line, glm-5.2) and "xhigh" (every GPT-5.2+,
@@ -192,9 +279,12 @@ export const chatBodySchema = z
     // Which surface sent the request — tags the spend ledger so admin can split
     // website vs native-app spending. Defaults to "web".
     client: z.enum(["web", "app"]).optional(),
-    // IANA timezone from the browser or native client (e.g. "Europe/Paris"),
-    // used when an agent routine is created from chat without an explicit zone.
-    timeZone: z.string().trim().min(1).max(64).optional(),
+    /** What this client renders (SPEC §2.2). Lenient: invalid → dropped, never a 400. */
+    clientFeatures: z.unknown().optional().transform(lenientClientFeatures),
+    /** IANA zone of the browser, e.g. "Europe/Paris". Used by current_time and research only. */
+    timeZone: z.unknown().optional().transform(lenientTimeZone),
+    /** Effective UI locale (<html lang>), BCP-47. Never used to format UI copy. */
+    locale: z.unknown().optional().transform(lenientLocale),
     privateHistory: z
       .array(
         z.object({
