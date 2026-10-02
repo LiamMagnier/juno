@@ -16,7 +16,7 @@
  * MOTION CONTRACT (revision 1: hover is opt-in, INTERACTION_SPEC I-7).
  *
  *   .jicon-trigger           the control that owns the icon. Gives the press
- *                            dip (scale 0.9, 70 ms) only when the control is the
+ *                            dip (scale 0.97, 70 ms) only when the control is the
  *                            icon alone (an icon button: the Icon detects it and
  *                            marks itself data-solo); a row or a labelled button
  *                            presses tonally and its glyph stays still. State
@@ -47,7 +47,7 @@
  */
 import * as React from "react";
 import type { CSSProperties, SVGProps } from "react";
-import { ICON_ALIASES, ICONS, resolveIcon, resolveIconAt, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
+import { ICON_ALIASES, ICONS, KEYLINE, resolveIcon, resolveIconAt, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
 
 export type KnownIconName = keyof typeof ICONS | keyof typeof ICON_ALIASES;
 /** Any drawn name (autocompletes), or any string: an unknown name renders a placeholder. */
@@ -186,6 +186,25 @@ function axisMap(stems: Set<number>, k: number, frac: number, off: number): Axis
     if (j > 0 && tgt <= to[j - 1] + 1e-6) tgt = c + (to[j - 1] - from[j - 1]);
     to.push(tgt);
   });
+  // Equal gaps stay equal (a list's lines, more's points, the faders' rails): a run of three or more
+  // stems spaced alike in the drawing is re-spaced by one whole device pixel step about its middle stem,
+  // so rounding never leaves a 4, 5, 4 rhythm. A tie rounds the step down (the glyph stays inside its
+  // live area); a run that would cross its neighbours keeps the plain fit.
+  for (let j = 0; j < from.length - 2; ) {
+    const gap = from[j + 1] - from[j];
+    let e = j + 1;
+    while (e + 1 < from.length && Math.abs(from[e + 1] - from[e] - gap) < 1e-3) e++;
+    if (e - j >= 2) {
+      const dp = gap * k;
+      const step = Math.max(1, Math.abs(dp - Math.floor(dp) - 0.5) < 1e-6 ? Math.floor(dp) : Math.round(dp)) / k;
+      const mid = Math.floor((j + e) / 2);
+      const next = to.slice(j, e + 1).map((_, t) => to[mid] + (j + t - mid) * step);
+      const clearBefore = j === 0 || next[0] > to[j - 1] + 1e-6;
+      const clearAfter = e === from.length - 1 || next[next.length - 1] < to[e + 1] - 1e-6;
+      if (clearBefore && clearAfter) next.forEach((v, t) => (to[j + t] = v));
+      j = e;
+    } else j++;
+  }
   const last = from.length - 1;
   return (v) => {
     if (v <= from[0]) return r3(v + to[0] - from[0]);
@@ -355,7 +374,7 @@ function renderShape(el: IconElement, key: React.Key, ctx: Ctx, extra?: Record<s
 }
 
 /**
- * A live bar's scale: level 0..1 maps to a height of 3 to 16.5 units whatever
+ * A live bar's scale: level 0..1 maps to a height of 3 to 16.5 construction units (times the keyline) whatever
  * the bar's rest height (a loud outer bar can stand as tall as the middle
  * one), inside the live area. The bar is the group's first path, drawn upright.
  */
@@ -363,7 +382,7 @@ function levelScale(el: IconElement, level: number): number {
   const d = String(el.children?.[0]?.attrs.d ?? "");
   const ys = [...d.matchAll(/[ML]\s*-?[\d.]+\s+(-?[\d.]+)/g)].map((m) => Number(m[1]));
   const rest = ys.length >= 2 ? Math.abs(ys[ys.length - 1] - ys[0]) : 9;
-  const h = 3 + Math.max(0, Math.min(1, level)) * 13.5;
+  const h = (3 + Math.max(0, Math.min(1, level)) * 13.5) * KEYLINE;
   return Math.round((h / rest) * 1000) / 1000;
 }
 
@@ -702,6 +721,18 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
     setShown(name);
   }
 
+  /*
+   * Turned on after mount: a state change, not a first paint. The on state's
+   * draw-in (a check writing itself) plays only then; an icon that mounts
+   * already on is simply there (a menu's current-model check opening again).
+   */
+  const [turned, setTurned] = React.useState(false);
+  const [lastState, setLastState] = React.useState(state);
+  if (state !== lastState) {
+    setLastState(state);
+    setTurned(state === "active");
+  }
+
   const strokePx = px ?? iconStrokePx(size);
   const sw = line ?? Math.round(((strokePx * 24) / size) * 1000) / 1000;
   const dpr = React.useSyncExternalStore(subscribeDpr, dprNow, dprServer);
@@ -736,6 +767,7 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
       className={className ? `ji ${className}` : "ji"}
       data-icon={name}
       data-state={state}
+      data-turned={turned ? "" : undefined}
       data-on={d?.on?.kind}
       data-pose={pose}
       role={title ? "img" : undefined}
