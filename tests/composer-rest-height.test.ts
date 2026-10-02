@@ -39,9 +39,10 @@ function fieldMinHeight(variant: "pointer" | "coarse"): number {
 }
 
 test("the field's rest height is the min-height in its metrics", () => {
-  // V3: a 45px field in the dock (13px over one 26px line, 4px under it,
-  // rounded to the line box), 52px under a coarse pointer.
-  assert.equal(fieldMinHeight("pointer"), 45);
+  // A 46px field in the dock (16px over one 26px line, 4px under it: the
+  // equal-inset rule, 16px from the top as from the side), 52px under a
+  // coarse pointer.
+  assert.equal(fieldMinHeight("pointer"), 46);
   assert.equal(fieldMinHeight("coarse"), 52);
 });
 

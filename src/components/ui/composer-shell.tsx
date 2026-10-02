@@ -145,10 +145,10 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
  * file's source, so changing the field or the row without changing this fails
  * there rather than on screen.
  */
-export const COMPOSER_REST_HEIGHT = { pointer: 99, coarse: 114 } as const;
+export const COMPOSER_REST_HEIGHT = { pointer: 100, coarse: 114 } as const;
 
 /** The same two heights as classes. Tailwind reads classes from source text, so they are written out. */
-export const composerRestHeightClass = "h-[99px] coarse:h-[114px]";
+export const composerRestHeightClass = "h-[100px] coarse:h-[114px]";
 
 /**
  * The HOME's composer at rest: the same row and edge over the home's taller

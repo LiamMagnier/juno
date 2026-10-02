@@ -1126,7 +1126,7 @@ export function CanvasPanel({
             <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "console" | "code")} className="flex min-h-0 flex-1 flex-col">
               {/* Workspace tab row — view switcher left, view-contextual actions right. */}
               <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
-                <TabsList className="h-8">
+                <TabsList className="h-8 rounded-field p-0.5">
                   <TabsTrigger value="preview" className="gap-1.5">
                     {rt.mode === "console" ? <Terminal className="size-3.5" aria-hidden /> : null}
                     {rt.mode === "console" ? "Output" : isDesign ? "Design" : "Preview"}

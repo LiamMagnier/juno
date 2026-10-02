@@ -3040,8 +3040,17 @@
   /* Anything that has to stay full-bleed inside prose opts back out. */
   .prose-juno pre,
   .prose-juno table,
-  .prose-juno img,
   .prose-juno .aicss-cb { max-inline-size: none; }
+  /* Pictures are responsive: never wider than the column (or the canvas)
+     they sit in, height from their own ratio, corners on the card rung. They
+     used to opt out of the measure with max-inline-size: none, which let a
+     1200px photo run past the canvas edge. */
+  .prose-juno img {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+    border-radius: 12px;
+  }
   /*
    * THE RHYTHM RULE, AND WHY THE CLASS IS DOUBLED.
    *
