@@ -51,11 +51,16 @@ final class JunoMobileIPadCaptureUITests: XCTestCase {
 
     for (orientationName, orientation) in orientations {
       XCUIDevice.shared.orientation = orientation
+      // The springboard settles its rotation before the first launch.
+      Thread.sleep(forTimeInterval: 1.5)
       for scenario in scenarios where only?.contains(scenario.name) ?? true {
         let app = XCUIApplication()
         app.launchArguments =
           ["--juno-ui-preview", "--juno-preview-appearance", appearance] + scenario.arguments
         app.launch()
+        // Again, with the app in front: a rotation asked of the home screen
+        // alone does not always reach the app that launches over it.
+        XCUIDevice.shared.orientation = orientation
         // Entrance motion settles well inside this.
         Thread.sleep(forTimeInterval: 3.5)
         let shot = XCUIScreen.main.screenshot()

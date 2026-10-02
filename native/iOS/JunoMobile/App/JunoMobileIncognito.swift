@@ -343,7 +343,10 @@ struct JunoMobileIncognitoChat: View {
             }
         }
         .padding(JunoSpace.snug)
-        .background(JunoGlassBackground(cornerRadius: 26))
+        // The glass is the capsule's own effect, inside the container, as the
+        // chat composer's is. A glass *background* view in a container is
+        // merged with its siblings and drew the field and chips blurred.
+        .junoGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         // Dashed, as the web marks its private composer, but in the ink's own
         // light rather than the accent: on the dark page the shape is enough,
         // and a coral outline read as an error state.

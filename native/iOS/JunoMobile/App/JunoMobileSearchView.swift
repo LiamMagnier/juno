@@ -128,6 +128,10 @@ struct JunoMobileSearchView: View {
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
         .junoGlassSearchContainer()
+        // The results' measure: on an iPad the field is the width of the
+        // column it searches, not of the window.
+        .frame(maxWidth: JunoMobileMeasure.reading)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Content
