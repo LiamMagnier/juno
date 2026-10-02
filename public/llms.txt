@@ -1,0 +1,25 @@
+# Alevr
+
+> Alevr (said AL-ver) is the AI workspace for chat, agents and code. It brings Claude, GPT, Gemini and models from more than a dozen AI labs into one calm workspace, with research that cites its sources, persistent agents and a coding agent whose changes you review.
+
+The name is inspired by aleph, the symbol mathematics uses for infinite cardinalities. Signature line: "Go further."
+
+## Product
+
+- [Alevr Chat](https://chat.liams.dev/#features): conversation with 160+ models from 14 labs. Auto picks a model per message, or choose one yourself.
+- Deep Field: research mode that plans a search, reads the sources and cites every claim.
+- Folio: answers become documents, diagrams, code and small apps, with version history and sharing.
+- [Alevr Orbit](https://chat.liams.dev/#orbit): persistent AI agents with a name, a role, standing work and permissions (Allowed, Ask first, Blocked).
+- [Alevr Code](https://chat.liams.dev/#code): a coding agent that reads the repository, makes the change, runs the tests and waits for review.
+- Memory, Projects, Library, voice, incognito chats, connected apps (Google Drive, Microsoft 365, GitHub, Notion, Figma, Apple apps), MCP servers and skills.
+
+## Plans and platforms
+
+- [Pricing](https://chat.liams.dev/#pricing): a free plan, then monthly plans priced in EUR with a transparent usage meter.
+- [Download](https://chat.liams.dev/download): web app, Mac app, iPhone and iPad.
+
+## Privacy
+
+- Hosted in France, on EU infrastructure, GDPR by default.
+- Messages are encrypted at rest. Conversations are never used for training.
+- [Privacy policy](https://chat.liams.dev/legal/confidentialite), [Terms](https://chat.liams.dev/legal/cgu)

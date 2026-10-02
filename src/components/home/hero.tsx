@@ -68,7 +68,7 @@ export function Hero() {
           <div className="alv-hero-veil" />
           <m.div className="alv-hero-copy" style={pinned ? { opacity: copyOpacity, y: copyY } : undefined}>
             <h1 id="alv-hero-title" className="alv-display alv-enter" style={{ ["--i" as string]: 0 }}>Go further.</h1>
-            <p className="alv-lede alv-enter" style={{ ["--i" as string]: 1 }}>Chat, agents and code in one calm workspace. Research deeply, hand off the routine, and finish real work.</p>
+            <p className="alv-lede alv-enter" style={{ ["--i" as string]: 1 }}>Alevr is the AI workspace for chat, agents and code. Research deeply, hand off the routine, and finish real work.</p>
             <div className="alv-actions alv-enter" style={{ ["--i" as string]: 2 }}>
               <PublicAction href="/sign-up">Create account</PublicAction>
               <PublicAction href="/download" secondary>Download for Mac</PublicAction>

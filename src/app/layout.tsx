@@ -64,7 +64,7 @@ const mono = JetBrains_Mono({
 });
 
 const APP_DESCRIPTION =
-  "Every frontier AI model (Claude, GPT, Gemini and a dozen more labs) in one calm workspace, metered by what answers actually cost.";
+  "Alevr is the AI workspace for chat, agents and code. Claude, GPT, Gemini and every frontier model in one calm place. Go further.";
 
 export const metadata: Metadata = {
   title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
@@ -81,21 +81,12 @@ export const metadata: Metadata = {
     locale: "en_US",
     title: PRODUCT_NAME,
     description: APP_DESCRIPTION,
-    // Static 1200×630 card generated from the design tokens (see public/og.png).
-    images: [
-      {
-        url: "/og.png",
-        width: 1200,
-        height: 630,
-        alt: `${PRODUCT_NAME}. Go further.`,
-      },
-    ],
+    // The card itself is src/app/opengraph-image.tsx (content-hashed URL).
   },
   twitter: {
     card: "summary_large_image",
     title: PRODUCT_NAME,
     description: APP_DESCRIPTION,
-    images: ["/og.png"],
   },
 };
 
