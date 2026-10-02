@@ -598,7 +598,7 @@ export function ApprovalCard({
         // A flat tone step, radius 12, no border, no shadow, no warning wash
         // (INTERACTION_SPEC T6, critique 1): the attention words in the title
         // are what make it stand out from the prose, not a tinted box.
-        "@container my-5 w-full rounded-card bg-muted px-4 pb-4 pt-3.5 contrast-more:border contrast-more:border-border",
+        "@container my-5 w-full rounded-field bg-muted px-4 pb-4 pt-3.5 contrast-more:border contrast-more:border-border",
         "motion-safe:animate-rise-in motion-reduce:animate-fade-in [animation-fill-mode:backwards]"
       )}
     >

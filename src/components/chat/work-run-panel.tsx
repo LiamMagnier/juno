@@ -161,7 +161,7 @@ export function WorkRunPanel({
       className={cn(
         // A flat tone step, radius 12, no border, no shadow (T anatomy); a
         // hairline only under Increase Contrast.
-        "@container rounded-card bg-muted contrast-more:border contrast-more:border-border",
+        "@container rounded-field bg-muted contrast-more:border contrast-more:border-border",
         className
       )}
     >
@@ -219,7 +219,7 @@ export function WorkRunPanel({
             className={cn(
               "flex h-[38px] w-full items-center gap-1.5 border-t border-border/70 px-4 text-left text-ui text-muted-foreground coarse:h-11",
               "transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-foreground/75 motion-reduce:transition-none",
-              planOpen ? "rounded-none" : "rounded-b-card"
+              planOpen ? "rounded-none" : "rounded-b-field"
             )}
           >
             <ChevronRight
