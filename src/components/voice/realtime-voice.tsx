@@ -14,6 +14,7 @@ import {
   type VoiceProviderId,
 } from "@/lib/voice-relay-protocol";
 import { cn } from "@/lib/utils";
+import { readVoiceLevel } from "@/lib/voice-level";
 import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
@@ -66,6 +67,12 @@ export interface VoiceCallParts {
   /** The live level (0-1) of whoever is talking, read once per frame by the glow. */
   level: () => number;
   /**
+   * Each voice's own envelope, read once per frame by the glow: your
+   * microphone and Juno's output as heard. Split, so talking over Juno lights
+   * both voices instead of blending them into one. Wins over `stream`.
+   */
+  levels: { you: () => number; alevr: () => number };
+  /**
    * The audio of whoever holds the floor, when there is one to hear: your
    * microphone while you talk, Juno's output AS IT PLAYS while Juno talks.
    * The glow analyses it in low / mid / high bands, so its lobes move with
@@ -96,6 +103,12 @@ function toneFor(phase: VoicePhase): VoiceGlowTone {
       return "muted";
   }
 }
+
+/** The realtime hook's split envelopes (lib/voice-level.ts), for the glow. */
+const CALL_LEVELS = {
+  you: () => readVoiceLevel("user"),
+  alevr: () => readVoiceLevel("assistant"),
+};
 
 /** Juno's voice arrives mastered, near full scale; a room microphone doesn't. */
 const OUTPUT_SENSITIVITY = 2.2;
@@ -134,6 +147,7 @@ export function voiceCallParts({
     // Muted: a low, even grey band, visibly on and visibly quiet, rather than
     // a frozen frame of whatever was said last.
     level: phase === "muted" ? () => 0.12 : () => levelRef.current,
+    levels: CALL_LEVELS,
     stream: streamFor(phase, voice.audioStreams),
     sensitivity: phase === "speaking" ? OUTPUT_SENSITIVITY : undefined,
     processing: phase === "thinking",
@@ -303,6 +317,7 @@ export function RealtimeVoice({
       <VoiceCallNotices voice={voice} />
       <JunoVoiceGlow
         stream={parts.stream}
+        levels={parts.levels}
         sensitivity={parts.sensitivity}
         level={parts.level}
         processing={parts.processing}
