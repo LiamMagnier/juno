@@ -1,5 +1,10 @@
 @import "../components/agents/agents.css";
 @import "../components/agents/agent-face.css";
+/* The Continuum mark and its thinking treatment: loaded here, like the agent
+   sheets, so a component module carries no CSS import (the unit tests render
+   those components under tsx, which cannot load a stylesheet). */
+@import "../components/brand/brand.css";
+@import "../components/brand/thinking-mark.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -2989,10 +2994,14 @@
   }
   .prose-juno.prose-juno > :is(h3, h4, h5, h6):not(:first-child) { margin-top: 1.6em; }
   .prose-juno.prose-juno > :is(h3, h4, h5, h6) + * { margin-top: 0.45em; }
+  /* Each heading a clear step above the 16px body (critique 1: the old h5 at
+     17px read as bold body). `##` is the heading models reach for most, so it
+     lands on 19px, the gallery thread's section heading; `###` keeps a whole
+     2px step over the body as well. */
   .prose-juno h3 { font-size: 1.375em; }
-  .prose-juno h4 { font-size: 1.2em; }
-  .prose-juno h5 { font-size: 1.0625em; }
-  .prose-juno h6 { font-size: 1em; }
+  .prose-juno h4 { font-size: 1.1875em; line-height: 1.37; }
+  .prose-juno h5 { font-size: 1.125em; line-height: 1.4; }
+  .prose-juno h6 { font-size: 1em; color: hsl(var(--foreground) / .75); }
   /* Kills the UA's 1em block margins so the rhythm rule above is the only
      thing spacing blocks. It must NOT be the thing that spaces them: see the
      specificity note there. */
@@ -3025,7 +3034,9 @@
   }
   .prose-juno ul { list-style: disc; }
   .prose-juno ol { list-style: decimal; }
-  .prose-juno li { margin: 0.2em 0; }
+  /* Real bullets on a hanging indent: wrapped lines align with the first
+     word, and items breathe a little apart (6px at the reading rung). */
+  .prose-juno li { margin: 0.375em 0; padding-left: 0.15em; }
   .prose-juno li > ul, .prose-juno li > ol { margin-top: 0.2em; }
   /* A quote is set apart by a hairline and indent, in the muted ink: 2px of
      neutral rule, not a coloured callout bar. */

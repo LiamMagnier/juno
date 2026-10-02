@@ -1,6 +1,5 @@
 "use client";
 
-import "./thinking-mark.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { continuumDrawingSet } from "./continuum-geometry";

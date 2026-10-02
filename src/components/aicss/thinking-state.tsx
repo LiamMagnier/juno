@@ -4,18 +4,14 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * AIcss "Thinking State" — the shimmering label.
+ * A status label: the words of a phase, set still.
  *
- * One valley of reduced alpha sweeps through the word rather than a bright band
- * travelling over it, which is what separates this from a loading skeleton: a
- * skeleton says "there will be content here", and this says "something is
- * happening now". See `.aicss-shine` in globals.css for the gradient.
- *
- * `settled` is the whole reason this is a component rather than a class. The
- * same node keeps its box and its colour and simply stops moving, so the moment
- * a run completes costs no reflow and no colour jump — which is what let this
- * replace `animate-status-glow` on the live strip, where an opacity breathe was
- * doing the same job less precisely.
+ * This was AIcss's shimmering label, a valley of alpha swept through the word.
+ * Alevr retired every shimmer (INTERACTION_SPEC M1, MOTION_AND_THINKING.md):
+ * a live row is the Continuum mark beside truthful words (live-line.tsx), and
+ * the words themselves never move. The component is kept so its callers keep
+ * their box, tone and `settled` contract; both states are now the same still
+ * text, in the tone the label asked for.
  */
 export function ThinkingState({
   children = "Thinking",
@@ -24,22 +20,16 @@ export function ThinkingState({
   className,
   ...rest
 }: React.ComponentPropsWithoutRef<"span"> & {
-  /** Stop the sweep and rest at `tone`. */
+  /** Kept for callers: the label no longer moves in either state. */
   settled?: boolean;
-  /** Which token the text settles at. `strong` for a label that leads a block. */
+  /** Which token the text rests at. `strong` for a label that leads a block. */
   tone?: "muted" | "strong";
 }) {
   return (
     <span
       {...rest}
       data-settled={settled ? "true" : "false"}
-      style={{
-        // A custom property rather than a class pair: the gradient derives its
-        // own valley from this one colour (see .aicss-shine).
-        ["--aicss-shine" as string]: tone === "strong" ? "var(--foreground)" : "var(--muted-foreground)",
-        ...rest.style,
-      }}
-      className={cn("aicss-shine aicss-thinking", className)}
+      className={cn("aicss-thinking", tone === "strong" ? "text-foreground" : "text-muted-foreground", className)}
     >
       {children}
     </span>

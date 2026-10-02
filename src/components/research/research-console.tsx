@@ -18,6 +18,7 @@ import { RollingNumber } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
+import { LiveLine } from "@/components/chat/live-line";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
@@ -131,7 +132,11 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
           // the question does not, and the gates print the question themselves.
           ? <p className="text-ui font-medium">{awaitingClarify ? `Before ${PRODUCT_NAME} starts` : "Your research plan"}</p>
           : <h3 className="line-clamp-2 text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground">{run.goal}</h3>}
-        <p role="status" className="mt-1 text-caption text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>
+        {/* The live line every working row uses: the Continuum mark beside the
+            truthful stage, still while the run waits on you. */}
+        {isWorkingResearchState(state) || state.startsWith("awaiting_")
+          ? <LiveLine className="mt-1" size={16} text={RESEARCH_STATE_MESSAGE[state]} phase={state.startsWith("awaiting_") ? "waiting" : "working"} immediate />
+          : <p role="status" className="mt-1 text-ui text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {!atGate && run.live && <>

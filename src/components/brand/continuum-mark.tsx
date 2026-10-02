@@ -1,4 +1,3 @@
-import "./brand.css";
 import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { BRAND_TONE_COLOR, type BrandTone } from "./brand-tone";

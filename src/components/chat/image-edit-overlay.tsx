@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Crop, ImageIcon, ImageOff, MousePointer2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
+import { LiveLine } from "@/components/chat/live-line";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
@@ -365,11 +366,8 @@ export function ImageEditOverlay({
                 />
 
                 {!imgReady && !imgFailed && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground" role="status">
-                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-secondary">
-                      <ImageIcon className="size-4 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
-                    </span>
-                    <span className="text-caption">Preparing image…</span>
+                  <div className="absolute inset-0 flex items-center justify-center px-6">
+                    <LiveLine text="Preparing the image" phase="working" />
                   </div>
                 )}
 

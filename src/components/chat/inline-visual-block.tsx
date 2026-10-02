@@ -9,7 +9,6 @@ import {
   GitBranch,
   HelpCircle,
   Layers3,
-  Loader2,
   ListChecks,
   Maximize2,
   Table2,
@@ -19,6 +18,7 @@ import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { stepLabFromLegacySteps } from "@/lib/step-lab";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { LiveLine } from "@/components/chat/live-line";
 
 type VisualKind = "cards" | "steps" | "flow" | "flowchart" | "diagram" | "comparison" | "table" | "quiz" | "callout" | "timeline";
 
@@ -553,10 +553,14 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
       // #000 transcript ground computed to ~3.8% lightness, so the one surface
       // that has to say "this did not render" had nothing behind its text.
       <div className="my-3 rounded-field border bg-card px-4 py-3 text-ui text-muted-foreground">
-        <div className="flex items-center gap-2">
-          {streaming ? <Loader2 className="size-4 text-muted-foreground animate-spin" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
-          <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
-        </div>
+        {streaming ? (
+          <LiveLine text="Drawing the visual" phase="working" size={16} />
+        ) : (
+          <div className="flex items-center gap-2">
+            <StatusIcons.warning className="size-4 text-warning" />
+            <span>This inline visual could not be rendered.</span>
+          </div>
+        )}
       </div>
     );
   }

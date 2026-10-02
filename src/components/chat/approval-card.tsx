@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Clock } from "@/components/ui/icons";
+import { ChevronRight } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
-import { Button } from "@/components/ui/button";
+import { ConnectorMark } from "@/components/connections/connector-logos";
+import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton, tellInstead } from "@/components/chat/decision";
 import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
 import type {
@@ -13,6 +14,7 @@ import type {
   ClientActionApproval,
 } from "@/lib/action-approval";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { TIMING } from "@/lib/interaction";
 
 /*
  * The one card in the transcript that is not prose.
@@ -411,7 +413,7 @@ export function ApprovalCard({
   const [armed, setArmed] = React.useState(false);
   React.useEffect(() => {
     visibleAt.current = Date.now(); setArmed(false);
-    const timer = window.setTimeout(() => setArmed(true), 500);
+    const timer = window.setTimeout(() => setArmed(true), TIMING.approvalArm);
     return () => window.clearTimeout(timer);
   }, [approval.id, approval.receiptDigest]);
   // Presentation only: whether the argument list is unfolded. It used to be a
@@ -475,7 +477,7 @@ export function ApprovalCard({
 
   const decide = React.useCallback(
     async (decision: ActionApprovalDecision) => {
-      if (Date.now() - visibleAt.current < 500) return;
+      if (Date.now() - visibleAt.current < TIMING.approvalArm) return;
       setOutcome({ kind: "sending", decision });
       let response: Response;
       try {
@@ -561,6 +563,28 @@ export function ApprovalCard({
   // inline as a JSX child is read by the extractor as UI text.
   const untouched = outcome.kind === "idle";
 
+  // The verb the primary button says, and the sentence the title says it in.
+  const verbLabel = handoff ? "Hand off" : task ? "Start task" : agentConfig ? "Apply setup change" : approvalVerb(current.toolName);
+  const toolVerb = approvalVerb(current.toolName);
+  const verbPhrase = handoff
+    ? `hand this task to ${teammate ?? "another agent"}`
+    : task
+      ? "start a background task"
+      : agentConfig
+        ? "change this agent's setup"
+        : toolVerb === "Allow this action"
+          ? `use ${current.connectorLabel}`
+          : `${toolVerb.charAt(0).toLowerCase()}${toolVerb.slice(1)} in ${current.connectorLabel}`;
+  const settledTitle = handoff
+    ? "Handoff to another agent"
+    : task
+      ? "Background task"
+      : agentConfig
+        ? "Agent setup change"
+        : `${verbPhrase.charAt(0).toUpperCase()}${verbPhrase.slice(1)}`;
+  const danger = current.riskClass === "destructive_or_sensitive";
+  const expiryLine = task ? taskCopy.footnote : `Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`;
+
   return (
     <section
       // A group, not a landmark: a transcript can hold several of these, and one
@@ -568,230 +592,229 @@ export function ApprovalCard({
       role="group"
       aria-labelledby={labelId}
       aria-busy={sending || undefined}
+      data-answerable={answerable ? "" : undefined}
       className={cn(
-        // `@container`: the argument rows below lay out by the card's own width —
-        // it sits in a transcript that can be 412px wide beside a canvas at any
-        // window width, and `sm:` was asking the window.
-        "@container my-5 w-full rounded-card border px-4 py-4",
-        answerable
-          ? // This is holding a generation open. It has to out-shout the prose
-            // it sits between, or it gets scrolled past and the model just
-            // appears to hang.
-            // The dark tint is separate. 7% of --warning over a #000 ground is
-            // ~4% lightness — BELOW --card — so on dark the card that has to
-            // out-shout the prose was dimmer than an ordinary one. 7% is still
-            // right over light paper. No shadow: it sits in the reading column,
-            // where an edge is a hairline (FLAT_UI §2), and the warning rule and
-            // ring already carry the weight a `shadow-pop` never added.
-            "border-warning/60 bg-warning/[0.07] ring-1 ring-warning/20 dark:bg-warning/[0.14]"
-          : // `bg-card`, not `bg-card/50`: half of a 6.5% fill over black is
-            // ~3.3%, so a settled approval was a border around the page.
-            "border-border/60 bg-card",
+        // `@container`: the argument rows lay out by the card's own width.
+        // A flat tone step, radius 12, no border, no shadow, no warning wash
+        // (INTERACTION_SPEC T6, critique 1): the attention words in the title
+        // are what make it stand out from the prose, not a tinted box.
+        "@container my-5 w-full rounded-field bg-muted px-4 pb-4 pt-3.5 contrast-more:border contrast-more:border-border",
         "motion-safe:animate-rise-in motion-reduce:animate-fade-in [animation-fill-mode:backwards]"
       )}
     >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        {handoff || agentConfig ? (
-          <AppIcons.agents
-            className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
-        ) : task ? (
-          <AppIcons.work
-            className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
-        ) : (
-          <StatusIcons.security
-            className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
-        )}
-        <p id={labelId} className={cn("text-caption font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
-          {handoff
-            ? answerable
-              ? "Hand this to another agent?"
-              : "Handoff to another agent"
-            : task
-              ? answerable
-                ? "Start a background task?"
-                : "Background task"
-              : agentConfig
-                ? answerable
-                  ? "Allow this agent setup change?"
-                  : "Agent setup change"
-                : answerable
-                  ? `${PRODUCT_NAME} needs your approval`
-                  : "Approval request"}
+      <header className="flex items-start gap-3">
+        <span aria-hidden="true" className="mt-px flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+          {handoff || agentConfig ? (
+            <AppIcons.agents className="size-4" />
+          ) : task ? (
+            <AppIcons.work className="size-4" />
+          ) : (
+            <ConnectorMark id={current.connectorId} className="size-4" />
+          )}
+        </span>
+        <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-foreground/75")}>
+          {answerable ? (
+            <>
+              <NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}
+            </>
+          ) : (
+            settledTitle
+          )}
         </p>
-        {!task && !agentConfig && <span className="text-caption text-muted-foreground">{risk.label}</span>}
-        {answerable && remaining !== null && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-micro text-muted-foreground">
-            <Clock className="size-3" aria-hidden="true" />
-            <span aria-hidden="true">Expires in {formatCountdown(remaining)}</span>
-            <span className="sr-only">
-              Answer this request before {new Date(current.expiresAt).toLocaleTimeString()}
-            </span>
-          </span>
+        {!task && !agentConfig && answerable && (
+          <span className="mt-0.5 shrink-0 text-ui text-muted-foreground">{risk.label}</span>
         )}
       </header>
 
-      <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-body font-medium" : "text-ui")}>
-        {task && taskTitle
-          ? taskTitle
-          : agentConfig && agentConfigPreview?.headline
-            ? agentConfigPreview.headline
-            : current.preview}
-      </p>
-      {task ? (
-        <>
-          {teammate && (
-            <p className="mt-1 text-label text-muted-foreground">
-              To <span className="text-foreground">{teammate}</span>
-            </p>
-          )}
-          {taskEstimate && (
-            <p className="mt-1 text-label tabular-nums text-muted-foreground">
-              Estimated cost <span className="text-foreground">{taskEstimate}</span>
-            </p>
-          )}
-        </>
-      ) : agentConfig && agentConfigPreview && agentConfigPreview.changes.length > 0 ? (
-        <dl className="mt-2.5 divide-y divide-border/50 rounded-field border border-border/50 bg-secondary px-3 py-2">
-          {agentConfigPreview.changes.map((item, idx) => (
-            <div key={`${item.label}-${idx}`} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 text-label">
-              <dt className="font-medium text-muted-foreground">{item.label}</dt>
-              <dd className="text-right text-foreground">
-                {item.from ? (
-                  <>
-                    <span className="text-muted-foreground">{item.from}</span>
-                    <span className="mx-1.5 text-muted-foreground" aria-hidden="true">
-                      →
-                    </span>
-                    <span className="font-medium text-foreground">{item.to}</span>
-                  </>
-                ) : (
-                  <span className="font-medium text-foreground">{item.to}</span>
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <p className="mt-1 font-mono text-micro text-muted-foreground">
-          {current.connectorLabel} · {current.toolName}
-        </p>
-      )}
-      {(!task || answerable) && !agentConfig && (
-        <p className="mt-2 text-ui leading-relaxed text-muted-foreground">
-          {task ? taskCopy.description : risk.detail}
-        </p>
-      )}
-
-      {current.derivedFromUntrusted && (
-        <div className="mt-2.5 flex gap-2 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
-          <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
+      <div className="mt-2.5 @[28rem]:ml-8">
+        {/* The exact payload, quoted: a neutral rule, not a box inside the card. */}
+        <div className="pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
           {task ? (
-            <p className="text-label leading-relaxed text-warning-foreground">{taskCopy.untrusted}</p>
-          ) : (
-            <p className="text-label leading-relaxed text-warning-foreground">
-              The model wrote these arguments from content it read: a web page, a file, or output from
-              another connector. That content can contain text written to steer what gets sent. Check the
-              values below are what you meant before you allow it.
-            </p>
-          )}
-        </div>
-      )}
-
-      {!agentConfig && (
-        <div className="mt-2.5 rounded-field border border-border/50 bg-secondary">
-          <button
-            type="button"
-            onClick={() => setDetailOpen((v) => !v)}
-            aria-expanded={detailOpen}
-            aria-controls={detailOpen ? detailId : undefined}
-            className={cn(
-              "flex min-h-11 w-full items-center gap-1.5 rounded-field px-3 text-left text-label font-medium text-foreground",
-              "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
-            )}
-          >
-            <ChevronRight
-              className={cn(
-                "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                detailOpen && "rotate-90"
+            <>
+              <p className="text-nav font-medium text-foreground">{taskTitle ?? current.preview}</p>
+              {(teammate || taskEstimate) && (
+                <p className="mt-0.5 text-ui tabular-nums text-muted-foreground">
+                  {teammate && (
+                    <>
+                      To <span className="text-foreground">{teammate}</span>
+                    </>
+                  )}
+                  {teammate && taskEstimate && <span aria-hidden="true">{" · "}</span>}
+                  {taskEstimate && (
+                    <>
+                      Estimated cost <span className="text-foreground">{taskEstimate}</span>
+                    </>
+                  )}
+                </p>
               )}
-              aria-hidden="true"
-            />
-            {handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent"}
-          </button>
-          <Collapse open={detailOpen}>
-            <div id={detailId} className="border-t border-border/50 px-3 py-2.5">
-              {task && taskBrief ? (
-                <p className="whitespace-pre-wrap break-words text-label leading-relaxed text-foreground">
-                  {taskBrief}
-                </p>
-              ) : detailRows.length === 0 ? (
-                <p className="text-label leading-relaxed text-muted-foreground">
-                  This call sends no arguments.
-                </p>
-              ) : (
-                <dl className="space-y-1.5">
-                  {detailRows.map(([key, value]) => (
-                    <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
-                      <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
-                      <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
-                        {formatDetailValue(value)}
+            </>
+          ) : agentConfig ? (
+            <>
+              <p className="text-nav text-foreground">{agentConfigPreview?.headline ?? current.preview}</p>
+              {agentConfigPreview && agentConfigPreview.changes.length > 0 && (
+                <dl className="mt-1.5 space-y-1">
+                  {agentConfigPreview.changes.map((item, idx) => (
+                    <div key={`${item.label}-${idx}`} className="flex flex-wrap items-baseline gap-x-2 text-ui">
+                      <dt className="text-muted-foreground">{item.label}</dt>
+                      <dd className="text-foreground">
+                        {item.from ? (
+                          <>
+                            <span className="text-muted-foreground">{item.from}</span>
+                            <span className="mx-1.5 text-muted-foreground" aria-hidden="true">
+                              →
+                            </span>
+                            <span className="font-medium">{item.to}</span>
+                          </>
+                        ) : (
+                          <span className="font-medium">{item.to}</span>
+                        )}
                       </dd>
                     </div>
                   ))}
                 </dl>
               )}
-            </div>
-          </Collapse>
-        </div>
-      )}
-
-      {answerable && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button disabled={sending || !armed} onClick={() => decide("allow_once")} className="h-11 px-4">
-            {handoff ? "Hand off" : task ? "Start task" : agentConfig ? "Apply setup change" : approvalVerb(current.toolName)}
-          </Button>
-          <Button variant="ghost" disabled={sending || !armed} onClick={() => decide("deny")} className="h-11 px-4">Deny</Button>
-          {canAllowScope && !agentConfig && (
-            <details className="relative">
-              <summary className="flex h-11 cursor-pointer items-center rounded-control px-3 text-ui text-muted-foreground hover:bg-accent" aria-label="More approval choices">More choices</summary>
-              <div className="surface-float absolute left-0 top-full z-popper mt-1 rounded-menu p-1">
-                <Button variant="ghost" disabled={sending || !armed} onClick={() => decide("allow_scope")}>Always allow this action</Button>
-              </div>
-            </details>
+            </>
+          ) : (
+            <>
+              <p className="text-ui text-muted-foreground">
+                <span className="font-medium text-foreground">{current.connectorLabel}</span>{" "}
+                <span className="font-mono">{current.toolName}</span>
+              </p>
+              <p className="mt-0.5 text-nav text-foreground">{current.preview}</p>
+            </>
           )}
-          <Button variant="ghost" className="basis-full justify-start px-0 text-muted-foreground" onClick={() => {
-            window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: "Instead of this action, " }));
-            document.getElementById("juno-composer-textarea")?.focus();
-          }}>{`Tell ${PRODUCT_NAME} what to do instead`}</Button>
         </div>
-      )}
 
-      {/* Always mounted: a region inserted at the same moment its text appears
-          is frequently not announced at all. */}
-      <p
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "flex items-start gap-1.5 text-label leading-relaxed",
-          resultText ? "mt-2.5" : "sr-only",
-          outcome.kind === "refused" ? "text-warning-foreground" : "text-muted-foreground"
+        {(!task || answerable) && !agentConfig && (
+          <p className="mt-2.5 text-ui leading-relaxed text-foreground/75">{task ? taskCopy.description : risk.detail}</p>
         )}
-      >
-        {resultText}
-      </p>
 
-      {answerable && !sending && untouched && (
-        <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-          <Clock className="size-3" aria-hidden="true" />
-          {task ? taskCopy.footnote : `Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`}
+        {current.derivedFromUntrusted && (
+          // Said in words, beside the payload it is about. The attention ink on
+          // the lead only; no tinted box.
+          <p className="mt-2 flex gap-2 text-ui leading-relaxed text-foreground/75">
+            <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--attention))]" aria-hidden="true" />
+            <span>
+              <NeedsLead>Check this first.</NeedsLead>{" "}
+              {task
+                ? taskCopy.untrusted
+                : "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it."}
+            </span>
+          </p>
+        )}
+
+        {!agentConfig && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              onClick={() => setDetailOpen((v) => !v)}
+              aria-expanded={detailOpen}
+              aria-controls={detailOpen ? detailId : undefined}
+              className={cn(
+                "-ml-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
+                "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+              )}
+            >
+              <ChevronRight
+                className={cn(
+                  "size-3.5 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                  detailOpen && "rotate-90"
+                )}
+                aria-hidden="true"
+              />
+              {handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent"}
+            </button>
+            <Collapse open={detailOpen}>
+              <div id={detailId} className="pb-1 pt-1.5">
+                {task && taskBrief ? (
+                  <p className="whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground">{taskBrief}</p>
+                ) : detailRows.length === 0 ? (
+                  <p className="text-ui leading-relaxed text-muted-foreground">This call sends no arguments.</p>
+                ) : (
+                  <dl className="space-y-1.5">
+                    {detailRows.map(([key, value]) => (
+                      <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
+                        <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
+                        <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
+                          {formatDetailValue(value)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            </Collapse>
+          </div>
+        )}
+
+        {answerable && (
+          // One button family: the verb is the one filled button (ink, or the
+          // danger fill for a destructive verb); "Not now" and the redirect
+          // are the same quiet outline. A standing permission waits behind the
+          // verb's caret. Both answers wait for the card to arm.
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <QuietButton disabled={sending || !armed} onClick={() => decide("deny")}>
+              Not now
+            </QuietButton>
+            <VerbButton
+              label={verbLabel}
+              accessibleLabel={`${verbLabel}: ${task && taskTitle ? taskTitle : current.preview}`}
+              armed={armed && !sending}
+              busy={sending}
+              danger={danger}
+              onClick={() => decide("allow_once")}
+              menuLabel="More ways to approve"
+              alternatives={
+                canAllowScope && !agentConfig
+                  ? [
+                      { label: `${verbLabel} once`, line: `${PRODUCT_NAME} asks again next time.`, onSelect: () => decide("allow_once") },
+                      {
+                        label: "Always allow this action",
+                        line: `${PRODUCT_NAME} stops asking before this action in ${current.connectorLabel}. Change it in Customize.`,
+                        onSelect: () => decide("allow_scope"),
+                      },
+                    ]
+                  : undefined
+              }
+            />
+            <QuietButton disabled={sending} className="@[28rem]:ml-auto" onClick={() => tellInstead("Instead of this action, ")}>
+              {TELL_INSTEAD_LABEL}
+            </QuietButton>
+          </div>
+        )}
+
+        {/* Always mounted: a region inserted at the same moment its text appears
+            is frequently not announced at all. */}
+        <p
+          role="status"
+          aria-live="polite"
+          className={cn(
+            "flex items-start gap-1.5 text-ui leading-relaxed",
+            resultText ? "mt-2.5" : "sr-only",
+            outcome.kind === "refused" ? "text-foreground" : "text-muted-foreground"
+          )}
+        >
+          {outcome.kind === "refused" && resultText && (
+            <StatusIcons.warning className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--attention))]" aria-hidden="true" />
+          )}
+          {resultText}
         </p>
-      )}
+
+        {answerable && !sending && untouched && (
+          <p className="mt-2.5 text-ui text-muted-foreground">
+            {expiryLine}
+            {remaining !== null && (
+              <>
+                {" "}
+                <span aria-hidden="true" className="tabular-nums">
+                  {`${formatCountdown(remaining)} left.`}
+                </span>
+                <span className="sr-only">Answer this request before {new Date(current.expiresAt).toLocaleTimeString()}</span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
     </section>
   );
 }
