@@ -31,13 +31,21 @@
  *      blind to hair-thin tips, so they are never traded away for area.
  *
  * OPTICAL MASTERS (16, 20, 24, 32 px). Below 32 px the master's channels fall
- * under a pixel and the blades fuse. Each optical master moves every outline
- * point inward by softplus((w - d) / 2), where d is its distance to the nearest
- * other blade, so each channel opens to at least w px and nothing away from a
- * channel moves; tips are cut where a retreating edge meets its partner, then
- * the outline is refit on its own extrema. Vertical placement puts the outer
- * extrema on whole pixels and lifts the box slightly because the visual mass
- * sits below the box centre.
+ * under a pixel and the blades fuse, so each small size has its own drawing,
+ * chosen by the mark's rendered width in DEVICE pixels (continuumDrawingSet:
+ * a 16 px mark on a 2x screen is 32 device px and draws the 32 master).
+ *   16 and 20 move whole blades: every blade keeps the master's exact outline
+ *   (so its round head, its joins and its edges are the master's) and only its
+ *   placement changes, a translation, a turn of at most 4.3 degrees about its
+ *   own centroid and a uniform scale of at least 0.97, chosen by a search that
+ *   keeps the drawing as close to the master as it can while every channel
+ *   opens to `channel` px. Then the outer extrema snap to whole pixels.
+ *   24 and 32, where the channels need far less, move outline points inward
+ *   by softplus((w - d) / 2), d being the distance to the nearest other blade,
+ *   and refit on the outline's own extrema.
+ * Every optical master places the box slightly above centre because the visual
+ * mass sits below the box centre; `rows` is the band of whole pixel rows the
+ * ink occupies (the tight crop).
  */
 
 export type ContinuumPoint = readonly [number, number];
@@ -56,6 +64,17 @@ export type ContinuumOpticalSize = 16 | 20 | 24 | 32;
 export type ContinuumDrawing = {
   readonly viewBox: string;
   readonly paths: readonly { readonly id: ContinuumBladeId; readonly d: string }[];
+};
+/** One drawing per device-pixel class: `hiDpi` (for 1.5 dppx and up) is null when it would be the same drawing. */
+export type ContinuumDrawingSet = { readonly base: ContinuumDrawing; readonly hiDpi: ContinuumDrawing | null };
+export type ContinuumOptical = {
+  /** The opened channel minimum, px. */
+  readonly channel: number;
+  /** How the master was adapted: whole blades moved ("placement") or outline points inset ("inset"). */
+  readonly method: "placement" | "inset";
+  /** The whole pixel rows the ink occupies, [top, bottom): the tight crop. */
+  readonly rows: readonly [number, number];
+  readonly blades: readonly { readonly id: ContinuumBladeId; readonly d: string }[];
 };
 
 /**
@@ -158,28 +177,34 @@ export const CONTINUUM_MASTER: readonly ContinuumBlade[] = [
   },
 ];
 
-/** Per-size optical masters in pixel space (viewBox 0 0 size size). `channel` is the opened minimum in px. */
-export const CONTINUUM_OPTICAL: Readonly<Record<ContinuumOpticalSize, { readonly channel: number; readonly blades: readonly { readonly id: ContinuumBladeId; readonly d: string }[] }>> = {
+/** Per-size optical masters in pixel space (viewBox 0 0 size size). */
+export const CONTINUUM_OPTICAL: Readonly<Record<ContinuumOpticalSize, ContinuumOptical>> = {
   16: {
     channel: 1.3,
+    method: "placement",
+    rows: [2, 13],
     blades: [
-      { id: "blade-1", d: "M1.47 6.483C3.083 4.769 6.846 2.045 9.221 2.045C9.771 2.045 10.578 2.259 10.578 2.931C10.578 3.139 10.483 3.389 10.457 3.599C10.43 3.826 10.445 4.014 10.403 4.277C10.258 5.199 9.757 6.05 9.188 6.775C9.008 6.495 8.826 6.096 8.653 5.87C8.199 5.278 7.185 4.999 6.47 4.999C4.91 4.999 2.834 5.732 1.47 6.483Z" },
-      { id: "blade-2", d: "M11.719 4.243C12.68 4.729 14.436 7.014 14.436 8.139C14.436 9.657 11.347 9.742 10.253 9.742C9.418 9.742 8.412 9.693 7.617 9.443C7.936 9.218 8.202 8.957 8.55 8.749C8.92 8.527 9.296 8.438 9.646 8.168C10.647 7.395 11.561 5.54 11.719 4.243Z" },
-      { id: "blade-3", d: "M16 10.028C13.951 11.316 9.585 12.956 7.182 12.956C6.618 12.956 5.62 12.824 5.283 12.318C5.15 12.119 5.116 11.876 5.048 11.652C4.927 11.252 4.843 11.16 4.843 10.705C4.843 10.278 4.989 9.838 5.15 9.449C5.406 9.711 5.684 10.014 5.988 10.221C7.075 10.96 8.909 11.046 10.197 11.046C12.561 11.046 13.777 10.548 16 10.028Z" },
-      { id: "blade-4", d: "M3.676 11.647C2.608 11.572 0.765 9.984 0.765 8.983C0.765 7.601 4.991 6.395 6.328 6.311C5.504 7.491 5.158 7.342 4.557 7.932C3.983 8.495 3.54 9.92 3.54 10.744C3.54 11.098 3.581 11.311 3.676 11.647Z" },
+      { id: "blade-1", d: "M-0.02 6.614C1.801 4.83 6.334 1.837 8.778 2.02C9.798 2.096 10.191 2.714 10.126 3.585C10.036 4.793 9.101 6.195 8.32 6.93C8.343 5.678 7.948 4.796 6.321 4.675C4.298 4.524 1.879 5.626 -0.02 6.614Z" },
+      { id: "blade-2", d: "M11.373 4.165C12.293 5.036 14.054 7.147 13.993 8.362C13.921 9.769 11.475 9.928 10.406 9.873C9.618 9.833 8.126 9.604 7.573 9.268C9.321 8.172 11.385 6.367 11.373 4.165Z" },
+      { id: "blade-3", d: "M15.7 10.677C13.799 11.786 9.636 13.098 7.499 13.004C6.134 12.943 5.117 12.287 5.181 10.823C5.211 10.162 5.452 9.54 5.783 8.955C5.781 10.85 7.952 11.099 9.414 11.163C11.482 11.255 13.738 11.049 15.7 10.677Z" },
+      { id: "blade-4", d: "M3.917 11.487C2.709 11.257 0.764 9.777 0.776 8.569C0.793 6.782 5.144 5.97 6.323 6.113C5.301 7.046 3.692 8.786 3.676 10.449C3.672 10.854 3.764 11.097 3.917 11.487Z" },
     ],
   },
   20: {
     channel: 1.15,
+    method: "placement",
+    rows: [2, 17],
     blades: [
-      { id: "blade-1", d: "M0.238 9.938C2.582 7.451 8.041 3 11.523 3C12.359 3 13.386 3.42 13.386 4.348C13.386 4.542 13.322 4.77 13.304 4.971C13.132 6.855 12.715 7.817 11.467 9.304C11.286 8.918 11.257 8.645 11.101 8.281C10.603 7.115 9.495 6.852 8.332 6.852C6.352 6.852 3.484 7.854 1.779 8.853C1.171 9.209 0.787 9.517 0.238 9.938Z" },
-      { id: "blade-2", d: "M14.431 5.437C15.58 6.096 18.046 9.138 18.046 10.616C18.046 12.615 14.465 12.832 13.04 12.832C11.973 12.832 10.42 12.711 9.448 12.276C9.918 11.915 10.56 11.398 11.017 11.07C11.342 10.836 11.692 10.667 11.993 10.404C13.219 9.336 14.355 7.113 14.431 5.437Z" },
-      { id: "blade-3", d: "M20 12.979C17.439 14.591 11.978 16.638 8.973 16.638C8.126 16.638 6.874 16.409 6.354 15.675C6.208 15.469 6.137 15.202 6.052 14.963C5.902 14.543 5.823 14.303 5.823 13.847C5.823 13.137 6.073 12.463 6.374 11.831C6.618 12.225 6.753 12.562 7.103 12.907C8.266 14.051 10.672 14.049 12.216 14.049C14.809 14.049 17.476 13.566 20 12.979Z" },
-      { id: "blade-4", d: "M4.9 15.181C3.521 15.06 0.919 13.049 0.919 11.474C0.919 9.961 4.847 8.676 6.081 8.399C6.859 8.225 7.412 8.162 8.206 8.161C7.638 8.737 7.189 9.241 6.649 9.809C6.36 10.114 5.996 10.348 5.756 10.638C5.151 11.368 4.656 12.91 4.656 13.881C4.656 14.395 4.735 14.702 4.9 15.181Z" },
+      { id: "blade-1", d: "M-0.023 9.764C2.191 7.254 7.841 2.902 11.059 2.907C12.403 2.91 12.977 3.682 12.975 4.829C12.972 6.42 11.882 8.345 10.929 9.382C10.84 7.74 10.238 6.623 8.096 6.62C5.432 6.615 2.369 8.289 -0.023 9.764Z" },
+      { id: "blade-2", d: "M14.278 5.396C15.546 6.484 18.001 9.154 17.997 10.758C17.992 12.616 14.779 12.981 13.368 12.978C12.327 12.975 10.346 12.768 9.597 12.36C11.83 10.806 14.434 8.296 14.278 5.396Z" },
+      { id: "blade-3", d: "M19.945 13.095C17.545 14.721 12.189 16.813 9.372 16.878C7.573 16.919 6.177 16.146 6.133 14.216C6.113 13.344 6.375 12.505 6.759 11.708C6.923 14.198 9.799 14.333 11.726 14.289C14.452 14.227 17.4 13.757 19.945 13.095Z" },
+      { id: "blade-4", d: "M5.099 15.167C3.552 14.91 1.025 13.081 1.004 11.54C0.972 9.26 6.498 8.091 8.007 8.238C6.73 9.46 4.731 11.728 4.761 13.85C4.768 14.367 4.892 14.674 5.099 15.167Z" },
     ],
   },
   24: {
     channel: 1,
+    method: "inset",
+    rows: [3, 20],
     blades: [
       { id: "blade-1", d: "M-0.002 12.216C2.79 9.176 9.628 3.634 13.828 3.634C15.087 3.634 16.159 4.285 16.159 5.632C16.159 7.997 15.216 9.75 13.724 11.517C13.603 11.067 13.558 10.636 13.409 10.201C12.885 8.673 11.6 8.274 10.113 8.274C7.748 8.274 4.493 9.54 2.439 10.686C1.623 11.141 0.795 11.711 -0.002 12.216Z" },
       { id: "blade-2", d: "M17.141 6.311C18.608 7.361 21.654 10.878 21.654 12.797C21.654 15.081 17.576 15.504 15.912 15.504C14.63 15.504 12.497 15.295 11.339 14.768C12.233 14.061 13.546 13.103 14.353 12.32C15.834 10.882 17.186 8.436 17.141 6.311Z" },
@@ -189,6 +214,8 @@ export const CONTINUUM_OPTICAL: Readonly<Record<ContinuumOpticalSize, { readonly
   },
   32: {
     channel: 1,
+    method: "inset",
+    rows: [5, 27],
     blades: [
       { id: "blade-1", d: "M0 16.443C3.621 12.4 12.915 5 18.443 5C20.477 5 21.608 6.094 21.608 8.137C21.608 10.926 19.976 13.677 18.236 15.752C17.978 12.578 16.747 11.188 13.447 11.188C8.944 11.188 3.747 14.131 0 16.443Z" },
       { id: "blade-2", d: "M22.744 8.388C24.738 10.161 28.873 14.425 28.873 17.185C28.873 20.252 23.501 20.833 21.256 20.833C19.547 20.833 16.648 20.549 15.107 19.839C18.588 17.291 23.166 13.179 22.744 8.388Z" },
@@ -210,29 +237,51 @@ export function bladePath(blade: ContinuumBlade): string {
 /** Master blades as path data, in blade order. */
 export const CONTINUUM_MASTER_PATHS: readonly { readonly id: ContinuumBladeId; readonly d: string }[] = CONTINUUM_MASTER.map((b) => ({ id: b.id, d: bladePath(b) }));
 
+/** The master's width : height. */
+export const CONTINUUM_ASPECT = CONTINUUM_BOUNDS.width / CONTINUUM_BOUNDS.height;
+
 /**
- * The optical master that suits a rendered size (CSS px), or null above 40 px
- * where the master itself holds its channels.
+ * The optical master that suits a rendered width in device pixels, or null
+ * above 40 where the master itself holds its channels.
  */
-export function opticalSizeFor(size: number): ContinuumOpticalSize | null {
-  if (size <= 17) return 16;
-  if (size <= 21) return 20;
-  if (size <= 27) return 24;
-  if (size <= 40) return 32;
+export function opticalSizeFor(width: number): ContinuumOpticalSize | null {
+  if (width <= 17) return 16;
+  if (width <= 21) return 20;
+  if (width <= 27) return 24;
+  if (width <= 40) return 32;
   return null;
 }
 
 /**
- * What to draw in a size x size square: the optical master when one suits,
- * otherwise the master in its square box. `tight` returns the master in its
- * own bounds instead (for lockups, where the box is not square).
+ * What to draw for a mark `size` px tall at one device pixel per px: in a
+ * size x size square, the optical master when one suits its width, otherwise
+ * the master in its square box. `tight` crops to the ink instead (lockups,
+ * where the box is not square): the optical master's whole pixel rows, or the
+ * master's own bounds; the optical choice then follows the wider width.
  */
 export function continuumDrawing(size: number, opts: { tight?: boolean } = {}): ContinuumDrawing {
+  const width = opts.tight ? size * CONTINUUM_ASPECT : size;
+  const optical = opticalSizeFor(width);
+  if (optical) {
+    const o = CONTINUUM_OPTICAL[optical];
+    const viewBox = opts.tight ? `0 ${o.rows[0]} ${optical} ${o.rows[1] - o.rows[0]}` : `0 0 ${optical} ${optical}`;
+    return { viewBox, paths: o.blades };
+  }
   if (opts.tight) {
     const b = CONTINUUM_BOUNDS;
     return { viewBox: `${b.x} ${b.y} ${b.width} ${b.height}`, paths: CONTINUUM_MASTER_PATHS };
   }
-  const optical = opticalSizeFor(size);
-  if (optical) return { viewBox: `0 0 ${optical} ${optical}`, paths: CONTINUUM_OPTICAL[optical].blades };
   return { viewBox: CONTINUUM_SQUARE_VIEWBOX, paths: CONTINUUM_MASTER_PATHS };
+}
+
+/**
+ * The drawings for 1x and for 1.5 dppx and up (renderers switch with
+ * `@media (min-resolution: 1.5dppx)`): on a 2x screen a 16 px mark covers 32
+ * device pixels, where the 32 master keeps both the shape and the channels and
+ * the 16 master, tuned for 16 device pixels, would look thin and pinched.
+ */
+export function continuumDrawingSet(size: number, opts: { tight?: boolean } = {}): ContinuumDrawingSet {
+  const base = continuumDrawing(size, opts);
+  const hi = continuumDrawing(size * 2, opts);
+  return { base, hiDpi: hi.paths === base.paths ? null : hi };
 }

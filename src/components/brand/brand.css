@@ -1,0 +1,21 @@
+/*
+ * Alevr brand drawings: which optical master a mark shows, by device pixels.
+ *
+ * A mark below 41 px carries two drawings (continuumDrawingSet): the one tuned
+ * for 1x and the one for 1.5 dppx and up, where a 16 px mark covers 32 device
+ * pixels and the 32 master keeps both the shape and the channels. Only one is
+ * ever displayed; the switch is CSS, so it holds before hydration and in print.
+ */
+.alevr-dppx-hi {
+  display: none;
+}
+
+@media (min-resolution: 1.5dppx) {
+  .alevr-dppx-lo {
+    display: none;
+  }
+
+  .alevr-dppx-hi {
+    display: inline;
+  }
+}
