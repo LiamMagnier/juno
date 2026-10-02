@@ -353,7 +353,7 @@ function catalogToItem(a: CatalogItem): DirectoryItem {
     id: a.id,
     slug: a.slug,
     label: appLabel(a),
-    description: a.noAuth ? "Ready without sign-in" : "Available to connect",
+    description: a.noAuth ? "Ready without sign-in" : "Connect to use it in chats",
     logo: a.logo,
     connected: a.connected,
     connecting: a.connecting,
@@ -570,7 +570,12 @@ export function ConnectorDirectory({
           .then((r) => (r.ok ? (r.json() as Promise<CatalogResponse>) : { items: [] }))
           .then((data) => ({
             category,
-            items: (data.items ?? []).filter((a) => !NATIVE_EQUIVALENT[a.slug] && !a.connected).slice(0, 6),
+            // The overview shows apps that connect in one press: an app that
+            // needs its own Composio sign-in app first is still found by
+            // search and inside its category, but is not a showcase.
+            items: (data.items ?? [])
+              .filter((a) => !NATIVE_EQUIVALENT[a.slug] && !a.connected && (a.managedAuth || a.noAuth))
+              .slice(0, 6),
           }))
           .catch(() => ({ category, items: [] as CatalogItem[] }))
       )
@@ -781,7 +786,7 @@ export function ConnectorDirectory({
           />
         )}
 
-        {cursor && !loading && !error && (
+        {cursor && !loading && !error && !(overview && sections.length > 0) && (
           <div className="flex justify-center pt-6">
             <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={loadingMore} loading={loadingMore}>
               Load more apps

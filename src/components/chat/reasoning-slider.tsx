@@ -375,7 +375,7 @@ function EffortPanel({
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.07] dark:bg-white/[0.08]">
           <div
             className={cn(
-              "absolute inset-0 rounded-full bg-foreground/85 transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none",
+              "absolute inset-0 rounded-full bg-foreground/85 transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none dark:bg-white/25",
               index === 0 && "opacity-0",
             )}
             style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2}px))` }}
