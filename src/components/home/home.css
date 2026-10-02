@@ -195,7 +195,7 @@
 .alv-orbit-you { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: grid; justify-items: center; gap: 10px; }
 .alv-you-disc { width: 76px; height: 76px; border-radius: 99px; display: grid; place-items: center; background: var(--alv-surface); outline: 1px solid var(--alv-line); box-shadow: var(--alv-shadow); color: var(--alv-sub); }
 .alv-agent { position: absolute; translate: -50% -50%; display: grid; justify-items: center; gap: 6px; width: 220px; text-align: center; }
-.alv-agent-sprite { width: 132px; height: 132px; margin: -26px 0 -6px; transition: transform 420ms var(--alv-ease); }
+.alv-agent-sprite { width: 92px; height: 92px; margin: -18px 0 -4px; transition: transform 420ms var(--alv-ease); }
 .alv-agent:hover .alv-agent-sprite { transform: translateY(-4px) rotate(-2deg); }
 @media (prefers-reduced-motion: reduce) { .alv-agent:hover .alv-agent-sprite { transform: none; } }
 .alv-agent-name { font-family: var(--font-serif), Newsreader, serif; font-size: 22px; line-height: 1; letter-spacing: -.01em; }
@@ -354,7 +354,7 @@
   .alv-orbit-section { padding: 80px 0 96px; }
   .alv-orbit-map { aspect-ratio: 3 / 4; margin-top: 48px; }
   .alv-agent { width: 150px; }
-  .alv-agent-sprite { width: 96px; height: 96px; margin: -18px 0 -4px; }
+  .alv-agent-sprite { width: 68px; height: 68px; margin: -12px 0 -3px; }
   .alv-agent-name { font-size: 18px; }
   .alv-agent-state { font-size: 12px; line-height: 16px; }
   .alv-ledger { grid-template-columns: minmax(0, 1fr); }

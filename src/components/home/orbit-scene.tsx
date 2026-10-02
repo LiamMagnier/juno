@@ -44,7 +44,7 @@ function Placed({ agent, progress, still }: { agent: Agent; progress: MotionValu
     <m.div className="absolute inset-0" style={still ? { x: `${rest.x}%`, y: `${rest.y}%` } : { x, y }}>
       <div className="alv-agent" style={{ left: 0, top: 0 }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- static transparent sprite */}
-        <img className="alv-agent-sprite" src={`/brand/agents/${agent.sprite}.webp`} alt="" width={132} height={132} loading="lazy" decoding="async" />
+        <img className="alv-agent-sprite" src={`/brand/agents/${agent.sprite}.webp`} alt="" width={92} height={92} loading="lazy" decoding="async" />
         <span className="alv-agent-name">{agent.name}</span>
         <span className="alv-agent-state" data-attention={agent.attention || undefined}>{agent.line}</span>
       </div>
