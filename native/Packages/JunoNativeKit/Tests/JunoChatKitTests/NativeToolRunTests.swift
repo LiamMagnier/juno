@@ -224,6 +224,20 @@ final class NativeToolRunTests: XCTestCase {
         XCTAssertEqual(call.run?.filesDiscarded, 1)
     }
 
+    /// The image route serves PNG, JPEG, WebP and GIF only; any other image
+    /// type is a FILE there, so no link is invented for it.
+    func testOnlyServableImagesGetTheImageRoute() throws {
+        let call = try decode(row(#"""
+        {"callId":"c","tool":"run_code","status":"succeeded",
+         "run":{"status":"succeeded","exitCode":0,"files":[
+           {"attachmentId":"att_png","name":"chart.png","mime":"image/png","kind":"IMAGE"},
+           {"attachmentId":"att_tif","name":"scan.tiff","mime":"image/tiff","kind":"FILE"},
+           {"attachmentId":"att_bmp","name":"old.bmp","mime":"image/bmp"},
+           {"attachmentId":"att_odd","name":"odd.png","mime":"image/png","kind":"FILE"}]}}
+        """#))
+        XCTAssertEqual(call.run?.files.map(\.path), ["/api/attachments/att_png", nil, nil, nil])
+    }
+
     func testNoStringCarriesAnEmDash() throws {
         for json in [running, succeeded, failed] {
             let call = try decode(row(json))

@@ -322,7 +322,7 @@ test("the stored record is bounded and keeps only what a reload needs", () => {
   assert.equal((record.stdout as { head: string }).head.length, 8_192);
   assert.equal(record.logUrl, undefined);
   assert.equal(record.secret, undefined);
-  assert.deepEqual(record.files, [{ attachmentId: "att_a", name: "a.png", mime: "image/png", url: "/api/attachments/att_a" }]);
+  assert.deepEqual(record.files, [{ attachmentId: "att_a", name: "a.png", mime: "image/png", kind: "IMAGE", url: "/api/attachments/att_a" }]);
   assert.equal(sanitizeToolRunRecord("nope"), undefined);
 });
 
@@ -499,4 +499,72 @@ test("a run's chart loads with the viewer's session, not through the cookieless 
   assert.equal(requiresViewerCredentials(chart.url), true);
   assert.equal(requiresViewerCredentials("/api/files/uploads/a.png"), true);
   assert.equal(requiresViewerCredentials("https://bucket.example/a.png"), false);
+});
+
+/*
+ * Adversarial review, round 2 (2026-10-02).
+ */
+
+test("only the chat's own call row names a tool in its detail; free text there is never a run", () => {
+  // start_task puts the model's task title in `detail`, "Connected tools
+  // ready" a connector's label, a Code row the command's output. None is a
+  // tool name, whatever it spells.
+  const free: ClientActivityEvent[] = [
+    { id: "t1", kind: "tool", title: "Starting a task", detail: "run_code", createdAt: "x" },
+    { id: "t2", kind: "tool", title: "Started a task", detail: "check_run", createdAt: "x" },
+    { id: "t3", kind: "tool", title: "Connected tools ready", detail: "run_code", createdAt: "x" },
+    { id: "t4", kind: "tool", title: "$ echo use_skill", detail: "use_skill", createdAt: "x" },
+    { id: "t5", kind: "tool", title: "read_file", detail: "read_skill_file", createdAt: "x" },
+  ];
+  for (const event of free) {
+    assert.equal(readToolRun(event, { live: false }), null, event.title);
+    assert.equal(readToolRun(event, { live: true }), null, event.title);
+  }
+  assert.deepEqual(readToolRuns(free, { live: false }), []);
+  // The chat's legacy call row still is one, live and stored.
+  const legacy: ClientActivityEvent = { id: "u1", kind: "tool", title: "Using Code", detail: "run_code", createdAt: "x" };
+  assert.equal(view(legacy, true).phase, "running");
+  assert.equal(view(legacy, false).phase, "outcome_unknown");
+});
+
+test("a produced file is drawn as an image only when the image route can serve it", () => {
+  // The upload plan stores PNG, JPEG, WebP and GIF as IMAGE; everything else
+  // (TIFF, BMP, HEIC) is a FILE, which /api/attachments/<id> answers 404 for.
+  const row = {
+    id: "img",
+    kind: "tool",
+    title: "Using Code",
+    detail: "run_code",
+    createdAt: "x",
+    call: {
+      tool: "run_code",
+      status: "succeeded",
+      run: {
+        status: "succeeded",
+        exitCode: 0,
+        files: [
+          { attachmentId: "att_png", name: "chart.png", mime: "image/png", kind: "IMAGE" },
+          { attachmentId: "att_tif", name: "scan.tiff", mime: "image/tiff", kind: "FILE" },
+          { attachmentId: "att_bmp", name: "old.bmp", mime: "image/bmp" },
+          { attachmentId: "att_odd", name: "odd.png", mime: "image/png", kind: "FILE" },
+          { attachmentId: "att_up", name: "UP.JPG", mime: "IMAGE/JPEG" },
+        ],
+      },
+    },
+  } as unknown as ClientActivityEvent;
+  const v = view(row);
+  assert.deepEqual(
+    v.files.map((f) => [f.name, f.kind, f.url]),
+    [
+      ["chart.png", "image", "/api/attachments/att_png"],
+      ["scan.tiff", "file", null],
+      ["old.bmp", "file", null],
+      ["odd.png", "file", null],
+      ["UP.JPG", "image", "/api/attachments/att_up"],
+    ],
+  );
+  // A reload draws them the same way.
+  const stored = sanitizeToolRunRecord((row as unknown as { call: { run: unknown } }).call.run)!;
+  const reread = view({ ...row, call: { tool: "run_code", status: "succeeded", run: stored } } as unknown as ClientActivityEvent);
+  assert.deepEqual(reread.files.map((f) => [f.kind, f.url]), v.files.map((f) => [f.kind, f.url]));
 });

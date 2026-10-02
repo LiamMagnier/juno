@@ -538,6 +538,9 @@ enum NativeToolRunWire {
         return text
     }
 
+    /// `IMAGE_MIME` in src/lib/uploads.ts: what `/api/attachments/<id>` serves.
+    static let drawableImageMimes: Set<String> = ["image/png", "image/jpeg", "image/webp", "image/gif"]
+
     /// The owner-scoped image route for an attachment id, the id encoded as
     /// one path segment so it can never climb to another route.
     static func attachmentPath(_ id: String) -> String? {
@@ -622,7 +625,11 @@ enum NativeToolRunWire {
                       let name = string(file["name"], max: 255) ?? string(file["fileName"], max: 255) else { continue }
                 let mime = string(file["mime"], max: 160) ?? string(file["mimeType"], max: 160) ?? "application/octet-stream"
                 let attachmentID = string(file["attachmentId"], max: 200) ?? string(file["id"], max: 200)
-                let isImage = mime.lowercased().hasPrefix("image/")
+                // Only the four types the upload plan stores as IMAGE are
+                // served by the image route; a TIFF or a HEIC is kept as a
+                // FILE, which that route answers 404 for (the web's
+                // `isDrawableImage`). The producer's FILE is believed.
+                let isImage = drawableImageMimes.contains(mime.lowercased()) && file["kind"] != .string("FILE")
                 files.append(NativeToolRunFile(
                     attachmentID: attachmentID,
                     name: name,

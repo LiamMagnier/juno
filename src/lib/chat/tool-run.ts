@@ -33,6 +33,7 @@
 
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { formatSpan } from "@/lib/run-receipt";
+import { IMAGE_MIME } from "@/lib/uploads";
 import type { ClientActivityEvent, ClientToolDetail } from "@/types/chat";
 
 /* ── Vocabulary ─────────────────────────────────────────────────────────── */
@@ -345,6 +346,22 @@ function program(value: unknown): { code: string; cut: boolean } | null {
 const MAX_FILES = 50;
 const ATTACHMENT_ID = /^[A-Za-z0-9_-]{1,200}$/;
 
+/**
+ * Whether a produced file is drawn as an image, and may be drawn from the
+ * owner-scoped image route when its record carries no link.
+ *
+ * Not every `image/*` is one. The upload plan stores only these four as
+ * `IMAGE` (`attachmentKind`); a TIFF, a BMP or a HEIC the program wrote is
+ * kept as a `FILE`, and `/api/attachments/<id>` answers 404 for a FILE (and
+ * 415 for anything its sniffer does not know). Drawn as an image, such a file
+ * was a broken picture in the run strip instead of a tile. The producer's own
+ * `kind` (`ExecOutputFile.kind`) is believed when it says FILE.
+ */
+function isDrawableImage(mime: string, producerKind: unknown): boolean {
+  if (producerKind === "FILE") return false;
+  return (IMAGE_MIME as readonly string[]).includes(mime.toLowerCase());
+}
+
 function files(value: unknown): ToolRunFile[] {
   if (!Array.isArray(value)) return [];
   const out: ToolRunFile[] = [];
@@ -358,7 +375,7 @@ function files(value: unknown): ToolRunFile[] {
     // request paths (`/api/attachments/<id>`, the tile's `/preview` fetch), so
     // anything that could climb out of its segment is not an id.
     const attachmentId = [str(r.attachmentId, 200), str(r.id, 200)].find((id) => !!id && ATTACHMENT_ID.test(id)) ?? null;
-    const kind: ToolRunFile["kind"] = mime.toLowerCase().startsWith("image/") ? "image" : "file";
+    const kind: ToolRunFile["kind"] = isDrawableImage(mime, r.kind) ? "image" : "file";
     // Only same-origin paths are links. A run's manifest is server-written,
     // but a link that leaves the app from a file card is never the right
     // default, and an `/api/...` path is the only shape the server sends.
@@ -500,10 +517,19 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
   const detail = toolDetail(event.tool);
   const detailRec = detail as unknown as Rec | null;
 
+  // The bare `detail` names the tool only on the chat's legacy call row
+  // (`title: "Using X"`, route.ts). Every other `kind: "tool"` row puts free
+  // text there: a start_task row the model's task title, "Connected tools
+  // ready" a connector's label, a Code row the command's output. Read as a
+  // name, a task the model called "run_code", or a command that printed
+  // "use_skill", became a run with "Outcome unknown" under it. Native reads
+  // only the "Using " row with a tool detail, for the same reason.
   const tool =
     canonicalRunTool(str(call?.tool)) ??
     canonicalRunTool(detail?.name) ??
-    (event.kind === "tool" ? canonicalRunTool(event.detail) : null);
+    (event.kind === "tool" && typeof event.title === "string" && event.title.startsWith("Using ")
+      ? canonicalRunTool(event.detail)
+      : null);
   if (!tool) return null;
 
   const run = rec(call?.run) ?? rec(ev.run) ?? rec(detailRec?.run);
@@ -1106,6 +1132,8 @@ export function sanitizeToolRunRecord(value: unknown): Rec | undefined {
       ...(f.attachmentId ? { attachmentId: f.attachmentId } : {}),
       name: f.name,
       mime: f.mime,
+      // As it was read, so a reloaded row draws the file the same way.
+      kind: f.kind === "image" ? "IMAGE" : "FILE",
       ...(f.bytes !== null ? { bytes: f.bytes } : {}),
       ...(f.url ? { url: f.url } : {}),
       ...(f.width !== null ? { width: f.width } : {}),
