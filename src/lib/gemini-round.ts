@@ -70,7 +70,7 @@ export interface GeminiRoundState {
   webSearchQueries?: string[];
 }
 
-export function emptyGeminiRound(round?: number): GeminiRoundState {
+export function emptyGeminiRound(round: number = 0): GeminiRoundState {
   return {
     events: [],
     assistantParts: [],
