@@ -338,10 +338,14 @@ export function validateCoverage(coverage: ToolRuntimeCoverage, catalog: readonl
 
   const cells = new Set<string>();
   for (const cell of coverage.matrix) {
+    const where = `${cell.surface} × ${cell.runtime}`;
     cells.add(`${cell.surface}|${cell.runtime}`);
-    if (!isCell(cell)) problems.push(`${cell.surface} × ${cell.runtime} has no verdict.`);
+    if (!isCell(cell)) {
+      problems.push(`${where} has no verdict.`);
+      continue;
+    }
     if ((cell.verdict === "verified" || cell.verdict === "failed") && (!cell.date || !cell.evidence)) {
-      problems.push(`${cell.surface} × ${cell.runtime} is ${cell.verdict} without a date and evidence.`);
+      problems.push(`${where} is ${cell.verdict} without a date and evidence.`);
     }
   }
   for (const { key: surface } of COVERAGE_SURFACES) {

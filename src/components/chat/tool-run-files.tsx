@@ -126,8 +126,7 @@ export function ToolRunOutputs({
   streaming: boolean;
   /** The message's own attachments. A run file already among them is drawn by
    *  the message (as an image or a tile), so it is not drawn here again; one
-   *  that is not yet (the reply is still streaming) is drawn here, with the
-   *  message's link when it has one. */
+   *  that is not yet (the reply is still streaming) is drawn here. */
   attachments?: readonly ClientAttachment[];
   onOpenFile?: (attachment: ClientAttachment) => void;
   className?: string;
