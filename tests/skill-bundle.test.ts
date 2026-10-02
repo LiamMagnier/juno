@@ -613,6 +613,33 @@ test("a skill asking for a shell, network or connectors never widens the turn", 
   );
 });
 
+test("a shell request on a turn whose execution is not decided yet is explained conditionally, never as a flat refusal", () => {
+  // The chat route applies a skill before it settles execution, so it passes no
+  // `code`. Bash is then not granted, and the model is told what to do in either
+  // case: it can see whether run_code is among its tools.
+  const outcome = applyChatSkill({
+    slug: "quarterly-summary",
+    candidates: [{ id: "skl_1", slug: "quarterly-summary", enabled: true, trust: "user_authored", autoSelect: false, currentVersion: 1, projectId: null }],
+    version: { version: 1, instructions: "Do it.", contract: emptySkillContract(), requestedTools: ["Bash", "web_search"], securityStatus: "clear", requiresConsent: false },
+    capabilities,
+    wrapUntrusted: wrap,
+  });
+  assert.ok(outcome.applied);
+  if (!outcome.applied) return;
+  assert.deepEqual(outcome.application.resolved.tools, [], "nothing is granted on an undecided turn");
+  assert.match(outcome.application.systemSuffix, /\(Bash\), use run_code if it is among your tools/);
+  assert.match(outcome.application.systemSuffix, /If run_code is not among your tools, nothing can run here/);
+  assert.deepEqual(
+    narrowRuntimeToolsForSkill([RUN_CODE_TOOL_ID, "read_document"], outcome.application),
+    [RUN_CODE_TOOL_ID],
+    "the request still keeps run_code through the narrowing, so the sentence is not a dead end"
+  );
+
+  // Decided either way, the conditional is not said.
+  assert.doesNotMatch(applied(["Bash"], false).systemSuffix, /use run_code if it is among your tools/);
+  assert.doesNotMatch(applied(["Bash"], true).systemSuffix, /use run_code if it is among your tools/);
+});
+
 test("an armed imported skill whose scripts nobody reviewed is refused with its own reason", () => {
   const outcome = applyChatSkill({
     slug: "quarterly-summary",

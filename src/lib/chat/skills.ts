@@ -125,7 +125,10 @@ export interface ChatSkillCapabilities {
   /**
    * `run_code` is attached to this turn (a healthy no-network sandbox, a
    * verified model, an entitled plan, not private, not in lockdown). Optional
-   * so a caller that predates the execution runtime grants no code.
+   * so a caller that predates the execution runtime grants no code. Absent
+   * means "not decided yet" (the chat route applies a skill before it settles
+   * execution): nothing is granted, and a shell request is explained to the
+   * model conditionally on its own tool list rather than as a flat refusal.
    */
   code?: boolean;
   /** `read_skill_file` is attached, so a skill's references can be read. */
@@ -327,7 +330,14 @@ export function skillAppliedActivity(application: ChatSkillApplication): {
   };
 }
 
-function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
+/**
+ * @param undecidedCode the withheld names that mean `run_code` here (`Bash`,
+ *   `python`…), when the caller could not say whether the turn carries it (the
+ *   route decides execution after it applies the skill). The model can see its
+ *   own tool list, so it is told what to do in either case instead of being
+ *   told flatly that it cannot run anything while `run_code` sits in its tools.
+ */
+function withheldSentence(resolved: ResolvedSkillPermissions, undecidedCode: readonly string[] = []): string | null {
   const groups: [string, string[]][] = [
     ["tools", resolved.withheld.tools],
     ["connectors", resolved.withheld.connectors],
@@ -342,9 +352,15 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
       return `${label}: ${shown}${rest > 0 ? ` and ${rest} more` : ""}`;
     });
   if (parts.length === 0) return null;
+  const running =
+    undecidedCode.length > 0
+      ? `Where its method runs commands or programs (${undecidedCode.slice(0, WITHHELD_NAMES_SHOWN).join(", ")}), ` +
+        `use run_code if it is among your tools: it runs them in ${PRODUCT_NAME}'s sandbox, with no internet and no ` +
+        `access to the person's computer. If run_code is not among your tools, nothing can run here. `
+      : "";
   return (
     `This skill asked for things this conversation does not have (${parts.join("; ")}). ` +
-    `You do not have them and must not act as though you do. Many skills are written for an ` +
+    `You do not have them and must not act as though you do. ${running}Many skills are written for an ` +
     `agent with a shell and a filesystem; this is a chat turn. Follow the parts of the method ` +
     `that apply here, do the rest yourself, and say plainly which steps you could not carry out.`
   );
@@ -461,7 +477,14 @@ export function applyChatSkill(input: {
     wrapUntrusted: input.wrapUntrusted,
   });
 
-  const note = withheldSentence(resolved);
+  // `code` absent: the caller applies the skill before it knows whether the
+  // turn runs code. A shell request is then withheld as `run_code` (it was not
+  // granted) but explained conditionally, never as a flat "you cannot".
+  const undecidedCode =
+    input.capabilities.code === undefined
+      ? resolved.withheld.tools.filter((tool) => canonicalSkillToolName(tool) === RUN_CODE_TOOL_ID)
+      : [];
+  const note = withheldSentence(resolved, undecidedCode);
   return {
     applied: true,
     application: {
