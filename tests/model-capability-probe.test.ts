@@ -73,7 +73,17 @@ test("Responses-only OpenAI models are probed on /responses, never /chat/complet
   assert.equal(request.body.model, "gpt-5.5-pro");
 });
 
-test("Anthropic keeps its native messages endpoint, everyone else /chat/completions", () => {
+test("every OpenAI model is probed on /responses, the surface that now serves it", () => {
+  const model = fake({ id: "openai:gpt-6-sol", provider: "openai", providerModel: "gpt-6-sol" });
+  assert.equal(providerAdapterFor(model), "openai-responses");
+  const request = probeRequestFor(model, "sk-test");
+  assert.ok(request);
+  assert.equal(request.url, "https://api.openai.com/v1/responses");
+  assert.equal(request.shape, "responses");
+  assert.equal(request.body.store, false);
+});
+
+test("Anthropic keeps its native messages endpoint, Grok xAI's Responses, the compat labs /chat/completions", () => {
   const claude = probeRequestFor(
     fake({ id: "anthropic:claude-sonnet-5", provider: "anthropic", providerModel: "claude-sonnet-5" }),
     "sk-ant",
@@ -82,10 +92,24 @@ test("Anthropic keeps its native messages endpoint, everyone else /chat/completi
   assert.equal(claude.url, "https://api.anthropic.com/v1/messages");
   assert.equal(claude.headers["anthropic-version"], "2023-06-01");
 
+  // Grok is served on xAI's own host, so it is probed there — never on
+  // api.openai.com, whose Responses surface it shares only the shape of.
   const grok = probeRequestFor(fake({ id: "xai:grok-4.5", provider: "xai", providerModel: "grok-4.5" }), "xai-key");
   assert.ok(grok);
-  assert.equal(grok.url, "https://api.x.ai/v1/chat/completions");
+  assert.equal(grok.adapter, "xai-responses");
+  assert.equal(grok.shape, "responses");
+  assert.equal(grok.url, "https://api.x.ai/v1/responses");
   assert.equal(grok.headers.authorization, "Bearer xai-key");
+  assert.equal(grok.body.store, false);
+
+  // A Grok slug its record keeps on compat is probed there.
+  const fast = probeRequestFor(fake({ id: "xai:grok-4.1-fast", provider: "xai", providerModel: "grok-4.1-fast" }), "xai-key");
+  assert.ok(fast);
+  assert.equal(fast.url, "https://api.x.ai/v1/chat/completions");
+
+  const deepseek = probeRequestFor(fake({ id: "deepseek:deepseek-flash", provider: "deepseek", providerModel: "deepseek-flash" }), "ds");
+  assert.ok(deepseek);
+  assert.match(deepseek.url, /\/chat\/completions$/);
 });
 
 test("every curated chat model is probed on the transport that will serve it", () => {

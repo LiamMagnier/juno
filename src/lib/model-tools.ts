@@ -19,6 +19,7 @@
 
 import type { ModelInfo } from "@/lib/models";
 import type { Provider } from "@/lib/providers";
+import type { ReasoningEffort } from "@/types/chat";
 
 export interface ModelToolCapabilities {
   supported: boolean;                                  // accepts function tools at all
@@ -160,6 +161,12 @@ const MODEL_TOOLS: Readonly<Record<string, Partial<ModelToolCapabilities>>> = {
   "openai:gpt-5.6-luna": { chatCompletions: false },
   // The original gpt-5 rejects hosted search at "minimal".
   "openai:gpt-5": { hostedSearchMinEffort: "low" },
+  // Hosted search is documented for GPT-4o, o3, o4-mini and GPT-5 onward, not
+  // for these retiring snapshots: they get Juno's web_search instead of a 400.
+  "openai:o1": { nativeSearch: false },
+  "openai:o3-mini": { nativeSearch: false },
+  "openai:gpt-4-turbo": { nativeSearch: false },
+  "openai:gpt-3.5-turbo": { nativeSearch: false },
 
   // Built-in search and remote MCP only; no client function tools, no Chat Completions.
   "xai:grok-4.20-multi-agent-0309": { supported: false, chatCompletions: false, responses: true },
@@ -181,10 +188,14 @@ function providerModelOf(id: string): string {
   return at === -1 ? id : id.slice(at + 1);
 }
 
+function isPreGemini3(model: Pick<ModelInfo, "provider" | "id">): boolean {
+  return model.provider === "google" && PRE_GEMINI_3.test(providerModelOf(model.id));
+}
+
 /** The rules that follow from the model entry itself, before any listed exception. */
 function derivedFor(model: Pick<ModelInfo, "provider" | "id" | "api">): Partial<ModelToolCapabilities> {
   const derived: Partial<ModelToolCapabilities> = {};
-  if (model.provider === "google" && PRE_GEMINI_3.test(providerModelOf(model.id))) derived.nativeSearch = false;
+  if (isPreGemini3(model)) derived.nativeSearch = false;
   // Responses-only snapshots (gpt-*-pro, some Codex) are not served on /chat/completions at all.
   if (model.api === "responses") derived.chatCompletions = false;
   return derived;
@@ -200,4 +211,57 @@ export function toolCapabilitiesFor(
     ...(MODEL_TOOLS[model.id] ?? {}),
     ...(model.tools ?? {}),
   };
+}
+
+/**
+ * Whether a lab's models search natively on Juno's transport, by its lab row.
+ *
+ * For the places that know only a provider, such as a deployment's configured
+ * labs. A model in hand, a discovered one included, is read through
+ * `providerSearchAvailable` or `toolCapabilitiesFor(model).nativeSearch`,
+ * which also see its exceptions.
+ */
+export function labHasNativeSearch(provider: Provider): boolean {
+  return (LAB_TOOLS[provider] ?? COMPAT).nativeSearch;
+}
+
+/**
+ * Whether the provider's own search can serve this model on Juno's transport
+ * at all. This is what `ModelInfo.webSearch` says (SPEC §5.6).
+ *
+ * `nativeSearch`, plus the pre-Gemini-3 line. That line's grounding cannot
+ * share a request with function tools, so the tool plan (SPEC §3.6) counts it
+ * as having no native search and gives it Juno's `web_search` beside its
+ * functions. On a request that carries no functions it still grounds, as it
+ * always has. Until WS9a retires the chat route's read of
+ * `ModelInfo.webSearch`, that request is the only way these models reach the
+ * web, so the flag stays on for them.
+ *
+ * Free of deployment env on purpose: the composer reads the same flag from the
+ * browser bundle. The server applies its own switches (`OPENAI_RESPONSES`)
+ * through `providerSearchServed` in provider-routing.ts.
+ */
+export function providerSearchAvailable(model: Pick<ModelInfo, "provider" | "id" | "api" | "tools">): boolean {
+  return toolCapabilitiesFor(model).nativeSearch || isPreGemini3(model);
+}
+
+const EFFORT_RANK: Record<NonNullable<ReasoningEffort>, number> = {
+  minimal: 0, low: 1, medium: 2, high: 3, xhigh: 4, max: 5,
+};
+
+/**
+ * Whether provider-hosted search may ride a request at this effort.
+ *
+ * The original gpt-5 rejects hosted `web_search` at "minimal" (SPEC §5.2
+ * item 3), so its minimal turns carry no native search and get Juno's
+ * `web_search` instead. No effort at all ranks below every tier.
+ */
+export function hostedSearchAllowedAt(
+  caps: Pick<ModelToolCapabilities, "nativeSearch" | "hostedSearchMinEffort">,
+  effort: ReasoningEffort | null | undefined,
+): boolean {
+  if (!caps.nativeSearch) return false;
+  if (!caps.hostedSearchMinEffort) return true;
+  const rank = effort ? EFFORT_RANK[effort] : -1;
+  return rank >= EFFORT_RANK[caps.hostedSearchMinEffort];
 }

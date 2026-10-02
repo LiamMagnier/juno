@@ -785,13 +785,20 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("grok-4.1-fast")) return caps([], true, true);
       return caps([], false); // grok-build: reasons, no documented control
     case "deepseek":
-      if (id.includes("v4")) return caps(["high", "max"], true); // thinking on/off + effort
+      // V4 Pro and the unversioned `deepseek-flash` (V4.1 Flash) both think by
+      // default at "high" and take `reasoning_effort: "none"` as the off
+      // switch. Flash was catalogued `reasoning: false` and fell through to
+      // the always-on branch below, so its turns thought with no control and
+      // no Instant (gap-provider §1).
+      if (id.includes("v4") || id.includes("deepseek-flash")) return caps(["high", "max"], true); // thinking on/off + effort
       return caps([], false); // deepseek-reasoner: always on, no control
     case "zhipu":
-      // GLM-5.3: reasoning is ALWAYS enabled on the General API and Z.ai
-      // documents no control for it — so no ladder and no Instant, rather
-      // than an inherited 5.2 ladder whose values it may reject.
-      if (id.includes("glm-5.3")) return caps([], false);
+      // GLM-5.3: reasoning is ALWAYS on — `thinking: {type: "disabled"}` makes
+      // the request fail — and its depth is the top-level `reasoning_effort`
+      // enum low|high|max (Z.ai, 2026-09). So a ladder and no Instant. It used
+      // to expose neither, which clamped every turn to "no effort" and sent
+      // exactly the `disabled` object that fails.
+      if (id.includes("glm-5.3")) return caps(["low", "high", "max"], false);
       // GLM-5.2 is the ONLY GLM exposing reasoning_effort; the rest are on/off.
       if (id.includes("glm-5.2")) return caps(["minimal", ...LMHXM], true);
       return caps([], true, true); // glm-5 / 4.6 / 4.7: thinking on/off toggle

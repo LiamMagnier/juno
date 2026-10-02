@@ -1,7 +1,7 @@
 import type { Plan } from "@prisma/client";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { DISCOVERED, UNAVAILABLE } from "@/lib/models.generated";
-import type { ModelToolCapabilities } from "@/lib/model-tools";
+import { labHasNativeSearch, providerSearchAvailable, type ModelToolCapabilities } from "@/lib/model-tools";
 
 // Canonical model id is "provider:providerModel" (e.g. "anthropic:claude-opus-4-8").
 export type ModelId = string;
@@ -207,11 +207,30 @@ export function hasRetired(model: Pick<ModelInfo, "retiresOn">, today: string = 
   return model.retiresOn != null && model.retiresOn < today;
 }
 
-// Providers whose chat models can search the web natively (their own tool /
-// grounding — no third-party search service).
-const WEB_SEARCH_PROVIDERS = new Set<Provider>(["anthropic", "google", "xai"]);
+/**
+ * Whether a lab's chat models search the web natively on Juno's transport
+ * (their own tool or grounding — no third-party search service).
+ *
+ * Read from the tool capability table rather than a list of its own, which is
+ * what left every OpenAI model without search after Responses gained a hosted
+ * tool (RC-2). A model in hand, a discovered one included, is read through
+ * `modelSearchesNatively`, which also sees the per-model exceptions (the
+ * retiring OpenAI snapshots, an unconfirmed Grok slug).
+ */
 export function providerSupportsWebSearch(p: Provider): boolean {
-  return WEB_SEARCH_PROVIDERS.has(p);
+  return labHasNativeSearch(p);
+}
+
+/**
+ * `ModelInfo.webSearch` for one model: its provider's own search can serve it
+ * on Juno's transport (SPEC §5.6; `providerSearchAvailable` has the rule).
+ *
+ * The same answer on the server and in the browser, because the composer reads
+ * this flag from the client bundle. A deployment switch such as
+ * `OPENAI_RESPONSES=0` is applied where the server decides, never here.
+ */
+export function modelSearchesNatively(model: Pick<ModelInfo, "provider" | "id" | "api">): boolean {
+  return providerSearchAvailable(model);
 }
 
 interface ModelDef {
@@ -269,7 +288,7 @@ function def(d: ModelDef): ModelInfo {
     agenticTools: d.agenticTools ?? (modality === "chat" ? guessAgenticTools(d.id) : false),
     cost: d.cost ?? guessCost(d.id),
     modality,
-    webSearch: modality === "chat" ? providerSupportsWebSearch(d.provider) : false,
+    webSearch: modality === "chat" ? modelSearchesNatively({ provider: d.provider, id: `${d.provider}:${d.id}`, api: d.api }) : false,
     status: d.status,
     family: d.family,
     deprecationNote: d.deprecationNote,
@@ -664,7 +683,7 @@ const DISCOVERED_MODELS: ModelInfo[] = DISCOVERED.filter(
   agenticTools: guessAgenticTools(d.id),
   cost: guessCost(d.id),
   modality: "chat",
-  webSearch: providerSupportsWebSearch(d.provider),
+  webSearch: modelSearchesNatively({ provider: d.provider, id: `${d.provider}:${d.id}` }),
   status: "current",
   family: d.id, // its own family — never competes with curated "current" slots
   legacy: false,
@@ -984,7 +1003,7 @@ export function resolveModel(id: string): ModelInfo | null {
     agenticTools: guessAgenticTools(migrated.providerModel),
     cost: guessCost(migrated.providerModel),
     modality: "chat",
-    webSearch: providerSupportsWebSearch(migrated.provider),
+    webSearch: modelSearchesNatively({ provider: migrated.provider, id: canonical }),
     status: "current",
     legacy: false,
   };
