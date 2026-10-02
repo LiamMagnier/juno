@@ -57,7 +57,7 @@ export function SharedArtifactViewer({
   // see publicShareProfile), only what renders without a script gets a Preview:
   // HTML, SVG and CSS as markup. React and Mermaid are shown as their source.
   const isStatic = useSandboxProfile() === "static";
-  const previewOff = isStatic && rt.mode === "web" && !rendersStatically(type, language);
+  const previewOff = !isMarkdown && isStatic && rt.mode === "web" && !rendersStatically(type, language);
   // Console runtimes (JS/Python) aren't executed on public pages — code only.
   const hasPreview = isMarkdown || (rt.mode === "web" && !previewOff);
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");

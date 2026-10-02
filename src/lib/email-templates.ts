@@ -1,4 +1,4 @@
-import { env } from "@/lib/env";
+import { EMAIL_COLORS, EMAIL_SANS, emailAppUrl, emailParagraph, escapeEmailHtml, renderEmailLayout } from "@/lib/email-layout";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
@@ -7,8 +7,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * later). Every template returns subject + HTML + a plain-text alternate.
  *
  * Email HTML is deliberately old-school: a single centered table, inline
- * styles everywhere, system font stacks (webfonts don't load in most clients).
- * The palette mirrors the app — warm paper #faf7f0, ink text, one coral link.
+ * styles everywhere, with Newsreader/Inter where supported and safe fallbacks.
+ * The shared envelope mirrors the neutral V3 palette in light and dark mode.
  */
 
 export interface EmailTemplate {
@@ -17,35 +17,14 @@ export interface EmailTemplate {
   text: string;
 }
 
-const PAPER = "#faf7f0";
-const CARD = "#ffffff";
-const INK = "#292524";
-const MUTED = "#78716c";
-const HAIRLINE = "#e7e2d8";
-const CORAL = "#c2410c";
-
-const SERIF = `Georgia, 'Times New Roman', serif`;
-const SANS = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
-const MONO = `'SF Mono', SFMono-Regular, Menlo, Consolas, monospace`;
-
-/** Absolute app URL for links (prod: https://chat.liams.dev). */
-function appUrl(path = ""): string {
-  return `${env.appUrl.replace(/\/$/, "")}${path}`;
-}
-
-/**
- * HTML-escape, then numeric-entity-encode anything non-ASCII so the markup
- * survives clients that mis-detect the charset (the HTML part is a fragment,
- * so there is no <meta charset> to save us).
- */
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/[^\x00-\x7f]/gu, (c) => `&#${c.codePointAt(0)};`);
-}
+const PAPER = EMAIL_COLORS.well;
+const INK = EMAIL_COLORS.ink;
+const MUTED = EMAIL_COLORS.muted;
+const HAIRLINE = EMAIL_COLORS.edge;
+const SANS = EMAIL_SANS;
+const MONO = EMAIL_SANS;
+const appUrl = emailAppUrl;
+const escapeHtml = escapeEmailHtml;
 
 /** "$4.72" / "$11" — dollars with cents only when they matter. */
 function usd(amount: number): string {
@@ -58,53 +37,21 @@ function dayLabel(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
 }
 
-/**
- * Shared shell: paper background, one white card with a hairline border,
- * serif display heading, sans body, single coral CTA link, mono footer.
- */
-function layout(opts: {
-  eyebrow: string;
-  heading: string;
-  /** Pre-escaped HTML paragraphs/blocks for the card body. */
-  bodyHtml: string;
-  cta: { label: string; href: string };
-}): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${PAPER};padding:40px 16px;">
-  <tr>
-    <td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
-        <tr>
-          <td style="background-color:${CARD};border:1px solid ${HAIRLINE};border-radius:16px;padding:36px 36px 32px;">
-            <p style="margin:0 0 16px;font-family:${MONO};font-size:11px;letter-spacing:0.02em;color:${MUTED};">${escapeHtml(opts.eyebrow)}</p>
-            <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;font-weight:500;line-height:1.3;color:${INK};">${escapeHtml(opts.heading)}</h1>
-            ${opts.bodyHtml}
-            <p style="margin:24px 0 0;font-family:${SANS};font-size:14px;">
-              <a href="${opts.cta.href}" style="color:${CORAL};font-weight:600;text-decoration:none;">${escapeHtml(opts.cta.label)} &rarr;</a>
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding:20px 8px 0;">
-            <p style="margin:0;font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">
-              ${PRODUCT_NAME} &middot; chat.liams.dev &middot; <a href="${appUrl("/settings")}" style="color:${MUTED};text-decoration:underline;">manage notifications</a>
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
+function layout(opts: { eyebrow: string; heading: string; bodyHtml: string; cta: { label: string; href: string } }): string {
+  return renderEmailLayout({
+    heading: opts.heading,
+    bodyHtml: opts.bodyHtml,
+    cta: opts.cta,
+    footer: { label: "Manage notifications", href: appUrl("/settings") },
+  });
 }
 
-/** Plain-text alternate shell: body lines + CTA + the same mono footer. */
+/** Plain-text alternate shell: body lines + CTA + the same branded footer. */
 function textLayout(lines: string[], cta: { label: string; href: string }): string {
-  return [...lines, "", `${cta.label}: ${cta.href}`, "", `${PRODUCT_NAME} · chat.liams.dev · manage notifications: ${appUrl("/settings")}`].join("\n");
+  return [...lines, "", `${cta.label}: ${cta.href}`, "", `${PRODUCT_NAME} · Go further. · Manage notifications: ${appUrl("/settings")}`].join("\n");
 }
 
-/** One inline-styled body paragraph. */
-function para(html: string): string {
-  return `<p style="margin:0 0 12px;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};">${html}</p>`;
-}
+const para = emailParagraph;
 
 /** One-hour, single-use credential recovery email. */
 export function passwordReset(resetUrl: string): EmailTemplate {
@@ -194,8 +141,8 @@ export function weeklyDigest(stats: WeeklyDigestStats): EmailTemplate {
   const models = stats.topModels.slice(0, 3);
   const row = (label: string, value: string) =>
     `<tr>
-      <td style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">${escapeHtml(label)}</td>
-      <td align="right" style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${SANS};font-size:14px;color:${INK};">${escapeHtml(value)}</td>
+      <td class="alevr-email-rule alevr-email-muted" style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">${escapeHtml(label)}</td>
+      <td class="alevr-email-rule alevr-email-copy" align="right" style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${SANS};font-size:14px;color:${INK};">${escapeHtml(value)}</td>
     </tr>`;
   const bodyHtml =
     para(`Here's what your week looked like.`) +
@@ -230,10 +177,10 @@ export function weeklyDigest(stats: WeeklyDigestStats): EmailTemplate {
  * scheduled-tasks runner will send it when a run completes.
  */
 export function taskResult(taskName: string, excerpt: string, threadUrl: string): EmailTemplate {
-  const subject = `${taskName} — your scheduled task ran`;
+  const subject = `${taskName}: your scheduled task ran`;
   const bodyHtml =
     para(`Your scheduled task <strong>${escapeHtml(taskName)}</strong> just finished a run.`) +
-    `<blockquote style="margin:16px 0 0;padding:12px 16px;border-left:2px solid ${CORAL};background-color:${PAPER};border-radius:0 8px 8px 0;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};">${escapeHtml(excerpt)}</blockquote>`;
+    `<blockquote class="alevr-email-well" style="margin:16px 0 0;padding:12px 16px;background-color:${PAPER};border-radius:8px;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};">${escapeHtml(excerpt)}</blockquote>`;
   return {
     subject,
     html: layout({

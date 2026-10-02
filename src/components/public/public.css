@@ -1,4 +1,4 @@
-/* Public V3 surfaces. These selectors do not reach the app shell. */
+/* Public V3 surfaces, plus the expressly scoped onboarding dialog below. */
 .alevr-public {
   --primary: var(--foreground);
   --primary-foreground: var(--background);

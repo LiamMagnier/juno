@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { budgetAlert } from "@/lib/email-templates";
+import { emailParagraph, escapeEmailHtml, renderEmailLayout } from "@/lib/email-layout";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
@@ -153,57 +154,15 @@ export async function sendBudgetAlert(input: BudgetAlertInput): Promise<void> {
  * the one-card shape match email-templates.ts; keep them in step by eye.
  */
 
-const PAPER = "#faf7f0";
-const CARD = "#ffffff";
-const INK = "#292524";
-const MUTED = "#78716c";
-const HAIRLINE = "#e7e2d8";
-const CORAL = "#c2410c";
-const SERIF = `Georgia, 'Times New Roman', serif`;
-const SANS = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
-const MONO = `'SF Mono', SFMono-Regular, Menlo, Consolas, monospace`;
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/[^\x00-\x7f]/gu, (c) => `&#${c.codePointAt(0)};`);
-}
-
 function securityLayout(opts: { eyebrow: string; heading: string; body: string[]; cta: { label: string; href: string } }): string {
-  const paragraphs = opts.body
-    .map(
-      (line) =>
-        `<p style="margin:0 0 12px;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};">${escapeHtml(line)}</p>`
-    )
-    .join("\n            ");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${PAPER};padding:40px 16px;">
-  <tr>
-    <td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
-        <tr>
-          <td style="background-color:${CARD};border:1px solid ${HAIRLINE};border-radius:16px;padding:36px 36px 32px;">
-            <p style="margin:0 0 16px;font-family:${MONO};font-size:11px;letter-spacing:0.02em;color:${MUTED};">${escapeHtml(opts.eyebrow)}</p>
-            <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;font-weight:500;line-height:1.3;color:${INK};">${escapeHtml(opts.heading)}</h1>
-            ${paragraphs}
-            <p style="margin:24px 0 0;font-family:${SANS};font-size:14px;">
-              <a href="${opts.cta.href}" style="color:${CORAL};font-weight:600;text-decoration:none;">${escapeHtml(opts.cta.label)} &rarr;</a>
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
+  return renderEmailLayout({ heading: opts.heading, bodyHtml: opts.body.map(line => emailParagraph(escapeEmailHtml(line))).join("\n"), cta: opts.cta });
 }
 
 function securityText(body: string[], cta: { label: string; href: string }): string {
-  return [...body, "", `${cta.label}: ${cta.href}`, "", `${PRODUCT_NAME} · chat.liams.dev`].join("\n");
+  return [...body, "", `${cta.label}: ${cta.href}`, "", `${PRODUCT_NAME} · Go further.`].join("\n");
 }
 
-const IGNORE_LINE = "If you didn't ask for this, you can ignore this email — nothing changes until the link is opened.";
+const IGNORE_LINE = "If you didn't ask for this, you can ignore this email. Nothing changes until the link is opened.";
 
 /** "Confirm your email address" — sent at registration and on resend. */
 export async function sendEmailVerification(to: string, verifyUrl: string): Promise<SendEmailResult> {
