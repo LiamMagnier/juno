@@ -1,0 +1,59 @@
+/*
+ * The Continuum thinking mark (thinking-mark.tsx; timing in thinking-schedule.ts).
+ *
+ * The silhouette never moves. Each blade is drawn in ink and, above it, in
+ * presence ink at opacity 0 (.tm-tone); a pass raises one upper blade at a
+ * time toward --tm-peak over `fast` and lets it fall over `base`, the next
+ * starting as this one peaks (Web Animations in thinking-mark.tsx). At rest
+ * the mark is the colour of its row (currentColor), never darker than its own
+ * label. Visibility fades on `fast`; under reduced motion that fade is the
+ * only movement left, and in forced colours the tone layer is not drawn.
+ */
+.alevr-thinking-mark {
+  /*
+   * The peak, tuned so light and dark change by the same amount (OKLab
+   * distance from the row's muted ink: 0.107 at 0.5 on light, 0.096 at 0.9 on
+   * dark, where presence ink sits much closer to the muted ink).
+   */
+  --tm-peak: 0.5;
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+  color: inherit;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out-soft);
+}
+
+.dark .alevr-thinking-mark {
+  --tm-peak: 0.9;
+}
+
+.alevr-thinking-mark[data-visible="true"] {
+  opacity: 1;
+}
+
+.alevr-thinking-mark .tm-ink path {
+  fill: currentColor;
+}
+
+.alevr-thinking-mark .tm-tone path {
+  fill: hsl(var(--primary-ink));
+  opacity: 0;
+}
+
+/*
+ * Reduced motion needs no rule here: the schedule never starts a pass or a
+ * settle under it, and a pass running when the setting turns on fades back
+ * over `fast` (the brief fade reduced motion permits) instead of cutting.
+ */
+
+/* Forced colours: the system ink, no tonal layer; the words carry the state. */
+@media (forced-colors: active) {
+  .alevr-thinking-mark {
+    color: CanvasText;
+  }
+
+  .alevr-thinking-mark .tm-tone {
+    display: none;
+  }
+}
