@@ -47,13 +47,14 @@
  */
 import * as React from "react";
 import type { CSSProperties, SVGProps } from "react";
-import { ICON_ALIASES, ICONS, KEYLINE, resolveIcon, resolveIconAt, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
+import { KEYLINE, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
+import { CATALOG_ALIASES, CATALOG_NAMES, resolveCatalogIcon as resolveIcon, resolveCatalogIconAt as resolveIconAt, type CatalogIconName } from "./catalog";
 
-export type KnownIconName = keyof typeof ICONS | keyof typeof ICON_ALIASES;
+export type KnownIconName = CatalogIconName;
 /** Any drawn name (autocompletes), or any string: an unknown name renders a placeholder. */
 export type IconName = KnownIconName | (string & {});
 
-export const ICON_NAMES = Object.keys(ICONS);
+export const ICON_NAMES = CATALOG_NAMES;
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   name: IconName;
@@ -72,6 +73,14 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   fit?: boolean;
   /** Labs only: the line in px instead of the optical ladder, still fitted. */
   px?: number;
+  /**
+   * Production: the rendered size comes from CSS (a `size-4` class, or a
+   * parent's `[&_svg]:size-4.5`), so `size` is only the first guess. After
+   * mount the icon reads its own computed width and, when that differs, draws
+   * the optical cut and the grid fit for the size it is actually painted at
+   * (the line, the small cut and the hinting are all per size).
+   */
+  autoSize?: boolean;
 }
 
 /* —————————————————————————————— Optical sizing —————————————————————————————— */
@@ -513,7 +522,7 @@ const TURNS: Record<string, [string, number]> = {
   "arrow-up": ["arrow", 270],
 };
 
-const ALIASES: Record<string, string> = ICON_ALIASES;
+const ALIASES: Record<string, string> = CATALOG_ALIASES;
 
 function turnBetween(from: string, to: string): number | null {
   const a = TURNS[ALIASES[from] ?? from];
@@ -701,11 +710,23 @@ function useCrispPlacement(svgRef: React.RefObject<SVGSVGElement | null>, snapRe
   }, [svgRef, snapRef, size, name]);
 }
 
-export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, line, fit: fitOn = true, px, className, style, ...rest }: IconProps) {
+export function Icon({ name, size: sizeProp = 20, state = "rest", title, value, levels, pose, line, fit: fitOn = true, px, autoSize = false, className, style, ...rest }: IconProps) {
   const rawId = React.useId();
   const uid = `ji${rawId.replace(/[^a-zA-Z0-9]/g, "")}`;
   const svgRef = React.useRef<SVGSVGElement | null>(null);
   const snapRef = React.useRef<SVGGElement | null>(null);
+  const [measured, setMeasured] = React.useState<number | null>(null);
+  const size = autoSize && measured != null ? measured : sizeProp;
+  React.useLayoutEffect(() => {
+    if (!autoSize) return;
+    const el = svgRef.current;
+    if (!el) return;
+    // The computed width ignores transforms, so a glyph inside a popover mid-pop measures its real size.
+    const w = parseFloat(getComputedStyle(el).width);
+    if (!Number.isFinite(w) || w < 8 || w > 96) return;
+    const next = Math.round(w * 4) / 4;
+    if (Math.abs(next - size) >= 0.25) setMeasured(next);
+  }, [autoSize, className, sizeProp, size]);
   const shownLevels = useCalmLevels(levels, svgRef);
   useCrispPlacement(svgRef, snapRef, size, name);
 

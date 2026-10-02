@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { Keyboard, LogOut, ShieldCheck, Sparkles } from "@/components/ui/icons";
+import { ArrowUpCircle, Keyboard, LogOut, ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -255,7 +255,7 @@ export function UserMenu({
             label="Settings"
           />
           {canUpgrade && (
-            <MenuRow href="/upgrade" onSelect={leave} icon={<Sparkles className="size-4" />} label="Upgrade plan" />
+            <MenuRow href="/upgrade" onSelect={leave} icon={<ArrowUpCircle className="size-4" />} label="Upgrade plan" />
           )}
           {features.isOwner && (
             <MenuRow
