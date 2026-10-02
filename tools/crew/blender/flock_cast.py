@@ -777,7 +777,7 @@ CAST = {
     # A — soft solids, dot eyes, felt hats
     "A": [
         dict(id="pip", name="Pip", shape="pill", color=PAL["tomato"], eyes=dict(style="dot"), acc=[dict(id="bucket", color=INK)]),
-        dict(id="cubby", name="Cubby", shape="cube", color=PAL["cobalt"], eyes=dict(style="dot", gap=1.35), acc=[dict(id="frames", color=INK)]),
+        dict(id="cubby", name="Cubby", shape="cube", color=PAL["cobalt"], eyes=dict(style="dot", gap=1.35, size=0.84), acc=[dict(id="frames", color=INK)]),
         dict(id="gus", name="Gus", shape="gumdrop", color=PAL["violet"], eyes=dict(style="dot"), acc=[dict(id="sprout", color=PAL["chartreuse"])]),
         dict(id="belle", name="Belle", shape="bell", color=PAL["aqua"], eyes=dict(style="pill"), acc=[]),
         dict(id="momo", name="Momo", shape="mochi", color=PAL["magenta"], eyes=dict(style="arc"), acc=[dict(id="beanie", color=PAL["butter"], pom=WHITE)]),
@@ -794,7 +794,7 @@ CAST = {
     ],
     # C — soft symbols: round button eyes, happy half-moons, sleepy arcs, one-piece shades
     "C": [
-        dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="smile", gap=1.15, z=0.47), acc=[]),
+        dict(id="sol", name="Sol", shape="star", color=PAL["sunflower"], eyes=dict(style="smile", gap=1.3, z=0.47, size=1.25), acc=[]),
         dict(id="luna", name="Luna", shape="moon", color=PAL["cobalt"], eyes=dict(style="sleep"), acc=[dict(id="nightcap", color=PAL["sky"], pom=WHITE)]),
         dict(id="zap", name="Zip", shape="sparkle", color=PAL["aqua"], eyes=dict(style="round"), acc=[]),
         dict(id="volt", name="Volt", shape="bolt", color=PAL["tangerine"], eyes=dict(style="round", z=0.8, round=0.8, gap=1.2), acc=[dict(id="visor", color=INK)], lift=0.14),
