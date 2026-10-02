@@ -3933,10 +3933,12 @@
     }
   }
 
+  /* Equal insets: the page's top padding IS its side gutter (16/24/32 by
+     width), so content starts as far from the top as from the side. */
   .app-page-content {
     margin-inline: auto;
     width: 100%;
-    padding-block: 1.25rem 2.5rem;
+    padding-block: var(--page-gutter) 2.5rem;
   }
   @container page (min-width: 40rem) {
     .app-page-content {

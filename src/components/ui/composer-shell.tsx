@@ -184,9 +184,14 @@ export const COMPOSER_SPRING = spring.standard;
  */
 const COMPOSER_FIELD_METRICS =
   // eslint-disable-next-line design-system/no-raw-text-size -- 16px exactly: iOS Safari zooms the page into any focused field below it, and body-lg (17px) is a different measure.
-  "block w-full min-h-[2.8125rem] coarse:min-h-[3.25rem] px-5 max-[760px]:px-4 pb-1 pt-[0.8125rem] text-base leading-relaxed";
+  "block w-full min-h-[2.875rem] coarse:min-h-[3.25rem] px-4 pb-1 pt-4 text-base leading-relaxed";
 
 /**
+ * EQUAL INSETS (owner rule, 2026-10-02): the field's box starts 16px from the
+ * composer's left edge AND 16px from its top, so an armed chip at the start of
+ * the draft sits as far from the top as from the side. It was 20px across and
+ * 13px down, which only line-height had been hiding.
+ *
  * The textarea, directly on the surface: transparent, 16px inline padding
  * (the same inset the `+` glyph hangs off), `text-base` because iOS Safari
  * zooms into anything smaller.

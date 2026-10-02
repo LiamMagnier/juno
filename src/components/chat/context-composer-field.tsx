@@ -623,16 +623,29 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     [selectToken],
   );
 
-  /** The token touching the caret on one side: Backspace looks behind, Delete ahead. */
+  /**
+   * The token Backspace (behind) or Delete (ahead) should take, as a whole.
+   *
+   * Matches when the caret is INSIDE a token (browsers can still land a caret
+   * between its parts, and the default delete then ate it piece by piece:
+   * the name, the box, the icon), exactly at its edge, or separated from it
+   * only by the space typed after it, so "@github " goes in one press.
+   */
   function tokenAtCaret(side: "before" | "after"): HTMLElement | null {
     const root = rootRef.current;
     const selection = window.getSelection();
     if (!root || !selection?.isCollapsed) return null;
-    const at = editorOffset(root, selection.anchorNode, selection.anchorOffset);
+    const anchor = selection.anchorNode;
+    const anchorElement = anchor instanceof Element ? anchor : anchor?.parentElement ?? null;
+    const inside = anchorElement?.closest<HTMLElement>("[data-context-token]");
+    if (inside && root.contains(inside)) return inside;
+    const at = editorOffset(root, anchor, selection.anchorOffset);
+    const text = readEditor(root).text;
     return (
       tokenElements(root).find((node) => {
         const span = tokenSpan(root, node);
-        return side === "before" ? span.end === at : span.start === at;
+        if (side === "before") return span.end === at || (span.end === at - 1 && /[ \u00a0]/.test(text[at - 1] ?? ""));
+        return span.start === at || (span.start === at + 1 && /[ \u00a0]/.test(text[at] ?? ""));
       }) ?? null
     );
   }
@@ -680,14 +693,16 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
       }
     }
 
-    // Two-step delete on a hardware keyboard (C9): the first press selects the
-    // token, the second removes it. Delete is symmetric.
+    // ONE press removes a token (owner, 2026-10-02: deleting @github took
+    // four presses). It was a two-step select-then-delete (C9); a selected
+    // token from a click still goes on the next press too. Delete is symmetric.
     if ((event.key === "Backspace" || event.key === "Delete") && !event.metaKey && !event.altKey) {
-      const node = tokenAtCaret(event.key === "Backspace" ? "before" : "after");
+      const node =
+        (selectedToken.current?.isConnected ? selectedToken.current : null) ??
+        tokenAtCaret(event.key === "Backspace" ? "before" : "after");
       if (node) {
         event.preventDefault();
-        if (selectedToken.current === node) removeToken(node, "keyboard");
-        else selectToken(node);
+        removeToken(node, "keyboard");
         return;
       }
     }

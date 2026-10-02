@@ -3150,7 +3150,7 @@ export function Composer({
                   // 16px in EVERY state (composerFieldClass): iOS Safari zooms
                   // into a focused field below 16px. The home's field is taller
                   // at rest; density elsewhere comes from the autosize caps.
-                  className={cn(composerFieldClass, frame === "landing" && "min-h-[4.375rem] pt-[0.9375rem] max-[760px]:min-h-[3.25rem] max-[760px]:pt-[0.8125rem]")}
+                  className={cn(composerFieldClass, frame === "landing" && "min-h-[4.375rem] max-[760px]:min-h-[3.25rem]")}
                   // The marks drawn over the head of the field, as a hole in
                   // the first line: `text-indent` indents one line, not a block.
                   style={leadIndent ? { textIndent: leadIndent } : undefined}

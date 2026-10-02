@@ -219,7 +219,7 @@ function Miniature({ children }: { children: React.ReactNode }) {
 function PagePreview({ title, lines, type }: { title: string; lines: string[]; type: string }) {
   return (
     <Miniature>
-      <div className="absolute inset-x-[34px] top-[22px] bottom-0 rounded-t-sm bg-background px-[18px] pt-[18px] shadow-[0_0_0_1px_hsl(var(--border)/0.7)] dark:bg-card">
+      <div className="absolute inset-x-6 top-6 bottom-0 rounded-t-sm bg-background px-[18px] pt-[18px] shadow-[0_0_0_1px_hsl(var(--border)/0.7)] dark:bg-card">
         <p className="line-clamp-2 font-serif text-foreground" style={{ fontSize: 15, lineHeight: "19px" }}>{title}</p>
         {lines.length ? (
           lines.map((line, index) => (
@@ -238,7 +238,7 @@ function PagePreview({ title, lines, type }: { title: string; lines: string[]; t
 function DeckPreview({ title, type }: { title: string; type: string }) {
   return (
     <Miniature>
-      <div className="absolute inset-x-[18px] top-[30px] h-[176px] rounded-sm bg-background px-[16px] pt-[16px] shadow-[0_0_0_1px_hsl(var(--border)/0.7)] dark:bg-card">
+      <div className="absolute inset-x-[18px] top-[18px] bottom-[18px] rounded-sm bg-background px-[16px] pt-[16px] shadow-[0_0_0_1px_hsl(var(--border)/0.7)] dark:bg-card">
         <p className="line-clamp-2 font-serif text-foreground" style={{ fontSize: 16, lineHeight: "20px" }}>{title}</p>
         <p className="mt-[4px] text-muted-foreground" style={MINI_TEXT}>{type}</p>
       </div>
@@ -269,7 +269,7 @@ function FilePagePreview({ file, type }: { file: LibraryItem; type: string }) {
   if (preview?.thumbnailUrl) {
     return (
       <Miniature>
-        <div className="absolute inset-x-[34px] top-[22px] bottom-0 overflow-hidden rounded-t-sm bg-background shadow-[0_0_0_1px_hsl(var(--border)/0.7)]">
+        <div className="absolute inset-x-6 top-6 bottom-0 overflow-hidden rounded-t-sm bg-background shadow-[0_0_0_1px_hsl(var(--border)/0.7)]">
           {/* eslint-disable-next-line @next/next/no-img-element -- a bounded JPEG of the first page, from our own route */}
           <img src={preview.thumbnailUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover object-top" />
         </div>
