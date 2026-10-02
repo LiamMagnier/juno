@@ -77,7 +77,7 @@ const atStop = (i: number, count: number) => {
  */
 export const EffortPanelContext = React.createContext<{ modelName: string; onOpenModels: () => void } | null>(null);
 
-const PANEL_THUMB = 40;
+const PANEL_THUMB = 28;
 /** Where stop `i` of `count` sits on the panel track (4px inset at each end). */
 const panelStop = (i: number, count: number) => {
   const t = count > 1 ? i / (count - 1) : 0;
@@ -345,7 +345,7 @@ function EffortPanel({
           <span />
         )}
         <div className="flex min-w-0 flex-col items-center">
-          <span key={current?.label} className="text-heading font-medium text-foreground motion-safe:animate-fade-in">
+          <span key={current?.label} className="text-body font-medium text-foreground motion-safe:animate-fade-in">
             {current?.label}
           </span>
           {panel ? (
@@ -371,7 +371,7 @@ function EffortPanel({
         </button>
       </div>
 
-      <div className={cn("relative mt-4 h-12 w-full", disabled && "opacity-55")}>
+      <div className={cn("relative mt-3 h-9 w-full", disabled && "opacity-55")}>
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.07] dark:bg-white/[0.08]">
           <div
             className={cn(
@@ -397,7 +397,7 @@ function EffortPanel({
             className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
             style={{ transform: `translateX(${head})` }}
           >
-            <div className="absolute left-0 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.18),0_4px_12px_rgb(0_0_0/0.12)]" />
+            <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18),0_2px_8px_rgb(0_0_0/0.12)]" />
           </div>
         </div>
         <input

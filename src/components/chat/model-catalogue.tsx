@@ -126,12 +126,12 @@ function matchesQuery(m: ModelInfo, q: string): boolean {
  */
 function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
-    <div aria-hidden className="flex h-8 items-center gap-2 px-2 pt-1">
-      <span className="shrink-0 font-mono text-micro text-muted-foreground">{children}</span>
+    <div aria-hidden className="flex items-center gap-2 px-2.5 pb-1 pt-3">
+      <span className="shrink-0 text-caption font-medium text-muted-foreground">{children}</span>
       {count != null && (
-        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">{count}</span>
+        <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">{count}</span>
       )}
-      <span className="h-px flex-1 bg-border/60" />
+      <span className="flex-1" />
     </div>
   );
 }
@@ -174,12 +174,12 @@ function EmptyBlock({
 function Stat({ label, value, unit, score }: { label: string; value: string; unit?: string; score: number }) {
   return (
     <div>
-      <div className="font-mono text-micro text-muted-foreground">{label}</div>
+      <div className="text-caption text-muted-foreground">{label}</div>
       <div className="mt-0.5 flex items-baseline gap-1">
-        <span className="text-ui font-medium tabular-nums text-foreground">{value}</span>
-        {unit && <span className="font-mono text-micro text-muted-foreground">{unit}</span>}
+        <span className="text-body font-medium tabular-nums text-foreground">{value}</span>
+        {unit && <span className="text-caption text-muted-foreground">{unit}</span>}
       </div>
-      <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-secondary">
+      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
         {/* An inline scale: this is DATA, not a colour — the same precedent as
             the popover's own inline size below. It travels on `scaleX` from
             the left edge rather than on `width`, because only transform and
@@ -187,7 +187,7 @@ function Stat({ label, value, unit, score }: { label: string; value: string; uni
             relaid the bar on every frame of every arrow keypress. */}
         <div
           aria-hidden
-          className="h-full w-full origin-left rounded-full bg-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+          className="h-full w-full origin-left rounded-full bg-foreground/70 transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
           style={{ transform: `scaleX(${Math.max(0, Math.min(10, score)) / 10})` }}
         />
       </div>
@@ -225,7 +225,7 @@ function DetailPanel({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [modelId]);
 
-  const shell = "hidden w-[268px] shrink-0 flex-col border-l border-border/70 md:flex";
+  const shell = "hidden w-[272px] shrink-0 flex-col border-l border-border/60 bg-muted/40 md:flex";
   if (!model) {
     return (
       <div className={cn(shell, "items-center justify-center p-5")}>
@@ -245,19 +245,15 @@ function DetailPanel({
 
   return (
     <div className={shell}>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
         {/* The words swap in place, unkeyed and unfaded: the cursor moves
             every ~33ms under a held arrow key or a pointer sweep, and a fade
             restarted per step never gets past partial opacity (see above). */}
-        <div className="flex items-center gap-2">
-          {auto ? (
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
-              <JunoMark className="size-3" />
-            </span>
-          ) : (
-            <ProviderLogo provider={model.provider} className="size-5 shrink-0" />
-          )}
-          <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-field border border-foreground/[0.07] bg-card dark:border-white/[0.08]">
+            {auto ? <JunoMark className="size-5" /> : <ProviderLogo provider={model.provider} className="size-5" />}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-body font-medium text-foreground">{model.name}</span>
         </div>
         <p className="mt-0.5 font-mono text-micro text-muted-foreground">
           {auto ? PRODUCT_NAME : model.providerModel}
@@ -313,7 +309,7 @@ function DetailPanel({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 border-t border-border/70 px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-2 border-t border-border/60 p-3">
         {/* The accent is an ACTION here, not a status. A full-width coral bar
             reading "Selected" spends the brand colour on the one state that
             needs no button at all — and invites a press that does nothing.
@@ -321,11 +317,10 @@ function DetailPanel({
             reach this" are things to press. */}
         <Button
           type="button"
-          size="sm"
           variant={selected ? "secondary" : "default"}
           disabled={selected || !!model.comingSoon}
           onClick={onUse}
-          className="min-w-0 flex-1"
+          className="h-9 min-w-0 flex-1"
         >
           {selected
             ? "Selected"
@@ -421,7 +416,7 @@ function RailTile({
             "pressable flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
             "motion-reduce:active:scale-100",
             "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            active ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            active ? "surface-key text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
           {children}
@@ -683,7 +678,7 @@ export function ModelCatalogue({
           // ONE cursor, one fill. `hover:bg-accent` used to survive alongside
           // it, so a stationary pointer and the arrow keys painted two rows
           // with the identical fill at once.
-          "flex h-8 w-full items-center gap-2 rounded-control px-2 text-left outline-none",
+          "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-left outline-none",
           // Colour only, so it keeps its timing under reduced motion (fades
           // are not travel; ICONS_AND_MOTION.md §2.2, rule 10).
           "transition-colors duration-fast ease-out-soft",
@@ -699,13 +694,13 @@ export function ModelCatalogue({
             <JunoMark className="size-2.5" />
           </span>
         ) : (
-          <ProviderLogo provider={m.provider} className="size-4 shrink-0" />
+          <ProviderLogo provider={m.provider} className="size-[18px] shrink-0" />
         )}
-        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{m.name}</span>
-        {starred && <Star aria-hidden className="size-3 shrink-0 fill-current text-primary" />}
+        <span className={cn("min-w-0 flex-1 truncate text-ui text-foreground", active && "font-medium")}>{m.name}</span>
+        {starred && <Star aria-hidden className="size-3 shrink-0 fill-current text-muted-foreground" />}
         <span aria-hidden className="flex w-4 shrink-0 items-center justify-center">
           {active ? (
-            <StatusIcons.success className="size-3.5 text-primary" />
+            <StatusIcons.success className="size-4 text-foreground" />
           ) : locked ? (
             <Lock className="size-3 text-muted-foreground" />
           ) : null}
@@ -770,16 +765,16 @@ export function ModelCatalogue({
         // it would re-lay the whole list upward under a pointer that has not
         // moved every time you pick a lab. Both bounds clamp to the viewport.
         style={{
-          width: "min(600px, calc(100vw - 2rem))",
-          minHeight: "min(360px, var(--radix-popover-content-available-height))",
-          maxHeight: "min(480px, var(--radix-popover-content-available-height))",
+          width: "min(640px, calc(100vw - 2rem))",
+          minHeight: "min(380px, var(--radix-popover-content-available-height))",
+          maxHeight: "min(500px, var(--radix-popover-content-available-height))",
         }}
-        className="flex max-w-none flex-col overflow-hidden rounded-popover p-0"
+        className="flex max-w-none origin-bottom-right flex-col overflow-hidden rounded-menu p-0"
       >
         <div className="flex min-h-0 flex-1">
           {/* Lab rail — 48px of marks, folds under `sm`. Only labs with
               something in them; a tile can never lead to an empty list. */}
-          <div className="hidden w-12 shrink-0 flex-col border-r border-border/70 bg-muted/25 sm:flex">
+          <div className="hidden w-12 shrink-0 flex-col border-r border-border/60 bg-muted/40 sm:flex">
             {/* ScrollFade, not a bare `overflow-y-auto`: sixteen marks need
                 more than a short column has, and the strip used to scroll
                 with no affordance saying so. */}
@@ -832,14 +827,14 @@ export function ModelCatalogue({
 
           {/* List */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border/70 p-3">
+            <div className="shrink-0 border-b border-border/60 px-2 py-1.5">
               {/* `.surface-inset` is the material FLAT_UI.md §3.3 assigns to a
                   search field, and `focus-within:border-ring` is the accent's
                   one decorative home in this popover. The field had neither:
                   the control the popover autofocuses was the one that looked
                   inert. */}
-              <div className="surface-inset flex h-9 items-center gap-2 rounded-control px-2.5 transition-colors duration-fast ease-out-soft focus-within:border-ring">
-                <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <div className="flex h-10 items-center gap-2.5 rounded-control px-2.5">
+                <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 <input
                   value={query}
                   onChange={(e) => {
@@ -931,10 +926,10 @@ export function ModelCatalogue({
                           {renderRows(g.models, g.key, g.byModality)}
                           {g.legacy.length > 0 && (
                             <details key={q ? "open" : "closed"} open={!!q} className="group/legacy">
-                              <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control px-2 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
-                                <span className="shrink-0 font-mono text-micro">Past models</span>
-                                <span className="h-px flex-1 bg-border/70" />
-                                <span className="shrink-0 font-mono text-micro tabular-nums">{g.legacy.length}</span>
+                              <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
+                                <span className="shrink-0 text-caption font-medium">Past models</span>
+                                <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">{g.legacy.length}</span>
+                                <span className="flex-1" />
                                 {/* `ease-in-out` is the curve for an A-to-B move
                                     with both endpoints visible; an ease-out makes
                                     the chevron look like it arrives from off-screen. */}

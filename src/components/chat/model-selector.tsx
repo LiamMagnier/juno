@@ -358,19 +358,6 @@ export function ModelSelector({
   const chipRef = React.useRef<HTMLButtonElement>(null);
   /** Where the popovers open: chosen as they open, so a short window picks the side with room. */
   const [side, setSide] = React.useState<"top" | "bottom">("top");
-  const layerBox = layer?.box;
-  const virtualAnchor = React.useMemo(
-    () => ({
-      current: {
-        getBoundingClientRect: () => {
-          const chipBox = chipRef.current?.getBoundingClientRect() ?? new DOMRect();
-          const box = layerBox?.current?.getBoundingClientRect() ?? chipBox;
-          return new DOMRect(chipBox.x, box.y, chipBox.width, box.height);
-        },
-      },
-    }),
-    [layerBox],
-  );
   const onSide = layer?.onSide;
   React.useEffect(() => {
     onSide?.(open || pickerOpen ? side : null);
@@ -458,8 +445,11 @@ export function ModelSelector({
     // stage one's trigger, and two Radix triggers on one element fight over
     // its `data-state`, leaving the chip stuck open-looking after a close.
     <Popover open={pickerOpen && !disabled} onOpenChange={setPickerOpen}>
-      {layer ? <PopoverAnchor virtualRef={virtualAnchor} /> : null}
-      <AnchorSpan virtual={!!layer}>
+
+      {/* Anchored to the CHIP, opening upward over the composer (owner: "why
+          does it stay under the composer instead of overhanging it"). It used
+          to anchor to the composer's whole box and sit outside it. */}
+      <AnchorSpan virtual={false}>
           <Popover
             open={open && !disabled}
             onOpenChange={(next) => {
@@ -469,12 +459,12 @@ export function ModelSelector({
                 // the row that opens it is inside the menu this opens.
                 prefetchCatalogue();
                 setRecent(readRecent());
-                if (layer) setSide(layer.pickSide(420));
+                setSide("top");
               }
               setOpen(next);
             }}
           >
-            {layer ? <PopoverAnchor virtualRef={virtualAnchor} /> : null}
+      
             <PopoverTrigger asChild>{chip}</PopoverTrigger>
             <PopoverContent
               align="end"
@@ -488,7 +478,7 @@ export function ModelSelector({
               className={cn(
                 "rounded-menu",
                 thinking && view === "effort"
-                  ? "w-[min(22rem,calc(100vw-1.5rem))] p-4"
+                  ? "w-[min(18.5rem,calc(100vw-1.5rem))] p-3"
                   : cn(
                       "w-72 p-1.5",
                       layer && "w-[min(21.5rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain",
@@ -502,7 +492,7 @@ export function ModelSelector({
               {thinking && view === "effort" ? (
                 <div key="effort" className="motion-safe:animate-fade-in">
                   <EffortPanelContext.Provider
-                    value={{ modelName: current?.name ?? "Model", onOpenModels: () => setView("models") }}
+                    value={{ modelName: current?.name ?? "Model", onOpenModels: openCatalogue }}
                   >
                     {thinking}
                   </EffortPanelContext.Provider>
