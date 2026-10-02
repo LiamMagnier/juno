@@ -37,6 +37,7 @@ import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
 import { activeRunId, runReceiptParts } from "@/lib/chat/tool-run";
 import { ToolRunOutputs } from "@/components/chat/tool-run-files";
 import type { ClientActivityEvent, ClientAttachment, ClientSource } from "@/types/chat";
+import { reasoningHeadline } from "@/lib/chat/reasoning-headline";
 
 /**
  * WHAT THE RUN IS DOING, RIGHT NOW — one sentence, computed once.
@@ -54,7 +55,9 @@ import type { ClientActivityEvent, ClientAttachment, ClientSource } from "@/type
 function liveCopy(
   activeLabel: string | undefined,
   latest: ClientActivityEvent | undefined,
-  thinkMs: number | null
+  thinkMs: number | null,
+  /** One readable line of what the model is reasoning about (reasoning-headline.ts). */
+  headline: string | null = null,
 ) {
   if (latest?.kind === "warning") {
     return { message: latest.title, warning: true };
@@ -94,6 +97,12 @@ function liveCopy(
   // say that leaving is safe. The same three sentences as the transcript's
   // own status line (message-item.tsx, StreamStatus), so the strip and the
   // line never describe one wait in two voices.
+  // What the model is actually working through, in one line, while it
+  // reasons: the owner's ChatGPT/Claude reference. The words come from the
+  // reasoning itself and only when they read as prose (see the helper).
+  if (headline && (!latest || latest.kind === "reasoning")) {
+    return { message: headline, warning: false };
+  }
   const elapsed = thinkMs ?? 0;
   if (elapsed >= 10 * 60_000) {
     return { message: "Still working. You can leave; the answer will be here.", warning: false };
@@ -201,6 +210,7 @@ export function ActivityTimeline({
   // instance inside the panel would calibrate whenever the sheet was opened and
   // read 0.0s next to this row's 8.4s.
   const { nowServer, anchorT0 } = useRunClock(list, streaming);
+  const headline = React.useMemo(() => (streaming ? reasoningHeadline(reasoning) : null), [streaming, reasoning]);
   const run = React.useMemo(
     () => buildRun(list, nowServer, anchorT0, { sources, reasoning, reasoningParts }),
     [list, nowServer, anchorT0, sources, reasoning, reasoningParts],
@@ -219,7 +229,7 @@ export function ActivityTimeline({
   // The THINK span, not the whole run — see liveCopy.
   const live = liveRun
     ? { message: runReceiptParts(liveRun).label, warning: false }
-    : liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null);
+    : liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null, headline);
   // One reading, two consumers: the live count below and WebSearchBlock's
   // settled flag further down describe the same moment of the run.
   const researchActive = run.phases.some((phase) => phase.key === "research" && phase.active);
@@ -287,7 +297,7 @@ export function ActivityTimeline({
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
   // Only the model reasoning is "thinking"; a search, a read or a tool call is
   // work with a name (MOTION_AND_THINKING.md).
-  const livePhase = !latest || latest.kind === "reasoning" || live.message === "Thinking" ? "thinking" : "working";
+  const livePhase = !latest || latest.kind === "reasoning" || live.message === "Thinking" || live.message === headline ? "thinking" : "working";
 
   // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. The elapsed number alone rewrites
   // once a second, so the visual content is hidden from the tree and the label

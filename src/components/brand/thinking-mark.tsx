@@ -149,6 +149,35 @@ function runSettle(root: HTMLElement) {
 }
 
 /**
+ * The continuous hand-off while work is real (owner, 2026-10-02: "the logo
+ * doesn't do anything, it's just here"): presence ink travels blade to blade,
+ * clockwise, at a calmer tempo than an event pass and to a fuller peak, for as
+ * long as the phase is thinking or working. It is the one loop the mark has,
+ * and it is honest: it runs only while a reply is actually in progress, stops
+ * when the tab is hidden, and is absent under reduced motion.
+ */
+const LOOP = { rise: 280, fall: 620, stagger: 210, gap: 380, peak: 0.92 } as const;
+const LOOP_MS = LOOP.stagger * 3 + LOOP.rise + LOOP.fall + LOOP.gap;
+
+function runLoopPass(root: HTMLElement) {
+  const { outSoft } = tokens(root);
+  const crest = LOOP.rise / (LOOP.rise + LOOP.fall);
+  tonePaths(root).forEach((paths, i) => {
+    for (const p of paths) {
+      const from = takeTone(p);
+      p.animate(
+        [
+          { opacity: from, easing: outSoft },
+          { opacity: LOOP.peak, offset: crest, easing: outSoft },
+          { opacity: 0 },
+        ],
+        { duration: LOOP.rise + LOOP.fall, delay: i * LOOP.stagger, fill: "backwards" },
+      );
+    }
+  });
+}
+
+/**
  * The Continuum thinking mark (MOTION_AND_THINKING.md): the stationary mark,
  * with presence ink handed from blade to blade, clockwise, when real work
  * starts and when a new real step arrives. It never spins, pulses on a loop
@@ -185,6 +214,19 @@ export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion,
   useEffect(() => {
     dispatch({ type: "phase", phase, now: clock() });
   }, [phase, dispatch]);
+
+  const looping = view.visible && isPendingPhase(view.shown) && !view.reduced;
+  useEffect(() => {
+    const el = root.current;
+    if (!looping || !el) return;
+    const pass = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      runLoopPass(el);
+    };
+    pass();
+    const id = setInterval(pass, LOOP_MS);
+    return () => clearInterval(id);
+  }, [looping]);
 
   const lastEvent = useRef(eventKey);
   const recent = useRef<number[]>([]);
