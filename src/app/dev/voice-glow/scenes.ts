@@ -101,7 +101,7 @@ export const SCENES: Record<Exclude<GlowState, "lab">, Scene> = {
     call: (ms) => (ms < 1700 ? at({ assistantSpeaking: true, userSpeaking: ms >= 1500 }) : at({ userSpeaking: speaking(spoken(ms, "you", 1500, 3600)) })),
     you: (ms) => spoken(ms, "you", 1500, 3600) || room(ms),
     alevr: (ms) => spoken(ms, "alevr", 0, 1650),
-    stillAt: 1790,
+    stillAt: 1690,
   },
   approval: { call: () => at({}), you: room, alevr: silent, stillAt: 1200, approval: true },
   reconnecting: { call: () => at({ status: "reconnecting" }), you: room, alevr: silent, stillAt: 1200 },

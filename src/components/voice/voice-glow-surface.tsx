@@ -214,13 +214,19 @@ export function VoiceGlowSurface({
       if (w === 0 || h === 0) return;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const m = GLOW_MARGIN;
+      // Never wider than the window: a light reaching past a phone's edge
+      // would give the page a horizontal scroll.
+      const box = child.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth || window.innerWidth;
+      const mL = Math.max(0, Math.min(m, Math.floor(box.left)));
+      const mR = Math.max(0, Math.min(m, Math.floor(vw - box.right)));
       const raw = parseFloat(getComputedStyle(child).borderTopLeftRadius) || 0;
       const geo: Geometry = {
-        left: child.offsetLeft - m,
+        left: child.offsetLeft - mL,
         top: child.offsetTop - m,
-        width: w + 2 * m,
+        width: w + mL + mR,
         height: h + 2 * m,
-        rect: [m, m, w, h],
+        rect: [mL, m, w, h],
         radius: Math.min(raw, w / 2, h / 2),
         dpr,
       };
@@ -236,7 +242,7 @@ export function VoiceGlowSurface({
         canvas.width = pw;
         canvas.height = ph;
       }
-      if (!prev || prev.width !== geo.width || prev.height !== geo.height || prev.radius !== geo.radius || prev.dpr !== dpr) {
+      if (!prev || prev.width !== geo.width || prev.height !== geo.height || prev.rect[0] !== geo.rect[0] || prev.radius !== geo.radius || prev.dpr !== dpr) {
         if (drawn.current) draw(drawn.current, true);
       }
     };
@@ -244,7 +250,11 @@ export function VoiceGlowSurface({
     const ro = new ResizeObserver(measure);
     ro.observe(child);
     ro.observe(root);
-    return () => ro.disconnect();
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [draw]);
 
   // Palette: the tokens as this element resolves them (a `.dark` subtree included).

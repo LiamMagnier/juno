@@ -23,7 +23,8 @@ import type { ResolvedGlowPalette } from "@/components/voice/voice-glow-palette"
  * The shapes the lab compares; production draws the winner.
  *
  * - `edge`: the composer's own edge lights from the bottom centre and the
- *   light spreads around the outline with the voice, a soft falloff outside.
+ *   light spreads around the outline with the voice, a soft falloff outside;
+ *   two voices at once part toward their own sides.
  * - `duet`: the same edge light, but each voice is anchored at its own
  *   bottom corner (you right, as your turns sit in the transcript; Alevr
  *   left), so two voices at once read as two.
@@ -181,6 +182,14 @@ void main() {
   float bFrom = hx;
   float bTo = -hx;
   if (uVariant > 1.5) { aYou = corner; aAlevr = -corner; bFrom = corner; bTo = -corner; }
+  else {
+    // One voice is centred, like the glow it replaces. Two at once (you
+    // talking over Alevr) part to make room for each other, yours toward your
+    // side and Alevr's toward its own, and meet in the middle.
+    float both = smoothstep(0.04, 0.3, min(uYou.x, uAlevr.x));
+    aYou = both * 0.21 * W;
+    aAlevr = -both * 0.21 * W;
+  }
 
   if (uVariant > 0.5 && uVariant < 1.5) {
     // HORIZON: light pooled under the composer, from the speaker's side.
@@ -196,9 +205,9 @@ void main() {
     float bw = max(0.07 * W, 18.0);
     for (int i = 0; i < 2; i++) {
       vec3 bm = i == 0 ? uBeamB : uBeamA;
-      float bx = mix(0.42 * W, -0.42 * W, bm.y);
-      float al = gauss((rel.x - bx) / bw) * below;
-      light(bm.x * (1.0 - bm.z), al, hF + 0.6 * F1, d, line, uYouLine, uYouGlow, uYouHot, haloK * 1.2, lineK * hL);
+      float al = gauss((rel.x - mix(0.42 * W, -0.42 * W, bm.y)) / bw) * below;
+      float alE = gauss((rel.x - mix(0.42 * W, -0.42 * W, max(bm.y - 0.12, 0.0))) / bw) * below;
+      light(bm.x * (1.0 - bm.z), alE, hF + 0.6 * F1, d, line, uYouLine, uYouGlow, uYouHot, haloK * 1.2, lineK * hL);
       light(bm.x * bm.z, al, hF + 0.6 * F1, d, line, uAlevrLine, uAlevrGlow, uAlevrHot, haloK * 1.2, lineK * hL);
     }
   } else {
@@ -214,9 +223,11 @@ void main() {
     float bw = max(0.075 * W, 20.0);
     for (int i = 0; i < 2; i++) {
       vec3 bm = i == 0 ? uBeamB : uBeamA;
-      float bs = mix(bFrom, bTo, bm.y);
-      float al = gauss((s - bs) / bw);
-      light(bm.x * (1.0 - bm.z), al, F0 + 0.4 * F1, d, line, uYouLine, uYouGlow, uYouHot, haloK, lineK);
+      // Ember trails the presence head by a beam's width, so the handoff
+      // reads as one light passing to the next rather than two mixing.
+      float al = gauss((s - mix(bFrom, bTo, bm.y)) / bw);
+      float alE = gauss((s - mix(bFrom, bTo, max(bm.y - 0.12, 0.0))) / bw);
+      light(bm.x * (1.0 - bm.z), alE, F0 + 0.4 * F1, d, line, uYouLine, uYouGlow, uYouHot, haloK, lineK);
       light(bm.x * bm.z, al, F0 + 0.4 * F1, d, line, uAlevrLine, uAlevrGlow, uAlevrHot, haloK, lineK);
     }
   }

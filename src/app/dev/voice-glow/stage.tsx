@@ -408,7 +408,7 @@ const DIRECTIONS: Direction[] = [
     variant: "edge",
     what: "The composer’s own 1px edge takes the speaker’s tone from the bottom centre, and the light spreads around the outline with the voice, falling off softly outside. Nothing inside the box.",
     verdict:
-      "Chosen. It is still the glow (centred at the bottom, rising with the voice) turned inside out: the light leaves the object instead of filling it, so the field and the V3 edge stay crisp. The shape is the composer’s own outline, and presence on the edge is already how this product says “live”. Thinking reads as the handoff along the bottom edge. Costs: interruption overlaps both tones at the centre, so the two voices meet in one place rather than two.",
+      "Chosen. It is still the glow (centred at the bottom, rising with the voice) turned inside out: the light leaves the object instead of filling it, so the field and the V3 edge stay crisp. The shape is the composer\u2019s own outline, and presence on the edge is already how this product says \u201clive\u201d. Thinking is the Continuum handoff along the bottom edge, from your end to Alevr\u2019s. Taken from D: when you talk over Alevr the two lights part toward their own sides instead of mixing at the centre. Cost: a WebGL canvas (shared, drawn only on change).",
     chosen: true,
   },
   {
@@ -530,6 +530,8 @@ export function VoiceGlowGallery({
   const extra = React.useMemo(() => ({ reduced, solid }), [reduced, solid]);
   return (
     <AppProvider bootstrap={BOOTSTRAP}>
+      {/* Stills and clips: no Next.js dev badge over the composer. */}
+      <style>{"nextjs-portal{display:none!important}"}</style>
       <VoiceGlowStageContext.Provider value={extra}>
         {state === "lab" && !play ? <Lab clock={clock} base={extra} stills={!!still && t === undefined} rows={rows} /> : <StateView state={state} play={play} clock={clock} extra={extra} />}
       </VoiceGlowStageContext.Provider>

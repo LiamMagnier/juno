@@ -209,9 +209,11 @@ export function handoffBeams(t: number): [GlowBeamFrame, GlowBeamFrame] {
   const u = t - cycle * GLOW_TIMING.repass;
   const travel = Math.min(1, u / HANDOFF_PASS);
   const pos = easeInOut(travel);
-  // The tone hands over across the whole pass, a step behind the light, as
-  // the ThinkingMark's segments do: ember leaves, presence arrives.
-  const mix = easeOutSoft(Math.min(1, Math.max(0, (u - GLOW_TIMING.handoffStagger) / HANDOFF_PASS)));
+  // The tone hands over as the ThinkingMark's paths do: one stagger after the
+  // light sets off, ember passes to presence in one 220 ms tone step, so the
+  // beam leaves your end warm and travels the rest of the way in Alevr's ink.
+  // Short on purpose: wherever ember and presence overlap they mix to mauve.
+  const mix = easeOutSoft(Math.min(1, Math.max(0, (u - GLOW_TIMING.handoffStagger) / GLOW_TIMING.handoffTone)));
   let amp: number;
   if (u < GLOW_TIMING.handoffTone) amp = easeOutSoft(u / GLOW_TIMING.handoffTone);
   else if (u < HANDOFF_PASS) amp = 1;
