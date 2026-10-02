@@ -32,8 +32,9 @@ import AppKit
 /// Anything not listed here defers to the system semantic colours so the apps
 /// track platform conventions automatically.
 public extension JunoColorToken {
-    /// `--primary`, identical in both appearances: the brand coral. The
-    /// account's accent is ``SwiftUI/Color/junoAccent``.
+    /// `--primary` in each appearance: V3's ultramarine, #2D49C9, lifted to
+    /// #97A6E6 on the charcoal. The account's accent is
+    /// ``SwiftUI/Color/junoAccent``.
     static let accentLight = JunoColorToken.coral
     static let accentDark = JunoGeneratedColors.primary.dark
 

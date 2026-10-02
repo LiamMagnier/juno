@@ -518,7 +518,6 @@ struct DesktopConnectionsScreen: View {
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }
-        }
     }
 
     /// The same actions for a right-click, plus the identifier the retired
@@ -570,7 +569,6 @@ struct DesktopConnectionsScreen: View {
             }
         case .unavailable:
             EmptyView()
-        }
         }
         Divider()
         Button("Copy Identifier") {
@@ -812,7 +810,6 @@ struct DesktopConnectionsScreen: View {
             if connector.mcpStatus == "error" { return connector.lastError ?? "Connection failed. Manage this server to test again." }
             let count = connector.toolCount ?? 0
             return "\(count) \(count == 1 ? "tool" : "tools") · \(connector.connected ? "Enabled" : "Disabled")"
-        }
         }
         switch state {
         case .connected:

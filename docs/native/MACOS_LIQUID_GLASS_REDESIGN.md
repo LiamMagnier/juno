@@ -1327,7 +1327,7 @@ Old accessors become deprecated aliases with fix-its.
 | `junoAccent` | `--primary` (by accent) | #B55636 | #B55636 | The action colour (§0.4) |
 | `junoAccentInk` | `--primary-ink` (**new accessor**) | #AD5234 | #DE8D73 | Links, accent text, code keywords |
 | `junoOnAccent` | `--primary-foreground` | #FFFFFF | #FFFFFF | Glyph on coral |
-| `junoRing` | accent-block `--ring` | #5F5C54 | #D1CFC7 | Focus. Equal to the graphite `AccentColor` asset, which is kept. |
+| `junoRing` | accent-block `--ring` | #1A1B1F | #E6E8EA | Focus, the same neutral graphite for every accent (V3). Equal to the graphite `AccentColor` asset, which is kept. |
 | `junoSuccess` / `Ink` | `--success` / `-ink` | #4F9C68 / #347449 | #60AF7A | Status |
 | `junoWarning` / `WarningInk` | `--warning` / `-foreground` | #B48931 / #846424 | #D4A954 / #EAC886 | Status; "N left" |
 | `junoDestructive` / `DestructiveInk` | `--destructive` / `-ink` | #B9533C / #A2442F | #BF553E / #C86B56 | Status; delete |
@@ -1844,7 +1844,7 @@ An independent pass checked 28 claims against the code and the macOS 27 SDK. Mos
 - **App icon.** Replace the flat PNG `AppIcon.appiconset` with an Icon Composer `.icon` that has light, dark, clear and tinted variants.
 - **Window restoration.** Reopen the last chat, not a forced draft. Support several main windows through "Open Chat in New Window".
 - **Accessibility:**
-  - `junoTertiaryInk` is 2.89:1 on the light canvas, so it may carry only ≥13pt non-essential text. Keycaps and timers use `junoSecondaryInk`.
+  - `junoTertiaryInk` is 2.87:1 on the light canvas (V3; 2.89:1 on the warm canvas before it), so it may carry only ≥13pt non-essential text. Keycaps and timers use `junoSecondaryInk`.
   - Pin marks at ≥ 3:1.
   - `.isHeader` on the greeting and page titles.
   - Transcript turns as headings for the rotor.

@@ -479,15 +479,17 @@ struct DesktopWorkHostTile: View {
         switchGeneration &+= 1
     }
 
-    static let accessibilityPane =
+    // nonisolated: plain strings the chat's task card reads off the main
+    // actor too (ChatWorkLocalBlocker); Swift 6.3 rejects that otherwise.
+    nonisolated static let accessibilityPane =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    static let screenRecordingPane =
+    nonisolated static let screenRecordingPane =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     /// What a missing permission stops, in the card's words — the chat's task
     /// card says the same when a run on this Mac is missing one (Phase 5 B4).
-    static let accessibilitySentence =
+    nonisolated static let accessibilitySentence =
         "Driving a browser needs macOS Accessibility permission, which Juno does not have."
-    static let screenRecordingSentence =
+    nonisolated static let screenRecordingSentence =
         "Screen control needs macOS Screen Recording permission, which Juno does not have."
 
     // MARK: - Applications

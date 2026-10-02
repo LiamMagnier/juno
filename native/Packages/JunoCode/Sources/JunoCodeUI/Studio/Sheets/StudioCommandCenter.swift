@@ -324,7 +324,7 @@ struct StudioCostBreakdownView: View {
         .scrollContentBackground(.hidden)
     }
 
-    static func money(_ value: Double) -> String {
+    nonisolated static func money(_ value: Double) -> String {
         value < 0.01 ? "under $0.01" : String(format: "$%.2f", value)
     }
 }

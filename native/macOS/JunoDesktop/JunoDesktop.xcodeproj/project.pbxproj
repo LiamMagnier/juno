@@ -469,6 +469,7 @@
 		EC83ECC39C2207A97E53D692 /* DesktopOutputsPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopOutputsPopover.swift; sourceTree = "<group>"; };
 		ECACB2996FDFAD5AC00D7C58 /* DesktopProjectsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProjectsScreen.swift; sourceTree = "<group>"; };
 		ED6CD2A24AF9C22BB13214E1 /* ComposerDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDictation.swift; sourceTree = "<group>"; };
+		EFD2E232478AB0290A15B915 /* JunoScreenControl */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoScreenControl; path = ../../Packages/JunoScreenControl; sourceTree = SOURCE_ROOT; };
 		EFF3752CD70FDA49FAE186AD /* RunSnapshotFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSnapshotFixtures.swift; sourceTree = "<group>"; };
 		F03B02FCF79ED91840D543DC /* JunoDesktopWebAuthenticationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopWebAuthenticationClient.swift; sourceTree = "<group>"; };
 		F148ADFEF1AAEE653E833F67 /* DesktopArtifactStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopArtifactStatus.swift; sourceTree = "<group>"; };
@@ -765,6 +766,7 @@
 			children = (
 				2807C4133D065252D8055B6B /* JunoCode */,
 				35C1561AF09A8CB3746E28EC /* JunoNativeKit */,
+				EFD2E232478AB0290A15B915 /* JunoScreenControl */,
 				A42266BD81649CCC5E1FE611 /* JunoWork */,
 			);
 			name = Packages;
@@ -975,6 +977,7 @@
 			packageReferences = (
 				EF92194A01D97CBBE93C8BF6 /* XCLocalSwiftPackageReference "../../Packages/JunoCode" */,
 				0AABF1FE7224B9EFDF9B9128 /* XCLocalSwiftPackageReference "../../Packages/JunoNativeKit" */,
+				ECDEF963B25CFE9B833AFE53 /* XCLocalSwiftPackageReference "../../Packages/JunoScreenControl" */,
 				C15DFD02013ECB36937E724C /* XCLocalSwiftPackageReference "../../Packages/JunoWork" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1633,6 +1636,10 @@
 		C15DFD02013ECB36937E724C /* XCLocalSwiftPackageReference "../../Packages/JunoWork" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../Packages/JunoWork;
+		};
+		ECDEF963B25CFE9B833AFE53 /* XCLocalSwiftPackageReference "../../Packages/JunoScreenControl" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/JunoScreenControl;
 		};
 		EF92194A01D97CBBE93C8BF6 /* XCLocalSwiftPackageReference "../../Packages/JunoCode" */ = {
 			isa = XCLocalSwiftPackageReference;
