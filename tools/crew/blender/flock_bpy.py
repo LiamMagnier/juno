@@ -302,8 +302,8 @@ def setup_render(scene, res_x, res_y, spp=128, transparent=True):
         scene.cycles.denoiser = "OPENIMAGEDENOISE"
     except Exception:
         pass
-    # OIDN on the Metal GPU reserves ~6.5 GB of unified memory (a bare cube peaks
-    # at 7.5 GB with it, 1 GB without); on the CPU it costs a second or two.
+    # Denoise on the CPU: it costs a second or two and keeps OIDN's buffers off the
+    # Metal device, which already holds ~7.3 GB for any Cycles scene on this Mac.
     try:
         scene.cycles.denoising_use_gpu = os.environ.get("DENOISE_GPU", "0") == "1"
     except Exception:

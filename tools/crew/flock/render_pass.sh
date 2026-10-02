@@ -3,12 +3,14 @@
 #   bash tools/crew/flock/render_pass.sh <out_dir> [sheets...]
 # Env: RES (portraits), SPP, Q (fuzz quality), LQ (lineup fuzz quality: 6 characters at
 #      once need far more hair memory; 0.45 is plenty at key-art scale), LINEUP_ONLY,
-#      SKIP_PORTRAITS=1 (lineup + variants only)
+#      SKIP_PORTRAITS=1 (lineup + variants only), STATES=1 (the six agent states, SRES),
+#      LAYERED=1 (lineup one character's fibres per render, composited: memory)
 set -u
 OUT=$1; shift
 SHEETS=${@:-A B C}
 HERE=$(cd "$(dirname "$0")/../blender" && pwd)
-BL=/Applications/Blender.app/Contents/MacOS/Blender
+# GATE: an optional wrapper (the machine-wide slot gate), run per Blender call
+BL="${GATE:-} /Applications/Blender.app/Contents/MacOS/Blender"
 cd "$HERE"
 mkdir -p "$OUT"
 for S in $SHEETS; do

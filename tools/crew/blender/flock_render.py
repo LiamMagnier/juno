@@ -70,11 +70,41 @@ def portrait_cam(sc, objs, yaw, fill=0.74, elev=7, lens=70):
     B.camera(sc, target=(0.5 * (lo.x + hi.x), 0, h * 0.5), dist=dist, lens=lens, elev=elev, yaw=yaw)
 
 
+_STATS = {}
+
+
+def _stats(st):
+    # Cycles' own memory report ("Mem:..., Peak:..."), kept for the WROTE line.
+    if "Peak" in st:
+        _STATS["last"] = st.split("|")[1].strip() if "|" in st else st
+
+
+if os.environ.get("STATS") == "1":
+    bpy.app.handlers.render_stats.append(_stats)
+
+
 def render(sc, path):
     t0 = time.time()
+    psys = [p for ob in sc.objects if ob.type == "MESH" for p in ob.particle_systems]
+    hairs = sum(p.settings.count * max(1, p.settings.rendered_child_count) for p in psys)
+    # Memory: Cycles on Metal already holds ~7.3 GB for any scene here, and each
+    # million fibres adds ~0.4 GB; the guard kills Blender above 10 GB. Keep a
+    # render under HAIR_BUDGET fibres: fewer children, slightly thicker ones.
+    budget = float(os.environ.get("HAIR_BUDGET", 3.6e6))
+    if hairs > budget:
+        k = budget / hairs
+        for st in {p.settings for p in psys}:
+            st.rendered_child_count = max(3, int(st.rendered_child_count * k))
+            st.root_radius *= k ** -0.35
+            st.tip_radius *= k ** -0.35
+        new = sum(p.settings.count * max(1, p.settings.rendered_child_count) for p in psys)
+        print(f"HAIR_BUDGET {hairs / 1e6:.2f}M -> {new / 1e6:.2f}M", flush=True)
+        hairs = new
+    if os.environ.get("STATS") == "1":
+        print(f"HAIRS {hairs / 1e6:.2f}M", flush=True)
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    print("WROTE", path, f"{time.time() - t0:.1f}s", flush=True)
+    print("WROTE", path, f"{time.time() - t0:.1f}s", _STATS.get("last", ""), flush=True)
 
 
 def scene(res_x, res_y, floor=True, spread=1.0):

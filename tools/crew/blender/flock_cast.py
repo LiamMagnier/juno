@@ -781,7 +781,7 @@ CAST = {
         dict(id="gus", name="Gus", shape="gumdrop", color=PAL["violet"], eyes=dict(style="dot"), acc=[dict(id="sprout", color=PAL["chartreuse"])]),
         dict(id="belle", name="Belle", shape="bell", color=PAL["aqua"], eyes=dict(style="pill"), acc=[]),
         dict(id="momo", name="Momo", shape="mochi", color=PAL["magenta"], eyes=dict(style="arc"), acc=[dict(id="beanie", color=PAL["butter"], pom=WHITE)]),
-        dict(id="bo", name="Bo", shape="peanut", color=PAL["sunflower"], eyes=dict(style="dot", size=1.12), acc=[dict(id="cone", color=INK, ball=WHITE)]),
+        dict(id="bo", name="Bo", shape="peanut", color=PAL["sunflower"], eyes=dict(style="dot", size=1.12), acc=[dict(id="cone", color=PAL["cobalt"], ball=WHITE)]),
     ],
     # B — snack bar, sticker eyes and arcs
     "B": [

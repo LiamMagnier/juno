@@ -50,6 +50,10 @@ def material_for(part, sid):
             mat = mat.copy()
             _gradient(mat, *part["gradient"])
         return mat
+    if col.lower() in ("#17171c", "#fbfaf6") and kind == "decal":
+        # Graphic eyes: dead matte, so a raised edge never catches a highlight
+        # that reads as a wet bead (no catchlight, ever).
+        return B.matte_material(f"eye_{col}", col, rough=1.0, spec=0.03, sheen=0.04)
     if kind == "matte" or col in (C.INK, C.WHITE) or col.lower() in ("#17171c", "#fbfaf6"):
         return B.matte_material(f"m_{col}", col, rough=part.get("rough", 0.8), sheen=part.get("sheen", 0.2))
     return B.flock_material(f"{sid}_{part['name']}", col, grain=0.03)
