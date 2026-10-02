@@ -143,7 +143,9 @@ function previewOf(candidate: PackageCandidate, origin: PackageOrigin, notes: { 
     /** What of the folder is kept, by kind, and what was left out. Null for instructions only. */
     bundle: candidate.bundle
       ? {
-          ...bundleCounts(candidate.bundle.manifest),
+          // The files BESIDE the SKILL.md, as the GitHub preview counts them.
+          files: bundleCounts(candidate.bundle.manifest).files - 1,
+          scripts: bundleCounts(candidate.bundle.manifest).scripts,
           totalBytes: candidate.bundle.manifest.totalBytes,
           skippedFiles: candidate.bundle.manifest.skipped.map((entry) => entry.path),
         }

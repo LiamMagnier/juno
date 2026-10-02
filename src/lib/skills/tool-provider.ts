@@ -8,11 +8,13 @@
  * one `SkillToolSession` per turn. `promptSection` is the short list of skills
  * on offer; `close()` drops the turn's sandbox mounts.
  *
- * `codeExecution(turn)` must say whether `run_code` is on this turn. The
- * provider cannot see the execution lane's grant, and the sentence the model is
- * given about a skill's scripts ("run them with run_code" or "they cannot run
- * here") has to be true. Mounting itself is harmless either way: a mount is
- * read only by a `run_code` call.
+ * The provider cannot see the execution lane's grant (the two are opened side
+ * by side), so unless `codeExecution(turn)` says, the sentence about a skill's
+ * scripts is conditional on the model's own tool list ("if run_code is among
+ * your tools…"), which is always true. Mounting is harmless either way: a mount
+ * is read only by a `run_code` call.
+ *
+ * Registered in `src/lib/tools/providers.ts` as `skillsToolProvider`.
  */
 
 import "server-only";
@@ -36,8 +38,11 @@ import {
 export const SKILL_TOOL_IDS: readonly string[] = Object.freeze([USE_SKILL_TOOL_ID, READ_SKILL_FILE_TOOL_ID]);
 
 export interface SkillsToolProviderOptions {
-  /** Whether `run_code` is on this turn. */
-  codeExecution(turn: ToolTurn): boolean | Promise<boolean>;
+  /**
+   * Whether `run_code` is on this turn, when the caller can say. Without it the
+   * model is told what to do in either case, conditional on its own tool list.
+   */
+  codeExecution?(turn: ToolTurn): boolean | "unknown" | Promise<boolean | "unknown">;
   /** Who is acting, for the audit log. Defaults to `web` (chat and voice), `cloud_runner` (work). */
   actorFor?(turn: ToolTurn): WorkActor;
   /** Design §9.3. Off by default: only skills opted in to automatic use are offered. */
@@ -70,7 +75,7 @@ async function hasSomethingToOffer(turn: ToolTurn, policy: SkillDiscoveryPolicy)
   return count > 0;
 }
 
-export function createSkillsToolProvider(options: SkillsToolProviderOptions): ToolProvider {
+export function createSkillsToolProvider(options: SkillsToolProviderOptions = {}): ToolProvider {
   const policy = options.policy ?? DEFAULT_SKILL_DISCOVERY_POLICY;
   return {
     id: "skills",
@@ -86,7 +91,7 @@ export function createSkillsToolProvider(options: SkillsToolProviderOptions): To
     },
     async open(turn, granted) {
       const wanted = new Set(granted);
-      const code = await options.codeExecution(turn);
+      const code = options.codeExecution ? await options.codeExecution(turn) : "unknown";
       const session = await openSkillToolSession({
         userId: turn.userId,
         surface: turn.surface,
@@ -117,3 +122,6 @@ export function createSkillsToolProvider(options: SkillsToolProviderOptions): To
     },
   };
 }
+
+/** The provider as the tool registry installs it. */
+export const skillsToolProvider: ToolProvider = createSkillsToolProvider();

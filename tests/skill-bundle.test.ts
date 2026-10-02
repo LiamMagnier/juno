@@ -484,6 +484,12 @@ test("loading returns the instructions, the files and how to run the script when
   const noCode = skillLoadResult({ row: row(), version: versionWithBundle({ requestedTools: ["Bash"] }), via: "automatic", code: false, skillFiles: true, wrapUntrusted: wrap });
   assert.match(noCode.text, /cannot run in this conversation/);
   assert.match(noCode.text, /expects to run code/);
+
+  // The skills provider is opened beside the execution one and cannot see its
+  // grant: the sentence is then conditional on the model's own tool list.
+  const unknown = skillLoadResult({ row: row(), version: versionWithBundle({ requestedTools: ["Bash"] }), via: "automatic", code: "unknown", skillFiles: true, wrapUntrusted: wrap });
+  assert.match(unknown.text, /If run_code is among your tools, its scripts are mounted read-only/);
+  assert.doesNotMatch(unknown.text, /expects to run code, and this conversation cannot/);
 });
 
 test("an imported skill's instructions arrive enveloped", () => {

@@ -361,7 +361,13 @@ const BUNDLE_FILES_NAMED = 40;
 export function skillBundleNote(input: {
   slug: string;
   manifest: Pick<SkillBundleManifest, "files"> | null | undefined;
-  code: boolean;
+  /**
+   * Whether `run_code` is on this turn. `"unknown"` when the caller cannot see
+   * the execution grant (the skill tools provider is opened separately from the
+   * execution one): the sentence is then conditional on the model's own tool
+   * list, which it can see, rather than a claim that might be false.
+   */
+  code: boolean | "unknown";
   skillFiles: boolean;
 }): string | null {
   const files = bundleCompanionFiles(input.manifest);
@@ -375,14 +381,18 @@ export function skillBundleNote(input: {
   const reading = input.skillFiles
     ? `Read any of them with read_skill_file (skill: "${input.slug}", path as listed).`
     : "You cannot open these files in this conversation.";
+  const mounted =
+    ` mounted read-only at /skills/${input.slug}/ in ${PRODUCT_NAME}'s sandbox: run them with run_code ` +
+    `(for example language "bash", code "python3 /skills/${input.slug}/<script> ..."), with the conversation's ` +
+    `files in /work/inputs and anything you write to /work returned as files. The sandbox has no internet and ` +
+    `no access to the person's computer, whatever the skill says it needs.`;
   const running = !scripts
     ? ""
-    : input.code
-      ? ` Its scripts are mounted read-only at /skills/${input.slug}/ in ${PRODUCT_NAME}'s sandbox: run them with run_code ` +
-        `(for example language "bash", code "python /skills/${input.slug}/<script> ..."), with the conversation's ` +
-        `files in /work/inputs and anything you write to /work returned as files. The sandbox has no internet and ` +
-        `no access to the person's computer, whatever the skill says it needs.`
-      : ` Its scripts cannot run in this conversation (no code execution here), so do those steps another way or say plainly that you could not.`;
+    : input.code === true
+      ? ` Its scripts are${mounted}`
+      : input.code === "unknown"
+        ? ` If run_code is among your tools, its scripts are${mounted} If it is not, its scripts cannot run here: do those steps another way or say plainly that you could not.`
+        : ` Its scripts cannot run in this conversation (no code execution here), so do those steps another way or say plainly that you could not.`;
   return `This skill keeps these files:\n${named}${more}\n${reading}${running}`;
 }
 

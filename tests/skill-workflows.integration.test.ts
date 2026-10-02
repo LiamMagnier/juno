@@ -183,7 +183,7 @@ if (!URL) {
     const skills = preview.body.skills as Array<Record<string, unknown>>;
     assert.equal(skills.length, 1);
     assert.equal(skills[0].securityStatus, "clear");
-    assert.deepEqual(skills[0].bundle && { files: (skills[0].bundle as { files: number }).files, scripts: (skills[0].bundle as { scripts: number }).scripts }, { files: 3, scripts: 1 });
+    assert.deepEqual(skills[0].bundle && { files: (skills[0].bundle as { files: number }).files, scripts: (skills[0].bundle as { scripts: number }).scripts }, { files: 2, scripts: 1 });
 
     const imported = await postPackage({ paths: JSON.stringify([skills[0].path]), digest: preview.body.digest as string });
     assert.equal(imported.status, 201, JSON.stringify(imported.body));

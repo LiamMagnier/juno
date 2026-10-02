@@ -53,8 +53,13 @@ export interface SkillToolSessionInput {
   projectId: string | null;
   /** The skill the person armed (`/slug`), or the one a Work run already applied. */
   armedSlug?: string | null;
-  /** `run_code` is on this turn, so bundles may be mounted. */
-  code: boolean;
+  /**
+   * Whether `run_code` is on this turn, when the caller knows (`"unknown"`
+   * when it does not; see `skillBundleNote`). A loaded skill's folder is
+   * mounted unless this is `false`: a mount is read only by a `run_code` call,
+   * so mounting on a turn without one costs nothing and claims nothing.
+   */
+  code: boolean | "unknown";
   /** `read_skill_file` is on this turn. */
   skillFiles: boolean;
   policy?: SkillDiscoveryPolicy;
@@ -177,7 +182,7 @@ export async function openSkillToolSession(input: SkillToolSessionInput): Promis
   const tars = new Map<string, Promise<Map<string, Uint8Array>>>();
 
   const mount = (row: SkillLibraryRow, version: SkillVersionForUse): boolean => {
-    if (!input.code || !version.bundle) return false;
+    if (input.code === false || !version.bundle) return false;
     addSkillMount(
       input.sessionId,
       skillMountFor({

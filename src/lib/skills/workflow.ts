@@ -140,7 +140,7 @@ export function skillToolDescription(rows: readonly Pick<SkillLibraryRow, "slug"
 export function skillsPromptSection(input: {
   rows: readonly Pick<SkillLibraryRow, "slug" | "description" | "name">[];
   armed?: { slug: string; manifest: Pick<SkillBundleManifest, "files"> | null | undefined } | null;
-  code: boolean;
+  code: boolean | "unknown";
   skillFiles: boolean;
 }): string | undefined {
   const parts: string[] = [];
@@ -239,7 +239,7 @@ export function skillLoadResult(input: {
   row: Pick<SkillLibraryRow, "slug" | "trust">;
   version: Pick<SkillVersionForUse, "version" | "instructions" | "requestedTools" | "bundle">;
   via: SkillSelectionVia;
-  code: boolean;
+  code: boolean | "unknown";
   skillFiles: boolean;
   wrapUntrusted: (label: string, content: string) => string;
 }): { text: string; untrusted: boolean } {
@@ -253,7 +253,7 @@ export function skillLoadResult(input: {
   });
   const wantsCode = input.version.requestedTools.some((tool) => canonicalSkillToolName(tool) === RUN_CODE_TOOL_ID);
   const codeNote =
-    wantsCode && !input.code
+    wantsCode && input.code === false
       ? "This skill expects to run code, and this conversation cannot run code. Do the steps you can, and say plainly which ones you could not carry out."
       : null;
   const bundleNote = skillBundleNote({
@@ -311,6 +311,7 @@ export function readSkillFilePage(input: {
   offset?: number;
   /** The file's bytes, from the verified bundle; null when the path is SKILL.md or an asset. */
   contents: Uint8Array | null;
+  /** Whether the skill's folder is mounted for this turn's runs. */
   code: boolean;
   wrapUntrusted: (label: string, content: string) => string;
 }): ReadSkillFileResult {
