@@ -639,7 +639,7 @@ function orbitArcs(a: number, chord: number): string[] {
   });
 }
 
-const ORBIT_ARCS = orbitArcs(9.375, 3.5);
+const ORBIT_ARCS = orbitArcs(ORBIT_A, 3.5);
 const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
 
 /**
