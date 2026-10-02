@@ -3340,6 +3340,17 @@ model WorkSkillVersion {
   permissionDigest String?
   requiresConsent  Boolean @default(false)
 
+  /// The skill's folder, kept (src/lib/skills/bundle.ts): scripts, references
+  /// and assets beside its SKILL.md, stored once as a content-addressed tar.
+  /// Null for a skill that is instructions only. `bundleDigest` is the tar's
+  /// sha256 and the name of the object; `bundleManifest` lists every file with
+  /// its size, sha256 and kind (instructions / reference / script / asset).
+  /// The scanner reads the scripts and an imported version with scripts waits
+  /// for consent, exactly as a widened permission surface does.
+  bundleKey      String?
+  bundleDigest   String?
+  bundleManifest Json?
+
   createdAt DateTime @default(now())
 
   skill WorkSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)

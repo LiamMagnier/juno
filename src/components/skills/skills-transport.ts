@@ -239,6 +239,28 @@ export interface SkillImportCandidate extends GithubSkillPreview {
   slugTaken: boolean;
   suggestedSlug: string | null;
   securityStatus: string | null;
+  /**
+   * What an import keeps of the skill's folder beside its SKILL.md (counts),
+   * or why the folder would be refused. Null when there is nothing beside it,
+   * or from a server that does not say.
+   */
+  bundle: SkillImportBundle | null;
+}
+
+export type SkillImportBundle =
+  | { kind: "kept"; files: number; scripts: number }
+  | { kind: "refused"; reason: string; message: string };
+
+function importBundle(raw: unknown): SkillImportBundle | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.refused === "string") {
+    return { kind: "refused", reason: value.refused, message: typeof value.message === "string" ? value.message : "" };
+  }
+  if (typeof value.files === "number" && typeof value.scripts === "number" && value.files > 0) {
+    return { kind: "kept", files: value.files, scripts: value.scripts };
+  }
+  return null;
 }
 
 /**
@@ -300,6 +322,7 @@ function candidates(raw: unknown): SkillImportCandidate[] {
         slugTaken: entry.slugTaken === true,
         suggestedSlug: typeof entry.suggestedSlug === "string" ? entry.suggestedSlug : null,
         securityStatus: typeof entry.securityStatus === "string" ? entry.securityStatus : null,
+        bundle: importBundle(entry.bundle),
       },
     ];
   });
@@ -441,6 +464,27 @@ export function importSkillPackage(
 }
 
 /** Where a skill downloads as a portable file. */
+/** One file of a version's kept folder, as the skill's page reviews it. */
+export interface SkillBundleFileView {
+  path: string;
+  kind: "instructions" | "reference" | "script" | "asset";
+  mime: string;
+  size: number;
+  sha256: string;
+  /** Null for an asset, which is described rather than shown. */
+  text: string | null;
+  truncated: boolean;
+}
+
+export function fetchSkillBundleFile(id: string, version: number, path: string): Promise<WorkResult<SkillBundleFileView>> {
+  return request(
+    "GET",
+    `/api/work/skills/${encodeURIComponent(id)}/versions/${version}/files?path=${encodeURIComponent(path)}`,
+    undefined,
+    (data) => data.file as SkillBundleFileView
+  );
+}
+
 export function skillExportHref(id: string, format: "md" | "zip" = "md"): string {
   return `/api/work/skills/${encodeURIComponent(id)}/export${format === "zip" ? "?format=zip" : ""}`;
 }

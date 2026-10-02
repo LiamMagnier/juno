@@ -12,7 +12,11 @@
  *   - new upstream instructions withdraw trust the reader had given the old
  *     ones (and automatic selection with it), because nobody has read them;
  *   - what the reader added in Juno (the files a skill brings, a preferred
- *     model) is kept, and provenance records the new commit.
+ *     model) is kept, and provenance records the new commit;
+ *   - the skill's folder is fetched again at the new commit and becomes the
+ *     new version's bundle, scanned, and waiting for consent when it carries a
+ *     script nobody here has vouched for. New upstream FILES withdraw trust the
+ *     same way new instructions do: a script nobody read is not vouched for.
  *
  * Paths in `install` are new upstream skills, installed into this source the
  * way an import would, under a free slash name when their own is taken.
@@ -26,12 +30,21 @@ import { recordWorkAudit } from "@/lib/work/audit";
 import {
   createSkillWithFirstVersion,
   findUserSource,
+  githubTokenFor,
   mintSkillVersion,
   pathsInstalledElsewhere,
   readInstalledSourceSkills,
   takenSkillSlugs,
 } from "@/lib/skills/store";
-import { MAX_DISCOVERED_SKILLS } from "@/lib/skills/github";
+import {
+  BUNDLE_BUDGET_MESSAGE,
+  MAX_DISCOVERED_SKILLS,
+  bundlePreflight,
+  createBundleFetchBudget,
+  fetchGithubSkillBundle,
+  GITHUB_IMPORT_REFUSAL_MESSAGES,
+} from "@/lib/skills/github";
+import { skillBundleRefusalMessage } from "@/lib/skills/bundle";
 import {
   diffSourceSkills,
   githubSkillContract,
@@ -41,7 +54,9 @@ import {
   sourceCommitsAfter,
   suggestSkillSlug,
   trustAfterUpstreamChange,
+  upstreamBundleChanged,
   upstreamChanged,
+  upstreamFilesChanged,
 } from "@/lib/skills/sources";
 import { titleFromSkillName } from "@/lib/skills/skill-md";
 import { SKILL_CONTRACT_VERSION, normalizeSkillSlug } from "@/lib/work/skills";
@@ -80,7 +95,10 @@ type SkipReason =
   | "up_to_date"
   | "invalid_slug"
   | "slug_taken"
-  | "version_conflict";
+  | "version_conflict"
+  | "bundle_refused"
+  | "fetch_failed"
+  | "fetch_budget";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -124,7 +142,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const updated: LibrarySkill[] = [];
   const installedNow: LibrarySkill[] = [];
-  const skipped: { path: string; reason: SkipReason }[] = [];
+  const skipped: { path: string; reason: SkipReason; message?: string }[] = [];
+  const token = await githubTokenFor(user.id);
+  const budget = createBundleFetchBudget();
+  const fetchBundle = async (candidate: Parameters<typeof fetchGithubSkillBundle>[2]) =>
+    !bundlePreflight(candidate) && !budget.admit(candidate)
+      ? ({ ok: false, budget: true } as const)
+      : fetchGithubSkillBundle({ fetch, token }, discovery, candidate);
+  const fetchSkip = (fetched: Exclude<Awaited<ReturnType<typeof fetchBundle>>, { ok: true }>): { reason: SkipReason; message: string } =>
+    "budget" in fetched
+      ? { reason: "fetch_budget", message: BUNDLE_BUDGET_MESSAGE }
+      : "problem" in fetched
+        ? { reason: "bundle_refused", message: skillBundleRefusalMessage(fetched.problem) }
+        : { reason: "fetch_failed", message: GITHUB_IMPORT_REFUSAL_MESSAGES[fetched.reason] };
 
   for (const path of update) {
     const skill = byPath.get(path);
@@ -143,6 +173,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       continue;
     }
 
+    const fetched = await fetchBundle(candidate);
+    if (!fetched.ok) {
+      skipped.push({ path, ...fetchSkip(fetched) });
+      continue;
+    }
     const next = githubSkillContract(candidate, skill.contract);
     const minted = await mintSkillVersion({
       userId: user.id,
@@ -158,8 +193,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // travels with the instructions. The name and slash name stay: they are
         // what the reader recognises and types.
         description: candidate.skill.description,
-        trust: trustAfterUpstreamChange(row.trust, candidate.skill.instructions !== skill.instructions),
+        trust: trustAfterUpstreamChange(
+          row.trust,
+          candidate.skill.instructions !== skill.instructions ||
+            upstreamFilesChanged(skill, candidate) ||
+            upstreamBundleChanged(skill, fetched.bundle)
+        ),
       },
+      // Upstream's folder at this commit, or none when it holds nothing but the SKILL.md.
+      bundle: fetched.bundle,
     });
     if (!minted.ok) {
       skipped.push({ path, reason: "version_conflict" });
@@ -192,6 +234,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       skipped.push({ path, reason: "slug_taken" });
       continue;
     }
+    const fetchedNew = await fetchBundle(candidate);
+    if (!fetchedNew.ok) {
+      skipped.push({ path, ...fetchSkip(fetchedNew) });
+      continue;
+    }
     const { contract, requestedTools } = githubSkillContract(candidate);
     const created = await createSkillWithFirstVersion({
       userId: user.id,
@@ -206,6 +253,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       autoSelect: false,
       sourceId: source.id,
       sourcePath: path,
+      bundle: fetchedNew.bundle,
     });
     if (!created.ok) {
       skipped.push({ path, reason: "slug_taken" });

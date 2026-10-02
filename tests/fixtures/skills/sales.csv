@@ -1,0 +1,17 @@
+region,quarter,revenue
+North,Q1,1200.50
+North,Q2,1340.00
+North,Q3,1100.25
+North,Q4,1500.00
+South,Q1,800.00
+South,Q2,950.75
+South,Q3,1020.00
+South,Q4,990.00
+West,Q1,2100.00
+West,Q2,1980.40
+West,Q3,2250.10
+West,Q4,2400.00
+East,Q1,600.00
+East,Q2,700.00
+East,Q3,650.50
+East,Q4,720.00
