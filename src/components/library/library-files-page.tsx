@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { LibraryNav } from "./library-nav";
 import { toast } from "sonner";
 import { ArrowLeft, Search, Upload } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -224,8 +223,9 @@ export default function LibraryPage() {
     // however far down the list the reader is.
     <div className="relative h-full" {...handlers}>
       <AppPage measure="wide">
-        <LibraryNav current="files" />
         <AppPageHeader
+          backHref="/library"
+          backLabel="Library"
           // Recently deleted is a MODE, not a filter, so it has to be legible
           // in the heading.
           heading={deletedView ? "Recently deleted" : "Uploaded files"}

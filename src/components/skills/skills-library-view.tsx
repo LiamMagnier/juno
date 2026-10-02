@@ -1,6 +1,6 @@
 "use client";
 
-import { CustomizeNav } from "@/components/customize/customize-nav";
+import { CustomizeFrame } from "@/components/customize/customize-nav";
 import * as React from "react";
 import { Search } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
@@ -10,7 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GitHubMark } from "@/components/connections/connector-logos";
-import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { AppPageHeader } from "@/components/app/app-page";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { staggerDelay } from "@/lib/motion";
@@ -168,8 +168,7 @@ export function SkillsLibraryView({
   const hasAny = library !== null && (library.yours.length > 0 || library.sources.length > 0);
 
   return (
-    <AppPage measure="reading">
-      <CustomizeNav current="skills" />
+    <CustomizeFrame current="skills">
       <AppPageHeader
         heading="Skills"
         lede={`Instructions ${PRODUCT_NAME} follows for a specific job. Type / in chat to use one.`}
@@ -298,7 +297,7 @@ export function SkillsLibraryView({
           ) : null}
         </>
       )}
-    </AppPage>
+    </CustomizeFrame>
   );
 }
 

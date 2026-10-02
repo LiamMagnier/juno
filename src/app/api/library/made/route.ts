@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { artifactInProjectWhere, artifactProjectId } from "@/lib/artifact-access";
@@ -16,6 +17,8 @@ export const runtime = "nodejs";
 const MAX_QUERY_LENGTH = 200;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+/** How much of an artifact's source rides along for its miniature (as /api/artifacts). */
+const PREVIEW_CHARS = 900;
 
 /**
  * GET /api/library/made — everything Juno made for the person, in one list
@@ -67,7 +70,7 @@ export async function GET(req: Request) {
             projectId: true,
             createdAt: true,
             updatedAt: true,
-            conversation: { select: { projectId: true } },
+            conversation: { select: { projectId: true, agentId: true } },
           },
         }),
     kind === "artifact"
@@ -90,7 +93,7 @@ export async function GET(req: Request) {
             validatedAt: true,
             createdAt: true,
             updatedAt: true,
-            session: { select: { projectId: true, conversationId: true } },
+            session: { select: { projectId: true, conversationId: true, agentId: true } },
           },
         }),
   ]);
@@ -122,7 +125,42 @@ export async function GET(req: Request) {
     validated: d.validatedAt !== null,
   }));
 
-  return NextResponse.json(mergeLibraryPages([artifactItems, deliverableItems], limit), {
+  // Who made each item, when an agent did: one owner-scoped read for the page.
+  const agentOf = new Map<string, string>();
+  artifacts.forEach((a) => { if (a.conversation?.agentId) agentOf.set(`artifact:${a.id}`, a.conversation.agentId); });
+  deliverables.forEach((d) => { if (d.session.agentId) agentOf.set(`deliverable:${d.id}`, d.session.agentId); });
+  const agentIds = [...new Set(agentOf.values())];
+  if (agentIds.length > 0) {
+    const agents = await prisma.agent.findMany({
+      where: { userId: user.id, id: { in: agentIds }, deletedAt: null },
+      select: { id: true, name: true, avatar: true },
+    });
+    const byId = new Map(agents.map((agent) => [agent.id, agent]));
+    for (const item of [...artifactItems, ...deliverableItems]) {
+      const agent = byId.get(agentOf.get(`${item.kind}:${item.id}`) ?? "");
+      if (agent) item.agent = { id: agent.id, name: agent.name, avatar: agent.avatar };
+    }
+  }
+
+  // The opening of each artifact's newest version, for its miniature: cut in
+  // Postgres (an artifact's content is unbounded), and never for a design,
+  // whose tile draws its poster. The ids are this owner's, read above.
+  const page = mergeLibraryPages([artifactItems, deliverableItems], limit);
+  const previewed = page.items.filter((item) => item.kind === "artifact" && item.type !== "DESIGN").map((item) => item.id);
+  if (previewed.length > 0) {
+    const rows = await prisma.$queryRaw<{ artifactId: string; preview: string | null }[]>`
+      SELECT DISTINCT ON (v."artifactId")
+             v."artifactId" AS "artifactId",
+             left(v."content", ${PREVIEW_CHARS}::int) AS "preview"
+      FROM "ArtifactVersion" v
+      WHERE v."artifactId" IN (${Prisma.join(previewed)})
+      ORDER BY v."artifactId", v."version" DESC
+    `;
+    const previews = new Map(rows.map((row) => [row.artifactId, row.preview]));
+    for (const item of page.items) if (previews.get(item.id)) item.preview = previews.get(item.id);
+  }
+
+  return NextResponse.json(page, {
     headers: { "Cache-Control": "no-store" },
   });
 }

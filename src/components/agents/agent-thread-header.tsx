@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Hand, Monitor, MoreHorizontal, PanelRight } from "@/components/ui/icons";
+import { Monitor, MoreHorizontal, Pause, Play, Shapes, User } from "@/components/ui/icons";
 import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { localStateSentence } from "@/components/agents/agent-bits";
@@ -34,6 +34,7 @@ import {
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
+import { BRAND } from "@/lib/brand/names";
 
 export { threadAgentState } from "@/components/agents/thread-agent-state";
 
@@ -134,14 +135,6 @@ export function AgentThreadHeader({
       className="agent-thread-bar relative isolate flex shrink-0 justify-center px-4 py-2.5"
       style={{ "--bar-tone": `var(--agent-${agent.avatar.tone})` } as React.CSSProperties}
     >
-      {/* The thread carries the agent's colour: a faint wash of its tone behind the header. */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background: `radial-gradient(70% 140% at 50% -40%, hsl(var(--agent-${agent.avatar.tone}) / 0.13), transparent 70%)`,
-        }}
-      />
       <div className="flex w-full max-w-3xl items-center gap-3">
         <button
           ref={faceRef}
@@ -154,11 +147,10 @@ export function AgentThreadHeader({
         >
           <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-ui font-medium text-foreground">{agent.name}</span>
+            <span className="block truncate font-serif text-body-lg leading-6 text-foreground">{agent.name}</span>
             {attention ? (
-              <span className="flex items-center gap-1 text-caption font-medium text-primary">
-                <Hand className="size-3 shrink-0" aria-hidden="true" />
-                <span className="truncate">{sentence}</span>
+              <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite">
+                {sentence}
               </span>
             ) : (
               <AgentStatusLine text={sentence} state={state} className="text-caption text-muted-foreground" />
@@ -185,22 +177,27 @@ export function AgentThreadHeader({
               <TooltipContent>Computer</TooltipContent>
             </Tooltip>
           ) : null}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Profile"
-                aria-pressed={profileOpen}
-                onClick={() => onTogglePanel?.("profile")}
-                className={cn("text-muted-foreground hover:text-foreground", profileOpen && "bg-selected text-foreground")}
-              >
-                <PanelRight className="size-4" aria-hidden="true" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Profile</TooltipContent>
-          </Tooltip>
+          {/* Named actions where there is room (design: About, Appearance, Pause), icons on a phone. */}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-pressed={profileOpen}
+            onClick={() => onTogglePanel?.("profile")}
+            className={cn("gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground", profileOpen && "bg-selected text-foreground")}
+          >
+            <User className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{`About ${agent.name}`}</span>
+            <span className="sr-only sm:hidden">{`About ${agent.name}`}</span>
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setStudio(true)} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground md:inline-flex">
+            <Shapes className="size-4" aria-hidden="true" />
+            Appearance
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground md:inline-flex">
+            {agent.status === "paused" ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
+            {agent.status === "paused" ? "Resume" : "Pause"}
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -215,8 +212,8 @@ export function AgentThreadHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuItem onSelect={() => setStudio(true)}>Customize</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void handlePauseResume()}>
+              <DropdownMenuItem className="md:hidden" onSelect={() => setStudio(true)}>Appearance</DropdownMenuItem>
+              <DropdownMenuItem className="md:hidden" onSelect={() => void handlePauseResume()}>
                 {agent.status === "paused" ? "Resume" : "Pause"}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -246,7 +243,7 @@ export function AgentThreadHeader({
           <DialogHeader>
             <DialogTitle>Retire {agent.name}?</DialogTitle>
             <DialogDescription>
-              Its routines and tasks stop and it leaves your team. This conversation stays in your history.
+              {`Its routines and tasks stop and it leaves ${BRAND.orbit.label}. This conversation stays in your history.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -288,7 +285,7 @@ export function AgentGreeting({
         <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} spread={0.6} name={agent.name} gaze />
       </span>
       <h1 className="mt-8 text-balance font-serif text-display font-normal text-foreground">
-        Hi, I’m <span className="italic">{agent.name}</span>.
+        {`Hi, I’m ${agent.name}.`}
       </h1>
       <p className="mt-3 max-w-md text-body-lg text-muted-foreground">
         {paused

@@ -746,26 +746,12 @@ function DeviceList({
                   meta={
                     <>
                       <span className="truncate font-mono">{w.path}</span>
-                      {/* The one fact the timestamp cannot carry, in words as
-                          well as in the dot — the dot is decoration to a
-                          screen reader. */}
-                      {devices && !online && <span className="shrink-0">· Mac offline</span>}
+                      {/* The one fact the timestamp cannot carry, in words (no status dots). */}
+                      {devices && !online && <span className="shrink-0">, Mac offline</span>}
                     </>
                   }
                   trailing={
                     <span className="flex shrink-0 items-center gap-1.5">
-                      {devices && (
-                        // Full strength, and `bg-warning` for offline — the same
-                        // two colours the session banner's presence chip uses,
-                        // because it is the same fact one screen later. At /50
-                        // this dot composited to ~2.8:1 on the true-black
-                        // ground, under the 3:1 non-text minimum, on the one
-                        // mark that says whether this project can run anything.
-                        <span
-                          className={cn("size-1.5 rounded-full", online ? "bg-success" : "bg-warning")}
-                          aria-hidden="true"
-                        />
-                      )}
                       <span className="font-mono text-caption tabular-nums text-muted-foreground">
                         {timeAgo(w.lastOpenedAt)}
                       </span>

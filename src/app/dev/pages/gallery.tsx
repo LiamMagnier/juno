@@ -10,6 +10,8 @@ import ArtifactsPage from "@/app/(app)/artifacts/page";
 import ConnectionsPage from "@/app/(app)/connections/page";
 import AutomationsPage from "@/app/(app)/automations/page";
 import SettingsPage from "@/app/(app)/settings/page";
+import InstructionsPage from "@/app/(app)/customize/instructions/page";
+import { CodeLanding } from "@/components/code/code-landing";
 import { AgentsHome } from "@/components/agents/agents-home";
 import { CompareView } from "@/components/compare/compare-view";
 import { AppPage } from "@/components/app/app-page";
@@ -113,13 +115,24 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
   }
   if (path === "/api/library/made") {
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
-    const items = ARTIFACTS.map((item) => ({ kind: "artifact", id: item.id, title: item.title, type: item.type, version: item.version, href: `/a/${item.id}`, conversationId: item.conversationId, projectId: null, createdAt: item.createdAt, updatedAt: item.updatedAt }));
+    // An agent made two of them (its thread), and two are a task's files, so
+    // the byline, the deck and the unvalidated-file line can all be seen.
+    const madeBy = (id: string) => {
+      const owner = AGENTS.find((agent) => agent.id === id);
+      return owner ? { id: owner.id, name: owner.name, avatar: owner.avatar } : undefined;
+    };
+    const items = [
+      ...ARTIFACTS.map((item, index) => ({ kind: "artifact", id: item.id, title: item.title, type: item.type, version: item.version, href: `/a/${item.id}`, conversationId: item.conversationId, projectId: null, createdAt: item.createdAt, updatedAt: item.updatedAt, preview: item.preview ?? null, agent: index === 2 ? madeBy("ag-3") : index === 0 ? madeBy("ag-2") : undefined })),
+      { kind: "deliverable", id: "d-1", title: "October board update", type: "PRESENTATION", version: 2, href: "/api/work/artifacts/d-1/download", conversationId: "c-3", projectId: null, createdAt: ARTIFACTS[1].createdAt, updatedAt: ARTIFACTS[1].updatedAt, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", validated: true, agent: madeBy("ag-2") },
+      { kind: "deliverable", id: "d-2", title: "Q3 forecast against Stripe revenue", type: "SPREADSHEET", version: 1, href: "/api/work/artifacts/d-2/download", conversationId: "c-1", projectId: null, createdAt: ARTIFACTS[3].createdAt, updatedAt: ARTIFACTS[3].updatedAt, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", validated: false },
+    ];
     return own({ items: items.filter((item) => item.title.toLowerCase().includes(q)), nextCursor: null }, { items: [], nextCursor: null });
   }
   if (path === "/api/approvals/grants") return own({ grants: [] }, { grants: [] });
   if (path === "/api/settings") return json({ settings: { ...bootstrap().settings, actionApprovalPolicy: "ask_for_any_change", blockedConnectors: [], lockdownMode: false } });
   if (/^\/api\/attachments\/[^/]+\/preview$/.test(path)) return json({ text: "Development fixture.\nThis document preview uses sample content for visual review.", thumbnailUrl: null });
   if (path === "/api/artifacts") {
+    if (url.searchParams.get("deleted") === "1") return json({ items: [{ id: "a-9", title: "Old pricing draft", deletedAt: ARTIFACTS[0].updatedAt, purgeAt: new Date(Date.now() + 20 * 86_400_000).toISOString() }] });
     if (url.searchParams.get("projectId")) return json({ items: ARTIFACTS.slice(0, 2) });
     return own({ items: ARTIFACTS }, { items: [] });
   }
@@ -218,6 +231,10 @@ function Page({ page }: { page: PageName }) {
       );
     case "skills":
       return <SkillsLibraryPage />;
+    case "instructions":
+      return <InstructionsPage />;
+    case "code":
+      return <CodeLanding prefill={{ prompt: "", repo: null, baseRef: null, notes: [] }} />;
     case "notifications":
     case "search":
       return <ProjectsPage />;

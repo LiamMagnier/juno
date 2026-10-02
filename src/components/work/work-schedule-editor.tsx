@@ -538,7 +538,9 @@ export function WorkScheduleEditor({
             onChange={(runKind) => set("runKind", runKind)}
             options={[
               { value: "work", label: "A task" },
-              { value: "code", label: "Code" },
+              // "A Code session", not "Code": Code names the product, and a
+              // one-word "Code" beside "A task" read as a mode of the task.
+              { value: "code", label: "A Code session" },
             ]}
             ariaLabel="What this routine runs"
             optionClassName="px-3 py-1 text-ui"

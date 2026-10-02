@@ -46,3 +46,12 @@ export interface UserMcpServerStatus {
   createdAt: string;
   updatedAt: string;
 }
+
+/** When Alevr last used one app, as /api/connectors/usage reports it. */
+export interface ConnectorUsage {
+  at: string;
+  toolName: string;
+  access: string;
+  conversationId: string | null;
+  conversationTitle: string | null;
+}
