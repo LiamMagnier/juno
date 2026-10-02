@@ -94,6 +94,12 @@ export async function* streamChat(opts: {
    * the runtime broker like the registry tools. Ignored without `audit`.
    */
   toolSpecs?: readonly ToolSpec[];
+  /**
+   * A tool loop the caller built and owns (the tool round-trip probe, which
+   * offers its own pure test function). Used as-is: no registry, connector or
+   * native toolset is opened, and streamChat does not close it.
+   */
+  toolLoop?: ToolLoop;
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
@@ -126,7 +132,7 @@ export async function* streamChat(opts: {
 
   // Open the Unified Agent Toolset (registry tools, provider specs, connectors)
   let toolset: ChatToolset | undefined;
-  if (opts.audit) {
+  if (opts.audit && !opts.toolLoop) {
     try {
       const agentContext: AgentExecutionContext = {
         userId: opts.audit.userId,
@@ -155,7 +161,8 @@ export async function* streamChat(opts: {
    * the same way whichever provider made it (src/lib/tools/dispatch.ts), and
    * the call ids it issues are stable across a replayed round.
    */
-  const tools: ToolLoop | undefined = toolset && toolset.tools.length > 0 ? createToolLoop(toolset) : undefined;
+  const tools: ToolLoop | undefined =
+    opts.toolLoop ?? (toolset && toolset.tools.length > 0 ? createToolLoop(toolset) : undefined);
   try {
     const adapter = providerAdapterFor(model, proMode);
     // Every provider call in the product funnels through the switch below, so
