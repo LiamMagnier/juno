@@ -197,12 +197,11 @@ elif mode == "lineup":
             cc, _ = FB.build_meshes(m)
             ez = m.get("eyes", {}).get("z", cc.face["z"])
             z = float(os.environ["EYEUP"]) - ez + m.get("lift", 0.0)
-        layered = os.environ.get("LAYERED") == "1"
-        root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ and not layered, view=cam_dir(0, 0))
-        lean = m.get("lean", 0.0)
-        if lean:
-            root.rotation_euler[1] = math.radians(lean)
-        objs += ob
+        layered = os.environ.get("LAYERED") in ("1", "2")
+        iso = os.environ.get("LAYERED") == "2"
+        if not iso:
+            root, ob, c = FB.place(m, loc=(x, y, z), yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ and not layered, view=cam_dir(0, 0))
+            objs += ob
         placed.append((i, y, (x, y, z), yaw, m))
     span = right - left
     if os.environ.get("PPU"):
@@ -216,7 +215,7 @@ elif mode == "lineup":
     crop = 0.0 if os.environ.get("EYEUP") else float(os.environ.get("CROP", 0.08))
     zc = crop + vis_h / 2
     B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)
-    if os.environ.get("LAYERED") != "1":
+    if not layered:
         render(sc, os.path.join(out_dir, f"lineup_{sheet}.png"))
     else:
         # One character's flock per render (memory), the others present as bare
@@ -225,7 +224,18 @@ elif mode == "lineup":
         import numpy as np
 
         layers = []
+        # LAYERED=2: each character alone in a fresh scene (same camera and lights):
+        # the least memory, at the cost of the faint shadows they cast on each other.
         for k, (i, y, loc, yaw, m) in enumerate(placed):
+            path = os.path.join(out_dir, f".layer_{sheet}_{k}.png")
+            if iso:
+                sc = scene(W, H, floor=False, spread=float(os.environ.get("LSPREAD", 2.4)))
+                FB.place(m, loc=loc, yaw=yaw, quality=Q, seed=i * 7 + 1, fuzz_on=FUZZ, view=cam_dir(0, 0))
+                B.camera(sc, target=(0, 0, zc), dist=30, lens=85, elev=0, yaw=0, ortho=vis_w)
+                print(f"PHASE layer {k} {m['id']} {time.time() - T0:.0f}s", flush=True)
+                render(sc, path)
+                layers.append((y, path))
+                continue
             for ob in list(bpy.data.objects):
                 if ob.name.startswith(m["id"] + "_") and ob.type == "MESH":
                     bpy.data.objects.remove(ob, do_unlink=True)
@@ -233,7 +243,6 @@ elif mode == "lineup":
             for ob in bpy.data.objects:
                 if ob.type == "MESH" and ob.name != "floor":
                     ob.visible_camera = ob in ob_k
-            path = os.path.join(out_dir, f".layer_{sheet}_{k}.png")
             print(f"PHASE layer {k} {m['id']} {time.time() - T0:.0f}s", flush=True)
             render(sc, path)
             layers.append((y, path))
