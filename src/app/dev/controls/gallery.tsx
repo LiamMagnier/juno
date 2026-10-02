@@ -169,9 +169,9 @@ function LivePlusMenu() {
 
   const sections: PlusMenuSection[] = [
     [
-      { kind: "action", id: "files", label: "Add files or photos", icon: ComposerIcons.attach, detail: "⌘U", onSelect: noop },
+      { kind: "action", id: "files", label: "Add photos and files", icon: ComposerIcons.attach, detail: "⌘U", onSelect: noop },
       { kind: "action", id: "screenshot", label: "Take a screenshot", icon: Scan, onSelect: noop },
-      { kind: "action", id: "library", label: "Add from library", icon: AppIcons.library, onSelect: noop },
+      { kind: "action", id: "library", label: "Add from Library", icon: AppIcons.library, onSelect: noop },
     ],
     [
       {
@@ -850,9 +850,9 @@ export function ControlsGallery() {
                 getDisplayMedia, the library row — then where the chat sits,
                 then what is armed for the message. */}
             <StaticMenu title="Composer + menu" width={MENU_W_WIDE}>
-              <MenuRow icon={ComposerIcons.attach} detail="⌘U">Add files or photos</MenuRow>
+              <MenuRow icon={ComposerIcons.attach} detail="⌘U">Add photos and files</MenuRow>
               <MenuRow icon={Scan}>Take a screenshot</MenuRow>
-              <MenuRow icon={AppIcons.library}>Add from library</MenuRow>
+              <MenuRow icon={AppIcons.library}>Add from Library</MenuRow>
               <MenuHairline />
               <MenuRow icon={AppIcons.projects} chevron>Add to project</MenuRow>
               <MenuRow icon={Plug} detail="2" chevron>Connectors</MenuRow>

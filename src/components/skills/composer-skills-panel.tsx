@@ -33,7 +33,7 @@ function bySource(skills: ChatSkill[]): { key: string; label: string; yours: boo
 }
 
 /**
- * The composer's "Use a skill" flyout.
+ * The composer's "Run a skill" flyout.
  *
  * GROUPED WHILE BROWSING, FLAT WHILE SEARCHING. With nothing typed, the skills
  * sit under their source (yours first, then each repository), the way the

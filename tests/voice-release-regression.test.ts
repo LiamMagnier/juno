@@ -111,7 +111,7 @@ test("web Voice keeps Files independent from vision and never puts bytes on the 
   // ...nor before the composer will even hold one: the voice sheet offers the
   // same attach row as chat, and only photos narrow with the provider.
   assert.match(chatComposer, /voiceActive && !voiceCanSeeImages/);
-  assert.match(chatComposer, /voiceCanSeeImages \? "Add files or photos" : "Add files"/);
+  assert.match(chatComposer, /voiceCanSeeImages \? "Add photos and files" : "Add files"/);
   assert.doesNotMatch(chatComposer, /Voice mode accepts image attachments only/);
   assert.doesNotMatch(chatComposer, /Voice mode accepts images from your library only/);
   // One per-turn cap, shared with the route and the relay rather than retyped.

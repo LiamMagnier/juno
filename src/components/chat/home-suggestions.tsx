@@ -5,6 +5,7 @@ import { AppIcons } from "@/lib/app-icons";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import type { ContextToken } from "@/lib/chat/context-tokens";
 import { mentionToToken, type MentionItem, type MentionSearchResult } from "@/lib/mentions/types";
+import { homeSuggestions, type HomeSuggestion } from "@/lib/chat/home-suggestions";
 
 /*
  * THE HOME'S SUGGESTIONS: at most three, derived from the person's own state,
@@ -24,42 +25,6 @@ import { mentionToToken, type MentionItem, type MentionSearchResult } from "@/li
  * uses (owner-scoped, rate-limited); a failure or a signed-out preview shows
  * nothing, because suggestions are never required.
  */
-
-export type HomeSuggestion =
-  | { kind: "app"; key: string; label: string; item: MentionItem }
-  | { kind: "project"; key: string; label: string; item: MentionItem };
-
-const APP_FRESH_MS = 3 * 24 * 60 * 60 * 1000;
-const MAX_SUGGESTIONS = 3;
-
-/** The suggestions a lookup's rows support, newest first, at most three. Pure, so the rule is tested. */
-export function homeSuggestions(items: readonly MentionItem[], now = Date.now()): HomeSuggestion[] {
-  const today = new Date(now);
-  const sameDay = (iso?: string) => {
-    if (!iso) return false;
-    const at = new Date(iso);
-    return at.getFullYear() === today.getFullYear() && at.getMonth() === today.getMonth() && at.getDate() === today.getDate();
-  };
-  const at = (iso?: string) => (iso ? new Date(iso).getTime() : 0);
-  const out: Array<HomeSuggestion & { at: number }> = [];
-  for (const item of items) {
-    if (item.kind === "app" && item.connected !== false && !item.needsConnection) {
-      const when = at(item.updatedAt);
-      if (when && now - when <= APP_FRESH_MS && when <= now + 60_000) {
-        out.push({ kind: "app", key: `app:${item.id}`, label: `Use ${item.label}`, item, at: when });
-      }
-    } else if (item.kind === "project" && sameDay(item.updatedAt)) {
-      out.push({ kind: "project", key: `project:${item.id}`, label: `Continue in ${item.label}`, item, at: at(item.updatedAt) });
-    }
-  }
-  return out
-    .sort((a, b) => b.at - a.at)
-    .slice(0, MAX_SUGGESTIONS)
-    .map(({ at: _at, ...rest }) => {
-      void _at;
-      return rest;
-    });
-}
 
 let cached: { at: number; items: MentionItem[] } | null = null;
 const CACHE_MS = 5 * 60_000;

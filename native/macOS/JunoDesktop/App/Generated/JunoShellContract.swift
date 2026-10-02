@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "487cff41d3a79556c432dddd183094e153ec47e29c7c86765e85b98caf2cacc0"
+    static let digest = "098514d9fe1036cdecf06f04701bcc87c5fadb7d82213a7496a2ceaf0cd3d872"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -325,6 +325,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     case voiceFiles = "voice-files"
     case screenshot
     case library
+    case mention
     case project
     case connectors
     case skill
@@ -342,13 +343,14 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     /// The web's words.
     var label: String {
         switch self {
-        case .files: "Add files or photos"
+        case .files: "Add photos and files"
         case .voiceFiles: "Add files"
         case .screenshot: "Take a screenshot"
-        case .library: "Add from library"
+        case .library: "Add from Library"
+        case .mention: "Mention a file, app or agent"
         case .project: "Add to project"
         case .connectors: "Apps"
-        case .skill: "Use a skill"
+        case .skill: "Run a skill"
         case .research: "Deep Field"
         case .search: "Web search"
         case .memory: "Memory"
@@ -358,13 +360,14 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     /// The words in Title Case, for a menu.
     var title: String {
         switch self {
-        case .files: "Add Files or Photos"
+        case .files: "Add Photos and Files"
         case .voiceFiles: "Add Files"
         case .screenshot: "Take a Screenshot"
         case .library: "Add from Library"
+        case .mention: "Mention a File, App or Agent"
         case .project: "Add to Project"
         case .connectors: "Apps"
-        case .skill: "Use a Skill"
+        case .skill: "Run a Skill"
         case .research: "Deep Field"
         case .search: "Web Search"
         case .memory: "Memory"
@@ -377,6 +380,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .voiceFiles: .action
         case .screenshot: .action
         case .library: .action
+        case .mention: .action
         case .project: .submenu
         case .connectors: .submenu
         case .skill: .submenu
@@ -392,6 +396,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .voiceFiles: .attach
         case .screenshot: .scan
         case .library: .library
+        case .mention: .textCursor
         case .project: .projects
         case .connectors: .connections
         case .skill: .skills
@@ -408,6 +413,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .voiceFiles: false
         case .screenshot: true
         case .library: false
+        case .mention: true
         case .project: true
         case .connectors: true
         case .skill: true
@@ -424,6 +430,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .voiceFiles: .files
         case .screenshot: nil
         case .library: nil
+        case .mention: nil
         case .project: nil
         case .connectors: nil
         case .skill: nil
@@ -442,8 +449,9 @@ enum JunoShellPlusMenu {
     /// The chat composer's groups, in order.
     static let chat: [[JunoShellPlusRow]] = [
         [.files, .screenshot, .library],
+        [.mention, .skill],
+        [.research, .search, .memory],
         [.project, .connectors],
-        [.skill, .research, .search, .memory],
     ]
 
     /// The voice composer's groups, in order.

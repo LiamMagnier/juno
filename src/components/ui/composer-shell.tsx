@@ -150,6 +150,15 @@ export const COMPOSER_REST_HEIGHT = { pointer: 99, coarse: 114 } as const;
 /** The same two heights as classes. Tailwind reads classes from source text, so they are written out. */
 export const composerRestHeightClass = "h-[99px] coarse:h-[114px]";
 
+/**
+ * The HOME's composer at rest: the same row and edge over the home's taller
+ * field (`min-h-[4.375rem]`, 70px, composer.tsx's landing frame; the coarse
+ * field is the dock's 52px), so the new-chat skeleton stands exactly where
+ * the composer lands.
+ */
+export const COMPOSER_HOME_REST_HEIGHT = { pointer: 124, coarse: 114 } as const;
+export const composerHomeRestHeightClass = "h-[124px] coarse:h-[114px]";
+
 /* ————————————————————————————————————————————————————————————————————————
  * Shared recipes
  * ———————————————————————————————————————————————————————————————————— */

@@ -4,6 +4,8 @@ import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting } from "@/components/chat/empty-state";
+import { HomeSuggestions } from "@/components/chat/home-suggestions";
+import { loadMentionFixtures, loadSuggestionFixtures } from "./mention-fixtures";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
@@ -13,13 +15,15 @@ import type { WorkStatus } from "@/lib/work/domain";
 import type { AppBootstrap } from "@/types/app";
 import type { ReasoningEffort } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
+import { cn } from "@/lib/utils";
 
 /*
  * Fixture data. Only what the rendered components read is filled in; the rest
  * of the bootstrap is cast, because nothing on this page reaches it.
  */
-const BOOTSTRAP = {
-  user: { id: "dev", name: "Dev", email: null, image: null },
+export const BOOTSTRAP = {
+  user: { id: "dev", name: "Liam Magnier", email: null, image: null },
   settings: {
     theme: "system",
     accent: "coral",
@@ -198,10 +202,56 @@ const DONE = work({
   steering: null,
 });
 
+/** The home as chat-view lays it out (`.chat-home`), filling the panel. */
+function HomeView(common: React.ComponentProps<typeof Composer>) {
+  return (
+    <section data-fixture="landing" className="flex min-h-dvh flex-col">
+      <div className="chat-home page-gutter relative isolate">
+        <div className="chat-home__greet grid w-full grid-cols-1 grid-rows-1 justify-items-center">
+          <div className="col-start-1 row-start-1 flex w-full flex-col items-center justify-center">
+            <EmptyGreeting />
+          </div>
+        </div>
+        <div className="chat-home__composer relative isolate w-full">
+          <Composer {...common} frame="landing" />
+        </div>
+        <div className="chat-home__suggest">
+          <HomeSuggestions load={loadSuggestionFixtures} onPickProject={() => {}} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** A thread's foot: a stub transcript and the docked composer, as the column holds it. */
+function DockView(common: React.ComponentProps<typeof Composer>) {
+  return (
+    <section data-fixture="dock" className="flex min-h-dvh flex-col">
+      <div className="page-gutter mx-auto w-full max-w-3xl flex-1 space-y-4 pt-16 text-body text-foreground">
+        <p className={cn(USER_BUBBLE_CLASS, "ml-auto w-fit max-w-[80%]")}>Compare the Q3 forecast with what Stripe shows for renewals.</p>
+        <p>Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.</p>
+      </div>
+      <div className="relative isolate w-full">
+        <Composer
+          {...common}
+          conversationId="conv-dev"
+          frame="dock"
+          footnote={<p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>}
+        />
+      </div>
+    </section>
+  );
+}
+
 export function ComposerLandingFixture() {
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
-  const common = {
+  const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks">("all");
+  React.useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("view");
+    if (wanted === "home" || wanted === "dock" || wanted === "tasks") setView(wanted);
+  }, []);
+  const common: React.ComponentProps<typeof Composer> = {
     conversationId: null,
     model,
     onModelChange: setModel,
@@ -214,37 +264,22 @@ export function ComposerLandingFixture() {
     onToggleWebSearch: () => {},
     webSearchEnabled: true,
     onToggleConnector: () => {},
+    onOpenVoiceMode: () => {},
+    loadMentions: (query) => loadMentionFixtures(query),
   };
 
   return (
     <AppProvider bootstrap={BOOTSTRAP}>
-      <main className="app-main-canvas min-h-dvh bg-background pb-24 text-foreground">
-        {/* The empty chat, laid out exactly as chat-view.tsx lays it out. */}
-        <section data-fixture="landing" className="page-gutter mx-auto flex w-full max-w-4xl flex-col items-center py-16">
-          <div className="mb-6 flex w-full justify-center sm:mb-8">
-            <EmptyGreeting />
-          </div>
-          <div className="relative isolate w-full max-w-3xl">
-            <Composer {...common} frame="landing" />
-          </div>
-        </section>
-
-        {/* The dock, as the transcript's column holds it. */}
-        <section data-fixture="dock" className="w-full border-t border-border pt-10">
-          <div className="relative isolate w-full">
-            <Composer
-              {...common}
-              frame="dock"
-              footnote={<p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>}
-            />
-          </div>
-        </section>
-
-        <section className="page-gutter mx-auto w-full max-w-3xl space-y-6 pt-10">
-          <WorkRunPanel work={LIVE} />
-          <WorkRunPanel work={WAITING} />
-          <WorkRunPanel work={DONE} />
-        </section>
+      <main className="app-main-canvas min-h-dvh bg-background text-foreground">
+        {view === "all" || view === "home" ? <HomeView {...common} /> : null}
+        {view === "all" || view === "dock" ? <DockView {...common} /> : null}
+        {view === "all" || view === "tasks" ? (
+          <section className="page-gutter mx-auto w-full max-w-3xl space-y-6 py-10">
+            <WorkRunPanel work={LIVE} />
+            <WorkRunPanel work={WAITING} />
+            <WorkRunPanel work={DONE} />
+          </section>
+        ) : null}
       </main>
     </AppProvider>
   );
