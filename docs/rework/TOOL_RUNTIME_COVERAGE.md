@@ -171,6 +171,23 @@ Facts the producers should know:
   `workRunCapabilityDegraded` (`src/lib/work/tool-run-events.ts`): the existing event kinds
   `tool_started`, `tool_finished`, `artifact_created` and `degraded` (`capability_unavailable`)
   with additive `summary`, `run` and `runPhase` keys, so shipped clients keep decoding.
+- **Names.** Only the bare ids `run_code`, `code_interpreter`, `check_run`, `use_skill` and
+  `read_skill_file` are runs. A namespaced `connector__run_code` is a connector's tool (a
+  custom MCP server may name one that) and keeps the connector receipt on every surface.
+- **Links.** `url` and `logUrl` must be same-origin paths; a backslash, a control character or
+  anything resolving to another origin is dropped (`sameOriginPath`, native
+  `NativeToolRunWire.path`). Attachment ids are encoded as one path segment.
+- **Bounds.** Each stream part is drawn to 16,000 characters and 400 lines and the program to
+  1,000 lines; what is cut is added to `omittedBytes`, so "not shown" stays true. The server
+  should still bound what it sends (the run record is persisted at 8,192 characters a part).
+- **Spellings.** The execution runtime's `ExecRunFacts` names (`finishedLate`, `skippedFiles`,
+  `skillSlug`) and its error codes (`timed_out`, `invalid_arguments`, `capability_unavailable`)
+  are read as the contract's (`finishedLater`, `filesDiscarded`, `skill.slug`, `timeout`,
+  `invalid_args`, `unavailable`). The dispatcher should still translate them; this is only a
+  floor.
+- **Unknown, by whom.** `outcome_unknown` from the server reads "the server restarted while
+  this ran"; a row the reader finds still open when the stream ended reads "the reply ended
+  before this run reported back"; a name-only row reads "how this run ended was not recorded".
 - **Wire status.** Until the contract lands on the trunk, `contracts/chat/juno-chat-wire-v1.status.json`
   lists the eight `ClientToolDetail` keys native decodes under `nativeOnly`. When the contract
   lands, those entries move into `fields` as `native` (the check fails until they do).

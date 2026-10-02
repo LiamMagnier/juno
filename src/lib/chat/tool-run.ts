@@ -343,6 +343,7 @@ function program(value: unknown): { code: string; cut: boolean } | null {
 }
 
 const MAX_FILES = 50;
+const ATTACHMENT_ID = /^[A-Za-z0-9_-]{1,200}$/;
 
 function files(value: unknown): ToolRunFile[] {
   if (!Array.isArray(value)) return [];
@@ -353,7 +354,10 @@ function files(value: unknown): ToolRunFile[] {
     const name = str(r.name, 255) ?? str(r.fileName, 255);
     if (!name) continue;
     const mime = str(r.mime, 160) ?? str(r.mimeType, 160) ?? "application/octet-stream";
-    const attachmentId = str(r.attachmentId, 200) ?? str(r.id, 200);
+    // An id is one opaque token (a cuid). It is spliced into same-origin
+    // request paths (`/api/attachments/<id>`, the tile's `/preview` fetch), so
+    // anything that could climb out of its segment is not an id.
+    const attachmentId = [str(r.attachmentId, 200), str(r.id, 200)].find((id) => !!id && ATTACHMENT_ID.test(id)) ?? null;
     const kind: ToolRunFile["kind"] = mime.toLowerCase().startsWith("image/") ? "image" : "file";
     // Only same-origin paths are links. A run's manifest is server-written,
     // but a link that leaves the app from a file card is never the right

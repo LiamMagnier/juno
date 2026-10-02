@@ -418,6 +418,9 @@ test("only same-origin paths are links: backslash and tab tricks are refused", (
   assert.equal(v.logUrl, null);
   // The image falls back to the owner-scoped attachment route; the CSV has no link.
   assert.deepEqual(v.files.map((f) => f.url), ["/api/attachments/att_img", null]);
+  // An id that could climb out of its path segment is not an id.
+  const climbing = view({ ...row, call: { tool: "run_code", status: "succeeded", run: { status: "succeeded", files: [{ attachmentId: "../work/runs/x", name: "c.png", mime: "image/png" }] } } } as unknown as ClientActivityEvent);
+  assert.deepEqual(climbing.files.map((f) => [f.attachmentId, f.url]), [[null, null]]);
   const stored = sanitizeToolRunRecord((row as unknown as { call: { run: unknown } }).call.run)!;
   assert.equal(stored.logUrl, undefined);
   assert.deepEqual((stored.files as Array<{ url?: string }>).map((f) => f.url), ["/api/attachments/att_img", undefined]);
