@@ -26,6 +26,13 @@ test("every call says plainly that it has no tools, and where the work can happe
   }
 });
 
+test("the limit never forbids reading what the caller attached or shows", () => {
+  // A voice turn carries attached files' text and camera frames; telling the
+  // model it "cannot open files" makes it refuse the document it was handed.
+  assert.doesNotMatch(VOICE_TOOL_LIMIT, /open (or make )?files/i);
+  assert.match(VOICE_TOOL_LIMIT, /can read whatever the user attaches or shows you/);
+});
+
 test("the limit sits inside the speech rules, so their shape is unchanged", () => {
   const text = voiceInstructions(null, "You are Ada.");
   assert.ok(text.endsWith("pick up naturally."));

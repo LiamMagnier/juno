@@ -542,7 +542,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         started.detail = toolOutcome(payload, event.kind) ?? started.detail;
         started.facts = [...started.facts, ...resultFacts(payload)];
         started.warning = injectionWarning(payload);
-        applyRunOutcome(started, payload);
+        applyRunOutcome(started, payload, event.kind);
         continue;
       }
       const described = describeEvent(event, payload);
@@ -564,7 +564,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         facts: [...toolFacts(payload), ...resultFacts(payload)],
         warning: injectionWarning(payload),
       });
-      applyRunOutcome(entries[entries.length - 1], payload);
+      applyRunOutcome(entries[entries.length - 1], payload, event.kind);
       continue;
     }
 
@@ -700,8 +700,9 @@ function toolFacts(payload: Payload): ActivityFact[] {
  * failed · exit 1"), the evidence joins the facts, and a run whose end nobody
  * saw is marked as never having reported back rather than as a failure.
  */
-function applyRunOutcome(entry: ActivityEntry, payload: Payload): void {
-  const run = readWorkToolRun(payload);
+function applyRunOutcome(entry: ActivityEntry, payload: Payload, kind: string): void {
+  // A refusal is not a run (readWorkToolRun): its own wording stands.
+  const run = readWorkToolRun(payload, kind);
   if (!run) return;
   entry.title = runSummaryLine(run);
   // The second line is the reason it did not simply finish, or nothing: the

@@ -14,23 +14,28 @@ import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./pr
 import { effectiveRelaySessionLimitSec } from "./session-limit.js";
 import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
 
+/**
+ * What this call cannot do, said plainly (TOOL_RUNTIME_DESIGN.md §6.12, G18).
+ * The relay has no tool calls: no code, no produced files, no browsing. A
+ * caller who asks for any of that hears that it happens in the chat, rather
+ * than a voice that describes code as if it had run it.
+ *
+ * It is NOT a limit on reading. A voice turn carries the text of the files the
+ * person attached (`providerText`) and camera frames, so the sentence says the
+ * model can read those: "you cannot open files" would have it refuse the
+ * document it was just handed. Recorded in
+ * contracts/capabilities/tool-runtime-coverage.json as the realtime voice row.
+ */
+export const VOICE_TOOL_LIMIT =
+  "In this call you cannot run code or scripts, create files, browse the web, or use any tool, though you can read whatever the user attaches or shows you. If asked to run something, say plainly that you can't do that in a voice call and that it can be done in the chat. Never describe code or results as if you had run them.";
+
 /*
  * Who is speaking, and how. Split so an agent's persona can replace the first
  * without touching the second: a call in an agent's thread is that agent, but
  * it is still a spoken conversation with every rule a spoken conversation has.
- * Joined, the two are byte for byte the instructions every call had before.
+ * The speech rules carry the tool limit above; otherwise they are the
+ * instructions every call had before.
  */
-/**
- * What this call cannot do, said plainly (TOOL_RUNTIME_DESIGN.md §6.12, G18).
- * The relay carries audio and nothing else: no tool calls, no code, no files,
- * no browsing. A caller who asks for any of that hears that it happens in the
- * chat, rather than a voice that describes code as if it had run it.
- * Recorded in contracts/capabilities/tool-runtime-coverage.json as the
- * realtime voice row.
- */
-export const VOICE_TOOL_LIMIT =
-  "In this call you cannot run code or scripts, open or make files, browse, or use any tool. If asked to, say plainly that you can't do that in a voice call and that it can be done in the chat. Never describe code or results as if you had run them.";
-
 // The product's name as src/lib/brand/names.ts spells it (PRODUCT_NAME); this
 // package is built on its own, so the word is restated here.
 const VOICE_IDENTITY = "You are Alevr, a warm, quick-witted voice assistant.";

@@ -17,11 +17,14 @@ import {
   runOmittedNote,
   runReceiptParts,
   runSummaryLine,
+  sameOriginPath,
   sanitizeToolRunRecord,
+  RUN_STREAM_PART_MAX_LINES,
   type ToolRunPhase,
 } from "@/lib/chat/tool-run";
 import { TOOL_RUN_FIXTURES as F } from "@/lib/chat/tool-run-fixtures";
 import { receiptIconKind, receiptLabelForCall } from "@/lib/chat/tool-receipt";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import type { ClientActivityEvent } from "@/types/chat";
 
 /*
@@ -43,7 +46,8 @@ const EM_DASH = "—";
 test("only the execution and skill tools are runs; the old id is an alias", () => {
   assert.equal(canonicalRunTool("code_interpreter"), "run_code");
   assert.equal(canonicalRunTool("run_code"), "run_code");
-  assert.equal(canonicalRunTool("juno__check_run"), "check_run");
+  // A namespaced name is a connector's tool, never Alevr's own (see below).
+  assert.equal(canonicalRunTool("juno__check_run"), null);
   assert.equal(canonicalRunTool("use_skill"), "use_skill");
   assert.equal(canonicalRunTool("read_skill_file"), "read_skill_file");
   assert.equal(canonicalRunTool("web_search"), null);
@@ -342,4 +346,140 @@ test("the tool contract's detail fields: live phase, progress lines, typed outco
   assert.equal(skill.skill?.name, "quarterly-summary");
   assert.equal(runReceiptParts(skill).label, "Ran a shell script");
   assert.match(skill.code ?? "", /scripts\/build\.py/);
+});
+
+/*
+ * ADVERSARIAL READS (L4 review, 2026-10-02). The row is server-written, but
+ * its run record carries what a program, a skill or a third-party connector
+ * chose: file names, output, links. Each of these was a real defect.
+ */
+
+test("a connector tool named run_code is never presented as an Alevr run", () => {
+  // mcp.ts names a connector's tools `<connector>__<tool>`; a custom MCP
+  // server can call one of its tools `run_code` or `code_interpreter`.
+  for (const name of ["mcp_evil__run_code", "github__code_interpreter", "x__use_skill", "a__b__read_skill_file"]) {
+    assert.equal(canonicalRunTool(name), null, name);
+    const row: ClientActivityEvent = {
+      id: name,
+      kind: "tool",
+      title: "Using Evil MCP",
+      detail: name,
+      createdAt: "2026-10-02T10:00:00.000Z",
+      tool: { server: "Evil MCP", name, args: JSON.stringify({ code: "print(1)", language: "python" }), result: "1", status: "ok" },
+    };
+    assert.equal(readToolRun(row, { live: false }), null, `${name} must stay a connector receipt`);
+  }
+  assert.equal(canonicalRunTool("toString"), null, "no prototype keys");
+  assert.equal(canonicalRunTool(5 as unknown as string), null, "a non-string name costs the row, never throws");
+});
+
+test("only same-origin paths are links: backslash and tab tricks are refused", () => {
+  for (const bad of ["/\\evil.example/x", "/\t/evil.example/x", "/\n/evil.example", "//evil.example", "https://evil.example", "javascript:alert(1)", " /\\evil.example", "/a\\b"]) {
+    assert.equal(sameOriginPath(bad), null, JSON.stringify(bad));
+  }
+  assert.equal(sameOriginPath("/api/attachments/att_1"), "/api/attachments/att_1");
+  assert.equal(sameOriginPath("/api/files/u%2F1?x=1"), "/api/files/u%2F1?x=1");
+
+  const row: ClientActivityEvent = {
+    id: "links",
+    kind: "tool",
+    title: "Using Code",
+    detail: "run_code",
+    createdAt: "2026-10-02T10:00:00.000Z",
+    call: {
+      tool: "run_code",
+      status: "succeeded",
+      run: {
+        status: "succeeded",
+        exitCode: 0,
+        logUrl: "/\\evil.example/log",
+        files: [
+          { attachmentId: "att_img", name: "a.png", mime: "image/png", url: "/\\evil.example/a.png" },
+          { name: "b.csv", mime: "text/csv", url: "/\t/evil.example/b.csv" },
+        ],
+      },
+    },
+  } as unknown as ClientActivityEvent;
+  const v = view(row);
+  assert.equal(v.logUrl, null);
+  // The image falls back to the owner-scoped attachment route; the CSV has no link.
+  assert.deepEqual(v.files.map((f) => f.url), ["/api/attachments/att_img", null]);
+  const stored = sanitizeToolRunRecord((row as unknown as { call: { run: unknown } }).call.run)!;
+  assert.equal(stored.logUrl, undefined);
+  assert.deepEqual((stored.files as Array<{ url?: string }>).map((f) => f.url), ["/api/attachments/att_img", undefined]);
+});
+
+test("output that would explode the code block is cut for display, and the cut is counted", () => {
+  const flood = "\n".repeat(60_000);
+  const row: ClientActivityEvent = {
+    id: "flood",
+    kind: "tool",
+    title: "Using Code",
+    detail: "run_code",
+    createdAt: "2026-10-02T10:00:00.000Z",
+    call: { tool: "run_code", status: "succeeded", run: { status: "succeeded", exitCode: 0, code: "x\n".repeat(5_000), stdout: { head: flood, tail: flood, omittedBytes: 10 }, stderr: "e\n".repeat(30_000) } },
+  } as unknown as ClientActivityEvent;
+  const v = view(row);
+  assert.ok(v.stdout!.head.split("\n").length <= RUN_STREAM_PART_MAX_LINES);
+  assert.ok(v.stdout!.tail!.split("\n").length <= RUN_STREAM_PART_MAX_LINES + 1);
+  assert.ok(v.stdout!.omittedBytes > 100_000, "what the row does not draw is said as not shown");
+  assert.match(runOmittedNote(v.stdout!) ?? "", /KB not shown/);
+  assert.ok(v.stderr!.head.split("\n").length <= RUN_STREAM_PART_MAX_LINES);
+  assert.ok(v.stderr!.omittedBytes > 0);
+  assert.ok((v.code ?? "").split("\n").length <= 1_001);
+  assert.equal(v.codeTruncated, true, "a cut program says it was shortened");
+  // Small output is untouched.
+  const small = view({ ...row, call: { tool: "run_code", status: "succeeded", run: { status: "succeeded", stdout: { head: "a\nb", omittedBytes: 0 } } } } as unknown as ClientActivityEvent);
+  assert.deepEqual([small.stdout!.head, small.stdout!.omittedBytes], ["a\nb", 0]);
+});
+
+test("a detail field of the wrong type costs that field, never the renderer", () => {
+  const row = {
+    id: "odd",
+    kind: "tool",
+    title: "Using Code",
+    detail: "run_code",
+    createdAt: "2026-10-02T10:00:00.000Z",
+    tool: { server: "Code", name: "run_code", status: "failed", result: 42, args: { code: 1 }, durationMs: "fast" },
+  } as unknown as ClientActivityEvent;
+  const v = view(row, false);
+  assert.equal(v.phase, "failed");
+  assert.equal(v.detail?.result, undefined);
+  assert.equal(v.durationMs, null);
+  assert.doesNotThrow(() => runReceiptParts(v));
+  assert.doesNotThrow(() => runSummaryLine(v));
+  // A detail without a name is no detail at all.
+  assert.equal(readToolRun({ ...row, detail: "web", tool: { server: "x", name: 7 } } as unknown as ClientActivityEvent), null);
+});
+
+test("the execution runtime's own spellings read the same as the contract's", () => {
+  // ExecRunFacts (rf/tools-L2): finishedLate, skippedFiles, skillSlug, and
+  // ExecErrorCode `timed_out` / `invalid_arguments` before the dispatcher maps them.
+  const base = { id: "l2", kind: "tool", title: "Using Code", detail: "run_code", createdAt: "2026-10-02T10:00:00.000Z" };
+  const late = view({ ...base, call: { tool: "run_code", status: "succeeded", run: { status: "succeeded", exitCode: 0, finishedLate: true, skillSlug: "quarterly-summary", skippedFiles: [{ name: "big.bin", bytes: 9, reason: "too large" }] } } } as unknown as ClientActivityEvent);
+  assert.equal(late.finishedLater, true);
+  assert.equal(runReceiptParts(late).reason, "It finished after the reply was interrupted.");
+  assert.equal(late.filesDiscarded, 1);
+  assert.equal(late.skill?.slug, "quarterly-summary");
+  const timedOut = view({ ...base, call: { tool: "run_code", status: "failed", error: { code: "timed_out" }, timeoutMs: 120_000, args: { language: "python" } } } as unknown as ClientActivityEvent);
+  assert.equal(timedOut.phase, "timed_out");
+  assert.equal(runReceiptParts(timedOut).label, "Timed out after 2 min");
+  const invalid = view({ ...base, call: { tool: "run_code", status: "failed", error: { code: "invalid_arguments" } } } as unknown as ClientActivityEvent);
+  assert.equal(runReceiptParts(invalid).reason, "The model sent a request this tool can't use, so nothing ran.");
+  const stored = sanitizeToolRunRecord({ status: "succeeded", finishedLate: true, skill: { slug: "qs" }, skippedFiles: [{}, {}] })!;
+  assert.equal(stored.finishedLater, true);
+  assert.deepEqual(stored.skill, { name: "qs", slug: "qs" });
+  assert.equal(stored.filesDiscarded, 2);
+});
+
+test("a run's chart loads with the viewer's session, not through the cookieless optimizer", () => {
+  // The fallback link for a produced image is the owner-scoped
+  // /api/attachments/<id>, which 401s without the session. Next's optimizer
+  // fetches without cookies, so <Image> must skip it (ImageTile's `unoptimized`).
+  const v = view(F.contractSucceeded);
+  const chart = v.files.find((f) => f.kind === "image")!;
+  assert.equal(chart.url, "/api/attachments/att_c_chart");
+  assert.equal(requiresViewerCredentials(chart.url), true);
+  assert.equal(requiresViewerCredentials("/api/files/uploads/a.png"), true);
+  assert.equal(requiresViewerCredentials("https://bucket.example/a.png"), false);
 });

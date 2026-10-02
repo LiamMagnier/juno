@@ -120,6 +120,22 @@ test("an older runner's tool_finished (no phase, only isError) still reads truth
   assert.equal(readWorkToolRun({ tool: "browser", isError: false }), null);
 });
 
+test("a refused run is the feed's refusal, never \"Running code\"", () => {
+  // agent-core's tool_denied carries { callId, tool, reason } and no isError:
+  // a person declined, an approval expired, or the loop detector stopped it.
+  assert.equal(readWorkToolRun({ callId: "d1", tool: "run_code", reason: "The user declined this action." }, "tool_denied"), null);
+  const entries = deriveActivity([event("tool_denied", { callId: "d1", tool: "run_code", reason: "The user declined this action." })]);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].state, "refused");
+  assert.doesNotMatch(entries[0].title, /^Running/);
+  assert.equal(readWorkToolRun({ tool: "run_code" }, "tool_finished")?.phase, "succeeded", "a finished call without an error flag is the feed's done");
+});
+
+test("a connector's run_code in a task is a connector call, not an Alevr run", () => {
+  assert.equal(readWorkToolRun({ tool: "mcp_evil__run_code", isError: false }, "tool_finished"), null);
+  assert.equal(workToolStartedPayload({ callId: "m1", tool: "mcp_evil__run_code", status: "running" }), null);
+});
+
 test("no sandbox or an unverified model is the existing capability_unavailable degradation", () => {
   const down = workRunCapabilityDegraded("code_execution_unavailable");
   assert.equal(down.kind, "degraded");

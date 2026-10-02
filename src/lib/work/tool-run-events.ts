@@ -183,16 +183,29 @@ export function workRunCapabilityDegraded(gap: WorkRunCapabilityGap, opts: { mod
 /**
  * A run tool event's facts for the feed, from either event: the outcome
  * sentence, the exit code, where it ran, the files. Null for any other tool.
+ *
+ * `kind` is the Work event the payload came from. A `tool_denied` is not a
+ * run at all (the runner refused it before it started: a person declined, an
+ * approval expired, the loop detector stopped the task, the tier forbade it)
+ * and carries no `isError`, so it is null here and the feed's own refusal
+ * wording stands; read as a run it would say "Running code" over a refusal.
  */
-export function readWorkToolRun(payload: Record<string, unknown>): ToolRunView | null {
+export function readWorkToolRun(
+  payload: Record<string, unknown>,
+  kind?: "tool_started" | "tool_finished" | "tool_denied" | string,
+): ToolRunView | null {
+  if (kind === "tool_denied") return null;
   const tool = typeof payload.tool === "string" ? payload.tool : typeof payload.name === "string" ? payload.name : null;
   if (!canonicalRunTool(tool)) return null;
   const run = payload.run && typeof payload.run === "object" && !Array.isArray(payload.run) ? (payload.run as Record<string, unknown>) : null;
   const phase = typeof payload.runPhase === "string" ? payload.runPhase : null;
   const isError = payload.isError === true;
-  // An older runner sends no phase; `isError` is then the only witness, and
-  // absent both the call is still running (a `tool_started`).
-  const status = phase ?? (payload.isError === undefined ? "running" : isError ? "failed" : "succeeded");
+  // An older runner sends no phase; `isError` is then the only witness. A
+  // `tool_finished` without it finished without an error (the feed already
+  // says done); a `tool_started` is still running.
+  const status =
+    phase ??
+    (payload.isError === undefined ? (kind === "tool_finished" ? "succeeded" : "running") : isError ? "failed" : "succeeded");
   return viewWorkToolRun({
     callId: typeof payload.callId === "string" ? payload.callId : "work-run",
     tool: tool!,

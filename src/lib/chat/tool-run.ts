@@ -50,11 +50,43 @@ const TOOL_ALIASES: Record<string, ToolRunTool> = {
   read_skill_file: "read_skill_file",
 };
 
-/** The canonical id of a tool this module speaks for, or null. */
-export function canonicalRunTool(name: string | null | undefined): ToolRunTool | null {
-  if (!name) return null;
-  const bare = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
-  return TOOL_ALIASES[bare] ?? null;
+/**
+ * The canonical id of a tool this module speaks for, or null.
+ *
+ * BARE NAMES ONLY. Alevr's own tools are never namespaced; a name with a
+ * `connector__` prefix is a connector's tool (`mcp.ts` names them
+ * `<connector>__<tool>`), and a custom MCP server is free to call one of its
+ * tools `run_code`. Reading that as a run would dress a third party's call up
+ * as "Ran Python" in Alevr's sandbox, with Run again under it. Native
+ * (`canonicalToolID`) matches exact names for the same reason.
+ */
+export function canonicalRunTool(name: unknown): ToolRunTool | null {
+  if (typeof name !== "string" || !name || name.includes("__")) return null;
+  return Object.prototype.hasOwnProperty.call(TOOL_ALIASES, name) ? TOOL_ALIASES[name] : null;
+}
+
+/**
+ * A link the app may follow from a run row, or null: a same-origin path and
+ * nothing else.
+ *
+ * `startsWith("/") && !startsWith("//")` is not that test. Browsers treat a
+ * backslash as a slash and drop tabs and newlines anywhere in a URL, so
+ * `/\evil.example` and `/<TAB>/evil.example` both resolve to another origin.
+ * Those are refused outright, and what remains must resolve back to the page's
+ * own origin.
+ */
+export function sameOriginPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const path = value.trim();
+  if (!path.startsWith("/") || path.startsWith("//") || path.length > 2_000) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\\\u0000-\u001f\u007f]/.test(path)) return null;
+  try {
+    const base = "https://origin.invalid";
+    return new URL(path, base).origin === base ? path : null;
+  } catch {
+    return null;
+  }
 }
 
 export type ToolRunLanguage = "python" | "javascript" | "bash";
@@ -229,21 +261,77 @@ function context(value: unknown): ToolRunContext | null {
     : null;
 }
 
-function stream(value: unknown): ToolRunStream | null {
+/**
+ * How much of one stream part (head or tail) a row draws. The code block
+ * renders one element per line, so a program that prints 60,000 newlines
+ * would otherwise be 60,000 rows per part in the reader's tab. What is cut
+ * here is added to `omittedBytes`, so "12 KB not shown" stays true.
+ */
+export const RUN_STREAM_PART_MAX_CHARS = 16_000;
+export const RUN_STREAM_PART_MAX_LINES = 400;
+/** The program's display bound in lines (characters are bounded at 64,000). */
+export const RUN_CODE_MAX_LINES = 1_000;
+
+const utf8 = new TextEncoder();
+
+function utf8Bytes(text: string): number {
+  return text ? utf8.encode(text).length : 0;
+}
+
+/** The first `maxLines` lines and `maxChars` characters of `text`, and the bytes cut. */
+function keepHead(text: string, maxChars: number, maxLines: number): { kept: string; cutBytes: number } {
+  let end = Math.min(text.length, maxChars);
+  let lines = 0;
+  for (let i = 0; i < end; i++) {
+    if (text.charCodeAt(i) === 10 && ++lines >= maxLines) {
+      end = i;
+      break;
+    }
+  }
+  return end >= text.length ? { kept: text, cutBytes: 0 } : { kept: text.slice(0, end), cutBytes: utf8Bytes(text.slice(end)) };
+}
+
+/** The last `maxLines` lines and `maxChars` characters of `text`, and the bytes cut. */
+function keepTail(text: string, maxChars: number, maxLines: number): { kept: string; cutBytes: number } {
+  let start = Math.max(0, text.length - maxChars);
+  let lines = 0;
+  for (let i = text.length - 1; i >= start; i--) {
+    if (text.charCodeAt(i) === 10 && ++lines >= maxLines) {
+      start = i + 1;
+      break;
+    }
+  }
+  return start <= 0 ? { kept: text, cutBytes: 0 } : { kept: text.slice(start), cutBytes: utf8Bytes(text.slice(0, start)) };
+}
+
+function stream(value: unknown, maxChars = RUN_STREAM_PART_MAX_CHARS): ToolRunStream | null {
   if (typeof value === "string") {
-    return value.length ? { head: value.slice(0, 64_000), tail: null, omittedBytes: 0, totalBytes: null } : null;
+    if (!value.length) return null;
+    const head = keepHead(value.slice(0, 64_000), maxChars, RUN_STREAM_PART_MAX_LINES);
+    const beyond = value.length > 64_000 ? utf8Bytes(value.slice(64_000)) : 0;
+    return { head: head.kept, tail: null, omittedBytes: head.cutBytes + beyond, totalBytes: null };
   }
   const r = rec(value);
   if (!r) return null;
-  const head = raw(r.head) ?? raw(r.text) ?? "";
-  const tail = raw(r.tail);
-  if (!head && !tail) return null;
+  const rawHead = raw(r.head) ?? raw(r.text) ?? "";
+  const rawTail = raw(r.tail);
+  if (!rawHead && !rawTail) return null;
+  const head = keepHead(rawHead, maxChars, RUN_STREAM_PART_MAX_LINES);
+  const tail = rawTail ? keepTail(rawTail, maxChars, RUN_STREAM_PART_MAX_LINES) : null;
   return {
-    head,
-    tail,
-    omittedBytes: count(r.omittedBytes) ?? 0,
+    head: head.kept,
+    tail: tail?.kept || null,
+    omittedBytes: (count(r.omittedBytes) ?? 0) + head.cutBytes + (tail?.cutBytes ?? 0),
     totalBytes: count(r.totalBytes) ?? count(r.bytes),
   };
+}
+
+/** The program as the detail draws it: bounded in lines, and whether it was cut. */
+function program(value: unknown): { code: string; cut: boolean } | null {
+  const text = raw(value);
+  if (!text) return null;
+  const kept = keepHead(text, 64_000, RUN_CODE_MAX_LINES);
+  return { code: kept.kept, cut: kept.cutBytes > 0 || (typeof value === "string" && value.length > 64_000) };
 }
 
 const MAX_FILES = 50;
@@ -259,11 +347,10 @@ function files(value: unknown): ToolRunFile[] {
     const mime = str(r.mime, 160) ?? str(r.mimeType, 160) ?? "application/octet-stream";
     const attachmentId = str(r.attachmentId, 200) ?? str(r.id, 200);
     const kind: ToolRunFile["kind"] = mime.toLowerCase().startsWith("image/") ? "image" : "file";
-    const given = str(r.url, 2_000);
     // Only same-origin paths are links. A run's manifest is server-written,
     // but a link that leaves the app from a file card is never the right
     // default, and an `/api/...` path is the only shape the server sends.
-    const safeUrl = given && given.startsWith("/") && !given.startsWith("//") ? given : null;
+    const safeUrl = sameOriginPath(r.url);
     const url = safeUrl ?? (kind === "image" && attachmentId ? `/api/attachments/${encodeURIComponent(attachmentId)}` : null);
     out.push({
       attachmentId,
@@ -339,6 +426,45 @@ function phaseFromStatus(status: string | null, errorCode: string | null): ToolR
   }
 }
 
+/**
+ * The execution runtime's own failure codes (`ExecErrorCode`, rf/tools-L2)
+ * onto the tool contract's (`ToolErrorCode`), so a run that reaches the
+ * client before the dispatcher translates it is still said truthfully: a
+ * `timed_out` code is a time limit, not "Python failed".
+ */
+const ERROR_CODE_ALIASES: Record<string, string> = {
+  timed_out: "timeout",
+  invalid_arguments: "invalid_args",
+  capability_unavailable: "unavailable",
+  program_failed: "tool_error",
+};
+
+function errorCodeOf(value: unknown): string | null {
+  const code = str(value, 80);
+  return code ? (ERROR_CODE_ALIASES[code] ?? code) : null;
+}
+
+/**
+ * The row's `tool` detail with every field this module reads at its declared
+ * type. The detail is server-written, but a value of the wrong type (a number
+ * where a string belongs) must cost that field, never throw in a renderer.
+ */
+function toolDetail(value: unknown): ClientToolDetail | null {
+  const r = rec(value);
+  if (!r || typeof r.name !== "string" || typeof r.server !== "string") return null;
+  const out = { ...r } as Rec;
+  for (const key of ["args", "argsNote", "result", "resultNote", "status"] as const) {
+    if (out[key] !== undefined && typeof out[key] !== "string") delete out[key];
+  }
+  for (const key of ["argsTruncated", "resultTruncated"] as const) {
+    if (out[key] !== undefined && typeof out[key] !== "boolean") delete out[key];
+  }
+  for (const key of ["resultChars", "durationMs"] as const) {
+    if (out[key] !== undefined && count(out[key]) === null) delete out[key];
+  }
+  return out as unknown as ClientToolDetail;
+}
+
 /** Parse the redacted argument JSON of a legacy row, when it is whole. */
 function legacyArgs(detail: ClientToolDetail | null): Rec | null {
   if (!detail?.args || detail.argsTruncated) return null;
@@ -359,7 +485,7 @@ function legacyArgs(detail: ClientToolDetail | null): Rec | null {
 export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean } = {}): ToolRunView | null {
   const ev = event as unknown as Rec;
   const call = rec(ev.call);
-  const detail = event.tool ?? null;
+  const detail = toolDetail(event.tool);
   const detailRec = detail as unknown as Rec | null;
 
   const tool =
@@ -371,7 +497,7 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
   const run = rec(call?.run) ?? rec(ev.run) ?? rec(detailRec?.run);
   const prog = progress(call?.progress ?? run?.progress ?? ev.progress ?? detailRec?.progress);
   const error = rec(call?.error);
-  const errorCode = str(error?.code, 80) ?? str(detailRec?.errorCode, 80) ?? str(run?.errorCode, 80);
+  const errorCode = errorCodeOf(error?.code) ?? errorCodeOf(detailRec?.errorCode) ?? errorCodeOf(run?.errorCode);
   const args = rec(call?.args);
   const legacy = legacyArgs(detail);
 
@@ -415,8 +541,9 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
 
   const skillRec = rec(run?.skill) ?? rec(call?.skill);
   const skillName =
-    str(skillRec?.name, 120) ?? str(skillRec?.slug, 120) ?? str(args?.skill, 120) ?? str(args?.name, 120) ?? str(legacy?.skill, 120) ?? str(legacy?.name, 120);
-  const skillSlug = str(skillRec?.slug, 120);
+    str(skillRec?.name, 120) ?? str(skillRec?.slug, 120) ?? str(run?.skillSlug, 120) ?? str(args?.skill, 120) ?? str(args?.name, 120) ?? str(legacy?.skill, 120) ?? str(legacy?.name, 120);
+  const skillSlug = str(skillRec?.slug, 120) ?? str(run?.skillSlug, 120);
+  const code = program(run?.code) ?? program(legacy?.code) ?? program(legacy?.command);
 
   return {
     id: event.id,
@@ -439,23 +566,23 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
     timeoutMs: count(call?.timeoutMs) ?? count(detailRec?.timeoutMs) ?? count(run?.timeoutMs),
     startedAt: str(call?.startedAt, 40) ?? str(run?.startedAt, 40) ?? event.createdAt ?? null,
     files: files(run?.files),
-    filesDiscarded: count(run?.filesDiscarded) ?? 0,
+    // The runtime lists the files it did not keep (`skippedFiles`); the
+    // client projection counts them. Either says the same thing.
+    filesDiscarded: count(run?.filesDiscarded) ?? (Array.isArray(run?.skippedFiles) ? run.skippedFiles.length : 0),
     stdout: stream(run?.stdout ?? run?.stdoutTail),
     stderr: stream(run?.stderr ?? run?.stderrTail),
     progress: prog,
-    code: raw(run?.code) ?? raw(legacy?.code) ?? raw(legacy?.command),
-    codeTruncated: run?.codeTruncated === true || (!run?.code && !!detail?.argsTruncated),
+    code: code?.code ?? null,
+    codeTruncated: run?.codeTruncated === true || !!code?.cut || (!run?.code && !!detail?.argsTruncated),
     reason: oneLine(str(args?.reason, 300) ?? str(legacy?.reason, 300)),
     skill: skillName ? { name: skillName, slug: skillSlug } : null,
     skillPath: str(args?.path, 400) ?? str(legacy?.path, 400),
     checkedRunId: str(args?.run_id, 200) ?? str(legacy?.run_id, 200),
     errorCode,
     errorDetail: oneLine(str(error?.detail, 300) ?? str(run?.errorDetail, 300)),
-    logUrl: (() => {
-      const url = str(run?.logUrl, 2_000);
-      return url && url.startsWith("/") && !url.startsWith("//") ? url : null;
-    })(),
-    finishedLater: run?.finishedLater === true,
+    logUrl: sameOriginPath(run?.logUrl),
+    // `finishedLate` is the execution runtime's spelling (ExecRunFacts).
+    finishedLater: run?.finishedLater === true || run?.finishedLate === true,
     source: typed ? "typed" : "legacy",
     detail,
   };
@@ -925,9 +1052,12 @@ export function sanitizeToolRunRecord(value: unknown): Rec | undefined {
     const n = count(r[key]);
     if (n !== null) out[key] = n;
   }
+  if (!out.filesDiscarded && Array.isArray(r.skippedFiles) && r.skippedFiles.length) out.filesDiscarded = r.skippedFiles.length;
   for (const key of ["stdout", "stderr"] as const) {
-    const s = stream(r[key]);
-    if (s) out[key] = { head: s.head.slice(0, 8_192), ...(s.tail ? { tail: s.tail.slice(0, 8_192) } : {}), omittedBytes: s.omittedBytes, ...(s.totalBytes !== null ? { totalBytes: s.totalBytes } : {}) };
+    // Cut to the stored bound with the cut counted, so a reloaded row's
+    // "not shown" note is as true as the live one's.
+    const s = stream(r[key], 8_192);
+    if (s) out[key] = { head: s.head, ...(s.tail ? { tail: s.tail } : {}), omittedBytes: s.omittedBytes, ...(s.totalBytes !== null ? { totalBytes: s.totalBytes } : {}) };
   }
   const list = files(r.files);
   if (list.length) {
@@ -942,13 +1072,15 @@ export function sanitizeToolRunRecord(value: unknown): Rec | undefined {
     }));
   }
   const skill = rec(r.skill);
-  const skillName = str(skill?.name, 120);
-  if (skillName) out.skill = { name: skillName, ...(str(skill?.slug, 120) ? { slug: str(skill?.slug, 120) } : {}) };
+  // The tool contract's record names a skill by slug only.
+  const skillSlug = str(skill?.slug, 120) ?? str(r.skillSlug, 120);
+  const skillName = str(skill?.name, 120) ?? skillSlug;
+  if (skillName) out.skill = { name: skillName, ...(skillSlug ? { slug: skillSlug } : {}) };
   const agentName = str(r.agentName, 120);
   if (agentName) out.agentName = agentName;
-  const logUrl = str(r.logUrl, 2_000);
-  if (logUrl && logUrl.startsWith("/") && !logUrl.startsWith("//")) out.logUrl = logUrl;
-  if (r.finishedLater === true) out.finishedLater = true;
+  const logUrl = sameOriginPath(r.logUrl);
+  if (logUrl) out.logUrl = logUrl;
+  if (r.finishedLater === true || r.finishedLate === true) out.finishedLater = true;
   const code = raw(r.code, 16_000);
   if (code) out.code = code;
   if (r.codeTruncated === true || (typeof r.code === "string" && r.code.length > 16_000)) out.codeTruncated = true;
