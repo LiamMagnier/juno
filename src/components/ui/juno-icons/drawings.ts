@@ -611,8 +611,7 @@ function orbitArcs(a: number, chord: number): string[] {
 const ORBIT_ARCS = orbitArcs(9.375, 3.5);
 /**
  * Below 18 px Orbit is drawn larger (a = 10.125) with a 1.5 px clear gap, so
- * the open ellipse carries the weight of Code's brackets beside it (an
- * ellipse outline has far less ink than a bracket pair).
+ * the open, tilted ellipse stands as tall as Code's brackets beside it.
  */
 const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
 
@@ -620,8 +619,6 @@ const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
 const codeBracket = (top: number, bottom: number, arm: number, r: number): string =>
   `M${fmt(arm)} ${fmt(top)}H${fmt(4.5 + r * 1.18)}${corner(4.5, top, 1, 0, 0, 1, r)}V${fmt(bottom - r * 1.18)}${corner(4.5, bottom, 0, -1, 1, 0, r)}H${fmt(arm)}`;
 const CODE_BRACKET = codeBracket(4.5, 19.5, 9.75, 2.25);
-/** Below 18 px the brackets are shorter (13.5 units), for optical balance with Orbit. */
-const CODE_BRACKET_SMALL = codeBracket(5.25, 18.75, 9.375, 2.25);
 
 /* —————————————————————————————— The set —————————————————————————————— */
 
@@ -651,7 +648,6 @@ export const ICONS = {
   code: I({
     group: "Navigation",
     elements: [g([p(CODE_BRACKET)], { x: -1 }), g([p(flipX(CODE_BRACKET))], { x: 1 }), p(poly(12, 8.25, 12, 15.75))],
-    small: { elements: [g([p(CODE_BRACKET_SMALL)], { x: -1 }), g([p(flipX(CODE_BRACKET_SMALL))], { x: 1 }), p(poly(12, 9, 12, 15))] },
     motion: "Alevr Code: opposed brackets with the cursor inset between them. The brackets open a unit each way; the cursor holds still.",
   }),
   "new-chat": I({

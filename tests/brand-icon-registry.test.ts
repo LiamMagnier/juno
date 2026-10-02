@@ -36,7 +36,6 @@ test("the registry's Code is brackets with an inset cursor, not </>", () => {
   const ds = JSON.stringify(ICONS.code.elements);
   assert.ok(!ds.includes("13.5 5.25"), "the </> slash is gone");
   assert.equal(CODE_GLYPH[24].paths.length, 3);
-  // Two bracket groups and the cursor, at 24 and in the small cut.
+  // Two bracket groups and the cursor.
   assert.equal(ICONS.code.elements.length, 3);
-  assert.equal(resolveIconAt("code", 16)!.elements.length, 3);
 });

@@ -49,10 +49,10 @@ export const ORBIT_CONSTRUCTION = {
 } as const;
 
 /**
- * Optical balance with Code at small sizes: an open ellipse carries much less
- * ink than a bracket pair, so below 24 px Orbit is drawn a little larger (and
- * Code a little shorter, CODE_GRID) until the two read as one weight beside
- * their labels. The 24 master is the V3 drawing unchanged.
+ * Optical balance with Code at small sizes: an open, tilted ellipse reads
+ * shorter and lighter than a bracket pair, so below 24 px Orbit is drawn a
+ * little larger until it stands as tall as Code (12 px of ink at 16) beside
+ * its label. The 24 master is the V3 drawing unchanged.
  */
 const ORBIT_A: Record<GlyphSize, number> = { 16: 10.125, 20: 9.6, 24: ORBIT_CONSTRUCTION.a };
 
@@ -114,11 +114,10 @@ function bracket(stemX: number, top: number, bottom: number, armX: number, r: nu
 /** Per-size bracket placements (px): stem centrelines put one stroke edge on a whole pixel. */
 // The 24-unit drawing follows the V3 icon set's Code (stem 4.5, corner 2.25, cursor 8.25 to
 // 15.75); each size moves stems and arms to its own pixel grid, and the arms stop short enough
-// to keep the V3 drawing's clear gap (3 units at 24) across the half-pixel axis shift. At 16
-// and 20 the brackets are a pixel shorter, for optical balance with Orbit (ORBIT_A).
+// to keep the V3 drawing's clear gap (3 units at 24) across the half-pixel axis shift.
 const CODE_GRID: Record<GlyphSize, { stroke: number; stem: number; top: number; bottom: number; arm: number; r: number; cursor: [number, number] }> = {
-  16: { stroke: 1.25, stem: 2.625, top: 3.375, bottom: 12.625, arm: 5.75, r: 1.5, cursor: [6, 10] },
-  20: { stroke: 1.5, stem: 3.75, top: 4.25, bottom: 15.75, arm: 7.25, r: 1.75, cursor: [7.5, 12.5] },
+  16: { stroke: 1.25, stem: 2.625, top: 2.625, bottom: 13.375, arm: 6, r: 1.5, cursor: [5.5, 10.5] },
+  20: { stroke: 1.5, stem: 3.75, top: 3.75, bottom: 16.25, arm: 7.5, r: 1.75, cursor: [7, 13] },
   24: { stroke: 1.5, stem: 4.75, top: 4.75, bottom: 19.25, arm: 9.25, r: 2.25, cursor: [8.25, 15.75] },
 };
 

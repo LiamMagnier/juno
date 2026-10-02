@@ -240,22 +240,31 @@ export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion,
     };
   }, [dispatch]);
 
-  // Drive the tone layer from the machine's view. Each branch starts from the current tone.
-  const drawn = useRef({ passId: 0, settleId: 0 });
+  // Drive the tone layer from the machine's view. Each branch starts from the current tone, and
+  // only a change of plan touches it: a settle runs to its end; a pass is released (faded) only
+  // when work stops being drawn mid-pass (a status replaced it, reduced motion turned on).
+  const drawn = useRef<{ passId: number; settleId: number; mode: "rest" | "pass" | "settle" }>({ passId: 0, settleId: 0, mode: "rest" });
   useEffect(() => {
     const el = root.current;
     if (!el || typeof el.animate !== "function") return;
-    if (view.settling && view.settleId !== drawn.current.settleId) {
-      drawn.current.settleId = view.settleId;
+    const d = drawn.current;
+    if (view.settling && view.settleId !== d.settleId) {
+      d.settleId = view.settleId;
+      d.mode = "settle";
       runSettle(el);
       return;
     }
-    if (view.passing && view.passId !== drawn.current.passId) {
-      drawn.current.passId = view.passId;
+    if (view.passing && view.passId !== d.passId) {
+      d.passId = view.passId;
+      d.mode = "pass";
       runPass(el);
       return;
     }
-    if (!isPendingPhase(view.shown) || view.reduced || !view.visible) runRelease(el);
+    const stopped = !isPendingPhase(view.shown) || !view.visible;
+    if ((d.mode === "pass" && (stopped || view.reduced)) || (d.mode === "settle" && view.reduced)) {
+      d.mode = "rest";
+      runRelease(el);
+    }
   }, [view.passing, view.passId, view.settling, view.settleId, view.shown, view.reduced, view.visible]);
 
   const set = continuumDrawingSet(size);
