@@ -25,7 +25,8 @@ import { AVAILABLE_SKILL_WHERE } from "@/lib/skills/sources";
 import { parseBundleManifest } from "@/lib/skills/bundle-manifest";
 import { unpackTar } from "@/lib/skills/bundle";
 import { loadSkillBundleTar } from "@/lib/skills/bundle-store";
-import { clearSkillMounts, mountSkill, skillMountFor } from "@/lib/skills/mount";
+import { skillMountFor } from "@/lib/skills/mount";
+import { clearSkillMounts, mountSkill } from "@/lib/exec/mounts";
 import {
   consentReasonsOf,
   discoverableSkills,

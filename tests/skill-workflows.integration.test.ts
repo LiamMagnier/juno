@@ -14,13 +14,19 @@
  *   NODE_OPTIONS=--conditions=react-server \
  *   npx tsx --test --experimental-test-module-mocks tests/skill-workflows.integration.test.ts
  *
- * THE SANDBOX STAND-IN. The execution runtime (`src/lib/exec`, the execution
- * lane) owns `run_code`, the ToolRun row and output attachments. Until it is on
- * the trunk, `runInSandbox` below runs the turn's mounts the way the design's
- * container profile does (juno-exec image, --network none, read-only root,
- * no capabilities, uid 1000, /skills/<slug> read-only, /work writable) so the
- * skill half is proven end to end. The cases skip without Docker or the
- * `juno-exec:dev` image (`bash deploy/exec-host/local/run-local.sh` builds it).
+ * THE REAL RUNTIME. With a local juno-exec (the execution lane's Docker
+ * Desktop profile, `bash deploy/exec-host/local/run-local.sh`), the V3 cases
+ * run the script through `run_code` itself, chat and Work: the ToolRun row
+ * carries the skill version and bundle digest and out.xlsx is a `tool_output`
+ * attachment. Set, as the runtime suite does:
+ *
+ *   EXEC_TEST_URL=http://127.0.0.1:<port> EXEC_TEST_TOKEN_FILE=<that profile's token file>
+ *
+ * THE SANDBOX STAND-IN. Without those, `runInSandbox` below runs the turn's
+ * mounts the way the design's container profile does (juno-exec image,
+ * --network none, read-only root, no capabilities, uid 1000, /skills/<slug>
+ * read-only, /work writable) so the skill half is still proven end to end. The
+ * stand-in cases skip without Docker or the `juno-exec:dev` image.
  */
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
@@ -141,6 +147,16 @@ if (!URL) {
   process.env.DIRECT_URL = URL;
   process.env.AUTH_SECRET ??= "juno-skills-isolated-integration-test-key-0123456789";
   process.env.DATA_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString("base64");
+  const EXEC_URL = process.env.EXEC_TEST_URL;
+  const EXEC_TOKEN_FILE = process.env.EXEC_TEST_TOKEN_FILE;
+  const liveExec = !!(EXEC_URL && EXEC_TOKEN_FILE);
+  if (liveExec) {
+    process.env.TOOL_RUNTIME = "1";
+    process.env.CODE_INTERPRETER_URL = EXEC_URL;
+    process.env.CODE_INTERPRETER_TOKEN = readFileSync(EXEC_TOKEN_FILE!, "utf8").trim();
+  } else {
+    delete process.env.TOOL_RUNTIME;
+  }
 
   const db = new PrismaClient({ datasources: { db: { url: URL } } });
   const owner = `skills-test-${randomUUID()}`;
@@ -204,6 +220,70 @@ if (!URL) {
   const sandboxTest = (name: string, fn: () => Promise<void>) =>
     test(name, { skip: !canMockModules ? "needs --experimental-test-module-mocks" : !docker ? `needs Docker and ${SANDBOX_IMAGE}` : false }, fn);
 
+  const execTest = (name: string, fn: () => Promise<void>) =>
+    test(name, { skip: !canMockModules ? "needs --experimental-test-module-mocks" : !liveExec ? "needs EXEC_TEST_URL and EXEC_TEST_TOKEN_FILE (a local juno-exec)" : false }, fn);
+
+  /** A conversation with sales.csv attached, as the person would have it. */
+  async function conversationWithSales() {
+    const { putObject } = await import("@/lib/storage");
+    const conversation = await db.conversation.create({ data: { userId: owner, title: "Quarterly numbers" } });
+    const key = `uploads/${owner}/test-${randomUUID()}-sales.csv`;
+    await putObject(key, salesCsv, "text/csv");
+    const attachment = await db.attachment.create({
+      data: {
+        userId: owner, conversationId: conversation.id, kind: "FILE", fileName: "sales.csv", mimeType: "text/csv",
+        size: salesCsv.byteLength, storageKey: key, parserState: "ready",
+      },
+    });
+    return { conversation, attachment };
+  }
+
+  /** The xlsx a run attached, read back from storage. */
+  async function attachedWorkbook(attachmentId: string) {
+    const { getObjectBytes } = await import("@/lib/storage");
+    const attachment = await db.attachment.findUniqueOrThrow({ where: { id: attachmentId } });
+    assert.equal(attachment.origin, "tool_output");
+    assert.equal(attachment.userId, owner);
+    assert.equal(attachment.fileName, "out.xlsx");
+    return readSummarySheet((await getObjectBytes(attachment.storageKey)).bytes);
+  }
+
+  /** An authored skill whose script tries the network (V6). Created once. */
+  async function ensurePhoneHome() {
+    const { createSkillWithFirstVersion } = await import("@/lib/skills/store");
+    const { buildSkillBundle } = await import("@/lib/skills/bundle");
+    const { emptySkillContract } = await import("@/lib/work/skills");
+    const built = buildSkillBundle([
+      { path: "SKILL.md", bytes: new TextEncoder().encode("---\nname: phone-home\ndescription: Calls out.\n---\nRun scripts/call.py.") },
+      {
+        path: "scripts/call.py",
+        bytes: new TextEncoder().encode(
+          "import socket, sys\n" +
+            "for target in [('1.1.1.1', 80), ('example.com', 443)]:\n" +
+            "    try:\n" +
+            "        socket.create_connection(target, timeout=3).close()\n" +
+            "        print('connected', target)\n" +
+            "        sys.exit(0)\n" +
+            "    except OSError as error:\n" +
+            "        print('refused', target, type(error).__name__, file=sys.stderr)\n" +
+            "sys.exit(7)\n"
+        ),
+      },
+    ]);
+    if (!built.ok) throw new Error("phone-home bundle");
+    return createSkillWithFirstVersion({
+      userId: owner,
+      slug: "phone-home",
+      name: "Phone home",
+      description: "Calls out.",
+      instructions: "Run scripts/call.py.",
+      requestedTools: ["web_search", "Bash"],
+      contract: { ...emptySkillContract(), requestedConnectors: ["gmail"], requestedDomains: ["example.com"] },
+      origin: "authored",
+      bundle: built.bundle,
+    });
+  }
+
   async function postPackage(fields: Record<string, string>) {
     const { POST } = await import("@/app/api/skills/import/package/route");
     const form = new FormData();
@@ -250,7 +330,7 @@ if (!URL) {
   routeTest("unconsented, it is explained and never mounted: /slug, use_skill and a Work run alike", async () => {
     const { loadChatSkill } = await import("@/lib/chat/skill-runtime");
     const { openSkillToolSession } = await import("@/lib/skills/session");
-    const { skillMountsFor } = await import("@/lib/skills/mount");
+    const { skillMountsFor } = await import("@/lib/exec/mounts");
     const outcome = await loadChatSkill({
       userId: owner,
       slug: "quarterly-summary",
@@ -332,7 +412,7 @@ if (!URL) {
   sandboxTest("the /slug path: armed, mounted read-only, its reference read, its script run, out.xlsx as specified", async () => {
     const { loadChatSkill } = await import("@/lib/chat/skill-runtime");
     const { createSkillsToolProvider } = await import("@/lib/skills/tool-provider");
-    const { skillMountsFor } = await import("@/lib/skills/mount");
+    const { skillMountsFor } = await import("@/lib/exec/mounts");
     const outcome = await loadChatSkill({
       userId: owner,
       slug: "quarterly-summary",
@@ -399,7 +479,7 @@ if (!URL) {
     );
     assert.equal(patched.status, 200);
     const { createSkillsToolProvider } = await import("@/lib/skills/tool-provider");
-    const { skillMountsFor } = await import("@/lib/skills/mount");
+    const { skillMountsFor } = await import("@/lib/exec/mounts");
     const sessionId = `gen_${randomUUID()}`;
     const turn = { userId: owner, surface: "chat" as const, sessionId, conversationId: null, projectId: null, plan: "PRO", modelId: "test-model", vision: false, skillSlug: null };
     const provider = createSkillsToolProvider({ codeExecution: () => true });
@@ -437,9 +517,87 @@ if (!URL) {
     }
   });
 
+  execTest("V3 in chat on the real runtime: use_skill, the reference, then run_code runs the script; the ToolRun names the skill version and digest; out.xlsx is attached", async () => {
+    // Opted in for automatic use, as the use_skill case above does through PATCH.
+    await db.workSkill.update({ where: { id: skillId }, data: { trust: "user_authored", autoSelect: true } });
+    const { conversation } = await conversationWithSales();
+    const { createSkillsToolProvider } = await import("@/lib/skills/tool-provider");
+    const { execToolProvider } = await import("@/lib/exec/provider");
+    const sessionId = `gen_${randomUUID()}`;
+    const turn = { userId: owner, surface: "chat" as const, sessionId, conversationId: conversation.id, projectId: null, plan: "PRO", modelId: "test-model", vision: false, skillSlug: null };
+    assert.deepEqual(await execToolProvider.availability(turn), { available: true }, "the local juno-exec answers and reports no egress");
+    const skills = await createSkillsToolProvider({ codeExecution: () => true }).open(turn, ["use_skill", "read_skill_file"]);
+    const exec = await execToolProvider.open(turn, ["run_code"]);
+    const ctx = (callId: string) => ({ userId: owner, surface: "chat" as const, sessionId, conversationId: conversation.id, projectId: null, callId, round: 0, signal: new AbortController().signal, reportProgress() {} });
+    try {
+      const byId = Object.fromEntries([...skills.specs, ...exec.specs].map((spec) => [spec.id, spec]));
+      const loaded = await byId.use_skill.execute({ name: "quarterly-summary" }, ctx("call_use"));
+      assert.equal(loaded.status, "succeeded", loaded.text);
+      const style = await byId.read_skill_file.execute({ skill: "quarterly-summary", path: "reference/style.md" }, ctx("call_read"));
+      assert.match(style.text, /named \*\*Summary\*\*/);
+
+      const ran = await byId.run_code.execute({ language: "bash", code: RUN_SCRIPT, reason: "Build the quarterly summary" }, ctx("call_run"));
+      assert.equal(ran.status, "succeeded", ran.text);
+      assert.equal(ran.run?.status, "succeeded");
+      assert.equal(ran.run?.exitCode, 0);
+      assert.match(ran.text, /"grand_total": 20302\.5/);
+      const version = await db.workSkillVersion.findFirstOrThrow({ where: { skillId, bundleDigest: digest }, orderBy: { version: "desc" } });
+      assert.deepEqual(ran.run?.skill, { slug: "quarterly-summary", versionId: version.id, bundleDigest: digest });
+
+      const row = await db.toolRun.findFirstOrThrow({ where: { userId: owner, sessionId, callId: "call_run" } });
+      assert.equal(row.status, "succeeded");
+      assert.equal(row.skillVersionId, version.id, "the run record names the skill version");
+      assert.equal(row.skillBundleDigest, digest, "and the exact bundle it ran");
+      const outputs = ran.run?.files ?? [];
+      const workbook = outputs.find((file) => file.name === "out.xlsx");
+      assert.ok(workbook, JSON.stringify(outputs));
+      const sheet = await attachedWorkbook(workbook!.attachmentId);
+      assert.deepEqual(sheet.sheetNames, ["Summary"]);
+      assert.deepEqual(sheet.rows, EXPECTED_ROWS);
+
+      const audit = await db.workAuditEvent.findFirstOrThrow({ where: { userId: owner, kind: "skill_applied", detail: { path: ["generationId"], equals: sessionId } } });
+      assert.equal((audit.detail as Record<string, unknown>).contentHash, digest, "an audit row records the skill applied, with its bytes");
+    } finally {
+      await skills.close?.();
+      await exec.close?.();
+    }
+  });
+
+  execTest("V3 in a Work run on the real runtime: skillToolsFor and the run's own run_code; the output is attached to the run", async () => {
+    const { putObject } = await import("@/lib/storage");
+    const { workExecDeps } = await import("@/lib/exec/work");
+    const { skillToolsFor } = await import("@/lib/skills/run-tools");
+    const session = await db.workSession.create({ data: { userId: owner, title: "Quarterly summary", goal: "Summarise the quarter.", status: "running", permissionPolicy: "balanced" } });
+    const run = await db.workRun.create({ data: { sessionId: session.id, userId: owner, status: "running" } });
+    const key = `uploads/${owner}/test-${randomUUID()}-sales.csv`;
+    await putObject(key, salesCsv, "text/csv");
+    const input = await db.attachment.create({ data: { userId: owner, kind: "FILE", fileName: "sales.csv", mimeType: "text/csv", size: salesCsv.byteLength, storageKey: key, parserState: "ready" } });
+    await db.workRunIO.create({ data: { runId: run.id, direction: "input", refKind: "attachment", refId: input.id, label: "sales.csv" } });
+
+    const tools = await skillToolsFor({ userId: owner, runId: run.id, projectId: null, codeExecution: true });
+    try {
+      const [useSkill, readSkillFile] = tools.tools;
+      assert.equal((await useSkill.execute({ name: "quarterly-summary" })).isError, undefined);
+      assert.match((await readSkillFile.execute({ skill: "quarterly-summary", path: "reference/style.md" })).output, /Freeze the header row/);
+      const deps = workExecDeps({ runId: run.id, userId: owner, sessionId: session.id, projectId: null, vision: false });
+      assert.ok(deps, "the runtime is configured for Work");
+      const result = await deps!.runCode({ language: "bash", code: RUN_SCRIPT }, { callId: "work_call_1" });
+      assert.equal(result.isError, false, result.output);
+      assert.equal(result.exitCode, 0);
+      const row = await db.toolRun.findFirstOrThrow({ where: { userId: owner, workRunId: run.id } });
+      assert.equal(row.surface, "work");
+      assert.equal(row.skillBundleDigest, digest);
+      assert.ok(row.skillVersionId);
+      const output = await db.workRunIO.findFirstOrThrow({ where: { runId: run.id, direction: "output", refKind: "attachment" } });
+      assert.deepEqual((await attachedWorkbook(output.refId)).rows, EXPECTED_ROWS);
+    } finally {
+      await tools.close();
+    }
+  });
+
   sandboxTest("the same scenario in a Work run: skillToolsFor loads, reads and mounts under the run id", async () => {
     const { skillToolsFor } = await import("@/lib/skills/run-tools");
-    const { skillMountsFor } = await import("@/lib/skills/mount");
+    const { skillMountsFor } = await import("@/lib/exec/mounts");
     const runId = `run_${randomUUID()}`;
     const tools = await skillToolsFor({ userId: owner, runId, projectId: null, codeExecution: true });
     try {
@@ -485,39 +643,7 @@ if (!URL) {
   });
 
   sandboxTest("a skill asking for network and connectors gets neither: the grant is the turn's and a socket fails in the sandbox", async () => {
-    const { createSkillWithFirstVersion } = await import("@/lib/skills/store");
-    const { buildSkillBundle } = await import("@/lib/skills/bundle");
-    const { emptySkillContract } = await import("@/lib/work/skills");
-    const built = buildSkillBundle([
-      { path: "SKILL.md", bytes: new TextEncoder().encode("---\nname: phone-home\ndescription: Calls out.\n---\nRun scripts/call.py.") },
-      {
-        path: "scripts/call.py",
-        bytes: new TextEncoder().encode(
-          "import socket, sys\n" +
-            "for target in [('1.1.1.1', 80), ('example.com', 443)]:\n" +
-            "    try:\n" +
-            "        socket.create_connection(target, timeout=3).close()\n" +
-            "        print('connected', target)\n" +
-            "        sys.exit(0)\n" +
-            "    except OSError as error:\n" +
-            "        print('refused', target, type(error).__name__, file=sys.stderr)\n" +
-            "sys.exit(7)\n"
-        ),
-      },
-    ]);
-    assert.ok(built.ok);
-    if (!built.ok) return;
-    const created = await createSkillWithFirstVersion({
-      userId: owner,
-      slug: "phone-home",
-      name: "Phone home",
-      description: "Calls out.",
-      instructions: "Run scripts/call.py.",
-      requestedTools: ["web_search", "Bash"],
-      contract: { ...emptySkillContract(), requestedConnectors: ["gmail"], requestedDomains: ["example.com"] },
-      origin: "authored",
-      bundle: built.bundle,
-    });
+    const created = await ensurePhoneHome();
     assert.ok(created.ok);
     if (!created.ok) return;
     assert.equal(created.version.requiresConsent, false, "a skill the person wrote does not ask them to approve their own script");
@@ -538,7 +664,7 @@ if (!URL) {
     assert.deepEqual(outcome.application.resolved.withheld.domains, ["example.com"]);
 
     const { openSkillToolSession } = await import("@/lib/skills/session");
-    const { skillMountsFor } = await import("@/lib/skills/mount");
+    const { skillMountsFor } = await import("@/lib/exec/mounts");
     const sessionId = `gen_${randomUUID()}`;
     const session = await openSkillToolSession({
       userId: owner, surface: "chat", sessionId, projectId: null, armedSlug: "phone-home", code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
@@ -551,6 +677,32 @@ if (!URL) {
       assert.match(run.stderr, /refused \('example\.com', 443\) gaierror/, "no DNS either");
     } finally {
       await session.close();
+    }
+  });
+
+  execTest("V6 on the real runtime: a skill script that phones home fails at the socket, and the run says so", async () => {
+    if (!(await db.workSkill.findFirst({ where: { userId: owner, slug: "phone-home" } }))) await ensurePhoneHome();
+    const { openSkillToolSession } = await import("@/lib/skills/session");
+    const { execToolProvider } = await import("@/lib/exec/provider");
+    const sessionId = `gen_${randomUUID()}`;
+    const session = await openSkillToolSession({
+      userId: owner, surface: "chat", sessionId, projectId: null, armedSlug: "phone-home", code: true, skillFiles: true, wrapUntrusted: wrap, actor: "web",
+    });
+    const turn = { userId: owner, surface: "chat" as const, sessionId, conversationId: null, projectId: null, plan: "PRO", modelId: "test-model", vision: false, skillSlug: "phone-home" };
+    const exec = await execToolProvider.open(turn, ["run_code"]);
+    try {
+      assert.ok(session.armed, "the phone-home skill is armed");
+      const ran = await exec.specs[0].execute(
+        { language: "bash", code: "python3 /skills/phone-home/scripts/call.py" },
+        { userId: owner, surface: "chat", sessionId, conversationId: null, projectId: null, callId: "call_net", round: 0, signal: new AbortController().signal, reportProgress() {} }
+      );
+      assert.equal(ran.run?.exitCode, 7, ran.text);
+      assert.equal(ran.run?.status, "failed");
+      assert.match(ran.text, /refused \('1\.1\.1\.1', 80\)/);
+      assert.match(ran.text, /gaierror/);
+    } finally {
+      await session.close();
+      await exec.close?.();
     }
   });
 
