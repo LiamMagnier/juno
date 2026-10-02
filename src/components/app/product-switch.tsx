@@ -203,19 +203,24 @@ export function ProductSwitch({
       // and a `p-0.5` box inside it would eat the tap target for a border that
       // only has to say "these two are a different kind of thing". A
       // separator hairline says it for free, and it is what the footer uses.
-      <nav aria-label={`${PRODUCT_NAME} products`} className="pt-2">
-        <div className="flex flex-col items-center gap-1 px-2.5 pb-2">
+      <nav aria-label={`${PRODUCT_NAME} products`} className="flex flex-col items-center px-2 pb-2 pt-2">
+        {/* The expanded switch, turned on its side: the same recessed track
+            and the same raised thumb, so the rail and the panel draw one
+            control rather than two. */}
+        <div className="flex flex-col gap-0.5 rounded-field bg-sidebar-accent/80 p-0.5">
           {PRODUCTS.map((product) => (
             <RailItem
               key={product.id}
               product={product}
               active={product.id === active}
               locked={isLocked(product, plan)}
+              thumbId={thumbId}
+              thumbTransition={thumbTransition}
               onNavigate={onNavigate}
             />
           ))}
         </div>
-        <div className="mx-2.5 border-b border-sidebar-border/70" aria-hidden="true" />
+        <div className="mt-2.5 h-px w-5 bg-sidebar-border" aria-hidden="true" />
       </nav>
     );
   }
@@ -238,7 +243,7 @@ export function ProductSwitch({
      */
     <nav
       aria-label={`${PRODUCT_NAME} products`}
-      className="grid h-9 w-full shrink-0 grid-cols-2 gap-0.5 rounded-control bg-sidebar-accent/80 p-0.5 coarse:h-12"
+      className="grid h-8 w-full shrink-0 grid-cols-2 gap-0.5 rounded-control bg-sidebar-accent/80 p-0.5 coarse:h-12"
     >
       {PRODUCTS.map((product) => (
         <Segment
@@ -286,7 +291,7 @@ function Segment({
             // `.pressable` carries the press dip AND the colour transitions
             // (globals.css); a `transition-colors` after it would override the
             // shorthand and un-animate the press.
-            "pressable group relative flex h-full min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-ui font-medium",
+            "pressable group relative flex h-full min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-ui font-medium",
             "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
             locked
               ? "text-muted-foreground/80 hover:text-muted-foreground"
@@ -336,11 +341,15 @@ function RailItem({
   product,
   active,
   locked,
+  thumbId,
+  thumbTransition,
   onNavigate,
 }: {
   product: Product;
   active: boolean;
   locked: boolean;
+  thumbId: string;
+  thumbTransition: object;
   onNavigate?: () => void;
 }) {
   const chord = useChordLabel(product.chord);
@@ -354,29 +363,31 @@ function RailItem({
           // Always named at rail width: there is no visible label to read.
           aria-label={accessibleName(product, locked) ?? product.label}
           className={cn(
-            // A plain fill, no travelling thumb. The rows below this (New chat,
-            // Search, Library) mark themselves with exactly this fill; a
-            // fill that glides between stacked rows above a stack of fills that
-            // do not reads as a lift, not as a switch.
-            "group relative flex size-11 items-center justify-center rounded-control transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+            // The expanded switch's recipe at rail size: a raised thumb that
+            // travels inside a recessed track (see the nav above).
+            "pressable group relative flex size-8 items-center justify-center rounded-md transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
             locked
-              ? "text-muted-foreground/80 hover:bg-sidebar-hover hover:text-muted-foreground"
+              ? "text-muted-foreground/80 hover:text-muted-foreground"
               : active
-                // The panel's one selected recipe, not a fill that resembles
-                // it. This was `bg-sidebar-accent` — the colour the rows under
-                // it used for HOVER — so at the rail the open product and a
-                // hovered destination were the same paint, which is the exact
-                // confusion the two-colour retune exists to end.
-                ? "sidebar-row-selected text-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground",
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground",
           )}
         >
+          {active && (
+            <motion.span
+              layoutId={thumbId}
+              aria-hidden="true"
+              transition={thumbTransition}
+              className="product-switch-thumb absolute inset-0"
+              style={{ borderRadius: 8 }}
+            />
+          )}
           {/* Byte-identical to NavRow's glyph box, so the rail is one optical
               rhythm from the products down to the footer — which the comment
               claimed while the box passed no size, letting SidebarMotionIcon
               fall back to its own `size-4` (16px) directly above nav glyphs at
               18. `[&_svg]:size-4` is what makes the sentence true. */}
-          <span className="flex size-5 items-center justify-center [&_svg]:size-4">
+          <span className="relative flex size-5 items-center justify-center [&_svg]:size-4">
             {locked ? (
               <Lock aria-hidden="true" />
             ) : (

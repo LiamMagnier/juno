@@ -72,10 +72,18 @@ function ModelMark({ model, className }: { model: ModelInfo; className?: string 
 }
 
 /** A model row's second line: what it is for, in a few words. */
+/** The first clause of a description: "Anthropic's newest Opus: long-running
+ *  agentic coding…" reads "Anthropic's newest Opus". A full sentence cut off
+ *  by an ellipsis on every row was most of the menu's noise. */
+function firstClause(text: string): string {
+  const cut = text.split(/[:.;—(]| - /)[0]?.trim() ?? "";
+  return cut.length > 44 ? `${cut.slice(0, 42).trimEnd()}…` : cut;
+}
+
 function modelLine(model: ModelInfo): string | undefined {
   if (isAutoModelId(model.id)) return "Picks the right model for each message";
-  const what = model.description?.trim();
-  if (model.cost === 3) return what ? `Uses more of your limit. ${what}` : "Uses more of your limit";
+  const what = model.description?.trim() ? firstClause(model.description.trim()) : "";
+  if (model.cost === 3) return what ? `${what} · uses more of your limit` : "Uses more of your limit";
   return what || undefined;
 }
 

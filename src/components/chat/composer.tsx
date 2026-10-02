@@ -2740,6 +2740,7 @@ export function Composer({
        */}
       <DictationSwap
         active={dictating}
+        draft={text}
         onCancel={() => setDictating(false)}
         onClose={(transcript, sendNow) => closeDictation(transcript, sendNow)}
       >

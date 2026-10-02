@@ -1528,13 +1528,26 @@
    * ink: the edge itself, switched at once, plus a pseudo-element whose
    * opacity arrives on fast, so only opacity moves.
    */
+  /*
+   * The composer is the one object on the page that asks to be touched, so it
+   * is the one lifted surface: a hairline edge plus a soft two-layer shadow
+   * (contact + ambient), tinted from the foreground rather than pure black.
+   * Focus deepens the lift instead of darkening the edge. Dark mode drops the
+   * shadow (it reads as dirt on charcoal) for a faint top highlight.
+   */
   .composer-surface {
     background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--foreground) / 0.16);
-    box-shadow: none;
+    border: 1px solid hsl(var(--foreground) / 0.1);
+    box-shadow:
+      0 1px 2px hsl(var(--foreground) / 0.04),
+      0 6px 24px -10px hsl(var(--foreground) / 0.12);
+    transition:
+      box-shadow var(--dur-base) var(--ease-out-soft),
+      border-color var(--dur-fast) var(--ease-out-soft);
   }
   .dark .composer-surface {
     border-color: hsl(0 0% 100% / 0.1);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
   }
   .composer-surface::after {
     content: "";
@@ -1600,11 +1613,14 @@
   .voice-glow[data-voice-glow-fallback][data-voice-glow="muted"] > :first-child { border-color: var(--voice-glow-muted); }
   .voice-glow[data-voice-glow-fallback] > .voice-glow-canvas { display: none; }
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / .3);
-    box-shadow: none;
+    border-color: hsl(var(--foreground) / 0.16);
+    box-shadow:
+      0 1px 2px hsl(var(--foreground) / 0.05),
+      0 12px 36px -12px hsl(var(--foreground) / 0.18);
   }
   .dark .composer-surface:focus-within {
-    border-color: hsl(0 0% 100% / 0.24);
+    border-color: hsl(0 0% 100% / 0.2);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05);
   }
   .composer-surface[data-kbd-focus],
   .dark .composer-surface[data-kbd-focus] {
@@ -1614,7 +1630,7 @@
     opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {
-    .composer-surface::after { transition: none; }
+    .composer-surface, .composer-surface::after { transition: none; }
   }
   /* Increase Contrast: the edge is a full line, not a tint (§1.7). */
   @media (prefers-contrast: more) {

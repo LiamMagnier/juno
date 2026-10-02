@@ -21,7 +21,7 @@ import { UserAvatar, UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
-import { OrbitGlyph } from "@/components/brand/orbit-glyph";
+import { JunoOrbit } from "@/components/ui/icons";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -928,7 +928,7 @@ export function AppSidebar({
           // w-16 = 64px = app-shell's RAIL_WIDTH. Not the spec's 56: the
           // product switch's rail items are 44px inside `px-2.5`, which is
           // exactly 64, and that control is signed off and not ours to resize.
-          collapsed ? "w-16" : "w-full md:w-[var(--juno-sidebar-width,260px)]"
+          collapsed ? "w-[52px]" : "w-full md:w-[var(--juno-sidebar-width,260px)]"
         )}
       >
         {/* ── Lockup · bell · collapse ─────────────────────────────────── */}
@@ -953,16 +953,47 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn("flex items-center", collapsed ? "flex-col gap-1 px-2.5 pt-2" : "mt-2 h-11 gap-0.5 pl-[18px] pr-2")}
+          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-[18px] pr-2")}
         >
           <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex-1")}>
+            {collapsed && onToggleCollapse ? (
+              /*
+               * THE RAIL'S HEAD IS ONE CONTROL. It used to stack the mark, the
+               * bell and an expand button, three 44px tiles before the first
+               * destination. Now the mark is the expand control: under the
+               * pointer it hands over to the panel glyph (the pattern people
+               * know from the references), and the bell lives by the avatar.
+               */
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onToggleCollapse}
+                    aria-label="Show sidebar"
+                    aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
+                    className="jicon-trigger group/head relative grid size-9 place-items-center rounded-control text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover coarse:size-11"
+                  >
+                    <span className="col-start-1 row-start-1 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-90 group-hover/head:opacity-0 group-focus-visible/head:opacity-0 motion-reduce:transition-none">
+                      <ContinuumMark size={14} tight tone="current" />
+                    </span>
+                    <span className="col-start-1 row-start-1 scale-90 text-muted-foreground opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-100 group-hover/head:text-foreground group-hover/head:opacity-100 group-focus-visible/head:opacity-100 motion-reduce:transition-none [&_svg]:size-4">
+                      <SidebarMotionIcon kind="panel-open" />
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="flex items-center gap-1.5">
+                  Show sidebar
+                  <Kbd>{`${mod}⇧S`}</Kbd>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
             <Link
               href={isCode ? "/code" : "/chat"}
               onClick={() => setSidebarOpen(false)}
               aria-label={isCode ? `${BRAND.code.title} home` : `${PRODUCT_NAME} home`}
               className={cn(
                 "flex items-center rounded-control text-foreground outline-offset-2",
-                collapsed ? "size-11 justify-center" : "h-9 w-fit"
+                collapsed ? "size-9 justify-center" : "h-9 w-fit"
               )}
             >
               {collapsed ? (
@@ -973,7 +1004,9 @@ export function AppSidebar({
                 </motion.span>
               )}
             </Link>
+            )}
           </motion.div>
+          {!collapsed && (
           <NotificationsPopover inbox={inbox} open={inboxOpen} onOpenChange={setInboxOpen} onNavigate={() => setSidebarOpen(false)}>
             <PopoverTrigger asChild>
               <Button
@@ -982,7 +1015,7 @@ export function AppSidebar({
                 aria-label={inboxDetail ? `Notifications, ${inboxDetail}` : "Notifications"}
                 className={cn(
                   "jicon-trigger shrink-0 coarse:size-11",
-                  collapsed ? "size-11" : "size-8",
+                  "size-8",
                   (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -990,14 +1023,15 @@ export function AppSidebar({
               </Button>
             </PopoverTrigger>
           </NotificationsPopover>
-          {onToggleCollapse && (
+          )}
+          {onToggleCollapse && !collapsed && (
             <motion.div layout="position" transition={layoutTransition} className="hidden shrink-0 md:flex">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className={cn("jicon-trigger hidden shrink-0 text-muted-foreground hover:text-foreground md:inline-flex", collapsed ? "size-11" : "size-8 coarse:size-11")}
+                    className={cn("jicon-trigger hidden shrink-0 text-muted-foreground hover:text-foreground md:inline-flex", "size-8 coarse:size-11")}
                     onClick={onToggleCollapse}
                     aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
                     aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
@@ -1088,7 +1122,7 @@ export function AppSidebar({
             row people press most, as in both references. `pt-1` is all the air
             the header needs: its 48px row already centres 32px controls, so
             the first row starts 12px under the collapse button. */}
-        <div className={cn(collapsed ? "space-y-1 px-2.5 pt-2" : "px-2 pt-1")}>
+        <div className={cn(collapsed ? "flex flex-col items-center gap-0.5 px-2 pt-1" : "px-2 pt-1")}>
           <NavRow
             collapsed={collapsed}
             href={isCode ? "/code" : undefined}
@@ -1169,7 +1203,7 @@ export function AppSidebar({
             "isolate",
             // No top padding when expanded: this is the same run of rows as
             // New chat and Search above it (see the note there).
-            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1 px-2.5 pt-2" : "px-2"
+            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar flex flex-col items-center gap-0.5 px-2 pt-0.5" : "px-2"
           )}
           aria-label="Primary"
         >
@@ -1318,7 +1352,7 @@ export function AppSidebar({
                               pathname === "/agents" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                             )}
                           >
-                            <OrbitGlyph size={16} tone="current" />
+                            <JunoOrbit aria-hidden="true" className="size-4" motion="none" />
                             <span className="min-w-0 truncate">{BRAND.orbit.label}</span>
                           </Link>
                           <SectionAction
@@ -1515,8 +1549,30 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn(collapsed ? "flex justify-center px-2.5 pb-2 pt-1" : "px-2 pb-2 pt-1")}
+          className={cn(collapsed ? "flex flex-col items-center gap-1 px-2 pb-3 pt-1" : "px-2 pb-2 pt-1")}
         >
+          {collapsed && (
+            <NotificationsPopover inbox={inbox} open={inboxOpen} onOpenChange={setInboxOpen} onNavigate={() => setSidebarOpen(false)}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={inboxDetail ? `Notifications, ${inboxDetail}` : "Notifications"}
+                      className={cn(
+                        "jicon-trigger size-9 shrink-0 rounded-control hover:bg-sidebar-hover coarse:size-11",
+                        (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-sidebar-foreground hover:text-foreground"
+                      )}
+                    >
+                      <SidebarMotionIcon kind="notifications" className="size-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="right">{inboxDetail ? `Notifications · ${inboxDetail}` : "Notifications"}</TooltipContent>
+              </Tooltip>
+            </NotificationsPopover>
+          )}
           {collapsed ? (
             <UserMenu compact onOpenArchived={() => setArchivedOpen(true)} archivedLabel={isCode ? "Archived sessions" : "Archived chats"} />
           ) : (
@@ -1999,7 +2055,10 @@ function navRowClass(collapsed: boolean, active: boolean) {
     "group relative flex h-8 w-full items-center rounded-control font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
     // The rail: a 44px target around the glyph, so every icon is one tap and
     // the row's tooltip names it.
-    collapsed ? "size-11 justify-center px-0" : "gap-2.5 px-2 coarse:h-11",
+    // The rail: 36px targets on a 52px column (44 under a coarse pointer).
+    // The old 44px tiles made every glyph sit in a slab of grey when hovered
+    // or selected, which is what read as "too big".
+    collapsed ? "size-9 justify-center px-0 coarse:size-11" : "gap-2.5 px-2 coarse:h-11",
     // NO `bg-` on the active row: its fill is the travelling `motion.span`
     // inside it (see NavRow). Painting it here too would leave a hard-edged
     // copy of the fill sitting under the one that slides, so the old row's ink

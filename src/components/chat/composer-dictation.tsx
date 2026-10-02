@@ -11,6 +11,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useUiLocale } from "@/lib/i18n-format";
+import {
+  DICTATION_LANGUAGES,
+  resolveDictationLanguage,
+  storeDictationLanguage,
+  type DictationLanguage,
+} from "@/lib/dictation-language";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 /**
  * Dictation — the composer, listening.
@@ -67,7 +81,7 @@ const EXIT_MS = 160;
  * which threw the words away. A stalled response body never rejects on its
  * own, so the deadline has to be explicit.
  */
-const STT_TIMEOUT_MS = 15_000;
+const STT_TIMEOUT_MS = 8_000;
 /** Restart backoff for a recognizer that keeps ending immediately. */
 const RESTART_BACKOFF_MS = [200, 500, 1200, 3000];
 
@@ -91,7 +105,7 @@ function extensionFor(mime: string): string {
  * fails, or takes longer than a person will wait — the caller then ships the
  * Web Speech preview rather than dropping what was just said.
  */
-async function transcribeBlob(blob: Blob, signal: AbortSignal): Promise<string | null> {
+async function transcribeBlob(blob: Blob, language: string, signal: AbortSignal): Promise<string | null> {
   const timeout = new AbortController();
   const onAbort = () => timeout.abort();
   signal.addEventListener("abort", onAbort);
@@ -99,10 +113,10 @@ async function transcribeBlob(blob: Blob, signal: AbortSignal): Promise<string |
   try {
     const form = new FormData();
     form.append("audio", blob, `dictation.${extensionFor(blob.type)}`);
-    // The browser locale is the best available hint for what the user speaks.
-    // Without it the model guesses from the first syllables and often picks
-    // English, which is exactly what mangles French dictation.
-    if (typeof navigator !== "undefined" && navigator.language) form.append("language", navigator.language);
+    // The language the reader picked in the dictation bar. Without it the model
+    // guesses from the first syllables and often picks English, which is
+    // exactly what mangles French dictation.
+    form.append("language", language);
     const res = await fetch("/api/voice/stt", { method: "POST", body: form, signal: timeout.signal });
     if (!res.ok) return null;
     const data = (await res.json()) as { text?: string };
@@ -151,10 +165,15 @@ const DictationMeter = React.forwardRef<HTMLSpanElement, { active: boolean; clas
 );
 
 export function ComposerDictation({
+  draft = "",
   onCancel,
   onStop,
   onSend,
 }: {
+  /** What was already typed. Shown ahead of the live words so the field does
+   *  not appear to empty when the microphone opens; it is not part of the
+   *  transcript handed back (the composer appends to its own draft). */
+  draft?: string;
   /** Discard everything and return to text mode. */
   onCancel: () => void;
   /** Finalize: hand the transcript to the composer textarea for editing. */
@@ -174,6 +193,13 @@ export function ComposerDictation({
 
   const { features } = useApp();
   const serverStt = features.serverStt;
+  const uiLocale = useUiLocale();
+  const [language, setLanguage] = React.useState<DictationLanguage>(() => resolveDictationLanguage(uiLocale));
+  const [languageMenuOpen, setLanguageMenuOpen] = React.useState(false);
+  const languageMenuOpenRef = React.useRef(false);
+  languageMenuOpenRef.current = languageMenuOpen;
+  const languageRef = React.useRef(language);
+  languageRef.current = language;
 
   const phaseRef = React.useRef<Phase>("active");
   /** Set the moment a cancel is accepted, including one that interrupts an
@@ -204,6 +230,7 @@ export function ComposerDictation({
   React.useEffect(() => setReady(true), []);
 
   const speech = useSpeechRecognition({
+    lang: language.tag,
     onFinal: (text) => setFinals((f) => [...f, text]),
     onEnd: () => {
       // Chrome ends recognition after long silence, and also fires `no-speech`
@@ -230,6 +257,35 @@ export function ComposerDictation({
   });
   const startRef = React.useRef<(() => void) | null>(null);
   startRef.current = speech.start;
+
+  /**
+   * Switch the language mid-take. The recognizer hears one language per
+   * session, so the running one is stopped; its `end` handler restarts it,
+   * and by then `startRef` holds a start bound to the new tag. The backoff
+   * counters are reset so a deliberate switch is never mistaken for a
+   * recognizer that keeps dying.
+   */
+  const changeLanguage = React.useCallback(
+    (tag: string) => {
+      const next = DICTATION_LANGUAGES.find((l) => l.tag === tag);
+      if (!next || next.tag === languageRef.current.tag) return;
+      storeDictationLanguage(next.tag);
+      restartCountRef.current = 0;
+      restartAtRef.current = 0;
+      setRecognitionLost(false);
+      setLanguage(next);
+    },
+    []
+  );
+  const languageMountedRef = React.useRef(false);
+  const stopSpeech = speech.stop;
+  React.useEffect(() => {
+    if (!languageMountedRef.current) {
+      languageMountedRef.current = true;
+      return;
+    }
+    if (phaseRef.current === "active") stopSpeech();
+  }, [language, stopSpeech]);
 
   const transcript = React.useMemo(() => {
     const tail = speech.interim.trim();
@@ -398,7 +454,7 @@ export function ComposerDictation({
         setTranscribing(true);
         const controller = new AbortController();
         abortRef.current = controller;
-        const accurate = await transcribeBlob(blob, controller.signal);
+        const accurate = await transcribeBlob(blob, languageRef.current.tag, controller.signal);
         if (cancelledRef.current) return;
         close(accurate ?? previewText);
       })();
@@ -412,6 +468,9 @@ export function ComposerDictation({
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // The language menu owns Escape and Enter while it is open: Escape
+      // closes the menu, Enter picks a language. Neither ends the take.
+      if (languageMenuOpenRef.current) return;
       if (e.key === "Escape") {
         e.preventDefault();
         cancel();
@@ -503,6 +562,7 @@ export function ComposerDictation({
           </p>
         ) : transcript ? (
           <p className="whitespace-pre-wrap text-foreground">
+            {draft.trim() && <span className="text-muted-foreground">{`${draft.trim()} `}</span>}
             {finals.join(" ")}
             {speech.interim.trim() && (
               <>
@@ -512,7 +572,16 @@ export function ComposerDictation({
             )}
           </p>
         ) : (
-          <p className="text-muted-foreground">Speak now.</p>
+          <p className="text-muted-foreground">
+            {draft.trim() ? (
+              <>
+                {`${draft.trim()} `}
+                <span className="opacity-60">…</span>
+              </>
+            ) : (
+              `Speak now, in ${language.label}.`
+            )}
+          </p>
         )}
       </div>
 
@@ -556,17 +625,52 @@ export function ComposerDictation({
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={stop}
-            disabled={transcribing}
-            aria-label="Stop dictation and edit the text"
-          >
-            <Check className="size-4" />
-            Done
-          </Button>
+          <DropdownMenu open={languageMenuOpen} onOpenChange={setLanguageMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={transcribing}
+                    aria-label={`Dictation language: ${language.label}`}
+                    className={cn(
+                      "pressable h-7 rounded-full px-2.5 font-mono text-caption font-medium tracking-wide text-muted-foreground",
+                      "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground",
+                      "data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:opacity-50 coarse:h-11"
+                    )}
+                  >
+                    {language.short}
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Language you are speaking</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" side="top" className="min-w-44">
+              <DropdownMenuRadioGroup value={language.tag} onValueChange={changeLanguage}>
+                {DICTATION_LANGUAGES.map((l) => (
+                  <DropdownMenuRadioItem key={l.tag} value={l.tag}>
+                    {l.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={stop}
+                disabled={transcribing}
+                aria-label="Stop dictating and keep the text"
+                className={composerIconButtonClass}
+              >
+                <Check className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Stop and keep the text</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button

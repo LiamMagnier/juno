@@ -250,6 +250,9 @@ export function ComposerLandingFixture() {
   React.useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("view");
     if (wanted === "home" || wanted === "dock" || wanted === "tasks") setView(wanted);
+    // `?model=<id>` opens on a named model, so the effort dial can be checked.
+    const wantedModel = new URLSearchParams(window.location.search).get("model");
+    if (wantedModel) setModel(wantedModel as ModelId);
   }, []);
   const common: React.ComponentProps<typeof Composer> = {
     conversationId: null,

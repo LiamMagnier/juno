@@ -151,10 +151,10 @@ export function UserMenu({
           // TooltipTrigger's own `data-state` (closed / delayed-open) overrides
           // the dropdown's. `aria-expanded` is written by DropdownMenuTrigger
           // alone.
-          className="group size-11 rounded-control hover:bg-sidebar-hover aria-expanded:sidebar-row-selected"
+          className="group size-9 rounded-control hover:bg-sidebar-hover aria-expanded:sidebar-row-selected coarse:size-11"
           aria-label="Account menu"
         >
-          <UserAvatar className="size-8" />
+          <UserAvatar className="size-7" />
         </Pressable>
       ) : (
         <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-hover">

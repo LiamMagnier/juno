@@ -62,7 +62,7 @@ import {
  * track's 2px padding, but the inset a browser applies is half of the thumb
  * it was given, so the outer figure is what belongs here and in the CSS.
  */
-const THUMB = 28;
+const THUMB = 18;
 
 /** Where stop `i` of `count` sits along the track, as a CSS length. */
 const atStop = (i: number, count: number) => {
@@ -99,90 +99,59 @@ export function ReasoningSlider({
   if (count < 2) return null;
 
   const head = atStop(index, count);
-
   return (
     <div className={cn("select-none", className)}>
-      {/* The eyebrow and the value on one line. The eyebrow used to be drawn
-          by the model popover AROUND this control; it belongs here, beside
-          the word it names, and every surface that mounts the slider gets it
-          for free instead of only that one. */}
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+      {/*
+       * THE EFFORT DIAL, redrawn after the owner's reference (OpenAI's
+       * thinking-time control): a hairline track, one stop per rung, a small
+       * raised thumb and the rung names under their stops. The old control was
+       * a 28px accent bar with a 28px knob, which read as a toggle switch or a
+       * progress bar rather than as a choice among a few depths.
+       */}
+      <div className="mb-2 flex items-baseline justify-between gap-3">
         <span className="text-caption font-medium text-muted-foreground">Thinking</span>
-        {/* Keyed on the rung, so the word cross-fades in as the knob lands
-            rather than being replaced in one frame (§2.2.7). */}
         <span
           key={current?.label ?? ""}
           className={cn(
-            "text-ui font-medium transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            "text-caption font-medium",
             "motion-safe:animate-fade-in motion-safe:[animation-duration:var(--dur-fast)]",
-            disabled ? "text-muted-foreground" : "text-primary",
+            disabled ? "text-muted-foreground" : "text-foreground",
           )}
         >
           {current?.label ?? ""}
         </span>
       </div>
-
-      {/* h-9 for the hit area with the 28px pill centred in it: the pill is
-          the size the design wants, and 28px alone is under every touch
-          target minimum there is. */}
-      <div className={cn("relative h-9 w-full coarse:h-11", disabled && "opacity-55")}>
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 overflow-hidden rounded-full bg-secondary">
-          {/* The fill runs THROUGH the knob rather than up to it, so its
-              rounded cap is hidden underneath instead of butting against a
-              circle with a sliver of track showing between the two.
-
-              It is a full-width bar SLID in from the left, not a bar whose
-              width grows: only transform and opacity travel
-              (ICONS_AND_MOTION.md §2.2.8). A width transition relaid the
-              track on every frame; a translate stays on the compositor. The
-              percentages inside `head` resolve against the bar's own width,
-              which is the track's, so the cap lands exactly where the width
-              used to end. The track's own clip rounds the left end. */}
+      <div className={cn("relative h-6 w-full coarse:h-11", disabled && "opacity-55")}>
+        {/* Track. The fill is a full-width bar slid in from the left, so only
+            transform travels (ICONS_AND_MOTION.md §2.2.8). */}
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-foreground/10">
           <div
-            className="absolute inset-0 overflow-hidden rounded-full bg-primary transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
-            style={{ transform: `translateX(calc(-100% + ${head} + 12px))` }}
+            className="absolute inset-0 rounded-full bg-foreground/85 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+            style={{ transform: `translateX(calc(-100% + ${head}))` }}
           />
-
-          {/* A mark per rung, inside the track. Behind the knob they sit on
-              the accent and have to invert to stay visible. */}
-          {options.map((option, i) => (
-            <span
-              key={`tick-${option.value}-${option.label}`}
-              className={cn(
-                "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-                i <= index ? "bg-primary-foreground/55" : "bg-muted-foreground/40",
-              )}
-              style={{ left: atStop(i, count) }}
-            />
-          ))}
         </div>
-
-        {/* The knob, at the track's FULL height rather than inset inside it.
-            Inset, its 24px disc sat on a 26px fill and left a 1px crescent of
-            accent showing round the edge at the first rung — a coral ring on
-            a control whose first rung means "no thinking at all". At the
-            track's own height the fill's cap is covered in every position.
-            A hairline, not a shadow: still the flat product.
-
-            It rides a full-width carriage that TRANSLATES, for the same reason
-            as the fill: `left` is a layout property and must not animate. The
-            carriage is the track's width, so `head`'s percentages mean the
-            same thing here as they did as a `left`.
-
-            The carriage sits in a clipping frame of the track's own size. Slid
-            right, its empty remainder reached past the control by up to a
-            track's width; inside a popover that is harmless, but on any
-            in-flow surface it widened the page and gave it a sideways scroll.
-            The knob itself never leaves the frame, so nothing visible is cut. */}
+        {/* Stops, one per rung, sitting on the track. */}
+        {options.map((option, i) => (
+          <span
+            key={`stop-${option.value}-${option.label}`}
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              i < index ? "bg-background/70" : i === index ? "bg-transparent" : "bg-foreground/25",
+            )}
+            style={{ left: atStop(i, count) }}
+          />
+        ))}
+        {/* The thumb rides a carriage that translates (never `left`), inside a
+            frame of the track's size so the carriage cannot widen the page. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div
-            className="absolute inset-0 transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
+            className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
             style={{ transform: `translateX(${head})` }}
           >
-            <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/60 bg-knob" />
+            <div className="effort-thumb absolute left-0 top-1/2 size-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/[0.06] bg-knob shadow-[0_1px_2px_rgb(0_0_0/0.12),0_2px_8px_rgb(0_0_0/0.08)] dark:border-white/10" />
           </div>
         </div>
-
         <input
           type="range"
           min={0}
@@ -198,15 +167,32 @@ export function ReasoningSlider({
           }}
           className="effort-range peer absolute inset-0 m-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
         />
-
-        {/* Focus is drawn on the track, which has a box; the input it belongs
-            to is transparent and has nothing to ring. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100 motion-reduce:transition-none"
+          className="pointer-events-none absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100 motion-reduce:transition-none"
         />
       </div>
-
+      {/* The rung names, each under its stop and each a target of its own:
+          the ends hug the edges, the middle ones centre on their stop. */}
+      <div className="relative mt-1 h-4">
+        {options.map((option, i) => (
+          <button
+            key={`label-${option.value}-${option.label}`}
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "absolute top-0 whitespace-nowrap text-caption transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              i === index ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+              i === 0 ? "left-0" : i === count - 1 ? "right-0" : "-translate-x-1/2",
+            )}
+            style={i === 0 || i === count - 1 ? undefined : { left: atStop(i, count) }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       {(onFastModeChange || onProModeChange) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {onFastModeChange && (

@@ -409,8 +409,8 @@ test("the list's section headings are the contract's, in order, per product", ()
       label: perProduct(attribute(node, "label"), "Section"),
     })),
     // Orbit's head is a destination (it opens the roster), not a Section:
-    // the Orbit glyph and `BRAND.orbit.label`, linking to /agents.
-    ...elements(APP_SIDEBAR, "OrbitGlyph").map((node) => ({
+    // the Orbit icon and `BRAND.orbit.label`, linking to /agents.
+    ...elements(APP_SIDEBAR, "JunoOrbit").map((node) => ({
       node,
       label: { chat: BrandNames.BRAND.orbit.label, code: BrandNames.BRAND.orbit.label },
     })),

@@ -42,7 +42,7 @@ const SIDEBAR_MAX = 336;
  * starts.
  */
 const SIDEBAR_DEFAULT = 260;
-const RAIL_WIDTH = 64;
+const RAIL_WIDTH = 52;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /code is the one navigation the user cannot absorb as
 // "the page is loading".
@@ -489,7 +489,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           /* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
              spacer and app-sidebar's collapsed column — and a mismatch leaves
              a seam of page showing through beside the rail at md–lg. */
-          <div aria-hidden className="hidden h-full w-16 shrink-0 bg-sidebar md:block" />
+          <div aria-hidden className="hidden h-full w-[52px] shrink-0 bg-sidebar md:block" />
         )}
         {/* The scrim fades out as well as in. It used to cut on close while the
             panel it belonged to was still folding away, so the page brightened

@@ -472,7 +472,6 @@ const CHEVRON = poly(9.375, 6.75, 14.625, 12, 9.375, 17.25);
 const ARROW_SHAFT = poly(4.5, 12, 19.5, 12);
 const ARROW_HEAD = head(19.5, 12, 0, 7.425);
 
-const BUBBLE = "M6.75 4.5H17.25A3 3 0 0 1 20.25 7.5V13.5A3 3 0 0 1 17.25 16.5H11.25L7.5 19.875V16.5H6.75A3 3 0 0 1 3.75 13.5V7.5A3 3 0 0 1 6.75 4.5Z";
 /**
  * The folder: continuous corners, and a tab whose shoulder is a soft S (a
  * bracketed join, the way Newsreader's serifs meet their stems) instead of a
@@ -498,7 +497,6 @@ function folderBody(x0: number, x1: number, yTab: number, yTop: number, y1: numb
 }
 const FOLDER = folderBody(3.75, 20.25, 5.25, 7.5, 18.75, 8.25);
 /** The open folder's back: up the left, over the tab, along the top, down to where the front leaf covers it. */
-const FOLDER_BACK = `M3.75 18.75V${fmt(5.25 + 2.655)}${corner(3.75, 5.25, 0, 1, 1, 0, 2.25)}${tabS(8.25, 5.25, 7.5)}H${fmt(18.75 - 2.655)}${corner(18.75, 7.5, -1, 0, 0, 1, 2.25)}V10.5`;
 /** The bell's shoulders are round, its waist straight, and its lip flares a little: cast, not extruded. */
 const BELL = "M4.875 16.5C6 15.6 6.75 14.4 6.75 12.75V10.5A5.25 5.25 0 0 1 17.25 10.5V12.75C17.25 14.4 18 15.6 19.125 16.5";
 const MIC = "M9 6.75A3 3 0 0 1 15 6.75V11.25A3 3 0 0 1 9 11.25Z";
@@ -541,17 +539,6 @@ const HAND =
  * at 16 px a band made the pair read as "0lb". The two stand a house gap
  * apart at the top, so they never merge into one blob.
  */
-const SHELF_Y = 19.5;
-const LEAN = -12;
-const UPRIGHT = `M${P(3.75, SHELF_Y)}V${fmt(4.5 + 1.77)}${corner(3.75, 4.5, 0, 1, 1, 0, 1.5)}H${fmt(9 - 1.77)}${corner(9, 4.5, -1, 0, 0, 1, 1.5)}V${fmt(SHELF_Y)}`;
-const leanBook = (() => {
-  const q = (x: number, y: number) => rot(x, y, 15, SHELF_Y, LEAN);
-  const [ax, ay] = q(15, SHELF_Y);
-  const [bx, by] = q(20.25, SHELF_Y);
-  const [cx_, cy_] = q(20.25, SHELF_Y - 12);
-  const [dx, dy] = q(15, SHELF_Y - 12);
-  return roundPoly(1.5, ax, ay, bx, by, cx_, cy_, dx, dy);
-})();
 
 const PLUG = ["M7.5 9H16.5V12A4.5 4.5 0 0 1 7.5 12Z", poly(9.75, 9, 9.75, 4.5), poly(14.25, 9, 14.25, 4.5), poly(12, 16.5, 12, 20.25)];
 
@@ -610,37 +597,7 @@ export function ellArc(cx: number, cy: number, a: number, b: number, phi: number
  * 8 px apart at 16 px. No rotational symmetry, no arrowhead, no start or end
  * to chase: it cannot read as refresh, sync or a spinner, and it never moves.
  */
-const ORBIT_A = 9.375;
-function orbitArcs(a: number, chord: number): string[] {
-  const b = a / ((1 + Math.sqrt(5)) / 2);
-  const th = (-24 * Math.PI) / 180;
-  const at = (deg: number): [number, number] => {
-    const t = (deg * Math.PI) / 180;
-    const x = a * Math.cos(t);
-    const y = b * Math.sin(t);
-    return [12 + x * Math.cos(th) - y * Math.sin(th), 12 + x * Math.sin(th) + y * Math.cos(th)];
-  };
-  const half = (g: number): number => {
-    let lo = 0;
-    let hi = 60;
-    for (let i = 0; i < 40; i++) {
-      const mid = (lo + hi) / 2;
-      const p0 = at(g - mid);
-      const q0 = at(g + mid);
-      if (Math.hypot(q0[0] - p0[0], q0[1] - p0[1]) < chord) lo = mid;
-      else hi = mid;
-    }
-    return hi;
-  };
-  return [0, 180].map((g) => {
-    const [x0, y0] = at(g + half(g));
-    const [x1, y1] = at(g + 180 - half(g + 180));
-    return `M${P(x0, y0)}A${fmt(a)} ${fmt(b)} -24 0 1 ${P(x1, y1)}`;
-  });
-}
 
-const ORBIT_ARCS = orbitArcs(ORBIT_A, 3.5);
-const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
 
 /**
  * Code (revision 2, the Code board's construction): opposed square brackets
@@ -650,8 +607,6 @@ const ORBIT_ARCS_SMALL = orbitArcs(10.125, 2.25 + 1.875);
  * it straight), the counter between the arms is 9 units wide, and the cursor
  * is half the brackets' height, centred: the board's proportions.
  */
-const BRACKET = `M7.5 4.5H${fmt(4.5 + 1.77)}${corner(4.5, 4.5, 1, 0, 0, 1, 1.5)}V${fmt(19.5 - 1.77)}${corner(4.5, 19.5, 0, -1, 1, 0, 1.5)}H7.5`;
-const CURSOR = poly(12, 8.25, 12, 15.75);
 
 /** A simple person: head and shoulders, the house gap between them. */
 const HEAD = [12, 8.25, 3.75] as const;
@@ -803,71 +758,93 @@ export function keyline(d: IconDrawing): IconDrawing {
 
 const I = (d: Omit<IconDrawing, "viewBox" | "line">): IconDrawing => keyline({ viewBox: 24, line: 1.5, ...d });
 
+/* Redrawn 2026-10-02 on Lucide's geometry (ISC), placed on the construction
+   grid so the keyline projects it back to the reference size, and drawn in the
+   house line. The owner rejected the earlier marks for these navigation glyphs. */
+const CHAT_BUBBLE = "M20.889 16.444A1.778 1.778 0 0 1 19.111 18.222L7.403 18.222A1.778 1.778 0 0 0 6.146 18.743L4.188 20.7A0.631 0.631 0 0 1 3.111 20.254L3.111 5.778A1.778 1.778 0 0 1 4.889 4L19.111 4A1.778 1.778 0 0 1 20.889 5.778Z";
+const NEW_CHAT_PEN = "M17.667 3.667A0.889 0.889 0 0 1 20.333 6.333L12.322 14.346A1.778 1.778 0 0 1 11.564 14.795L9.01 15.541A0.444 0.444 0 0 1 8.459 14.99L9.205 12.436A1.778 1.778 0 0 1 9.655 11.679Z";
+const FOLDER_SHUT = "M19.111 19.111A1.778 1.778 0 0 0 20.889 17.333L20.889 8.444A1.778 1.778 0 0 0 19.111 6.667L12.089 6.667A1.778 1.778 0 0 1 10.587 5.867L9.867 4.8A1.778 1.778 0 0 0 8.382 4L4.889 4A1.778 1.778 0 0 0 3.111 5.778L3.111 17.333A1.778 1.778 0 0 0 4.889 19.111Z";
+const LIBRARY_LEAN = "M19.467 18.133C19.644 18.578 19.378 19.111 18.933 19.289L17.244 19.911C16.8 20.089 16.267 19.822 16.089 19.378L11.2 5.867C11.022 5.422 11.289 4.889 11.733 4.711L13.422 4.089C13.867 3.911 14.4 4.178 14.578 4.622Z";
+const BELL_BODY = "M4.233 14.956A0.889 0.889 0 0 0 4.889 16.444L19.111 16.444A0.889 0.889 0 0 0 19.769 14.957C18.587 13.739 17.333 12.444 17.333 8.444A5.333 5.333 0 0 0 6.667 8.444C6.667 12.444 5.412 13.739 4.233 14.956";
+const ORBIT_ARC_A = "M19.414 7.097A8.889 8.889 0 0 1 10.459 20.756";
+const ORBIT_ARC_B = "M4.586 16.903A8.889 8.889 0 0 1 13.547 3.246";
+
+
 
 export const ICONS = {
   /* ——— Navigation ——— */
   chat: I({
     group: "Navigation",
-    elements: [p(BUBBLE)],
-    fill: [solid(BUBBLE)],
+    elements: [p(CHAT_BUBBLE)],
+    fill: [solid(CHAT_BUBBLE)],
     on: { kind: "fill" },
-    hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
+    hover: { s: 1.06, o: [3.111, 20.7], anim: "pop" },
     motion: "The bubble speaks: a small pop from the tail.",
   }),
-  orbit: {
-    viewBox: 24,
-    line: 1.5,
+  orbit: I({
     group: "Navigation",
-    elements: ORBIT_ARCS.map((d) => p(d)),
-    small: { elements: ORBIT_ARCS_SMALL.map((d) => p(d)) },
+    elements: [p(ORBIT_ARC_A), p(ORBIT_ARC_B), c(12, 12, 2.667), c(18.222, 5.778, 1.778), c(5.778, 18.222, 1.778)],
     motion: "None, ever: Orbit's glyph is static (it must never read as a spinner or a loading orbit). Selection is tonal, on the row.",
-  },
+  }),
   code: I({
     group: "Navigation",
-    elements: [g([p(BRACKET)], { x: -1 }), g([p(flipX(BRACKET))], { x: 1 }), p(CURSOR)],
-    motion: "Alevr Code: opposed brackets with the cursor inset between them. The brackets open a unit each way; the cursor holds still.",
+    elements: [
+      g([p("M17.333 15.556L20.889 12L17.333 8.444")], { x: 0.75 }),
+      g([p("M6.667 8.444L3.111 12L6.667 15.556")], { x: -0.75 }),
+      p("M14.222 4.889L9.778 19.111"),
+    ],
+    motion: "Alevr Code: angle brackets around a slash. The brackets step a unit apart.",
   }),
   "new-chat": I({
     group: "Navigation",
-    elements: [p(BUBBLE), ko(plusAt(18.75, 17.25, 2.625)), p(plusAt(18.75, 17.25, 2.625))],
-    hover: { s: 1.07, o: [7.5, 19.875], anim: "pop" },
-    motion: "A new chat is the chat bubble with the house plus cut into its corner. It speaks: a small pop from the tail.",
+    elements: [
+      p("M12 4L5.778 4A1.778 1.778 0 0 0 4 5.778L4 18.222A1.778 1.778 0 0 0 5.778 20L18.222 20A1.778 1.778 0 0 0 20 18.222L20 12"),
+      g([p(NEW_CHAT_PEN)], { r: -8, o: [9, 15] }),
+    ],
+    motion: "A new chat is a page with a pen on it. The pen tips as if starting to write.",
   }),
   search: I({
     group: "Navigation",
-    elements: [c(10.125, 10.125, 6.375), p(poly(17.063, 17.063, 20.625, 20.625))],
-    hover: { r: -14, o: [10.125, 10.125] },
-    motion: "The handle stands a house gap off the lens (Juno's join). The lens tilts about its own centre, so only the handle swings.",
+    elements: [c(11.111, 11.111, 7.111), p("M20 20L16.142 16.142")],
+    hover: { r: -14, o: [11.111, 11.111] },
+    motion: "The lens tilts about its own centre, so only the handle swings.",
   }),
   folder: I({
     group: "Navigation",
-    elements: [p(FOLDER)],
-    fill: [solid(FOLDER)],
+    elements: [p(FOLDER_SHUT)],
+    fill: [solid(FOLDER_SHUT)],
     on: { kind: "fill" },
     hoverSwap: "folder-open",
     motion: "The folder opens (a cross-fade to its open drawing).",
   }),
   "folder-open": I({
     group: "Navigation",
-    elements: [p(FOLDER_BACK), g([p(roundPoly(1.2, 6.75, 10.5, 20.625, 10.5, 17.25, 18.75, 3.75, 18.75))], { y: -0.5 })],
-    motion: "The front leaf lifts half a unit.",
+    elements: [p("M6.667 13.778L8 11.2A1.778 1.778 0 0 1 9.547 10.222L19.111 10.222A1.778 1.778 0 0 1 20.836 12.444L19.467 17.778A1.778 1.778 0 0 1 17.733 19.111L4.889 19.111A1.778 1.778 0 0 1 3.111 17.333L3.111 5.778A1.778 1.778 0 0 1 4.889 4L8.356 4A1.778 1.778 0 0 1 9.858 4.8L10.578 5.867A1.778 1.778 0 0 0 12.062 6.667L17.333 6.667A1.778 1.778 0 0 1 19.111 8.444L19.111 10.222")],
+    motion: "The folder, open.",
   }),
   library: I({
     group: "Navigation",
-    elements: [p(poly(3, SHELF_Y, 21, SHELF_Y)), p(UPRIGHT), g([p(leanBook)], { r: -LEAN, o: [15, SHELF_Y], y: -1 })],
-    motion: "The leaning volume straightens and lifts, as a book comes off the shelf.",
+    elements: [
+      p(rr(4, 4, 7.111, 16, 0.889)),
+      p("M7.556 4L7.556 20"),
+      g([p(LIBRARY_LEAN)], { r: -6, o: [17.8, 19.6], y: -0.5 }),
+    ],
+    motion: "A volume on the shelf and one leaning on it. The leaning volume straightens and lifts.",
   }),
   customize: I({
     group: "Navigation",
     elements: [
-      p(poly(4.5, 7.5, 19.5, 7.5)),
-      p(poly(4.5, 16.5, 19.5, 16.5)),
-      { ...ko(rr(13.875, 4.875, 2.25, 5.25, 1.125)), hover: { x: -2.25 } },
-      g([solid(rr(13.875, 4.875, 2.25, 5.25, 1.125))], { x: -2.25 }),
-      { ...ko(rr(7.875, 13.875, 2.25, 5.25, 1.125)), hover: { x: 2.25 } },
-      g([solid(rr(7.875, 13.875, 2.25, 5.25, 1.125))], { x: 2.25 }),
+      p("M10.222 5.778L4 5.778"),
+      p("M20 5.778L13.778 5.778"),
+      p("M8.444 12L4 12"),
+      p("M20 12L12 12"),
+      p("M12 18.222L4 18.222"),
+      p("M20 18.222L15.556 18.222"),
+      g([p("M13.778 4L13.778 7.556")], { x: -1.5 }),
+      g([p("M8.444 10.222L8.444 13.778")], { x: 1.5 }),
+      g([p("M15.556 16.444L15.556 20")], { x: -1.5 }),
     ],
-    motion: "Two faders, their caps cut clear of the track by the house gap. The caps slide toward each other.",
+    motion: "Three faders. Their stops slide a step along the track.",
   }),
   crew: I({
     group: "Navigation",
@@ -882,16 +859,15 @@ export const ICONS = {
   }),
   bell: I({
     group: "Navigation",
-    optical: 1.06,
-    elements: BELL_PARTS.map((d) => p(d)),
-    fill: [solid(`${BELL}Z`), p(BELL_PARTS[1]), p(BELL_PARTS[2])],
-    on: { kind: "turn", deg: 14, o: [12, 4.5] },
-    hover: { r: 10, o: [12, 4.5], anim: "swing" },
+    elements: [p(BELL_BODY), p("M10.46 20A1.778 1.778 0 0 0 13.54 20")],
+    fill: [solid(BELL_BODY), p("M10.46 20A1.778 1.778 0 0 0 13.54 20")],
+    on: { kind: "turn", deg: 14, o: [12, 3.111] },
+    hover: { r: 10, o: [12, 3.111], anim: "swing" },
     motion: "One swing from the hanger, damped, then still. Active (something new): it holds the swing, tilted as it rings, at its usual weight. Never a fill or a dot.",
   }),
   sidebar: I({
     group: "Navigation",
-    elements: [p(FRAME), g([p(poly(9, 4.5, 9, 19.5))], { x: -1.5 })],
+    elements: [p(rr(4, 4, 16, 16, 1.778)), g([p("M9.333 4L9.333 20")], { x: -1 })],
     motion: "The divider slides toward the edge the panel hides into.",
   }),
   "panel-right": I({
@@ -986,23 +962,23 @@ export const ICONS = {
   mic: I({
     group: "Composer",
     elements: [
-      p(MIC),
-      p("M6 11.25A6 6 0 0 0 18 11.25"),
-      p(poly(12, 17.25, 12, 20.25)),
-      g([p(poly(3, 7.5, 3, 10.5))], { rest: 0, op: 1 }),
-      g([p(poly(21, 7.5, 21, 10.5))], { rest: 0, op: 1, delay: 60 }),
+      p(rr(9.333, 3.111, 5.333, 11.556, 2.667)),
+      p("M18.222 10.222L18.222 12A6.222 6.222 0 0 1 5.778 12L5.778 10.222"),
+      p("M12 18.222L12 20.889"),
     ],
     on: { kind: "swap", to: "voice" },
-    motion: "Two level ticks appear beside it. Active: becomes the level meter.",
+    hover: { y: -0.75 },
+    motion: "The capsule lifts a little. Active: becomes the level meter.",
   }),
   voice: I({
     group: "Composer",
     elements: [
-      g([p(poly(4.5, 9.75, 4.5, 14.25))], { sy: 0.6, o: [4.5, 12], anim: "levels", delay: 0 }),
-      g([p(poly(8.25, 7.5, 8.25, 16.5))], { sy: 1.25, o: [8.25, 12], anim: "levels", delay: 30 }),
-      g([p(poly(12, 4.5, 12, 19.5))], { sy: 0.7, o: [12, 12], anim: "levels", delay: 60 }),
-      g([p(poly(15.75, 7.5, 15.75, 16.5))], { sy: 1.2, o: [15.75, 12], anim: "levels", delay: 90 }),
-      g([p(poly(19.5, 9.75, 19.5, 14.25))], { sy: 0.7, o: [19.5, 12], anim: "levels", delay: 120 }),
+      g([p("M3.111 10.222L3.111 12.889")], { sy: 0.6, o: [3.111, 11.556], anim: "levels", delay: 0 }),
+      g([p("M6.667 6.667L6.667 16.444")], { sy: 1.2, o: [6.667, 11.556], anim: "levels", delay: 30 }),
+      g([p("M10.222 4L10.222 20")], { sy: 0.7, o: [10.222, 12], anim: "levels", delay: 60 }),
+      g([p("M13.778 8.444L13.778 14.667")], { sy: 1.25, o: [13.778, 11.556], anim: "levels", delay: 90 }),
+      g([p("M17.333 5.778L17.333 17.333")], { sy: 0.75, o: [17.333, 11.556], anim: "levels", delay: 120 }),
+      g([p("M20.889 10.222L20.889 12.889")], { sy: 0.6, o: [20.889, 11.556], anim: "levels", delay: 150 }),
     ],
     motion: "One pass of levels runs across the bars, then they rest. With `levels`, the bars follow the input.",
   }),

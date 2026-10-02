@@ -165,14 +165,17 @@ export const PlusMenuRow = React.forwardRef<
         if (toggle || keepOpen) event.preventDefault();
         onSelect?.();
       }}
-      className={cn(plusMenuRowClass, description && "items-start py-2", className)}
+      className={cn(plusMenuRowClass, className)}
       {...props}
     >
-      {leading ?? (icon ? <PlusMenuGlyph icon={icon} className={description ? "mt-0.5" : undefined} /> : null)}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{children}</span>
+      {leading ?? (icon ? <PlusMenuGlyph icon={icon} /> : null)}
+      {/* The description rides the label's line, muted, rather than a second
+          line: a two-line row in a list of one-line rows broke the rhythm of
+          the whole menu for the sake of two words. */}
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="truncate">{children}</span>
         {description && (
-          <span className="mt-0.5 block truncate text-caption font-normal text-muted-foreground">{description}</span>
+          <span className="truncate text-caption font-normal text-muted-foreground">{description}</span>
         )}
       </span>
       {detail && (
@@ -182,7 +185,24 @@ export const PlusMenuRow = React.forwardRef<
       )}
       {note ? (
         <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
-      ) : toggle || radio ? (
+      ) : toggle ? (
+        /* A toggle draws a switch: the state is legible at rest, off as well
+           as on, where a tick only ever said "on". */
+        <span
+          aria-hidden="true"
+          className={cn(
+            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            ticked ? "bg-primary" : "bg-foreground/15",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute left-0.5 top-0.5 size-3 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.2)] transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+              ticked && "translate-x-3",
+            )}
+          />
+        </span>
+      ) : radio ? (
         // A tick, not a Switch. This slot used to render the real `Switch`
         // component (aria-hidden, pointer-events-none) so that the menu and
         // the "@" palette would stop drawing two different toggles for one
