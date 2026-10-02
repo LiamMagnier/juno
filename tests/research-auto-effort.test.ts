@@ -32,3 +32,15 @@ test("no effort control and auto mode land in the middle, never the floor", () =
   assert.equal(researchEffortFor({ cost: null, reasoningEffort: "high" }), "deep");
   assert.equal(researchEffortFor({}), "standard");
 });
+
+/*
+ * The tiers are the native path's alone now (SPEC §9.2, §9.6.4): a web run is
+ * sized by its envelope, from the planner's scope. The auto-effort mapping
+ * stays for the frozen native request, which still sends `researchEffort`.
+ */
+test("sizing never reads the derived depth", async () => {
+  const { readFileSync } = await import("node:fs");
+  for (const file of ["src/lib/research/envelope.ts", "src/lib/research/engine.ts", "src/lib/research/planner.ts", "src/app/api/research/route.ts"]) {
+    assert.doesNotMatch(readFileSync(file, "utf8"), /auto-effort|researchEffortFor/, `${file} sizes by depth`);
+  }
+});

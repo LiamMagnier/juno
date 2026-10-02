@@ -11,6 +11,9 @@ import { purchasablePlans } from "@/lib/stripe";
 import { configuredProviders } from "@/lib/providers";
 import { DEFAULT_MODEL, providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
+import { keyedSearchEngineConfigured } from "@/lib/web/search";
+import { searchProviderStatus } from "@/lib/search/search-engine";
+import { researchEntitlement } from "@/lib/research/entitlement";
 import { isOwnerEmail } from "@/lib/owner";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { AUTO_LOCALE } from "@/lib/i18n";
@@ -22,6 +25,20 @@ import { normalizeSensitiveTopics } from "@/lib/memory-sensitive";
 import { webPushPublicKey } from "@/lib/notify/web-push";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
+
+/**
+ * A keyed engine (Tavily, Serper, Brave or Exa) is configured (§6.3). Asked
+ * of the chat search profile, which owns the answer; until that lands
+ * (`src/lib/web/search.ts` is a stub that throws) the search stack's own
+ * roster says the same thing.
+ */
+function keyedSearchConfigured(): boolean {
+  try {
+    return keyedSearchEngineConfigured();
+  } catch {
+    return searchProviderStatus().hasKeyedProvider;
+  }
+}
 
 export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> {
   /*
@@ -192,8 +209,21 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       // The voice picker lists OpenAI voices, so it must know which provider is live.
       ttsProvider: isServerTtsConfigured() ? (env.voice.ttsProvider === "elevenlabs" ? "elevenlabs" : "openai") : null,
       storage: isStorageAvailable(),
-      webSearch: configuredProviders().some(providerSupportsWebSearch),
-      deepResearch: isWebSearchConfigured(),
+      // "Web is possible on this deployment" (SPEC §3.6): a provider with
+      // native search, OR a keyed engine for Juno's own web_search — which is
+      // what lets every tools-capable model turn web on (RC-2).
+      webSearch: configuredProviders().some(providerSupportsWebSearch) || keyedSearchConfigured(),
+      // Per person now (§9.1): the plan, the deployment and lockdown. The
+      // field name stays (native contract); private, voice and a project's
+      // workspace are decided where the request is made.
+      deepResearch: researchEntitlement({
+        plan: quota.plan,
+        privateMode: false,
+        lockdown: settings?.lockdownMode ?? false,
+        voiceMode: false,
+        workspace: null,
+        configured: isWebSearchConfigured(),
+      }).allowed,
       email: isEmailEnabled(),
       webPush: Boolean(pushPublicKey),
       webPushPublicKey: pushPublicKey,

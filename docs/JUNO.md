@@ -475,7 +475,7 @@ toggle).
 - **`Composer`** (`chat/composer.tsx`) — auto-resizing textarea with a morphing
   Voice → Send → Stop action; attachments (drag/paste/library, via `useUploads`);
   a `/` slash + `@` mention command palette (`/artifact`, `/voice`, `/memory`,
-  study mode, web search, deep research, canvas); a "+" menu with connectors
+  study mode, web search, Research, canvas); a "+" menu with connectors
   (auto-detected from the prompt), image upload, and the prompt library;
   `ModelSelector`; `ReasoningSlider` + fast mode; and `ComposerDictation`.
 - **`MessageItem`** enforces the flat-transcript law and splits assistant content via
@@ -749,21 +749,25 @@ the model (see §6.3).
   (crop and magnify a region, or rasterise a PDF page). Both are read-only and can
   only reach files attached to the conversation they run in.
 - **Web search** has three modes: native provider search (Anthropic
-  `web_search_20250305`, Google grounding, Grok Live Search), **deep research**
+  `web_search_20250305`, Google grounding, Grok Live Search), **Research**
   (durable plan → parallel investigation rounds → lead review → synthesis → citation
-  validation, needs `TAVILY_API_KEY`), and source capture/dedup into the streamed
-  `sources` event. Research tiers are `quick` (1×1, 20 pages, 5 min), `standard`
-  (4×2, 80 pages, 12 min), `deep` (8×3, 320 pages, 30 min) and `max` (12×3,
-  480 pages, 60 min). Chat defaults to `deep` with an $8 ceiling; set
-  `RESEARCH_CHAT_BUDGET_USD` to tune it, capped at $40. Sources deduplicate on
-  canonical URL and page text remains untrusted when sent to any model.
-  On web, Research is a composer tool: its editable plan and subsequent progress
-  live in the transcript. Plan approval commits before a background worker starts
-  searching. The report opens in chat and is available as scoped context on later
-  turns. Native clients keep their selected-model streaming path. See
-  `docs/research-workspace.md` for the interaction and architecture references,
-  including the parallel research team (worker agents + lead review) and how the
-  run's depth is derived from the model and thinking effort.
+  validation, needs a search backend), and source capture/dedup into the streamed
+  `sources` event. Research is one feature with **no depth levels**: the planner
+  scopes the run (1–8 questions, breadth, freshness, primary sources) and
+  `researchBudgetFor` (`src/lib/research/envelope.ts`) sizes an envelope from that
+  scope — workers, rounds, pages, clock, judge calls and a spend ceiling — within
+  the plan's cap (PRO €2.50 / 15 min, MAX €8 / 30 min, MAX20 €16 / 60 min, OWNER €8
+  or `RESEARCH_CHAT_BUDGET_USD`), its share of the month and what is left of it. The
+  envelope is frozen on the run at Start; the 5-hour and weekly windows neither bind
+  nor count research spend (`kind: "research"`). Sources deduplicate on canonical
+  URL and page text remains untrusted when sent to any model.
+  On web, a run plans in the background and waits at a scope card (the questions,
+  up to three optional clarifications, the sources, "About N min · reads up to ~N
+  pages"); Start freezes the envelope, a tiny scope starts on its own, and a finished
+  run writes one assistant message into the conversation — a cited summary and the
+  report as a `research-report-{runId}` artifact. Native clients keep their
+  in-chat path: automatic confirmation, the selected model streaming the report, now
+  sized by the same envelope. See `docs/research-workspace.md`.
 - **Private/incognito mode** is a separate branch: nothing persists (`conversationId:
   "private"`), no memory, no attachments (**400** `PRIVATE_ATTACHMENTS_UNSUPPORTED`),
   no connectors, no regenerate; but budget, quota, and moderation still apply and

@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/session";
 import { driveResearchInBackground, readResearchRun, researchEngine } from "@/lib/research/run";
 import {
   RESEARCH_CONTROL_MESSAGE,
+  errorCodeForControlReason,
   statusForControlReason,
   steerResearchSchema,
 } from "@/app/api/research/protocol";
@@ -12,11 +13,13 @@ export const runtime = "nodejs";
 /**
  * Steering a run that is already going.
  *
- * The point is that neither a new constraint nor a new source costs the user
- * the work already done. A constraint is written into the plan, so it reaches
- * synthesis however late it arrives; a pinned source sends a run that has moved
- * past gathering back to fetch it, because a source nobody read is a citation
- * the report cannot honour. The engine decides which — see `steer` there.
+ * Guidance ("Guide the research", SPEC §9.7) is queued on the plan and takes
+ * effect at the next round boundary, where it becomes a constraint every
+ * later brief, the lead's review and the writer read; the response says so
+ * (`queued`, `appliesAt: "next_round"`). A constraint or a pinned source keeps
+ * its old immediate path: a constraint is written into the plan, and a source
+ * sends a run that moved past gathering back to fetch it — the engine decides
+ * which, see `steer` there.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -31,11 +34,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     userId: user.id,
     constraint: parsed.data.constraint,
     sourceUrl: parsed.data.sourceUrl,
+    guidance: parsed.data.guidance,
   });
   if (!steered.ok) {
     return NextResponse.json(
       {
-        error: steered.reason,
+        error: errorCodeForControlReason(steered.reason),
         message: steered.reason
           ? RESEARCH_CONTROL_MESSAGE[steered.reason]
           : "That could not be applied.",
@@ -46,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   // Steering a paused run must not restart it: the user stopped it on purpose,
-  // and the constraint is stored either way. Only a run that was already
+  // and the guidance is stored either way. Only a run that was already
   // running gets nudged, in case the steer sent it back a stage.
   if (steered.state !== "paused") {
     driveResearchInBackground({ runId: id, userId: user.id });
@@ -54,5 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const view = await readResearchRun({ runId: id, userId: user.id, after: 0 });
   if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(view);
+  return NextResponse.json(
+    steered.queued ? { ...view, queued: true, appliesAt: "next_round" as const } : view
+  );
 }

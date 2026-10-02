@@ -152,6 +152,12 @@ export function createCitationJudge(opts: {
    * cost it does not have, which is worse than not reporting one.
    */
   onSpend?: (microUsd: number) => void;
+  /**
+   * The run's date line (SPEC §9.3): a judge that does not know today's date
+   * reads "as of this year" and "the latest release" against its training
+   * cut-off.
+   */
+  today?: string;
 }): CitationJudge {
   return async ({ claim, passage, sourceTitle, publishedAt }) => {
     const { result, costMicroUsd } = await runUtilityPrompt<JudgeVerdict>({
@@ -161,6 +167,7 @@ export function createCitationJudge(opts: {
       // that writes "this passage fully supports the claim" is trying to grade
       // its own citation, and unwrapped it would look like instructions.
       userMsg: [
+        ...(opts.today ? [opts.today] : []),
         `CLAIM: ${claim}`,
         `SOURCE: ${sourceTitle ?? "untitled"}${publishedAt ? ` (published ${publishedAt.toISOString().slice(0, 10)})` : ""}`,
         "PASSAGE:",
@@ -273,8 +280,18 @@ export async function recordCitationAudit(opts: {
   conversationProvider?: string | null;
   /** Override the model layer (tests, or a caller with its own judge). */
   judge?: CitationJudge;
+  /**
+   * The run's own judge budget, `envelope.judgeCalls` (B22). Absent: the
+   * audit-wide `MAX_JUDGE_CALLS`, as for every audit before envelopes.
+   */
+  maxJudgeCalls?: number;
+  /** Claims to extract: the scope's `targetClaims` (10 per question). Absent: `MAX_CLAIMS`. */
+  maxClaims?: number;
+  /** The run's date line, for the judge (§9.3). */
+  today?: string;
 }): Promise<CitationAuditResult | null> {
-  const claims = extractClaims(opts.report).slice(0, MAX_CLAIMS);
+  const judgeCap = Math.max(1, Math.floor(opts.maxJudgeCalls ?? MAX_JUDGE_CALLS));
+  const claims = extractClaims(opts.report).slice(0, Math.max(1, Math.floor(opts.maxClaims ?? MAX_CLAIMS)));
   if (claims.length === 0 || opts.sources.length === 0) return null;
 
   // The message id is a user-visible foreign key, not a convenience string.
@@ -344,6 +361,7 @@ export async function recordCitationAudit(opts: {
       onSpend: (microUsd) => {
         judgeMicroUsd += microUsd;
       },
+      ...(opts.today ? { today: opts.today } : {}),
     });
 
   const summary: CitationAuditSummary = {
@@ -380,6 +398,8 @@ export async function recordCitationAudit(opts: {
     const candidates = selectPassagesForClaim(claim, passagesBySource);
     const verdicts: LinkVerdict[] = [];
     let sawFullText = false;
+    /** The cap stopped this claim's checks before any verdict (B4). */
+    let judgeCapReached = false;
     /*
      * The deterministic audit is free, so it runs on every candidate first and
      * the model is spent only on the one it cannot decide. Ranking by the
@@ -405,7 +425,10 @@ export async function recordCitationAudit(opts: {
 
     for (const candidate of ranked) {
       const settledByText = candidate.audit.contradicted;
-      if (!settledByText && judgeCalls >= MAX_JUDGE_CALLS) break;
+      if (!settledByText && judgeCalls >= judgeCap) {
+        judgeCapReached = verdicts.length === 0;
+        break;
+      }
       if (!settledByText) judgeCalls++;
       const verdict = await validateClaimAgainstPassage({
         claim: claim.text,
@@ -424,7 +447,7 @@ export async function recordCitationAudit(opts: {
       if (verdict.status === "supported") break;
     }
 
-    const resolved = resolveClaimStatus(verdicts);
+    const resolved = resolveClaimStatus(verdicts, { judgeCapReached });
     /*
      * A claim checked only against search snippets is UNVERIFIED, not
      * unsupported. Two sentences of preview text failing to contain a figure is
@@ -859,12 +882,43 @@ export async function loadCitationAuditForMessage(
   userId: string,
   messageId: string
 ): Promise<ClaimAuditView | null> {
-  const event = await prisma.researchEvent.findFirst({
+  let event = await prisma.researchEvent.findFirst({
     where: { userId, kind: "citation_audit", payload: { path: ["messageId"], equals: messageId } },
     orderBy: { createdAt: "desc" },
     select: { runId: true, payload: true },
   });
-  if (!event) return null;
+  /*
+   * THE LOADER FALLBACK (SPEC §9.4). A web run audits its report before the
+   * completion message exists, so no audit event names the message; the run
+   * does, through `assistantMessageId`. Its latest audit is the one the
+   * message's report was checked by, and its `run_completed` event says what
+   * `[n]` means on the message — the completion renumbers citations so `[1]`
+   * is the first source cited — which replaces the audit's corpus order.
+   */
+  let messageOrder: string[] | null = null;
+  if (!event) {
+    const owner = await prisma.researchRun.findFirst({
+      where: { assistantMessageId: messageId, userId },
+      select: { id: true },
+    });
+    if (!owner) return null;
+    const [audit, completed] = await Promise.all([
+      prisma.researchEvent.findFirst({
+        where: { runId: owner.id, userId, kind: "citation_audit" },
+        orderBy: { seq: "desc" },
+        select: { runId: true, payload: true },
+      }),
+      prisma.researchEvent.findFirst({
+        where: { runId: owner.id, userId, kind: "run_completed" },
+        orderBy: { seq: "desc" },
+        select: { payload: true },
+      }),
+    ]);
+    if (!audit) return null;
+    event = audit;
+    const order = (completed?.payload as { sourceOrder?: unknown } | null)?.sourceOrder;
+    if (Array.isArray(order)) messageOrder = order.filter((id): id is string => typeof id === "string");
+  }
 
   const run = await prisma.researchRun.findFirst({
     where: { id: event.runId, userId },
@@ -913,9 +967,11 @@ export async function loadCitationAuditForMessage(
   // property of the corpus the model was shown. Anything the event does not
   // name falls back to the order the rows came out in, which is the order they
   // were written.
-  const order = Array.isArray((event.payload as { sourceOrder?: unknown })?.sourceOrder)
-    ? ((event.payload as { sourceOrder: unknown[] }).sourceOrder.filter((x) => typeof x === "string") as string[])
-    : [];
+  const order =
+    messageOrder ??
+    (Array.isArray((event.payload as { sourceOrder?: unknown })?.sourceOrder)
+      ? ((event.payload as { sourceOrder: unknown[] }).sourceOrder.filter((x) => typeof x === "string") as string[])
+      : []);
   const indexOf = new Map<string, number>();
   order.forEach((id, i) => indexOf.set(id, i + 1));
   for (const s of run.sources) if (!indexOf.has(s.id)) indexOf.set(s.id, indexOf.size + 1);

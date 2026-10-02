@@ -1,7 +1,9 @@
 import "server-only";
 import OpenAI from "openai";
 import { getAnthropic } from "@/lib/anthropic";
+import type { Plan } from "@prisma/client";
 import { MODEL_LIST, trainsOnPrompts, type ModelInfo } from "@/lib/models";
+import { researchLeadCandidates, type ResearchLeadCandidate } from "@/lib/research/envelope";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
@@ -137,7 +139,7 @@ export function researchWorkerModel(): ModelInfo | null {
  * better is configured, which keeps a single-model deployment working exactly
  * as it did.
  */
-export function researchLeadModel(): ModelInfo | null {
+export function researchLeadModel(opts: { plan?: Plan; preferred?: string | null } = {}): ModelInfo | null {
   const usable = MODEL_LIST.filter(
     (model) =>
       model.modality === "chat" &&
@@ -150,10 +152,48 @@ export function researchLeadModel(): ModelInfo | null {
       !trainsOnPrompts(model) &&
       model.api !== "responses"
   );
+  /*
+   * With a plan (§9.5.1): the candidates are filtered to the plan's lead
+   * class (input price per MTok), the chat's own model wins when it
+   * qualifies, and nothing qualifying means no lead at all — the run is
+   * refused `not_configured` rather than written by a model the plan does
+   * not buy. Without one, the ordering it has always had.
+   */
+  if (opts.plan) {
+    const { lead } = researchLeadCandidates(usable.map(leadCandidate), { plan: opts.plan, preferred: opts.preferred });
+    return lead ? usable.find((model) => model.id === lead.id) ?? null : null;
+  }
   const best = usable.sort(
     (a, b) => getModelMetrics(b).intelligence - getModelMetrics(a).intelligence || a.cost - b.cost
   )[0];
   return best ?? researchWorkerModel();
+}
+
+/** The step-down lead for a month too thin for the plan's own class (§9.2). */
+export function researchStepDownModel(opts: { plan: Plan; preferred?: string | null }): ModelInfo | null {
+  const usable = MODEL_LIST.filter(
+    (model) =>
+      model.modality === "chat" &&
+      model.agenticTools &&
+      !model.comingSoon &&
+      model.status !== "deprecated" &&
+      isProviderConfigured(model.provider) &&
+      !trainsOnPrompts(model) &&
+      model.api !== "responses"
+  );
+  const { stepDown } = researchLeadCandidates(usable.map(leadCandidate), opts);
+  return stepDown ? usable.find((model) => model.id === stepDown.id) ?? null : null;
+}
+
+function leadCandidate(model: ModelInfo): ResearchLeadCandidate {
+  const metrics = getModelMetrics(model);
+  return {
+    id: model.id,
+    inputUsdPerMTok: metrics.inputUsdPerMTok,
+    outputUsdPerMTok: metrics.outputUsdPerMTok,
+    intelligence: metrics.intelligence,
+    cost: model.cost,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +217,7 @@ Only tool calls move the work forward. Do not write an essay; the lead only read
 function workerUserMessage(input: RunWorkerInput): string {
   const { brief } = input;
   const lines = [
+    ...(brief.today ? [brief.today] : []),
     `Research goal: ${truncate(brief.goal, 800)}`,
     "",
     brief.brief ? `Lead researcher's brief:\n${truncate(brief.brief, 2_000)}\n` : "",

@@ -893,3 +893,12 @@ test("two different stories about the same subject are not syndication", () => {
   ]);
   assert.equal(duplicates.size, 0);
 });
+
+test("a claim the judge never checked is left as written — no 'Unverified:' rewrite, no revision (B4)", () => {
+  const report = "# Report\n\nThe scheme cost taxpayers £2.7 billion in 2023 [1].";
+  const claims = extractClaims(report);
+  const repaired = repairReportFromClaims(report, [{ ...claims[0], status: "unverified", supportStrength: null }]);
+  assert.equal(repaired.repaired, false);
+  assert.equal(repaired.report, report);
+  assert.deepEqual(resolveClaimStatus([], { judgeCapReached: true }), { status: "unverified", supportStrength: null });
+});
