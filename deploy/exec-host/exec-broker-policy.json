@@ -1,0 +1,11 @@
+{
+  "image": "@IMAGE_ID@",
+  "sessionsRoot": "/var/lib/juno-exec/sessions",
+  "runUser": "@RUN_UID@:@RUN_GID@",
+  "memoryMb": 1536,
+  "cpus": "1",
+  "pidsLimit": 256,
+  "tmpfsSize": "256m",
+  "runtime": null,
+  "maxSkillMounts": 8
+}

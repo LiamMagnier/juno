@@ -191,51 +191,64 @@ test("a fetched page reaches the model whole, with its closing marker", () => {
 /*
  * THE SAFETY INVARIANT, AND IT IS THE ONE WORTH A TEST OF ITS OWN.
  *
- * `UnifiedCodeInterpreter.execute` falls back to `sandbox/python.ts` — a child
- * process on THIS host — whenever no remote sandbox answers. The code this
- * tool runs is written by a model reading documents supplied by strangers, so
- * that fallback would turn a prompt injection inside a PDF into arbitrary
- * execution beside the provider keys and every other tenant's files. The tool
- * therefore calls the microVM adapter directly and is not offered at all when
- * none is configured.
+ * The code this tool runs is written by a model reading documents supplied by
+ * strangers, so running it on THIS host would turn a prompt injection inside a
+ * PDF into arbitrary execution beside the provider keys and every other
+ * tenant's files. The old `UnifiedCodeInterpreter` fell back to exactly that (a
+ * child process, `sandbox/python.ts`) whenever no remote sandbox answered. It
+ * is retired: the tool is a bridge onto the hosted runtime (src/lib/exec),
+ * which only speaks HTTP to the execution host, and with none configured the
+ * tool is not offered at all.
  */
 test("model-written code never runs on this host", async () => {
-  const source = readFileSync(new URL("../src/lib/agent/code.ts", import.meta.url), "utf8");
+  const { existsSync, readdirSync } = await import("node:fs");
+  assert.equal(existsSync(new URL("../src/lib/code-interpreter.ts", import.meta.url)), false, "the falling-back wrapper is gone");
+  const sandbox = readFileSync(new URL("../src/lib/sandbox/python.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(sandbox, /child_process|spawn\(|execFile/, "no host executor remains");
 
-  /*
-   * Checked on what the file IMPORTS, not on what it mentions: the header
-   * names `sandbox/python.ts` precisely in order to explain why it is never
-   * used, and a test that cannot tell an explanation from a dependency fails
-   * on its own documentation.
-   */
+  const source = readFileSync(new URL("../src/lib/agent/code.ts", import.meta.url), "utf8");
   const imports = source
     .split("\n")
     .filter((line) => /(^import |await import\()/.test(line))
     .join("\n");
-  assert.doesNotMatch(imports, /UnifiedCodeInterpreter|codeInterpreter\b/, "the falling-back wrapper");
-  assert.doesNotMatch(imports, /sandbox\/python|LocalIsolatedSandboxAdapter|executePythonSandbox/, "the host subprocess");
-  // Only the remote backend, and never a preference that could fall back to one.
-  assert.match(imports, /MicroVMSandboxAdapter/);
-  assert.doesNotMatch(source, /preferredBackend/);
+  assert.doesNotMatch(imports, /sandbox\/python|code-interpreter/, "no path to a host subprocess");
+  assert.match(imports, /@\/lib\/exec\/runtime/, "the hosted runtime only");
+
+  // Nothing in the runtime can start a process here: it is an HTTP client.
+  for (const file of readdirSync(new URL("../src/lib/exec/", import.meta.url))) {
+    const text = readFileSync(new URL(`../src/lib/exec/${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(text, /from "node:child_process"|require\("child_process"\)/, `${file} must not spawn processes`);
+  }
 
   const { isCodeInterpreterConfigured } = await import("../src/lib/agent/code");
-  const url = process.env.CODE_INTERPRETER_URL;
-  const token = process.env.CODE_INTERPRETER_TOKEN;
-  const e2b = process.env.E2B_API_KEY;
+  const saved = {
+    url: process.env.CODE_INTERPRETER_URL,
+    token: process.env.CODE_INTERPRETER_TOKEN,
+    e2b: process.env.E2B_API_KEY,
+    flag: process.env.TOOL_RUNTIME,
+  };
   try {
     delete process.env.CODE_INTERPRETER_URL;
     delete process.env.CODE_INTERPRETER_TOKEN;
-    delete process.env.E2B_API_KEY;
-    assert.equal(isCodeInterpreterConfigured(), false, "no sandbox means no capability");
-    // An endpoint without a token is not a sandbox either.
-    process.env.CODE_INTERPRETER_URL = "https://sandbox.example";
-    assert.equal(isCodeInterpreterConfigured(), false);
-    process.env.CODE_INTERPRETER_TOKEN = "t";
+    process.env.E2B_API_KEY = "e2b-key-that-no-longer-counts-as-a-sandbox-000000";
+    process.env.TOOL_RUNTIME = "1";
+    assert.equal(isCodeInterpreterConfigured(), false, "no sandbox means no capability (an E2B key is not one)");
+    process.env.CODE_INTERPRETER_URL = "https://exec.example";
+    assert.equal(isCodeInterpreterConfigured(), false, "an endpoint without a token is not a sandbox");
+    process.env.CODE_INTERPRETER_TOKEN = "short";
+    assert.equal(isCodeInterpreterConfigured(), false, "a weak token is refused");
+    process.env.CODE_INTERPRETER_TOKEN = "t".repeat(40);
     assert.equal(isCodeInterpreterConfigured(), true);
+    process.env.CODE_INTERPRETER_URL = "http://exec.example";
+    assert.equal(isCodeInterpreterConfigured(), false, "plain HTTP only to a loopback address");
+    process.env.CODE_INTERPRETER_URL = "http://127.0.0.1:3178";
+    assert.equal(isCodeInterpreterConfigured(), true);
+    delete process.env.TOOL_RUNTIME;
+    assert.equal(isCodeInterpreterConfigured(), false, "the owner's feature switch is required");
   } finally {
-    if (url === undefined) delete process.env.CODE_INTERPRETER_URL; else process.env.CODE_INTERPRETER_URL = url;
-    if (token === undefined) delete process.env.CODE_INTERPRETER_TOKEN; else process.env.CODE_INTERPRETER_TOKEN = token;
-    if (e2b === undefined) delete process.env.E2B_API_KEY; else process.env.E2B_API_KEY = e2b;
+    for (const [name, value] of [["CODE_INTERPRETER_URL", saved.url], ["CODE_INTERPRETER_TOKEN", saved.token], ["E2B_API_KEY", saved.e2b], ["TOOL_RUNTIME", saved.flag]] as const) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
   }
 });
 

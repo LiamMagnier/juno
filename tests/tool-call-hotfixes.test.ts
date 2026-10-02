@@ -36,13 +36,27 @@ for (const toolName of ["read_document", "inspect_image"]) {
   });
 }
 
-test("the page reader and code tool still ask under every policy but block", () => {
-  for (const toolName of ["browser_agent", "code_interpreter"]) {
-    const { riskClass } = classifyExternalAction({ connectorId: "juno_runtime", toolName, args: {} });
-    for (const policy of ACTION_PERMISSION_POLICIES) {
-      if (policy === "block") continue;
-      assert.equal(decideActionPolicy({ policy, riskClass }), "ask", `${toolName} under ${policy}`);
-    }
+test("the page reader still asks under every policy but block", () => {
+  const { riskClass } = classifyExternalAction({ connectorId: "juno_runtime", toolName: "browser_agent", args: {} });
+  for (const policy of ACTION_PERMISSION_POLICIES) {
+    if (policy === "block") continue;
+    assert.equal(decideActionPolicy({ policy, riskClass }), "ask", `browser_agent under ${policy}`);
+  }
+});
+
+// Hosted code execution is a read (chat-rework DECISIONS §4b, TOOL_RUNTIME_DESIGN
+// §6.9): a fresh container on the execution host with no network, no
+// credentials and only this conversation's files. It used to classify as
+// "unknown" and ask on every run. A person who asks about everything, or who
+// blocks tools or turns lockdown on, still gets that.
+test("run_code, check_run and the code_interpreter alias are reads the default policy allows", () => {
+  for (const toolName of ["run_code", "check_run", "code_interpreter"]) {
+    const { riskClass } = classifyExternalAction({ connectorId: "juno_runtime", toolName, args: { code: "print(1)" } });
+    assert.equal(riskClass, "read_only", toolName);
+    assert.equal(decideActionPolicy({ policy: DEFAULT_ACTION_PERMISSION_POLICY, riskClass }), "allow", toolName);
+    assert.equal(decideActionPolicy({ policy: "always_ask", riskClass }), "ask", toolName);
+    assert.equal(decideActionPolicy({ policy: "block", riskClass }), "block", toolName);
+    assert.equal(decideActionPolicy({ policy: DEFAULT_ACTION_PERMISSION_POLICY, riskClass, lockdown: true }), "block", toolName);
   }
 });
 
