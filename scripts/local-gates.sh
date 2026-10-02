@@ -32,7 +32,13 @@ step "Typecheck, tests and lint (in parallel)"
 gate_logs="$(mktemp -d)"
 npm run typecheck >"$gate_logs/typecheck.log" 2>&1 & pid_typecheck=$!
 npm run lint >"$gate_logs/lint.log" 2>&1 & pid_lint=$!
-npm test >"$gate_logs/test.log" 2>&1 & pid_test=$!
+if [ "${GATES_UNIT_TESTS_SHARDED:-}" = "1" ]; then
+  # CI runs tests/*.test.ts in four parallel shard jobs (deploy.yml unit-tests);
+  # here it runs only the rest of the test chain. Local, Mac deploy and release run everything.
+  (npx tsx scripts/test-auth.ts && npx tsx scripts/test-message-crypto.ts && npm run test:moderation && npm run test:skill-package && npm run test:custom-mcp) >"$gate_logs/test.log" 2>&1 & pid_test=$!
+else
+  npm test >"$gate_logs/test.log" 2>&1 & pid_test=$!
+fi
 gate_failed=0
 for name in typecheck lint test; do
   pid_var="pid_$name"
