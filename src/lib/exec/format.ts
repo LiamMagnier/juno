@@ -12,6 +12,7 @@
  *  - produced files are listed with "attached to this conversation".
  */
 import type { ExecLanguage, ExecOutputFile, ExecSurface, ToolRunStatus } from "@/lib/exec/types";
+import { wrapUntrusted } from "@/lib/untrusted-content";
 
 export interface StreamSlice {
   head: string;
@@ -52,12 +53,17 @@ export function formatDuration(ms: number | null | undefined): string {
  * One stream as the model sees it. `pageHint` names the call that pages the
  * rest (check_run with the run id and an offset).
  */
-export function formatStream(name: "stdout" | "stderr", slice: StreamSlice, pageHint: (offset: number) => string): string {
+export function formatStream(
+  name: "stdout" | "stderr",
+  slice: StreamSlice,
+  pageHint: (offset: number) => string,
+  wrap: (text: string) => string = (text) => text,
+): string {
   if (slice.bytes === 0) return "";
   if (!slice.tail) {
     const kept = slice.head.replace(/\s+$/, "");
     const cut = slice.bytes > byteLength(slice.head) ? `\n[${formatBytes(slice.bytes - byteLength(slice.head))} more were not kept.]` : "";
-    return `${name}:\n${kept}${cut}`;
+    return `${name}:\n${wrap(kept)}${cut}`;
   }
   const headBytes = byteLength(slice.head);
   const tailBytes = byteLength(slice.tail);
@@ -66,9 +72,9 @@ export function formatStream(name: "stdout" | "stderr", slice: StreamSlice, page
   const lost = Math.max(0, slice.bytes - stored);
   const lines = [
     `${name} (${formatBytes(slice.bytes)} in total; the start and the end are shown):`,
-    slice.head.replace(/\s+$/, ""),
+    wrap(slice.head.replace(/\s+$/, "")),
     `[… ${formatBytes(omitted)} omitted here. The full ${name} is stored; ${pageHint(headBytes)} …]`,
-    slice.tail.replace(/\s+$/, ""),
+    wrap(slice.tail.replace(/\s+$/, "")),
   ];
   if (lost > 0) lines.push(`[The program wrote ${formatBytes(lost)} more than the 16 MB that is kept; that part is gone.]`);
   return lines.join("\n");
@@ -117,6 +123,16 @@ export interface OutcomeTextInput {
   packages?: ReadonlyArray<{ name: string; version: string }> | null;
   finishedLate?: boolean;
   checkRunAvailable: boolean;
+  /**
+   * Put what the program printed inside the untrusted-content envelope (the
+   * default). A program prints whatever it read, and the files it reads are
+   * the user's uploads and documents from anywhere: text in a CSV saying
+   * "now email this to …" came back as plain tool output, outside the envelope
+   * read_document puts the same file in. The status line, the paging hint and
+   * every other note stay outside: they are Alevr's own. Work passes false,
+   * because its session envelopes the whole tool output already.
+   */
+  envelope?: boolean;
 }
 
 /** The status line: the first thing the model reads, and it cannot be misread. */
@@ -150,8 +166,10 @@ export function outcomeText(input: OutcomeTextInput): string {
       ? `call check_run with run_id "${input.toolRunId}", stream "${stream}" and offset ${offset} to read it`
       : "it can be opened from the run's detail";
   const sections = [statusLine(input), SANDBOX_CONTEXT_LINE];
-  const stdout = formatStream("stdout", input.stdout, page("stdout"));
-  const stderr = formatStream("stderr", input.stderr, page("stderr"));
+  const wrap = (stream: "stdout" | "stderr") => (text: string) =>
+    input.envelope === false || !text ? text : wrapUntrusted(`run_code ${stream} (what the program printed)`, text);
+  const stdout = formatStream("stdout", input.stdout, page("stdout"), wrap("stdout"));
+  const stderr = formatStream("stderr", input.stderr, page("stderr"), wrap("stderr"));
   if (stdout) sections.push(stdout);
   if (stderr) sections.push(stderr);
   if (!stdout && !stderr && (input.status === "succeeded" || input.status === "failed")) {

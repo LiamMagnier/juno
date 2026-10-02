@@ -15,6 +15,7 @@ import "server-only";
  * gone) picks it up. A row nobody can account for becomes `outcome_unknown`,
  * and nothing is ever re-run automatically. Design: TOOL_RUNTIME_DESIGN.md §6.
  */
+import { createHash } from "node:crypto";
 import { conversationAttachments } from "@/lib/agent/attachments";
 import { matchAttachment, nameList } from "@/lib/agent/attachment-match";
 import { getObjectBytes } from "@/lib/storage";
@@ -242,6 +243,7 @@ export async function outcomeFromRow(
     packages: manifest?.pythonPackages ?? null,
     finishedLate: row.finishedLate,
     checkRunAvailable: options.checkRunAvailable ?? true,
+    envelope: (options.surface ?? row.surface) !== "work",
   });
   const prefixed = options.replayed ? `${text}\n\n(This is the recorded result of this exact call; it was not run again.)` : text;
   return {
@@ -622,7 +624,14 @@ export async function executeRunCode(
       await recordInputs(lease, inputRecord);
       const skillSlugs: string[] = [];
       for (const mount of ctx.skills ?? []) {
-        await client.putSkill(remoteSession, mount.slug, await mount.openBundle(), ctx.signal);
+        const bundle = await mount.openBundle();
+        // The row records `bundleDigest` as what ran; the host only checks that
+        // the bytes survived the upload. A bundle that is not the recorded one
+        // (a replaced storage object, a stale cache) is refused, not mounted.
+        if (createHash("sha256").update(bundle).digest("hex") !== mount.bundleDigest) {
+          throw new Error(`the skill bundle "${mount.slug}" does not match its recorded digest, so it was not mounted.`);
+        }
+        await client.putSkill(remoteSession, mount.slug, bundle, ctx.signal);
         skillSlugs.push(mount.slug);
       }
       if (ctx.signal?.aborted) throw new Error("aborted before the start");

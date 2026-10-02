@@ -186,9 +186,11 @@ def broker_run(transport, argv):
 
 
 # ── Filesystem helpers that never follow a symlink ───────────────────────────
-# The container (a different, unprivileged uid) can write anything into /work,
-# including symlinks pointing at host paths. Everything the service reads from a
-# workspace goes through these, which open each component with O_NOFOLLOW.
+# The container runs as this service's own uid (setup.sh: runUser = juno-exec, so
+# the service can read and remove what a program writes) and can write anything
+# into /work, including symlinks pointing at host paths and folders chmod-ed to
+# 000. Everything the service reads from a workspace goes through these, which
+# open each component with O_NOFOLLOW; removal goes through _remove_tree.
 
 
 def open_beneath(root, relative):

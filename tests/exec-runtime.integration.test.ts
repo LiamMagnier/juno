@@ -147,8 +147,9 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
       assert.equal(outcome.run?.exitCode, 3);
       assert.equal(outcome.run?.status, "failed");
       assert.match(outcome.text, /FAILED: exit code 3/);
-      assert.match(outcome.text, new RegExp(`stdout:\\nto stdout from ${language === "bash" ? "bash" : "node"}`));
-      assert.match(outcome.text, new RegExp(`stderr:\\nto stderr from ${language === "bash" ? "bash" : "node"}`));
+      // Both streams, each inside the untrusted envelope (a program prints what it read).
+      assert.match(outcome.text, new RegExp(`stdout:\\n<<<JUNO_UNTRUSTED_BEGIN>>> source=run_code stdout[^\\n]*\\nto stdout from ${language === "bash" ? "bash" : "node"}`));
+      assert.match(outcome.text, new RegExp(`stderr:\\n<<<JUNO_UNTRUSTED_BEGIN>>> source=run_code stderr[^\\n]*\\nto stderr from ${language === "bash" ? "bash" : "node"}`));
       assert.match(outcome.text, /Alevr's sandbox/);
       const row = await prisma.toolRun.findUniqueOrThrow({ where: { id: outcome.run!.toolRunId } });
       assert.equal(row.exitCode, 3);

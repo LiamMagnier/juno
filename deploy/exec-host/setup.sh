@@ -202,6 +202,8 @@ if [ -n "$CERTBOT_EMAIL" ]; then
   KEY="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
 fi
 cat > /etc/nginx/sites-available/juno-exec <<NGINX
+# No request path in the log: it carries the names of users' input files.
+log_format juno_exec '\$remote_addr [\$time_local] \$request_method \$status \$body_bytes_sent \$request_time';
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -210,7 +212,7 @@ server {
     ssl_certificate_key $KEY;
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 40m;
-    access_log /var/log/nginx/juno-exec.access.log;
+    access_log /var/log/nginx/juno-exec.access.log juno_exec;
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
