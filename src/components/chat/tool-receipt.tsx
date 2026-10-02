@@ -32,6 +32,7 @@ import {
   FilePlus,
   FileText,
   Globe,
+  HelpCircle,
   Image as ImageIcon,
   Keyboard,
   ListChecks,
@@ -39,6 +40,7 @@ import {
   NotebookPen,
   Plug,
   Search,
+  StopCircle,
   Telescope,
   Terminal,
   Wrench,
@@ -49,7 +51,7 @@ import {
   Pencil,
   type IconComponent,
 } from "@/components/ui/icons";
-import { CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Collapse } from "@/components/ui/collapse";
 import { PhaseOrb } from "@/components/effects/phase-orb";
 import { formatSpan } from "@/lib/run-receipt";
@@ -89,6 +91,7 @@ const RECEIPT_ICONS: Record<ReceiptIconKind, IconComponent> = {
   connectors: Plug,
   tools: Wrench,
   write: Pencil,
+  skill: AppIcons.skills,
   warning: TriangleAlert,
   error: AlertCircle,
   success: Check,
@@ -125,6 +128,8 @@ export function ToolReceiptRow({
   children,
   onRetry,
   retrying,
+  retryLabel,
+  mark,
   className,
 }: {
   /** The house glyph kind. Mapped here; never a hand-rolled SVG. */
@@ -149,6 +154,13 @@ export function ToolReceiptRow({
   /** Failures that are safe to re-run. Hidden while running. */
   onRetry?: () => void;
   retrying?: boolean;
+  /** The retry verb ("Run again" for a run: a new call, never a replay). */
+  retryLabel?: string;
+  /**
+   * The live mark for THE active row (MOTION_AND_THINKING.md): only one row
+   * of a transcript carries it. Absent, a running row keeps the house orb.
+   */
+  mark?: React.ReactNode;
   className?: string;
 }) {
   const Glyph = RECEIPT_ICONS[icon] ?? Wrench;
@@ -156,6 +168,8 @@ export function ToolReceiptRow({
   const failed = status === "failed";
   const denied = status === "denied";
   const running = status === "running";
+  const stopped = status === "stopped";
+  const unknown = status === "unknown";
   const statusText = receiptStatusText(status);
   const canOpen = expandable && !!children;
 
@@ -165,7 +179,11 @@ export function ToolReceiptRow({
           only on the active one; settled rows fully still. */}
       <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
         {running ? (
-          <PhaseOrb state="working" className="-my-0.5 -ml-0.5" />
+          (mark ?? <PhaseOrb state="working" className="-my-0.5 -ml-0.5" />)
+        ) : unknown ? (
+          <HelpCircle className="size-4 text-warning" />
+        ) : stopped ? (
+          <StopCircle className="size-4 text-muted-foreground" />
         ) : failed ? (
           <STATUS_ICONS.error className="size-4 text-warning" />
         ) : denied ? (
@@ -186,7 +204,7 @@ export function ToolReceiptRow({
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-caption leading-5",
-          running ? "font-medium text-foreground" : failed ? "text-warning" : "text-foreground/80",
+          running ? "font-medium text-foreground" : failed || unknown ? "text-warning" : "text-foreground/80",
         )}
       >
         {label}
@@ -245,10 +263,10 @@ export function ToolReceiptRow({
       )}
 
       {/* Failures are receipts too: one line + reason + Retry when safe. */}
-      {(failed && reason) || (onRetry && !running) ? (
+      {((failed || stopped || unknown) && reason) || (onRetry && !running) ? (
         <div className="border-t border-border/60 px-1.5 pb-1.5 pl-[1.875rem] pr-1 pt-0.5">
-          {failed && reason ? (
-            <p className="text-caption text-warning/90">{reason}</p>
+          {(failed || stopped || unknown) && reason ? (
+            <p className={cn("text-caption", stopped ? "text-muted-foreground" : "text-warning/90")}>{reason}</p>
           ) : null}
           {onRetry && !running ? (
             <button
@@ -257,7 +275,7 @@ export function ToolReceiptRow({
               disabled={retrying}
               className="mt-0.5 text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none"
             >
-              {retrying ? "Trying again…" : "Try again"}
+              {retrying ? "Trying again…" : (retryLabel ?? "Try again")}
             </button>
           ) : null}
         </div>

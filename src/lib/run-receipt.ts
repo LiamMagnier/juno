@@ -1,6 +1,10 @@
 import type { ClientToolDetail } from "@/types/chat";
 import type { RunModel, Step } from "@/components/chat/thought-process-model";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+// Functions only, called at copy time: the import is circular (tool-run reads
+// `formatSpan` from here) and safe because neither module calls the other
+// while it is being evaluated.
+import { runContextLine, runExitLine, runOmittedNote } from "@/lib/chat/tool-run";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE RUN, AS TEXT — the panel's two copy buttons and its one span formatter.
@@ -289,6 +293,29 @@ export function toStepMarkdown(step: Step): string {
     lines.push("", body.text);
   } else if (body?.type === "memory") {
     lines.push("", body.memory.content);
+  } else if (body?.type === "run") {
+    // A run copies as its evidence: where, what, what it printed, how it
+    // ended, what it made. The same fields the run detail shows, nothing more.
+    const run = body.run;
+    const where = runContextLine(run);
+    if (where) lines.push(where);
+    if (run.code) {
+      lines.push("");
+      lines.push(...fenced(run.code, run.language === "bash" ? "bash" : run.language === "javascript" ? "javascript" : run.language === "python" ? "python" : undefined));
+    }
+    for (const [label, stream] of [["Output", run.stdout], ["Errors", run.stderr]] as const) {
+      if (!stream) continue;
+      lines.push("", `${label}:`, ...fenced(stream.head));
+      const omitted = runOmittedNote(stream);
+      if (omitted) lines.push(omitted);
+      if (stream.tail) lines.push(...fenced(stream.tail));
+    }
+    const exit = runExitLine(run);
+    if (exit) lines.push("", exit);
+    if (run.files.length) {
+      lines.push("", "Files:");
+      for (const file of run.files) lines.push(`- ${file.name}`);
+    }
   } else if (body?.type === "tool") {
     const tool = body.tool;
     lines.push("");

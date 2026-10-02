@@ -34,6 +34,8 @@ import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { Pressable } from "@/components/ui/pressable";
 import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
+import { activeRunId, runReceiptParts } from "@/lib/chat/tool-run";
+import { ToolRunOutputs } from "@/components/chat/tool-run-files";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
 /**
@@ -212,8 +214,16 @@ export function ActivityTimeline({
 
   const latest = hasEvents ? list[list.length - 1] : undefined;
   const active = run.phases.find((p) => p.active);
+  // A real run that is working is what the turn is doing, in its own words
+  // ("Running Python", "Waiting for your answer"), not "Thinking": the strip
+  // follows the truthful work row (MOTION_AND_THINKING.md).
+  const runViews = run.calls.flatMap((c) => (c.run ? [c.run] : []));
+  const liveRunId = activeRunId(runViews, !!streaming);
+  const liveRun = liveRunId ? runViews.find((v) => v.id === liveRunId) : undefined;
   // The THINK span, not the whole run — see liveCopy.
-  const live = liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null);
+  const live = liveRun
+    ? { message: runReceiptParts(liveRun).label, warning: false }
+    : liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null);
   // One reading, two consumers: the live count below and WebSearchBlock's
   // settled flag further down describe the same moment of the run.
   const researchActive = run.phases.some((phase) => phase.key === "research" && phase.active);
@@ -241,7 +251,11 @@ export function ActivityTimeline({
   ].filter(Boolean);
   const restingTitle = hasReasoning
     ? "Thought process"
-    : toolServers.length
+    : runViews.length === 1
+      ? runReceiptParts(runViews[0]).label
+      : runViews.length > 1
+        ? `${runViews.length} runs`
+        : toolServers.length
       ? `Used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} and ${toolServers.length - 2} more` : toolServers.join(" and ")}`
       : run.searches
         ? "Searched the web"
@@ -399,6 +413,11 @@ export function ActivityTimeline({
           the primary timeline look broken and buried the reply. Searches still
           stream because they are a single query line the reader is waiting on,
           not the model's private channel. */}
+      {/* What the turn's runs made (lib/chat/tool-run): the chart or the
+          workbook, above the answer that talks about it, and the polite
+          announcement of each run's phase change. Nothing when no run. */}
+      <ToolRunOutputs events={list} streaming={!!streaming} />
+
       {showSearch && (
         <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">
           <WebSearchBlock

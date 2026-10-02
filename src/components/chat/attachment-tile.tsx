@@ -99,7 +99,7 @@ export function AttachmentTile({
 }
 
 /** A sent image: itself, at the transcript's thumbnail height, opening in the viewer. */
-function ImageTile({ attachment, onOpen }: { attachment: ClientAttachment; onOpen?: (attachment: ClientAttachment) => void }) {
+export function ImageTile({ attachment, onOpen }: { attachment: ClientAttachment; onOpen?: (attachment: ClientAttachment) => void }) {
   const image = (
     <Image
       src={attachment.url}
