@@ -162,10 +162,13 @@ function tileSvg(size: number, shape: Shape): string {
     const d = squircle(body.x, body.y, body.w, body.w, 185.4 * k);
     defs =
       `<linearGradient id="relief" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1f22"/><stop offset="1" stop-color="#151618"/></linearGradient>` +
-      `<filter id="drop" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="${10 * k}" stdDeviation="${5 * k}" flood-color="#000" flood-opacity="0.3"/></filter>` +
+      `<filter id="blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${5 * k}"/></filter>` +
       `<clipPath id="body"><path d="${d}"/></clipPath>`;
+    // The shadow is its own blurred shape under the body: a filter on the gradient-filled body
+    // itself makes Chrome paint the gradient at low precision, in visible bands.
     shapeEl =
-      `<path d="${d}" fill="url(#relief)" filter="url(#drop)"/>` +
+      `<path d="${d}" transform="translate(0 ${10 * k})" fill="#000" fill-opacity="0.3" filter="url(#blur)"/>` +
+      `<path d="${d}" fill="url(#relief)"/>` +
       (size >= 64 ? `<path d="${d}" fill="none" stroke="#ffffff" stroke-opacity="${rimOpacity}" stroke-width="${rim * 2}" clip-path="url(#body)"/>` : "");
   } else {
     const radius = shape === "rounded" ? size * 0.22 : shape === "favicon" ? Math.round(size * 0.19) : 0;
