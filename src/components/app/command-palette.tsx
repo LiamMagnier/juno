@@ -1218,7 +1218,7 @@ function CommandMenu() {
         },
       },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
-      { id: "agents", group: "Actions", label: `Open ${BRAND.orbit.label}`, icon: AppIcons.agents, keywords: "orbit agents your agents crew teammates roster delegate goals routines", run: () => go("/agents") },
+      { id: "agents", group: "Actions", label: `Open ${BRAND.orbit.label}`, icon: AppIcons.orbit, keywords: "orbit agents your agents crew teammates roster delegate goals routines", run: () => go("/agents") },
       { id: "code-runs", group: "Actions", label: `Open ${BRAND.code.label}`, icon: AppIcons.code, keywords: "sessions runs agents executions tasks alevr juno code", run: () => go("/code") },
       { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
       /* DESIGN IS A TYPE NOW, NOT A PLACE, and this row is the word people
