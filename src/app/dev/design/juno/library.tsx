@@ -343,7 +343,7 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
               <input placeholder="Search the library" aria-label="Search the library" value={query} onChange={(e) => setQuery(e.target.value)} />
             </label>
             <button type="button" className="jn-sort jicon-trigger" aria-haspopup="menu">
-              <span className="ink-3">Made by</span> Anyone
+              <span className="ink-3">Added by</span> Anyone
               <Icon name="chevron-down" size={16} />
             </button>
             <button type="button" className="jn-sort jicon-trigger" aria-haspopup="menu">
@@ -394,7 +394,7 @@ export function LibraryScene({ view: initialView = "grid", query: initialQuery =
                 Kind
               </span>
               <span role="columnheader" className="jn-librow__by">
-                Made by
+                Added by
               </span>
               <span role="columnheader" className="jn-librow__chat">
                 From
