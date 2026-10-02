@@ -597,14 +597,15 @@ export function ellArc(cx: number, cy: number, a: number, b: number, phi: number
  * at both tips into two equal arcs, each the other turned half a turn: the
  * refresh glyph without its arrowheads. Now the arcs are unequal and step
  * past each other the way the board's blades (and the Continuum's) do:
- *   - the back arc runs over the top on the full ellipse (a = 9.375), about
- *     205 degrees, from just under the left tip to the right tip;
- *   - the front arc runs under, on the same ellipse at 0.86, so at both breaks
+ *   - the back arc runs over the top on the full ellipse (a = 9.375), from
+ *     just under the left tip round to the right tip;
+ *   - the front arc runs under, on the same ellipse at 0.9, so at both breaks
  *     its end sits inside the back arc's (a step, not a gap in one line);
  *   - the breaks are measured in arc length, not angle, against the 16 px line
- *     (1.667 construction units): the open one at the right tip clears 3 lines
- *     plus 0.6, the closing one under the left tip 1.5 lines, so each stays
- *     open at 16 px on 1x and nothing reads as a dash.
+ *     (1.667 construction units): the open one, centred on the right tip,
+ *     clears 2.25 lines; the closing one, just under the left tip, 1.25. Each
+ *     stays open at 16 px on 1x, and the pair still reads as one orbit (a
+ *     wider open break read as a swoosh, a C, in the sidebar at 16 px).
  * The minor axis is 11.6 units (13 on the keyline): the two arcs stay more than
  * 8 px apart at 16 px. No rotational symmetry, no arrowhead, no start or end
  * to chase: it cannot read as refresh, sync or a spinner, and it never moves.
@@ -612,7 +613,7 @@ export function ellArc(cx: number, cy: number, a: number, b: number, phi: number
 const ORBIT_A = 9.375;
 const ORBIT_B = n3(ORBIT_A * 0.618);
 const ORBIT_TILT = -24;
-const ORBIT_FRONT = 0.86;
+const ORBIT_FRONT = 0.9;
 /** The 16 px line in construction units (1.25 px at 16 is 1.875 keyline units). */
 const LINE16 = 1.667;
 /** ds/dt of an ellipse, units per degree of its parameter. */
@@ -624,12 +625,13 @@ function ellWalk(a: number, b: number, t0: number, s: number, dir: 1 | -1): numb
   return Math.round(t * 100) / 100;
 }
 const orbitArcs = (): string[] => {
-  const open = 4 * LINE16 + 0.6;
-  const close = 2.5 * LINE16;
-  const openFrom = ellWalk(ORBIT_A, ORBIT_B, 5, open / 2, -1);
-  const openTo = ellWalk(ORBIT_A, ORBIT_B, 5, open / 2, 1);
-  const closeFrom = ellWalk(ORBIT_A, ORBIT_B, 170, close / 2, -1);
-  const closeTo = ellWalk(ORBIT_A, ORBIT_B, 170, close / 2, 1);
+  // Centreline lengths: the clear space plus one line (half a round cap each side).
+  const open = 3.25 * LINE16;
+  const close = 2.25 * LINE16;
+  const openFrom = ellWalk(ORBIT_A, ORBIT_B, 0, open / 2, -1);
+  const openTo = ellWalk(ORBIT_A, ORBIT_B, 0, open / 2, 1);
+  const closeFrom = ellWalk(ORBIT_A, ORBIT_B, 175, close / 2, -1);
+  const closeTo = ellWalk(ORBIT_A, ORBIT_B, 175, close / 2, 1);
   return [
     ellArc(12, 12, n3(ORBIT_A * ORBIT_FRONT), n3(ORBIT_B * ORBIT_FRONT), ORBIT_TILT, openTo, closeFrom),
     ellArc(12, 12, ORBIT_A, ORBIT_B, ORBIT_TILT, closeTo, openFrom + 360),
@@ -873,6 +875,7 @@ export const ICONS = {
   }),
   bell: I({
     group: "Navigation",
+    optical: 1.06,
     elements: BELL_PARTS.map((d) => p(d)),
     fill: [solid(`${BELL}Z`), p(BELL_PARTS[1]), p(BELL_PARTS[2])],
     on: { kind: "turn", deg: 14, o: [12, 4.5] },
@@ -937,6 +940,7 @@ export const ICONS = {
   }),
   attach: I({
     group: "Composer",
+    optical: 1.08,
     elements: [p(turn("M10.5 9V15A1.5 1.5 0 0 0 13.5 15V6.75A3 3 0 0 0 7.5 6.75V15.75A4.5 4.5 0 0 0 16.5 15.75V8.25", 40))],
     hover: { r: -10, o: [12, 12] },
     motion: "The clip tilts as if sliding onto a page.",
@@ -1081,6 +1085,7 @@ export const ICONS = {
   }),
   edit: I({
     group: "Message",
+    optical: 1.06,
     elements: [p(pencil(4.5, 19.5, -45, 19.4, 4.2, 4.2)), p(poly(...pt(...pt(4.5, 19.5, 15.4, -45), 2.1, 45), ...pt(...pt(4.5, 19.5, 15.4, -45), 2.1, 225)))],
     hover: { r: -7, o: [4.5, 19.5] },
     motion: "The pencil rocks on its tip.",
@@ -1209,6 +1214,7 @@ export const ICONS = {
   }),
   link: I({
     group: "Files",
+    optical: 1.06,
     elements: [
       g([p(turn("M9.75 16.5H7.5A4.5 4.5 0 0 1 7.5 7.5H9.75", -45))], { x: -0.53, y: 0.53 }),
       g([p(turn("M14.25 7.5H16.5A4.5 4.5 0 0 1 16.5 16.5H14.25", -45))], { x: 0.53, y: -0.53 }),
@@ -1241,6 +1247,7 @@ export const ICONS = {
   }),
   key: I({
     group: "Apps",
+    optical: 1.06,
     elements: [c(8.25, 15.75, 3.75), p(poly(10.9, 13.1, 19.5, 4.5)), p(poly(16.5, 7.5, 18.75, 9.75)), p(poly(14.25, 9.75, 15.75, 11.25))],
     hover: { r: -14, o: [8.25, 15.75] },
     motion: "The key turns.",

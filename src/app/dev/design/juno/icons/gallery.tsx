@@ -63,8 +63,9 @@ function Sheet({ group }: { group?: string }) {
       <header className="jig-head">
         <h1 className="jig-title">Icons</h1>
         <p className="jig-lede">
-          Alevr&apos;s own set: {count} drawings on one 24 unit grid, one optically sized line (1.25 px at 16, 1.5 px from 18), fitted to the pixel grid
-          at every size, with a small cut below 18 px where detail would turn to mud, and at most one motion each. In the product, hover motion is
+          Alevr&apos;s own set: {count} drawings on one 24 unit grid, drawn on a construction lattice and set on the family&apos;s keyline (the size
+          Lucide, Phosphor and SF Symbols draw at), one optically sized line (1.25 px at 16, 1.5 px from 18), fitted to the pixel grid at every size,
+          with a small cut below 18 px where detail would turn to mud, and at most one motion each. In the product, hover motion is
           opt-in (low-frequency destinations only) and Orbit never moves; here every cell opts in. Hover any of them; the right-hand three show the
           hover pose, the on state and the disabled state. The brand&apos;s semantic inventory is at ?view=inventory.
         </p>
