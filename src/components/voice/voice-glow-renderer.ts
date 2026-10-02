@@ -193,7 +193,7 @@ void main() {
 
   if (uVariant > 0.5 && uVariant < 1.5) {
     // HORIZON: light pooled under the composer, from the speaker's side.
-    float below = smoothstep(b.y * 0.15, b.y, rel.y) * (1.0 - smoothstep(b.x - r, b.x + 8.0, abs(rel.x)));
+    float below = smoothstep(b.y * 0.15, b.y, rel.y) * (1.0 - smoothstep(b.x - 3.0 * r, b.x + 6.0, abs(rel.x)));
     float hF = 4.0;
     float hL = 0.35;
     float sy = 0.30 * W;

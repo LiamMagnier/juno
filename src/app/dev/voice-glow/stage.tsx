@@ -432,7 +432,7 @@ const DIRECTIONS: Direction[] = [
     variant: "duet",
     what: "The edge light again, but each voice is anchored at its own bottom corner, yours right and Alevr’s left, and grows toward the centre; talking over Alevr lights both ends and they meet.",
     verdict:
-      "Close second. The best at interruption and the most literal handoff, but a light that lives in the corners leaves the centre of the composer dark while one person talks, and asymmetry reads as a fault at a glance. Its two-anchor idea survives in the winner’s thinking pass (from your end to Alevr’s).",
+      "Close second. The best at interruption and the most literal handoff, but a light that lives in the corners leaves the centre of the composer dark while one person talks, climbs the sides to the top corners, and asymmetry reads as a fault at a glance. Its two anchors survive in the winner: the thinking pass runs from your end to Alevr’s, and two voices at once part toward them.",
   },
   {
     key: "Today",
