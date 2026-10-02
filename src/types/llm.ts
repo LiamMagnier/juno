@@ -1,6 +1,7 @@
 import type { Attachment, Role } from "@prisma/client";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ChatFinishReason, ClientSource } from "@/types/chat";
+import type { ToolErrorCode, ToolOutcomeStatus, ToolProgress, ToolRunRecord } from "@/lib/tools/types";
 
 /** A persisted message reduced to what model adapters need. */
 export type MessageForModel = { role: Role; content: string; attachments: Attachment[] };
@@ -62,6 +63,49 @@ export type LlmEvent =
       detail?: string;
       /** Raw JSON string exactly as the provider sent it, unparsed. */
       args?: string;
+      /**
+       * The provider's own id when it differs from `callId` (suffixed because a
+       * host reused it, or synthesized because the host sent none). `callId`
+       * is always the Alevr id (src/lib/tools/call-ids.ts).
+       */
+      providerCallId?: string;
+      /** The model step this call ended: 0-based, +1 per tool round. */
+      round?: number;
+      /** Position of the call within its round, 0-based. */
+      index?: number;
+    }
+  /**
+   * The dispatcher's view of a call between `call` and `result`
+   * (src/lib/tools/dispatch.ts).
+   *
+   * `queued` is yielded for every call of a batch the moment it starts, so the
+   * rows exist before any of them runs. `awaiting_approval` means a person is
+   * deciding (the approval frame itself still comes from the broker's
+   * callback). `running` is yielded only AFTER authorisation, with the tool's
+   * own bound: the route holds the stall watchdog from here to the result,
+   * because the provider is not expected to say anything while a tool runs.
+   */
+  | {
+      type: "tool";
+      phase: "status";
+      server: string;
+      name: string;
+      callId: string;
+      status: "queued" | "awaiting_approval" | "running";
+      timeoutMs?: number;
+    }
+  /**
+   * A running call's latest output (design §6.4): the last few lines and byte
+   * counts, at most one frame per call per second. Logged like every other
+   * frame, and it touches the watchdog.
+   */
+  | {
+      type: "tool";
+      phase: "progress";
+      server: string;
+      name: string;
+      callId: string;
+      progress: ToolProgress;
     }
   | {
       type: "tool";
@@ -89,6 +133,16 @@ export type LlmEvent =
        *  the text the panel's own cut was taken from. tool-detail.ts measures
        *  it there rather than carrying a second, subtly different number. */
       durationMs?: number;
+      providerCallId?: string;
+      round?: number;
+      index?: number;
+      /** The typed outcome. `ok` stays and equals `status === "succeeded"`. */
+      status?: ToolOutcomeStatus;
+      error?: { code: ToolErrorCode };
+      /** Execution tools: the run behind the call. */
+      run?: ToolRunRecord;
+      /** Served from the turn's duplicate cache: nothing ran a second time. */
+      cached?: boolean;
     }
   /**
    * A connector action is waiting for the person to answer.
