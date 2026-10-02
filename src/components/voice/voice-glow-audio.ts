@@ -15,12 +15,10 @@ import { normalizedSpeechLoudness } from "@/lib/realtime-voice-activity";
  * torn down with the stream. `gain` scales the RMS before the dB mapping.
  */
 export function useStreamLevel(stream: MediaStream | null | undefined, gain = 1): (() => number) | null {
-  const readRef = React.useRef<(() => number) | null>(null);
   const [ready, setReady] = React.useState<(() => number) | null>(null);
 
   React.useEffect(() => {
     if (!stream || stream.getAudioTracks().length === 0) {
-      readRef.current = null;
       setReady(null);
       return;
     }
@@ -45,10 +43,8 @@ export function useStreamLevel(stream: MediaStream | null | undefined, gain = 1)
       for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
       return normalizedSpeechLoudness(Math.sqrt(sum / buf.length) * gain);
     };
-    readRef.current = read;
     setReady(() => read);
     return () => {
-      readRef.current = null;
       try {
         source?.disconnect();
         node.disconnect();

@@ -407,7 +407,7 @@ const DIRECTIONS: Direction[] = [
     variant: "edge",
     what: "The composer’s own 1px edge takes the speaker’s tone from the bottom centre, and the light spreads around the outline with the voice, falling off softly outside. Nothing inside the box.",
     verdict:
-      "Chosen. It is still the glow (centred at the bottom, rising with the voice) turned inside out: the light leaves the object instead of filling it, so the field and the V3 edge stay crisp. The shape is the composer\u2019s own outline, and presence on the edge is already how this product says \u201clive\u201d. Thinking is the Continuum handoff along the bottom edge, from your end to Alevr\u2019s. Taken from D: when you talk over Alevr the two lights part toward their own sides instead of mixing at the centre. Cost: a WebGL canvas (shared, drawn only on change).",
+      "Chosen. It is still the glow (centred at the bottom, rising with the voice) turned inside out: the light leaves the object instead of filling it, so the field and the V3 edge stay crisp. The shape is the composer’s own outline, and presence on the edge is already how this product says “live”. Thinking is the Continuum handoff along the bottom edge, from your end to Alevr’s. Taken from D: when you talk over Alevr the two lights part toward their own sides instead of mixing at the centre. Cost: a WebGL canvas (shared, drawn only on change).",
     chosen: true,
   },
   {
@@ -424,7 +424,7 @@ const DIRECTIONS: Direction[] = [
     beam: "refined",
     what: "Today’s package, as far as its props go: one colour family per voice, no idle breathing, no hue drift, no warp, no fringe, and the bloom masked to the bottom band of the box.",
     verdict:
-      "Rejected. Much quieter than today, and honest about the work it reuses, but it is still the library’s chat-input demo: the light is clipped inside the box, so it still sits behind the controls row, and the hump is the package’s shape, not Alevr’s. Its ceiling is “less wrong”.",
+      "Rejected. Much quieter than today, and honest about the work it reuses, but it is still the library’s chat-input demo: the light is clipped inside the box, so it still sits behind the controls row; on ivory a masked ember turns brown; and the hump is the package’s shape, not Alevr’s. Its ceiling is “less wrong”.",
   },
   {
     key: "D",
