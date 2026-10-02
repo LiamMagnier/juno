@@ -166,14 +166,28 @@ Facts the producers should know:
   `/api/attachments/{id}`; other files show as cards that say they are in the conversation's
   files, without a link, until the record carries a same-origin `url` or the reply is saved and
   the message's own attachment tiles take over (the run strip then stops drawing them, so a
-  file is never shown twice).
+  file is never shown twice). "Image" means what that route serves: PNG, JPEG, WebP and GIF,
+  the four types the upload plan stores as `IMAGE`. A TIFF, BMP or HEIC the program wrote is a
+  `FILE` there (the route answers 404), so it is drawn as a file card; a file whose record says
+  `kind: "FILE"` (`ExecOutputFile.kind`) is always one.
 - **Orbit task runs** use `workToolStartedPayload`, `workToolFinishedEvents` and
   `workRunCapabilityDegraded` (`src/lib/work/tool-run-events.ts`): the existing event kinds
   `tool_started`, `tool_finished`, `artifact_created` and `degraded` (`capability_unavailable`)
-  with additive `summary`, `run` and `runPhase` keys, so shipped clients keep decoding.
+  with additive `summary`, `run` and `runPhase` keys, so shipped clients keep decoding. Each
+  finished-run draft carries an idempotency `key` (`run:<callId>:finished`,
+  `run:<callId>:file:<attachmentId>`); the runner must pass it to `appendEvents` as the event's
+  `key`, so a retried append or a replayed outcome files the ending and its files once. Today
+  the execution lane's Work path (`toWorkExecResult`) hands agent-core only `isError`, so an
+  Orbit task reads an unknown or stopped run as "Code failed" until it emits these drafts.
 - **Names.** Only the bare ids `run_code`, `code_interpreter`, `check_run`, `use_skill` and
   `read_skill_file` are runs. A namespaced `connector__run_code` is a connector's tool (a
-  custom MCP server may name one that) and keeps the connector receipt on every surface.
+  custom MCP server may name one that) and keeps the connector receipt on every surface. A
+  row's bare `detail` text is read as a tool name only on the chat's own call row (`title:
+  "Using X"`): elsewhere it is free text (a task title the model chose, a connector's label, a
+  Code command's output) and never makes a row a run.
+- **Names a person reads.** File, skill, path and agent names, a run's reason and its error
+  detail lose control characters and bidirectional overrides (U+202E would turn
+  "report<RLO>fdp.exe" into what reads as "reportexe.pdf"); line breaks become spaces.
 - **Links.** `url` and `logUrl` must be same-origin paths; a backslash, a control character or
   anything resolving to another origin is dropped (`sameOriginPath`, native
   `NativeToolRunWire.path`). Attachment ids are encoded as one path segment.
@@ -199,6 +213,8 @@ Facts the producers should know:
 | Every phase settled (queued, running with progress, waiting for approval, succeeded with files, failed, JavaScript exit 3, timed out, stopped, outcome unknown, unavailable, missing package, skill read and script, long output, the pre-rework row, and the tool contract's shapes) in web chat rows, the run strip and its files, the Thought process dock, web Code activity, the Orbit task feed and the voice sentences | Built and fixture-tested; captured in `/dev/tool-runs` light and dark, Reduced Motion on and off, and at phone width with no sideways scroll (screenshots kept outside the repository in `juno/.claude/local-tools/refoundation-artifacts/shots/tool-surfaces`) |
 | macOS and iOS ChatKit decoding, words and file cards | `NativeToolRunTests` (decoding of both wire shapes, words, malformed records) and offscreen snapshots of the run detail at the Mac panel width (360 pt) and the iPhone width (390 pt), light and dark; `NativeWorkToolRunTests` for the Orbit log |
 | Mac Activity panel | Shows a run's context, exit and file cards (`ActivityPanel.swift`); the app target compiles. The Mac transcript snapshot suite cannot run on the trunk today: its test target does not compile (`DesktopShellContractTests` expects a shell action the contract no longer has, and the connections screen needs the native lane's repair bff7598b) |
-| Reduced Motion and screen-reader announcements | One polite announcement per phase change ("Running Python.", "Ran Python, 2 files."), none for progress, none for a stored turn, and only the working run when a live turn remounts; the live mark is the in-tree orb until the Continuum ThinkingMark lands, still under Reduced Motion |
+| Reduced Motion and screen-reader announcements | Web: one polite announcement per phase change ("Running Python.", "Ran Python, 2 files."), none for progress, none for a stored turn, and only the working run when a live turn remounts; a second run that ends with the same sentence is announced again (the region re-mounts its text). The live mark is the in-tree orb until the Continuum ThinkingMark is swapped in, still under Reduced Motion. Native: the sentence exists (`NativeToolRunPresentation.announcement`) but nothing posts it yet, so VoiceOver hears no phase change on macOS or iOS |
+| Voice | The voice-mode prompt says outcomes, never code, and names files once; read-aloud (`speechForReply`) names a turn's files once. The one spoken phase and the spoken outcome lines (`voiceRunCue`, `voiceRunOutcome`) are written and tested but no voice path calls them yet |
+| Web Code | The run receipt renders for a row that carries the run record or the chat's call row. Real Code rows come from the agent protocol fold and carry neither today, so Code shows its ordinary command receipts until the protocol carries the run record |
 | V1 to V4 shown in the authenticated web chat, an Orbit thread and task, web Code, a voice-mode turn | **Not run**: needs the tool-contract, execution and skill lanes merged, a sandbox and provider keys |
 | Coverage per provider, runtime and surface | This page; every live cell untested |
