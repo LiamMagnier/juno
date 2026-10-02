@@ -4,49 +4,27 @@
  *
  * A turn (a chat generation, or a Work run) is one sandbox session. The skills
  * it loads, whether the person armed one with `/slug` or the model loaded one
- * through `use_skill`, are registered here under the session id, and the
- * execution runtime reads `skillMountsFor(surface, sessionId)` when it builds each
- * `run_code` call, so a skill loaded earlier in the turn is present at
+ * through `use_skill`, are registered in the execution lane's registry
+ * (`mountSkill(surface, sessionId, mount)` in src/lib/exec/mounts.ts), which
+ * `run_code` reads on every call, so a skill loaded earlier in the turn is at
  * `/skills/<slug>` for every run after it. The runtime uploads each bundle once
- * per session (the host keys it by digest) and records which mount a run's
- * code named (`ToolRun.skillVersionId`, `skillBundleDigest`).
+ * per session (the host keys it by digest) and records which mount a run's code
+ * named (`ToolRun.skillVersionId`, `skillBundleDigest`).
  *
  * A mount is read-only and never widens anything: the sandbox profile (no
  * network, no credentials, nothing but /work and the mounts) is the turn's,
  * whatever the skill asked for. Only a version that passed every check
- * (scanned, consented, enabled) is ever registered, and only on a turn that
- * carries `run_code`.
- *
- * Process-local by design: a turn runs in one process from its first token to
- * its last, and the registry entry is cleared when the turn's tool session
- * closes. An entry is also dropped after `MOUNT_TTL_MS` without use, so a turn
- * that died without closing cannot leak bundles into memory forever.
+ * (scanned, consented, enabled) is ever registered.
  */
 
 import "server-only";
 
 import { loadSkillBundleTar } from "@/lib/skills/bundle-store";
+import type { SkillMount } from "@/lib/exec/types";
 
-/**
- * A skill bundle that may be mounted read-only at /skills/<slug>.
- *
- * Structurally identical to `SkillMount` in `src/lib/exec/types.ts` (the
- * execution lane's file), which is what the runtime consumes; repeated here so
- * this lane compiles before that one lands.
- */
-export interface SkillMount {
-  /** Mount name, /^[a-z0-9][a-z0-9-]{0,63}$/: the files appear under /skills/<slug>. */
-  slug: string;
-  skillVersionId: string;
-  /** sha256 (hex) of the bundle tar, checked by the host. */
-  bundleDigest: string;
-  /** The bundle as a tar (≤ 5 MB): regular files only. */
-  openBundle(): Promise<Uint8Array>;
-}
+export type { SkillMount };
 
 const MOUNT_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
-/** As long as the sandbox keeps the session's workspace. */
-const MOUNT_TTL_MS = 30 * 60 * 1000;
 
 /**
  * A mount for one stored bundle. The bytes are read (and verified against the
@@ -74,63 +52,4 @@ export function skillMountFor(input: {
       return pending;
     },
   };
-}
-
-/*
- * The per-session registry below has the exact signatures of the execution
- * lane's `src/lib/exec/mounts.ts` (`mountSkill`, `skillMountsFor`,
- * `clearSkillMounts`, keyed by surface and session, at most 8 mounts), which is
- * the one `run_code` reads. It stands in until that file is on the trunk; when
- * it is, these three are deleted and `session.ts` imports that module instead,
- * so there is exactly one registry and `run_code` sees every mount.
- */
-
-type MountSurface = "chat" | "work" | "voice";
-
-const MAX_MOUNTS_PER_SESSION = 8;
-
-interface SessionMounts {
-  mounts: Map<string, SkillMount>;
-  touchedAt: number;
-}
-
-const sessions = new Map<string, SessionMounts>();
-
-function key(surface: MountSurface, sessionId: string): string {
-  return `${surface}:${sessionId}`;
-}
-
-function sweep(now: number): void {
-  for (const [name, entry] of sessions) {
-    if (now - entry.touchedAt > MOUNT_TTL_MS) sessions.delete(name);
-  }
-}
-
-/**
- * Arms a skill bundle for a session. False when the mount name or digest is
- * invalid or the session already holds the maximum. A slug already mounted is
- * replaced by the same skill's mount: slugs are unique per account.
- */
-export function mountSkill(surface: MountSurface, sessionId: string, mount: SkillMount): boolean {
-  if (!MOUNT_SLUG.test(mount.slug) || !/^[0-9a-f]{64}$/.test(mount.bundleDigest)) return false;
-  const now = Date.now();
-  sweep(now);
-  const entry = sessions.get(key(surface, sessionId)) ?? { mounts: new Map<string, SkillMount>(), touchedAt: now };
-  if (!entry.mounts.has(mount.slug) && entry.mounts.size >= MAX_MOUNTS_PER_SESSION) return false;
-  entry.mounts.set(mount.slug, mount);
-  entry.touchedAt = now;
-  sessions.set(key(surface, sessionId), entry);
-  return true;
-}
-
-/** Every mount registered for a session, in the order the skills were loaded. */
-export function skillMountsFor(surface: MountSurface, sessionId: string): SkillMount[] {
-  const entry = sessions.get(key(surface, sessionId));
-  if (!entry || Date.now() - entry.touchedAt > MOUNT_TTL_MS) return [];
-  return [...entry.mounts.values()];
-}
-
-/** Forgets a session's mounts. Called when its tool session closes. */
-export function clearSkillMounts(surface: MountSurface, sessionId: string): void {
-  sessions.delete(key(surface, sessionId));
 }

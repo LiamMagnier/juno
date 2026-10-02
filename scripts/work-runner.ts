@@ -137,6 +137,8 @@ import {
 import { scanSkillVersion } from "@/lib/work/skill-security";
 import { skillIsAvailable } from "@/lib/skills/library-contract";
 import { AVAILABLE_SKILL_WHERE } from "@/lib/skills/sources";
+import { skillToolsFor } from "@/lib/skills/run-tools";
+import { consentReasonsOf } from "@/lib/skills/workflow";
 import { getMemoryProfile } from "@/lib/memory";
 import { workMemoryContext, workMemoryEnabled } from "@/lib/work/memory-context";
 import type { Prisma } from "@prisma/client";
@@ -1740,12 +1742,37 @@ async function fetchPinnedWebPage(
  * the model discover a skill, read its referenced files and mount its bundle
  * (with `mountSkill("work", runId, …)`) so `run_code` can run its scripts.
  *
- * THE CALL SITE FOR THE SKILL LANE (L3, rf/skill-workflows). Its
- * `skillToolsFor` (src/lib/skills/run-tools.ts) replaces this body; until it
- * lands a run carries no skill tools, which is the behaviour before the rework.
+ * Built by the skill lane's `skillToolsFor` (src/lib/skills/run-tools.ts)
+ * AFTER the run's skill is applied and its toolset narrowed: the applied
+ * skill's folder becomes readable (and mounted when `run_code` survived the
+ * narrowing), and these two tools are added outside the narrowing, because
+ * they read only the person's own skills and a skill that declares
+ * `run_code` and nothing else still has to read the reference it points at.
+ * Its mounts are dropped with the run's other disposers.
  */
-async function workSkillTools(_input: { runId: string; userId: string }): Promise<WorkToolDefinition[]> {
-  return [];
+async function workSkillTools(input: {
+  runId: string;
+  userId: string;
+  projectId: string | null;
+  appliedSlug: string | null;
+  codeExecution: boolean;
+  disposers: Array<() => Promise<void>>;
+}): Promise<{ tools: WorkToolDefinition[]; promptSection: string | null }> {
+  try {
+    const opened = await skillToolsFor({
+      userId: input.userId,
+      runId: input.runId,
+      projectId: input.projectId,
+      appliedSlug: input.appliedSlug,
+      codeExecution: input.codeExecution,
+    });
+    input.disposers.push(() => opened.close());
+    return { tools: opened.tools, promptSection: opened.promptSection };
+  } catch (error) {
+    // A library that cannot be read is a run without skill tools, not a failed run.
+    log("skill tools unavailable", { runId: input.runId, error: String(error) });
+    return { tools: [], promptSection: null };
+  }
 }
 
 function buildTools(input: {
@@ -1771,8 +1798,6 @@ function buildTools(input: {
    * the programs run on the separate execution host with no network.
    */
   exec: { deps: NonNullable<ReturnType<typeof workExecDeps>>; manifestLine: string | null } | null;
-  /** use_skill / read_skill_file for this run (L3's `skillToolsFor`); empty until that lands. */
-  skillTools: WorkToolDefinition[];
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -2153,7 +2178,6 @@ function buildTools(input: {
     // A sandbox on the execution host, not this worker: `withoutHostWorkspaceTools`
     // keeps these (they are not workspace tools) and strips the host ones below.
     ...(input.exec ? runtime.execTools({ ...input.exec.deps, manifestLine: input.exec.manifestLine }) : []),
-    ...input.skillTools,
     ...runtime.workspaceTools(),
   ]);
 }
@@ -2643,7 +2667,9 @@ async function applySkill(input: {
   }
   if (row.requiresConsent) {
     throw new SkillSecurityError(
-      "This version requests new permissions. Review the version and approve those permissions before running it."
+      consentReasonsOf(row.securityScan).includes("scripts")
+        ? "This skill was imported with scripts nobody has reviewed. Review its files and approve them before running it."
+        : "This version requests new permissions. Review the version and approve those permissions before running it."
     );
   }
 
@@ -3490,7 +3516,6 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     remoteComputer,
     disposers,
     exec: execDeps ? { deps: execDeps, manifestLine: await runtimeManifestSummary().catch(() => null) } : null,
-    skillTools: await workSkillTools({ runId: input.runId, userId: input.userId }),
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
@@ -3509,7 +3534,17 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // run's own toolset by the resolved list rather than building a list from
   // the skill's request, so a name the skill asked for and did not get simply
   // produces no tool.
-  const effectiveTools = skill ? runtime.narrowToPermittedTools(tools, skill.tools) : tools;
+  const narrowedTools = skill ? runtime.narrowToPermittedTools(tools, skill.tools) : tools;
+  const skillTools = await workSkillTools({
+    runId: input.runId,
+    userId: input.userId,
+    projectId: run.session.projectId ?? null,
+    appliedSlug: skill?.reference.detail.slug ?? null,
+    codeExecution: runtime.toolNames(narrowedTools).includes("run_code"),
+    disposers,
+  });
+  const effectiveTools = [...narrowedTools, ...skillTools.tools];
+  const systemSuffix = [skill?.systemSuffix, skillTools.promptSection].filter((part): part is string => !!part).join("\n\n");
   egressDomains.current = skill ? skill.domains : null;
 
   if (skill) {
@@ -3716,7 +3751,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // admitting there isn't one. That run keeps the old behaviour — tokens
     // counted, cost zero — which is now the exception rather than every run.
     ...(choice.info ? { pricing: pricingFor(choice.info) } : {}),
-    ...(skill ? { systemSuffix: skill.systemSuffix } : {}),
+    ...(systemSuffix ? { systemSuffix } : {}),
     // The thinking tier the reader chose, on every request this run makes.
     //
     // It used to stop at the column. `WorkSessionOptions` had no field for it
