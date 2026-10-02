@@ -14,6 +14,7 @@ import {
   type Segment,
   type TokenRef,
 } from "./fixtures";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 import { Icon } from "./icons";
 import { fromKeyboard, usePopoverKeys } from "./layers";
 import { AppMark, ModelMark, TokenMark } from "./marks";
@@ -1091,7 +1092,7 @@ const PLUS_ITEMS: { icon: string; label: string; hint?: string; line?: string; a
   { icon: "at", label: "Mention a file, app or agent", hint: "@" },
   { icon: "skill", label: "Run a skill", hint: "/" },
   /* D-038: the deep-research mode is Deep Field, always with its descriptor, and its own glyph (the set's deep-field). */
-  { icon: "deep-field", label: "Deep Field", line: "Deep research", aria: "Deep Field, deep research" },
+  { icon: "deep-field", label: FEATURE_NAMES.research.label, line: FEATURE_NAMES.research.description, aria: FEATURE_NAMES.research.accessibleLabel },
 ];
 
 /** What + offers: things to add to the message, then the two ways to name context in the sentence. */

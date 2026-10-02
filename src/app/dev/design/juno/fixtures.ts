@@ -1,4 +1,5 @@
 import type { Provider } from "@/lib/providers";
+import { AGENT_STATE_NAMES, FEATURE_NAMES } from "@/lib/brand/names";
 import type { CrewState } from "./crew/face";
 
 /*
@@ -57,23 +58,17 @@ export const SIDE_CREW: CrewRow[] = [...CREW].sort((a, b) => SIDE_ORDER[a.status
 export const MIRA = CREW[0];
 
 /** The sidebar's right-hand word for an agent's row. Ready is the rest state and says nothing. */
-export const SIDE_STATE: Record<AgentStatus, string | null> = {
-  ready: null,
-  thinking: "Thinking",
-  working: "Working",
-  needs: "Needs your answer",
-  blocked: "Blocked",
-  finished: "Finished",
+/* The six states' words come from the central name registry (src/lib/brand/names.ts, D-035..D-038). */
+export const STATE_WORD: Record<AgentStatus, string> = {
+  ready: AGENT_STATE_NAMES.ready,
+  thinking: AGENT_STATE_NAMES.thinking,
+  working: AGENT_STATE_NAMES.working,
+  needs: AGENT_STATE_NAMES.needsAnswer,
+  blocked: AGENT_STATE_NAMES.blocked,
+  finished: AGENT_STATE_NAMES.finished,
 };
 
-export const STATE_WORD: Record<AgentStatus, string> = {
-  ready: "Ready",
-  thinking: "Thinking",
-  working: "Working",
-  needs: "Needs your answer",
-  blocked: "Blocked",
-  finished: "Finished",
-};
+export const SIDE_STATE: Record<AgentStatus, string | null> = { ...STATE_WORD, ready: null };
 
 /** The face pose for each status. */
 export const STATUS_FACE: Record<AgentStatus, CrewState> = {
@@ -400,10 +395,11 @@ export const LIBRARY: LibItem[] = [
 ];
 
 /** D-038 (revised): what Alevr makes is collected under "Made by Alevr"; what you gave it are Files. Cards and sentences name the real type. */
-export const LIB_FILTERS = ["All", "Made by Alevr", "Files"] as const;
-export const LIB_FILTER_KINDS: Record<(typeof LIB_FILTERS)[number], LibKind[] | null> = {
+export const MADE_BY = FEATURE_NAMES.artifacts.label; // "Made by Alevr", from the registry
+export const LIB_FILTERS = ["All", MADE_BY, "Files"] as const;
+export const LIB_FILTER_KINDS: Record<string, LibKind[] | null> = {
   All: null,
-  "Made by Alevr": ["document", "deck", "design"],
+  [MADE_BY]: ["document", "deck", "design"],
   Files: ["sheet", "pdf", "image"],
 };
 export const LIB_STORAGE = { used: "2.1 GB", of: "10 GB", deleted: 3 };

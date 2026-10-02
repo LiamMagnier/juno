@@ -414,7 +414,8 @@
 .jn .jn-codehome__lockup {
   color: var(--ink-2);
 }
-.jn .jn-codehome__lockup .jn-alevr {
+.jn .jn-codehome__lockup .jn-alevr,
+.jn .jn-codehome__lockup .jn-lockup__art {
   color: var(--ink-2);
 }
 .jn .jn-codehome__lockup .jn-lockup__product {

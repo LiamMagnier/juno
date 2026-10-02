@@ -274,11 +274,9 @@ export function CodeScene({ pane: initialPane = "session" }: { pane?: "session" 
         </div>
         <div className="jn-codework__main">
           <TopBar
-            title={
-              <>
-                Sync worker drops cursors on retry <span className="jn-top__meta">juno-web, This Mac</span>
-              </>
-            }
+            /* Revision 2: the title alone (the repository and host are in the context row and the sidebar), so the
+               reason beside Open pull request never squeezes it into "juno-w…". */
+            title="Sync worker drops cursors on retry"
           >
             {/* Not ready while the tests run: a quiet, unavailable control, and the reason in words beside it (Revision 2). */}
             <span className="jn-top__why" id="jn-pr-why">

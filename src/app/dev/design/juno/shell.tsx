@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CrewMark, crewMember } from "./crew-bridge";
 import { ACCOUNT, CODE_SESSIONS, CREW, PINNED, RECENT, SIDE_CREW, SIDE_STATE, STATUS_FACE, WORKSPACES, type AgentStatus, type CrewRow, type SessionState } from "./fixtures";
 import { AlevrLogo, CodeGlyph, OrbitGlyph, ThinkingMark } from "./brand";
+import { BRAND, FEATURE_NAMES } from "@/lib/brand/names";
 import { Icon } from "./icons";
 import { fromKeyboard, usePopoverKeys } from "./layers";
 import { POP_IN, R, T, useReduced } from "./motion";
@@ -291,16 +292,16 @@ export function OrbitLabel({ current, onSelect }: { current?: boolean; onSelect?
         href="#"
         className="jn-side__labellink"
         aria-current={current ? "page" : undefined}
-        aria-label="Orbit, your agents"
+        aria-label={`${BRAND.orbit.label}, ${BRAND.orbit.description.toLowerCase()}`}
         onClick={(e) => {
           e.preventDefault();
           onSelect?.();
         }}
       >
         <OrbitGlyph size={16} className="jn-side__labelglyph" />
-        <span>Orbit</span>
+        <span>{BRAND.orbit.label}</span>
       </a>
-      <button type="button" className="jib jib--sm jicon-trigger jicon-quiet jn-side__labelbtn jtip" aria-label="Create agent" data-tip="Create agent" data-tip-align="end">
+      <button type="button" className="jib jib--sm jicon-trigger jicon-quiet jn-side__labelbtn jtip" aria-label={FEATURE_NAMES.createAgent.label} data-tip={FEATURE_NAMES.createAgent.label} data-tip-align="end">
         <Icon name="plus" size={16} />
       </button>
     </div>

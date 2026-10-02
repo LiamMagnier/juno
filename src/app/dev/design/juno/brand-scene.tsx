@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlevrLogo, BRAND_STANDIN, CodeGlyph, ContinuumMark, HANDOFF, ORBIT_ARCS, OrbitGlyph, ThinkingMark, type ThinkingState } from "./brand";
-import { CONTINUUM_H, CONTINUUM_W } from "./brand-geometry";
+import { AlevrLogo, BRAND_STANDIN, CodeGlyph, ContinuumMark, continuumHeight, HANDOFF, ORBIT_ARCS, ORBIT_GEOMETRY, OrbitGlyph, ThinkingMark, type ThinkingState } from "./brand";
 import { Icon } from "./icons";
 
 /*
@@ -57,8 +56,9 @@ function MarkTiles() {
 /** Clear space: one broad path width around the mark, drawn in the presence ink as hairlines. */
 function ClearSpace() {
   const w = 220;
-  const h = (w * CONTINUUM_H) / CONTINUUM_W;
-  const pad = w * 0.17;
+  const h = continuumHeight(w);
+  // One broad path width: 48 of the master's 240.5 units.
+  const pad = Math.round(((w * 48) / 240.5) * 100) / 100;
   return (
     <div className="jn-brand__clear">
       <div className="jn-brand__clearbox" style={{ width: w + pad * 2, height: h + pad * 2 }}>
@@ -96,7 +96,7 @@ function OpticalSizes() {
               </figure>
             ))}
           </div>
-          <span className="jn-brand__tilecap">Optical masters: below 48 px the open channels widen so they stay visible.</span>
+          <span className="jn-brand__tilecap">Optical masters: 16, 20, 24 and 32 are drawn for their own pixel grid, so the channels stay open; on 1.5x screens the next master up stands in.</span>
         </Themed>
       ))}
     </div>
@@ -205,11 +205,12 @@ export function OrbitConstruction() {
   const H = 400;
   const cx = W / 2;
   const cy = H / 2 - 34;
+  // The production glyph's own construction (brand-glyphs.ts): a = 9.375 grid units, b = a / phi, tilted 24 degrees.
   const rx = 172;
-  const ry = rx * 0.618;
-  const rot = -22;
-  const c = rx * 0.786;
-  const s = rx / 9.5;
+  const ry = rx * ORBIT_GEOMETRY.ratio;
+  const rot = ORBIT_GEOMETRY.tilt;
+  const c = rx * Math.sqrt(1 - ORBIT_GEOMETRY.ratio ** 2);
+  const s = rx / ORBIT_GEOMETRY.a;
   const mark = 128;
   return (
     <figure className="jn-brand__orbit" aria-label="Alevr Orbit: the Continuum inside the Orbit ellipse, with its construction">
@@ -232,7 +233,7 @@ export function OrbitConstruction() {
           ))}
         </g>
       </svg>
-      <span className="jn-brand__orbitmark" style={{ left: `${((cx - mark / 2) / W) * 100}%`, top: `${((cy - (mark * CONTINUUM_H) / CONTINUUM_W / 2) / H) * 100}%`, width: `${(mark / W) * 100}%` }}>
+      <span className="jn-brand__orbitmark" style={{ left: `${((cx - mark / 2) / W) * 100}%`, top: `${((cy - continuumHeight(mark) / 2) / H) * 100}%`, width: `${(mark / W) * 100}%` }}>
         <ContinuumMark size={mark} optical={false} />
       </span>
       <figcaption className="jn-brand__orbitcap">

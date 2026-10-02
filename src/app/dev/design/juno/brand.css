@@ -17,6 +17,7 @@
 }
 
 .jn .jn-alevr {
+  /* The production wordmark is an outlined SVG (currentColor); these type settings stay for any text fallback. */
   font-family: var(--font-serif);
   font-weight: 600;
   font-style: normal;
@@ -38,9 +39,7 @@
   color: var(--ink);
   line-height: 1;
 }
-.jn .jn-lockup__mark {
-  transform: translateY(calc(var(--lk) * -0.06));
-}
+
 .jn .jn-lockup__product {
   font-family: var(--font-serif);
   font-weight: 400;
@@ -59,94 +58,55 @@
   vertical-align: middle;
 }
 
-/* —————————————————————————— The ThinkingMark: a tonal path handoff ——————————————————————————
+/* —————————————————————————— The ThinkingMark (production) ——————————————————————————
  *
- * Stationary. A pass runs clockwise from the top blade: each blade rises
- * toward the presence ink over `fast` (120 ms, out-soft) and falls back over
- * `base` (220 ms, out-soft); the next blade starts 120 ms later, as this one
- * peaks, so one blade at a time carries the tone (Revision 2, the production
- * schedule). The peak is a mix, not the full presence ink, tuned so light and
- * dark move by the same amount (light 58%, dark 88%). A pass restarts by
- * switching between two identical keyframe names (data-pass a/b). Between
- * passes the mark is the row's ink: nothing is held. Finished settles once
- * (560 ms, every blade to half the peak and back). Waiting and error: still,
- * in the third ink. Reduced motion: no passes, no settle.
+ * src/components/brand/thinking-mark.tsx draws it and runs its schedule (one
+ * blade at a time: rise 120 ms, fall 220 ms, the next 120 ms later; absorbed
+ * requests, a backing-off window; one 560 ms settle; nothing held). Its tone
+ * layer is hsl(var(--primary-ink)) and its peak --tm-peak (0.5 light, 0.9
+ * dark, where the presence ink sits closer to the muted ink). The galleries
+ * theme by data-theme (and pinned data-scheme tiles), not by the app's .dark
+ * class, so the presence ink and the peak are given here per scheme. At rest
+ * the mark is its row's ink: the second ink, the third when it waits or fails.
  */
-.jn .jn-tm {
-  --tm-ink: var(--ink-2);
-  /* light-dark() so a subtree pinned to one scheme (the brand scene's tiles) resolves its own peak. */
-  --tm-on: light-dark(color-mix(in oklab, var(--presence) 58%, var(--tm-ink)), color-mix(in oklab, var(--presence) 88%, var(--tm-ink)));
-  --tm-half: light-dark(color-mix(in oklab, var(--presence) 30%, var(--tm-ink)), color-mix(in oklab, var(--presence) 44%, var(--tm-ink)));
+.jn {
+  --primary-ink: 229.231 63.415% 48.235%;
 }
-.jn .jn-tm .jn-cmk__b {
-  fill: var(--tm-ink);
+.jn[data-theme="dark"],
+.jn [data-scheme="dark"] {
+  --primary-ink: 228.608 61.240% 74.706%;
 }
-.jn .jn-tm[data-state="waiting"],
-.jn .jn-tm[data-state="error"] {
-  --tm-ink: var(--ink-3);
+.jn [data-scheme="light"] {
+  --primary-ink: 229.231 63.415% 48.235%;
 }
-.jn .jn-tm[data-pass="a"] .jn-cmk__b {
-  animation: jn-tm-a 340ms linear calc(var(--i) * 120ms) both;
-}
-.jn .jn-tm[data-pass="b"] .jn-cmk__b {
-  animation: jn-tm-b 340ms linear calc(var(--i) * 120ms) both;
-}
-.jn .jn-tm[data-settle] .jn-cmk__b {
-  animation: jn-tm-settle var(--d-emphasis) linear both;
-}
-/* 120 ms of 340 is 35.3%: the rise, then the fall. */
-@keyframes jn-tm-a {
-  0% {
-    fill: var(--tm-ink);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+@media (prefers-color-scheme: dark) {
+  .jn:not([data-theme="light"]) {
+    --primary-ink: 228.608 61.240% 74.706%;
   }
-  35.3% {
-    fill: var(--tm-on);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  100% {
-    fill: var(--tm-ink);
+  .jn:not([data-theme="light"]) .alevr-thinking-mark {
+    --tm-peak: 0.9;
   }
 }
-@keyframes jn-tm-b {
-  0% {
-    fill: var(--tm-ink);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  35.3% {
-    fill: var(--tm-on);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  100% {
-    fill: var(--tm-ink);
-  }
+.jn[data-theme="dark"] .alevr-thinking-mark,
+.jn [data-scheme="dark"] .alevr-thinking-mark {
+  --tm-peak: 0.9;
 }
-@keyframes jn-tm-settle {
-  0% {
-    fill: var(--tm-ink);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  21% {
-    fill: var(--tm-half);
-    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
-  }
-  100% {
-    fill: var(--tm-ink);
-  }
+.jn [data-scheme="light"] .alevr-thinking-mark {
+  --tm-peak: 0.5;
 }
-.jn[data-rm] .jn-tm .jn-cmk__b {
-  animation: none !important;
+.jn .alevr-thinking-mark {
+  color: var(--ink-2);
+  vertical-align: middle;
 }
-@media (prefers-reduced-motion: reduce) {
-  .jn .jn-tm .jn-cmk__b {
-    animation: none !important;
-  }
+.jn .alevr-thinking-mark:is([data-phase="waiting"], [data-phase="error"]) {
+  color: var(--ink-3);
 }
-@media (forced-colors: active) {
-  .jn .jn-tm .jn-cmk__b {
-    fill: CanvasText;
-    animation: none !important;
-  }
+/* The lockup with a product word: the word sits on the wordmark's baseline (the art box's bottom edge). */
+.jn .jn-lockup:has(.jn-lockup__product) {
+  align-items: baseline;
+}
+.jn .jn-lockup__art {
+  color: inherit;
 }
 
 /* —————————————————————————— The brand scene (scene=brand) —————————————————————————— */
