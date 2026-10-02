@@ -725,7 +725,10 @@ public struct NativeRunView: Equatable, Sendable {
                         durationMs: detail.run?.durationMs ?? detail.durationMs,
                         timeoutMs: detail.timeoutMs,
                         args: runArgs,
-                        errorCode: contractCode ?? (status == .failed ? "tool_error" : (status == .cancelled ? "cancelled" : nil)),
+                        // A legacy row that never returned is unknown because the
+                        // reply ended, not because a server said so: the words
+                        // under it must not claim a restart (`reply_ended`).
+                        errorCode: contractCode ?? (status == .failed ? "tool_error" : (status == .cancelled ? "cancelled" : (status == .outcomeUnknown && detail.resultNote == "unfinished" ? NativeToolRunPresentation.replyEndedCode : nil))),
                         cached: detail.cached,
                         run: detail.run,
                         progress: detail.progress

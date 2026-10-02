@@ -529,23 +529,83 @@ enum NativeToolRunWire {
     }
 
     /// Same-origin paths only: a file card never leaves the app by default.
-    private static func path(_ value: JunoJSONValue?) -> String? {
+    /// `/\host` and a tab or newline inside the path resolve to another host
+    /// in a browser's URL parser, so a backslash or a control character
+    /// refuses the path outright (the web's `sameOriginPath`).
+    static func path(_ value: JunoJSONValue?) -> String? {
         guard let text = string(value, max: 2_000), text.hasPrefix("/"), !text.hasPrefix("//") else { return nil }
+        if text.contains("\\") || text.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) { return nil }
         return text
+    }
+
+    /// The owner-scoped image route for an attachment id, the id encoded as
+    /// one path segment so it can never climb to another route.
+    static func attachmentPath(_ id: String) -> String? {
+        var segment = CharacterSet.urlPathAllowed
+        segment.remove(charactersIn: "/.")
+        guard let encoded = id.addingPercentEncoding(withAllowedCharacters: segment), !encoded.isEmpty else { return nil }
+        return "/api/attachments/\(encoded)"
+    }
+
+    /// One stream part as a run detail draws it (the web's
+    /// `RUN_STREAM_PART_MAX_CHARS` / `_LINES`): a `Text` sized to 64,000
+    /// characters or 60,000 lines stalls layout. What is cut is counted in
+    /// `omittedBytes`, so "not shown" stays true.
+    static let streamPartMaxChars = 16_000
+    static let streamPartMaxLines = 400
+    static let codeMaxLines = 1_000
+
+    static func keepHead(_ text: String, maxChars: Int, maxLines: Int) -> (kept: String, cutBytes: Int) {
+        var end = text.startIndex
+        var chars = 0
+        var lines = 0
+        while end < text.endIndex, chars < maxChars {
+            if text[end] == "\n" {
+                lines += 1
+                if lines >= maxLines { break }
+            }
+            end = text.index(after: end)
+            chars += 1
+        }
+        if end == text.endIndex { return (text, 0) }
+        return (String(text[..<end]), text[end...].utf8.count)
+    }
+
+    static func keepTail(_ text: String, maxChars: Int, maxLines: Int) -> (kept: String, cutBytes: Int) {
+        var start = text.endIndex
+        var chars = 0
+        var lines = 0
+        while start > text.startIndex, chars < maxChars {
+            let previous = text.index(before: start)
+            if text[previous] == "\n" {
+                lines += 1
+                if lines >= maxLines { break }
+            }
+            start = previous
+            chars += 1
+        }
+        if start == text.startIndex { return (text, 0) }
+        return (String(text[start...]), text[..<start].utf8.count)
     }
 
     private static func stream(_ value: JunoJSONValue?) -> NativeToolRunStream? {
         switch value {
         case .string(let text)?:
-            return text.isEmpty ? nil : NativeToolRunStream(head: String(text.prefix(64_000)))
+            guard !text.isEmpty else { return nil }
+            let bounded = String(text.prefix(64_000))
+            let head = keepHead(bounded, maxChars: streamPartMaxChars, maxLines: streamPartMaxLines)
+            let beyond = text.utf8.count - bounded.utf8.count
+            return NativeToolRunStream(head: head.kept, omittedBytes: head.cutBytes + beyond)
         case .object(let fields)?:
-            let head = raw(fields["head"]) ?? raw(fields["text"]) ?? ""
-            let tail = raw(fields["tail"])
-            if head.isEmpty && tail == nil { return nil }
+            let rawHead = raw(fields["head"]) ?? raw(fields["text"]) ?? ""
+            let rawTail = raw(fields["tail"])
+            if rawHead.isEmpty && rawTail == nil { return nil }
+            let head = keepHead(rawHead, maxChars: streamPartMaxChars, maxLines: streamPartMaxLines)
+            let tail = rawTail.map { keepTail($0, maxChars: streamPartMaxChars, maxLines: streamPartMaxLines) }
             return NativeToolRunStream(
-                head: head,
-                tail: tail,
-                omittedBytes: count(fields["omittedBytes"]) ?? 0,
+                head: head.kept,
+                tail: tail.flatMap { $0.kept.isEmpty ? nil : $0.kept },
+                omittedBytes: (count(fields["omittedBytes"]) ?? 0) + head.cutBytes + (tail?.cutBytes ?? 0),
                 totalBytes: count(fields["totalBytes"]) ?? count(fields["bytes"])
             )
         default:
@@ -568,7 +628,7 @@ enum NativeToolRunWire {
                     name: name,
                     mime: mime,
                     bytes: count(file["bytes"]) ?? count(file["size"]),
-                    path: path(file["url"]) ?? (isImage ? attachmentID.map { "/api/attachments/\($0)" } : nil),
+                    path: path(file["url"]) ?? (isImage ? attachmentID.flatMap(attachmentPath) : nil),
                     width: count(file["width"]),
                     height: count(file["height"])
                 ))
@@ -584,6 +644,10 @@ enum NativeToolRunWire {
         if case .object(let skillFields)? = fields["skill"] {
             skill = string(skillFields["name"], max: 120) ?? string(skillFields["slug"], max: 120)
         }
+        skill = skill ?? string(fields["skillSlug"], max: 120)
+        let program = raw(fields["code"]).map { keepHead($0, maxChars: 64_000, maxLines: codeMaxLines) }
+        var discarded = count(fields["filesDiscarded"])
+        if discarded == nil, case .array(let skipped)? = fields["skippedFiles"] { discarded = skipped.count }
         return NativeToolRun(
             runID: string(fields["runId"], max: 200) ?? string(fields["id"], max: 200),
             status: string(fields["status"], max: 40),
@@ -593,14 +657,15 @@ enum NativeToolRunWire {
             durationMs: count(fields["durationMs"]),
             stdout: stream(fields["stdout"] ?? fields["stdoutTail"]),
             stderr: stream(fields["stderr"] ?? fields["stderrTail"]),
-            code: raw(fields["code"]),
-            codeTruncated: fields["codeTruncated"] == .bool(true),
+            code: program?.kept,
+            codeTruncated: fields["codeTruncated"] == .bool(true) || (program?.cutBytes ?? 0) > 0,
             files: files,
-            filesDiscarded: count(fields["filesDiscarded"]) ?? 0,
+            filesDiscarded: discarded ?? 0,
             skillName: skill,
             agentName: string(fields["agentName"], max: 120),
             logPath: path(fields["logUrl"]),
-            finishedLater: fields["finishedLater"] == .bool(true)
+            // `finishedLate` is the execution runtime's spelling (ExecRunFacts).
+            finishedLater: fields["finishedLater"] == .bool(true) || fields["finishedLate"] == .bool(true)
         )
     }
 

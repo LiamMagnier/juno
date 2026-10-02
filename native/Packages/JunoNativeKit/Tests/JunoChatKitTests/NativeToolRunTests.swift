@@ -161,6 +161,10 @@ final class NativeToolRunTests: XCTestCase {
         XCTAssertEqual(view.calls.map(\.tool), ["run_code", "run_code"])
         XCTAssertEqual(view.calls.map(\.status), [.succeeded, .outcomeUnknown])
         XCTAssertEqual(NativeToolPresentation.phrase(view.calls[0]), "Ran Python")
+        // The legacy row never returned because the reply ended; no server
+        // said it restarted (the web says the same sentence).
+        XCTAssertEqual(NativeToolRunPresentation.summary(view.calls[1]), "Outcome unknown, the reply ended before this run reported back")
+        XCTAssertTrue(NativeToolRunPresentation.reason(view.calls[1])?.hasPrefix("The reply ended before this run reported back") == true)
     }
 
     func testRunFilesCountAsFilesCreated() throws {
@@ -172,6 +176,52 @@ final class NativeToolRunTests: XCTestCase {
         )
         XCTAssertEqual(view.counts.codeRuns, 1)
         XCTAssertEqual(view.counts.filesCreated, 3)
+    }
+
+    // MARK: Adversarial reads (L4 review, 2026-10-02)
+
+    /// `/\host` and a tab inside the path resolve to another host in a URL
+    /// parser; an attachment id is one encoded segment, never a climb.
+    func testOnlySameOriginPathsSurviveBackslashAndControlTricks() throws {
+        for bad in ["/\\evil.example/x", "/\t/evil.example/x", "/\n/evil.example", "//evil.example", "https://evil.example", "/a\\b"] {
+            XCTAssertNil(NativeToolRunWire.path(.string(bad)), bad)
+        }
+        XCTAssertEqual(NativeToolRunWire.path(.string("/api/files/k1")), "/api/files/k1")
+        XCTAssertEqual(NativeToolRunWire.attachmentPath("att_1"), "/api/attachments/att_1")
+        XCTAssertEqual(NativeToolRunWire.attachmentPath("../files/x"), "/api/attachments/%2E%2E%2Ffiles%2Fx")
+
+        let call = try decode(row(#"""
+        {"callId":"c","tool":"run_code","status":"succeeded",
+         "run":{"status":"succeeded","exitCode":0,"logUrl":"/\\evil.example/log",
+                "files":[{"attachmentId":"../files/secret","name":"a.png","mime":"image/png","url":"/\\evil.example/a.png"}]}}
+        """#))
+        XCTAssertNil(call.run?.logPath)
+        XCTAssertEqual(call.run?.files.first?.path, "/api/attachments/%2E%2E%2Ffiles%2Fsecret")
+    }
+
+    /// A program that prints 60,000 newlines must not become a 60,000-line
+    /// `Text`; what is not drawn is counted as not shown.
+    func testFloodedOutputIsCutForDisplayAndTheCutIsCounted() throws {
+        let flood = String(repeating: "\\n", count: 60_000)
+        let program = String(repeating: "x\\n", count: 5_000)
+        let json = #"{"callId":"c","tool":"run_code","status":"succeeded","run":{"status":"succeeded","exitCode":0,"code":""#
+            + program + #"","stdout":{"head":""# + flood + #"","tail":""# + flood + #"","omittedBytes":10}}}"#
+        let call = try decode(row(json))
+        let stdout = try XCTUnwrap(call.run?.stdout)
+        XCTAssertLessThanOrEqual(stdout.head.split(separator: "\n", omittingEmptySubsequences: false).count, NativeToolRunWire.streamPartMaxLines)
+        XCTAssertLessThanOrEqual((stdout.tail ?? "").split(separator: "\n", omittingEmptySubsequences: false).count, NativeToolRunWire.streamPartMaxLines + 1)
+        XCTAssertGreaterThan(stdout.omittedBytes, 100_000)
+        XCTAssertNotNil(NativeToolRunPresentation.omittedNote(stdout))
+        XCTAssertLessThanOrEqual((call.run?.code ?? "").split(separator: "\n", omittingEmptySubsequences: false).count, NativeToolRunWire.codeMaxLines + 1)
+        XCTAssertEqual(call.run?.codeTruncated, true)
+    }
+
+    /// The execution runtime's own spellings (ExecRunFacts) read the same.
+    func testTheExecutionRuntimesSpellingsDecode() throws {
+        let call = try decode(row(#"{"callId":"c","tool":"run_code","status":"succeeded","run":{"status":"succeeded","exitCode":0,"finishedLate":true,"skillSlug":"quarterly-summary","skippedFiles":[{"name":"big.bin"}]}}"#))
+        XCTAssertEqual(call.run?.finishedLater, true)
+        XCTAssertEqual(call.run?.skillName, "quarterly-summary")
+        XCTAssertEqual(call.run?.filesDiscarded, 1)
     }
 
     func testNoStringCarriesAnEmDash() throws {

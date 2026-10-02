@@ -261,11 +261,18 @@ public enum NativeToolRunPresentation {
         case .failed:
             return [label(call), figure(call)].compactMap { $0 }.joined(separator: " · ")
         case .outcomeUnknown:
-            return "Outcome unknown, the server restarted while this ran"
+            return call.errorCode == replyEndedCode
+                ? "Outcome unknown, the reply ended before this run reported back"
+                : "Outcome unknown, the server restarted while this ran"
         default:
             return label(call)
         }
     }
+
+    /// The error code a legacy row that never returned carries: its end is
+    /// unknown because the reply ended, which is a different claim from a
+    /// server that lost the run (the web's `unknownBecause: "reply_ended"`).
+    public static let replyEndedCode = "reply_ended"
 
     /// One sentence under the row for anything that did not simply finish.
     public static func reason(_ call: NativeToolCall) -> String? {
@@ -274,7 +281,9 @@ public enum NativeToolRunPresentation {
         case .cancelled:
             return (call.run?.filesDiscarded ?? 0) > 0 ? "You stopped this run. Files it made were not kept." : "You stopped this run before it finished."
         case .outcomeUnknown:
-            return "The server restarted while this ran, so Alevr can't tell whether it finished. It was not run again."
+            return call.errorCode == replyEndedCode
+                ? "The reply ended before this run reported back, so Alevr can't tell whether it finished. It was not run again."
+                : "The server restarted while this ran, so Alevr can't tell whether it finished. It was not run again."
         case .expired: return "Nobody answered in time, so nothing ran."
         case .failed:
             if call.errorCode == "timeout" { return "It was stopped at its time limit." }
