@@ -60,6 +60,7 @@ import {
 import {
   bundlePreflight,
   companionTreeDigest,
+  createBundleFetchBudget,
   discoverGithubSkills,
   fetchGithubSkillBundle,
   parseGithubSkillSource,
@@ -395,6 +396,18 @@ test("a GitHub folder with a symlink or an oversized file is refused from the tr
     assert.ok(!fetched.ok && "problem" in fetched && fetched.problem.reason === reason);
     assert.equal(github.calls.length, before, "nothing fetched");
   }
+});
+
+test("one import's folder fetches are budgeted across its skills", () => {
+  const budget = createBundleFetchBudget({ files: 3, bytes: 1_000 });
+  const folder = (count: number, size = 10) => ({
+    companionEntries: Array.from({ length: count }, (_, index) => ({ path: `reference/${index}.md`, size, sha: "x", symlink: false })),
+  });
+  assert.equal(budget.admit(folder(2)), true);
+  assert.equal(budget.admit(folder(2)), false, "past the file budget");
+  assert.equal(budget.admit(folder(0)), true, "a folder with nothing to fetch always fits");
+  assert.equal(budget.admit(folder(1, 2_000)), false, "past the byte budget");
+  assert.equal(budget.admit(folder(1)), true);
 });
 
 test("a rate limit partway through a folder fails the skill rather than importing it with a hole", async () => {

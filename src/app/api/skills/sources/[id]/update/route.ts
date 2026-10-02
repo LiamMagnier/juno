@@ -36,7 +36,14 @@ import {
   readInstalledSourceSkills,
   takenSkillSlugs,
 } from "@/lib/skills/store";
-import { MAX_DISCOVERED_SKILLS, fetchGithubSkillBundle, GITHUB_IMPORT_REFUSAL_MESSAGES } from "@/lib/skills/github";
+import {
+  BUNDLE_BUDGET_MESSAGE,
+  MAX_DISCOVERED_SKILLS,
+  bundlePreflight,
+  createBundleFetchBudget,
+  fetchGithubSkillBundle,
+  GITHUB_IMPORT_REFUSAL_MESSAGES,
+} from "@/lib/skills/github";
 import { skillBundleRefusalMessage } from "@/lib/skills/bundle";
 import {
   diffSourceSkills,
@@ -89,7 +96,8 @@ type SkipReason =
   | "slug_taken"
   | "version_conflict"
   | "bundle_refused"
-  | "fetch_failed";
+  | "fetch_failed"
+  | "fetch_budget";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -135,8 +143,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const installedNow: LibrarySkill[] = [];
   const skipped: { path: string; reason: SkipReason; message?: string }[] = [];
   const token = await githubTokenFor(user.id);
-  const fetchBundle = (candidate: Parameters<typeof fetchGithubSkillBundle>[2]) =>
-    fetchGithubSkillBundle({ fetch, token }, discovery, candidate);
+  const budget = createBundleFetchBudget();
+  const fetchBundle = async (candidate: Parameters<typeof fetchGithubSkillBundle>[2]) =>
+    !bundlePreflight(candidate) && !budget.admit(candidate)
+      ? ({ ok: false, budget: true } as const)
+      : fetchGithubSkillBundle({ fetch, token }, discovery, candidate);
+  const fetchSkip = (fetched: Exclude<Awaited<ReturnType<typeof fetchBundle>>, { ok: true }>): { reason: SkipReason; message: string } =>
+    "budget" in fetched
+      ? { reason: "fetch_budget", message: BUNDLE_BUDGET_MESSAGE }
+      : "problem" in fetched
+        ? { reason: "bundle_refused", message: skillBundleRefusalMessage(fetched.problem) }
+        : { reason: "fetch_failed", message: GITHUB_IMPORT_REFUSAL_MESSAGES[fetched.reason] };
 
   for (const path of update) {
     const skill = byPath.get(path);
@@ -157,11 +174,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const fetched = await fetchBundle(candidate);
     if (!fetched.ok) {
-      skipped.push({
-        path,
-        reason: "problem" in fetched ? "bundle_refused" : "fetch_failed",
-        message: "problem" in fetched ? skillBundleRefusalMessage(fetched.problem) : GITHUB_IMPORT_REFUSAL_MESSAGES[fetched.reason],
-      });
+      skipped.push({ path, ...fetchSkip(fetched) });
       continue;
     }
     const next = githubSkillContract(candidate, skill.contract);
@@ -220,11 +233,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
     const fetchedNew = await fetchBundle(candidate);
     if (!fetchedNew.ok) {
-      skipped.push({
-        path,
-        reason: "problem" in fetchedNew ? "bundle_refused" : "fetch_failed",
-        message: "problem" in fetchedNew ? skillBundleRefusalMessage(fetchedNew.problem) : GITHUB_IMPORT_REFUSAL_MESSAGES[fetchedNew.reason],
-      });
+      skipped.push({ path, ...fetchSkip(fetchedNew) });
       continue;
     }
     const { contract, requestedTools } = githubSkillContract(candidate);

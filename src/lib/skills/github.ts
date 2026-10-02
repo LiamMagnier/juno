@@ -762,6 +762,39 @@ export function bundlePreflight(candidate: Pick<GithubSkillCandidate, "companion
   return null;
 }
 
+/** Companion files one import (or one update) fetches, across all its skills. */
+export const MAX_IMPORT_BUNDLE_FILES = 500;
+/** Companion bytes one import (or one update) fetches, across all its skills. */
+export const MAX_IMPORT_BUNDLE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * A running total over one request's folder fetches, from the tree's own sizes.
+ *
+ * One skill is bounded by the bundle limits; a request choosing a hundred
+ * skills is not, and would spend a shared GitHub rate limit and the web
+ * process's time on twenty thousand reads. Past the budget a skill is skipped
+ * with a sentence telling the reader to import it on its own.
+ */
+export function createBundleFetchBudget(limits = { files: MAX_IMPORT_BUNDLE_FILES, bytes: MAX_IMPORT_BUNDLE_BYTES }) {
+  let files = 0;
+  let bytes = 0;
+  return {
+    /** Reserves the folder's fetches, or says it does not fit. */
+    admit(candidate: Pick<GithubSkillCandidate, "companionEntries">): boolean {
+      const entries = keptEntries(candidate);
+      const size = entries.reduce((sum, entry) => sum + entry.size, 0);
+      if (entries.length === 0) return true;
+      if (files + entries.length > limits.files || bytes + size > limits.bytes) return false;
+      files += entries.length;
+      bytes += size;
+      return true;
+    },
+  };
+}
+
+export const BUNDLE_BUDGET_MESSAGE =
+  "This import already fetched as many skill files as one import may, so this skill's folder was not fetched. Import it on its own.";
+
 /** One file's bytes, bounded while they stream. */
 async function fetchBytes(client: GithubClient, url: string, limit: number): Promise<ApiResult<Uint8Array>> {
   const controller = new AbortController();

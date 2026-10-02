@@ -50,7 +50,9 @@ import {
 import {
   MAX_DISCOVERED_SKILLS,
   GITHUB_IMPORT_REFUSAL_MESSAGES,
+  BUNDLE_BUDGET_MESSAGE,
   bundlePreflight,
+  createBundleFetchBudget,
   discoverGithubSkills,
   fetchGithubSkillBundle,
   parseGithubSkillSource,
@@ -218,7 +220,7 @@ function annotate(
   return notes;
 }
 
-type SkipReason = "installed" | "slug_taken" | "invalid_slug" | "bundle_refused" | "fetch_failed";
+type SkipReason = "installed" | "slug_taken" | "invalid_slug" | "bundle_refused" | "fetch_failed" | "fetch_budget";
 
 export async function POST(req: Request) {
   const { user, error } = await requireUser();
@@ -337,6 +339,7 @@ export async function POST(req: Request) {
   const skipped: { path: string; slug: string; reason: SkipReason; message: string }[] = [];
   let blockedCount = 0;
   let stopped: { reason: string; message: string } | null = null;
+  const budget = createBundleFetchBudget();
 
   for (const candidate of chosen) {
     if (library.installed.has(candidate.path)) {
@@ -364,6 +367,10 @@ export async function POST(req: Request) {
     // The folder, fetched at the commit the preview read. A refused folder
     // skips the skill with the reason; a fetch that cannot finish stops the
     // import, rather than installing a skill missing one of its files.
+    if (!bundlePreflight(candidate) && !budget.admit(candidate)) {
+      skipped.push({ path: candidate.path, slug, reason: "fetch_budget", message: BUNDLE_BUDGET_MESSAGE });
+      continue;
+    }
     const fetched = await fetchGithubSkillBundle({ fetch, token }, discovery, candidate);
     if (!fetched.ok && "problem" in fetched) {
       skipped.push({
