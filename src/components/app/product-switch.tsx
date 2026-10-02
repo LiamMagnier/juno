@@ -365,7 +365,7 @@ function RailItem({
           className={cn(
             // The expanded switch's recipe at rail size: a raised thumb that
             // travels inside a recessed track (see the nav above).
-            "pressable group relative flex size-8 items-center justify-center rounded-md transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
+            "pressable group relative flex size-8 items-center justify-center rounded-control transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
             locked
               ? "text-muted-foreground/80 hover:text-muted-foreground"
               : active
@@ -379,7 +379,7 @@ function RailItem({
               aria-hidden="true"
               transition={thumbTransition}
               className="product-switch-thumb absolute inset-0"
-              style={{ borderRadius: 8 }}
+              style={{ borderRadius: 10 }}
             />
           )}
           {/* Byte-identical to NavRow's glyph box, so the rail is one optical

@@ -78,7 +78,7 @@
     --faint-foreground: 217.500 3.704% 42.353%;
     --attention: 34.161 91.946% 29.216%;
     --user-bubble: 210.000 6.667% 94.118%;
-    --material-opacity: .70;
+    --material-opacity: .86;
     --background: 240.000 20.000% 99.020%;
     --foreground: 216.000 9.091% 10.784%;
 
@@ -471,7 +471,7 @@
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
        behind; warm ink from the same family as --shadow-* follows. */
-    --scrim: 48 12% 8% / 0.36;
+    --scrim: 48 12% 8% / 0.26;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
        up its answer instead of picking a number.
@@ -1154,6 +1154,29 @@
   }
   .surface-raised-lg {
     box-shadow: var(--shadow-raised-lg);
+  }
+  /* Interactive cards lift: any link or button drawn as a raised card rises
+     one pixel and takes the larger throw under the pointer, so every grid in
+     the product (projects, library, agents, apps) answers hover the same way.
+     Reduced motion keeps the shadow and drops the travel. */
+  @media (hover: hover) {
+    a.surface-raised,
+    button.surface-raised {
+      transition:
+        transform var(--dur-base) var(--ease-out-soft),
+        box-shadow var(--dur-base) var(--ease-out-soft),
+        border-color var(--dur-fast) var(--ease-out-soft),
+        background-color var(--dur-fast) var(--ease-out-soft);
+    }
+    a.surface-raised:hover,
+    button.surface-raised:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-raised-lg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    a.surface-raised:hover,
+    button.surface-raised:hover { transform: none; }
   }
   .surface-inset {
     background-color: hsl(var(--background));

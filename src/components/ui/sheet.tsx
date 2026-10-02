@@ -41,7 +41,7 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "surface-float fixed inset-y-0 z-modal h-full w-[280px] max-w-[85vw] pb-safe pt-safe outline-none data-[state=open]:animate-sheet-in data-[state=closed]:animate-sheet-out",
+        "overlay-glass fixed inset-y-0 z-modal h-full w-[280px] max-w-[85vw] pb-safe pt-safe outline-none data-[state=open]:animate-sheet-in data-[state=closed]:animate-sheet-out",
         side === "left"
           ? "left-0 rounded-r-panel border-l-0 pl-safe [--sheet-from:-100%]"
           : "right-0 rounded-l-panel border-r-0 pr-safe [--sheet-from:100%]",

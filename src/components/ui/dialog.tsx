@@ -59,7 +59,7 @@ const DialogOverlay = React.forwardRef<
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 /**
- * The panel is `.surface-float` at `rounded-panel` (20) — opaque, because a
+ * The panel is `.overlay-glass` at `rounded-panel` (20): opaque, because a
  * dialog holds content that has to be read, and glass is for chrome.
  *
  * Centring lives on the INDEPENDENT `translate` property, not on a
@@ -78,7 +78,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "surface-float fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
+        "overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
         className
       )}
       {...props}

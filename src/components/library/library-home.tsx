@@ -262,7 +262,7 @@ export function LibraryHome() {
             onChange={setShow}
             ariaLabel="Show"
             columns="content"
-            className="rounded-control p-0.5"
+            className="rounded-field p-0.5"
             optionClassName="h-7 rounded-md px-3 py-0 text-ui coarse:h-9"
             options={[
               { value: "all", label: "All" },
@@ -304,7 +304,7 @@ export function LibraryHome() {
               onChange={changeView}
               ariaLabel="View"
               labelHidden
-              className="shrink-0 gap-0.5 rounded-control p-0.5"
+              className="shrink-0 gap-0.5 rounded-field p-0.5"
               optionClassName="size-7 rounded-md coarse:size-9"
               options={[
                 { value: "grid", label: "Grid", icon: <LayoutGrid className="size-4" /> },
