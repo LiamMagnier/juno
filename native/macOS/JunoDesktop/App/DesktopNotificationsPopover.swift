@@ -39,6 +39,8 @@ struct DesktopNotificationsRow: View {
             isOpen.toggle()
         } label: {
             rowLabel
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .help(helpText)

@@ -530,6 +530,10 @@
         "/api/work/skills/[id]": "native",
         "/api/work/skills/[id]/versions": "native",
         "/api/work/skills/[id]/versions/[version]/consent": "native",
+        "/api/work/skills/[id]/versions/[version]/files": {
+          "status": "planned",
+          "note": "Reading a skill version's bundled files (skills as executable workflows, 2026-10-02); the Mac skill detail does not list them yet."
+        },
         "/api/work/skills/[id]/export": {
           "status": "planned",
           "note": "Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet."

@@ -86,7 +86,6 @@
     "request.privateHistory": "native",
     "request.privateHistory[].role": "native",
     "request.privateHistory[].content": "native",
-
     "stream.meta": "native",
     "stream.meta.conversationId": "native",
     "stream.meta.userMessageId": "native",
@@ -184,7 +183,6 @@
       "note": "Durable first-submission failure code, as meta.receiptState."
     },
     "stream.ping": "native",
-
     "ClientMessage.id": "native",
     "ClientMessage.role": "native",
     "ClientMessage.content": "native",
@@ -225,7 +223,6 @@
     "ClientMessage.costUsd": "native",
     "ClientMessage.cacheReadTokens": "native",
     "ClientMessage.cacheWriteTokens": "native",
-
     "ClientAttachment.id": "native",
     "ClientAttachment.kind": "native",
     "ClientAttachment.fileName": "native",
@@ -235,12 +232,10 @@
     "ClientAttachment.width": "native",
     "ClientAttachment.height": "native",
     "ClientAttachment.parserState": "native",
-
     "ClientSource.title": "native",
     "ClientSource.url": "native",
     "ClientSource.snippet": "native",
     "ClientSource.cited": "native",
-
     "ClientArtifact.id": "native",
     "ClientArtifact.identifier": "native",
     "ClientArtifact.type": "native",
@@ -264,7 +259,6 @@
       "status": "planned",
       "note": "The re-emit guard's waiting suggestion (Apply / Dismiss / Compare). The apps draw no card for a held tag and have no suggestion bar yet."
     },
-
     "ClientArtifactVersion.version": "native",
     "ClientArtifactVersion.content": "native",
     "ClientArtifactVersion.origin": "native",
@@ -273,7 +267,6 @@
       "status": "web-only",
       "note": "Marks the web design editor's unsealed working copy, presented as the version it will become. Only owner web reads include it; the apps edit designs in their own hosted editor and save whole documents with a base version."
     },
-
     "ClientActivityEvent.id": "native",
     "ClientActivityEvent.kind": "native",
     "ClientActivityEvent.title": "native",
@@ -294,7 +287,6 @@
       "status": "web-only",
       "note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
     },
-
     "ClientToolDetail.server": "native",
     "ClientToolDetail.name": "native",
     "ClientToolDetail.args": "native",
@@ -306,15 +298,14 @@
     "ClientToolDetail.resultChars": "native",
     "ClientToolDetail.status": "native",
     "ClientToolDetail.durationMs": "native",
-    "ClientToolDetail.callId": { "status": "planned", "note": "The Alevr call id that pairs a live update with its row (src/lib/tools/call-ids.ts). Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.phase": { "status": "planned", "note": "Live only: queued / awaiting_approval / running from the dispatcher; never read back from a persisted row. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.timeoutMs": { "status": "planned", "note": "The running call's bound, for 'up to 2 min'. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.progress": { "status": "planned", "note": "Live only: a running call's last lines and byte counts, at most once a second. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.outcome": { "status": "planned", "note": "The typed outcome beside the legacy status, outcome_unknown included. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.errorCode": { "status": "planned", "note": "Why a call did not succeed (invalid_args, unknown_tool, timeout, cancelled…). Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.run": { "status": "planned", "note": "Execution tools: the run record (context, exit code, produced files) filled by the execution lane. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-    "ClientToolDetail.cached": { "status": "planned", "note": "A repeated identical call answered from the turn's cache; nothing ran twice. Tool contract (TOOL_RUNTIME_DESIGN §6.4, lane L1); native presentation is the surfaces lane (L4): NativeActivityWire.ToolDetailWire gains tolerant decoding." },
-
+    "ClientToolDetail.callId": "native",
+    "ClientToolDetail.phase": "native",
+    "ClientToolDetail.timeoutMs": "native",
+    "ClientToolDetail.progress": "native",
+    "ClientToolDetail.outcome": "native",
+    "ClientToolDetail.errorCode": "native",
+    "ClientToolDetail.run": "native",
+    "ClientToolDetail.cached": "native",
     "ClientMemoryReceipt.id": "native",
     "ClientMemoryReceipt.content": "native",
     "ClientMemoryReceipt.category": "native",
@@ -326,7 +317,6 @@
       "status": "planned",
       "note": "As sourceRef."
     },
-
     "ClientActionApproval.id": "native",
     "ClientActionApproval.surface": "native",
     "ClientActionApproval.sessionId": "native",
@@ -347,7 +337,6 @@
     "ClientActionApproval.decidedAt": "native",
     "ClientActionApproval.completedAt": "native",
     "ClientActionApproval.createdAt": "native",
-
     "ClientWorkSession.id": "native",
     "ClientWorkSession.projectId": "native",
     "ClientWorkSession.conversationId": "native",
@@ -383,83 +372,299 @@
     "ClientWorkSession.delegatedByAgentId": {
       "status": "planned",
       "note": "The crew member that handed the task over. Not drawn by the apps yet."
+    },
+    "request.clientFeatures": "native",
+    "request.locale": "native",
+    "stream.reasoning.round": "native",
+    "stream.delta.round": "native",
+    "stream.delta.phase": "native",
+    "stream.handoff": "native",
+    "ClientActivityEvent.patch": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration (tool runs, rounds, handoff, sources); the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.exitCode": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration (tool runs, rounds, handoff, sources); the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.seq": "native",
+    "ClientActivityEvent.round": "native",
+    "ClientActivityEvent.call": "native",
+    "ClientActivityEvent.segment": "native",
+    "ClientActivityEvent.commentary": "native",
+    "ClientActivityEvent.fact": "native",
+    "ClientActivityEvent.notice": "native",
+    "ClientSource.origin": "native",
+    "stream.handoff.to": "native",
+    "stream.handoff.runId": "native",
+    "ReasoningSegment.offset": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "RunNotice.code": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.v": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolProgress.lines": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.exitCode": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.workedMs": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.durationMs": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.provider": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "CommentaryItem.inline": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.files": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.failed": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.web": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "stream.handoff.userMessageId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.ready": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.read": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.auto": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.key": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.stderrBytes": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.round": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.args": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.offered": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.providerCallId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.label": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.approval": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolProgress.stderrBytes": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.connectorId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.routed": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ReasoningSegment.round": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.durationMs": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.tool": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.runId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.origin": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.attachments": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.status": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.modelId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.callId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.cached": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "CommentaryItem.round": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.leadModel": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "CommentaryItem.text": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "RunNotice.params": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.stdoutBytes": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.toolTitle": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.state": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ReasoningSegment.part": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.language": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.startedAt": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.connectorLabel": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.effort": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.figure": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.index": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.status": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.title": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.roundBudget": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.cited": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.endedAt": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.historyMessages": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.context": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.nativeSearch": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.projectFiles": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.pages": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.timeoutMs": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.title": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolRun.runId": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ToolCallRecord.error": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientToolProgress.stdoutBytes": {
+      "status": "planned",
+      "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
     }
   },
   "nativeOnly": {
-    "request.clientFeatures": {
-      "note": "The grammar the client renders (Tool calls & research rework, SPEC §2.2; web/tools-thinking-research, not on main). Today's server strips it: chatBodySchema is not strict."
-    },
-    "request.locale": {
-      "note": "The reader's BCP-47 locale (the same rework); stripped by today's server."
-    },
-    "stream.handoff": {
-      "note": "Background research's hand-off frame (the rework's research_background); today's server never sends it."
-    },
-    "stream.handoff.to": {
-      "note": "Always \"research\" on the rework's hand-off."
-    },
-    "stream.handoff.runId": {
-      "note": "The research run the turn handed off to."
-    },
-    "stream.delta.round": {
-      "note": "The rework's timeline grammar: which model round a delta belongs to."
-    },
-    "stream.delta.phase": {
-      "note": "The rework's timeline grammar: the phase a delta is written in."
-    },
-    "stream.reasoning.round": {
-      "note": "The rework's timeline grammar, as delta.round."
-    },
     "stream.error.error": {
       "note": "An older server's error frame carried `error` rather than `message`; the Mac still reads it as a fallback."
-    },
-    "ClientSource.origin": {
-      "note": "Where a source came from (the rework's citations); read when present."
-    },
-    "ClientActivityEvent.seq": {
-      "note": "The rework's typed timeline: the row's order in the run."
-    },
-    "ClientActivityEvent.round": {
-      "note": "The rework's typed timeline: the model round."
-    },
-    "ClientActivityEvent.call": {
-      "note": "The rework's typed timeline: one tool call's record."
-    },
-    "ClientActivityEvent.segment": {
-      "note": "The rework's typed timeline: a reasoning segment's position."
-    },
-    "ClientActivityEvent.commentary": {
-      "note": "The rework's typed timeline: the model's commentary between calls."
-    },
-    "ClientActivityEvent.notice": {
-      "note": "The rework's typed timeline: a coded notice with parameters."
-    },
-    "ClientActivityEvent.fact": {
-      "note": "The rework's typed timeline: a fact the run established."
-    },
-    "ClientToolDetail.callId": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.phase": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.timeoutMs": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.outcome": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.errorCode": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.cached": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.run": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
-    },
-    "ClientToolDetail.progress": {
-      "note": "The tool contract's ClientToolDetail addition (TOOL_RUNTIME_DESIGN §6.4, rf/tools-L1-tool-contract, not on the trunk yet); NativeActivityWire.ToolDetailWire decodes it tolerantly (surfaces lane L4). When the contract lands, this moves into fields as native."
     }
   },
   "swift": {
