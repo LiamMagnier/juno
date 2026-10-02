@@ -513,6 +513,23 @@ enum NativeToolRunWire {
         return trimmed.isEmpty ? nil : String(trimmed.prefix(max))
     }
 
+    /// A name a person reads (a file, a skill, an agent) without control
+    /// characters or bidirectional overrides: U+202E turns
+    /// "report<RLO>fdp.exe" into what reads as "reportexe.pdf" (the web's
+    /// `named`). Line breaks and tabs become spaces.
+    static func named(_ value: JunoJSONValue?, max: Int) -> String? {
+        guard case .string(let text)? = value else { return nil }
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x09, 0x0A, 0x0D: scalars.append(" ")
+            case 0x00...0x1F, 0x7F, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069: continue
+            default: scalars.append(scalar)
+            }
+        }
+        return string(.string(String(scalars)), max: max)
+    }
+
     private static func raw(_ value: JunoJSONValue?, max: Int = 64_000) -> String? {
         guard case .string(let text)? = value, !text.isEmpty else { return nil }
         return String(text.prefix(max))
@@ -622,7 +639,7 @@ enum NativeToolRunWire {
         if case .array(let entries)? = fields["files"] {
             for entry in entries.prefix(50) {
                 guard case .object(let file) = entry,
-                      let name = string(file["name"], max: 255) ?? string(file["fileName"], max: 255) else { continue }
+                      let name = named(file["name"], max: 255) ?? named(file["fileName"], max: 255) else { continue }
                 let mime = string(file["mime"], max: 160) ?? string(file["mimeType"], max: 160) ?? "application/octet-stream"
                 let attachmentID = string(file["attachmentId"], max: 200) ?? string(file["id"], max: 200)
                 // Only the four types the upload plan stores as IMAGE are
@@ -649,9 +666,9 @@ enum NativeToolRunWire {
         }
         var skill: String?
         if case .object(let skillFields)? = fields["skill"] {
-            skill = string(skillFields["name"], max: 120) ?? string(skillFields["slug"], max: 120)
+            skill = named(skillFields["name"], max: 120) ?? named(skillFields["slug"], max: 120)
         }
-        skill = skill ?? string(fields["skillSlug"], max: 120)
+        skill = skill ?? named(fields["skillSlug"], max: 120)
         let program = raw(fields["code"]).map { keepHead($0, maxChars: 64_000, maxLines: codeMaxLines) }
         var discarded = count(fields["filesDiscarded"])
         if discarded == nil, case .array(let skipped)? = fields["skippedFiles"] { discarded = skipped.count }
@@ -669,7 +686,7 @@ enum NativeToolRunWire {
             files: files,
             filesDiscarded: discarded ?? 0,
             skillName: skill,
-            agentName: string(fields["agentName"], max: 120),
+            agentName: named(fields["agentName"], max: 120),
             logPath: path(fields["logUrl"]),
             // `finishedLate` is the execution runtime's spelling (ExecRunFacts).
             finishedLater: fields["finishedLater"] == .bool(true) || fields["finishedLate"] == .bool(true)

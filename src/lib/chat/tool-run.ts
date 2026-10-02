@@ -227,6 +227,21 @@ function str(value: unknown, max = 4_000): string | null {
   return trimmed ? trimmed.slice(0, max) : null;
 }
 
+/**
+ * A name a person reads (a file, a skill, a path, an agent): `str` without
+ * control characters or bidirectional overrides. A program, or a model's
+ * arguments, chooses these, and U+202E turns "report<RLO>fdp.exe" into what
+ * reads as "reportexe.pdf" on a file card. Stored upload names are already
+ * ASCII; this holds for every producer, including ones that are not.
+ */
+function named(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  // Line breaks and tabs become spaces (a reason may span lines); every other
+  // control or direction mark is dropped.
+  // eslint-disable-next-line no-control-regex
+  return str(value.replace(/[\t\n\r]/g, " ").replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ""), max);
+}
+
 function raw(value: unknown, max = 64_000): string | null {
   return typeof value === "string" && value.length > 0 ? value.slice(0, max) : null;
 }
@@ -368,7 +383,7 @@ function files(value: unknown): ToolRunFile[] {
   for (const entry of value) {
     const r = rec(entry);
     if (!r) continue;
-    const name = str(r.name, 255) ?? str(r.fileName, 255);
+    const name = named(r.name, 255) ?? named(r.fileName, 255);
     if (!name) continue;
     const mime = str(r.mime, 160) ?? str(r.mimeType, 160) ?? "application/octet-stream";
     // An id is one opaque token (a cuid). It is spliced into same-origin
@@ -590,8 +605,8 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
 
   const skillRec = rec(run?.skill) ?? rec(call?.skill);
   const skillName =
-    str(skillRec?.name, 120) ?? str(skillRec?.slug, 120) ?? str(run?.skillSlug, 120) ?? str(args?.skill, 120) ?? str(args?.name, 120) ?? str(legacy?.skill, 120) ?? str(legacy?.name, 120);
-  const skillSlug = str(skillRec?.slug, 120) ?? str(run?.skillSlug, 120);
+    named(skillRec?.name, 120) ?? named(skillRec?.slug, 120) ?? named(run?.skillSlug, 120) ?? named(args?.skill, 120) ?? named(args?.name, 120) ?? named(legacy?.skill, 120) ?? named(legacy?.name, 120);
+  const skillSlug = named(skillRec?.slug, 120) ?? named(run?.skillSlug, 120);
   const code = program(run?.code) ?? program(legacy?.code) ?? program(legacy?.command);
 
   return {
@@ -608,7 +623,7 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
       (detail?.name === "code_interpreter" || str(call?.tool) === "code_interpreter" ? "python" : null) ??
       (tool === "run_code" && (str(legacy?.code) || str(args?.code)) ? "python" : null),
     context: context(run?.context) ?? context(call?.context),
-    agentName: str(run?.agentName, 120),
+    agentName: named(run?.agentName, 120),
     runId: str(run?.runId, 200) ?? str(run?.id, 200),
     exitCode,
     durationMs: count(run?.durationMs) ?? count(call?.durationMs) ?? (detail ? (count(detail.durationMs) ?? null) : null),
@@ -623,12 +638,12 @@ export function readToolRun(event: ClientActivityEvent, opts: { live?: boolean }
     progress: prog,
     code: code?.code ?? null,
     codeTruncated: run?.codeTruncated === true || !!code?.cut || (!run?.code && !!detail?.argsTruncated),
-    reason: oneLine(str(args?.reason, 300) ?? str(legacy?.reason, 300)),
+    reason: oneLine(named(args?.reason, 300) ?? named(legacy?.reason, 300)),
     skill: skillName ? { name: skillName, slug: skillSlug } : null,
-    skillPath: str(args?.path, 400) ?? str(legacy?.path, 400),
+    skillPath: named(args?.path, 400) ?? named(legacy?.path, 400),
     checkedRunId: str(args?.run_id, 200) ?? str(legacy?.run_id, 200),
     errorCode,
-    errorDetail: oneLine(str(error?.detail, 300) ?? str(run?.errorDetail, 300)),
+    errorDetail: oneLine(named(error?.detail, 300) ?? named(run?.errorDetail, 300)),
     logUrl: sameOriginPath(run?.logUrl),
     // `finishedLate` is the execution runtime's spelling (ExecRunFacts).
     finishedLater: run?.finishedLater === true || run?.finishedLate === true,
@@ -1158,10 +1173,10 @@ export function sanitizeToolRunRecord(value: unknown): Rec | undefined {
   }
   const skill = rec(r.skill);
   // The tool contract's record names a skill by slug only.
-  const skillSlug = str(skill?.slug, 120) ?? str(r.skillSlug, 120);
-  const skillName = str(skill?.name, 120) ?? skillSlug;
+  const skillSlug = named(skill?.slug, 120) ?? named(r.skillSlug, 120);
+  const skillName = named(skill?.name, 120) ?? skillSlug;
   if (skillName) out.skill = { name: skillName, ...(skillSlug ? { slug: skillSlug } : {}) };
-  const agentName = str(r.agentName, 120);
+  const agentName = named(r.agentName, 120);
   if (agentName) out.agentName = agentName;
   const logUrl = sameOriginPath(r.logUrl);
   if (logUrl) out.logUrl = logUrl;

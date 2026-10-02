@@ -596,3 +596,27 @@ test("a second run finishing with the same sentence is announced again, not swal
   // Nothing new to say leaves the region as it is.
   assert.equal(nextRunAnnouncement(state, pendingRunAnnouncements([run("a", "succeeded"), run("b", "succeeded")], seen)), state);
 });
+
+test("names a person reads carry no direction overrides or control characters", () => {
+  // U+202E turns "report<RLO>fdp.exe" into what reads as "reportexe.pdf".
+  const RLO = "\u202e";
+  const v = view({
+    id: "bidi",
+    kind: "tool",
+    title: "Using Skills",
+    detail: "read_skill_file",
+    createdAt: "x",
+    call: {
+      tool: "read_skill_file",
+      status: "succeeded",
+      args: { name: `q${RLO}s`, path: `ref${RLO}dm.exe`, reason: "first line\nsecond\u0007 line" },
+      run: { status: "succeeded", agentName: `Ada${RLO}`, files: [{ name: `report${RLO}fdp.exe`, mime: "application/pdf" }] },
+    },
+  } as unknown as ClientActivityEvent);
+  assert.equal(v.files[0].name, "reportfdp.exe");
+  assert.equal(v.skill?.name, "qs");
+  assert.equal(v.skillPath, "refdm.exe");
+  assert.equal(v.agentName, "Ada");
+  assert.equal(v.reason, "first line second line");
+  assert.equal(runReceiptParts(v).label, "Read refdm.exe from the qs skill");
+});

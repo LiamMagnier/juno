@@ -238,6 +238,19 @@ final class NativeToolRunTests: XCTestCase {
         XCTAssertEqual(call.run?.files.map(\.path), ["/api/attachments/att_png", nil, nil, nil])
     }
 
+    /// Names a person reads carry no direction overrides or control characters.
+    func testNamesCarryNoDirectionOverrides() throws {
+        let call = try decode(row(#"""
+        {"callId":"c","tool":"run_code","status":"succeeded",
+         "run":{"status":"succeeded","exitCode":0,"agentName":"Ada\u202e","skillSlug":"q\u202es",
+                "files":[{"name":"report\u202efdp.exe","mime":"application/pdf"}]}}
+        """#))
+        XCTAssertEqual(call.run?.files.first?.name, "reportfdp.exe")
+        XCTAssertEqual(call.run?.agentName, "Ada")
+        XCTAssertEqual(call.run?.skillName, "qs")
+        XCTAssertEqual(NativeToolRunWire.named(.string("a\nb\u{7}c"), max: 50), "a bc")
+    }
+
     func testNoStringCarriesAnEmDash() throws {
         for json in [running, succeeded, failed] {
             let call = try decode(row(json))
