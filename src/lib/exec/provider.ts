@@ -32,15 +32,17 @@ export const execToolProvider: ToolProvider = {
   async availability() {
     if (!isExecConfigured()) return { available: false, reason: "not_configured" };
     try {
-      const { execHealthy } = await import("@/lib/exec/runtime");
-      return (await execHealthy()) ? { available: true } : { available: false, reason: "unhealthy" };
+      const { execHealth } = await import("@/lib/exec/runtime");
+      const state = await execHealth();
+      return state === "healthy" ? { available: true } : { available: false, reason: state };
     } catch {
       return { available: false, reason: "unhealthy" };
     }
   },
   async open(turn, granted) {
     const { runtimeManifestSummary } = await import("@/lib/exec/runtime");
-    const manifestLine = await runtimeManifestSummary().catch(() => null);
+    // Cheap: the cached manifest, or the built-in line while it is fetched.
+    const manifestLine = await runtimeManifestSummary({ wait: false }).catch(() => null);
     const checkRunAvailable = granted.includes(CHECK_RUN_TOOL_ID);
     const options = {
       vision: turn.vision,

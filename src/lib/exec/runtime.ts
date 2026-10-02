@@ -103,8 +103,16 @@ export async function execManifest(client?: JunoExecClient): Promise<HostManifes
   return manifestCache.value;
 }
 
-/** One line for run_code's description: what the sandbox has (L1 puts it in the tool text). */
-export async function runtimeManifestSummary(): Promise<string | null> {
+/**
+ * One line for run_code's description: what the sandbox has. With
+ * `{ wait: false }` (the provider's `open`, which must stay cheap) it answers
+ * from the cache or null, and refreshes the cache in the background.
+ */
+export async function runtimeManifestSummary(options: { wait?: boolean } = {}): Promise<string | null> {
+  if (options.wait === false && !(manifestCache && Date.now() - manifestCache.at < 10 * 60_000)) {
+    void execManifest().catch(() => null);
+    return null;
+  }
   const manifest = await execManifest();
   if (!manifest?.runtimes) return null;
   const { python, javascript, bash } = manifest.runtimes;
@@ -114,22 +122,32 @@ export async function runtimeManifestSummary(): Promise<string | null> {
   return `Python ${python ?? "3"} (${packages.join(", ")}), Node ${javascript ?? "22"}, bash ${(bash ?? "").split("(")[0] || "5"}.`;
 }
 
-let healthCache: { at: number; ok: boolean } | null = null;
+export type ExecHealth = "healthy" | "unhealthy" | "network_not_isolated" | "not_configured";
 
-/** Whether the configured host answers, cached for a minute (for capability notes). */
-export async function execHealthy(): Promise<boolean> {
-  if (healthCache && Date.now() - healthCache.at < 60_000) return healthCache.ok;
+let healthCache: { at: number; state: ExecHealth } | null = null;
+
+/**
+ * Whether the configured host answers and reports no egress, cached for a
+ * minute. `network_not_isolated` keeps run_code off: its classification as a
+ * read rests on the sandbox having no network.
+ */
+export async function execHealth(): Promise<ExecHealth> {
   const endpoint = execEndpoint();
-  if (!endpoint) return false;
-  let ok = false;
+  if (!endpoint) return "not_configured";
+  if (healthCache && Date.now() - healthCache.at < 60_000) return healthCache.state;
+  let state: ExecHealth;
   try {
     const health = await new JunoExecClient(endpoint).health();
-    ok = health.ok === true && health.egress === "none";
+    state = health.ok !== true ? "unhealthy" : health.egress === "none" ? "healthy" : "network_not_isolated";
   } catch {
-    ok = false;
+    state = "unhealthy";
   }
-  healthCache = { at: Date.now(), ok };
-  return ok;
+  healthCache = { at: Date.now(), state };
+  return state;
+}
+
+export async function execHealthy(): Promise<boolean> {
+  return (await execHealth()) === "healthy";
 }
 
 // ── outcomes ────────────────────────────────────────────────────────────────
@@ -422,6 +440,14 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
   if (snapshot.status === "lost") {
     return settleUnknown(lease, row, "The sandbox restarted while this ran, so its outcome is unknown.", input);
   }
+  // Collecting can take a while (20 files, full logs): the lease is renewed as
+  // it goes, and the settlement uses the latest one.
+  let current = lease;
+  const keepAlive = async () => {
+    const next = await renewLease(current);
+    if (next) current = next;
+    return next !== null;
+  };
   // The full snapshot (with the stream slices) for a terminal run.
   if (!snapshot.stdout || !snapshot.stderr) snapshot = await client.getRun(snapshot.id, 0);
   const status = snapshot.status as ToolRunStatus;
@@ -440,13 +466,16 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
       conversationId: row.conversationId,
       workRunId: row.workRunId,
       vision: input.vision,
+      keepAlive,
     });
     files = captured.files;
     skipped = captured.skipped;
     images = captured.images;
   }
+  await keepAlive();
   const logKey = await storeFullLogs({ client, run: snapshot, userId: row.userId, toolRunId: row.id }).catch(() => null);
-  const settledOk = await settleToolRun(lease, {
+  await keepAlive();
+  const settledOk = await settleToolRun(current, {
     status,
     exitCode: snapshot.exitCode,
     durationMs: snapshot.durationMs,

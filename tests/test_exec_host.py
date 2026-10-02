@@ -482,6 +482,18 @@ class ServiceApi(unittest.TestCase):
         self.assertEqual(run["context"], "hosted_sandbox")
         self.assertEqual(run["network"], "none")
 
+    def test_events_stream_the_output_and_end_with_the_status(self):
+        run = self.host.run("import time\nfor i in range(3):\n    print('line', i, flush=True)\n    time.sleep(0.2)\nraise SystemExit(2)\n")
+        status, data, headers = self.host.request("GET", "/v1/runs/%s/events?after=0" % run["id"], raw=True)
+        self.assertEqual(status, 200)
+        self.assertIn("text/event-stream", headers["Content-Type"])
+        text = data.decode()
+        self.assertIn("event: chunk", text)
+        self.assertIn("line 2", text)
+        self.assertIn('event: end\ndata: {"status": "failed", "exitCode": 2}', text)
+        status, data, _ = self.host.request("GET", "/v1/runs/%s/events?after=999" % run["id"], raw=True)
+        self.assertNotIn("event: chunk", data.decode(), "resuming after the last seq sends only the end")
+
     def test_long_output_has_a_head_a_tail_and_full_paging(self):
         run = self.host.run("import sys\nfor i in range(100000):\n    print('line %06d ' % i + 'x' * 40)\n")
         self.assertEqual(run["status"], "succeeded")

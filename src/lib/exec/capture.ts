@@ -49,6 +49,13 @@ export interface CaptureInput {
   workRunId: string | null;
   vision: boolean;
   signal?: AbortSignal;
+  /**
+   * Called before each file: renews the caller's lease on the ToolRun and says
+   * whether it still holds it. Capture stops when it does not, so a slow
+   * collection cannot run on after another process (check_run, the sweep) has
+   * taken the row over.
+   */
+  keepAlive?: () => Promise<boolean>;
 }
 
 export interface CaptureResult {
@@ -72,6 +79,7 @@ export async function captureOutputs(input: CaptureInput): Promise<CaptureResult
 
   for (const [index, entry] of entries.entries()) {
     const name = names[index];
+    if (input.keepAlive && !(await input.keepAlive())) break;
     let bytes: Uint8Array;
     try {
       bytes = await input.client.downloadFile(input.run.id, entry, input.signal);

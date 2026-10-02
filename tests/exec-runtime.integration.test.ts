@@ -176,6 +176,13 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
     assert.equal(first.run?.toolRunId, second.run?.toolRunId);
     assert.equal(await hostRunsStarted(), before + 1, "one container for two dispatches");
     assert.equal(await prisma.toolRun.count({ where: { sessionId: context.sessionId } }), 1);
+    // The host's event feed for the same run: the output, then the end.
+    const { JunoExecClient } = await import("@/lib/exec/client");
+    const { execEndpoint } = await import("@/lib/exec/config");
+    const events = [];
+    for await (const event of new JunoExecClient(execEndpoint()!).events(first.run!.runId!)) events.push(event);
+    assert.ok(events.some((event) => "text" in event && event.text.includes("42")));
+    assert.deepEqual(events.at(-1), { end: true, status: "succeeded", exitCode: 0 });
   });
 
   test("V5: 5 MB of output gives the model head, tail and a paging note, and the full log is stored", async () => {
@@ -355,6 +362,38 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
     const row = await prisma.toolRun.findFirstOrThrow({ where: { userId: f.user.id } });
     assert.equal(row.status, "refused");
     assert.equal(row.remoteRunId, null);
+  });
+
+  test("Work runs: the run's files are inputs, outputs get a WorkRunIO row, and the call id keys the record", async () => {
+    const { workExecDeps } = await import("@/lib/exec/work");
+    const f = await seed();
+    const session = await prisma.workSession.create({ data: { userId: f.user.id, title: "Quarterly numbers", goal: "Sum the sales" } });
+    const run = await prisma.workRun.create({ data: { sessionId: session.id, userId: f.user.id } });
+    const input = await prisma.attachment.findFirstOrThrow({ where: { userId: f.user.id, fileName: "sales.csv" } });
+    await prisma.workRunIO.create({ data: { runId: run.id, direction: "input", refKind: "attachment", refId: input.id, label: "sales.csv" } });
+    const deps = workExecDeps({ runId: run.id, userId: f.user.id, sessionId: session.id, projectId: null, vision: false });
+    assert.ok(deps, "configured");
+    const result = await deps.runCode(
+      { code: "rows = open('inputs/sales.csv').read().splitlines()[1:]\ntotal = sum(int(r.split(',')[1]) for r in rows)\nopen('total.txt','w').write(str(total))\nprint(total)" },
+      { callId: "toolu_work_1" },
+    );
+    assert.equal(result.isError, false, result.output);
+    assert.equal(result.exitCode, 0);
+    assert.match(result.output, /\b600\b/);
+    const row = await prisma.toolRun.findFirstOrThrow({ where: { userId: f.user.id, workRunId: run.id } });
+    assert.equal(row.surface, "work");
+    assert.equal(row.callId, "toolu_work_1");
+    assert.equal(row.conversationId, null);
+    const output = await prisma.workRunIO.findFirstOrThrow({ where: { runId: run.id, direction: "output", refKind: "attachment" } });
+    assert.equal(output.label, "total.txt");
+    const again = await deps.runCode(
+      { code: "rows = open('inputs/sales.csv').read().splitlines()[1:]\ntotal = sum(int(r.split(',')[1]) for r in rows)\nopen('total.txt','w').write(str(total))\nprint(total)" },
+      { callId: "toolu_work_1" },
+    );
+    assert.match(again.output, /was not run again/, "a resumed run replays the call instead of running it twice");
+    const failed = await deps.runCode({ code: "raise SystemExit(4)" }, { callId: "toolu_work_2" });
+    assert.equal(failed.isError, true);
+    assert.equal(failed.exitCode, 4);
   });
 
   test("close the database", async () => {

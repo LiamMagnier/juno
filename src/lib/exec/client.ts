@@ -177,6 +177,43 @@ export class JunoExecClient {
     return this.json("GET", `/v1/runs/${encodeURIComponent(id)}?wait=${wait}`, { signal, timeoutMs: (wait + 15) * 1000 });
   }
 
+  /**
+   * The run's live stdout/stderr as server-sent events, from `after` on, until
+   * the run ends. Each chunk is `{ seq, stream, text }`; the last item is the
+   * end with the final status. Resumable: pass the last `seq` seen.
+   */
+  async *events(
+    id: string,
+    after = 0,
+    signal?: AbortSignal,
+  ): AsyncGenerator<{ seq: number; stream: "stdout" | "stderr" | "notice"; text: string } | { end: true; status: HostRunStatus; exitCode: number | null }> {
+    const response = await this.request("GET", `/v1/runs/${encodeURIComponent(id)}/events?after=${Math.max(0, after)}`, {
+      signal,
+      timeoutMs: 31 * 60_000,
+    });
+    if (!response.body) return;
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+        const event = /^event: (\w+)$/m.exec(block)?.[1];
+        const data = /^data: (.*)$/m.exec(block)?.[1];
+        if (!event || !data) continue;
+        const parsed = JSON.parse(data) as Record<string, unknown>;
+        if (event === "chunk") yield parsed as { seq: number; stream: "stdout" | "stderr" | "notice"; text: string };
+        if (event === "end") {
+          yield { end: true, status: parsed.status as HostRunStatus, exitCode: (parsed.exitCode as number | null) ?? null };
+          return;
+        }
+      }
+    }
+  }
+
   cancel(id: string, signal?: AbortSignal): Promise<HostRunSnapshot> {
     return this.json("POST", `/v1/runs/${encodeURIComponent(id)}/cancel`, { signal, timeoutMs: 15_000 });
   }
