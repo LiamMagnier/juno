@@ -1,0 +1,300 @@
+/*
+ * The composer's context objects and the layers it opens (Alevr V3 gallery,
+ * home and menus scenes; INTERACTION_SPEC C7-C10).
+ *
+ * Plain, unlayered CSS on purpose and only for elements Tailwind does not
+ * style: the token spans live inside a contenteditable (no React classes
+ * reach them), and the palette and popover are portalled layers whose rows
+ * share one recipe. Colours are the V3 tokens from globals.css; timings are
+ * the shared ladder (press 70, fast 120, exit 160, base 220).
+ */
+
+/* ——————————————————————————— Tokens in the sentence ——————————————————————————— */
+
+/* An atomic object (C8): a neutral chip one tone step above the field, the
+   thing's own mark, its name at the sentence's size. Colour comes only from
+   the mark. 24 px tall on the 26 px line, so two lines of tokens never touch. */
+.context-composer-field .context-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px 0 4px;
+  margin: 0 1px;
+  border-radius: 7px;
+  background-color: hsl(var(--secondary));
+  font-size: 15px;
+  line-height: 24px;
+  letter-spacing: -0.004em;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  vertical-align: -1px;
+  cursor: default;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-soft),
+    opacity var(--dur-exit) var(--ease-in);
+}
+.context-composer-field .context-token-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  line-height: 0;
+  color: hsl(var(--muted-foreground));
+}
+@media (hover: hover) and (pointer: fine) {
+  .context-composer-field .context-token:hover {
+    background-color: hsl(var(--selected));
+  }
+}
+/* First Backspace selects (C9): one tone deeper and a 1.5 px edge in the
+   tertiary ink. The second Backspace removes it. */
+.context-composer-field .context-token[data-selected] {
+  background-color: hsl(var(--selected));
+  box-shadow: 0 0 0 1.5px hsl(var(--muted-foreground));
+}
+/* Needs something before it resolves (an app not connected): the mark at 40%.
+   Its popover says why. No dot, no badge. */
+.context-composer-field .context-token[data-needs] .context-token-mark {
+  opacity: 0.4;
+}
+/* The token SETTLES (C8, signature S1): its fill starts at the palette's
+   highlight tone and relaxes to the token tone over base. Nothing moves; the
+   caret is already where it belongs. */
+.context-composer-field .context-token[data-settle] {
+  animation: context-token-settle var(--dur-base) var(--ease-out-soft);
+}
+@keyframes context-token-settle {
+  from {
+    background-color: hsl(var(--selected));
+  }
+}
+/* Removed by pointer (the popover's Remove from message): it yields in place,
+   fading on exit timing. The keyboard path removes it in the same frame. */
+.context-composer-field .context-token[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Increase Contrast: a meaningful tone boundary becomes a hairline (§1.7). */
+@media (prefers-contrast: more) {
+  .context-composer-field .context-token {
+    box-shadow: inset 0 0 0 1px hsl(var(--border));
+  }
+}
+
+/* The placeholder: drawn by CSS while the field is empty, never announced as
+   content (the field's accessible name is its label, C1). */
+.context-composer-field:empty::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+
+/* ——————————————————————————— The palette and the token popover ——————————————————————————— */
+
+/* On the shared popover material (`.surface-float`, D-033); these are the rows. */
+.composer-layer {
+  position: fixed;
+  z-index: var(--z-popper);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  padding: 6px;
+  overflow: hidden;
+  color: hsl(var(--foreground));
+}
+.composer-layer__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.composer-layer__label {
+  padding: 7px 10px 3px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+}
+.composer-layer__group + .composer-layer__group {
+  margin-top: 4px;
+}
+.composer-layer__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  color: hsl(var(--foreground));
+  cursor: default;
+  transition: background-color var(--dur-fast) var(--ease-out-soft);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-layer__row:hover {
+    background-color: hsl(var(--accent));
+  }
+}
+/* The highlight moves without animation (F0); it is the row Enter picks. */
+.composer-layer__row[aria-selected="true"] {
+  background-color: hsl(var(--selected));
+  transition: none;
+}
+.composer-layer__mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.composer-layer__mark[data-needs] {
+  opacity: 0.4;
+}
+.composer-layer__name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-layer__detail {
+  min-width: 0;
+  max-width: 55%;
+  flex: 0 1 auto;
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+.composer-layer__status {
+  padding: 9px 10px;
+  font-size: 13px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+}
+.composer-layer__foot {
+  display: flex;
+  gap: 16px;
+  margin: 6px -6px -6px;
+  padding: 9px 14px 10px;
+  border-top: 1px solid hsl(var(--border));
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+.composer-layer__foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.composer-layer__key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  border: 1px solid hsl(var(--border));
+  font-size: 11px;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+}
+/* Keyboard hints mean nothing on a touch screen. */
+@media (pointer: coarse) {
+  .composer-layer__foot {
+    display: none;
+  }
+  .composer-layer__row {
+    min-height: 44px;
+  }
+}
+
+/* The token popover (C10): grows from its token, says in words what the
+   token stands for and what using it will ask. */
+.composer-layer--popover {
+  padding: 14px 16px 12px;
+}
+.composer-popover__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.composer-popover__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.composer-popover__name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-popover__line {
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+.composer-popover__lede {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+}
+.composer-popover__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 12px -16px -12px;
+  padding: 6px 8px;
+  border-top: 1px solid hsl(var(--border));
+}
+.composer-popover__verb {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 18px;
+  color: hsl(var(--foreground));
+  transition: background-color var(--dur-fast) var(--ease-out-soft);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-popover__verb:hover {
+    background-color: hsl(var(--accent));
+  }
+}
+.composer-popover__verb:active {
+  background-color: hsl(var(--selected));
+}
+.composer-popover__verb--strong {
+  font-weight: 500;
+}
+@media (pointer: coarse) {
+  .composer-popover__verb {
+    height: 44px;
+  }
+}
+
+/* ——————————————————————————— Home suggestions ——————————————————————————— */
+
+/* A layer opened below the home composer covers the suggestions, and a draft
+   makes them moot: they step out in the same frame (keyboard-born, F0). */
+.chat-home:has([data-composer-layer="below"]) .chat-home__suggest,
+.chat-home:has([data-composer-draft]) .chat-home__suggest {
+  visibility: hidden;
+}
