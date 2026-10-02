@@ -11,6 +11,14 @@ export interface ToolContext {
    * developer session and not for the cloud runner.
    */
   containerSandbox?: import("./container-sandbox.js").ContainerSandboxConfig;
+  /**
+   * The provider's id for this call. Set by the Work session; a tool whose
+   * effect is recorded per call (run_code) keys its record on it so a replay
+   * finds the stored result instead of running twice.
+   */
+  callId?: string;
+  /** The turn's signal: Stop or the run's ceiling. Set by the Work session. */
+  signal?: AbortSignal;
 }
 
 export interface ToolResult {

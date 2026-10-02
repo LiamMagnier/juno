@@ -155,6 +155,19 @@ with the Swift runtime; each has tests in `src/test/`.
 - **Attribution** (`src/providers/proxy.ts`): `BackendConfig.runId` is sent as
   `x-juno-run` on every proxied call; the cloud runner passes its task id.
 
+## Hosted code execution (October 2026, TOOL_RUNTIME_DESIGN.md §6.5)
+
+- `src/work/tools.ts` (`execTools`, `ExecToolDeps`, `ExecToolResult`): `run_code`
+  and `check_run` for Work and Orbit runs. The effect is injected (the web app's
+  `src/lib/exec` runs the program on the execution host and owns the ToolRun
+  record, files and metering). Risk `safe`, tier `structured_file`, output
+  untrusted (scanned and enveloped). Not host workspace tools, so
+  `withoutHostWorkspaceTools` keeps them.
+- `src/tools/types.ts` (`ToolContext.callId`, `ToolContext.signal`) and
+  `src/work/session.ts` (sets both): a tool whose effect is recorded per call
+  keys it on the provider's call id, and Stop reaches a running program.
+  `src/test/exec-tools.test.ts` covers both. Re-apply when re-syncing.
+
 ## Build
 
 ```sh

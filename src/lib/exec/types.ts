@@ -124,6 +124,8 @@ export interface ExecRunFacts {
   skippedFiles: Array<{ name: string; bytes: number; reason: string }>;
   finishedLate: boolean;
   skillVersionId: string | null;
+  skillSlug: string | null;
+  skillBundleDigest: string | null;
 }
 
 /** Stable failure codes, mapped onto L1's ToolErrorCode and the capability contract. */

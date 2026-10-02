@@ -40,6 +40,7 @@ import {
   isTerminal,
   lockdownEnabled,
   markStarted,
+  readCode,
   readOutputs,
   readTail,
   recordInputs,
@@ -69,8 +70,8 @@ import {
 // ── small helpers ────────────────────────────────────────────────────────────
 
 function refused(code: ExecErrorCode, message: string): ExecToolOutcome {
-  const text = `${message}${code === "invalid_arguments" ? " Nothing was run." : ""}`;
-  return { status: code === "capability_unavailable" ? "failed" : "failed", text, body: text, error: { code } };
+  const text = code === "invalid_arguments" ? `${message} Nothing was run.` : message;
+  return { status: "failed", text, body: text, error: { code } };
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -85,8 +86,6 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener("abort", done, { once: true });
   });
 }
-
-const PAGE_HINT_STREAMS = ["stdout", "stderr"] as const;
 
 let manifestCache: { at: number; value: HostManifest | null } | null = null;
 
@@ -188,6 +187,8 @@ function factsFromRow(row: ToolRunRow): ExecRunFacts {
     skippedFiles: outputs.skipped,
     finishedLate: row.finishedLate,
     skillVersionId: row.skillVersionId,
+    skillSlug: row.skillVersionId ? (/\/skills\/([a-z0-9][a-z0-9-]{0,63})/.exec(readCode(row))?.[1] ?? null) : null,
+    skillBundleDigest: row.skillBundleDigest,
   };
 }
 
@@ -496,14 +497,7 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
     return outcomeFromRow({ ...settled, status: "running" }, { checkRunAvailable: input.checkRunAvailable });
   }
   await meter(settled);
-  const outcome = await outcomeFromRow(settled, {
-    checkRunAvailable: input.checkRunAvailable,
-    images,
-    surface: input.surface,
-  });
-  // Program output is shown with the store's slices; the live snapshot can be
-  // fuller (when the row's tails were cut), so prefer it for the model.
-  return outcome;
+  return outcomeFromRow(settled, { checkRunAvailable: input.checkRunAvailable, images, surface: input.surface });
 }
 
 async function meter(row: ToolRunRow): Promise<void> {
@@ -716,7 +710,10 @@ export async function executeCheckRun(raw: Record<string, unknown>, ctx: ExecCal
 
   if (parsed.stream) return pageOutput(row, parsed.stream, parsed.offset ?? 0);
 
-  if (isTerminal(row.status)) return outcomeFromRow(row, { vision, replayed: false, checkRunAvailable: true, images: await reloadImages(readOutputs(row).images, row.userId).then((images) => (vision ? images : [])) });
+  if (isTerminal(row.status)) {
+    const images = vision ? await reloadImages(readOutputs(row).images, row.userId) : [];
+    return outcomeFromRow(row, { vision, checkRunAvailable: true, images });
+  }
 
   const deadline = Date.now() + parsed.wait_seconds * 1000;
   const lease = await takeExpiredLease(row.id);
@@ -853,4 +850,3 @@ export function historyNote(facts: ExecRunFacts): string {
   return runSummary({ language: facts.language, status: facts.status, exitCode: facts.exitCode, files: facts.files });
 }
 
-export { PAGE_HINT_STREAMS };
