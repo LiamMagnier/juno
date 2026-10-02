@@ -65,6 +65,8 @@ const REGISTRY_TIMEOUT_MS: Readonly<Record<string, number>> = {
 const DEFAULT_REGISTRY_TIMEOUT_MS = 60_000;
 /** Connector calls: the SPEC's 60 s, started after any approval. */
 const CONNECTOR_TIMEOUT_MS = 60_000;
+/** The most of a spec's model-facing text a receipt keeps for a replay. */
+const RECEIPT_RESULT_CHARS = 30_000;
 
 function riskOf(riskClass: string): ToolRisk {
   switch (riskClass) {
@@ -389,14 +391,20 @@ export class UnifiedAgentRegistry {
         onApprovalRequest: composeApprovalCallbacks(context.onApprovalRequest, call.onApprovalRequest),
       });
       // Settle the receipt (when the broker issued one) with what the model
-      // was given, so a replay of this call returns the same text.
+      // was given, so a replay of this call returns the same text. Kept whole
+      // or not at all: the text may end in an untrusted envelope's closing
+      // marker, and a replay of a CUT text would hand the model an envelope
+      // that never closes.
       if (receiptId) {
         const { completeExternalAction } = await import("@/lib/action-approval-store");
         await completeExternalAction({
           userId: context.userId,
           receiptId,
           ok: outcome.status === "succeeded",
-          result: outcome.text.slice(0, 30_000),
+          result:
+            outcome.text.length <= RECEIPT_RESULT_CHARS
+              ? outcome.text
+              : `This call already ran (${outcome.status}); its result was too long to keep, so it is not repeated here. Do not run it again only to see the result.`,
         });
       }
       return outcome;
