@@ -177,10 +177,11 @@ Facts the producers should know:
 
 ## V7 acceptance status
 
-| Scenario | Status |
+| Scenario | Status (2026-10-02) |
 |---|---|
-| Every phase settled (running, waiting for approval, succeeded, failed, timed out, stopped, outcome unknown, unavailable) in web chat rows, the run strip, the Thought process panel, web Code activity, the Orbit task feed and voice sentences | Built and fixture-tested; captured in `/dev/tool-runs` |
-| macOS and iOS ChatKit decoding, words and file cards | Built and fixture-tested in `NativeToolRunTests` |
-| Reduced Motion and screen-reader announcements | One announcement per phase change through a polite live region, none for progress or a stored turn; the live mark is still under Reduced Motion |
+| Every phase settled (queued, running with progress, waiting for approval, succeeded with files, failed, JavaScript exit 3, timed out, stopped, outcome unknown, unavailable, missing package, skill read and script, long output, the pre-rework row, and the tool contract's shapes) in web chat rows, the run strip and its files, the Thought process dock, web Code activity, the Orbit task feed and the voice sentences | Built and fixture-tested; captured in `/dev/tool-runs` light and dark, Reduced Motion on and off, and at phone width with no sideways scroll (screenshots kept outside the repository in `juno/.claude/local-tools/refoundation-artifacts/shots/tool-surfaces`) |
+| macOS and iOS ChatKit decoding, words and file cards | `NativeToolRunTests` (decoding of both wire shapes, words, malformed records) and offscreen snapshots of the run detail at the Mac panel width (360 pt) and the iPhone width (390 pt), light and dark; `NativeWorkToolRunTests` for the Orbit log |
+| Mac Activity panel | Shows a run's context, exit and file cards (`ActivityPanel.swift`); the app target compiles. The Mac transcript snapshot suite cannot run on the trunk today: its test target does not compile (`DesktopShellContractTests` expects a shell action the contract no longer has, and the connections screen needs the native lane's repair bff7598b) |
+| Reduced Motion and screen-reader announcements | One polite announcement per phase change ("Running Python.", "Ran Python, 2 files."), none for progress, none for a stored turn, and only the working run when a live turn remounts; the live mark is the in-tree orb until the Continuum ThinkingMark lands, still under Reduced Motion |
 | V1 to V4 shown in the authenticated web chat, an Orbit thread and task, web Code, a voice-mode turn | **Not run**: needs the tool-contract, execution and skill lanes merged, a sandbox and provider keys |
 | Coverage per provider, runtime and surface | This page; every live cell untested |
