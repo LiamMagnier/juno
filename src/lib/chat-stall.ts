@@ -224,13 +224,21 @@ export function createStallWatchdog(
 
 /**
  * The route's reading of the tool acts for the watchdog: a hold from a call's
- * `running` act to its result, one per call (INV-33). Every event still
- * touches the watchdog — progress frames included — but while any call holds
- * it, no silence counts against the provider.
+ * `awaiting_approval` or `running` act to its result, one per call (INV-33).
+ * Every event still touches the watchdog — progress frames included — but
+ * while any call holds it, no silence counts against the provider.
  *
- * Calls that never report `running` (a native tool that does not know when it
- * is authorised) take no hold: the idle window and the approval pause bound
- * them exactly as before.
+ * WHY THE APPROVAL WAIT HOLDS TOO. The broker's callback pauses the watchdog
+ * when a card goes out, but the pause is a flag that the next `touch()`
+ * clears — and the dispatcher's own `awaiting_approval` act is the very next
+ * event the route reads, and touches for. Without a hold, a person deciding
+ * for longer than the idle window had the turn killed as a stalled model. The
+ * hold is counted, so two calls waiting at once cannot release each other,
+ * and the receipt's TTL is what bounds the wait.
+ *
+ * Calls that never report either act (a native tool that does not know when
+ * it is authorised) take no hold: the idle window and the approval pause
+ * bound them exactly as before.
  */
 export function trackToolActivity(watchdog: Pick<StallWatchdog, "hold">): {
   observe(event: { type: string; phase?: string; status?: string; callId?: string }): void;
@@ -242,7 +250,7 @@ export function trackToolActivity(watchdog: Pick<StallWatchdog, "hold">): {
   return {
     observe(event) {
       if (event.type !== "tool" || !event.callId) return;
-      if (event.phase === "status" && event.status === "running") {
+      if (event.phase === "status" && (event.status === "running" || event.status === "awaiting_approval")) {
         if (!releases.has(event.callId)) releases.set(event.callId, watchdog.hold());
       } else if (event.phase === "result") {
         releases.get(event.callId)?.();
