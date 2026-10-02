@@ -70,6 +70,11 @@ const previewCache = new Map<string, FilePreviewData>();
 const EMPTY: FilePreviewData = { text: null, thumbnailUrl: null };
 
 function usePreview(item: PreviewableItem, enabled: boolean): FilePreviewData | undefined {
+  return useFilePreview(item, enabled);
+}
+
+/** A file's excerpt and rendered first page, cached per id: the Library draws its own miniature from it. */
+export function useFilePreview(item: PreviewableItem, enabled: boolean): FilePreviewData | undefined {
   const [preview, setPreview] = React.useState<FilePreviewData | undefined>(() =>
     previewCache.get(item.id),
   );

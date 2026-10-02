@@ -57,12 +57,15 @@ const SOURCES = walk(join(ROOT, "src")).filter((file) => !file.endsWith(".genera
 const sourceOf = new Map(SOURCES.map((file) => [file.slice(ROOT.length), readFileSync(file, "utf8")]));
 
 const LANDING = "src/app/(app)/code/page.tsx";
+/** The landing's column, a component of its own so /dev/pages can draw it. */
+const LANDING_COLUMN = "src/components/code/code-landing.tsx";
 const COMPOSER = "src/components/code/code-composer.tsx";
 
 /* ───────────────────────── The landing is the composer ──────────────────── */
 
 test("the Code landing is a greeting and the composer, not a page frame", () => {
-  const landing = read(LANDING);
+  const landing = read(LANDING) + read(LANDING_COLUMN);
+  assert.match(read(LANDING), /<CodeLanding prefill=\{prefill\} \/>/, "the route mounts the landing column");
   assert.match(landing, /<CodeComposer/, "the landing must mount the composer");
   assert.match(landing, /font-serif/, "the landing opens with the serif greeting");
   // The one route in the app that is deliberately outside AppPage: a composer

@@ -31,7 +31,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FilePreview } from "@/components/chat/file-preview";
+import { FilePreview, useFilePreview } from "@/components/chat/file-preview";
 import { DesignPoster } from "@/components/artifacts/artifact-preview";
 import { ArtifactLifecycleActions } from "@/components/artifacts/artifact-lifecycle-actions";
 import { AgentFace } from "@/components/agents/agent-face";
@@ -249,8 +249,8 @@ function DeckPreview({ title, type }: { title: string; type: string }) {
 function SourcePreview({ source }: { source: string }) {
   return (
     <Miniature>
-      <pre className="absolute inset-0 overflow-hidden whitespace-pre p-[18px] font-mono text-muted-foreground" style={{ ...MINI_TEXT, lineHeight: "13px" }}>
-        {source.split("\n").slice(0, 16).join("\n")}
+      <pre className="absolute inset-0 overflow-hidden whitespace-pre px-[20px] pt-[20px] font-mono text-foreground/70 [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" style={{ fontSize: 11.5, lineHeight: "17px" }}>
+        {source.split("\n").slice(0, 12).join("\n")}
       </pre>
     </Miniature>
   );
@@ -262,8 +262,32 @@ function svgDataUrl(source: string): string | null {
   return `data:image/svg+xml;utf8,${encodeURIComponent(trimmed)}`;
 }
 
+/** A file that is not a picture: its rendered first page when the server made one, else its words on a page. */
+function FilePagePreview({ file, type }: { file: LibraryItem; type: string }) {
+  const preview = useFilePreview(file, true);
+  const title = file.fileName.replace(/\.[a-z0-9]{1,6}$/i, "");
+  if (preview?.thumbnailUrl) {
+    return (
+      <Miniature>
+        <div className="absolute inset-x-[34px] top-[22px] bottom-0 overflow-hidden rounded-t-sm bg-background shadow-[0_0_0_1px_hsl(var(--border)/0.7)]">
+          {/* eslint-disable-next-line @next/next/no-img-element -- a bounded JPEG of the first page, from our own route */}
+          <img src={preview.thumbnailUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover object-top" />
+        </div>
+      </Miniature>
+    );
+  }
+  const lines = (preview?.text ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  return <PagePreview title={title} lines={lines} type={type} />;
+}
+
 export function EntryPreview({ entry }: { entry: LibraryEntry }) {
-  if (entry.file) return <FilePreview item={entry.file} className="absolute inset-0" badge={false} />;
+  if (entry.file) {
+    return entry.file.kind === "IMAGE" ? <FilePreview item={entry.file} className="absolute inset-0" badge={false} /> : <FilePagePreview file={entry.file} type={entry.type} />;
+  }
   const made = entry.made;
   if (!made) return null;
   const type = made.type.toUpperCase();
@@ -284,13 +308,16 @@ export function EntryPreview({ entry }: { entry: LibraryEntry }) {
 
 /* —————————————————————————————— Parts —————————————————————————————— */
 
-function MadeBy({ entry, size = 16 }: { entry: LibraryEntry; size?: number }) {
+function MadeBy({ entry, size = 16, comma = false }: { entry: LibraryEntry; size?: number; comma?: boolean }) {
   const agent = entry.made?.agent;
   if (!agent) return null;
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground/100">
       <AgentFace avatar={normalizeAgentAvatar(agent.avatar, agent.id)} size={size} />
-      <span className="truncate text-foreground/80">{agent.name}</span>
+      <span className="truncate text-foreground/80">
+        {agent.name}
+        {comma ? "," : ""}
+      </span>
     </span>
   );
 }
@@ -432,12 +459,7 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
           <span className="line-clamp-2 [overflow-wrap:anywhere]">{entry.title}</span>
         </a>
         <span className="flex min-w-0 items-center gap-1.5 pl-6 text-caption leading-[18px] text-muted-foreground">
-          {entry.made?.agent ? (
-            <>
-              <MadeBy entry={entry} />
-              <span aria-hidden="true">,</span>
-            </>
-          ) : null}
+          {entry.made?.agent ? <MadeBy entry={entry} comma /> : null}
           <span className="shrink-0 tabular-nums">{when}</span>
           <ChatLink entry={entry} />
         </span>

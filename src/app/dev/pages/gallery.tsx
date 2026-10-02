@@ -10,6 +10,8 @@ import ArtifactsPage from "@/app/(app)/artifacts/page";
 import ConnectionsPage from "@/app/(app)/connections/page";
 import AutomationsPage from "@/app/(app)/automations/page";
 import SettingsPage from "@/app/(app)/settings/page";
+import InstructionsPage from "@/app/(app)/customize/instructions/page";
+import { CodeLanding } from "@/components/code/code-landing";
 import { AgentsHome } from "@/components/agents/agents-home";
 import { CompareView } from "@/components/compare/compare-view";
 import { AppPage } from "@/components/app/app-page";
@@ -229,6 +231,10 @@ function Page({ page }: { page: PageName }) {
       );
     case "skills":
       return <SkillsLibraryPage />;
+    case "instructions":
+      return <InstructionsPage />;
+    case "code":
+      return <CodeLanding prefill={{ prompt: "", repo: null, baseRef: null, notes: [] }} />;
     case "notifications":
     case "search":
       return <ProjectsPage />;

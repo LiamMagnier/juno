@@ -15,7 +15,7 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
-import { staggerDelay, transition } from "@/lib/motion";
+import { transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -193,7 +193,7 @@ function ConnectorTile({
   const isUserMcp = item.source === "user_mcp";
   const unavailable = !item.configured;
   const needsSetup = item.source === "composio" && item.managedAuth === false && !item.connected;
-  const openable = Boolean(onOpen) && (item.connected || isUserMcp || custom);
+  const openable = Boolean(onOpen) && (item.connected || isUserMcp);
 
   const line = custom
     ? item.connected
@@ -759,29 +759,20 @@ export function tileAnchor(id: string): string {
  * target, so it alone answers the pointer: the hairline firms up, the well
  * lifts a step, the plus turns a quarter. Pressing sinks it a touch.
  */
-function AddServerTile({ index, onClick }: { index: number; onClick: () => void }) {
+function AddServerTile({ index: _index, onClick }: { index: number; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-haspopup="dialog"
-      style={staggerDelay(index, "tight")}
-      className={cn(
-        "group flex min-h-[7.5rem] flex-col items-start justify-between gap-3 rounded-card border border-dashed border-border p-3.5 text-left",
-        "transition-[border-color,background-color,transform] duration-fast ease-out-soft",
-        "hover:border-solid hover:border-foreground/25 hover:bg-accent/50 active:scale-[0.99]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-      )}
+      className="group -mx-2.5 flex min-h-[60px] w-[calc(100%+1.25rem)] items-center gap-3.5 rounded-control px-2.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
     >
-      <span className="surface-inset flex size-10 items-center justify-center rounded-field text-muted-foreground transition-[transform,color] duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:text-foreground motion-reduce:group-hover:translate-y-0">
-        <Plus className="size-5 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:group-hover:rotate-0" />
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-dashed border-border text-muted-foreground group-hover:text-foreground">
+        <Plus className="size-4" aria-hidden="true" />
       </span>
-      <span className="min-w-0">
-        <span className="block text-ui font-medium leading-5 text-foreground">Add an MCP server</span>
-        <span className="block text-caption leading-4 text-muted-foreground">
-          Bring your own tools: any MCP server that signs in with OAuth.
-        </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="text-ui font-medium leading-5 text-foreground">Add an MCP server</span>
+        <span className="truncate text-ui leading-[18px] text-muted-foreground">Bring your own tools: any MCP server that signs in with OAuth.</span>
       </span>
     </button>
   );

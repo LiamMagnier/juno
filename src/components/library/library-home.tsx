@@ -270,7 +270,7 @@ export function LibraryHome() {
               { value: "files", label: "Files" },
             ]}
           />
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-2 @[40rem]/page:flex-none">
+          <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
             {show === "files" ? (
               <Button variant="ghost" size="sm" asChild className="hidden font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
                 <Link href="/library?view=files">Manage files</Link>
