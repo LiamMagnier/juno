@@ -7,7 +7,7 @@ import { Pricing } from "@/components/landing/pricing";
 import { Platforms } from "@/components/landing/platforms";
 import { Hero } from "./hero";
 import { Labs } from "./labs";
-import { Chapters } from "./chapters";
+import { Showcase } from "./showcase";
 import { OrbitScene } from "./orbit-scene";
 import { CodeScene } from "./code-scene";
 import { Bento } from "./bento";
@@ -30,7 +30,7 @@ export function AlevrHome() {
       <main>
         <Hero />
         <Labs />
-        <Chapters labs={LABS} modelsFloor={MODELS_FLOOR} totalLabs={TOTAL_LABS} />
+        <Showcase labs={LABS} modelsFloor={MODELS_FLOOR} totalLabs={TOTAL_LABS} />
 
         <section className="alv-orbit-section" id="orbit" aria-labelledby="alv-orbit-title">
           <div className="alv-col">

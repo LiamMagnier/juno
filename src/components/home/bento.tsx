@@ -1,5 +1,4 @@
-import { BookOpen, EyeOff, MessageSquareText, UserPen } from "@/components/ui/icons";
-import { ConnectorMark } from "@/components/connections/connector-logos";
+import { BookOpen, EyeOff, MessageSquareText, Plug, Sparkles, UserPen } from "@/components/ui/icons";
 import { InView } from "./in-view";
 
 /**
@@ -9,7 +8,20 @@ import { InView } from "./in-view";
  */
 
 const WAVE = [14, 26, 40, 58, 72, 52, 34, 62, 84, 66, 44, 30, 50, 70, 46, 28, 18, 36, 24, 12];
-const APPS = ["github", "notion", "linear", "slack", "figma", "apple-calendar", "apple-mail", "postgres"];
+/**
+ * Connectors Alevr ships (src/lib/connectors*), each drawn with the company's
+ * current mark on one shared tile. Single-colour marks (GitHub, Apple) take the
+ * ink colour so they read in both themes; the rest keep their brand colours.
+ * Apple's three connectors share the Apple mark.
+ */
+const APPS: { id: string; name: string; mono?: boolean }[] = [
+  { id: "google-drive", name: "Google Drive" },
+  { id: "microsoft", name: "Microsoft 365" },
+  { id: "notion", name: "Notion" },
+  { id: "github", name: "GitHub", mono: true },
+  { id: "figma", name: "Figma" },
+  { id: "apple", name: "Apple Calendar, Mail and Music", mono: true },
+];
 
 export function Bento() {
   return (
@@ -41,10 +53,19 @@ export function Bento() {
           </article>
           <article className="alv-cell alv-cell-d">
             <h3>Connect your tools.</h3>
-            <p className="alv-body">Bring in the apps you already use, and add skills that teach Alevr how you work.</p>
-            <div className="alv-cell-art alv-apps">
-              {APPS.map((id) => <span key={id} className="alv-app"><ConnectorMark id={id} /></span>)}
-            </div>
+            <p className="alv-body">Google Drive, Microsoft 365, GitHub, Notion, Figma and your Apple apps. Add any MCP server, and skills that teach Alevr how you work.</p>
+            <ul className="alv-cell-art alv-apps" aria-label="Apps you can connect">
+              {APPS.map(({ id, name, mono }) => (
+                <li key={id} className="alv-app" title={name}>
+                  {mono
+                    ? <span className="alv-app-mono" role="img" aria-label={name} style={{ maskImage: `url(/brand/apps/${id}.svg)`, WebkitMaskImage: `url(/brand/apps/${id}.svg)` }} />
+                    // eslint-disable-next-line @next/next/no-img-element -- small static brand marks
+                    : <img src={`/brand/apps/${id}.svg`} alt={name} width={24} height={24} loading="lazy" />}
+                </li>
+              ))}
+              <li className="alv-app alv-app-more" title="Any MCP server"><Plug aria-hidden /><span className="sr-only">Any MCP server</span></li>
+              <li className="alv-app alv-app-more" title="Skills"><Sparkles aria-hidden /><span className="sr-only">Skills</span></li>
+            </ul>
           </article>
           <article className="alv-cell alv-cell-e">
             <h3>Incognito when you need it.</h3>

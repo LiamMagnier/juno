@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, ChevronDown, FileText, JunoCode, JunoLibrary, JunoOrbit, Layers, Mic, PanelRight, Plus, Search, Share2, SquarePen, Telescope } from "@/components/ui/icons";
+import { User, ArrowUp, ChevronDown, FileText, JunoCode, JunoLibrary, JunoOrbit, Layers, Mic, PanelRight, Plus, Search, Share2, SquarePen, Telescope } from "@/components/ui/icons";
 import { ThinkingMark, type ThinkingPhase } from "@/components/brand/thinking-mark";
 
 /**
@@ -109,7 +109,7 @@ export function ProductWindow({ play, onReplayRef }: { play: boolean; onReplayRe
         <div className="alv-side-recent">Pricing page copy</div>
         <div className="alv-side-recent">Interview synthesis</div>
         <div className="alv-side-recent">Launch email draft</div>
-        <div className="alv-side-user"><span className="alv-avatar">IK</span><span>Inès Kervella</span></div>
+        <div className="alv-side-user"><span className="alv-avatar"><User aria-hidden className="size-3.5" /></span><span>Personal</span></div>
       </aside>
       <div className="alv-window-main">
         <div className="alv-window-bar">
