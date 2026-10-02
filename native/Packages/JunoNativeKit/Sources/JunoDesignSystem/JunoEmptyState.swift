@@ -170,6 +170,13 @@ public struct JunoEmptyState: View {
                     .contentShape(.rect)
                     .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
             }
+            if let actions {
+                HStack(spacing: JunoSpace.snug) {
+                    actions
+                }
+                .controlSize(.regular)
+                .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
+            }
         }
     }
 
