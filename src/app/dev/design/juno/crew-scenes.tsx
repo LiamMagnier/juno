@@ -173,7 +173,7 @@ export function CrewScene({ flow, member }: { flow?: string; member?: string }) 
   const initial: Sheet = flow === "add" ? { kind: "add" } : flow === "customize" ? { kind: "customize", id: member ?? "mira" } : null;
   const [sheet, setSheet] = React.useState<Sheet>(initial);
   return (
-    <AppFrame sidebar={<ChatSidebar current="crew" />}>
+    <AppFrame sidebar={<ChatSidebar current="crew" askOnScreen={["mira", "ines"]} />}>
       <MobileBar title="Orbit" collapse />
       <div className="jn-page jn-page--crew">
         {/* Revision 2: the serif title alone (the thin glyph beside 32 px type sat below its optical centre), and

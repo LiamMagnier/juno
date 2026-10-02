@@ -21,6 +21,7 @@
   margin-top: 4px;
 }
 .jn .jn-page__lede {
+  text-wrap: pretty;
   margin-top: 6px;
   font-size: 15px;
   line-height: 22px;
@@ -159,9 +160,9 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
+/* Revision 2 close-out: the ask is answered in Needs you below, so the portrait says it in ink (one amber per frame). */
 .jn .jn-portrait__state[data-state="waiting"] {
-  color: var(--attn);
-  font-weight: var(--attn-w);
+  color: var(--ink);
 }
 .jn .jn-portrait__state[data-state="paused"],
 .jn .jn-portrait__state[data-state="offline"] {
