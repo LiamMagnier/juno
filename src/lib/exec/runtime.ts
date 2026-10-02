@@ -18,7 +18,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { conversationAttachments } from "@/lib/agent/attachments";
 import { matchAttachment, nameList } from "@/lib/agent/attachment-match";
-import { getObjectBytes } from "@/lib/storage";
+import { getObjectBytes, openObjectStream } from "@/lib/storage";
 import { recordSpend } from "@/lib/spend";
 import { EXEC_LIMITS, execEndpoint, runCodeMicroUsdPerSecond, surfaceLimits } from "@/lib/exec/config";
 import {
@@ -239,6 +239,7 @@ export async function outcomeFromRow(
     files: outputs.files,
     skippedFiles: outputs.skipped,
     imagesAttached: images.length,
+    imagesNotShown: Math.max(0, outputs.files.filter((file) => file.kind === "IMAGE").length - images.length),
     hostError: row.error,
     packages: manifest?.pythonPackages ?? null,
     finishedLate: row.finishedLate,
@@ -277,6 +278,8 @@ export async function uploadInputs(
   remoteSession: string,
   inputs: readonly ExecInputFile[],
   signal?: AbortSignal,
+  /** Called before each upload (the caller renews its lease; it throws when the lease is gone). */
+  beforeEach?: () => Promise<void>,
 ): Promise<Array<{ attachmentId: string; name: string; bytes: number }>> {
   const now = Date.now();
   let session = uploaded.get(remoteSession);
@@ -295,6 +298,7 @@ export async function uploadInputs(
     used.set(base, count);
     const name = count === 1 ? base : base.replace(/(\.[^.]*)?$/, ` (${count})$1`);
     if (session.names.get(name) !== input.id) {
+      await beforeEach?.();
       const { bytes } = await getObjectBytes(input.storageKey);
       session.names.delete(name);
       await client.putInput(remoteSession, name, bytes, signal);
@@ -309,6 +313,15 @@ export async function uploadInputs(
 function touchUploaded(remoteSession: string): void {
   const session = uploaded.get(remoteSession);
   if (session) session.at = Date.now();
+}
+
+/**
+ * The lease went to another process while this call was still preparing (the
+ * uploads outlasted it). That process now owns the row; this call must not
+ * start a run under it.
+ */
+class LeaseLostError extends Error {
+  override readonly name = "LeaseLostError";
 }
 
 function skillUsed(code: string, skills: readonly SkillMount[] | undefined): SkillMount | null {
@@ -494,7 +507,7 @@ async function settleFromSnapshot(input: DriveInput, lease: Lease, snapshot: Hos
     images = captured.images;
   }
   await keepAlive();
-  const logKey = await storeFullLogs({ client, run: snapshot, userId: row.userId, toolRunId: row.id }).catch(() => null);
+  const logKey = await storeFullLogs({ client, run: snapshot, userId: row.userId, toolRunId: row.id, keepAlive }).catch(() => null);
   await keepAlive();
   const settledOk = await settleToolRun(current, {
     status,
@@ -619,11 +632,22 @@ export async function executeRunCode(
     // run". The host answers at once, and a Stop that came meanwhile is acted
     // on below by cancelling the run it reports.
     let phase: "prepare" | "start" = "prepare";
+    // Uploads (twenty files of up to 32 MB, skill bundles) can outlast the
+    // lease, and the sweep takes a row whose lease lapsed with no run id and
+    // records it as outcome_unknown. A run started after that was never
+    // collected, metered or reported. So the lease is renewed before each
+    // upload and right before the start, and a lost lease stops the call.
+    const keepLease = async () => {
+      const next = await renewLease(lease);
+      if (!next) throw new LeaseLostError("another process took over this run");
+      lease = next;
+    };
     try {
-      const inputRecord = await uploadInputs(client, remoteSession, inputs, ctx.signal);
+      const inputRecord = await uploadInputs(client, remoteSession, inputs, ctx.signal, keepLease);
       await recordInputs(lease, inputRecord);
       const skillSlugs: string[] = [];
       for (const mount of ctx.skills ?? []) {
+        await keepLease();
         const bundle = await mount.openBundle();
         // The row records `bundleDigest` as what ran; the host only checks that
         // the bytes survived the upload. A bundle that is not the recorded one
@@ -635,6 +659,7 @@ export async function executeRunCode(
         skillSlugs.push(mount.slug);
       }
       if (ctx.signal?.aborted) throw new Error("aborted before the start");
+      await keepLease();
       phase = "start";
       snapshot = await client.startRun(
         {
@@ -649,14 +674,18 @@ export async function executeRunCode(
       );
       touchUploaded(remoteSession);
     } catch (error) {
+      if (error instanceof LeaseLostError) {
+        return waitForOtherHolder(row.id, ctx.userId, { deadline, signal: ctx.signal, checkRunAvailable, vision });
+      }
       if (phase === "prepare" && ctx.signal?.aborted) {
         // Stopped while the inputs went up: the start was never requested.
         await settleToolRun(lease, refusedSettlement("Stopped before the run started."));
         const text = "Stopped before the run started. Nothing was run.";
         return { status: "cancelled", text, body: text, error: { code: "cancelled" } };
       }
-      if (error instanceof ExecUnavailableError && error.ambiguous) {
-        // The request may have reached the host. Leave the row for the sweep
+      if (phase === "start" && error instanceof ExecUnavailableError && error.ambiguous) {
+        // The start request may have reached the host (an upload that failed
+        // started nothing, whatever the failure). Leave the row for the sweep
         // (or an identical retry, which the host's key turns into the same run).
         await releaseLease(lease);
         const text = "The sandbox did not confirm whether this run started, so its outcome is unknown. Do not say it ran; it will not be run again automatically.";
@@ -748,6 +777,29 @@ export async function executeCheckRun(raw: Record<string, unknown>, ctx: ExecCal
   });
 }
 
+/**
+ * Bytes [start, start + length) of a stored object, by a ranged read: a page is
+ * 40 KB of a log of up to 16 MB, and reading the whole object for each page
+ * put 16 MB per check_run call on a web VM with well under a gigabyte.
+ */
+async function readObjectRange(key: string, start: number, length: number): Promise<Uint8Array> {
+  const stream = await openObjectStream(key, { start, end: start + length - 1 });
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    while (received < length) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      chunks.push(value);
+      received += value.byteLength;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return new Uint8Array(Buffer.concat(chunks).subarray(0, length));
+}
+
 /** One page of a stream: from the stored log, the host, or the row's own tails. */
 async function pageOutput(row: ToolRunRow, stream: "stdout" | "stderr", offset: number): Promise<ExecToolOutcome> {
   const total = (stream === "stdout" ? row.stdoutBytes : row.stderrBytes) ?? 0;
@@ -755,7 +807,7 @@ async function pageOutput(row: ToolRunRow, stream: "stdout" | "stderr", offset: 
   let bytes: Uint8Array | null = null;
   if (row.logKey) {
     try {
-      bytes = (await getObjectBytes(`${row.logKey}${stream}.log`)).bytes.subarray(offset, offset + pageBytes);
+      bytes = offset >= Math.min(total, EXEC_LIMITS.maxLogBytes) ? new Uint8Array(0) : await readObjectRange(`${row.logKey}${stream}.log`, offset, pageBytes);
     } catch {
       bytes = null;
     }

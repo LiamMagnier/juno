@@ -86,7 +86,7 @@ export function workExecDeps(input: WorkExecDepsInput): {
     ...(call.signal ? { signal: call.signal } : {}),
     vision: input.vision,
     inputs: () => workExecInputs({ runId: input.runId, userId: input.userId, sessionId: input.sessionId }),
-    skills: skillMountsFor("work", input.runId),
+    skills: skillMountsFor("work", input.userId, input.runId),
   });
   return {
     async runCode(args, call) {

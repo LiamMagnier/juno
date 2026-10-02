@@ -529,6 +529,41 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
     assert.ok((png.width ?? 0) > 8000, `the chart is ${png.width} px wide`);
     assert.equal(outcome.images?.length ?? 0, 0, "a 9000 px image would fail the provider request, so it stays out of the tool round");
     assert.match(outcome.text, /wide\.png/, "the file is still reported and attached");
+    assert.match(outcome.text, /1 image this run produced was not shown to you/, "the model is told it has not seen it");
+  });
+
+  test("review: a lease lost while the inputs went up starts nothing; the row stays the other holder's", async () => {
+    const { executeRunCode, sweepToolRuns } = await import("@/lib/exec/runtime");
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { createHash } = await import("node:crypto");
+    const f = await seed();
+    const directory = mkdtempSync(join(tmpdir(), "exec-skill-"));
+    writeFileSync(join(directory, "run.py"), "print('skill')\n");
+    const tar = new Uint8Array(execFileSync("tar", ["-cf", "-", "-C", directory, "run.py"], { env: { ...process.env, COPYFILE_DISABLE: "1" } }));
+    const context = ctx(f);
+    const before = await hostRunsStarted();
+    // Slow uploads outlast the lease: the sweep takes the row (no run id yet)
+    // and records it as outcome_unknown. The call must not start a run then.
+    const skill = {
+      slug: "probe",
+      skillVersionId: "v1",
+      bundleDigest: createHash("sha256").update(tar).digest("hex"),
+      openBundle: async () => {
+        await prisma.toolRun.updateMany({ where: { userId: f.user.id }, data: { leaseUntil: new Date(Date.now() - 1000) } });
+        await sweepToolRuns({ now: new Date() });
+        return tar;
+      },
+    };
+    const outcome = await executeRunCode({ code: "print('never')\n" }, { ...context, skills: [skill] });
+    assert.equal(outcome.status, "outcome_unknown", outcome.text);
+    assert.doesNotMatch(outcome.text, /never/);
+    const row = await prisma.toolRun.findFirstOrThrow({ where: { userId: f.user.id } });
+    assert.equal(row.status, "outcome_unknown");
+    assert.equal(row.remoteRunId, null);
+    assert.equal(await hostRunsStarted(), before, "no container was started after the lease was lost");
   });
 
   test("close the database", async () => {

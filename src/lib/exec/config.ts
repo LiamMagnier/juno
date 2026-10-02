@@ -53,7 +53,14 @@ export const EXEC_LIMITS = {
   maxLogBytes: 16 * 1024 * 1024,
   /** Images returned to a vision model in the tool round. */
   maxImages: 4,
-  maxImageBytes: 4 * 1024 * 1024,
+  /** Per image: base64 adds a third, and Anthropic refuses an image over 5 MB. */
+  maxImageBytes: 3_750_000,
+  /**
+   * All images of one result together. Four 4 MB images were 21 MB of base64
+   * in one tool round; the round after carried them again in its history, and
+   * a request over 32 MB fails the whole turn.
+   */
+  maxImagesTotalBytes: 6 * 1024 * 1024,
   /** Longest side of an image sent to the model (Anthropic refuses more than 8000 px). */
   maxImageSide: 8000,
   /** One check_run page. */

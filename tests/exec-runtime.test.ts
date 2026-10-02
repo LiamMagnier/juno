@@ -242,19 +242,23 @@ test("outcomes map onto L1's contract without inventing success", () => {
   assert.ok(progress.lines.every((line) => line.text.length <= 500));
 });
 
-test("skill mounts are per session, validated and bounded", () => {
+test("skill mounts are per account and session, validated and bounded", () => {
   const digest = "a".repeat(64);
   const mount = (slug: string) => ({ slug, skillVersionId: `v-${slug}`, bundleDigest: digest, openBundle: async () => new Uint8Array() });
-  clearSkillMounts("chat", "s1");
-  assert.equal(mountSkill("chat", "s1", mount("Bad Slug")), false);
-  assert.equal(mountSkill("chat", "s1", { ...mount("report"), bundleDigest: "nothex" }), false);
-  assert.equal(mountSkill("chat", "s1", mount("report")), true);
-  assert.deepEqual(skillMountsFor("chat", "s1").map((entry) => entry.slug), ["report"]);
-  assert.deepEqual(skillMountsFor("chat", "s2"), []);
-  assert.deepEqual(skillMountsFor("work", "s1"), []);
-  for (let i = 0; i < 7; i++) assert.equal(mountSkill("chat", "s1", mount(`s${i}`)), true);
-  assert.equal(mountSkill("chat", "s1", mount("ninth")), false, "at most eight per session");
-  clearSkillMounts("chat", "s1");
+  clearSkillMounts("chat", "u1", "s1");
+  assert.equal(mountSkill("chat", "u1", "s1", mount("Bad Slug")), false);
+  assert.equal(mountSkill("chat", "u1", "s1", { ...mount("report"), bundleDigest: "nothex" }), false);
+  assert.equal(mountSkill("chat", "", "s1", mount("report")), false, "no account, no mount");
+  assert.equal(mountSkill("chat", "u1", "s1", mount("report")), true);
+  assert.deepEqual(skillMountsFor("chat", "u1", "s1").map((entry) => entry.slug), ["report"]);
+  assert.deepEqual(skillMountsFor("chat", "u1", "s2"), []);
+  assert.deepEqual(skillMountsFor("work", "u1", "s1"), []);
+  // A chat session id is the generation id, which a client may choose: another
+  // account sending the same one must not get this account's skill bundles.
+  assert.deepEqual(skillMountsFor("chat", "u2", "s1"), [], "another account, same session id");
+  for (let i = 0; i < 7; i++) assert.equal(mountSkill("chat", "u1", "s1", mount(`s${i}`)), true);
+  assert.equal(mountSkill("chat", "u1", "s1", mount("ninth")), false, "at most eight per session");
+  clearSkillMounts("chat", "u1", "s1");
 });
 
 test("the attach decision: private and lockdown first, then configuration, plan and evidence", () => {
@@ -314,4 +318,80 @@ test("produced images report their real dimensions", () => {
   const gif = Buffer.from("GIF89a\x20\x03\x58\x02", "latin1");
   assert.deepEqual(imageDimensions(gif), { width: 800, height: 600 });
   assert.equal(imageDimensions(Buffer.from("not an image")), null);
+});
+
+// ── the host client: what "nothing was run" may be said about ───────────────
+
+test("the client calls a start ambiguous unless it certainly never reached the host, and never follows a redirect", async () => {
+  const http = await import("node:http");
+  const { JunoExecClient, ExecUnavailableError } = await import("@/lib/exec/client");
+  const token = "t".repeat(40);
+  const body = { session: `s_${"a".repeat(32)}`, account: `a_${"b".repeat(32)}`, language: "python" as const, code: "print(1)", timeoutMs: 1000 };
+  let redirectedHits = 0;
+  const elsewhere = http.createServer((_request, response) => {
+    redirectedHits += 1;
+    response.end("{}");
+  });
+  const host = http.createServer((request, response) => {
+    if (request.url === "/v1/runs" && request.headers["idempotency-key"] === "lost-body") {
+      // The host took the run (2xx) and the connection died before the body.
+      response.writeHead(201, { "Content-Type": "application/json", "Content-Length": "500" });
+      response.write('{"id": "r_');
+      setTimeout(() => request.socket.destroy(), 20);
+      return;
+    }
+    if (request.url === "/v1/runs" && request.headers["idempotency-key"] === "redirect") {
+      response.writeHead(307, { Location: `http://127.0.0.1:${(elsewhere.address() as { port: number }).port}/v1/runs` });
+      response.end();
+      return;
+    }
+    response.writeHead(404);
+    response.end("{}");
+  });
+  await new Promise<void>((resolve) => host.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => elsewhere.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new JunoExecClient({ url: `http://127.0.0.1:${(host.address() as { port: number }).port}`, token });
+    await assert.rejects(client.startRun(body, "lost-body"), (error: unknown) => {
+      assert.ok(error instanceof ExecUnavailableError);
+      assert.equal(error.ambiguous, true, "a 2xx whose body was lost may be a started run");
+      return true;
+    });
+    await assert.rejects(client.startRun(body, "redirect"), (error: unknown) => error instanceof ExecUnavailableError);
+    assert.equal(redirectedHits, 0, "the bearer token never follows a redirect");
+    // A port nobody listens on: refused before anything was sent.
+    const closed = http.createServer();
+    await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
+    const port = (closed.address() as { port: number }).port;
+    await new Promise<void>((resolve) => closed.close(() => resolve()));
+    await assert.rejects(new JunoExecClient({ url: `http://127.0.0.1:${port}`, token }).startRun(body, "refused"), (error: unknown) => {
+      assert.ok(error instanceof ExecUnavailableError);
+      assert.equal(error.ambiguous, false, "a refused connection started nothing");
+      return true;
+    });
+  } finally {
+    host.closeAllConnections();
+    await new Promise<void>((resolve) => host.close(() => resolve()));
+    await new Promise<void>((resolve) => elsewhere.close(() => resolve()));
+  }
+});
+
+test("images a run produced but did not hand back are named as not seen", () => {
+  const text = outcomeText({
+    status: "succeeded",
+    language: "python",
+    surface: "chat",
+    toolRunId: "run1234567890",
+    exitCode: 0,
+    durationMs: 1200,
+    stdout: { head: "", tail: "", bytes: 0 },
+    stderr: { head: "", tail: "", bytes: 0 },
+    files: [],
+    skippedFiles: [],
+    imagesAttached: 1,
+    imagesNotShown: 2,
+    checkRunAvailable: true,
+  });
+  assert.match(text, /2 images this run produced were not shown to you/);
+  assert.match(text, /Do not describe what they look like/);
 });

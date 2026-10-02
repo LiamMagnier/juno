@@ -72,6 +72,7 @@ export async function captureOutputs(input: CaptureInput): Promise<CaptureResult
     reason: entry.reason,
   }));
   const images: ExecImage[] = [];
+  let imageBytes = 0;
   const entries = input.run.files ?? [];
   if (entries.length === 0) return { files, skipped, images };
   const plan = await getUserPlan(input.userId);
@@ -169,9 +170,11 @@ export async function captureOutputs(input: CaptureInput): Promise<CaptureResult
       kind === "IMAGE" &&
       images.length < EXEC_LIMITS.maxImages &&
       bytes.byteLength <= EXEC_LIMITS.maxImageBytes &&
+      imageBytes + bytes.byteLength <= EXEC_LIMITS.maxImagesTotalBytes &&
       /^image\/(png|jpeg|gif|webp)$/.test(storedMime) &&
       sendableDimensions(dimensions)
     ) {
+      imageBytes += bytes.byteLength;
       images.push({ mimeType: storedMime, base64: Buffer.from(bytes).toString("base64"), label: fileName });
     }
   }
@@ -187,12 +190,15 @@ export async function reloadImages(attachmentIds: readonly string[], userId: str
     select: { id: true, fileName: true, mimeType: true, storageKey: true, size: true, width: true, height: true },
   });
   const images: ExecImage[] = [];
+  let imageBytes = 0;
   for (const row of rows) {
     if (images.length >= EXEC_LIMITS.maxImages || row.size > EXEC_LIMITS.maxImageBytes) continue;
+    if (imageBytes + row.size > EXEC_LIMITS.maxImagesTotalBytes) continue;
     if (!sendableDimensions(row.width && row.height ? { width: row.width, height: row.height } : null)) continue;
     if (!/^image\/(png|jpeg|gif|webp)$/.test(row.mimeType)) continue;
     try {
       const { bytes } = await getObjectBytes(row.storageKey);
+      imageBytes += bytes.byteLength;
       images.push({ mimeType: row.mimeType, base64: Buffer.from(bytes).toString("base64"), label: row.fileName });
     } catch {
       // A missing object is one image fewer, not a failed replay.
@@ -208,6 +214,8 @@ export async function storeFullLogs(input: {
   userId: string;
   toolRunId: string;
   signal?: AbortSignal;
+  /** Renews the caller's lease between pages (32 MB from the host can take a while). */
+  keepAlive?: () => Promise<boolean>;
 }): Promise<string | null> {
   const prefix = `tool-runs/${input.userId}/${input.toolRunId}/`;
   let stored = false;
@@ -218,6 +226,7 @@ export async function storeFullLogs(input: {
     let offset = 0;
     const limit = Math.min(slice.storedBytes, EXEC_LIMITS.maxLogBytes);
     while (offset < limit) {
+      if (input.keepAlive && !(await input.keepAlive())) throw new Error("the run was taken over while its logs were stored");
       const page = await input.client.output(input.run.id, stream, offset, Math.min(1024 * 1024, limit - offset), input.signal);
       if (page.bytes.byteLength === 0) break;
       chunks.push(page.bytes);

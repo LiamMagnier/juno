@@ -46,7 +46,7 @@ export const execToolProvider: ToolProvider = {
     const checkRunAvailable = granted.includes(CHECK_RUN_TOOL_ID);
     const options = {
       vision: turn.vision,
-      skills: () => skillMountsFor(turn.surface, turn.sessionId),
+      skills: () => skillMountsFor(turn.surface, turn.userId, turn.sessionId),
     };
     const specs = [
       ...(granted.includes(RUN_CODE_TOOL_ID) ? [runCodeSpec({ ...options, manifestLine, checkRunAvailable })] : []),

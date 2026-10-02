@@ -1738,7 +1738,7 @@ async function fetchPinnedWebPage(
 /**
  * The skill tools for a Work run: `use_skill` and `read_skill_file`, which let
  * the model discover a skill, read its referenced files and mount its bundle
- * (with `mountSkill("work", runId, …)`) so `run_code` can run its scripts.
+ * (with `mountSkill("work", userId, runId, …)`) so `run_code` can run its scripts.
  *
  * THE CALL SITE FOR THE SKILL LANE (L3, rf/skill-workflows). Its
  * `skillToolsFor` (src/lib/skills/run-tools.ts) replaces this body; until it

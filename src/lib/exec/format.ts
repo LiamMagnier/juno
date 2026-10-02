@@ -119,6 +119,8 @@ export interface OutcomeTextInput {
   files: ExecOutputFile[];
   skippedFiles: Array<{ name: string; bytes: number; reason: string }>;
   imagesAttached: number;
+  /** Images the run produced that were not handed back (too large, too many, or no vision). */
+  imagesNotShown?: number;
   hostError?: string | null;
   packages?: ReadonlyArray<{ name: string; version: string }> | null;
   finishedLate?: boolean;
@@ -192,6 +194,11 @@ export function outcomeText(input: OutcomeTextInput): string {
   }
   if (input.imagesAttached > 0) {
     sections.push(`[${input.imagesAttached} image${input.imagesAttached === 1 ? "" : "s"} from this run follow${input.imagesAttached === 1 ? "s" : ""}.]`);
+  }
+  if (input.imagesNotShown && input.imagesNotShown > 0) {
+    sections.push(
+      `[${input.imagesNotShown} image${input.imagesNotShown === 1 ? "" : "s"} this run produced ${input.imagesNotShown === 1 ? "was" : "were"} not shown to you (too large, too many, or not viewable here). Do not describe what ${input.imagesNotShown === 1 ? "it looks" : "they look"} like.]`,
+    );
   }
   if (input.status === "running" || input.status === "queued") {
     sections.push(

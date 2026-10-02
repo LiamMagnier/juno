@@ -88,6 +88,28 @@ export interface StartRunBody {
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Failures that happen before a request is sent: nothing reached the host.
+ * Everything else (a timeout, a reset, a socket closed mid-response, an error
+ * this list does not know) MAY have reached it, and for a start that means a
+ * run may exist. Saying "nothing was run" about a run that ran is the worse
+ * mistake, so the list names what is certain and the rest is ambiguous.
+ */
+const NOT_SENT = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_INVALID_URL",
+]);
 const TRANSFER_TIMEOUT_MS = 120_000;
 
 function combine(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
@@ -111,6 +133,9 @@ export class JunoExecClient {
         body: init.body,
         signal: combine(init.signal, init.timeoutMs ?? REQUEST_TIMEOUT_MS),
         cache: "no-store",
+        // The host never redirects; a redirect is a misconfiguration (or worse),
+        // and following it would send the bearer token on.
+        redirect: "error",
       });
     } catch (error) {
       if (init.signal?.aborted) throw error;
@@ -118,7 +143,7 @@ export class JunoExecClient {
       // A timeout or a reset after the request was sent may have reached the
       // host; a refused connection did not. The runtime keeps the two apart.
       const cause = (error as { cause?: { code?: string } })?.cause?.code ?? "";
-      const ambiguous = name === "TimeoutError" || cause === "UND_ERR_SOCKET" || cause === "ECONNRESET";
+      const ambiguous = !NOT_SENT.has(cause);
       throw new ExecUnavailableError(`The execution host could not be reached (${cause || name || "network"}).`, ambiguous);
     }
     if (response.status >= 500) {
@@ -164,12 +189,24 @@ export class JunoExecClient {
     });
   }
 
-  startRun(body: StartRunBody, idempotencyKey: string, signal?: AbortSignal): Promise<HostRunSnapshot> {
-    return this.json("POST", "/v1/runs", {
+  async startRun(body: StartRunBody, idempotencyKey: string, signal?: AbortSignal): Promise<HostRunSnapshot> {
+    const response = await this.request("POST", "/v1/runs", {
       body: JSON.stringify(body),
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       signal,
     });
+    // The host answered 2xx: it has the run. Losing the body now (a reset, a
+    // timeout mid-read) must not read as "nothing was run".
+    let snapshot: HostRunSnapshot;
+    try {
+      snapshot = (await response.json()) as HostRunSnapshot;
+    } catch {
+      throw new ExecUnavailableError("The execution host accepted the run but its answer was lost.", true);
+    }
+    if (!snapshot || typeof snapshot.id !== "string" || !/^r_[0-9a-f]{24}$/.test(snapshot.id)) {
+      throw new ExecUnavailableError("The execution host accepted the run but its answer was unreadable.", true);
+    }
+    return snapshot;
   }
 
   getRun(id: string, waitSeconds = 0, signal?: AbortSignal): Promise<HostRunSnapshot> {
