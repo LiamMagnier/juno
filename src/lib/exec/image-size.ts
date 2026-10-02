@@ -47,12 +47,3 @@ export function sendableDimensions(dimensions: { width: number; height: number }
   const { width, height } = dimensions;
   return width > 0 && height > 0 && width <= EXEC_LIMITS.maxImageSide && height <= EXEC_LIMITS.maxImageSide;
 }
-
-/** A display name for a produced path: the base name, prefixed by its folder when two collide. */
-function displayNames(entries: readonly HostFileEntry[]): string[] {
-  const bases = entries.map((entry) => entry.path.split("/").pop() || entry.path);
-  return entries.map((entry, index) => {
-    const base = bases[index];
-    return bases.filter((candidate) => candidate === base).length > 1 ? entry.path.replace(/\//g, "_") : base;
-  });
-}
