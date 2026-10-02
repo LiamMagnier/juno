@@ -91,7 +91,11 @@ test("a thinking block keeps its signature and stays ahead of the tool_use it pr
     { type: "tool_use", id: "toolu_1", name: "github__list_issues", input: { repo: "juno" } },
   ]);
   assert.equal(round.blocks[0].type, "thinking", "thinking must precede the tool_use it reasoned toward");
-  assert.deepEqual(round.toolUses, [{ id: "toolu_1", name: "github__list_issues", json: '{"repo":"juno"}' }]);
+  // `callId` is the provider id unless the turn's tool loop issued another
+  // (src/lib/tools/call-ids.ts); `index` is the call's position in the round.
+  assert.deepEqual(round.toolUses, [
+    { id: "toolu_1", callId: "toolu_1", name: "github__list_issues", index: 0, json: '{"repo":"juno"}' },
+  ]);
   assert.equal(round.stopReason, "tool_use");
 });
 
@@ -140,7 +144,7 @@ test("every tool_use yields a call event, labelled through the toolset", async (
   // No `args`: the call event is yielded from content_block_start, where the
   // arguments have not begun streaming. Anthropic attaches them to the result.
   assert.deepEqual(yielded, [
-    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call", callId: "a" },
+    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call", callId: "a", index: 0 },
   ]);
 });
 

@@ -10,6 +10,8 @@ import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { sendableToolImages, toolImageIntro, withheldImagesNote } from "@/lib/tool-result-images";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
+import type { ToolLoop } from "@/lib/tools/loop";
+import type { ToolCallInput } from "@/lib/tools/types";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { ClientSource } from "@/types/chat";
@@ -67,6 +69,15 @@ export function toGeminiFunctionDeclarations(toolset: McpToolset) {
  * Supports turns, multimodality (images, PDFs), thinking / reasoning, tool loops,
  * Google search grounding, and usage tokens.
  */
+/**
+ * The seam the scripted-transport tests replace: one streamGenerateContent
+ * request returning the SSE response. Production leaves it absent and uses
+ * `requestGeminiStream` with the configured keys.
+ */
+export interface GeminiTransport {
+  request(input: { url: string; body: unknown; signal?: AbortSignal }): Promise<Response>;
+}
+
 export async function* streamGemini(
   model: ModelInfo,
   system: string,
@@ -75,13 +86,15 @@ export async function* streamGemini(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
-  toolset?: McpToolset,
+  tools?: ToolLoop,
   dynamicContext?: string,
   requestContext?: Partial<GeminiRequestContext>,
+  transport?: GeminiTransport,
 ): AsyncGenerator<LlmEvent> {
-  const apiKeys = getGoogleApiKeys();
-  if (apiKeys.length === 0) throw new Error("Google API key is not configured.");
-  const key = apiKeys[0];
+  const toolset = tools?.toolset;
+  const apiKeys = transport ? [] : getGoogleApiKeys();
+  if (!transport && apiKeys.length === 0) throw new Error("Google API key is not configured.");
+  const key = apiKeys[0] ?? "";
 
   const contents = await toGeminiContents(
     history,
@@ -112,7 +125,9 @@ export async function* streamGemini(
   };
 
   const hasTools = !!toolset && toolset.tools.length > 0;
-  const functionDeclarations = hasTools ? toGeminiFunctionDeclarations(toolset) : [];
+  const functionDeclarations = hasTools && toolset ? toGeminiFunctionDeclarations(toolset) : [];
+  /** Model steps across the whole turn, continuations included: the call-id round. */
+  let step = 0;
   // `let`, because a continuation pass rebuilds it at the thinking floor.
   let generationConfig = geminiGenerationConfig(model, maxTokens, reasoningEffort);
 
@@ -210,17 +225,20 @@ export async function* streamGemini(
           tools: geminiToolsPayload({ model, functionDeclarations, webSearch, isFinalRound }),
         });
 
-        const res = await requestGeminiStream({
-          url,
-          init: {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-            body: JSON.stringify(requestBody),
-          },
-          signal,
-          context: geminiContext,
-          apiKeys,
-        });
+        const res = transport
+          ? await transport.request({ url, body: requestBody, signal })
+          : await requestGeminiStream({
+              url,
+              init: {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+                body: JSON.stringify(requestBody),
+              },
+              signal,
+              context: geminiContext,
+              apiKeys,
+            });
+        const thisStep = step++;
 
         // requestGeminiStream rejects successful responses without a body.
         const reader = res.body!.getReader();
@@ -292,51 +310,54 @@ export async function* streamGemini(
           cumTotal += state.usage.total;
         }
 
-        if (hasTools && !isFinalRound && state.functionCalls.length > 0) {
-          const responseParts: Array<{ name: string; response: Record<string, unknown> }> = [];
+        if (tools && hasTools && !isFinalRound && state.functionCalls.length > 0) {
+          // Gemini's `functionCall.id` is optional. When it gave one, that is
+          // the provider id and it is echoed on `functionResponse.id`; when it
+          // did not, the Alevr id is `jc_<step>_<index>` — stable across a
+          // replay, where this used to be a random id per attempt.
+          const inputs: ToolCallInput[] = state.functionCalls.map((call, index) => ({
+            name: call.name,
+            callId: tools.issueCallId(call.id, thisStep, index),
+            ...(call.id ? { providerCallId: call.id } : {}),
+            round: thisStep,
+            index,
+            argsText: JSON.stringify(call.args),
+          }));
+          for (const call of inputs) {
+            yield {
+              type: "tool",
+              server: toolset!.labelFor(call.name),
+              name: call.name,
+              phase: "call",
+              callId: call.callId,
+              args: call.argsText,
+              ...(call.providerCallId && call.providerCallId !== call.callId ? { providerCallId: call.providerCallId } : {}),
+              round: thisStep,
+              index: call.index,
+            };
+          }
+          const batch = yield* tools.run(inputs, signal, { nextIsFinal: round + 1 === maxRounds - 1 });
           // Collected across every call in the round: they all land in one
           // follow-up turn, because Gemini wants the functionResponse turn to
           // contain nothing else.
           const toolImages: GeminiPart[] = [];
           let toolImageIntroLine = "";
-
-          for (const call of state.functionCalls) {
-            const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            const label = toolset.labelFor(call.name);
-            yield {
-              type: "tool",
-              server: label,
-              name: call.name,
-              phase: "call",
-              callId,
-              args: JSON.stringify(call.args),
-            };
-
-            const exec = await toolset.execute(call.name, call.args, signal, callId);
-            const images = sendableToolImages(exec.images, model.vision);
-            responseParts.push({
-              name: call.name,
-              // exec.text, never exec.body: the body is the panel projection without
-              // the untrusted-content envelope the system prompt tells the model
-              // to read; every other adapter sends the model exec.text too.
-              response: { result: withheldImagesNote(exec.text, exec.images, images.length) },
-            });
+          const responseParts = batch.map((result) => {
+            const images = sendableToolImages(result.images, model.vision);
             for (const image of images) {
               toolImages.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
-              if (!toolImageIntroLine) toolImageIntroLine = toolImageIntro(call.name, images);
+              if (!toolImageIntroLine) toolImageIntroLine = toolImageIntro(result.name, images);
             }
-
-            yield {
-              type: "tool",
-              server: label,
-              name: call.name,
-              phase: "result",
-              callId,
-              result: exec.body,
-              ok: exec.ok,
-              durationMs: exec.durationMs,
+            // The model-facing text (envelope included), never the panel body.
+            // A failure goes under `error`, which Gemini reads as the call's
+            // error detail; a success under `result`, as before.
+            const text = withheldImagesNote(result.text, result.images, images.length);
+            return {
+              name: result.name,
+              response: result.isError ? { error: text } : { result: text },
+              ...(result.providerCallId ? { id: result.providerCallId } : {}),
             };
-          }
+          });
 
           // Replays the assistant parts UNCHANGED, thought signatures included.
           appendGeminiToolRound(

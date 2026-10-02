@@ -19,8 +19,8 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 export type GeminiPart =
   | { text: string; thought?: boolean; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string } }
-  | { functionCall: { name: string; args: Record<string, unknown> }; thoughtSignature?: string }
-  | { functionResponse: { name: string; response: Record<string, unknown> } };
+  | { functionCall: { name: string; args: Record<string, unknown>; id?: string }; thoughtSignature?: string }
+  | { functionResponse: { name: string; response: Record<string, unknown>; id?: string } };
 
 export type GeminiContent = {
   role: "user" | "model";

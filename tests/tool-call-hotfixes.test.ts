@@ -48,11 +48,17 @@ test("the page reader and code tool still ask under every policy but block", () 
 
 test("a runtime call the broker asks about can show its card", () => {
   // The route's callback sends the approval frame and pauses the watchdog.
-  assert.match(source("src/lib/agent/runtime.ts"), /onApprovalRequest: context\.onApprovalRequest,\n\s+provenance:/);
+  // The dispatcher's per-call callback is composed with it, never instead of it.
+  assert.match(
+    source("src/lib/agent/runtime.ts"),
+    /onApprovalRequest: composeApprovalCallbacks\(context\.onApprovalRequest, call\.onApprovalRequest\),\n\s+provenance:/,
+  );
 });
 
 test("Gemini hands the model the enveloped tool text, like every other adapter", () => {
   const gemini = source("src/lib/gemini.ts");
-  assert.match(gemini, /response: \{ result: withheldImagesNote\(exec\.text,/);
-  assert.doesNotMatch(gemini, /withheldImagesNote\(exec\.body/);
+  // The dispatcher's model-facing `text` (envelope included), never the panel body.
+  assert.match(gemini, /const text = withheldImagesNote\(result\.text,/);
+  assert.match(gemini, /response: result\.isError \? \{ error: text \} : \{ result: text \}/);
+  assert.doesNotMatch(gemini, /withheldImagesNote\(\w+\.body/);
 });

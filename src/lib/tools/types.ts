@@ -25,7 +25,7 @@
  */
 
 import type { ClientActionApproval } from "@/lib/action-approval";
-import type { ToolResultImage } from "@/lib/mcp";
+import type { McpToolset, ToolResultImage } from "@/lib/mcp";
 
 // ── Identity ────────────────────────────────────────────────────────────────
 
@@ -307,6 +307,34 @@ export interface ResolvedTool {
   input?: PortableSchema;
   /** Connector and native tools: their own schema, checked shallowly (required, primitive types). */
   inputSchema?: Record<string, unknown>;
+}
+
+/**
+ * What the dispatcher hands an executor with each call (`McpToolset.execute`'s
+ * fifth argument). Every field is optional, so an executor written before the
+ * dispatcher keeps working; one that honours them gives the person a truthful
+ * live row.
+ */
+export interface ToolExecuteOptions {
+  /** Per-call approval callback. Composed with, never instead of, the toolset's own. */
+  onApprovalRequest?: (approval: ClientActionApproval) => void;
+  /**
+   * Called once, right after authorisation succeeded and before the sink runs.
+   * The dispatcher yields `running` from it and only then starts the tool's
+   * timer, so an approval wait is never cut short by a tool budget.
+   */
+  onAuthorized?: () => void;
+  /** The tool's bound once running; informational for the executor. */
+  timeoutMs?: number;
+  /** Forward a running call's output (rate-limited by the dispatcher). */
+  reportProgress?: (progress: ToolProgress) => void;
+  round?: number;
+}
+
+/** The toolset a turn runs with: the provider-facing tools plus what the dispatcher needs to know. */
+export interface ChatToolset extends McpToolset {
+  /** Undefined for a name the turn does not carry: the call is refused, never guessed. */
+  resolve(name: string): ResolvedTool | undefined;
 }
 
 // ── Providers (the execution and skill lanes plug in here) ──────────────────

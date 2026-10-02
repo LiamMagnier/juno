@@ -428,9 +428,9 @@ test("the task tool keeps server-only modules out of its static graph", () => {
 
 test("streamChat offers native tools beside the toolset, never through the registry", () => {
   const llm = read("../src/lib/llm.ts");
-  assert.match(llm, /toolset = withNativeTools\(toolset, opts\.nativeTools \?\? \[\]\);/);
+  assert.match(llm, /toolset = withNativeChatTools\(toolset, opts\.nativeTools \?\? \[\]\);/);
   // After the toolset is opened, so a failed open still leaves them usable.
-  assert.ok(llm.indexOf("withNativeTools(toolset") > llm.indexOf("openUnifiedAgentToolset(active"));
+  assert.ok(llm.indexOf("withNativeChatTools(toolset") > llm.indexOf("openUnifiedAgentToolset(active"));
   const runtime = read("../src/lib/agent/runtime.ts");
   assert.doesNotMatch(runtime, /start_task/);
 });
