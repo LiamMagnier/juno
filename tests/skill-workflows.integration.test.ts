@@ -134,6 +134,21 @@ if (!URL) {
   let skillId = "";
   let digest = "";
 
+  /**
+   * The newest `skill_applied` row matching `detail`. The tools write it
+   * fire-and-forget (it never delays a result), so it is awaited by what it
+   * says rather than assumed to be the newest row already.
+   */
+  async function auditRow(detail: Record<string, string>) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const rows = await db.workAuditEvent.findMany({ where: { userId: owner, kind: "skill_applied" }, orderBy: { createdAt: "desc" }, take: 20 });
+      const row = rows.find((candidate) => Object.entries(detail).every(([key, value]) => (candidate.detail as Record<string, unknown>)[key] === value));
+      if (row) return row;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.fail(`no skill_applied row with ${JSON.stringify(detail)}`);
+  }
+
   test.before(async () => {
     if (!canMockModules) return;
     mock.module("next/navigation", { namedExports: { ...serverNavigation } });
@@ -248,8 +263,8 @@ if (!URL) {
     } finally {
       await db.workSkill.update({ where: { id: skillId }, data: { trust: "untrusted", autoSelect: false } });
     }
-    const audit = await db.workAuditEvent.findFirstOrThrow({ where: { userId: owner, kind: "skill_applied" }, orderBy: { createdAt: "desc" } });
-    assert.equal((audit.detail as Record<string, unknown>).outcome, "scripts_unreviewed");
+    const audit = await auditRow({ action: "use_skill", outcome: "scripts_unreviewed" });
+    assert.equal((audit.detail as Record<string, unknown>).skillSlug, "quarterly-summary");
   });
 
   routeTest("an edit made while the scripts wait for review keeps them waiting, whatever the trust says", async () => {
@@ -381,7 +396,7 @@ if (!URL) {
       assert.match(script.text, /def main\(source: str, target: str\)/);
       assert.doesNotMatch(script.text, /<<untrusted/, "a vouched-for skill's files are not enveloped");
 
-      const audit = await db.workAuditEvent.findFirstOrThrow({ where: { userId: owner, kind: "skill_applied" }, orderBy: { createdAt: "desc" } });
+      const audit = await auditRow({ action: "use_skill", generationId: sessionId });
       const detail = audit.detail as Record<string, unknown>;
       assert.equal(detail.action, "use_skill");
       assert.equal(detail.contentHash, digest);

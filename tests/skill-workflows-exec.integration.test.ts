@@ -290,7 +290,16 @@ if (skipReason) {
       assert.equal(useSkill.id, "use_skill");
       const loaded = await useSkill.execute({ name: "quarterly-summary" }, toolContext(sessionId, "call_use"));
       assert.equal(loaded.status, "succeeded", loaded.text);
-      const audit = await db.workAuditEvent.findFirstOrThrow({ where: { userId: owner, kind: "skill_applied" }, orderBy: { createdAt: "desc" } });
+      // The audit write is fire-and-forget (it never delays the tool result), so
+      // the row is awaited here by what it says, not by being the newest.
+      let audit = null;
+      for (let attempt = 0; attempt < 50 && !audit; attempt++) {
+        audit = await db.workAuditEvent.findFirst({
+          where: { userId: owner, kind: "skill_applied", detail: { path: ["generationId"], equals: sessionId } },
+        });
+        if (!audit) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.ok(audit, "the skill applied is audited");
       const detail = audit.detail as Record<string, unknown>;
       assert.equal(detail.action, "use_skill");
       assert.equal(detail.contentHash, digest);
