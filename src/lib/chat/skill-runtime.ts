@@ -24,6 +24,8 @@ import { prisma } from "@/lib/prisma";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { applyChatSkill, type ChatSkillCapabilities, type ChatSkillOutcome } from "@/lib/chat/skills";
 import { skillIsAvailable } from "@/lib/skills/library-contract";
+import { parseBundleManifest } from "@/lib/skills/bundle-manifest";
+import { consentReasonsOf } from "@/lib/skills/workflow";
 import { scanSkillVersion } from "@/lib/work/skill-security";
 import { parseRequestedTools, parseSkillContract, type SkillCandidate } from "@/lib/work/skills";
 
@@ -97,15 +99,23 @@ export async function loadChatSkill(input: {
     ? await prisma.workSkillVersion.findUnique({
         where: { skillId_version: { skillId: row.id, version: row.currentVersion } },
         select: {
+          id: true,
           version: true,
           instructions: true,
           contract: true,
           requestedTools: true,
           securityStatus: true,
+          securityScan: true,
           requiresConsent: true,
+          bundleDigest: true,
+          bundleManifest: true,
         },
       })
     : null;
+  // A manifest this build cannot read is no bundle at all: nothing is mounted
+  // and nothing is listed, rather than a partial folder.
+  const manifest = version?.bundleDigest ? parseBundleManifest(version.bundleManifest) : null;
+  const bundle = manifest && manifest.digest === version?.bundleDigest ? { digest: manifest.digest, manifest } : null;
 
   const contract = version ? parseSkillContract(version.contract) : null;
   const requestedTools = version ? parseRequestedTools(version.requestedTools) : [];
@@ -139,6 +149,9 @@ export async function loadChatSkill(input: {
             requestedTools,
             securityStatus,
             requiresConsent: version.requiresConsent,
+            consentFor: consentReasonsOf(version.securityScan),
+            versionId: version.id,
+            bundle,
           }
         : null,
     capabilities: input.capabilities,

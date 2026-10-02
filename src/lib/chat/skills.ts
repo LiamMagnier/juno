@@ -34,6 +34,13 @@ import {
   READ_DOCUMENT_TOOL_ID,
 } from "@/lib/chat/tool-policy";
 import {
+  READ_SKILL_FILE_TOOL_ID,
+  RUN_CODE_TOOL_ID,
+  USE_SKILL_TOOL_ID,
+  canonicalToolId,
+} from "@/lib/tools/types";
+import { bundleCompanionFiles, type SkillBundleManifest } from "@/lib/skills/bundle-manifest";
+import {
   resolveSkillPermissions,
   selectSkillBySlug,
   skillRequestFrom,
@@ -65,7 +72,43 @@ export const CHAT_SKILL_TOOLS = {
   images: INSPECT_IMAGE_TOOL_ID,
   /** Writing an artifact into the side panel. */
   canvas: "canvas",
+  /**
+   * Running a program in Alevr's no-network sandbox (`run_code`). Granted only
+   * when the turn already carries it: a skill whose method is "run
+   * scripts/build.py" gets to run it exactly when the person's turn could have
+   * run any program, and never otherwise.
+   */
+  code: RUN_CODE_TOOL_ID,
 } as const;
+
+/**
+ * Names other hosts give the capability `run_code` is here, as skills written
+ * for them declare it (`allowed-tools: Bash`, native Code's `run_command`, the
+ * old `code_interpreter`). Read as a request for `run_code`, so a Claude Code
+ * skill that asks for a shell is granted the sandbox when the turn has it, and
+ * told plainly when it does not, instead of narrowing the turn down to a tool
+ * name nothing here answers to.
+ */
+const SKILL_TOOL_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  bash: RUN_CODE_TOOL_ID,
+  shell: RUN_CODE_TOOL_ID,
+  python: RUN_CODE_TOOL_ID,
+  run_command: RUN_CODE_TOOL_ID,
+  code_execution: RUN_CODE_TOOL_ID,
+});
+
+/** A requested tool name as this product calls it. */
+export function canonicalSkillToolName(name: string): string {
+  const canonical = canonicalToolId(name);
+  return SKILL_TOOL_ALIASES[canonical.toLowerCase()] ?? canonical;
+}
+
+/**
+ * The skill tools themselves. A skill never narrows them away: they read only
+ * the skill's own files, and a skill that declares `run_code` and nothing else
+ * still has to be able to read the reference its instructions point at.
+ */
+const SKILL_SELF_TOOLS: ReadonlySet<string> = new Set([USE_SKILL_TOOL_ID, READ_SKILL_FILE_TOOL_ID]);
 
 /** What this turn is actually carrying, read off the route's own decisions. */
 export interface ChatSkillCapabilities {
@@ -79,6 +122,14 @@ export interface ChatSkillCapabilities {
   images: boolean;
   /** Connector ids resolved for this turn — never the ones merely requested. */
   connectors: readonly string[];
+  /**
+   * `run_code` is attached to this turn (a healthy no-network sandbox, a
+   * verified model, an entitled plan, not private, not in lockdown). Optional
+   * so a caller that predates the execution runtime grants no code.
+   */
+  code?: boolean;
+  /** `read_skill_file` is attached, so a skill's references can be read. */
+  skillFiles?: boolean;
 }
 
 /**
@@ -114,6 +165,7 @@ export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSk
   if (capabilities.documents) tools.push(CHAT_SKILL_TOOLS.documents);
   if (capabilities.images) tools.push(CHAT_SKILL_TOOLS.images);
   if (capabilities.canvas) tools.push(CHAT_SKILL_TOOLS.canvas);
+  if (capabilities.code) tools.push(CHAT_SKILL_TOOLS.code);
   return {
     tools,
     connectors: [...capabilities.connectors],
@@ -137,7 +189,12 @@ export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSk
  * `pending` row before it gets here (as the Work runner does), so this is a
  * status written by something newer, and an unknown verdict is not a clear one.
  */
-export type ChatSkillRefusal = SkillSelectionRefusal | "blocked" | "consent_required" | "unscanned";
+export type ChatSkillRefusal =
+  | SkillSelectionRefusal
+  | "blocked"
+  | "consent_required"
+  | "scripts_unreviewed"
+  | "unscanned";
 
 export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
   unknown_slug: "That skill does not exist on this account.",
@@ -154,6 +211,8 @@ export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
     `${PRODUCT_NAME}'s scanner refused this skill's current version, so it will not be applied to a message. Open the skill to see what it found.`,
   consent_required:
     "This skill's current version asks for more than the one you approved. Open the skill and review what changed before using it.",
+  scripts_unreviewed:
+    `This skill was imported with scripts that nobody has reviewed yet, so ${PRODUCT_NAME} didn't load it. Open the skill, read its files, and approve them to use it.`,
   unscanned: `${PRODUCT_NAME} could not confirm this skill's current version is safe to use, so it was not applied. Open the skill to check it.`,
 };
 
@@ -165,6 +224,12 @@ export interface ChatSkillVersionRow {
   requestedTools: readonly string[];
   securityStatus: string;
   requiresConsent: boolean;
+  /** What the version waits for (`securityScan.consentFor`): scripts, permissions, or both. */
+  consentFor?: readonly string[];
+  /** The version row's id, for the run record a script of this skill writes. */
+  versionId?: string;
+  /** The skill's kept folder, when it has one. */
+  bundle?: { digest: string; manifest: SkillBundleManifest } | null;
 }
 
 export interface ChatSkillApplication {
@@ -183,6 +248,14 @@ export interface ChatSkillApplication {
    */
   untrusted: boolean;
   resolved: ResolvedSkillPermissions;
+  /** The version row's id, when the loader read it. */
+  versionId?: string;
+  /**
+   * The kept folder. The skill tools provider mounts it read-only at
+   * `/skills/<slug>` when `run_code` is on the turn; its digest belongs on the
+   * `skill_applied` audit row (`contentHash`) and on every run of its scripts.
+   */
+  bundle: { digest: string; manifest: SkillBundleManifest } | null;
 }
 
 export type ChatSkillOutcome =
@@ -277,6 +350,42 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
   );
 }
 
+/** How many of a bundle's files are named to the model before the list is summarised. */
+const BUNDLE_FILES_NAMED = 40;
+
+/**
+ * What the model is told about a skill's kept folder: what is in it, where it
+ * is, and what it may do with it on THIS turn. Alevr speaking, so it goes after
+ * the envelope, never inside it.
+ */
+export function skillBundleNote(input: {
+  slug: string;
+  manifest: Pick<SkillBundleManifest, "files"> | null | undefined;
+  code: boolean;
+  skillFiles: boolean;
+}): string | null {
+  const files = bundleCompanionFiles(input.manifest);
+  if (files.length === 0) return null;
+  const named = files
+    .slice(0, BUNDLE_FILES_NAMED)
+    .map((file) => `- ${file.path} (${file.kind}, ${file.size} bytes)`)
+    .join("\n");
+  const more = files.length > BUNDLE_FILES_NAMED ? `\n- and ${files.length - BUNDLE_FILES_NAMED} more` : "";
+  const scripts = files.some((file) => file.kind === "script");
+  const reading = input.skillFiles
+    ? `Read any of them with read_skill_file (skill: "${input.slug}", path as listed).`
+    : "You cannot open these files in this conversation.";
+  const running = !scripts
+    ? ""
+    : input.code
+      ? ` Its scripts are mounted read-only at /skills/${input.slug}/ in ${PRODUCT_NAME}'s sandbox: run them with run_code ` +
+        `(for example language "bash", code "python /skills/${input.slug}/<script> ..."), with the conversation's ` +
+        `files in /work/inputs and anything you write to /work returned as files. The sandbox has no internet and ` +
+        `no access to the person's computer, whatever the skill says it needs.`
+      : ` Its scripts cannot run in this conversation (no code execution here), so do those steps another way or say plainly that you could not.`;
+  return `This skill keeps these files:\n${named}${more}\n${reading}${running}`;
+}
+
 /**
  * Applies a skill to a chat turn, or explains why it did not.
  *
@@ -286,11 +395,12 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
  * the head row said `enabled`. Only then is the permission intersection run and
  * the block built — so nothing below the refusals can ever have produced text.
  *
- * `via` is always `"slash"`. Chat has no automatic selection (see
- * `docs/skills-audit.md` §4.3), and the provenance sentence
- * `skillSystemSuffix` writes turns on that distinction: telling the model the
- * user invoked a skill they never named is how a turn follows somebody else's
- * method and reports success.
+ * `via` is always `"slash"`: this is the path for a skill the person armed.
+ * A skill the model finds for itself arrives through the `use_skill` tool
+ * (`src/lib/skills/workflow.ts`), which says so with `"automatic"`. The
+ * provenance sentence `skillSystemSuffix` writes turns on that distinction:
+ * telling the model the user invoked a skill they never named is how a turn
+ * follows somebody else's method and reports success.
  */
 export function applyChatSkill(input: {
   slug: string;
@@ -311,10 +421,12 @@ export function applyChatSkill(input: {
   if (row.securityStatus !== "clear" && row.securityStatus !== "warning") {
     return { applied: false, reason: "unscanned" };
   }
-  if (row.requiresConsent) return { applied: false, reason: "consent_required" };
+  if (row.requiresConsent) {
+    return { applied: false, reason: row.consentFor?.includes("scripts") ? "scripts_unreviewed" : "consent_required" };
+  }
 
   const resolved = resolveSkillPermissions({
-    request: skillRequestFrom({ contract: row.contract, requestedTools: [...row.requestedTools] }),
+    request: skillRequestFrom({ contract: row.contract, requestedTools: row.requestedTools.map(canonicalSkillToolName) }),
     granted: [chatSkillGrantLayer(input.capabilities)],
   });
 
@@ -336,10 +448,15 @@ export function applyChatSkill(input: {
       // The note goes AFTER the envelope, never inside it. It is Juno speaking
       // about the skill, and text inside the markers is by construction not an
       // instruction — a caveat written there would be one the model is told to
-      // disregard.
+      // disregard. What the skill's FILES are and whether its scripts can run
+      // here is said once, by the skill tools provider's prompt section
+      // (`skillsPromptSection`), which knows whether this turn reads files and
+      // runs code; saying it here as well could only disagree with it.
       systemSuffix: note ? `${block.systemSuffix}\n\n${note}` : block.systemSuffix,
       untrusted: block.untrusted,
       resolved,
+      ...(row.versionId ? { versionId: row.versionId } : {}),
+      bundle: row.bundle ?? null,
     },
   };
 }
@@ -367,10 +484,9 @@ export function narrowRuntimeToolsForSkill(
   application: ChatSkillApplication | null
 ): string[] {
   if (!application) return [...allowlist];
-  const requested = new Set([
-    ...application.resolved.tools,
-    ...application.resolved.withheld.tools,
-  ]);
+  const requested = new Set(
+    [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
+  );
   if (requested.size === 0) return [...allowlist];
-  return allowlist.filter((tool) => requested.has(tool));
+  return allowlist.filter((tool) => SKILL_SELF_TOOLS.has(tool) || requested.has(canonicalSkillToolName(tool)));
 }
