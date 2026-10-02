@@ -511,8 +511,8 @@ if (!URL) {
     files["skills/linked/secrets"] = { text: "../../../.ssh/id_rsa", mode: "120000" };
     const realFetch = globalThis.fetch;
     const contentReads: string[] = [];
-    globalThis.fetch = (async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    globalThis.fetch = (async (input: string | globalThis.URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof globalThis.URL ? input.href : input.url;
       const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
       if (!url.startsWith("https://api.github.com/")) throw new Error(`unexpected fetch ${url}`);
       if (url.endsWith("/repos/acme/skills")) return json({ default_branch: "main", name: "skills", owner: { login: "acme" } });
