@@ -368,6 +368,7 @@ const HOUSE_ICON_NAMES: Record<string, string> = {
   "juno-code": "code",
   "juno-library": "library",
   "juno-agents": "crew",
+  "juno-orbit": "orbit",
   "juno-design": "design",
   "send": "send",
   "search": "search",
@@ -487,6 +488,11 @@ export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "parts
 export const JunoLibrary = glyph(JunoLibraryGlyph, "juno-library", { motion: "parts" });
 /** Agents: a face whose eyes glance up and over on hover (docs/design/AGENTS.md). */
 export const JunoAgents = glyph(JunoAgentsGlyph, "juno-agents", { motion: "parts" });
+/** Orbit, the destination where your agents live (Alevr Orbit): two open arcs
+ *  of one ellipse, drawn by the house registry (`orbit`). Static: it never
+ *  moves under the pointer and has no selected form. An individual agent keeps
+ *  `JunoAgents`. (The 256-grid base is only a fallback; the house name wins.) */
+export const JunoOrbit = glyph(JunoAgentsGlyph, "juno-orbit");
 
 // ---------------------------------------------------------------------------
 // Direction & navigation

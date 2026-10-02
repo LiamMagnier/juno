@@ -54,6 +54,7 @@ import {
   JunoDesign,
   JunoLibrary,
   JunoAgents,
+  JunoOrbit,
   Minus,
   MoreHorizontal,
   NotebookPen,
@@ -183,6 +184,9 @@ export const AppIcons = {
    *  robot, a persona you talk to; an agent is someone you delegate to, and
    *  giving the two one glyph would say they are one thing. */
   agents: JunoAgents,
+  /** Orbit — the destination your agents live in (NAMES_AND_ICONS.md: "open
+   *  elliptical path"). `agents` stays the mark of an agent itself. */
+  orbit: JunoOrbit,
   tasks: CalendarClock,
   connections: Plug,
   pulls: GitPullRequest,
