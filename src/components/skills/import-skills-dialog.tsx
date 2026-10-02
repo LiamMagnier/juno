@@ -844,11 +844,31 @@ function CandidateDetails({ skill }: { skill: SkillImportCandidate }) {
             "No tools"
           )}
         </dd>
-        {skill.companionFiles.length > 0 ? (
+        {skill.bundle?.kind === "refused" ? (
+          <>
+            <dt className="text-muted-foreground">Other files</dt>
+            <dd className="text-foreground">{skill.bundle.message || "This skill's folder can't be imported."}</dd>
+          </>
+        ) : skill.bundle?.kind === "kept" ? (
           <>
             <dt className="text-muted-foreground">Other files</dt>
             <dd className="text-foreground">
-              <span className="tabular-nums">{skill.companionFiles.length}</span> beside it, listed and not installed
+              <span className="tabular-nums">{skill.bundle.files}</span> kept with it
+              {skill.bundle.scripts > 0 ? (
+                <>
+                  {", "}
+                  <span className="tabular-nums">{skill.bundle.scripts}</span>
+                  {skill.bundle.scripts === 1 ? " script" : " scripts"} you review before {PRODUCT_NAME} runs{" "}
+                  {skill.bundle.scripts === 1 ? "it" : "them"}, in its sandbox
+                </>
+              ) : null}
+            </dd>
+          </>
+        ) : skill.companionFiles.length > 0 ? (
+          <>
+            <dt className="text-muted-foreground">Other files</dt>
+            <dd className="text-foreground">
+              <span className="tabular-nums">{skill.companionFiles.length}</span> beside it
             </dd>
           </>
         ) : null}

@@ -29,6 +29,7 @@ interface World {
   attachmentVersions: Row[];
   deliverableVersions: Row[];
   importObjects: Row[];
+  toolRuns: Array<{ logKey: string | null }>;
   /** Keys whose delete throws, as an S3 outage would. */
   failing: Set<string>;
 }
@@ -39,7 +40,7 @@ let events: string[];
 let queries: Record<string, unknown>;
 
 function reset(partial: Partial<World> = {}) {
-  world = { attachments: [], attachmentVersions: [], deliverableVersions: [], importObjects: [], failing: new Set(), ...partial };
+  world = { attachments: [], attachmentVersions: [], deliverableVersions: [], importObjects: [], toolRuns: [], failing: new Set(), ...partial };
   events = [];
   queries = {};
 }
@@ -62,6 +63,7 @@ if (!canMockModules) {
         attachmentVersion: { findMany: findMany("attachmentVersions") },
         workArtifactVersion: { findMany: findMany("deliverableVersions") },
         importObject: { findMany: findMany("importObjects") },
+        toolRun: { findMany: findMany("toolRuns") },
         user: {
           delete: async (args: unknown) => {
             queries.userDelete = args;
@@ -177,6 +179,14 @@ if (!canMockModules) {
         "uploads/user-1/imports/run-1/staged.png",
       ].sort()
     );
+  });
+
+  test("a hosted code run's stored logs are purged with the account", async () => {
+    reset({ toolRuns: [{ logKey: "tool-runs/user-1/run-1/" }, { logKey: null }] });
+    const { deleteAccountPermanently } = await load();
+    await deleteAccountPermanently({ id: "user-1", email: null, image: null });
+    assert.deepEqual(queries.toolRuns, { where: { userId: "user-1", logKey: { not: null } }, select: { logKey: true } });
+    assert.deepEqual([...deleted()].sort(), ["tool-runs/user-1/run-1/stderr.log", "tool-runs/user-1/run-1/stdout.log"]);
   });
 
   test("a storage failure is logged and counted, and never keeps the account alive", async () => {

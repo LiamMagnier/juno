@@ -94,6 +94,8 @@ import {
 import { workModelOptions } from "@/lib/work/models";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
+import { workExecDeps } from "@/lib/exec/work";
+import { runtimeManifestSummary } from "@/lib/exec/runtime";
 import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
 import {
   admitConnectorResult,
@@ -135,6 +137,10 @@ import {
 import { scanSkillVersion } from "@/lib/work/skill-security";
 import { skillIsAvailable } from "@/lib/skills/library-contract";
 import { AVAILABLE_SKILL_WHERE } from "@/lib/skills/sources";
+import { skillToolsFor } from "@/lib/skills/run-tools";
+import { consentReasonsOf } from "@/lib/skills/workflow";
+import { skillPermittedRunTools } from "@/lib/work/skills";
+import { RUN_CODE_TOOL_ID } from "@/lib/tools/types";
 import { getMemoryProfile } from "@/lib/memory";
 import { workMemoryContext, workMemoryEnabled } from "@/lib/work/memory-context";
 import type { Prisma } from "@prisma/client";
@@ -1750,6 +1756,12 @@ function buildTools(input: {
    * hundred megabytes of Chromium on a worker that runs three runs at once.
    */
   disposers: Array<() => Promise<void>>;
+  /**
+   * run_code / check_run in Alevr's hosted sandbox (src/lib/exec/work.ts), or
+   * null when no execution host is configured. Never the worker's own checkout:
+   * the programs run on the separate execution host with no network.
+   */
+  exec: { deps: NonNullable<ReturnType<typeof workExecDeps>>; manifestLine: string | null } | null;
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -2127,6 +2139,9 @@ function buildTools(input: {
     ...remoteComputerTools,
     deliverables,
     cloudFiles,
+    // A sandbox on the execution host, not this worker: `withoutHostWorkspaceTools`
+    // keeps these (they are not workspace tools) and strips the host ones below.
+    ...(input.exec ? runtime.execTools({ ...input.exec.deps, manifestLine: input.exec.manifestLine }) : []),
     ...runtime.workspaceTools(),
   ]);
 }
@@ -2298,6 +2313,8 @@ interface AppliedSkill {
   injection: { severity: string; matchCount: number; signals: string[] } | null;
   /** The intersection of the version's request and the run's own toolset. */
   tools: string[];
+  /** The version's kept folder (its manifest), for what its method implies (`skillPermittedRunTools`). */
+  bundleManifest: unknown;
   /**
    * The `WorkRunIO` row that records which version actually ran, built by the
    * skills module rather than assembled here. `refId` is the version row's id
@@ -2560,6 +2577,7 @@ async function applySkill(input: {
       securityScan: true,
       permissionDigest: true,
       requiresConsent: true,
+      bundleManifest: true,
     },
   });
   const choice = selectSkillVersion({
@@ -2616,7 +2634,9 @@ async function applySkill(input: {
   }
   if (row.requiresConsent) {
     throw new SkillSecurityError(
-      "This version requests new permissions. Review the version and approve those permissions before running it."
+      consentReasonsOf(row.securityScan).includes("scripts")
+        ? "This skill was imported with scripts nobody has reviewed. Review its files and approve them before running it."
+        : "This version requests new permissions. Review the version and approve those permissions before running it."
     );
   }
 
@@ -2718,6 +2738,7 @@ async function applySkill(input: {
     untrusted: block.untrusted,
     injection,
     tools: resolved.tools,
+    bundleManifest: row.bundleManifest,
     domains: resolved.domains,
     reference: skillVersionRunReference({
       versionRowId: row.id,
@@ -3445,6 +3466,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
    * connectors, so it runs on the pause path as well as the terminal ones.
    */
   const disposers: Array<() => Promise<void>> = [];
+  const execDeps = workExecDeps({
+    runId: input.runId,
+    userId: input.userId,
+    sessionId: run.sessionId,
+    projectId: run.session.projectId ?? null,
+    vision: choice.info?.vision ?? false,
+  });
   const tools = buildTools({
     runtime,
     runId: input.runId,
@@ -3455,6 +3483,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     egressDomains,
     remoteComputer,
     disposers,
+    exec: execDeps ? { deps: execDeps, manifestLine: await runtimeManifestSummary().catch(() => null) } : null,
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
@@ -3473,7 +3502,32 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // run's own toolset by the resolved list rather than building a list from
   // the skill's request, so a name the skill asked for and did not get simply
   // produces no tool.
-  const effectiveTools = skill ? runtime.narrowToPermittedTools(tools, skill.tools) : tools;
+  //
+  // `skillPermittedRunTools` adds what the skill's own method implies and never
+  // more than the run has: run_code (with check_run) for a folder of scripts.
+  const narrowedTools = skill
+    ? runtime.narrowToPermittedTools(tools, skillPermittedRunTools(skill.tools, skill.bundleManifest))
+    : tools;
+  // use_skill / read_skill_file (src/lib/skills/run-tools.ts), after the
+  // narrowing: they read only the skills' own files. The applied skill's pinned
+  // version is armed and, when run_code survived, mounted at /skills/<slug> for
+  // every run_code call of this run; other skills offered to the run can be
+  // loaded by name.
+  // A library that cannot be read is a run without skill tools, not a failed run.
+  const skillRun = await skillToolsFor({
+    userId: input.userId,
+    runId: input.runId,
+    projectId: run.session.projectId ?? null,
+    appliedSlug: skill?.reference.detail.slug ?? null,
+    appliedVersion: skill?.reference.detail.version ?? null,
+    codeExecution: narrowedTools.some((tool) => tool.spec.name === RUN_CODE_TOOL_ID),
+  }).catch((error: unknown) => {
+    log("skill tools unavailable", { runId: input.runId, error: String(error) });
+    return null;
+  });
+  if (skillRun) disposers.push(() => skillRun.close());
+  const effectiveTools: WorkToolDefinition[] = [...narrowedTools, ...(skillRun?.tools ?? [])];
+  const systemSuffix = [skill?.systemSuffix, skillRun?.promptSection].filter((part): part is string => !!part).join("\n\n");
   egressDomains.current = skill ? skill.domains : null;
 
   if (skill) {
@@ -3680,7 +3734,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // admitting there isn't one. That run keeps the old behaviour — tokens
     // counted, cost zero — which is now the exception rather than every run.
     ...(choice.info ? { pricing: pricingFor(choice.info) } : {}),
-    ...(skill ? { systemSuffix: skill.systemSuffix } : {}),
+    ...(systemSuffix ? { systemSuffix } : {}),
     // The thinking tier the reader chose, on every request this run makes.
     //
     // It used to stop at the column. `WorkSessionOptions` had no field for it

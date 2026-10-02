@@ -285,7 +285,8 @@ export const EVAL_SUITE: EvalTask[] = [
       const result = await reg.executeToolCall(
         "browser_agent",
         { action: "navigate", url: "https://example.com" },
-        { userId: "eval-user", sessionId: "eval-session", mode: "chat", environment: "server_sandbox" }
+        { userId: "eval-user", sessionId: "eval-session", mode: "chat", environment: "server_sandbox" },
+        { callId: "eval-browser-1" }
       );
       return { success: typeof result.summary === "string" && result.success !== undefined };
     },
@@ -299,7 +300,8 @@ export const EVAL_SUITE: EvalTask[] = [
       const result = await reg.executeToolCall(
         "unregistered_tool",
         {},
-        { userId: "eval-user", sessionId: "eval-session", mode: "chat", environment: "server_sandbox" }
+        { userId: "eval-user", sessionId: "eval-session", mode: "chat", environment: "server_sandbox" },
+        { callId: "eval-unknown-1" }
       );
       return { success: result.success === false && result.error?.includes("Unknown tool") === true };
     },

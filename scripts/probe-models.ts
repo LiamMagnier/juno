@@ -1,6 +1,11 @@
 import { MODEL_LIST } from "../src/lib/models";
 import { loadAvailableModels } from "../src/lib/model-catalog-api";
-import { probeModelCapability, probeAndPersistModelCapability } from "../src/lib/model-capability";
+import {
+  persistToolProbeEvidence,
+  probeModelCapability,
+  probeAndPersistModelCapability,
+  probeModelToolCalling,
+} from "../src/lib/model-capability";
 
 /**
  * Refresh exact model capability evidence for a deployment.
@@ -28,12 +33,24 @@ import { probeModelCapability, probeAndPersistModelCapability } from "../src/lib
  * `--model` also reaches models marked `comingSoon`, which the sweep skips by
  * design: naming one explicitly is how you find out whether a lab has opened
  * the API yet, and that is a question worth being able to ask.
+ *
+ * `--tools` runs the TOOL ROUND-TRIP probe instead (src/lib/model-tool-probe.ts,
+ * evidence version 2 under `evidence.tools`): the model must call a function
+ * through Alevr's own adapter and dispatcher, receive the result and state it;
+ * two parallel calls and, for vision models, an image in a tool result are
+ * recorded beside it. It costs a few small requests per model, so name the
+ * models or a provider. A provider with no key here prints UNTESTED and writes
+ * nothing; only `verified` models are offered the execution and skill tools.
+ *
+ *   npm run models:probe -- --tools --model=claude-sonnet-5 --dry
+ *   npm run models:probe -- --tools --provider=google
  */
 
 interface Args {
   model: string | null;
   provider: string | null;
   dry: boolean;
+  tools: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -43,7 +60,7 @@ function parseArgs(argv: string[]): Args {
     const inline = hit.includes("=") ? hit.slice(hit.indexOf("=") + 1) : argv[argv.indexOf(hit) + 1];
     return inline && !inline.startsWith("--") ? inline.trim().toLowerCase() : null;
   };
-  return { model: value("model"), provider: value("provider"), dry: argv.includes("--dry") };
+  return { model: value("model"), provider: value("provider"), dry: argv.includes("--dry"), tools: argv.includes("--tools") };
 }
 
 async function main() {
@@ -69,6 +86,38 @@ async function main() {
       `No chat model matches${args.model ? ` --model=${args.model}` : ""}${args.provider ? ` --provider=${args.provider}` : ""}.`,
     );
     process.exitCode = 1;
+    return;
+  }
+
+  if (args.tools) {
+    if (!args.model && !args.provider) {
+      console.error("The tool probe is billed per model: name --model=… or --provider=….");
+      process.exitCode = 1;
+      return;
+    }
+    let notVerified = 0;
+    for (const model of models) {
+      const outcome = await probeModelToolCalling(model);
+      if (!outcome) {
+        console.log(`UNTESTED ${model.id} — provider is not configured here; nothing recorded.`);
+        notVerified += 1;
+        continue;
+      }
+      const { evidence, answered } = outcome;
+      if (answered && !args.dry) await persistToolProbeEvidence(model, evidence);
+      const checks = `round trip ${evidence.checks.roundTrip}, parallel ${evidence.checks.parallel}, tool image ${evidence.checks.toolImage}`;
+      const label = !answered ? "UNTESTED" : evidence.verdict === "verified" ? "VERIFIED" : "FAILED";
+      console.log(
+        [label, model.id, `via ${evidence.adapter}`, `(${checks})`, evidence.detail ? `— ${evidence.detail}` : "", !answered ? "— not recorded" : ""]
+          .filter(Boolean)
+          .join(" "),
+      );
+      if (label !== "VERIFIED") notVerified += 1;
+    }
+    console.log(
+      `Tool round-trip probes: ${models.length - notVerified}/${models.length} verified${args.dry ? " (dry run — nothing persisted)" : ""}.`,
+    );
+    if (notVerified > 0) process.exitCode = 1;
     return;
   }
 

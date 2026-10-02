@@ -6,7 +6,8 @@ import * as React from "react";
  * The keyboard and focus contract for everything that floats (INTERACTION_SPEC
  * §1.5, K1–K3), in one place so every popover and sheet behaves the same:
  *
- *   popover   Escape closes it and gives focus back to what opened it; a press
+ *   popover   Escape closes it at once (no exit fade: keyboard work never waits)
+ *             and gives focus back to what opened it; a press
  *             outside closes it; opened from the keyboard it appears in the
  *             same frame and focus moves to its checked item (or the first);
  *             the arrow keys move between its items.
@@ -66,6 +67,9 @@ export function usePopoverKeys(
       const root = ref.current;
       if (e.key === "Escape") {
         e.preventDefault();
+        // Dismissed from the keyboard, the layer goes in the same frame (F0, Revision 2): it is hidden now and
+        // its exit animation, if any, plays unseen. Pointer dismissals keep the 160 ms ease-in exit.
+        if (root) root.style.visibility = "hidden";
         closeRef.current();
         if (returnTo && document.contains(returnTo)) returnTo.focus({ preventScroll: true });
         return;
@@ -103,4 +107,17 @@ export function usePopoverKeys(
 /** A sheet or modal: focus moves in, Tab stays in, Escape closes, focus returns to the opener. */
 export function useDialogFocus(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void) {
   usePopoverKeys(ref, open, onClose, true, undefined, { trap: true });
+}
+
+/** Phone width (where sheets come up from the bottom, O5), read on change through matchMedia, not a resize handler. */
+export function usePhone(query = "(max-width: 760px)") {
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia(query);
+    const read = () => setOn(mq.matches);
+    read();
+    mq.addEventListener("change", read);
+    return () => mq.removeEventListener("change", read);
+  }, [query]);
+  return on;
 }

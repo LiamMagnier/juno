@@ -54,8 +54,11 @@ export const SPRING = {
   interactive: { type: "spring", duration: 0.32, bounce: 0.15 },
   /** Two sites only: an approved action's receipt settling, and long work finishing on screen. */
   reward: { type: "spring", duration: 0.36, bounce: 0.15 },
-  /** Characters only (D-032): a member arriving over its own thread, a reaction landing. The one playful spring. */
-  character: { type: "spring", duration: 0.5, bounce: 0.24 },
+  /**
+   * Characters only (D-032): an agent arriving over its own thread, a reaction landing. Revision 2: inside the
+   * spec's 0.15 bounce cap, on the emphasis duration (P6: arrival is F3, up to 560 ms).
+   */
+  character: { type: "spring", duration: 0.56, bounce: 0.15 },
 } satisfies Record<string, Transition>;
 
 export const T = {
@@ -88,6 +91,18 @@ export const T = {
  * the translucent frames are kept to the first few.
  */
 export const POP_IN: Transition = { duration: D.base, ease: EASE_OUT, opacity: { duration: 0.08, ease: EASE_OUT } };
+
+/**
+ * A sheet arriving (Revision 2): it travels on the drawer curve (360 ms) but its opacity arrives on `fast`
+ * (120 ms), so the translucent frames are few and the page behind never prints through the sheet's rows
+ * (the double exposure the critics caught at 40 to 80 ms).
+ */
+export const SHEET_IN: Transition = { duration: D.slow, ease: EASE_DRAWER, opacity: { duration: D.fast, ease: EASE_OUT } };
+
+/** Where a sheet comes from: the right on wide windows (40 px), the bottom on a phone (O5). */
+export function sheetFrom(phone: boolean) {
+  return phone ? { y: "100%", opacity: 1 } : { x: 40, opacity: 0 };
+}
 
 /** A sheet leaving (the person closed it): exit timing on the drawer's direction, never the entrance's. */
 export const SHEET_OUT: Transition = { duration: D.exit, ease: EASE_IN };

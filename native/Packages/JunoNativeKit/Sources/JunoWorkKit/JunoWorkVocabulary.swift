@@ -48,6 +48,12 @@ public enum JunoWorkVocabulary {
         case "screen_control": return "Working on your screen"
         case "web_search", "web_research": return "Searching the web"
         case "fetch_page", "read_page": return "Reading a web page"
+        // The execution and skill tools (TOOL_RUNTIME_DESIGN.md §6.5): the
+        // floor for a run event that carries no sentence of its own.
+        case "run_code", "code_interpreter": return "Running code"
+        case "check_run": return "Checking on a run"
+        case "use_skill": return "Reading a skill"
+        case "read_skill_file": return "Reading a skill file"
         case "computer_screenshot", "computer_screen": return "Looking at its screen"
         case "computer_click": return "Clicking on its screen"
         case "computer_type": return "Typing on its computer"
@@ -83,6 +89,10 @@ public enum JunoWorkVocabulary {
         case "screen_control": return "Worked on your screen"
         case "web_search", "web_research": return "Searched the web"
         case "fetch_page", "read_page": return "Read a web page"
+        case "run_code", "code_interpreter": return "Ran code"
+        case "check_run": return "Checked on a run"
+        case "use_skill": return "Read a skill"
+        case "read_skill_file": return "Read a skill file"
         case "computer_screenshot", "computer_screen": return "Looked at its screen"
         case "computer_click": return "Clicked on its screen"
         case "computer_type": return "Typed on its computer"

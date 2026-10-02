@@ -5,7 +5,8 @@ import { useClock, useLevel, useTick } from "./clock";
 import { type Talker } from "./signal";
 
 /*
- * THE STRING: Juno's voice signature.
+ * THE STRING: round 3's voice signature (Juno era), kept as option A in the
+ * Alevr lab (lab.tsx). Superseded by the channel (channel.tsx).
  *
  * One hairline, strung across the composer's voice row between the add
  * button and the controls, in the same 1.5 px the composer's own edge and the
@@ -76,7 +77,7 @@ export interface VoiceStringProps {
   phase: StringPhase;
   /** Scene time at which this phase began (draw-in, the cut, the crest's start). */
   since?: number;
-  /** Who "answering" is: Juno, or a crew member in their own thread (the line takes their thread colour). */
+  /** Who "answering" is: Alevr, or an agent in its own thread (the line takes its thread colour). */
   answerer?: Talker;
   className?: string;
   /** Lab use: a fixed width instead of measuring. */
@@ -84,7 +85,7 @@ export interface VoiceStringProps {
   height?: number;
 }
 
-export function VoiceString({ phase, since = 0, answerer = "juno", className, width: fixedW, height = 34 }: VoiceStringProps) {
+export function VoiceString({ phase, since = 0, answerer = "alevr", className, width: fixedW, height = 34 }: VoiceStringProps) {
   const clock = useClock();
   const level = useLevel();
   const svgRef = React.useRef<SVGSVGElement | null>(null);

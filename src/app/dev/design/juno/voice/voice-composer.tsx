@@ -6,7 +6,8 @@ import { Icon } from "../icons";
 import { R, T, useReduced } from "../motion";
 import { useClock, useLevel, useSampled, useTick } from "./clock";
 import { type Talker } from "./signal";
-import { VoiceString, type StringPhase } from "./voice-string";
+import { VoiceChannel } from "./channel";
+import { type StringPhase } from "./voice-string";
 
 /*
  * The composer, speaking. Not a new object: the system's composer (the same
@@ -24,13 +25,13 @@ import { VoiceString, type StringPhase } from "./voice-string";
  * VOICE (C16, the disc while the field is empty). The composer stays where it
  * is and becomes the call: the model and dictate leave (exit, 160 ms), the
  * disc's glyph turns from voice to end (fast), mute and sound output arrive
- * where they were, and the string draws out of the disc across the empty
- * middle of the row. The field stays and takes typing ("Add to the
+ * where they were, and the channel (channel.tsx, Alevr's voice signature)
+ * draws out of the add button and the disc into the empty middle of the row. The field stays and takes typing ("Add to the
  * conversation"); Enter adds it, and a send control appears in the field row
  * only while there is text. End (or Esc in the voice row) reverses it all.
  *
- * Neither mode prints its state. The state is the string's form, tone and
- * motion, and a polite live region ("Listening", "Juno is speaking") that is
+ * Neither mode prints its state. The state is the channel's form, tone and
+ * motion, and a polite live region ("Listening", "Alevr is speaking") that is
  * announced at most every 2 s; the row's group carries the same words as its
  * description for anyone who tabs into it.
  */
@@ -38,18 +39,35 @@ import { VoiceString, type StringPhase } from "./voice-string";
 export type DictPhase = "idle" | "permission" | "listening" | "interim" | "finalizing" | "done" | "error";
 export type ErrorKind = "blocked" | "silence" | "network" | "voice-lost";
 
-export const VOICE_WORDS: Record<StringPhase, string> = {
-  connecting: "Connecting voice",
-  listening: "Listening",
-  thinking: "Juno is thinking",
-  answering: "Juno is speaking",
-  muted: "Microphone muted",
-  interrupted: "Juno stopped. Listening",
-  approval: "Waiting for your approval on screen. Saying yes won’t approve it.",
-  reconnecting: "Connection lost. Reconnecting",
-  error: "Voice disconnected",
-  ended: "Voice conversation ended",
-};
+/**
+ * The state in words, for the live region and the voice row's description
+ * (VoiceOver reads the same sentence as the row's value on Mac and iOS).
+ * `who` is Alevr, or the agent by its own name in its thread.
+ */
+export function voiceWords(phase: StringPhase, who = "Alevr"): string {
+  switch (phase) {
+    case "connecting":
+      return "Connecting voice";
+    case "listening":
+      return "Listening";
+    case "thinking":
+      return `${who} is thinking`;
+    case "answering":
+      return `${who} is speaking`;
+    case "muted":
+      return "Microphone muted";
+    case "interrupted":
+      return `${who} stopped. Listening`;
+    case "approval":
+      return "Waiting for your approval on screen. Saying yes won’t approve it.";
+    case "reconnecting":
+      return "Connection lost. Reconnecting";
+    case "error":
+      return "Voice disconnected";
+    case "ended":
+      return "Voice conversation ended";
+  }
+}
 
 export const ERROR_COPY: Record<ErrorKind, { icon: string; text: React.ReactNode; verb: string }> = {
   blocked: {
@@ -59,7 +77,7 @@ export const ERROR_COPY: Record<ErrorKind, { icon: string; text: React.ReactNode
   },
   silence: {
     icon: "mic",
-    text: "Juno didn’t hear anything. Check that the right microphone is on.",
+    text: "Nothing was heard. Check that the right microphone is on.",
     verb: "Try again",
   },
   network: {
@@ -135,12 +153,13 @@ function ErrorRow({ kind }: { kind: ErrorKind }) {
 export type ComposerMode =
   | { kind: "text"; draft?: string; tip?: boolean; focused?: boolean }
   | { kind: "dictation"; phase: DictPhase; final?: string; interim?: string; error?: ErrorKind }
-  | { kind: "voice"; phase: StringPhase; since?: number; typed?: string; answerer?: Talker; error?: ErrorKind };
+  | { kind: "voice"; phase: StringPhase; since?: number; typed?: string; answerer?: Talker; error?: ErrorKind; beats?: readonly number[] };
 
 export function VoiceComposer({
   mode,
   placeholder = "Reply…",
-  label = "Message Juno",
+  label = "Message Alevr",
+  who = "Alevr",
   modelLabel = "Auto",
   memberDisc = false,
   onVoice,
@@ -152,6 +171,8 @@ export function VoiceComposer({
   placeholder?: string;
   label?: string;
   modelLabel?: string;
+  /** Who answers, in words: Alevr, or the agent's own name. */
+  who?: string;
   /** In a member's thread the armed disc wears the member's colour (member.css). */
   memberDisc?: boolean;
   onVoice?: () => void;
@@ -179,7 +200,7 @@ export function VoiceComposer({
   const discMode: "voice" | "send" | "end" = voice ? "end" : hasWords || dictActive ? "send" : "voice";
   const discQuiet = dictActive;
 
-  const words = mode.kind === "voice" ? VOICE_WORDS[mode.phase] : dict ? (dictLive ? "Listening" : dict.phase === "done" ? "Stopped listening" : dict.phase === "error" ? "Dictation stopped" : "") : "";
+  const words = mode.kind === "voice" ? voiceWords(mode.phase, who) : dict ? (dictLive ? "Listening" : dict.phase === "done" ? "Stopped listening" : dict.phase === "error" ? "Dictation stopped" : "") : "";
   const describedBy = React.useId();
   const error = mode.kind === "dictation" ? mode.error : mode.kind === "voice" ? mode.error : undefined;
   const swap = reduced ? R : T.fast;
@@ -229,17 +250,17 @@ export function VoiceComposer({
             <Icon name="plus" size={20} />
           </button>
 
-          {/* The middle of the row: empty in the text composer, the string in a call. */}
+          {/* The middle of the row: empty in the text composer, the channel in a call. */}
           <span className="jn-crow__spacer jv-mid">
             <AnimatePresence initial={false}>
               {mode.kind === "voice" ? (
                 <motion.span
-                  key="string"
+                  key="channel"
                   className="jv-mid__string"
                   initial={{ opacity: 1 }}
                   exit={{ opacity: 0, transition: { duration: 0.16, delay: 0.36 } }}
                 >
-                  <VoiceString phase={mode.phase} since={mode.since ?? autoSince} answerer={mode.answerer} />
+                  <VoiceChannel phase={mode.phase} since={mode.since ?? autoSince} answerer={mode.answerer} beats={mode.beats} />
                 </motion.span>
               ) : null}
             </AnimatePresence>

@@ -50,6 +50,10 @@ def material_for(part, sid):
             mat = mat.copy()
             _gradient(mat, *part["gradient"])
         return mat
+    if col.lower() in ("#17171c", "#fbfaf6") and kind == "decal":
+        # Graphic eyes: dead matte, so a raised edge never catches a highlight
+        # that reads as a wet bead (no catchlight, ever).
+        return B.matte_material(f"eye_{col}", col, rough=1.0, spec=0.03, sheen=0.04)
     if kind == "matte" or col in (C.INK, C.WHITE) or col.lower() in ("#17171c", "#fbfaf6"):
         return B.matte_material(f"m_{col}", col, rough=part.get("rough", 0.8), sheen=part.get("sheen", 0.2))
     return B.flock_material(f"{sid}_{part['name']}", col, grain=0.03)
@@ -81,14 +85,25 @@ def build_meshes(spec):
     return c, out
 
 
-def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=None):
+def vert_normals(ob):
+    me = ob.data
+    n = np.zeros(len(me.vertices) * 3)
+    me.vertices.foreach_get("normal", n)
+    return n.reshape(-1, 3)
+
+
+def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=None, view=None):
+    """view: the world direction toward the camera. With it (and FUZZ_VIEW != 0) the
+    fibres are only grown where the camera can see them, plus a margin past the
+    silhouette: the back of a character holds half the hair and none of the look,
+    and hair is what costs memory (renders must stay under 10 GB)."""
     c, meshes = build_meshes(spec)
     sid = spec["id"]
     coll = coll or bpy.data.collections.get("characters") or bpy.context.scene.collection
     root = bpy.data.objects.new(f"{sid}_root", None)
     coll.objects.link(root)
     root.location = loc
-    root.rotation_euler = (0, 0, math.radians(yaw))
+    root.rotation_euler = (0, math.radians(spec.get("lean", 0.0)), math.radians(yaw))
     objs = []
     for part, V, Q in meshes:
         if len(Q) == 0:
@@ -98,16 +113,36 @@ def place(spec, loc=(0, 0, 0), yaw=0.0, quality=1.0, seed=1, fuzz_on=True, coll=
         B.assign(ob, material_for(part, sid))
         if fuzz_on and part["fuzz"]:
             group = None
+            cover = 1.0
+            co = B.vert_co(ob)
+            w = np.ones(len(co))
             if part["kind"] == "body" and c.excl:
-                co = B.vert_co(ob)
-                w = np.ones(len(co))
                 for reg, ycut in c.excl:
                     r = reg(co[:, 0], co[:, 2])
                     m = np.ones(len(co), bool) if ycut is None else co[:, 1] < ycut + 0.02
                     w = np.where(m, np.minimum(w, S.sstep(0.008, 0.026, r)), w)
+            if view is not None and os.environ.get("FUZZ_VIEW", "1") != "0":
+                # the camera direction in the character's frame (yaw about z, lean about y)
+                v = np.asarray(view, float)
+                v = v / np.linalg.norm(v)
+                a = -math.radians(yaw)
+                v = np.array([v[0] * math.cos(a) - v[1] * math.sin(a), v[0] * math.sin(a) + v[1] * math.cos(a), v[2]])
+                L_ = -math.radians(spec.get("lean", 0.0))
+                v = np.array([v[0] * math.cos(L_) + v[2] * math.sin(L_), v[1], -v[0] * math.sin(L_) + v[2] * math.cos(L_)])
+                nd = vert_normals(ob) @ v
+                cut = float(os.environ.get("FUZZ_VIEW_CUT", -0.4))
+                w = w * S.sstep(cut - 0.15, cut + 0.1, nd)
+                # FUZZ_FACE < 1 thins the fibres that face the camera (seen end-on they
+                # only add grain, which the sheen and bump already give) and keeps the
+                # silhouette band, where the soft fuzzy rim is, at full density.
+                face = float(os.environ.get("FUZZ_FACE", 1.0))
+                if face < 1.0:
+                    w = w * (face + (1.0 - face) * (1.0 - S.sstep(0.45, 0.85, nd)))
+            if w.min() < 0.999:
                 B.set_group(ob, "dens", w)
                 group = "dens"
-            L = float(os.environ.get("FUZZ_LEN", 0.011)) * part.get("fuzz_len", 1.0)
-            B.fuzz(ob, fuzz_mat_for(part, sid), length=L, quality=quality, seed=seed + len(objs), density_group=group)
+                cover = max(0.05, float(w.mean()))
+            L = float(os.environ.get("FUZZ_LEN", 0.012)) * part.get("fuzz_len", 1.0)
+            B.fuzz(ob, fuzz_mat_for(part, sid), length=L, quality=quality, seed=seed + len(objs), density_group=group, coverage=cover)
         objs.append(ob)
     return root, objs, c

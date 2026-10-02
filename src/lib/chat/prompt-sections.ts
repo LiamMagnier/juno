@@ -43,6 +43,37 @@ export const ATTACHED_IMAGE_NUDGE =
 export const CODE_INTERPRETER_NUDGE =
   "Running code: you have a code_interpreter tool that runs Python in a sandbox with the attached files in the working directory, under their own names. It is the general way to examine a file — open a PDF with pypdf and read the pages you need, crop or magnify part of an image with Pillow, load a spreadsheet with pandas and compute over it, or parse a format nothing else handles. Anything you print comes back to you, and any image you save is shown to you so you can read it yourself. Nothing has analysed these files in advance: if you need to know what is in one, open it.";
 
+/**
+ * What a turn without an execution tool is told about running code
+ * (TOOL_RUNTIME_DESIGN §6.11). A model with no tool and no word about it writes
+ * the program in its answer and narrates output it never saw — the one failure
+ * a reader cannot detect. Said plainly, once, and only about running: writing
+ * code for the person to run stays fine.
+ *
+ * `unverified_model`: execution exists here, but this model's tool calling has
+ * not been verified by the round-trip probe, so it carries no execution tool;
+ * the note names verified models the person can switch to.
+ * `unavailable`: nothing can run code on this turn.
+ */
+export function codeExecutionNote(
+  state: "available" | "unverified_model" | "unavailable" | "off",
+  verifiedAlternatives: readonly string[] = [],
+): string | null {
+  const never =
+    "You may still write code for them to run themselves, but never present output, numbers or files as if code had run.";
+  if (state === "unverified_model") {
+    const names = verifiedAlternatives.slice(0, 3);
+    const switchTo = names.length
+      ? ` and that switching to ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`} will let it run`
+      : "";
+    return `Running code: tool calling has not been verified for this model, so running code and skill scripts is not available in this chat. If the user asks you to run code, compute over a file or produce a file, say plainly that you cannot run it with this model${switchTo}. ${never}`;
+  }
+  if (state === "unavailable") {
+    return `Running code: you cannot run code in this chat. If the user asks you to run code, compute over a file or produce a file, say so plainly. ${never}`;
+  }
+  return null;
+}
+
 export const SELECTION_ANCHOR_NUDGE =
   'Selection anchors: when a user message contains a [Selection from artifact "…"] block, treat the quoted text or element as a precise anchor into that artifact. For a modify request, change ONLY that region, keep the rest of the artifact byte-identical where possible, and re-emit the COMPLETE artifact under the same identifier. For a question about the selection, answer directly and do not re-emit the artifact unless asked.';
 
@@ -56,6 +87,12 @@ export interface SystemPromptSections {
   imageTool?: boolean;
   /** `code_interpreter` is attached this turn (a file, and a sandbox to run in). */
   codeTool?: boolean;
+  /**
+   * The turn's own word on running code when no execution tool is attached
+   * (`codeExecutionNote`), or the execution and skill providers' sections when
+   * one is. Stable for a model and a plan, so it sits in the cached prompt.
+   */
+  executionSections?: readonly string[];
   /**
    * A canvas edit's exact-patch instructions. When present it REPLACES the
    * selection-anchor nudge rather than joining it: the two describe different
@@ -101,6 +138,7 @@ export function composeSystemPrompt(sections: SystemPromptSections): string {
     sections.documentTool ? ATTACHED_DOCUMENT_NUDGE : null,
     sections.imageTool ? ATTACHED_IMAGE_NUDGE : null,
     sections.codeTool ? CODE_INTERPRETER_NUDGE : null,
+    ...(sections.executionSections ?? []),
     sections.targetedArtifactEditPrompt ?? (sections.canvasOn ? SELECTION_ANCHOR_NUDGE : null),
   ]
     .filter(Boolean)

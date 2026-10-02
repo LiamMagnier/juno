@@ -180,6 +180,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // silently accept one account's recovery code as another account's second
   // factor. The scope is what makes that impossible rather than unlikely.
   ["MfaRecoveryCode", "userId"],
+  // A hosted code run: the program, its output and what it produced. Every
+  // read and write in src/lib/exec/store.ts carries the userId; the one
+  // cross-account query is the scheduler's lease sweep, which says so with
+  // prismaUnguarded.
+  ["ToolRun", "userId"],
   // A cloud Code environment holds encrypted environment variables and a setup
   // script that runs on the runner host. An unscoped read is one account's
   // secrets; an unscoped update is one account editing another's build step.

@@ -71,7 +71,8 @@ import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
-import { cleanForSpeech, stripMemoryTags } from "@/lib/message-content";
+import { stripMemoryTags } from "@/lib/message-content";
+import { speechForReply } from "@/lib/chat/tool-run-speech";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import { voicePhaseOf } from "@/lib/voice-phase";
@@ -1662,7 +1663,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       return;
     }
     setSpeakingId(id);
-    tts.speak(cleanForSpeech(text), settings.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
+    // The reply as speech, plus the files its runs made, named once when the
+    // reply did not already name them (lib/chat/tool-run-speech). Code and raw
+    // output are never read aloud.
+    const activity = chat.messages.find((m) => m.id === id)?.activity;
+    tts.speak(speechForReply(text, activity), settings.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
   };
 
   const sendFromComposer = React.useCallback(

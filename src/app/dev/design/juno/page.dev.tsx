@@ -11,6 +11,7 @@ import "./thread.css";
 import "./pages.css";
 import "./sheet.css";
 import "./member.css";
+import "./brand.css";
 
 /**
  * Juno, design round 3: the converged system (dev only; 404s in production).
@@ -18,7 +19,7 @@ import "./member.css";
  *   /dev/design/juno                               index
  *   /dev/design/juno?scene=home&theme=dark         one scene, filling the viewport
  *
- *   scene   home | thread | menus | crew | code | library | customize | system | motion | states
+ *   scene   home | thread | menus | crew | code | library | customize | system | motion | states | brand
  *   theme   light | dark (absent: the OS decides, prefers-color-scheme)
  *   rm      1 renders the reduced-motion form
  *   home    empty at rest; draft=1 (the sentence with tokens), focus=1, app=stripe (token panel), model=1, plus=1, pop=account|activity
@@ -32,19 +33,20 @@ import "./member.css";
  *   font    inter | geologica | commissioner | franklin | manrope | wix (the sans lab)
  *   cyr     literata | sourceserif (the Cyrillic serif lab)
  */
-export const metadata = { title: "Juno design" };
+export const metadata = { title: "Alevr design" };
 
 const SCENES: { id: SceneId; label: string; extra?: string[] }[] = [
   { id: "home", label: "Home, Chat at rest", extra: ["draft=1", "focus=1", "app=stripe", "model=1", "plus=1", "pop=account", "pop=activity"] },
   { id: "thread", label: "Thread after send", extra: ["stage=thinking", "stage=streaming", "plan=1", "at=top"] },
   { id: "menus", label: "@ palette, model, app panel" },
-  { id: "crew", label: "Crew roster and a member's thread", extra: ["member=mira", "flow=add", "flow=customize&member=mira"] },
-  { id: "code", label: "Juno Code, start and working session", extra: ["state=start", "pane=changes"] },
+  { id: "crew", label: "Orbit: your agents and an agent’s thread", extra: ["member=mira", "flow=add", "flow=customize&member=mira"] },
+  { id: "code", label: "Alevr Code, start and working session", extra: ["state=start", "pane=changes"] },
   { id: "library", label: "Library", extra: ["view=list", "q=invoice"] },
   { id: "customize", label: "Customize, Apps", extra: ["app=slack"] },
   { id: "system", label: "Component sheet" },
   { id: "motion", label: "Motion moments" },
   { id: "states", label: "Loading, empty, error, blocked, offline" },
+  { id: "brand", label: "Alevr: the identity in the real system" },
 ];
 
 export default async function JunoDesignPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -75,7 +77,7 @@ export default async function JunoDesignPage({ searchParams }: { searchParams: P
   return (
     <div className={`jn ${JUNO_FONTS}`} data-theme={theme}>
       <main className="jn-index">
-        <h1 className="t-title">Juno</h1>
+        <h1 className="t-title">Alevr</h1>
         <p className="jn-index__lede">Design round 3. One system: a bright neutral ground, graphite ink, Newsreader for the moments that speak, and colour only where things bring their own.</p>
         <nav className="jn-index__list">
           {SCENES.map((s) => (

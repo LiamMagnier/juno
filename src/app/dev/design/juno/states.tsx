@@ -69,9 +69,9 @@ function AnswerFailed() {
 function SlowFirstWord() {
   return (
     <div className="jn-stateblock">
-      <LiveLine text="Still reading Halvorsen annual report 2026.pdf, 64 pages" glyph="research" seconds={24} />
+      <LiveLine text="Still reading Halvorsen annual report 2026.pdf, 64 pages" seconds={24} />
       <p className="jn-stateline jn-stateline--quiet">
-        <span>Long files take a while. You can keep writing; Juno answers when it has read it.</span>
+        <span>Long files take a while. You can keep writing; Alevr answers when it has read it.</span>
         <button type="button" className="jb jb--link">
           Answer now
         </button>
@@ -86,7 +86,7 @@ function AppBlocked() {
       <div className="jn-blocked">
         <LinearMark size={20} />
         <div className="jn-blocked__main">
-          <p className="jn-blocked__title">Linear isn’t connected, so Juno can’t read the Atlas issues</p>
+          <p className="jn-blocked__title">Linear isn’t connected, so Alevr can’t read the Atlas issues</p>
           <p className="jn-blocked__line">Connecting opens Linear to sign in. Creating an issue will still ask you first.</p>
         </div>
         <button type="button" className="jb jb--primary jb--sm">
@@ -123,7 +123,7 @@ function FirstRun() {
   return (
     <div className="jn-firstrun">
       <p className="t-display">Good afternoon, Liam</p>
-      <p className="jn-firstrun__line">Juno works in your apps and files. Connect one to start, or just ask.</p>
+      <p className="jn-firstrun__line">Alevr works in your apps and files. Connect one to start, or just ask.</p>
       <div className="jn-firstrun__apps">
         {["gmail", "slack", "drive", "github"].map((id) => (
           <button key={id} type="button" className="jn-chip">
@@ -134,12 +134,12 @@ function FirstRun() {
       </div>
       <div className="jn-firstrun__side">
         <p className="jn-side__label">
-          <span>Crew</span>
+          <span>Orbit</span>
         </p>
-        <p className="jn-firstrun__empty">Teammates take standing work off your hands, like a Monday renewal check.</p>
+        <p className="jn-firstrun__empty">Your agents carry standing work forward, like a Monday renewal check.</p>
         <button type="button" className="jb jb--secondary jb--sm jicon-trigger jicon-quiet">
-          <Icon name="add-member" size={16} />
-          Add to crew
+          <Icon name="create-agent" size={16} />
+          Create agent
         </button>
       </div>
     </div>
@@ -150,7 +150,7 @@ function LibraryEmpty() {
   return (
     <div className="jn-empty jn-empty--compact">
       <p className="t-display">Nothing here yet</p>
-      <p className="jn-empty__line">What you give Juno and what it makes lands here: documents, decks, designs and files.</p>
+      <p className="jn-empty__line">What Alevr makes and the files you give it land here.</p>
       <button type="button" className="jb jb--secondary jb--sm jicon-trigger jicon-quiet">
         <Icon name="upload" size={16} />
         Upload
@@ -167,9 +167,6 @@ function Uploads() {
         <span className="jn-upload__main">
           <span className="jn-upload__name">Q4 plan.pdf</span>
           <span className="jn-upload__line num">Uploading, 3.1 of 5.0 MB</span>
-        </span>
-        <span className="jn-upload__glyph">
-          <Icon name="progress" size={16} value={0.62} />
         </span>
         <button type="button" className="jb jb--ghost jb--sm">
           Cancel
@@ -197,7 +194,7 @@ function ExpiredApp() {
       </span>
       <span className="jn-approw__text">
         <span className="jn-approw__name">Gmail</span>
-        <span className="jn-approw__line jn-approw__line--warn">Sign-in expired 2 days ago. Juno can’t read or send mail.</span>
+        <span className="jn-approw__line jn-approw__line--warn">Sign-in expired 2 days ago. Alevr can’t read or send mail.</span>
       </span>
       <button type="button" className="jb jb--secondary jb--sm">
         Reconnect
@@ -243,6 +240,7 @@ function TestsFailed() {
   );
 }
 
+/** Agents that are not working say why in words, with the verb that moves them on: Blocked (and the fix), Finished (and what). */
 function CrewPaused() {
   const ines = CREW.find((m) => m.id === "ines") ?? CREW[0];
   const tomas = CREW.find((m) => m.id === "tomas") ?? CREW[0];
@@ -256,7 +254,7 @@ function CrewPaused() {
             <span className="jn-crewstate__line">{m.long}</span>
           </span>
           <button type="button" className="jb jb--secondary jb--sm">
-            {m.state === "paused" ? "Resume" : "Wake"}
+            {m.status === "blocked" ? "Reconnect Greenhouse" : "Open the review"}
           </button>
         </div>
       ))}
@@ -290,19 +288,19 @@ export function StatesScene() {
         <Cell label="Failed run." cap="Code: which step failed, why, in one sentence, and the next move.">
           <TestsFailed />
         </Cell>
-        <Cell label="First run." cap="No chats and no crew yet: the home teaches by offering the first connection.">
+        <Cell label="First run." cap="No chats and no agents yet: the home teaches by offering the first connection.">
           <FirstRun />
         </Cell>
         <Cell label="Empty." cap="The Library before anything lands in it.">
           <LibraryEmpty />
         </Cell>
-        <Cell label="Uploading and refused." cap="Real progress, a reason in words, a way forward.">
+        <Cell label="Uploading and refused." cap="Real progress in numbers (no spinning arc), a reason in words, a way forward.">
           <Uploads />
         </Cell>
-        <Cell label="Expired." cap="An app whose sign-in lapsed: what Juno can no longer do, and Reconnect.">
+        <Cell label="Expired." cap="An app whose sign-in lapsed: what Alevr can no longer do, and Reconnect.">
           <ExpiredApp />
         </Cell>
-        <Cell label="Paused and offline." cap="Crew members at rest say until when, in words, with the verb that wakes them.">
+        <Cell label="Blocked and finished." cap="An agent that stopped says why in words, with the one verb that moves it on.">
           <CrewPaused />
         </Cell>
       </div>

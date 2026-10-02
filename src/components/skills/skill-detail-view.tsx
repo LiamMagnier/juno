@@ -29,17 +29,20 @@ import {
   type SkillResource,
 } from "@/lib/work/skills";
 import { sourceLabel, type ClientSkillSource } from "@/lib/skills/library-contract";
-import { skillExportHref } from "@/components/skills/skills-transport";
+import { fetchSkillBundleFile, skillExportHref, skillsFailureMessage, type SkillBundleFileView } from "@/components/skills/skills-transport";
 import { serializeSkillMd, SKILL_MD_FILENAME } from "@/lib/skills/skill-md";
 import { cn } from "@/lib/utils";
 import { SkillEditor, type SkillDraft } from "@/components/skills/skill-editor";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
 import {
+  bundleFileSize,
+  consentReasonsOfScan,
   githubRepoUrl,
   provenanceSource,
   securityFindingsOf,
   shortCommit,
   type ProvenanceSource,
+  type SkillSecurityFinding,
 } from "@/components/skills/skill-library-model";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -140,6 +143,8 @@ export function SkillDetailView({
   // whose text you have vouched for. An installed skill's file belongs to its
   // repository and is already one press away on GitHub.
   const canExportSkillMd = yours || skill.trust === "user_authored";
+  // The kept folder's files beside the SKILL.md, counted on the Files tab.
+  const folderFileCount = version?.bundle?.files.filter((file) => file.kind !== "instructions").length ?? 0;
   const skillMd = () =>
     serializeSkillMd({
       name: skill.slug,
@@ -269,6 +274,7 @@ export function SkillDetailView({
             busy={busy}
             onConsent={actions.onConsent}
             onEnableSource={actions.onEnableSource}
+            onReviewFiles={() => setTab("files")}
           />
 
           <UsageChoice
@@ -285,8 +291,8 @@ export function SkillDetailView({
                 <TabsTrigger value="instructions">Instructions</TabsTrigger>
                 <TabsTrigger value="files">
                   Files
-                  {resources.length > 0 ? (
-                    <span className="tabular-nums text-muted-foreground">{resources.length}</span>
+                  {resources.length + folderFileCount > 0 ? (
+                    <span className="tabular-nums text-muted-foreground">{resources.length + folderFileCount}</span>
                   ) : null}
                 </TabsTrigger>
                 <TabsTrigger value="history">History</TabsTrigger>
@@ -303,7 +309,12 @@ export function SkillDetailView({
               <InstructionsPanel version={version} source={source} />
             </TabsContent>
             <TabsContent value="files" className="mt-4">
-              <FilesPanel resources={resources} expected={version?.contract.resourceAttachmentIds ?? []} />
+              <FilesPanel
+                skillId={skill.id}
+                version={version}
+                resources={resources}
+                expected={version?.contract.resourceAttachmentIds ?? []}
+              />
             </TabsContent>
             <TabsContent value="history" className="mt-4">
               <HistoryPanel
@@ -388,6 +399,7 @@ function SkillNotices({
   busy,
   onConsent,
   onEnableSource,
+  onReviewFiles,
 }: {
   skill: ClientWorkSkill;
   version: ClientWorkSkillVersion | null;
@@ -395,6 +407,7 @@ function SkillNotices({
   busy: boolean;
   onConsent: () => void;
   onEnableSource?: () => void;
+  onReviewFiles?: () => void;
 }) {
   const status = version?.securityStatus ?? skill.securityStatus;
   const findings = securityFindingsOf(version?.securityScan);
@@ -432,18 +445,41 @@ function SkillNotices({
     );
   }
   if (version?.requiresConsent && status !== "blocked") {
+    const reasons = consentReasonsOfScan(version.securityScan);
+    const scripts = reasons.includes("scripts");
+    const permissions = reasons.includes("permissions") || !scripts;
+    const scriptCount = version.bundle?.scripts ?? 0;
     notices.push(
       <WorkStateNote
         key="consent"
         tone="warning"
         action={
-          <Button size="sm" onClick={onConsent} loading={busy}>
-            Approve
-          </Button>
+          <div className="flex gap-2">
+            {scripts && onReviewFiles ? (
+              <Button size="sm" variant="outline" onClick={onReviewFiles}>
+                Review files
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={onConsent} loading={busy}>
+              Approve
+            </Button>
+          </div>
         }
       >
-        <span className="block font-medium text-foreground">This version asks for more than the last one</span>
-        <span className="block">It won’t run until you approve what it asks for.</span>
+        <span className="block font-medium text-foreground">
+          {scripts
+            ? `This skill comes with ${scriptCount === 1 ? "a script" : `${scriptCount} scripts`} nobody has reviewed`
+            : "This version asks for more than the last one"}
+        </span>
+        <span className="block">
+          {scripts
+            ? `Read ${scriptCount === 1 ? "it" : "them"} under Files first. Once approved, ${PRODUCT_NAME} runs ${
+                scriptCount === 1 ? "it" : "them"
+              } only in its sandbox: no internet, no access to your computer, only the files you give it.${
+                permissions ? " This version also asks for more than the last one." : ""
+              }`
+            : "It won’t run until you approve what it asks for."}
+        </span>
       </WorkStateNote>
     );
   }
@@ -609,10 +645,128 @@ function InstructionsPanel({
   );
 }
 
-function FilesPanel({ resources, expected }: { resources: SkillResource[]; expected: string[] }) {
+const FOLDER_KIND_LABEL: Record<string, string> = {
+  instructions: "Instructions",
+  reference: "Reference",
+  script: "Script",
+  asset: "File",
+};
+
+/**
+ * The skill's kept folder: each file with what it is and its size, the
+ * scanner's findings beside the file they are about, and the text of any file
+ * one press away, so an imported skill's scripts can be read before they are
+ * approved. What was left out at import is said, not hidden.
+ */
+function FolderFiles({
+  skillId,
+  version,
+}: {
+  skillId: string;
+  version: ClientWorkSkillVersion;
+}) {
+  const bundle = version.bundle;
+  const [open, setOpen] = React.useState<string | null>(null);
+  const [files, setFiles] = React.useState<Record<string, SkillBundleFileView | { error: string }>>({});
+  const findings = securityFindingsOf(version.securityScan).filter((finding) => finding.path);
+  const findingsFor = (path: string): SkillSecurityFinding[] => findings.filter((finding) => finding.path === path);
+  if (!bundle) return null;
+  const shown = bundle.files.filter((file) => file.kind !== "instructions");
+
+  const toggle = (path: string) => {
+    setOpen((current) => (current === path ? null : path));
+    if (files[path]) return;
+    void fetchSkillBundleFile(skillId, version.version, path).then((result) =>
+      setFiles((current) => ({
+        ...current,
+        [path]: result.kind === "ok" ? result.value : { error: skillsFailureMessage(result, "Couldn’t open this file. Try again.") },
+      }))
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-caption text-muted-foreground">
+        {`Kept with the skill. ${bundle.scripts > 0 ? `Scripts run only in ${PRODUCT_NAME}’s sandbox, with no internet and no access to your computer.` : "Read by the model when the instructions point at them."}`}
+      </p>
+      <ul className="divide-y divide-border/70 overflow-hidden rounded-card border border-border">
+        {shown.map((file) => {
+          const notes = findingsFor(file.path);
+          const loaded = files[file.path];
+          const expanded = open === file.path;
+          return (
+            <li key={file.path}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left hover:bg-muted/40"
+                aria-expanded={expanded}
+                onClick={() => toggle(file.path)}
+              >
+                <CodeIcons.file className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate font-mono text-caption text-foreground" translate="no">
+                  {file.path}
+                </span>
+                <span className="shrink-0 text-caption text-muted-foreground">
+                  {FOLDER_KIND_LABEL[file.kind] ?? "File"} · {bundleFileSize(file.size)}
+                </span>
+              </button>
+              {notes.length > 0 ? (
+                <ul className="-mt-1 list-disc space-y-0.5 pb-2 pl-14 pr-4 text-caption text-muted-foreground">
+                  {notes.map((finding) => (
+                    <li key={`${finding.code}-${finding.path}`}>{finding.message}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {expanded ? (
+                <div className="border-t border-border/70 bg-muted/30 px-4 py-3">
+                  {!loaded ? (
+                    <Skeleton className="h-16 w-full rounded-sm" />
+                  ) : "error" in loaded ? (
+                    <p className="text-caption text-muted-foreground">{loaded.error}</p>
+                  ) : loaded.text === null ? (
+                    <p className="text-caption text-muted-foreground">{`A ${loaded.mime} file. It isn’t shown here; scripts can open it.`}</p>
+                  ) : (
+                    <>
+                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-caption text-foreground">
+                        {loaded.text}
+                      </pre>
+                      {loaded.truncated ? (
+                        <p className="mt-2 text-caption text-muted-foreground">Only the beginning of this file is shown.</p>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {bundle.skipped.length > 0 ? (
+        <p className="text-caption text-muted-foreground">
+          {`Not kept (a type the sandbox has no use for): ${bundle.skipped.slice(0, 5).map((entry) => entry.path).join(", ")}${bundle.skipped.length > 5 ? ` and ${bundle.skipped.length - 5} more` : ""}.`}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FilesPanel({
+  skillId,
+  version,
+  resources,
+  expected,
+}: {
+  skillId: string;
+  version: ClientWorkSkillVersion | null;
+  resources: SkillResource[];
+  expected: string[];
+}) {
   const lost = new Set(expected).size - resources.length;
+  const folder = version?.bundle && version.bundle.files.some((file) => file.kind !== "instructions") ? version : null;
+  if (folder && resources.length === 0 && lost <= 0) return <FolderFiles skillId={skillId} version={folder} />;
   return (
     <div className="space-y-3">
+      {folder ? <FolderFiles skillId={skillId} version={folder} /> : null}
       {lost > 0 ? (
         <WorkStateNote tone="warning">
           {lost === 1

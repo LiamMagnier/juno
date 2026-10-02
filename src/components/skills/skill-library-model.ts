@@ -340,6 +340,8 @@ export interface SkillSecurityFinding {
   code: string;
   severity: string;
   message: string;
+  /** The kept file a finding is about, for a finding in a skill's folder. */
+  path?: string;
 }
 
 export function securityFindingsOf(raw: unknown): SkillSecurityFinding[] {
@@ -350,9 +352,28 @@ export function securityFindingsOf(raw: unknown): SkillSecurityFinding[] {
     if (finding === null || typeof finding !== "object" || Array.isArray(finding)) return [];
     const value = finding as Record<string, unknown>;
     return typeof value.code === "string" && typeof value.severity === "string" && typeof value.message === "string"
-      ? [{ code: value.code, severity: value.severity, message: value.message }]
+      ? [{ code: value.code, severity: value.severity, message: value.message, ...(typeof value.path === "string" ? { path: value.path } : {}) }]
       : [];
   });
+}
+
+/**
+ * What a version waits for, from its scan (`consentFor`): `scripts` for an
+ * imported folder nobody has reviewed, `permissions` for a widened request.
+ * Empty for a scan written before the reason was recorded, which then reads as
+ * the permissions case it always was.
+ */
+export function consentReasonsOfScan(raw: unknown): string[] {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const value = (raw as { consentFor?: unknown }).consentFor;
+  return Array.isArray(value) ? value.filter((reason): reason is string => typeof reason === "string") : [];
+}
+
+/** "2.7 KB", "1.2 MB": a file's size as the Files tab shows it. */
+export function bundleFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 /** A pasted SKILL.md, not a repository name: a fence, then a name. */

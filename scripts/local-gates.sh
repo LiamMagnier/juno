@@ -47,6 +47,7 @@ step "Security and approval dispatch"
 npm run security:check
 node scripts/check-approval-dispatch.mjs
 python3 -m unittest discover -s tests -p 'test_computer_infrastructure.py'
+python3 -m unittest discover -s tests -p 'test_exec_host.py'
 step "Generated contracts and sandbox"
 for task in capabilities:check work:contract:check agent:protocol:check shell:contract:check native:wire:check design:tokens:check native:parity:check work:sandbox:check; do
   npm run "$task"

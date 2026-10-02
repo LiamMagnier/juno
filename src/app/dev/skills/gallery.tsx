@@ -166,6 +166,33 @@ function View({ view }: { view: SkillsGalleryView }) {
           installedFrom={{ ...FIXTURE_LIBRARY.sources[0], enabled: false }}
         />
       );
+    case "detail-scripts":
+      // An imported skill whose folder carries scripts nobody has reviewed:
+      // the consent note names them, the Files tab lists them with what the
+      // scanner found in each.
+      return (
+        <DetailFixture
+          skill={{ ...FIXTURE_DETAIL_SKILL, securityStatus: "warning" }}
+          version={{
+            ...FIXTURE_DETAIL_VERSION,
+            securityStatus: "warning",
+            requiresConsent: true,
+            securityScan: {
+              consentFor: ["scripts"],
+              findings: [
+                {
+                  code: "bundle_subprocess",
+                  severity: "warning",
+                  field: "bundle",
+                  path: "scripts/fill_form.py",
+                  message: "A script starts other programs or evaluates code it builds at run time.",
+                },
+              ],
+            },
+          }}
+          versions={FIXTURE_DETAIL_VERSIONS}
+        />
+      );
   }
 }
 

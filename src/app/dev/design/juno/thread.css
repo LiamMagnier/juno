@@ -132,10 +132,10 @@
   text-align: right;
 }
 
-/* The live line (M1): what Juno is doing, in words in the second ink, led by
-   a glyph for the kind of work in the presence colour (the one colour that
-   means "acting now"), and real seconds after three. The words are never the
-   blue: blue words read as a link. */
+/* The live line (M1): what Alevr is doing, in words in the second ink, led by
+   the Continuum ThinkingMark (its handoff is the one colour that means "acting
+   now"), and real seconds after three. The words are never the blue: blue
+   words read as a link. */
 .jn .jn-live {
   display: flex;
   align-items: center;
@@ -149,12 +149,19 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--presence);
+  width: 20px;
+  height: 20px;
 }
 .jn .jn-live--slot {
   visibility: hidden;
+}
+/* Stopped on the person: the words are the attention (no pill, no dot); the mark is still. */
+.jn .jn-live[data-state="waiting"] .jn-live__text {
+  color: var(--attn);
+  font-weight: var(--attn-w);
+}
+.jn .jn-live[data-state="error"] .jn-live__text {
+  color: var(--ink);
 }
 .jn .jn-live__words {
   display: inline-grid;
@@ -848,5 +855,96 @@
   .jn .jn-answer {
     font-size: 16px;
     line-height: 26px;
+  }
+}
+
+/* —————————————————————————————— Revision 2 —————————————————————————————— */
+
+/* Stopped: one quiet row where the work stopped, with the way to carry on. */
+.jn .jn-stopped {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.jn .jn-thread__end {
+  height: 1px;
+  margin-top: -1px;
+}
+
+/* Jump to latest (M19): centred on the composer's top edge, on the popover material. */
+/* It sits just above the composer (8 px clear of its edge), so it never covers the dock row's words. */
+.jn .jn-dock .jn-jump {
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  translate: -50% 0;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  background: var(--mat-pop);
+  -webkit-backdrop-filter: var(--mat-filter);
+  backdrop-filter: var(--mat-filter);
+  box-shadow: var(--shadow-pop);
+}
+.jn .jn-jump[data-live] {
+  color: var(--presence);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-jump:hover {
+    color: var(--ink);
+  }
+}
+.jn .jn-jump:active {
+  background: var(--well-2);
+}
+
+/* The approval keeps its room after it collapses (M18's spacer): the card's box eases, the room stays. */
+.jn .jn-approve-hold {
+  display: flow-root;
+}
+
+/* The chip's ink glyph (a made thing's type, from the icon set) beside the apps' own marks. */
+.jn .jn-chip__glyph {
+  color: var(--ink-2);
+}
+
+/* The phone home's one line for an agent's ask (there is no sidebar there). Hidden on wider windows. */
+.jn .jn-home__attn {
+  display: none;
+}
+@media (max-width: 760px) {
+  .jn .jn-home {
+    position: relative;
+  }
+  .jn .jn-home__attn {
+    position: absolute;
+    top: 8px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 12px 0 10px;
+    border-radius: var(--r-card);
+    background: var(--card);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--ink);
+  }
+  .jn .jn-home__attn > span:not(.jn-cmark) {
+    flex: 1;
+    min-width: 0;
+  }
+  .jn .jn-home__attn > svg {
+    color: var(--ink-3);
   }
 }

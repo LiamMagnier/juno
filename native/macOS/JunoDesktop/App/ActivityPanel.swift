@@ -647,6 +647,12 @@ struct DesktopToolCallDetail: View {
                     }
                     arguments
                     result
+                    // A real run's evidence (JunoChatKit): where it ran, its
+                    // exit, the files it made as cards, and Run again as a
+                    // new request. The failure phrase is already above.
+                    if call.run != nil {
+                        NativeToolRunDetailView(call: call, showsReason: false, onRunAgain: seedDraft)
+                    }
                     if call.tool == "mcp", call.status == .failed, call.errorCode != "blocked", let seedDraft {
                         Button("Ask to run again") {
                             seedDraft("Try again: \(call.toolTitle ?? call.connectorLabel ?? "the tool")")

@@ -8,18 +8,26 @@
   margin: 0 auto;
   padding: 56px 48px 96px;
 }
+/* Revision 2: a page's action sits on its TITLE's line (centred on the 40 px title line box), not on the
+   lede's last line, where it floated 40 px below the title in Orbit, Library and Customize. */
 .jn .jn-page__head {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
 }
+.jn .jn-page__head > :not(:first-child) {
+  flex: none;
+  margin-top: 4px;
+}
 .jn .jn-page__lede {
+  text-wrap: pretty;
   margin-top: 6px;
   font-size: 15px;
   line-height: 22px;
   color: var(--ink-2);
   max-width: 56ch;
+  text-wrap: pretty;
 }
 .jn .jn-page__search {
   width: 280px;
@@ -152,9 +160,9 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
+/* Revision 2 close-out: the ask is answered in Needs you below, so the portrait says it in ink (one amber per frame). */
 .jn .jn-portrait__state[data-state="waiting"] {
-  color: var(--attn);
-  font-weight: var(--attn-w);
+  color: var(--ink);
 }
 .jn .jn-portrait__state[data-state="paused"],
 .jn .jn-portrait__state[data-state="offline"] {
@@ -397,6 +405,23 @@
 /* The same tokens, one notch denser in the work itself: 13px step lines on
    28px rows, mono for paths and counts, the diff as the panel's second pane.
    The sidebar keeps the shell's 32 px rows (one shell, one target size). */
+/* The entry point: the product lockup (Continuum, Alevr Code) small and quiet above one serif line. */
+.jn .jn-codehome__greet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.jn .jn-codehome__lockup {
+  color: var(--ink-2);
+}
+.jn .jn-codehome__lockup .jn-alevr,
+.jn .jn-codehome__lockup .jn-lockup__art {
+  color: var(--ink-2);
+}
+.jn .jn-codehome__lockup .jn-lockup__product {
+  color: var(--ink-3);
+}
 .jn .jn-codehome__title {
   text-align: center;
   margin-bottom: 26px;
@@ -1358,6 +1383,48 @@
 .jn .jn-sheet__foot .jb--danger {
   margin-left: -14px;
 }
+.jn .jn-sheet__prose {
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--ink);
+  max-width: 48ch;
+  padding: 4px 0 6px;
+}
+.jn .jn-sheet__row > .jn-amark,
+.jn .jn-sheet__row > svg {
+  flex: none;
+}
+.jn .jn-sheet__row:has(> svg:first-child) {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.jn .jn-sheet__policy {
+  flex: none;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+/* A phone's sheet comes up from the bottom (O5): full width, the top corners rounded, the home indicator clear. */
+@media (max-width: 760px) {
+  .jn .jn-sheet {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: calc(100dvh - 40px);
+    border-radius: 22px 22px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .jn .jn-sheet__head {
+    padding: 18px 12px 14px 16px;
+  }
+  .jn .jn-sheet__body {
+    padding: 0 16px 12px;
+  }
+  .jn .jn-sheet__foot {
+    padding: 14px 16px 18px;
+  }
+}
 
 /* ——————————————————————————————— Phone ——————————————————————————————— */
 
@@ -1506,4 +1573,183 @@
 .jn .jb.jn-sheet__disconnect {
   color: var(--danger);
   text-decoration-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+/* —————————————————————————— Revision 2: Orbit —————————————————————————— */
+
+.jn .jn-asks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Create an agent by saying what it should take care of: the same object as the composer (surface, one
+   hairline, no shadow), one notch smaller; the note says what it will never do without asking. */
+.jn .jn-describe {
+  margin-top: 28px;
+  max-width: 720px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line-composer);
+  padding: 12px 12px 10px 18px;
+}
+.jn .jn-describe:focus-within {
+  box-shadow: 0 0 0 1px var(--line-3);
+}
+.jn .jn-describe:has(textarea:focus-visible) {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+.jn .jn-describe__box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.jn .jn-describe__label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.jn .jn-describe textarea {
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ink);
+  field-sizing: content;
+  min-height: 24px;
+}
+.jn .jn-describe textarea::placeholder {
+  color: var(--ink-3);
+}
+.jn .jn-describe__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+}
+.jn .jn-describe__note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-describe + .jn-lineup {
+  margin-top: 40px;
+}
+@media (max-width: 760px) {
+  .jn .jn-describe {
+    margin-top: 20px;
+    padding: 12px 10px 10px 14px;
+  }
+  .jn .jn-describe__foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .jn .jn-describe__foot .jb {
+    height: 44px;
+  }
+}
+
+/* —————————————————————————— Revision 2: Code —————————————————————————— */
+
+/* Review: the summary of what changed and Revert all over the files; each file's Revert in its header. */
+.jn .jn-diff__review {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 40px;
+  flex: none;
+  padding: 0 12px 0 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.jn .jn-diff__summary .mono {
+  font-size: 12px;
+}
+.jn .jn-diff__file {
+  position: relative;
+}
+.jn .jn-diff__filehead {
+  padding-right: 44px;
+}
+.jn .jn-diff__file .jn-diff__revert {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+}
+.jn .jn-diff__revert:not(:hover):not(:focus-visible) {
+  color: var(--ink-3);
+}
+/* The reason the pull request is not available yet, in words beside it. */
+.jn .jn-top__why {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  margin-right: 4px;
+  white-space: nowrap;
+}
+/* The context row's one voice: the interface sans at 13 px. */
+.jn .jn-ctx__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* The chosen mode, explained in one line under the start composer. */
+.jn .jn-codehome__mode {
+  margin: 10px auto 0;
+  max-width: 720px;
+  padding: 0 20px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-codehome__mode b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+/* On a phone the Session / Changes switch is the only tab bar: the panel's own tabs (Changes, Files,
+   Terminal, Tests) would repeat "Changes" and clip at the edge; Files, Terminal and Tests sit in More. */
+@media (max-width: 760px) {
+  .jn .jn-diff__tabs {
+    display: none;
+  }
+  .jn .jn-top__why {
+    display: none;
+  }
+}
+
+/* —————————————————————————— Revision 2: Library —————————————————————————— */
+
+.jn .jn-lib__meta {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.jn .jn-lib__by {
+  gap: 6px;
+}
+.jn .jn-lib__chatlink {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -3px -4px -3px auto;
+  border-radius: 7px;
+  color: var(--ink-3);
+  transition: background-color var(--d-fast) var(--e-out), color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-lib__chatlink:hover {
+    color: var(--ink);
+    background: var(--fill-hover);
+  }
+}
+.jn .jn-lib__chatlink:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
 }

@@ -54,6 +54,7 @@
 
 import "server-only";
 import { createArtifactMaintenance } from "@/lib/artifact-maintenance";
+import { sweepToolRuns } from "@/lib/exec/runtime";
 import { sealIdleDrafts } from "@/lib/artifact-writes";
 import { purgeExpiredArtifacts } from "@/lib/artifact-trash";
 
@@ -137,6 +138,14 @@ const SCHEDULER_ID = `work-scheduler:${process.pid}:${process.env.HOSTNAME ?? "l
 let stopping = false;
 let nextMigrationSweepAt = 0;
 let nextCheckpointSweepAt = 0;
+/**
+ * Hosted code runs whose turn ended before they did (src/lib/exec/runtime.ts
+ * `sweepToolRuns`). Every minute: a run is either collected ("finished
+ * later", its files attached) or recorded as outcome_unknown. Nothing is ever
+ * started or re-run here. A sweep in this process, not a new PM2 app.
+ */
+const TOOL_RUN_SWEEP_MS = 60_000;
+let nextToolRunSweepAt = 0;
 /** Where the last migration sweep stopped. See `sweepMigrations`. */
 let migrationCursor: string | null = null;
 
@@ -1082,6 +1091,20 @@ async function tick(): Promise<void> {
         // A failed sweep is not worth stopping the tick for: nothing downstream
         // depends on it having run, and the next pass tries again.
         log("checkpoint sweep failed", { error: String(error) });
+      }
+    );
+  }
+
+  if (now.getTime() >= nextToolRunSweepAt) {
+    nextToolRunSweepAt = now.getTime() + TOOL_RUN_SWEEP_MS;
+    await sweepToolRuns({ now }).then(
+      (result) => {
+        if (result.examined > 0) log("tool runs swept", { ...result });
+      },
+      (error: unknown) => {
+        // Like the checkpoint sweep: the next pass tries again, and a lapsed
+        // lease is still lapsed then.
+        log("tool run sweep failed", { error: String(error) });
       }
     );
   }

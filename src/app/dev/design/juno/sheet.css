@@ -607,9 +607,107 @@
   color: var(--attn);
   font-weight: 500;
 }
-.jn .jn-mcrew__words[data-state="thinking"],
-.jn .jn-mcrew__words[data-state="working"] {
-  color: var(--presence);
+.jn .jn-mcrew__words[data-status="needs"] {
+  color: var(--attn);
+  font-weight: var(--attn-w);
+}
+
+/* Orbit: the face and its words beside the agent's real sidebar rows. */
+.jn .jn-morbit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 40px;
+  max-width: 640px;
+}
+.jn .jn-side.jn-morbit__rows {
+  height: auto;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--side);
+}
+
+/* Thinking: the live row in context, and the same mark large. */
+.jn .jn-mthink {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  align-items: center;
+  gap: 32px;
+  max-width: 680px !important;
+}
+.jn .jn-mthink__row {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.jn .jn-mthink__big {
+  display: grid;
+  place-items: center;
+  height: 200px;
+  border-radius: var(--r-card);
+  background: var(--card);
+}
+
+/* Stop. */
+.jn .jn-mstop {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.jn .jn-stopped {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 24px;
+  color: var(--ink-2);
+}
+
+/* Copy and save. */
+.jn .jn-msave {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+.jn .jn-msave__btn {
+  min-width: 156px;
+  justify-content: center;
+}
+.jn .jn-msave__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jn .jn-msave__btn[data-saved] {
+  color: var(--ink);
+}
+
+/* Code verification. */
+.jn .jn-mverify__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.jn .jn-mverify__title {
+  font-weight: 500;
+}
+.jn .jn-mverify .jn-steps {
+  margin: 0;
+}
+
+/* Error, retry, blocked. */
+.jn .jn-mrecover {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.jn .jn-mrecover .jn-live .jb--link {
+  margin-left: 4px;
 }
 .jn .jn-mcrew__row {
   display: flex;
@@ -915,4 +1013,11 @@
   .jn .jn-states__grid {
     columns: 1;
   }
+}
+
+/* Revision 2: inside a state's frame the blocked message is the frame's own content, not a card in it. */
+.jn .jn-state__panel .jn-blocked {
+  background: none;
+  padding: 0;
+  border-radius: 0;
 }
