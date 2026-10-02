@@ -604,7 +604,8 @@ class Service:
             self._persist(run)
             argv = self.run_argv(run, command or LANGUAGES[run.language][1], program=command is None)
             run.call = BrokerCall(self.config["broker"], argv)
-            self.started_runs += 1
+            if not run.internal:
+                self.started_runs += 1
             timer = threading.Timer(run.timeoutMs / 1000.0, self._timeout, args=(run,))
             timer.daemon = True
             timer.start()
@@ -792,7 +793,8 @@ class Service:
 
     def health(self):
         return {"ok": True, "service": "juno-exec", "api": 1, "egress": "none", "image": self.config["policy"]["image"],
-                "activeRuns": self.host_active, "queuedRuns": self.pending, "time": int(now())}
+                "activeRuns": self.host_active, "queuedRuns": self.pending, "runsStarted": self.started_runs,
+                "time": int(now())}
 
     def sweep(self):
         """Drop idle sessions and old run records (30 minutes after the last activity)."""
