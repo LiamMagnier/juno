@@ -279,7 +279,7 @@ if (!DB_URL) {
     const { frames, done } = await send({ message: "Compute 6 times 7 in Python." }, TOOL_SCRIPT);
     const toolRows = frames
       .filter((f) => f.type === "activity")
-      .map((f) => (f as { event: { kind: string; tool?: Record<string, unknown> } }).event)
+      .map((f) => (f as unknown as { event: { kind: string; tool?: Record<string, unknown> } }).event)
       .filter((e) => e.kind === "tool" && e.tool);
     assert.ok(toolRows.some((e) => e.tool!.phase === "running" && e.tool!.timeoutMs === 130_000), "the running phase went live");
     assert.ok(
