@@ -188,3 +188,105 @@ test("resume() re-arms without an event, and pause is inert once stopped or stal
   t.mock.timers.tick(50);
   assert.equal(fired, 1, "a stopped watchdog cannot be revived through pause/resume");
 });
+
+/*
+ * V5 (TOOL_RUNTIME_DESIGN §7 L1): a 130-second tool call that emits progress
+ * frames completes without tripping the stall watchdog. The real windows, the
+ * real tracker the route uses, and the dispatcher's event shapes, on fake
+ * timers: 10 s of streaming, the call runs 130 s with a progress frame every
+ * 10 s, then the answer streams. Before the hold, 130 s of tool time inside a
+ * 120 s idle window was reported as a model that stopped responding.
+ */
+test("a 130 s tool call with progress frames completes without a stall", async (t: TestContext) => {
+  const { trackToolActivity } = await import("@/lib/chat-stall");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let fired = 0;
+  const wd = createStallWatchdog(() => fired++);
+  const tools = trackToolActivity(wd);
+  const event = (e: { type: string; phase?: string; status?: string; callId?: string }) => {
+    wd.touch();
+    tools.observe(e);
+  };
+
+  event({ type: "text" });
+  t.mock.timers.tick(10_000);
+  event({ type: "tool", phase: "call", callId: "c1" });
+  event({ type: "tool", phase: "status", status: "queued", callId: "c1" });
+  event({ type: "tool", phase: "status", status: "running", callId: "c1" });
+  assert.equal(wd.held, true);
+  for (let s = 0; s < 130; s += 10) {
+    t.mock.timers.tick(10_000);
+    event({ type: "tool", phase: "progress", callId: "c1" });
+    assert.equal(wd.held, true, "a progress frame never releases the hold");
+  }
+  event({ type: "tool", phase: "result", callId: "c1" });
+  assert.equal(wd.held, false);
+  t.mock.timers.tick(5_000);
+  event({ type: "text" });
+  assert.equal(fired, 0, "130 s of tool time is not provider silence");
+  assert.equal(wd.stalled, false);
+
+  // The idle window is back once the call settled: real silence still stalls.
+  t.mock.timers.tick(PROVIDER_IDLE_TIMEOUT_MS + 1);
+  assert.equal(fired, 1);
+  wd.stop();
+});
+
+test("the hold alone covers a silent run; without it the same silence stalls", async (t: TestContext) => {
+  const { trackToolActivity } = await import("@/lib/chat-stall");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+
+  let held = 0;
+  const withHold = createStallWatchdog(() => held++);
+  const tracker = trackToolActivity(withHold);
+  withHold.touch();
+  tracker.observe({ type: "tool", phase: "status", status: "running", callId: "x" });
+  t.mock.timers.tick(130_000);
+  assert.equal(held, 0, "no progress at all, still no stall while the call runs");
+  tracker.observe({ type: "tool", phase: "result", callId: "x" });
+  withHold.stop();
+
+  let unheld = 0;
+  const without = createStallWatchdog(() => unheld++);
+  without.touch();
+  t.mock.timers.tick(130_000);
+  assert.equal(unheld, 1, "the control: 130 s of silence with no running call is a stall");
+  without.stop();
+});
+
+test("parallel calls each hold; the clock restarts only when the last one settles", async (t: TestContext) => {
+  const { trackToolActivity } = await import("@/lib/chat-stall");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let fired = 0;
+  const wd = createStallWatchdog(() => fired++, 1_000, 5_000);
+  const tracker = trackToolActivity(wd);
+  wd.touch();
+  tracker.observe({ type: "tool", phase: "status", status: "running", callId: "a" });
+  tracker.observe({ type: "tool", phase: "status", status: "running", callId: "b" });
+  tracker.observe({ type: "tool", phase: "status", status: "running", callId: "b" });
+  assert.equal(tracker.active, 2);
+  tracker.observe({ type: "tool", phase: "result", callId: "a" });
+  t.mock.timers.tick(10_000);
+  assert.equal(fired, 0, "b still runs");
+  tracker.observe({ type: "tool", phase: "result", callId: "b" });
+  t.mock.timers.tick(1_001);
+  assert.equal(fired, 1);
+  tracker.releaseAll();
+  wd.stop();
+});
+
+test("an approval pause and a tool hold do not undo each other", (t: TestContext) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let fired = 0;
+  const wd = createStallWatchdog(() => fired++, 1_000, 5_000);
+  wd.touch();
+  const release = wd.hold();
+  wd.pause();
+  wd.touch(); // a result arriving clears the approval pause...
+  t.mock.timers.tick(10_000);
+  assert.equal(fired, 0, "...but the hold keeps the clock off");
+  release();
+  t.mock.timers.tick(1_001);
+  assert.equal(fired, 1);
+  wd.stop();
+});
