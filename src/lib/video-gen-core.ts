@@ -1,6 +1,9 @@
 import type { ModelInfo } from "@/lib/models";
 
-export const GOOGLE_OMNI_MODEL_ID = "gemini-omni-flash-preview";
+/** The GA Gemini Omni Flash id (27 Aug 2026), on the Interactions API. */
+export const GOOGLE_OMNI_MODEL_ID = "gemini-omni-1.1-flash";
+/** Every Omni id this adapter speaks for: the GA model and the retired preview it replaced. */
+const GOOGLE_OMNI_MODEL_IDS: ReadonlySet<string> = new Set([GOOGLE_OMNI_MODEL_ID, "gemini-omni-flash-preview"]);
 
 export type GoogleOmniVideoPoll =
   | { status: "running"; note?: string }
@@ -21,7 +24,7 @@ function firstString(record: UnknownRecord, keys: string[]): string | undefined 
 
 /** Keep the catalog and the provider adapter tied to the same exact model id. */
 export function isGoogleOmniModel(model: Pick<ModelInfo, "provider" | "providerModel">): boolean {
-  return model.provider === "google" && model.providerModel === GOOGLE_OMNI_MODEL_ID;
+  return model.provider === "google" && GOOGLE_OMNI_MODEL_IDS.has(model.providerModel);
 }
 
 /** Find the video content part across the Interactions API's step/output shapes. */

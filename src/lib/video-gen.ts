@@ -4,6 +4,7 @@ import type { ModelInfo } from "@/lib/models";
 import { isGoogleOmniModel, parseGoogleOmniInteraction } from "@/lib/video-gen-core";
 import type { MediaWire } from "@/lib/media-params";
 import {
+  googleOmniStartBody,
   minimaxVideoBody,
   pollXaiVideo,
   seedanceStartBody,
@@ -130,20 +131,15 @@ function googleOmniHeaders(): Record<string, string> {
 }
 
 const googleOmniAdapter: VideoAdapter = {
-  async start(model, prompt) {
+  async start(model, prompt, wire) {
     const { ok, status, data, text } = await fetchJson<GoogleOmniInteraction>(
       `${GOOGLE_API_BASE}/interactions`,
       {
         method: "POST",
         headers: googleOmniHeaders(),
-        body: JSON.stringify({
-          model: model.providerModel,
-          input: prompt,
-          background: true,
-          // Prefer URI delivery for larger clips; the poll parser also accepts
-          // the inline base64 form returned by the preview endpoint.
-          response_format: { type: "video", aspect_ratio: "16:9", delivery: "uri" },
-        }),
+        // URI delivery for larger clips; the poll parser also accepts the
+        // inline base64 form.
+        body: JSON.stringify(googleOmniStartBody(model.providerModel, prompt, wire)),
       }
     );
     if (!ok || !data.id) {

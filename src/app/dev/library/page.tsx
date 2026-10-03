@@ -2,13 +2,12 @@ import { notFound } from "next/navigation";
 import { LibraryGallery } from "./gallery";
 
 /**
- * Dev-only fixture page for the Library and the model picker's first stage.
+ * Dev-only fixture page for the Library.
  *
- * Both are hard to see in their interesting states on a real account: a file
+ * It is hard to see in its interesting states on a real account: a file
  * whose indexing failed, an upload halfway up, a refused file, a file in
- * Recently deleted that its chat still keeps, the drop overlay (which only
- * exists while something is being dragged), and the model menu with
- * favourites and recents. This renders the real presentational components
+ * Recently deleted that its chat still keeps, and the drop overlay (which only
+ * exists while something is being dragged). This renders the real presentational components
  * with made-up rows, so every state can be looked at, in both themes, side by
  * side.
  *

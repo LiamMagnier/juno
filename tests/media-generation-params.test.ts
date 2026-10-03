@@ -5,6 +5,7 @@ import { defaultParams, wireParams } from "@/lib/media-params";
 import {
   generationCost,
   geminiImageBody,
+  googleOmniStartBody,
   imageFileType,
   mediaCostFactor,
   minimaxImageBody,
@@ -224,6 +225,34 @@ test("Veo: aspectRatio, resolution, durationSeconds under parameters", () => {
     instances: [{ prompt: "p" }],
     parameters: { aspectRatio: "9:16", resolution: "720p", durationSeconds: "4" },
   });
+});
+
+test("Gemini Omni Flash: aspect and resolution inside response_format, URI delivery", () => {
+  const id = "google:gemini-omni-1.1-flash";
+  // No choices: exactly the body sent before parameters existed.
+  assert.deepEqual(googleOmniStartBody("gemini-omni-1.1-flash", "p", null), {
+    model: "gemini-omni-1.1-flash",
+    input: "p",
+    background: true,
+    response_format: { type: "video", aspect_ratio: "16:9", delivery: "uri" },
+  });
+  // 4K is spelt "4k" on the wire; there is no length option to send.
+  const plan = planGeneration(id, { aspect: "9:16", resolution: "4K", durationSec: 8 });
+  assert.deepEqual(plan.params, { aspect: "9:16", resolution: "4K" });
+  assert.deepEqual(googleOmniStartBody("gemini-omni-1.1-flash", "p", plan.wire), {
+    model: "gemini-omni-1.1-flash",
+    input: "p",
+    background: true,
+    response_format: { type: "video", aspect_ratio: "9:16", resolution: "4k", delivery: "uri" },
+  });
+  assert.deepEqual(defaultParams(id), { aspect: "16:9", resolution: "720p" });
+  // 360p drafts cost a third of the 720p default.
+  assert.equal(mediaCostFactor(id, "video", { aspect: "16:9", resolution: "360p" }), 0.34);
+  const controls = paramControls(id, defaultParams(id));
+  assert.deepEqual(controls.map((c) => c.key), ["aspect", "resolution"]);
+  assert.deepEqual(controls[1].choices.map((c) => c.label), ["360p", "720p", "1080p", "4K"]);
+  assert.deepEqual(fixedFacts(capabilitiesFor(id)), ["With sound"]);
+  assert.deepEqual(framePixels(id, defaultParams(id), "9:16"), { width: 720, height: 1280, exact: true });
 });
 
 test("Seedance, Hailuo and CogVideoX: choices as top-level body fields", () => {

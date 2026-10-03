@@ -71,6 +71,8 @@ export function promptWithSuffix(prompt: string, wire: MediaWire | null): string
 // four times medium.
 const IMAGE_RES_WEIGHT: Record<string, number> = { "0.5K": 0.75, "1K": 1, "2K": 1.5, "4K": 2.5 };
 const VIDEO_RES_WEIGHT: Record<string, number> = {
+  // Google: Omni's 360p drafts cost "a third" of 720p.
+  "360p": 0.34,
   "480p": 0.6,
   "512p": 0.65,
   "720p": 1,
@@ -299,6 +301,22 @@ export function minimaxImageItems(data: unknown, max: number): Array<{ b64?: str
 export function veoStartBody(prompt: string, wire: MediaWire | null): UnknownRecord {
   const parameters = isRecord(wire?.body.parameters) ? wire.body.parameters : null;
   return parameters && Object.keys(parameters).length ? { instances: [{ prompt }], parameters } : { instances: [{ prompt }] };
+}
+
+/**
+ * Gemini Omni Flash on the Interactions API: a background interaction whose
+ * video comes back as a Files API URI. The choices (aspect ratio, resolution)
+ * live inside `response_format`; without them the body is exactly the one
+ * sent before parameters existed (16:9 at the provider's default 720p).
+ */
+export function googleOmniStartBody(providerModel: string, prompt: string, wire: MediaWire | null): UnknownRecord {
+  const chosen = isRecord(wire?.body.response_format) ? wire.body.response_format : {};
+  return {
+    model: providerModel,
+    input: prompt,
+    background: true,
+    response_format: { type: "video", aspect_ratio: "16:9", ...chosen, delivery: "uri" },
+  };
 }
 
 /** Seedance (Ark): the choices are top-level body fields beside `content`. */

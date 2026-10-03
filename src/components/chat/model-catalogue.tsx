@@ -1,26 +1,27 @@
 "use client";
 
 /**
- * STAGE TWO — the model catalogue, in its own module so it can be fetched
- * when it is opened.
+ * The model catalogue, in its own module so it can be fetched when it is
+ * opened.
  *
- * The composer chip opens stage one (model-selector.tsx): a short menu of the
- * models you use, and how hard the model should think. This is what its "More
- * models" row opens, and it is the expensive half — three panes, sixteen lab
- * marks, a detail panel, keyboard navigation, favourites and recents. Most
- * sessions never open it; every session was downloading it.
+ * The composer's model chip (model-selector.tsx) opens this directly: three
+ * panes, sixteen lab marks, a detail panel, keyboard navigation, favourites
+ * and recents, and at the foot of the list how hard the selected model should
+ * think. It opens on the selected model, scrolled to its section (Google's
+ * Video rows for Veo) with its row lit. Most turns never open it; every
+ * session was downloading it.
  *
  * WHY A FILE AND NOT A `next/dynamic` AT THE OLD CALL SITE: the two stages
  * shared one component and one piece of state (`query`, `cursorKey`, `recent`,
  * the row refs), so there was nothing to split — the state that only the
  * catalogue uses now lives with the catalogue, which is what makes the dynamic
  * import in model-selector.tsx buy anything. It is also just a better
- * boundary: stage one no longer re-renders on every keystroke in a search
+ * boundary: the chip no longer re-renders on every keystroke in a search
  * field it does not own.
  *
- * WHAT STAYS BEHIND: `value`, the resolved `current` model and `onPick` come
- * in as props, because they are the caller's, and the two popovers' open state
- * is stage one's business.
+ * WHAT STAYS BEHIND: `value`, the resolved `current` model, `onPick` and the
+ * thinking control come in as props, because they are the caller's, and the
+ * popover's open state is the chip's business.
  *
  * THE CATALOGUE IS THREE PANES: a 48px rail of lab marks (names in the
  * tooltip — see `RailTile`), a narrow column of MODEL NAMES, and a scrollable
@@ -70,6 +71,7 @@ import {
   sortModelsForDisplay,
 } from "@/lib/model-metrics";
 import { isModelLocked, readRecent } from "@/lib/model-picker";
+import { EffortPanelContext } from "@/components/chat/reasoning-slider";
 import { cn } from "@/lib/utils";
 import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -463,16 +465,19 @@ export function ModelCatalogue({
   autoSelected,
   filter: modelFilter,
   onPick,
+  thinking,
   side = "top",
 }: {
   value: ModelId;
-  /** The model `value` resolves to — computed once by stage one. */
+  /** The model `value` resolves to — computed once by the chip. */
   current: ModelInfo | null;
   autoSelected: boolean;
   filter?: (model: ModelInfo) => boolean;
-  /** Picking a row: stage one owns what that does (recents, close, upgrade). */
+  /** Picking a row: the chip owns what that does (recents, close, upgrade). */
   onPick: (model: ModelInfo) => void;
-  /** The side stage one opened toward (the composer opens below on the home). */
+  /** The selected model's thinking-effort control, drawn under the list; null when it has one effort. */
+  thinking?: React.ReactNode;
+  /** The side the chip opens toward. */
   side?: "top" | "bottom";
 }) {
   const { quota, models, settings } = useApp();
@@ -484,13 +489,14 @@ export function ModelCatalogue({
   const [cursorKey, setCursorKey] = React.useState<string | null>(null);
   /**
    * Read on mount rather than in an effect keyed on an `open` flag: this
-   * component IS the open state now — stage one mounts it when the catalogue
+   * component IS the open state now — the chip mounts it when the catalogue
    * opens and unmounts it when it closes, so "reset when it opens" is just
    * initial state, and the transient fields above need no reset at all.
    */
   const [recent, setRecent] = React.useState<string[]>([]);
   React.useEffect(() => setRecent(readRecent()), []);
   const rowRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
+  const listViewportRef = React.useRef<HTMLDivElement>(null);
   /**
    * Whether the pointer has genuinely MOVED since the last arrow key.
    *
@@ -616,6 +622,8 @@ export function ModelCatalogue({
   /** ↑/↓ walk the list, Home/End jump to its ends, Enter picks. */
   const onNavKeyDown = (e: React.KeyboardEvent) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(e.key)) return;
+    // The thinking slider at the foot drives itself with the same keys.
+    if (e.target instanceof Element && e.target.closest("[data-model-thinking]")) return;
     if (order.length === 0) return;
     if (e.key === "Enter") {
       // A row is a button: its own click handles Enter.
@@ -633,6 +641,55 @@ export function ModelCatalogue({
   };
 
   const detailModel: ModelInfo | null = (cursorKey ? byKey.get(cursorKey) : null) ?? current ?? null;
+
+  /**
+   * The selected model's row: its copy under its own lab (where the Text /
+   * Image / Video / Audio headings are), else wherever else it is listed.
+   */
+  const selectedKey = React.useMemo(() => {
+    const id = autoSelected ? AUTO_MODEL_INFO.id : value;
+    const own = rowKeyFor("", id);
+    if (byKey.has(own)) return own;
+    return order.find((key) => byKey.get(key)?.id === id) ?? null;
+  }, [autoSelected, value, byKey, order]);
+
+  /**
+   * Open on the model in use: its row lit (so the panel describes it and the
+   * arrow keys start from it) and the list scrolled to its section, so a Veo
+   * thread opens on Google's Video rows rather than on the top of the list.
+   * The heading above the row goes to the top of the list when the row still
+   * fits under it; otherwise the row is centred. Once per open (this component
+   * is re-created per open), retried for a few frames because the popover's
+   * portal mounts its content a frame after this component.
+   */
+  const placedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (placedRef.current || !selectedKey) return;
+    let frame = 0;
+    let tries = 0;
+    const place = () => {
+      const row = rowRefs.current.get(selectedKey);
+      const viewport = listViewportRef.current;
+      if (!row || !viewport) {
+        if (++tries < 10) frame = requestAnimationFrame(place);
+        return;
+      }
+      placedRef.current = true;
+      setCursorKey(selectedKey);
+      let heading: Element | null = row.previousElementSibling;
+      while (heading && heading.tagName === "BUTTON") heading = heading.previousElementSibling;
+      const top = viewport.getBoundingClientRect().top - viewport.scrollTop;
+      const rowTop = row.getBoundingClientRect().top - top;
+      const rowBottom = rowTop + row.offsetHeight;
+      const headingTop = heading ? heading.getBoundingClientRect().top - top : rowTop;
+      viewport.scrollTop =
+        rowBottom - headingTop <= viewport.clientHeight - 8
+          ? Math.max(0, headingTop - 4)
+          : Math.max(0, rowTop - (viewport.clientHeight - row.offsetHeight) / 2);
+    };
+    frame = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(frame);
+  }, [selectedKey]);
   /**
    * One model row: a mark and a name.
    *
@@ -875,7 +932,7 @@ export function ModelCatalogue({
                 )}
               </div>
             </div>
-            <ScrollFade className="min-h-0 flex-1" viewportClassName="px-2 pb-3 pt-1.5">
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="px-2 pb-3 pt-1.5" viewportRef={listViewportRef}>
               <div
                 id="model-picker-list"
                 role="listbox"
@@ -957,11 +1014,29 @@ export function ModelCatalogue({
                 </div>
               </div>
             </ScrollFade>
+            {/* How hard the selected model thinks: one control for one
+                setting, under the list rather than in the panel, because the
+                panel folds away on a narrow screen and this must not. Its
+                model name puts the selected model back under the cursor. */}
+            {thinking ? (
+              <div data-model-thinking="" className="shrink-0 border-t border-border/60 px-3 pb-3 pt-2.5">
+                <EffortPanelContext.Provider
+                  value={{
+                    modelName: current?.name ?? "Model",
+                    onOpenModels: () => {
+                      if (selectedKey) moveCursorTo(selectedKey);
+                    },
+                  }}
+                >
+                  {thinking}
+                </EffortPanelContext.Provider>
+              </div>
+            ) : null}
           </div>
 
-          {/* Everything the names column does not say. Effort is NOT here:
-              it belongs to stage one, which is where you go to change it, and
-              a second copy would be two controls for one setting. */}
+          {/* Everything the names column does not say. Effort is not here:
+              it is under the list, for the selected model only, and a second
+              copy would be two controls for one setting. */}
           <DetailPanel
             model={detailModel}
             selected={!!detailModel && (isAutoModelId(detailModel.id) ? autoSelected : value === detailModel.id)}

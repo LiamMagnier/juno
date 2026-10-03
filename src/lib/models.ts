@@ -647,7 +647,16 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "google", id: "veo-3.1-generate-preview", name: "Veo 3.1", family: "veo", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 3, description: "Cinematic video with native synchronized audio, up to 4K." }),
   def({ provider: "google", id: "veo-3.1-fast-generate-preview", name: "Veo 3.1 Fast", family: "veo-fast", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Faster, cheaper Veo tier." }),
   def({ provider: "google", id: "veo-3.1-lite-generate-preview", name: "Veo 3.1 Lite", family: "veo-lite", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 1, description: "Lower-cost Veo 3.1 tier for quick video drafts." }),
-  def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash", family: "gemini-omni", status: "deprecated", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview).", deprecationNote: "Retires Sep 30, 2026. Use Veo 3.1 Fast", retiresOn: "2026-09-30", replacedBy: "google:veo-3.1-fast-generate-preview" }),
+  // Gemini Omni Flash, GA as `gemini-omni-1.1-flash` on 27 Aug 2026 (Google's
+  // models page lists it as the stable id; the deprecations page gives it no
+  // shutdown date). A video model, not a chat model: text, images and up to
+  // 10s of video in, one 3-10s clip with native audio out, through the
+  // Interactions API (`video-gen.ts`, `googleOmniStartBody`). Aspect and
+  // resolution are request fields; length is steered by the prompt only.
+  // Billed by output tokens: 5,792 a second of 720p at $17.50/M, about
+  // $0.10/s (spend.ts).
+  def({ provider: "google", id: "gemini-omni-1.1-flash", name: "Gemini Omni Flash", family: "gemini-omni", status: "current", released: "2026-08", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video: generate a clip, then edit or extend it by asking, from 360p drafts to 4K, with native audio." }),
+  def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash Preview", family: "gemini-omni", status: "deprecated", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview).", deprecationNote: "Retires Sep 30, 2026. Use Gemini Omni Flash", retiresOn: "2026-09-30", replacedBy: "google:gemini-omni-1.1-flash" }),
   def({ provider: "xai", id: "grok-imagine-video", name: "Grok Imagine Video", family: "imagine-video", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Text-, image-, and video-to-video generation." }),
   def({ provider: "xai", id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", family: "imagine-video-15", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 3, description: "Higher-fidelity 720p video with native audio ($0.08/s), GA June 2026." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-5-260628", name: "Seedance 2.5", family: "seedance", status: "current", released: "2026-07", modality: "video", minPlan: "MAX", cost: 3, description: "4 to 30s at 24fps with synchronized audio, from up to 50 reference assets." }),

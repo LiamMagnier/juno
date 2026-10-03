@@ -121,7 +121,8 @@ export function modelRatesMicroUsdPerToken(modelId: string): { input: number; ou
  *           $0.01 (fast) · GLM Image / CogView / MiniMax Image $0.02 ·
  *           Muse Image $0.01
  *   video — $0.50 per clip, $0.25 for fast/mini tiers, $0.75 for
- *           cost-tier-3 flagships (Veo 3.1, Seedance 2.0, Hailuo 2.3…)
+ *           cost-tier-3 flagships (Veo 3.1, Seedance 2.0, Hailuo 2.3…),
+ *           Gemini Omni Flash $1.00 (~$0.10/s, metered at its 10s ceiling)
  *   audio — Google's per-song list price: Lyria 3.5 and Lyria 3 Pro $0.08 a
  *           song, Lyria 3 Clip $0.04 a 30-second clip (audio-gen-core.ts)
  */
@@ -130,6 +131,11 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
   const id = (model?.id ?? modelId).toLowerCase();
   if (kind === "audio") return audioRequestCostMicroUsd(id);
   if (kind === "video") {
+    // Gemini Omni Flash bills output tokens, not clips: 5,792 tokens a second
+    // of 720p at $17.50/M is ~$0.10/s, and the prompt (not a field) sets the
+    // 3-10s length, so a clip is metered at its longest: $1.00. Checked
+    // before the "fast" tier below, which its id would otherwise match.
+    if (id.includes("gemini-omni")) return 1_000_000;
     if (/fast|mini|lite/.test(id)) return 250_000;
     return (model?.cost ?? 3) >= 3 ? 750_000 : 500_000;
   }

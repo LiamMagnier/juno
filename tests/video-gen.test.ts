@@ -7,11 +7,15 @@ test("Gemini Omni and Veo Lite are callable video catalog entries", () => {
   const veoLite = resolveModel("google:veo-3.1-lite-generate-preview");
   assert.ok(veoLite);
   assert.equal(isGoogleOmniModel(veoLite), false);
-  // Omni retired on 30 Sep 2026: from then on it migrates to Veo 3.1 Fast,
-  // and the Omni code path is recognised by its provider model id alone.
+  // The GA model runs on the Omni path.
+  const omniGa = resolveModel("google:gemini-omni-1.1-flash");
+  assert.ok(omniGa);
+  assert.equal(isGoogleOmniModel(omniGa), true);
+  // The preview retired on 30 Sep 2026: from then on it migrates to the GA
+  // model, and the Omni code path still recognises its provider model id.
   assert.equal(isGoogleOmniModel({ provider: "google", providerModel: "gemini-omni-flash-preview" }), true);
   if (hasRetired({ retiresOn: "2026-09-30" })) {
-    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:veo-3.1-fast-generate-preview");
+    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:gemini-omni-1.1-flash");
   } else {
     const omni = resolveModel("google:gemini-omni-flash-preview");
     assert.ok(omni);

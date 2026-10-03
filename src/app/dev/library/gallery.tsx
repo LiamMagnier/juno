@@ -16,11 +16,6 @@ import type {
   LibraryUpload,
   LibraryView,
 } from "@/components/library/library-types";
-import { ModelQuickMenu } from "@/components/chat/model-selector";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
-import { MODELS, type ModelId } from "@/lib/models";
-import { AUTO_MODEL_ID } from "@/lib/auto-model";
-import { reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 
 /* ── Fixtures ─────────────────────────────────────────────────────────── */
@@ -234,8 +229,6 @@ const UPLOADS: LibraryUpload[] = [
 
 export const STORAGE = { usedBytes: 1_240_000_000, quotaBytes: 10_737_418_240, remainingBytes: 9_497_418_240 };
 
-const FAVORITE_MODELS: ModelId[] = ["anthropic:claude-opus-5-5", "openai:gpt-6-sol"];
-const RECENT_MODELS: ModelId[] = ["anthropic:claude-sonnet-5", "google:gemini-3.8-flash"];
 
 /* ── Gallery ──────────────────────────────────────────────────────────── */
 
@@ -291,37 +284,6 @@ function useFixtureLibrary({
       ),
     onDismissUpload: (localId: string) => setUploads((previous) => previous.filter((upload) => upload.localId !== localId)),
   };
-}
-
-function ModelMenuFixture({ favorites, recent, value }: { favorites: ModelId[]; recent: ModelId[]; value: ModelId }) {
-  const [current, setCurrent] = React.useState<ModelId>(value);
-  const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
-  const models = [...favorites, ...recent, current]
-    .filter((id, index, all) => all.indexOf(id) === index)
-    .map((id) => MODELS[id])
-    .filter((model) => !!model);
-  const currentModel = MODELS[current];
-  const options = currentModel ? reasoningOptions(currentModel) : [];
-  return (
-    // The popover's own shell, drawn in place: the real one is portalled and
-    // anchored to a composer chip this page does not have.
-    <div className="surface-float overlay-glass w-72 rounded-menu p-1">
-      <ModelQuickMenu
-        models={models}
-        showAuto
-        value={current}
-        isLocked={(model) => model.minPlan === "MAX"}
-        onPick={(model) => setCurrent(model.id)}
-        onMore={() => undefined}
-        initialFocus="none"
-        thinking={
-          options.length > 1 ? (
-            <ReasoningSlider options={options} value={effort ?? options[Math.min(2, options.length - 1)].value} onChange={setEffort} />
-          ) : undefined
-        }
-      />
-    </div>
-  );
 }
 
 /**
@@ -448,12 +410,6 @@ export function LibraryGallery() {
           </div>
         </Section>
 
-        <Section title="Model picker, stage one" note="Auto, favourites, recents and the current model, then More models, then thinking. Arrow keys, Home, End and typeahead move the highlight.">
-          <div className="flex flex-wrap items-start gap-8">
-            <ModelMenuFixture favorites={FAVORITE_MODELS} recent={RECENT_MODELS} value="anthropic:claude-opus-5-5" />
-            <ModelMenuFixture favorites={[]} recent={[]} value={AUTO_MODEL_ID} />
-          </div>
-        </Section>
       </AppPage>
     </main>
   );

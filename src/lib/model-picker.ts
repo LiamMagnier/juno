@@ -1,10 +1,10 @@
 /**
- * The two things BOTH halves of the model control need.
+ * The things BOTH halves of the model control need.
  *
  * This file exists for one reason and it is a bundling reason, so it is worth
- * stating plainly: `model-selector.tsx` (stage one, always on screen) imports
- * `model-catalogue.tsx` (stage two, 40 kB) with `next/dynamic`, and a single
- * static `import { … } from "./model-catalogue"` anywhere in stage one undoes
+ * stating plainly: `model-selector.tsx` (the chip, always on screen) imports
+ * `model-catalogue.tsx` (what it opens, 40 kB) with `next/dynamic`, and a single
+ * static `import { … } from "./model-catalogue"` anywhere in the chip undoes
  * that completely — webpack puts the module in the importing chunk and the
  * dynamic import resolves to something already downloaded.
  *
@@ -43,62 +43,6 @@ export function pushRecent(id: string) {
   } catch {
     // Private mode, or storage full. Recents are a convenience, not state.
   }
-}
-
-/** Model rows in stage one, not counting Auto. Past this it is a catalogue, and there already is one. */
-export const QUICK_LIST_MAX = 5;
-
-/**
- * The models stage one lists under Auto: the account's favourites, then what
- * this browser used recently, and always the model the composer is on.
- *
- * The current model is guaranteed a row because the check mark on it is how
- * the list says where you are; a short list that could leave it out would
- * sometimes open with nothing checked. It takes the last slot when the list is
- * full, so favourites keep their order above it.
- *
- * Only models this surface can use: the caller's capability filter applies,
- * a model announced but not live is left for the catalogue, and an id the
- * account no longer has (a lab key removed, a model retired) is dropped
- * rather than drawn as a row that cannot be picked.
- */
-export function quickListModels({
-  models,
-  favorites,
-  recent,
-  currentId,
-  filter,
-  max = QUICK_LIST_MAX,
-}: {
-  models: ModelInfo[];
-  favorites: readonly string[];
-  recent: readonly string[];
-  currentId: string | null;
-  filter?: (model: ModelInfo) => boolean;
-  max?: number;
-}): ModelInfo[] {
-  const byId = new Map(models.map((m) => [m.id, m]));
-  const usable = (id: string) => {
-    const m = byId.get(id);
-    return m && !m.comingSoon && !isAutoModelId(m.id) && (!filter || filter(m)) ? m : null;
-  };
-  const out: ModelInfo[] = [];
-  const seen = new Set<string>();
-  const take = (id: string) => {
-    if (out.length >= max || seen.has(id)) return;
-    const m = usable(id);
-    if (!m) return;
-    seen.add(id);
-    out.push(m);
-  };
-  favorites.forEach(take);
-  recent.slice(0, RECENT_MAX).forEach(take);
-  const current = currentId ? usable(currentId) : null;
-  if (current && !seen.has(current.id)) {
-    if (out.length >= max) out.pop();
-    out.push(current);
-  }
-  return out;
 }
 
 /**

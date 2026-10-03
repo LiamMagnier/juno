@@ -25,7 +25,7 @@
 export interface MediaParams {
   /** "16:9", "1:1", or "auto" (the provider picks, from the prompt or the input image). */
   aspect?: string;
-  /** Canonical tier: images "0.5K" | "1K" | "2K" | "4K"; video "480p" | "512p" | "720p" | "768p" | "1080p" | "4K". */
+  /** Canonical tier: images "0.5K" | "1K" | "2K" | "4K"; video "360p" | "480p" | "512p" | "720p" | "768p" | "1080p" | "4K". */
   resolution?: string;
   /** Provider quality tier, e.g. "auto" | "low" | "medium" | "high" | "xhigh" | "max" | "standard" | "fast". */
   quality?: string;
@@ -166,6 +166,7 @@ const RES_LABELS: Record<string, string> = {
   "1K": "1K",
   "2K": "2K",
   "4K": "4K",
+  "360p": "360p",
   "480p": "480p",
   "512p": "512p",
   "720p": "720p",
@@ -580,6 +581,39 @@ function veo(modelId: string, lite: boolean): MediaCapabilities {
 }
 
 // ---------------------------------------------------------------------------
+// Google Gemini Omni Flash
+// POST /v1beta/interactions  { model, input, response_format: { type: "video", aspect_ratio, resolution, delivery } }
+// ---------------------------------------------------------------------------
+
+// "aspect_ratio": "16:9" | "9:16" (landscape is the default); "resolution":
+// "360p" | "720p" | "1080p" | "4k", 720p by default, 1080p and 4K upscaled.
+// There is no length field: a clip runs 3-10s and the prompt steers it. Audio
+// always comes with the video; one video per interaction.
+function geminiOmni(modelId: string): MediaCapabilities {
+  return {
+    modelId,
+    kind: "video",
+    endpoint: "POST /v1beta/interactions (response_format.*)",
+    options: {
+      aspect: { kind: "select", label: "Aspect ratio", field: "response_format.aspect_ratio", default: "16:9", choices: aspects(["16:9", "9:16"]) },
+      resolution: {
+        kind: "select",
+        label: "Resolution",
+        field: "response_format.resolution",
+        default: "720p",
+        choices: resolutions(["360p", "720p", "1080p", "4K"], { "4K": "4k" }, { "360p": "Draft", "1080p": "Upscaled", "4K": "Upscaled" }),
+      },
+    },
+    fixed: { audio: true, count: 1 },
+    sources: [
+      "https://ai.google.dev/gemini-api/docs/omni",
+      "https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash",
+    ],
+    unverified: ["duration: output is 3-10s but the request has no length field (the prompt steers it), so no length control."],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // xAI Grok Imagine Video
 // POST https://api.x.ai/v1/videos/generations → GET /v1/videos/{request_id}
 // ---------------------------------------------------------------------------
@@ -865,6 +899,7 @@ const ENTRIES: MediaCapabilities[] = [
   veo("google:veo-3.1-generate-preview", false),
   veo("google:veo-3.1-fast-generate-preview", false),
   veo("google:veo-3.1-lite-generate-preview", true),
+  geminiOmni("google:gemini-omni-1.1-flash"),
   grokVideo("xai:grok-imagine-video", false),
   grokVideo("xai:grok-imagine-video-1.5", true),
   seedance("seedance:dreamina-seedance-2-5-260628", {
@@ -997,6 +1032,7 @@ export function defaultParams(modelId: string): MediaParams {
 // Ranks for "nearest" when a value has to move: resolution tiers and seconds.
 const RES_RANK: Record<string, number> = {
   "0.5K": 512,
+  "360p": 360,
   "480p": 480,
   "512p": 512,
   "720p": 720,

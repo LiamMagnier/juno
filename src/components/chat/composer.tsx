@@ -1268,7 +1268,9 @@ export function Composer({
         variant="panel"
         defaultValue={defaultReasoning(resolved)}
         options={effortOptions}
-        value={reasoningEffort}
+        // Clamped as the chip's label is, so the slider and the chip name the
+        // same rung (an unclamped value missing from the options read as the first).
+        value={clampReasoningEffort(resolved, reasoningEffort)}
         onChange={onReasoningChange}
         disabled={controlsLocked}
         fastMode={fastMode}

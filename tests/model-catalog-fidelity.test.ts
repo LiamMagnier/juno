@@ -119,13 +119,21 @@ test("the September 2026 models carry the ids their providers actually serve", (
   assert.equal(lite.contextWindow, 1_048_576);
   assert.equal(byId.get("google:gemini-3.1-flash-lite")?.status, "legacy");
 
-  // And the one retirement: Google deprecated this endpoint on 30 Sep 2026.
+  // Gemini Omni Flash went GA as gemini-omni-1.1-flash on 27 Aug 2026: a
+  // video model on the Interactions API.
+  const omniGa = byId.get("google:gemini-omni-1.1-flash");
+  assert.ok(omniGa, "Gemini Omni Flash (GA) is in the catalog");
+  assert.equal(omniGa.modality, "video");
+  assert.equal(omniGa.status, "current");
+  assert.equal(omniGa.released, "2026-08");
+
+  // And the one retirement: Google deprecated the preview on 30 Sep 2026.
   // Before that date it is listed as deprecated; from 1 Oct it leaves the
-  // catalog and stored ids migrate to its replacement.
+  // catalog and stored ids migrate to the GA model.
   const omni = byId.get("google:gemini-omni-flash-preview");
   if (hasRetired({ retiresOn: "2026-09-30" })) {
     assert.equal(omni, undefined, "a retired model is no longer offered");
-    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:veo-3.1-fast-generate-preview");
+    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:gemini-omni-1.1-flash");
   } else {
     assert.ok(omni);
     assert.equal(omni.status, "deprecated");

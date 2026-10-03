@@ -12,9 +12,6 @@ import {
   parseLibrarySort,
   type LibraryCursorRow,
 } from "@/components/library/library-query";
-import { quickListModels, QUICK_LIST_MAX } from "@/lib/model-picker";
-import { MODELS, type ModelInfo } from "@/lib/models";
-import { AUTO_MODEL_ID } from "@/lib/auto-model";
 
 const ROUTE = readFileSync(new URL("../src/app/api/library/route.ts", import.meta.url), "utf8");
 const PAGE = readFileSync(new URL("../src/app/(app)/library/page.tsx", import.meta.url), "utf8");
@@ -25,8 +22,8 @@ const LIBRARY_TRASH = readFileSync(new URL("../src/components/library/library-tr
 /*
  * The Library's search, filter and sort run on the server, and the page puts
  * rows back (Undo, a finished upload) with the client's copy of the same
- * ordering. These pin the two halves to each other, and the model menu's
- * short list to the rules its comment states.
+ * ordering. These pin the two halves to each other, and the model chip to
+ * opening the full catalogue.
  */
 
 function item(id: string, patch: Partial<LibraryItem> = {}): LibraryItem {
@@ -222,44 +219,27 @@ test("the client's view test mirrors the route's where", () => {
   assert.equal(matchesView(photo, { q: "report", kind: "all" }), false);
 });
 
-const model = (id: string, patch: Partial<ModelInfo> = {}): ModelInfo => ({ ...MODELS[id], ...patch });
-const opus = model("anthropic:claude-opus-5-5");
-const sonnet = model("anthropic:claude-sonnet-5");
-const sol = model("openai:gpt-6-sol");
-const flash = model("google:gemini-3.8-flash");
-const haiku = model("anthropic:claude-haiku-4-5");
-const luna = model("openai:gpt-6-luna");
-const all = [opus, sonnet, sol, flash, haiku, luna];
+const SELECTOR = readFileSync(new URL("../src/components/chat/model-selector.tsx", import.meta.url), "utf8");
+const CATALOGUE = readFileSync(new URL("../src/components/chat/model-catalogue.tsx", import.meta.url), "utf8");
 
-test("stage one lists favourites, then recents, without repeats", () => {
-  const ids = quickListModels({
-    models: all,
-    favorites: [opus.id, sol.id],
-    recent: [sol.id, flash.id],
-    currentId: opus.id,
-  }).map((m) => m.id);
-  assert.deepEqual(ids, [opus.id, sol.id, flash.id]);
+test("the model chip opens the full catalogue, with no favourites menu first", () => {
+  // One popover, triggered by the chip, holding the catalogue.
+  assert.equal((SELECTOR.match(/<Popover\b/g) ?? []).length, 1, "one popover: the catalogue");
+  assert.match(SELECTOR, /<PopoverTrigger asChild>\s*<button/, "the chip is the catalogue's trigger");
+  assert.match(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{thinking\}/, "thinking travels into the catalogue");
+  // The old first stage is gone, whatever modality is selected.
+  assert.doesNotMatch(SELECTOR, /<ModelQuickMenu|quickListModels\(|>All models<|view === "effort"/);
+  assert.doesNotMatch(readFileSync(new URL("../src/lib/model-picker.ts", import.meta.url), "utf8"), /quickListModels/);
 });
 
-test("the current model always has a row, taking the last slot when the list is full", () => {
-  const ids = quickListModels({
-    models: all,
-    favorites: [opus.id, sonnet.id, sol.id, flash.id, haiku.id],
-    recent: [],
-    currentId: luna.id,
-  }).map((m) => m.id);
-  assert.equal(ids.length, QUICK_LIST_MAX);
-  assert.equal(ids.at(-1), luna.id);
-  assert.deepEqual(ids.slice(0, 4), [opus.id, sonnet.id, sol.id, flash.id]);
-});
-
-test("stage one drops what this surface cannot pick", () => {
-  const ids = quickListModels({
-    models: [opus, model(sol.id, { comingSoon: true }), flash],
-    favorites: [sol.id, "retired:model", AUTO_MODEL_ID],
-    recent: [flash.id, opus.id],
-    currentId: null,
-    filter: (m) => m.provider !== "anthropic",
-  }).map((m) => m.id);
-  assert.deepEqual(ids, [flash.id]);
+test("the catalogue opens on the selected model's section, with thinking under the list", () => {
+  // The selected row: its copy under its own lab, where the modality headings are.
+  assert.match(CATALOGUE, /const selectedKey = React\.useMemo/);
+  assert.match(CATALOGUE, /rowKeyFor\("", id\)/);
+  assert.match(CATALOGUE, /setCursorKey\(selectedKey\)/, "the selected row is lit when it opens");
+  assert.match(CATALOGUE, /viewportRef=\{listViewportRef\}/, "the list is scrolled to it");
+  // The effort control sits at the foot of the list and keeps its own arrow keys.
+  assert.match(CATALOGUE, /data-model-thinking=""/);
+  assert.match(CATALOGUE, /closest\("\[data-model-thinking\]"\)\) return;/);
+  assert.match(CATALOGUE, /<EffortPanelContext\.Provider/);
 });
