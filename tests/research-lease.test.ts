@@ -163,7 +163,9 @@ test("every long model stage heartbeats the lease while it runs (B3)", async () 
   };
   const slow = async <T>(label: string, value: T): Promise<T> => {
     const before = claims;
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    // 120 ms against a 5 ms heartbeat: ~24 beats expected, 2 required. 40 ms
+    // starved on a loaded, emulated builder (the Mac deploy's amd64 container).
+    await new Promise((resolve) => setTimeout(resolve, 120));
     beatsDuring[label] = claims - before;
     return value;
   };
@@ -184,7 +186,7 @@ test("every long model stage heartbeats the lease while it runs (B3)", async () 
   const done = await engine.drive({ runId: run.id, userId: "u", workerId: "w" });
   assert.equal(done?.state, "completed");
   for (const stage of ["plan", "synthesize", "validate"]) {
-    assert.ok((beatsDuring[stage] ?? 0) >= 2, `${stage} ran for 40 ms without renewing the lease (${beatsDuring[stage]})`);
+    assert.ok((beatsDuring[stage] ?? 0) >= 2, `${stage} ran for 120 ms without renewing the lease (${beatsDuring[stage]})`);
   }
 });
 
