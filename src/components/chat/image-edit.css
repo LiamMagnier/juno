@@ -1,0 +1,156 @@
+/*
+ * The image editor (image-edit-overlay.tsx). The picture on a quiet stage,
+ * one rail of tools, the chat composer at the foot, and one live object:
+ * the selection, in presence ink (the homepage's #2d49c9 / #97a6e6, which in
+ * the product means "this is the thing that is live", never a button colour).
+ *
+ * Radii: the rail is a pill with 4px padding holding 36px discs, so its 22px
+ * corner is the discs' 18px plus the padding (concentric). The picture's
+ * plate is the card rung (12px). The composer brings its own.
+ */
+.ie-root {
+  --ie-stage: #eef0f1;
+  --ie-presence: #2d49c9;
+  --ie-presence-tint: rgb(45 73 201 / .16);
+  --ie-ant-base: rgb(255 255 255 / .95);
+  --ie-dim: rgb(14 15 17 / .48);
+  --ie-hair: hsl(var(--foreground) / .1);
+  --ie-glass: rgb(255 255 255 / .78);
+  --ie-shadow: 0 1px 1px rgb(25 27 30 / .05), 0 24px 64px -24px rgb(25 27 30 / .32), 0 64px 120px -48px rgb(25 27 30 / .2);
+  --ie-ease: cubic-bezier(.16, 1, .3, 1);
+  background: var(--ie-stage);
+  color: hsl(var(--foreground));
+}
+.dark .ie-root {
+  --ie-stage: #0d0e0f;
+  --ie-presence: #97a6e6;
+  --ie-presence-tint: rgb(151 166 230 / .16);
+  --ie-ant-base: rgb(10 11 12 / .8);
+  --ie-dim: rgb(0 0 0 / .56);
+  --ie-hair: rgb(255 255 255 / .1);
+  --ie-glass: rgb(34 35 38 / .72);
+  --ie-shadow: 0 1px 1px rgb(0 0 0 / .4), 0 24px 64px -24px rgb(0 0 0 / .7), 0 64px 120px -48px rgb(0 0 0 / .6);
+}
+
+/* ———————— Chrome ———————— */
+.ie-round {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  border: 1px solid var(--ie-hair);
+  background: var(--ie-glass);
+  color: hsl(var(--foreground) / .8);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.ie-round:hover { color: hsl(var(--foreground)); }
+@media (max-width: 639px), (pointer: coarse) {
+  .ie-round { width: 44px; height: 44px; }
+}
+
+.ie-rail {
+  border: 1px solid var(--ie-hair);
+  background: var(--ie-glass);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.ie-rail-rule { background: var(--ie-hair); }
+.ie-tool { color: hsl(var(--muted-foreground)); }
+.ie-tool:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--foreground) / .06); }
+.ie-tool[data-on] { color: hsl(var(--foreground)); background: hsl(var(--foreground) / .1); }
+.ie-tool:disabled { opacity: .38; }
+
+/* Brush size: a hairline with a ring thumb. */
+.ie-size { width: 96px; }
+@media (max-width: 639px) { .ie-size { width: 72px; } }
+.ie-size-track { background: var(--ie-hair); }
+.dark .ie-size-track { background: rgb(255 255 255 / .18); }
+.ie-size-range { background: hsl(var(--foreground) / .55); }
+.ie-size-thumb {
+  width: 14px;
+  height: 14px;
+  background: hsl(var(--card));
+  border: 1.5px solid hsl(var(--foreground) / .7);
+  cursor: grab;
+}
+.ie-size-thumb:active { cursor: grabbing; }
+
+/* ———————— The picture ———————— */
+.ie-plate {
+  box-shadow: var(--ie-shadow), 0 0 0 1px var(--ie-hair);
+  background: hsl(var(--foreground) / .04);
+}
+.ie-overlay { opacity: 0; transition: opacity 220ms var(--ie-ease); }
+.ie-overlay[data-on] { opacity: 1; }
+
+/* The selection: a hairline base under marching presence ink. */
+.ie-sel-base { fill: none; stroke: var(--ie-ant-base); stroke-width: 1.5; }
+.ie-sel-ants { fill: none; stroke: var(--ie-presence); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.ie-sel-draw { fill: none; stroke: var(--ie-presence); stroke-width: 2; stroke-dasharray: 1 1; stroke-dashoffset: 0; opacity: 0; }
+.ie-handle {
+  width: 9px;
+  height: 9px;
+  translate: -50% -50%;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px var(--ie-presence), 0 1px 3px rgb(0 0 0 / .3);
+}
+@media (pointer: coarse) { .ie-handle { width: 13px; height: 13px; } }
+.ie-annot {
+  translate: 0 calc(-100% - 6px);
+  padding: 2px 6px;
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgb(14 15 17 / .74);
+}
+.ie-annot--below { translate: 0 6px; }
+
+.ie-brush {
+  opacity: 0;
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .35), inset 0 0 0 1px rgb(0 0 0 / .2);
+  transition: opacity 120ms;
+  will-change: transform;
+}
+.ie-brush[data-erase] { border-style: dashed; }
+.ie-frame:not([data-ready]) .ie-brush { display: none; }
+
+/* The scope chip's mark: a tiny selection, in presence ink. */
+.ie-scope-mark { border: 1.5px dashed var(--ie-presence); }
+
+/* ———————— Motion ———————— */
+.ie-root[data-state="open"] { animation: ie-fade 220ms var(--ie-ease) both; }
+.ie-root[data-state="closed"] { animation: ie-fade-out 160ms cubic-bezier(.4, 0, 1, 1) both; }
+@media (prefers-reduced-motion: no-preference) {
+  .ie-root[data-state="open"] .ie-chrome { animation: ie-drop 420ms var(--ie-ease) 120ms both; }
+  .ie-root[data-state="open"] .ie-dock { animation: ie-rise 520ms var(--ie-ease) 140ms both; }
+  .ie-sel[data-live] .ie-sel-ants { animation: ie-march 800ms linear infinite; }
+  .ie-sel-draw { animation: ie-draw 520ms var(--ie-ease) both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ie-root[data-state="open"] .ie-chrome,
+  .ie-root[data-state="open"] .ie-dock { animation: ie-fade 220ms linear both; }
+}
+@keyframes ie-fade { from { opacity: 0; } }
+@keyframes ie-fade-out { to { opacity: 0; } }
+@keyframes ie-drop { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes ie-rise { from { opacity: 0; transform: translateY(20px); } }
+@keyframes ie-march { to { stroke-dashoffset: -9; } }
+@keyframes ie-draw {
+  0% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+  80% { opacity: 1; stroke-dashoffset: 0; }
+  100% { opacity: 0; stroke-dashoffset: 0; }
+}
+
+@media (prefers-contrast: more) {
+  .ie-rail, .ie-round { border-color: hsl(var(--foreground) / .45); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ie-rail, .ie-round { background: hsl(var(--card)); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}

@@ -179,7 +179,8 @@ interface GeneratedImageProps {
   index?: number;
   /** Drawn as a grid tile (width from the grid column) rather than on its own. */
   tile?: boolean;
-  onEdit?: () => void;
+  /** Opens the editor. Handed the frame's rect so the editor can grow out of this picture. */
+  onEdit?: (origin?: DOMRect) => void;
 }
 
 export function GeneratedImage({ attachment, handoff, index = 0, tile = false, onEdit }: GeneratedImageProps) {
@@ -292,7 +293,7 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
       {onEdit && (
         <button
           type="button"
-          onClick={onEdit}
+          onClick={() => onEdit(frameRef.current?.getBoundingClientRect())}
           aria-label={`Edit ${attachment.fileName}`}
           // The media-overlay action: caption mono, hairline, a press that dips.
           className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"

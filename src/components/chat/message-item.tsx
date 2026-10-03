@@ -695,6 +695,8 @@ export const MessageItem = React.memo(function MessageItem({
   // Image-edit dialog target; kept mounted through the close animation.
   const [editTarget, setEditTarget] = React.useState<ClientAttachment | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
+  // Where the picture sat when Edit was pressed, so the editor opens out of it.
+  const [editOrigin, setEditOrigin] = React.useState<DOMRect | null>(null);
   // The shape this turn's generation asked for, kept past the placeholder so
   // the result lands in the same box and reveals (generated-media.tsx).
   const generationHandoff = useGenerationHandoff(message.error ? null : message.progress);
@@ -1266,7 +1268,8 @@ export const MessageItem = React.memo(function MessageItem({
             {mediaAttachments.length > 0 && (() => {
               const editFor = (a: ClientAttachment) =>
                 onImageEdit && currentModelId && !privateMode && !busy
-                  ? () => {
+                  ? (origin?: DOMRect) => {
+                      setEditOrigin(origin ?? null);
                       setEditTarget(a);
                       setEditOpen(true);
                     }
@@ -1610,6 +1613,7 @@ export const MessageItem = React.memo(function MessageItem({
           attachment={editTarget}
           sourceModelId={message.model}
           currentModelId={currentModelId}
+          originRect={editOrigin}
           open={editOpen}
           onOpenChange={setEditOpen}
           onSubmit={onImageEdit}
