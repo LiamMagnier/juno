@@ -4,7 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
 import { ChevronDown } from "@/components/ui/icons";
-import { Popover, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { EffortPanelContext } from "@/components/chat/reasoning-slider";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
@@ -15,18 +16,15 @@ import { composerChevronClass, composerChipClass } from "@/components/ui/compose
 import { cn } from "@/lib/utils";
 
 /**
- * The model control: a chip that opens the catalogue.
+ * The model control: a chip, and what it opens depends on the model.
  *
- * The chip opens the full catalogue (model-catalogue.tsx) straight away,
- * whatever kind of model is selected: search, every lab, each lab's Text /
- * Image / Video / Audio sections, and the selected model already in view and
- * highlighted. There used to be a first stage between the two, a short menu
- * of Auto, favourites and recents with "All models" under it (and, for a
- * thinking model, the effort slider in front of even that). The owner asked
- * for it to go: on a video or image thread it put a list of chat models
- * between the chip and the model you were looking for. Favourites still lead
- * the catalogue's All view, and the thinking effort for the selected model
- * sits at the foot of the catalogue's list.
+ * A model with thinking levels opens on the thinking slider first, the thing
+ * most turns change; the model name in that panel opens the full catalogue.
+ * Every other model (one effort, Auto, image, video, audio) opens the full
+ * catalogue (model-catalogue.tsx) straight away: search, every lab, each
+ * lab's Text / Image / Video / Audio sections, and the selected model in view.
+ * The short favourites menu that used to sit between the chip and the
+ * catalogue is gone (owner, 2026-10-03).
  *
  * ── The catalogue is fetched, not bundled ────────────────────────────────
  *
@@ -94,8 +92,10 @@ export function ModelSelector({
   onChange: (m: ModelId) => void;
   filter?: (model: ModelInfo) => boolean;
   disabled?: boolean;
-  /** The thinking-effort control for the chosen model, drawn at the foot of
-   *  the catalogue's list. Omit it (or pass null) when the model has one effort. */
+  /** The thinking-effort control for the chosen model. With one, the chip opens
+   *  on it first and the model name inside opens the catalogue; without one
+   *  (one effort, or an image/video/audio model) the chip opens the catalogue.
+   *  Omit it (or pass null) when the model has one effort. */
   thinking?: React.ReactNode;
   /** Composer placement (the chat composer); other callers keep the chip-anchored popover. */
   layer?: ModelSelectorLayer;
@@ -106,6 +106,8 @@ export function ModelSelector({
   const { quota, models } = useApp();
   const plan = quota.plan;
   const [open, setOpen] = React.useState(false);
+  /** The thinking panel the chip opens first, for a model with effort levels. */
+  const [effortOpen, setEffortOpen] = React.useState(false);
   /**
    * Whether the catalogue has ever been opened. Once true it stays true, so
    * the chunk is fetched once and the popover keeps its exit animation.
@@ -118,8 +120,8 @@ export function ModelSelector({
   const side = "top" as const;
   const onSide = layer?.onSide;
   React.useEffect(() => {
-    onSide?.(open ? side : null);
-  }, [onSide, open, side]);
+    onSide?.(open || effortOpen ? side : null);
+  }, [onSide, open, effortOpen, side]);
 
   const current = isAutoModelId(value) ? AUTO_MODEL_INFO : (models.find((m) => m.id === value) ?? resolveModel(value));
   const autoSelected = isAutoModelId(value);
@@ -130,6 +132,13 @@ export function ModelSelector({
       setOpenCount((n) => n + 1);
     }
     setOpen(next);
+  };
+
+  // From the thinking panel's model name: the panel closes as the catalogue
+  // opens, so two popovers on one chip are never on screen together.
+  const openCatalogue = () => {
+    setEffortOpen(false);
+    onOpenChange(true);
   };
 
   const select = (m: ModelInfo) => {
@@ -150,34 +159,69 @@ export function ModelSelector({
     setOpen(false);
   };
 
+  const chip = (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={`Model: ${current?.name ?? "Select model"}${effortLabel ? `, ${effortLabel}` : ""}`}
+      onPointerEnter={prefetchCatalogue}
+      onFocus={prefetchCatalogue}
+      // The shared composer chip: flat text, a tone under the pointer and
+      // while open. In the chat composer it is words only (C17): the short
+      // name in the second ink, the effort in the third when it is not the
+      // usual one, one chevron. No logo, no pill, no border.
+      className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", layer && "composer-model-chip")}
+    >
+      {current ? <ModelMark model={current} className="size-3.5" /> : null}
+      <span
+        key={current?.id ?? "no-model"}
+        aria-hidden="true"
+        translate="no"
+        className="min-w-0 truncate motion-safe:animate-fade-in max-[359px]:hidden"
+      >
+        {current?.name ?? "Select model"}
+        {effortLabel ? <span className="composer-model-chip__effort"> {effortLabel}</span> : null}
+      </span>
+      <ChevronDown className={composerChevronClass} motion="none" />
+    </button>
+  );
+
   return (
     <Popover open={open && !disabled} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={`Model: ${current?.name ?? "Select model"}${effortLabel ? `, ${effortLabel}` : ""}`}
-          onPointerEnter={prefetchCatalogue}
-          onFocus={prefetchCatalogue}
-          // The shared composer chip: flat text, a tone under the pointer and
-          // while open. In the chat composer it is words only (C17): the short
-          // name in the second ink, the effort in the third when it is not the
-          // usual one, one chevron. No logo, no pill, no border.
-          className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", layer && "composer-model-chip")}
-        >
-          {current ? <ModelMark model={current} className="size-3.5" /> : null}
-          <span
-            key={current?.id ?? "no-model"}
-            aria-hidden="true"
-            translate="no"
-            className="min-w-0 truncate motion-safe:animate-fade-in max-[359px]:hidden"
-          >
-            {current?.name ?? "Select model"}
-            {effortLabel ? <span className="composer-model-chip__effort"> {effortLabel}</span> : null}
+      {thinking ? (
+        // Thinking first (owner): the chip opens the effort panel; its model
+        // name opens the catalogue. The catalogue's popover is anchored to the
+        // span around the chip, because the chip is already the panel's
+        // trigger and two Radix triggers on one element fight over data-state.
+        <PopoverAnchor asChild>
+          <span className="inline-flex min-w-0">
+            <Popover
+              open={effortOpen && !disabled}
+              onOpenChange={(next) => {
+                if (next) prefetchCatalogue();
+                setEffortOpen(next);
+              }}
+            >
+              <PopoverTrigger asChild>{chip}</PopoverTrigger>
+              <PopoverContent
+                align="end"
+                side="top"
+                sideOffset={8}
+                collisionPadding={12}
+                className="w-[min(18.5rem,calc(100vw-1.5rem))] rounded-menu p-3"
+                aria-label="Thinking"
+                onOpenAutoFocus={(event) => event.preventDefault()}
+              >
+                <EffortPanelContext.Provider value={{ modelName: current?.name ?? "Model", onOpenModels: openCatalogue }}>
+                  {thinking}
+                </EffortPanelContext.Provider>
+              </PopoverContent>
+            </Popover>
           </span>
-          <ChevronDown className={composerChevronClass} motion="none" />
-        </button>
-      </PopoverTrigger>
+        </PopoverAnchor>
+      ) : (
+        <PopoverTrigger asChild>{chip}</PopoverTrigger>
+      )}
 
       {catalogueMounted && (
         <ModelCatalogue
@@ -187,7 +231,6 @@ export function ModelSelector({
           autoSelected={autoSelected}
           filter={modelFilter}
           onPick={select}
-          thinking={thinking}
           side={layer ? side : undefined}
         />
       )}

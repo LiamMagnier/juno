@@ -222,13 +222,16 @@ test("the client's view test mirrors the route's where", () => {
 const SELECTOR = readFileSync(new URL("../src/components/chat/model-selector.tsx", import.meta.url), "utf8");
 const CATALOGUE = readFileSync(new URL("../src/components/chat/model-catalogue.tsx", import.meta.url), "utf8");
 
-test("the model chip opens the full catalogue, with no favourites menu first", () => {
-  // One popover, triggered by the chip, holding the catalogue.
-  assert.equal((SELECTOR.match(/<Popover\b/g) ?? []).length, 1, "one popover: the catalogue");
-  assert.match(SELECTOR, /<PopoverTrigger asChild>\s*<button/, "the chip is the catalogue's trigger");
-  assert.match(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{thinking\}/, "thinking travels into the catalogue");
-  // The old first stage is gone, whatever modality is selected.
-  assert.doesNotMatch(SELECTOR, /<ModelQuickMenu|quickListModels\(|>All models<|view === "effort"/);
+test("the chip opens thinking first for an effort model, and the catalogue directly for every other model", () => {
+  // Owner, 2026-10-03: a model with effort levels opens on the thinking slider,
+  // whose model name opens the catalogue; any other model (one effort, Auto,
+  // image, video, audio) opens the catalogue straight away.
+  assert.match(SELECTOR, /\{thinking \? \(/, "the chip's stage depends on whether there is a thinking control");
+  assert.match(SELECTOR, /<EffortPanelContext\.Provider value=\{\{ modelName: [^}]*onOpenModels: openCatalogue \}\}>/, "the panel's model name opens the catalogue");
+  assert.match(SELECTOR, /:\s*\(\s*<PopoverTrigger asChild>\{chip\}<\/PopoverTrigger>\s*\)\}/, "without thinking, the chip is the catalogue's trigger");
+  assert.doesNotMatch(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{thinking\}/, "the slider is not repeated in the catalogue");
+  // The favourites menu stays gone.
+  assert.doesNotMatch(SELECTOR, /<ModelQuickMenu|quickListModels\(|>All models</);
   assert.doesNotMatch(readFileSync(new URL("../src/lib/model-picker.ts", import.meta.url), "utf8"), /quickListModels/);
 });
 
