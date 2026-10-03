@@ -172,9 +172,12 @@ function timeOnce(html: string): number {
   return performance.now() - started;
 }
 
-/** The faster of two runs, which filters most scheduler noise. */
+/**
+ * The fastest of three runs, which filters scheduler noise and a stray GC
+ * pause (seen in the Mac deploy's emulated amd64 build: 41, 85, then 392 ms).
+ */
 function bestOf(html: string): number {
-  return Math.min(timeOnce(html), timeOnce(html));
+  return Math.min(timeOnce(html), timeOnce(html), timeOnce(html));
 }
 
 for (const [name, unit] of Object.entries(PATHOLOGICAL)) {
@@ -182,9 +185,10 @@ for (const [name, unit] of Object.entries(PATHOLOGICAL)) {
     const [one, two, four] = [1, 2, 4].map((size) => bestOf(sized(unit, size)));
     const times = `1 MB ${one.toFixed(0)} ms, 2 MB ${two.toFixed(0)} ms, 4 MB ${four.toFixed(0)} ms`;
     // Linear is ~4x from 1 to 4 MB; the old quadratic chain was ~16x (and
-    // minutes at 4 MB). A floor of 20 ms keeps a near-instant 1 MB run from
-    // inflating the ratio on a fast machine.
-    assert.ok(four / Math.max(one, 20) < 8, `${name}: ${times}`);
+    // minutes at 4 MB). 10x leaves room for a slow, noisy builder and still
+    // catches quadratic growth. A floor of 20 ms keeps a near-instant 1 MB run
+    // from inflating the ratio on a fast machine.
+    assert.ok(four / Math.max(one, 20) < 10, `${name}: ${times}`);
     assert.ok(four < 5_000, `${name}: ${times}`);
   });
 }
