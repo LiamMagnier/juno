@@ -906,10 +906,9 @@
           "note": "The web's Customize › Instructions tab renders the same personalization section as Settings."
         },
         "/profile": {
-          "mac": "native",
-          "ios": "native",
-          "screen": "Settings › Account",
-          "note": "A redirect to Settings › Account."
+          "mac": "planned",
+          "ios": "planned",
+          "note": "The profile page (2026-10-03): lifetime tokens, streaks, a year of daily activity and usage by model. The apps still show usage in Settings › Account."
         }
       },
       "routes": {
@@ -935,7 +934,11 @@
           "note": "Browser push; the apps register through /api/v1/devices/apns."
         },
         "/api/settings": "native",
-        "/api/v1/devices/apns": "native"
+        "/api/v1/devices/apns": "native",
+        "/api/profile/activity": {
+          "status": "planned",
+          "note": "The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet."
+        }
       }
     },
     {

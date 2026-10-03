@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: d1baf1aa9d9777fc
+// tokens-digest: b0dc72d689d998c5
 //
 
 import CoreGraphics
@@ -531,7 +531,7 @@ public enum JunoGeneratedType {
     /// `text-display`
     public static let display = JunoGeneratedTypeRung(minSize: 32.0, maxSize: 48.0, fluidIntercept: 5.3328, fluidSlope: 0.041667, lineHeight: 1.08, tracking: -0.02, weight: 500)
     /// `text-page-title`
-    public static let pageTitle = JunoGeneratedTypeRung(minSize: 26.0, maxSize: 32.0, fluidIntercept: 16.0, fluidSlope: 0.015625, lineHeight: 1.15, tracking: -0.02, weight: 600)
+    public static let pageTitle = JunoGeneratedTypeRung(minSize: 32.0, maxSize: 44.0, fluidIntercept: 12.0, fluidSlope: 0.03125, lineHeight: 1.08, tracking: -0.03, weight: 600)
     /// `text-title`
     public static let title = JunoGeneratedTypeRung(minSize: 22.0, maxSize: 22.0, fluidIntercept: 22.0, fluidSlope: 0.0, lineHeight: 1.25, tracking: -0.012, weight: 600)
     /// `text-heading`

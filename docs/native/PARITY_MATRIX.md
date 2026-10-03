@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-299 routes: 183 native, 51 planned, 52 web only, 13 internal. 47 pages: on the Mac 36 native, 2 partial, 2 planned, 7 web only; on iOS 20 native, 6 partial, 14 planned, 7 web only.
+300 routes: 183 native, 52 planned, 52 web only, 13 internal. 47 pages: on the Mac 35 native, 2 partial, 3 planned, 7 web only; on iOS 19 native, 6 partial, 15 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
-| [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 11 | 1 | 2 | 0 |
+| [Settings, notifications and announcements](#settings) | 2/3 | 2/3 | 11 | 2 | 2 | 0 |
 | [Plans and billing](#billing) | 1/1 | 0/1 | 3 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/5 | 0/5 | 0 | 0 | 15 | 0 |
@@ -534,7 +534,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
 | `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
-| `/profile` | Native | Native | Settings › Account | A redirect to Settings › Account. |
+| `/profile` | Planned | Planned |  | The profile page (2026-10-03): lifetime tokens, streaks, a year of daily activity and usage by model. The apps still show usage in Settings › Account. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -552,6 +552,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/push/subscriptions` | GET, POST, PATCH, DELETE | Web only |  | Browser push; the apps register through /api/v1/devices/apns. |
 | `/api/settings` | GET, PATCH | Native | JunoChatKit |  |
 | `/api/v1/devices/apns` | POST, DELETE | Native | JunoSync |  |
+| `/api/profile/activity` | GET | Planned |  | The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet. |
 
 <a id="billing"></a>
 
