@@ -134,7 +134,7 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
  *   edge       `.composer-surface`'s 1px hairline, top and bottom       2
  *                                                                      99  (114 coarse)
  *
- * The home's composer is taller at rest (its field is 70px, composer.tsx)
+ * The home's composer is taller at rest (its field is 56px, composer.tsx)
  * and its skeleton is drawn by the landing frame, not from this constant.
  *
  * The chat skeletons (`app/(app)/chat/loading.tsx` and `[id]/loading.tsx`)
@@ -152,12 +152,12 @@ export const composerRestHeightClass = "h-[100px] coarse:h-[114px]";
 
 /**
  * The HOME's composer at rest: the same row and edge over the home's taller
- * field (`min-h-[4.375rem]`, 70px, composer.tsx's landing frame; the coarse
+ * field (`min-h-[3.5rem]`, 56px, composer.tsx's landing frame; the coarse
  * field is the dock's 52px), so the new-chat skeleton stands exactly where
  * the composer lands.
  */
-export const COMPOSER_HOME_REST_HEIGHT = { pointer: 124, coarse: 114 } as const;
-export const composerHomeRestHeightClass = "h-[124px] coarse:h-[114px]";
+export const COMPOSER_HOME_REST_HEIGHT = { pointer: 110, coarse: 114 } as const;
+export const composerHomeRestHeightClass = "h-[110px] coarse:h-[114px]";
 
 /* ————————————————————————————————————————————————————————————————————————
  * Shared recipes
@@ -233,7 +233,7 @@ export const composerFieldClass = cn(
  * surface that does not clip, so the outline has room on every side.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-label text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
 
 /* ————————————————————————————————————————————————————————————————————————
  * The field tier: armed marks and connector mentions, inside the draft
@@ -467,7 +467,7 @@ export const composerChevronClass =
  * outline's 2px offset has room and the one indicator is the house one.
  */
 export const composerIconButtonClass =
-  "size-[34px] shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-8 shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row
@@ -657,14 +657,14 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
                     dictation — which this composer already has, one button to
                     the left — and the two doing different things behind the
                     same picture is the confusion this row can least afford. */}
-                <AudioLines className="size-5" />
+                <AudioLines className="size-[18px]" />
               </motion.span>
             ) : (
               <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
                 {/* The bold cut: the one glyph on the row set on a solid
                     accent disc, where the regular line thins against the fill
                     — the same weight Claude and ChatGPT give their send arrow. */}
-                <Send weight="bold" className="size-5" />
+                <Send weight="bold" className="size-[18px]" />
               </motion.span>
             )}
           </AnimatePresence>

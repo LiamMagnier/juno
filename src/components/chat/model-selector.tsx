@@ -425,7 +425,7 @@ export function ModelSelector({
       // usual one, one chevron. No logo, no pill, no border.
       className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", layer && "composer-model-chip")}
     >
-      {current ? <ModelMark model={current} className="size-4" /> : null}
+      {current ? <ModelMark model={current} className="size-3.5" /> : null}
       <span
         key={current?.id ?? "no-model"}
         aria-hidden="true"

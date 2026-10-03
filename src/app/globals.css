@@ -1460,20 +1460,11 @@
   .sidebar-motion-icon__glyph {
     transition: opacity var(--dur-fast) var(--ease-out-soft);
   }
-  .sidebar-motion-icon__glyph--alternate { opacity: 0; }
+  /* The folder used to be two stacked glyphs cross-fading here, closed to
+     open. It is one drawing now whose own hover swap opens it (drawings.ts,
+     `folder`); the rule that faded the closed glyph out stayed behind and,
+     with no second glyph left to fade in, left Projects blank on hover. */
 
-  @media (hover: hover) {
-    /* Closed becomes open. The two glyphs are stacked and cross-fade, so the
-       shape reads as one folder changing rather than two icons swapping. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate),
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate) {
-      opacity: 0;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
-      opacity: 1;
-    }
-  }
   @media (prefers-reduced-motion: reduce) {
     .sidebar-motion-icon__glyph { transition: none; }
   }

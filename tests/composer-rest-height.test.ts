@@ -52,11 +52,11 @@ test("the constant is the field, the controls row and the hairline, added up", (
   assert.ok(row, "the controls row keeps its padding in one className");
   const rowPad = spacing(row![1]) + spacing(row![2]);
 
-  // The row's controls: the 34px icon button, the 36px disc and the chip;
+  // The row's controls: the 32px icon button, the 36px disc and the chip;
   // every one of them 44px under a coarse pointer.
   const icon = /export const composerIconButtonClass =\s*"([^"]+)"/.exec(SHELL)![1];
   const chip = /export const composerChipClass =\s*"([^"]+)"/.exec(SHELL)![1];
-  assert.match(icon, /(^|\s)size-\[34px\](\s|$)/);
+  assert.match(icon, /(^|\s)size-8(\s|$)/);
   assert.match(icon, /coarse:size-11/);
   assert.match(chip, /(^|\s)h-8(\s|$)/);
   assert.match(chip, /coarse:h-10/);
