@@ -377,9 +377,13 @@ class BrokerPolicy(unittest.TestCase):
         for bad in ({**self.policy, "runUser": "0:0"}, {**self.policy, "sessionsRoot": "relative"}, {k: v for k, v in self.policy.items() if k != "image"}):
             with open(path, "w") as file:
                 json.dump(bad, file)
-            with unittest.mock.patch.dict(os.environ, {"JUNO_EXEC_BROKER_POLICY": path}), self.assertRaises(ValueError):
+            # CONFIG too: as root (the Mac deploy's build container) the broker
+            # reads only its fixed path and ignores the environment, by design.
+            with unittest.mock.patch.dict(os.environ, {"JUNO_EXEC_BROKER_POLICY": path}), \
+                    unittest.mock.patch.object(broker, "CONFIG", path), self.assertRaises(ValueError):
                 broker.load_policy()
 
+    @unittest.skipIf(os.geteuid() == 0, "as root the broker reads only /etc/juno/exec-broker.json; the policy override is refused by design")
     def test_the_framed_protocol_relays_both_streams_and_the_exit_code(self):
         fake = os.path.join(self.directory, "docker")
         with open(fake, "w") as file:
