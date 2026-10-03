@@ -82,6 +82,83 @@ function place(projects: readonly FolderProject[]): Point[] {
   return out;
 }
 
+/* ─────────────────────────────── Labels ─────────────────────────────── */
+
+const FONT = 13;
+/** A mono glyph's advance (0.6em) plus the label's 0.02em tracking, in viewBox units. */
+const ADVANCE = FONT * 0.62;
+const MAX_CHARS = 20;
+
+interface Label {
+  x: number;
+  y: number;
+  anchor: "start" | "end" | "middle";
+  text: string;
+}
+interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+const clip = (name: string) => (name.length > MAX_CHARS ? `${name.slice(0, MAX_CHARS - 1)}…` : name);
+
+/** The four places a label can sit round its point, the outward side first. */
+function candidates(p: Point): Label[] {
+  const text = clip(p.name);
+  const gap = p.r + 7;
+  const right = Math.cos((p.deg * Math.PI) / 180) >= 0;
+  const below = Math.sin((p.deg * Math.PI) / 180) >= 0;
+  const side: Label[] = [
+    { x: p.x + gap, y: p.y + 4, anchor: "start", text },
+    { x: p.x - gap, y: p.y + 4, anchor: "end", text },
+  ];
+  const vertical: Label[] = [
+    { x: p.x, y: p.y + gap + 9, anchor: "middle", text },
+    { x: p.x, y: p.y - gap, anchor: "middle", text },
+  ];
+  if (!right) side.reverse();
+  if (!below) vertical.reverse();
+  return [side[0], vertical[0], vertical[1], side[1]];
+}
+
+function boxOf(l: Label): Box {
+  const w = l.text.length * ADVANCE;
+  const x0 = l.anchor === "start" ? l.x : l.anchor === "end" ? l.x - w : l.x - w / 2;
+  return { x0: x0 - 3, y0: l.y - FONT + 1, x1: x0 + w + 3, y1: l.y + 4 };
+}
+
+const overlaps = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/**
+ * Greedy label placement: the live project first, then the busiest, each
+ * taking the first of its four places that clears every other point and
+ * every label already placed, and staying unlabelled (named on hover) when
+ * none does. Nothing collides, at the cost of a name or two on a crowded map.
+ */
+function placeLabels(points: Point[], wanted: string[]): Map<string, Label> {
+  const placed = new Map<string, Label>();
+  const boxes: Box[] = [];
+  const dots = points.map((p) => ({ id: p.id, box: { x0: p.x - p.r - 3, y0: p.y - p.r - 3, x1: p.x + p.r + 3, y1: p.y + p.r + 3 } }));
+  const centre: Box = { x0: CX - 6, y0: CY - 6, x1: CX + 6, y1: CY + 6 };
+  for (const id of wanted) {
+    const p = points.find((q) => q.id === id);
+    if (!p) continue;
+    for (const label of candidates(p)) {
+      const box = boxOf(label);
+      if (box.x0 < 0 || box.x1 > W || box.y0 < 0 || box.y1 > H) continue;
+      if (overlaps(box, centre)) continue;
+      if (dots.some((d) => d.id !== id && overlaps(box, d.box))) continue;
+      if (boxes.some((b) => overlaps(box, b))) continue;
+      placed.set(id, label);
+      boxes.push(box);
+      break;
+    }
+  }
+  return placed;
+}
+
 export function ProjectsOrbit({ projects }: { projects: readonly FolderProject[] }) {
   const router = useRouter();
   const points = React.useMemo(() => place(projects), [projects]);
@@ -108,7 +185,11 @@ export function ProjectsOrbit({ projects }: { projects: readonly FolderProject[]
     [points, peek]
   );
   const arcs = React.useMemo(() => (live ? [{ ring: live.orbit, from: live.deg - 60, to: live.deg }] : undefined), [live]);
-  const topLabelled = new Set(points.filter((p) => p.top).slice(0, LABELLED).map((p) => p.id));
+  const labels = React.useMemo(() => {
+    const top = points.filter((p) => p.top).map((p) => p.id);
+    const order = liveId && top.includes(liveId) ? [liveId, ...top.filter((id) => id !== liveId)] : top;
+    return placeLabels(points, order.slice(0, LABELLED));
+  }, [points, liveId]);
 
   return (
     <div className="pj relative">
@@ -122,9 +203,8 @@ export function ProjectsOrbit({ projects }: { projects: readonly FolderProject[]
       >
         <circle cx={CX} cy={CY} r={3} aria-hidden="true" className="pj-center pj-pop" />
         {points.map((p, i) => {
-          const right = Math.cos((p.deg * Math.PI) / 180) >= 0;
           const isLive = p.id === liveId;
-          const showLabel = topLabelled.has(p.id) || peek === p.id;
+          const label = labels.get(p.id) ?? (peek === p.id ? candidates(p)[0] : null);
           return (
             <g
               key={p.id}
@@ -154,16 +234,16 @@ export function ProjectsOrbit({ projects }: { projects: readonly FolderProject[]
                 style={{ ["--i" as string]: i }}
                 aria-hidden="true"
               />
-              {showLabel && (
+              {label && (
                 <text
-                  x={p.x + (right ? p.r + 8 : -(p.r + 8))}
-                  y={p.y + 4}
-                  textAnchor={right ? "start" : "end"}
-                  className="pj-label pj-pop"
+                  x={label.x}
+                  y={label.y}
+                  textAnchor={label.anchor}
+                  className={labels.has(p.id) ? "pj-label pj-pop" : "pj-label pj-label-peek"}
                   style={{ ["--i" as string]: i }}
                   aria-hidden="true"
                 >
-                  {p.name.length > 22 ? `${p.name.slice(0, 21)}…` : p.name}
+                  {label.text}
                 </text>
               )}
             </g>

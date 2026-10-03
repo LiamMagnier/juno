@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronRight, CornerDownRight, FileText, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
+import { ChevronRight, CornerDownRight, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ import {
   validateProjectMove,
   type DeleteChildrenMode,
 } from "@/lib/projects/project-tree";
+import { ProjectCover } from "@/components/projects/project-cover";
 import "@/components/projects/projects.css";
 
 /* ─────────────────────────────── Types ─────────────────────────────── */
@@ -578,13 +579,21 @@ function Crumb({
 
 /* ─────────────────────────────── The tile ─────────────────────────────── */
 
-const FOLDER_PREVIEW = 3;
+const FOLDER_NAMES = 2;
+
+function plural(n: number, noun: string) {
+  return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
+}
 
 /**
- * One project or folder. A 12px card with a 4px frame: the cover band and the
- * folder rows reach the frame and take 8 (12 - 4); the name, preview and
- * counts sit on the 16px text inset. The name is the link (stretched over the
- * tile); pin and menu are circles in the corner, above it.
+ * One project or folder. A 12px card with a 4px frame: the cover plate
+ * reaches the frame and takes 8 (12 - 4); the name, excerpt and meta sit on
+ * the 12px text inset. The cover is the project's own dot-matrix drawing
+ * (project-cover.tsx), or its uploaded image. The name is the link
+ * (stretched over the tile); the folder names are links above it; pin and
+ * menu surface on hover and focus, and are always there on touch.
+ *
+ * `compact` (a folder inside a project) drops the cover and the excerpt.
  */
 export function ProjectTile({
   project: p,
@@ -592,6 +601,8 @@ export function ProjectTile({
   pathLabel,
   allProjects,
   compact = false,
+  live = false,
+  index = 0,
   onToggleStar,
   onRename,
   onMove,
@@ -600,13 +611,17 @@ export function ProjectTile({
   onDropInto,
 }: {
   project: FolderProject;
-  /** Its subfolders, to list inside it. */
+  /** Its subfolders, named under it. */
   folders?: FolderProject[];
   /** Where it sits, when drawn out of place (a search result). */
   pathLabel?: string;
   /** The whole tree, so a drop can be checked before it lands. */
   allProjects: readonly FolderProject[];
   compact?: boolean;
+  /** The most recently touched project: its cover carries the presence trajectory. */
+  live?: boolean;
+  /** Its place in the grid (the entrance and the cover's draw-on follow it). */
+  index?: number;
   onToggleStar?: () => void;
   onRename?: () => void;
   onMove?: () => void;
@@ -621,91 +636,104 @@ export function ProjectTile({
   const fileCount = Math.max(0, (p.fileCount ?? 0) - (p.coverUrl ? 1 : 0));
   const folderCount = p.childCount ?? folders.length;
   const canNest = validateNewChild(allProjects, p.id).ok;
+  const excerpt = promptPreview(p.instructions ?? "");
+  const hasActions = !!(onToggleStar || onRename || onMove || onDelete);
+
+  // A folder tile is narrow: chats, its own folders and the age, no prefix.
+  const meta = compact
+    ? [plural(p.conversationCount ?? 0, "chat"), ...(folderCount > 0 ? [plural(folderCount, "folder")] : []), ...(p.updatedAt ? [timeAgo(p.updatedAt)] : [])]
+    : [plural(p.conversationCount ?? 0, "chat"), plural(fileCount, "file"), ...(p.updatedAt ? [`updated ${timeAgo(p.updatedAt)}`] : [])];
 
   return (
     <article
       {...drop}
       {...dragSourceProps({ kind: "project", id: p.id })}
-      className="pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col"
+      className={cn("pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col", compact && "pj-tile-compact")}
+      style={{ ["--i" as string]: Math.min(index, 11) }}
     >
-      {p.coverUrl && !compact && (
-        <div className="relative aspect-[16/5] w-full overflow-hidden rounded-inner bg-muted">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={p.coverUrl} alt="" className="size-full object-cover" draggable={false} />
+      {!compact && (
+        <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-inner">
+          {p.coverUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.coverUrl} alt="" className="pj-cover-art size-full object-cover" draggable={false} />
+          ) : (
+            <ProjectCover id={p.id} folders={folderCount} live={live} index={index} />
+          )}
         </div>
       )}
 
-      <div className={cn("flex flex-1 flex-col px-3 pt-3", compact ? "pb-2" : "pb-3")}>
-        <div className={cn("flex min-h-7 items-center gap-2", compact ? "pr-8" : "pr-16")}>
-          <Folder className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="pj-annot truncate">
-            {pathLabel ?? (p.updatedAt ? (compact ? timeAgo(p.updatedAt) : `Updated ${timeAgo(p.updatedAt)}`) : "Folder")}
-          </span>
-        </div>
-
+      <div className={cn("flex flex-1 flex-col px-3", compact ? "pb-2.5 pt-3" : "pb-3 pt-3.5")}>
+        {pathLabel && <p className="pj-annot mb-1 truncate pr-6">{pathLabel}</p>}
         <Link
           href={`/projects/${p.id}`}
           draggable={false}
           className={cn(
-            "mt-1.5 block truncate text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
-            compact ? "pj-name-sm" : "pj-name"
+            "block truncate text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
+            compact ? "pj-name-sm pr-8" : "pj-name"
           )}
         >
           {p.name}
         </Link>
         {!compact && (
-          <p className="mt-1.5 line-clamp-2 min-h-[2lh] text-pretty text-ui leading-relaxed text-muted-foreground">
-            {promptPreview(p.instructions ?? "") || "No instructions yet."}
+          <p className={cn("mt-1 truncate text-ui", excerpt ? "text-muted-foreground" : "text-muted-foreground/70")}>
+            {excerpt || "No instructions yet"}
           </p>
         )}
+
+        {!compact && folders.length > 0 && (
+          <p className="relative z-[1] mt-3 flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
+            <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="shrink-0 text-foreground/80">{plural(folders.length, "folder")}</span>
+            <span className="shrink-0 text-muted-foreground/60" aria-hidden="true">·</span>
+            <span className="min-w-0 truncate">
+              {folders.slice(0, FOLDER_NAMES).map((folder, i) => (
+                <React.Fragment key={folder.id}>
+                  {i > 0 && ", "}
+                  <Link
+                    href={`/projects/${folder.id}`}
+                    draggable={false}
+                    className="rounded-sm underline-offset-[3px] outline-none transition-colors duration-fast hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline"
+                  >
+                    {folder.name}
+                  </Link>
+                </React.Fragment>
+              ))}
+              {folders.length > FOLDER_NAMES && `, +${folders.length - FOLDER_NAMES}`}
+            </span>
+          </p>
+        )}
+
+        <p className={cn("pj-annot mt-auto truncate", compact ? "pt-1.5" : "pt-4")}>{meta.join(" · ")}</p>
       </div>
 
-      {folders.length > 0 && !compact && (
-        <ul className="relative z-[1] border-t border-[var(--pj-hair)] pt-1" aria-label={`Folders in ${p.name}`}>
-          {folders.slice(0, FOLDER_PREVIEW).map((folder) => (
-            <li key={folder.id}>
-              <Link
-                href={`/projects/${folder.id}`}
-                draggable={false}
-                className="flex min-h-8 items-center gap-2 rounded-inner px-3 text-ui text-foreground/85 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
-              >
-                <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-                <span className="pj-annot shrink-0">{(folder.conversationCount ?? 0).toLocaleString()}</span>
-              </Link>
-            </li>
-          ))}
-          {folders.length > FOLDER_PREVIEW && (
-            <li className="pj-annot px-3 py-1.5 pl-[2.375rem]">
-              {`${folders.length - FOLDER_PREVIEW} more`}
-            </li>
+      {hasActions && p.starred && (
+        <span
+          className={cn(
+            "pj-pinned pointer-events-none absolute z-[2] grid size-7 place-items-center text-foreground/75 coarse:hidden",
+            compact ? "right-2 top-2" : "right-3 top-3"
           )}
-        </ul>
+          aria-hidden="true"
+        >
+          <Pin motion="none" weight="fill" className="size-3.5" />
+        </span>
       )}
 
-      <div className="mt-auto flex items-center gap-4 border-t border-[var(--pj-hair)] px-3 pb-2 pt-2.5">
-        <Count icon={MessageSquare} value={p.conversationCount ?? 0} noun="chat" />
-        <Count icon={FileText} value={fileCount} noun="file" />
-        {folderCount > 0 && <Count icon={Folder} value={folderCount} noun="folder" />}
-      </div>
-
-      {(onToggleStar || onRename || onMove || onDelete) && (
+      {hasActions && (
         <div
           className={cn(
-            "absolute right-2 top-2 z-[2] flex items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
-            p.starred ? "opacity-100" : "opacity-0"
+            "pj-actions absolute z-[2] flex items-center gap-0.5 rounded-full p-0.5",
+            compact ? "right-2 top-2" : "right-3 top-3"
           )}
         >
           {onToggleStar && (
             <Pressable
               kind="icon"
               size="sm"
-              selected={!!p.starred}
               aria-pressed={!!p.starred}
               aria-label={p.starred ? `Unpin ${p.name}` : `Pin ${p.name}`}
               title={p.starred ? "Unpin" : "Pin"}
               onClick={onToggleStar}
-              className={cn(p.starred && "text-[var(--pj-presence)] hover:text-[var(--pj-presence)]")}
+              className="rounded-full"
             >
               <IconSwap
                 swapped={!!p.starred}
@@ -716,7 +744,7 @@ export function ProjectTile({
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`} title="More">
+              <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`} title="More" className="rounded-full">
                 <ActionIcons.more className="size-3.5" aria-hidden="true" />
               </Pressable>
             </DropdownMenuTrigger>
@@ -759,15 +787,6 @@ export function ProjectTile({
         </div>
       )}
     </article>
-  );
-}
-
-function Count({ icon: Icon, value, noun }: { icon: typeof Folder; value: number; noun: string }) {
-  return (
-    <span className="pj-annot inline-flex items-center gap-1.5" title={`${value} ${noun}${value === 1 ? "" : "s"}`}>
-      <Icon className="size-3.5" aria-hidden="true" />
-      {value.toLocaleString()}
-    </span>
   );
 }
 

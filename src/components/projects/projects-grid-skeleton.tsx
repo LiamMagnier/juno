@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * The Projects grid in placeholder form: the toolbar row and six tiles, in
- * the tile's own anatomy (annotation, serif name, two preview lines, counts).
+ * the tile's own anatomy (cover plate, serif name, excerpt, meta line).
  *
  * One component for both places the grid waits, `loading.tsx` (the route
  * streaming in) and the page's own first fetch, because they had drifted:
@@ -25,24 +25,18 @@ export function ProjectsGridSkeleton({ toolbar = true, className }: { toolbar?: 
           <Skeleton className="h-9 w-44 rounded-field" />
         </div>
       )}
-      <div className={cn("grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3 @[42rem]/page:gap-4", toolbar && "mt-6")} aria-hidden="true">
+      <div className={cn("grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3 @[42rem]/page:gap-4 @[64rem]/page:gap-5", toolbar && "mt-6")} aria-hidden="true">
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="surface-raised nest-card nest-p-1 flex min-h-48 flex-col [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            className="surface-raised nest-card nest-p-1 flex flex-col [animation-fill-mode:backwards] motion-safe:animate-rise-in"
             style={staggerDelay(i)}
           >
-            <div className="flex-1 px-3 pt-3">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="mt-3 h-5 w-1/2" />
-              <div className="mt-3 space-y-1.5">
-                <Skeleton className="h-3 w-4/5" />
-                <Skeleton className="h-3 w-3/5" />
-              </div>
-            </div>
-            <div className="mt-4 flex items-center gap-4 px-3 pb-2 pt-2.5">
-              <Skeleton className="h-3 w-10" />
-              <Skeleton className="h-3 w-10" />
+            <Skeleton className="aspect-[16/7] w-full rounded-inner" />
+            <div className="flex flex-1 flex-col px-3 pb-3 pt-3.5">
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="mt-2.5 h-3 w-4/5" />
+              <Skeleton className="mt-6 h-3 w-2/5" />
             </div>
           </div>
         ))}

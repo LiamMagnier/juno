@@ -47,24 +47,29 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The tile: a hairline card with a 4px frame. Hover firms the line and lifts
-   a pixel; a drag over it turns the line presence blue (it will take the
-   drop). */
+/* The tile: a quiet card with a 4px frame round its cover plate. At rest the
+   hairline is barely there; hover lifts it on a tinted shadow and a firmer
+   line (no travel), and the cover's drawing drifts. A drag over it turns the
+   line presence blue (it will take the drop). */
 .pj-tile {
-  border: 1px solid var(--pj-line);
+  border: 1px solid var(--pj-hair);
   background: hsl(var(--card));
+  box-shadow: 0 1px 2px -1px hsl(var(--foreground) / 0.06);
   transition:
-    border-color 180ms var(--pj-ease),
-    background-color 180ms var(--pj-ease),
-    transform 260ms var(--pj-ease),
-    box-shadow 260ms var(--pj-ease);
+    border-color 220ms var(--pj-ease),
+    background-color 220ms var(--pj-ease),
+    box-shadow 420ms var(--pj-ease);
 }
-.pj-tile:hover { border-color: hsl(var(--foreground) / 0.2); }
-.pj-tile:focus-within { border-color: hsl(var(--foreground) / 0.24); }
-@media (prefers-reduced-motion: no-preference) {
-  .pj-tile:hover { transform: translateY(-1px); box-shadow: 0 10px 30px -18px hsl(var(--foreground) / 0.28); }
-  .pj-tile:active { transform: none; }
+.pj-tile:hover {
+  border-color: var(--pj-line);
+  box-shadow: 0 1px 2px -1px hsl(var(--foreground) / 0.08), 0 22px 44px -28px hsl(var(--foreground) / 0.34);
 }
+.dark .pj-tile { box-shadow: none; }
+.dark .pj-tile:hover {
+  background: color-mix(in srgb, hsl(var(--card)) 96%, hsl(var(--foreground)));
+  box-shadow: 0 22px 44px -26px rgb(0 0 0 / 0.7);
+}
+.pj-tile:focus-within { border-color: hsl(var(--foreground) / 0.22); }
 .pj-tile[data-drop="over"] {
   border-color: var(--pj-presence);
   background: var(--pj-presence-soft);
@@ -72,6 +77,53 @@
 }
 .pj-tile[data-drop="refuse"] { opacity: 0.55; }
 .pj-tile[data-dragging] { opacity: 0.4; }
+
+/* The cover plate: a recessed tone the drawing sits in, with an inner
+   hairline so an uploaded image keeps an edge on either ground. */
+.pj-cover {
+  background: hsl(var(--foreground) / 0.022);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.035);
+}
+.dark .pj-cover { background: hsl(var(--foreground) / 0.03); }
+.pj-cover-art { position: absolute; inset: 0; transform-origin: 50% 60%; }
+.pj-cover-dots { --dots-pitch: 3.4px; --dots-strength: 0.9; --dots-floor: 0.5; }
+.dark .pj-cover-dots { --dots-strength: 0.95; }
+
+/* Pin and menu: a small glass capsule over the cover's corner, surfaced on
+   hover or focus, always there on touch. A pinned tile shows the filled pin
+   alone at rest, in the same spot, and hands it over to the capsule. */
+.pj-actions {
+  background: hsl(var(--background) / 0.82);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.07), 0 4px 14px -6px hsl(var(--foreground) / 0.25);
+  opacity: 0;
+  transform: translateY(-2px) scale(0.97);
+  transition: opacity 200ms var(--pj-ease), transform 320ms var(--pj-ease);
+}
+.pj-tile:hover .pj-actions,
+.pj-tile:focus-within .pj-actions,
+.pj-actions:has([data-state="open"]) { opacity: 1; transform: none; }
+.pj-pinned { transition: opacity 160ms var(--pj-ease); }
+.pj-tile:hover .pj-pinned,
+.pj-tile:focus-within .pj-pinned { opacity: 0; }
+@media (pointer: coarse) {
+  .pj-actions { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .pj-actions { background: hsl(var(--background)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pj-cover-art { transition: transform 1200ms var(--pj-ease); }
+  .pj-tile:hover .pj-cover-art { transform: scale(1.05) rotate(-1.2deg); }
+  /* The grid arrives in reading order, 50ms apart. */
+  .pj-grid > li > .pj-tile { animation: pj-arrive 720ms var(--pj-ease) backwards; animation-delay: calc(var(--i, 0) * 50ms + 120ms); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pj-actions, .pj-pinned { transition: none; }
+}
+@keyframes pj-arrive { from { opacity: 0; transform: translateY(10px); } }
 
 /* A still surface in the same material (the Overview rail, settings groups). */
 .pj-card {
@@ -122,8 +174,15 @@
   font-family: var(--font-mono), "JetBrains Mono", monospace;
   font-size: 13px;
   letter-spacing: 0.02em;
+  /* A halo in the page's own colour lifts the name off the ring dots under it. */
+  paint-order: stroke;
+  stroke: hsl(var(--background));
+  stroke-width: 7px;
+  stroke-linejoin: round;
   transition: fill 200ms;
 }
+/* A name shown only while its point is hovered sits above the others. */
+.pj-label-peek { fill: hsl(var(--foreground)); }
 .pj-star { outline: none; }
 .pj-star:hover .pj-label,
 .pj-star:focus-visible .pj-label { fill: hsl(var(--foreground)); }

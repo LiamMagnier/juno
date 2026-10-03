@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RollingNumber } from "@/components/ui/micro";
-import { AppIcons } from "@/lib/app-icons";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -24,10 +23,10 @@ import { AppPage } from "@/components/app/app-page";
 import { PageHero } from "@/components/app/editorial";
 import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skeleton";
 import { ProjectsOrbit } from "@/components/projects/projects-orbit";
+import { ProjectCover } from "@/components/projects/project-cover";
 import {
   DeleteProjectDialog,
   MoveToDialog,
-  NewTile,
   ProjectNameDialog,
   ProjectTile,
   pathOf,
@@ -274,11 +273,17 @@ export default function ProjectsPage() {
   const folderCount = all.length - topCount;
   const chatCount = all.reduce((sum, p) => sum + p.conversationCount, 0);
   const pinnedCount = all.filter((p) => p.starred).length;
+  // The most recently touched project wears the presence trajectory, here and on the map.
+  const liveId = React.useMemo(() => {
+    let best: ProjectItem | null = null;
+    for (const p of all) if (!best || p.updatedAt > best.updatedAt) best = p;
+    return best?.id ?? null;
+  }, [all]);
   const deletingChildren = deleting ? childrenOf.get(deleting.id) ?? [] : [];
   const deletingParent = deleting?.parentId ? all.find((p) => p.id === deleting.parentId) : undefined;
 
   const newProject = (
-    <Button onClick={() => setNameDialog({ mode: "create" })}>
+    <Button variant="secondary" onClick={() => setNameDialog({ mode: "create" })}>
       <Plus className="size-4" aria-hidden="true" /> New project
     </Button>
   );
@@ -351,13 +356,20 @@ export default function ProjectsPage() {
       ) : loading ? (
         <ProjectsGridSkeleton />
       ) : empty ? (
-        <EmptyState
-          className="mt-6"
-          icon={AppIcons.projects}
-          title="No projects yet"
-          description="Create one to keep a topic’s chats, instructions and files together."
-          action={newProject}
-        />
+        <section className="pj mt-2 grid items-center gap-8 @[48rem]/page:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @[48rem]/page:gap-12 motion-safe:animate-rise-in">
+          <div className="pj-cover relative aspect-[16/9] overflow-hidden rounded-card">
+            <ProjectCover id="alevr-first-project" live aspect={16 / 9} />
+          </div>
+          <div className="max-w-sm">
+            <h2 className="pj-name text-foreground">Start your first project</h2>
+            <p className="mt-2 text-pretty text-ui leading-relaxed text-muted-foreground">
+              Give a topic its own instructions and files. Every chat you start inside it begins with them, and folders keep the parts apart.
+            </p>
+            <Button className="mt-6" onClick={() => setNameDialog({ mode: "create" })}>
+              <Plus className="size-4" aria-hidden="true" /> New project
+            </Button>
+          </div>
+        </section>
       ) : shown.length === 0 ? (
         <EmptyState
           className="mt-6"
@@ -380,14 +392,16 @@ export default function ProjectsPage() {
           }
         />
       ) : (
-        <ul className="pj ed-arrive mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3 @[42rem]/page:gap-4" aria-label="Projects">
-          {shown.map((p) => (
+        <ul className="pj pj-grid mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3 @[42rem]/page:gap-4 @[64rem]/page:gap-5" aria-label="Projects">
+          {shown.map((p, i) => (
             <li key={p.id} className="min-w-0">
               <ProjectTile
                 project={p}
                 folders={filtering ? [] : childrenOf.get(p.id) ?? []}
                 pathLabel={filtering && !isTop(p) ? `In ${pathOf(all, p.id)}` : undefined}
                 allProjects={all}
+                live={p.id === liveId}
+                index={i}
                 onToggleStar={() => toggleStar(p)}
                 onRename={() => setNameDialog({ mode: "rename", project: p })}
                 onNewFolder={() => setNameDialog({ mode: "folder", parent: p })}
@@ -397,11 +411,6 @@ export default function ProjectsPage() {
               />
             </li>
           ))}
-          {!filtering && (
-            <li className="min-w-0">
-              <NewTile label="New project" onClick={() => setNameDialog({ mode: "create" })} />
-            </li>
-          )}
         </ul>
       )}
 
