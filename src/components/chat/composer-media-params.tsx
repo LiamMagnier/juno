@@ -7,7 +7,7 @@ import { ChevronDown, Volume2 } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
+import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
 import { applyParamChange, capabilitiesFor, type MediaParamKey, type MediaParams } from "@/lib/media-params";
 import {
   MEDIA_PARAMS_STORE_KEY,
@@ -52,8 +52,8 @@ import { DotRings } from "@/components/home/dot-construction";
  * and output size in mono; on the right a grid of proportional tiles, tall to
  * square to wide, the current one ringed in presence blue.
  *
- * Every menu opens OUTSIDE the composer (`layer`, the composer's own
- * placement: below the home's tray, above the dock), never over the draft.
+ * Every menu opens at its own chip, just above it and over the composer, or
+ * below it when there is no room above (composer-menu.tsx, "Where they open").
  * Styles: composer-media-params.css, loaded from globals.css (a component
  * module carries no CSS import: the unit tests render components under tsx,
  * which cannot load a stylesheet). A value the current combination rules out
@@ -146,57 +146,24 @@ export function useMediaParams(model: string): MediaParamsState {
 }
 
 // ---------------------------------------------------------------------------
-// Placement: the composer decides which side a menu opens on
+// Placement: at the chip, Radix keeping it on screen
 // ---------------------------------------------------------------------------
 
 /**
- * The composer's layer placement (composer.tsx `pickMenuLayer`): given the
- * trigger and the height a menu wants, the side and offset that put the menu
- * OUTSIDE the composer box (below the home's tray, above the dock's
- * composer), so it never covers the text field.
+ * Where a generation menu opens: at its chip, on `side` (above in the dock and
+ * on the home, over the composer), 8px off it. Radix flips it to the chip's
+ * other side only when `side` has no room and shifts it along the row so a
+ * chip near the window's edge (a scrolled row, a phone) keeps its menu on
+ * screen; the shells cap their height to the room they have.
  */
-export interface MediaParamsLayer {
-  pick: (trigger: HTMLElement, need: number) => { side: "top" | "bottom"; sideOffset: number };
-  onSide?: (side: "top" | "bottom" | null) => void;
-}
-
-type Placed = { side: "top" | "bottom"; sideOffset: number; alignOffset: number };
-
-/**
- * `width(viewportWidth)` is the width the layer will take, so a layer opened
- * from a chip near the right edge (a scrolled row, a phone) is pulled left to
- * stay on screen: with the composer's side fixed, Radix's own collision shift
- * is off along with its flip.
- */
-function usePlacement(layer: MediaParamsLayer | undefined, fallback: "top" | "bottom", need: number, width: (vw: number) => number) {
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const [placed, setPlaced] = React.useState<Placed>({ side: fallback, sideOffset: 8, alignOffset: 0 });
-  const onOpenChange = (next: boolean) => {
-    let side = placed.side;
-    const trigger = triggerRef.current;
-    if (next && trigger) {
-      const vw = window.innerWidth;
-      const left = trigger.getBoundingClientRect().left;
-      const room = vw - 12 - left;
-      const w = Math.min(width(vw), vw - 24);
-      const alignOffset = w > room ? Math.round(room - w) : left < 12 ? Math.round(12 - left) : 0;
-      const p = layer ? layer.pick(trigger, need) : { side: fallback, sideOffset: 8 };
-      side = p.side;
-      setPlaced({ ...p, alignOffset });
-    }
-    layer?.onSide?.(next ? side : null);
-  };
-  const contentProps = {
-    side: layer ? placed.side : fallback,
-    sideOffset: layer ? placed.sideOffset : 8,
+function placement(side: "top" | "bottom") {
+  return {
+    side,
+    sideOffset: 8,
     align: "start" as const,
-    alignOffset: placed.alignOffset,
-    // The composer chose a side that clears its own box; letting Radix flip
-    // would put the menu back over the draft.
-    avoidCollisions: !layer,
-    collisionPadding: 12,
+    avoidCollisions: true,
+    collisionPadding: COMPOSER_MENU_COLLISION_PADDING,
   };
-  return { triggerRef, onOpenChange, contentProps };
 }
 
 // ---------------------------------------------------------------------------
@@ -207,15 +174,13 @@ export function ComposerMediaParams({
   modelId,
   state,
   disabled,
-  side = "bottom",
-  layer,
+  side = "top",
 }: {
   modelId: string;
   state: MediaParamsState;
   disabled?: boolean;
-  /** Which way the menus open when the composer gives no `layer`. */
+  /** The side of its chip each menu prefers (Radix flips it when there is no room). */
   side?: "top" | "bottom";
-  layer?: MediaParamsLayer;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
   useEdgeFades(ref);
@@ -223,7 +188,7 @@ export function ComposerMediaParams({
   const facts = fixedFacts(state.caps);
   if (!controls.length && !facts.length) return null;
   const kindLabel = state.caps?.kind === "video" ? "Video settings" : state.caps?.kind === "audio" ? "Music settings" : "Image settings";
-  const common = { disabled, side, layer };
+  const common = { disabled, side };
 
   return (
     <div ref={ref} className="cparams" role="group" aria-label={kindLabel} data-disabled={disabled ? "" : undefined}>
@@ -472,20 +437,18 @@ function ChoiceMenu({
   onPick,
   disabled,
   side,
-  layer,
 }: {
   control: ParamControl;
   onPick: (value: unknown) => void;
   disabled?: boolean;
   side: "top" | "bottom";
-  layer?: MediaParamsLayer;
 }) {
   const numeric = typeof control.value === "number";
-  const { triggerRef, onOpenChange, contentProps } = usePlacement(layer, side, 48 + control.choices.length * 40, () => 240);
+  const contentProps = placement(side);
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
-        <ChipTrigger ref={triggerRef} aria-label={`${control.label}: ${control.chip}`} disabled={disabled}>
+        <ChipTrigger aria-label={`${control.label}: ${control.chip}`} disabled={disabled}>
           <span>{control.chip}</span>
         </ChipTrigger>
       </DropdownMenuTrigger>
@@ -561,7 +524,6 @@ function FrameChooser({
   onPick,
   disabled,
   side,
-  layer,
   modelId,
   params,
 }: {
@@ -569,7 +531,6 @@ function FrameChooser({
   onPick: (value: unknown) => void;
   disabled?: boolean;
   side: "top" | "bottom";
-  layer?: MediaParamsLayer;
   modelId: string;
   params: MediaParams;
 }) {
@@ -581,13 +542,9 @@ function FrameChooser({
   // Balanced, never an orphan: up to five frames sit in one row, more fill
   // as few rows as possible with the columns spread evenly (14 → 5/5/4).
   const cols = Math.max(2, Math.ceil(choices.length / Math.ceil(choices.length / 5)));
-  const rows = Math.ceil(choices.length / cols);
-  const { triggerRef, onOpenChange, contentProps } = usePlacement(layer, side, Math.max(236, 40 + rows * 64), (vw) =>
-    vw <= 560 ? vw - 24 : 188 + 6 + 14 + cols * 56 + (cols - 1) * 4,
-  );
+  const contentProps = placement(side);
 
   const change = (next: boolean) => {
-    onOpenChange(next);
     setOpen(next);
     if (!next) setPreview(null);
   };
@@ -644,7 +601,7 @@ function FrameChooser({
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={change}>
       <PopoverPrimitive.Trigger asChild disabled={disabled}>
-        <ChipTrigger ref={triggerRef} aria-label={`${control.label}: ${shownLabel(control)}`} disabled={disabled}>
+        <ChipTrigger aria-label={`${control.label}: ${shownLabel(control)}`} disabled={disabled}>
           <AspectGlyph value={control.value} />
           <span>{control.chip}</span>
         </ChipTrigger>
@@ -773,33 +730,28 @@ function LengthPopover({
   onPick,
   disabled,
   side,
-  layer,
 }: {
   control: ParamControl;
   onPick: (value: unknown) => void;
   disabled?: boolean;
   side: "top" | "bottom";
-  layer?: MediaParamsLayer;
 }) {
   const range = control.range!;
   const auto = control.value === "auto";
   const seconds = typeof control.value === "number" ? control.value : Math.round((range.min + range.max) / 2);
   const [draft, setDraft] = React.useState<number | null>(null);
   const shown = draft ?? seconds;
-  const { triggerRef, onOpenChange, contentProps } = usePlacement(layer, side, 200, () => 288);
+  const contentProps = placement(side);
   const steps = Math.round((range.max - range.min) / range.step);
   const ticks = Array.from({ length: steps + 1 }, (_, i) => range.min + i * range.step);
   const labelled = (v: number) => v === range.min || v === range.max || (v % 5 === 0 && v - range.min >= 3 && range.max - v >= 3);
 
   return (
     <PopoverPrimitive.Root
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        setDraft(null);
-      }}
+      onOpenChange={() => setDraft(null)}
     >
       <PopoverPrimitive.Trigger asChild disabled={disabled}>
-        <ChipTrigger ref={triggerRef} aria-label={`${control.label}: ${control.chip}`} disabled={disabled}>
+        <ChipTrigger aria-label={`${control.label}: ${control.chip}`} disabled={disabled}>
           <span>{control.chip}</span>
         </ChipTrigger>
       </PopoverPrimitive.Trigger>

@@ -23,6 +23,21 @@ import { cn } from "@/lib/utils";
 /** The shell class. Pair with a width; the rest is composer.css. */
 export const composerMenuClass = "cmenu";
 
+/*
+ * WHERE THEY OPEN: at their own trigger, 8px off it, over the composer when
+ * that is where the room is (owner, 2026-10-04: "I want them to be on top of
+ * the composer"). The + menu and the model chip open just above their button,
+ * across the draft; the home tray's menus just above their chip. Radix's own
+ * collision handling keeps every one on screen: it flips a menu to the other
+ * side of its trigger only when the preferred side has no room, shifts it
+ * along, and `--radix-*-content-available-height` caps its height so a short
+ * window scrolls the list (MenuScrollEdges fades its edges) instead of
+ * cutting it off. These menus used to clear the composer's whole box and
+ * arrive far from what opened them.
+ */
+/** The space every composer menu keeps from the window's edges. */
+export const COMPOSER_MENU_COLLISION_PADDING = 12;
+
 /**
  * The highlight that follows the active row. One element per menu, under the
  * rows, moved with a transform: Radix stamps `data-highlighted` on whichever

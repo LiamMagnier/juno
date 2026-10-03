@@ -13,6 +13,7 @@ import { AUTO_MODEL_ID, AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model"
 import { useApp } from "@/components/app/app-provider";
 import { isModelLocked, pushRecent } from "@/lib/model-picker";
 import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
+import { COMPOSER_MENU_COLLISION_PADDING } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -63,29 +64,13 @@ function ModelMark({ model, className }: { model: ModelInfo; className?: string 
   );
 }
 
-/**
- * How the chat composer places this control's popovers: OUTSIDE its own box,
- * never over the draft or the composer's buttons (critique 1; INTERACTION_SPEC
- * MP1). The popover is anchored to a virtual rect with the chip's x and the
- * composer's full height, so Radix's own flip and shift keep it on screen
- * while either side it lands on is clear of the composer.
- */
-export interface ModelSelectorLayer {
-  /** The composer surface. */
-  box: React.RefObject<HTMLElement | null>;
-  /** The side to open toward, chosen when it opens (below on the home, above in the dock, by room). */
-  pickSide: (need: number) => "top" | "bottom";
-  /** The side a popover is open on, or null when none is (the home moves its suggestions aside). */
-  onSide?: (side: "top" | "bottom" | null) => void;
-}
-
 export function ModelSelector({
   value,
   onChange,
   filter: modelFilter,
   disabled = false,
   thinking,
-  layer,
+  inComposer = false,
   effortLabel,
 }: {
   value: ModelId;
@@ -97,8 +82,8 @@ export function ModelSelector({
    *  (one effort, or an image/video/audio model) the chip opens the catalogue.
    *  Omit it (or pass null) when the model has one effort. */
   thinking?: React.ReactNode;
-  /** Composer placement (the chat composer); other callers keep the chip-anchored popover. */
-  layer?: ModelSelectorLayer;
+  /** The chat composer's chip: words only (C17), its popovers opening above it, over the draft. */
+  inComposer?: boolean;
   /** The effort, in words, when it is not the model's usual one ("Opus Deep"): the label's third ink (C17). */
   effortLabel?: string;
 }) {
@@ -116,12 +101,10 @@ export function ModelSelector({
   /** A fresh catalogue per open: its query and cursor should not persist. */
   const [openCount, setOpenCount] = React.useState(0);
 
-  // The catalogue opens above the chip in the composer, as the menu did.
+  // Both popovers open at the chip, just above it and over the composer's
+  // draft (composer-menu.tsx, "Where they open"); Radix flips one below only
+  // when there is no room above.
   const side = "top" as const;
-  const onSide = layer?.onSide;
-  React.useEffect(() => {
-    onSide?.(open || effortOpen ? side : null);
-  }, [onSide, open, effortOpen, side]);
 
   const current = isAutoModelId(value) ? AUTO_MODEL_INFO : (models.find((m) => m.id === value) ?? resolveModel(value));
   const autoSelected = isAutoModelId(value);
@@ -170,7 +153,7 @@ export function ModelSelector({
       // while open. In the chat composer it is words only (C17): the short
       // name in the second ink, the effort in the third when it is not the
       // usual one, one chevron. No logo, no pill, no border.
-      className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", layer && "composer-model-chip")}
+      className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]", inComposer && "composer-model-chip")}
     >
       {current ? <ModelMark model={current} className="size-3.5" /> : null}
       <span
@@ -205,9 +188,9 @@ export function ModelSelector({
               <PopoverTrigger asChild>{chip}</PopoverTrigger>
               <PopoverContent
                 align="end"
-                side="top"
+                side={side}
                 sideOffset={8}
-                collisionPadding={12}
+                collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
                 className="w-[min(18.5rem,calc(100vw-1.5rem))] rounded-menu p-3"
                 aria-label="Thinking"
                 onOpenAutoFocus={(event) => event.preventDefault()}
@@ -231,7 +214,7 @@ export function ModelSelector({
           autoSelected={autoSelected}
           filter={modelFilter}
           onPick={select}
-          side={layer ? side : undefined}
+          side={inComposer ? side : undefined}
         />
       )}
     </Popover>

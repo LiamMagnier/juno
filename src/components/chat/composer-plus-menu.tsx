@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StatusIcons } from "@/lib/app-icons";
-import { composerMenuClass, MenuGlide, MenuScrollEdges } from "@/components/chat/composer-menu";
+import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide, MenuScrollEdges } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -275,31 +275,6 @@ export const PlusMenuRow = React.forwardRef<
   );
 });
 
-/**
- * How the chat composer places the menu: outside its own box, never over the
- * draft (critique 1, INTERACTION_SPEC C19). Chosen as the menu opens, from the
- * trigger: the side with room (below on the home, above in the dock) and the
- * offset that clears the composer's edge on that side.
- */
-export interface PlusMenuLayer {
-  pick: (trigger: HTMLElement, need: number) => { side: "top" | "bottom"; sideOffset: number };
-  /** The side the menu is open on, or null when it is closed. */
-  onSide?: (side: "top" | "bottom" | null) => void;
-}
-
-/**
- * The height the root list takes unscrolled: 36px rows, 13px hairlines
- * between groups, the shell's 6px padding and 1px border each side. It used
- * to ask for a flat 300 while the list ran to ~420, so the composer chose a
- * side that "had room" and the menu arrived cut off against the composer's
- * edge, reading as if it slid under it.
- */
-export function plusMenuNeed(sections: PlusMenuSection[]): number {
-  const groups = sections.filter((section) => section.length > 0);
-  const rows = groups.reduce((sum, section) => sum + section.length, 0);
-  return rows * 36 + Math.max(0, groups.length - 1) * 13 + 14;
-}
-
 export function PlusMenu({
   open,
   onOpenChange,
@@ -308,7 +283,6 @@ export function PlusMenu({
   tooltip,
   sections,
   className,
-  layer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -318,16 +292,9 @@ export function PlusMenu({
   tooltip: string;
   sections: PlusMenuSection[];
   className?: string;
-  layer?: PlusMenuLayer;
 }) {
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const [placed, setPlaced] = React.useState<{ side: "top" | "bottom"; sideOffset: number }>({ side: "top", sideOffset: 8 });
   /** A menu opened from the keyboard appears in the same frame (F0); by pointer it pops from the trigger (F2). */
   const [openedBy, setOpenedBy] = React.useState<"keyboard" | "pointer">("pointer");
-  const onSide = layer?.onSide;
-  React.useEffect(() => {
-    onSide?.(open ? placed.side : null);
-  }, [onSide, open, placed.side]);
   const [compact, setCompact] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -354,14 +321,12 @@ export function PlusMenu({
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
-      if (next && layer && triggerRef.current) setPlaced(layer.pick(triggerRef.current, plusMenuNeed(sections)));
       onOpenChange(next);
     }}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              ref={triggerRef}
               type="button"
               variant="ghost"
               size="icon-sm"
@@ -382,14 +347,18 @@ export function PlusMenu({
       </Tooltip>
 
       <DropdownMenuContent
+        // At the + itself (owner, 2026-10-04): just above the button, its
+        // bottom edge 8px over it, over the composer's own draft, the way a
+        // menu opens from the control that asked for it. It used to clear the
+        // composer's whole box and land far from the +. Radix flips it below
+        // only when there is no room above, shifts it on screen, and the
+        // max-height below caps it to the room it has (it scrolls, with the
+        // edge fades, rather than being cut off).
         align="start"
-        side={layer ? placed.side : "top"}
-        sideOffset={layer ? placed.sideOffset : 8}
-        alignOffset={layer ? -4 : 0}
-        // The composer chose a side with room that clears its own box; letting
-        // Radix flip would put the menu back over the draft.
-        avoidCollisions={!layer}
-        collisionPadding={16}
+        side="top"
+        sideOffset={8}
+        avoidCollisions
+        collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
         data-opened-by={openedBy}
         ref={menuRef}
         aria-label={compact && panel ? panel.label : "Add"}

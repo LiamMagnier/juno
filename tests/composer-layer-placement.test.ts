@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type PlacementRect } from "@/lib/chat/composer-layer-placement";
 
 /*
- * Where a layer the composer opens goes (src/lib/chat/composer-layer-placement.ts).
- * Critique 1: "popovers never cover the draft". INTERACTION_SPEC C7, C10, MP1:
- * every layer opens outside the composer's box, below it on the home, above it
- * in the dock, and flips only when its side has neither the room nor the
- * larger share. The invariant every case below ends on: the layer and the
- * composer never overlap.
+ * Where a layer typing opens goes (src/lib/chat/composer-layer-placement.ts):
+ * the "/" and @ palettes and a token's popover (INTERACTION_SPEC C7, C10).
+ * They open outside the composer's box, below it on the home, above it in the
+ * dock, and flip only when their side has neither the room nor the larger
+ * share, so they never hide the words being typed. (The composer's menus, the
+ * + and the model chip among them, open at their own trigger over the
+ * composer instead and do not use this.) The invariant every case below ends
+ * on: the layer and the composer never overlap.
  */
 
 function overlaps(layer: LayerPlacement, viewportHeight: number, composer: PlacementRect): boolean {
@@ -50,7 +52,7 @@ test("1440 home: the @ palette opens below the composer at the caret and never o
   assert.equal(overlaps(layer, 900, HOME_1440), false);
 });
 
-test("1440 dock: the model popover opens above, its end edge at the control", () => {
+test("1440 dock: an end-aligned layer opens above, its end edge at the anchor", () => {
   const layer = placeComposerLayer({
     composer: DOCK_1440,
     viewport: { width: 1440, height: 900 },

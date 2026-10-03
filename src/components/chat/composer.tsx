@@ -804,7 +804,6 @@ export function Composer({
   const layerSide = preferredLayerSide(frame);
   /** The side a layer is open on right now (the home moves its suggestions aside for one below). */
   const [fieldLayer, setFieldLayer] = React.useState<LayerSide | null>(null);
-  const [menuLayer, setMenuLayer] = React.useState<LayerSide | null>(null);
 
   /*
    * ── The unsent draft, kept while the composer is not mounted (C21) ────────
@@ -2627,39 +2626,11 @@ export function Composer({
       ];
 
   /*
-   * Where the + menu and the model popover open: outside the composer, on the
-   * side `placeComposerLayer` picks (below on the home, above in the dock, by
-   * room), so neither covers the draft or the composer's own buttons.
+   * The + menu, the model chip, the tray's and the generation row's menus
+   * open at their own trigger, over the composer when that is where the room
+   * is (composer-menu.tsx, "Where they open"). Only the typed layers (the "/"
+   * and @ palettes) still open outside the box, at the caret.
    */
-  // The box a menu opens outside of: the composer, or on the home the
-  // composer with its tray, so a menu below never lands on the tray.
-  const layerBoxRef = showTray ? rootRef : shellRef;
-  const sideFor = (trigger: HTMLElement | null, need: number, width: number): { box: DOMRect; side: LayerSide } => {
-    const box = layerBoxRef.current?.getBoundingClientRect() ?? trigger?.getBoundingClientRect() ?? new DOMRect();
-    const placed = placeComposerLayer({
-      composer: box,
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-      anchorX: trigger?.getBoundingClientRect().left ?? box.left,
-      width,
-      need,
-      prefer: layerSide,
-    });
-    return { box, side: placed.side };
-  };
-  const pickMenuLayer = (trigger: HTMLElement, need: number) => {
-    const { box, side } = sideFor(trigger, need, 288);
-    const at = trigger.getBoundingClientRect();
-    return side === "below"
-      ? { side: "bottom" as const, sideOffset: Math.round(box.bottom - at.bottom + 8) }
-      : { side: "top" as const, sideOffset: Math.round(at.top - box.top + 8) };
-  };
-  const pickModelSide = (need: number) => (sideFor(null, need, 344).side === "below" ? "bottom" : "top");
-  const onMenuSide = React.useCallback(
-    (side: "top" | "bottom" | null) => setMenuLayer(side === null ? null : side === "bottom" ? "below" : "above"),
-    [],
-  );
-  /** The generation row's menus open by the same rule as the + menu: outside the composer, never over the draft. */
-  const mediaLayer = { pick: pickMenuLayer, onSide: onMenuSide };
   /** The effort, in words, only when it is not the model's usual one (C17: "Opus Deep"). */
   const effortLabel =
     !isAuto && resolved && effortOptions.length >= 2 && reasoningEffort !== defaultReasoning(resolved)
@@ -2675,7 +2646,7 @@ export function Composer({
         : `Message ${PRODUCT_NAME}`;
   /** A layer is open below the composer (the home's suggestions step aside for it). */
   const layerBelow =
-    fieldLayer === "below" || menuLayer === "below" || (slashOpen && slashPlacement?.side === "below");
+    fieldLayer === "below" || (slashOpen && slashPlacement?.side === "below");
 
   return (
     <div
@@ -3206,7 +3177,6 @@ export function Composer({
                 label={armedSummary ? `Add files and more: ${armedSummary}` : "Add files and more"}
                 tooltip="Add files and more"
                 sections={plusSections}
-                layer={{ pick: pickMenuLayer, onSide: onMenuSide }}
               />
               {voiceCall?.status}
             </>
@@ -3222,7 +3192,7 @@ export function Composer({
                   disabled={controlsLocked}
                   thinking={thinkingControl}
                   effortLabel={effortLabel}
-                  layer={{ box: layerBoxRef, pickSide: pickModelSide, onSide: onMenuSide }}
+                  inComposer
                 />
               </div>
               {speechSupported && (
@@ -3347,10 +3317,9 @@ export function Composer({
           appsPanel={showConnectors ? connectorsPanel : null}
           skillsPanel={skillRow ? skillsPanel : null}
           disabled={plusLocked}
-          layer={mediaLayer}
           params={
             mediaParams.caps ? (
-              <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="bottom" layer={mediaLayer} />
+              <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" />
             ) : null
           }
         />
@@ -3358,7 +3327,7 @@ export function Composer({
       {/* In a thread the generation row gets the shelf to itself. */}
       {!showTray && mediaParams.caps && !voiceActive && !steerMode && (
         <div className="composer-tray composer-tray--params">
-          <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" layer={mediaLayer} />
+          <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" />
         </div>
       )}
       {/* The dock's bottom inset, with the line in it: 16px under `sm` and

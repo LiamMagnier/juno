@@ -1,11 +1,15 @@
 /**
- * WHERE A LAYER OPENED FROM THE COMPOSER GOES: never over the draft, never
- * over the composer's own buttons.
+ * WHERE A TYPED LAYER OPENED FROM THE COMPOSER GOES: never over the words
+ * being written.
  *
- * Every floating layer the composer owns (the @ palette, a token's popover,
- * the model popover, the + menu) opens OUTSIDE the composer's box, at the x of
- * whatever opened it (docs/rework/INTERACTION_SPEC.md C7, C10, MP1; critique 1:
- * "popovers never cover the draft"):
+ * The layers typing opens (the "/" palette, the @ palette, a token's popover)
+ * open OUTSIDE the composer's box, at the x of the caret or token that opened
+ * them (docs/rework/INTERACTION_SPEC.md C7, C10), since they follow the
+ * words as they are typed and must not hide them. The composer's MENUS (the
+ * +, the model chip, the home tray, the generation row) do not use this: they
+ * open at their own trigger, over the composer (owner, 2026-10-04;
+ * src/components/chat/composer-menu.tsx, "Where they open"). For the typed
+ * layers:
  *
  *   on the home   below the composer: the greeting stays whole above it, and
  *                 the suggestions under it are disposable (they step aside);
@@ -41,9 +45,9 @@ export interface LayerPlacementInput {
    * Defaults to the whole viewport.
    */
   bounds?: { top: number; bottom: number };
-  /** The x the layer is anchored to: the caret, a token's left edge, a trigger's edge. */
+  /** The x the layer is anchored to: the caret or a token's left edge. */
   anchorX: number;
-  /** Where the layer sits against `anchorX`: its start edge (palette, + menu) or its end edge (model). */
+  /** Where the layer sits against `anchorX`: its start edge (the usual) or its end edge. */
   align?: "start" | "end";
   /** Pulls a start-aligned layer left of the anchor, so its row text lines up with the caret. */
   inset?: number;
