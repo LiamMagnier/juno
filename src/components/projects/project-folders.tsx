@@ -593,7 +593,9 @@ function plural(n: number, noun: string) {
  * (stretched over the tile); the folder names are links above it; pin and
  * menu surface on hover and focus, and are always there on touch.
  *
- * `compact` (a folder inside a project) drops the cover and the excerpt.
+ * `compact` (a folder inside a project) keeps the cover, on a shallower
+ * 2:1 plate on a finer dot pitch, and drops the excerpt: a folder is read by its name and its
+ * drawing, the same object as a project at a smaller size.
  */
 export function ProjectTile({
   project: p,
@@ -651,16 +653,15 @@ export function ProjectTile({
       className={cn("pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col", compact && "pj-tile-compact")}
       style={{ ["--i" as string]: Math.min(index, 11) }}
     >
-      {!compact && (
-        <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-inner">
-          {p.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={p.coverUrl} alt="" className="pj-cover-art size-full object-cover" draggable={false} />
-          ) : (
-            <ProjectCover id={p.id} folders={folderCount} live={live} index={index} />
-          )}
-        </div>
-      )}
+      <div className={cn("pj-cover relative w-full overflow-hidden rounded-inner", compact ? "aspect-[16/7] @[30rem]/page:aspect-[2/1]" : "aspect-[16/7]")}>
+        {p.coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={p.coverUrl} alt="" className="pj-cover-art size-full object-cover" draggable={false} />
+        ) : (
+          <ProjectCover id={p.id} folders={folderCount} live={live} index={index} aspect={compact ? 2 : undefined}
+            className={compact ? "pj-cover-art-sm" : undefined} />
+        )}
+      </div>
 
       <div className={cn("flex flex-1 flex-col px-3", compact ? "pb-2.5 pt-3" : "pb-3 pt-3.5")}>
         {pathLabel && <p className="pj-annot mb-1 truncate pr-6">{pathLabel}</p>}
@@ -669,7 +670,7 @@ export function ProjectTile({
           draggable={false}
           className={cn(
             "block truncate text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
-            compact ? "pj-name-sm pr-8" : "pj-name"
+            compact ? "pj-name-sm" : "pj-name"
           )}
         >
           {p.name}
@@ -708,10 +709,7 @@ export function ProjectTile({
 
       {hasActions && p.starred && (
         <span
-          className={cn(
-            "pj-pinned pointer-events-none absolute z-[2] grid size-7 place-items-center text-foreground/75 coarse:hidden",
-            compact ? "right-2 top-2" : "right-3 top-3"
-          )}
+          className="pj-pinned pointer-events-none absolute right-3 top-3 z-[2] grid size-7 place-items-center text-foreground/75 coarse:hidden"
           aria-hidden="true"
         >
           <Pin motion="none" weight="fill" className="size-3.5" />
@@ -719,12 +717,7 @@ export function ProjectTile({
       )}
 
       {hasActions && (
-        <div
-          className={cn(
-            "pj-actions absolute z-[2] flex items-center gap-0.5 rounded-full p-0.5",
-            compact ? "right-2 top-2" : "right-3 top-3"
-          )}
-        >
+        <div className="pj-actions absolute right-3 top-3 z-[2] flex items-center gap-0.5 rounded-full p-0.5">
           {onToggleStar && (
             <Pressable
               kind="icon"
@@ -790,22 +783,43 @@ export function ProjectTile({
   );
 }
 
-/** The dashed "New folder" / "New project" tile, the same footprint as a tile. */
-export function NewTile({ label, onClick, disabledReason }: { label: string; onClick: () => void; disabledReason?: string | null }) {
+/**
+ * The Folders section's empty state: no dashed placeholder, an invitation in
+ * the tile's own language. A cover plate drawn for this project's folders
+ * (three spokes from the hub, the presence trajectory on its way round) next
+ * to a serif line, a sentence and the one action. Where the tree is already
+ * as deep as it goes, the action gives way to the reason, in mono.
+ */
+export function FoldersEmpty({
+  projectId,
+  projectName,
+  onNewFolder,
+  disabledReason,
+}: {
+  projectId: string;
+  projectName: string;
+  onNewFolder: () => void;
+  disabledReason?: string | null;
+}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!!disabledReason}
-      title={disabledReason ?? undefined}
-      className="pj-new group/new flex h-full min-h-32 w-full flex-col items-center justify-center gap-1.5 rounded-card p-4 text-ui font-medium text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <span className="inline-flex items-center gap-2">
-        <Plus className="size-4 transition-transform duration-base ease-out-expo group-hover/new:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
-        {label}
-      </span>
-      {disabledReason && <span className="pj-annot">{disabledReason}</span>}
-    </button>
+    <div className="pj-empty grid items-center gap-5 @[34rem]/page:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] @[34rem]/page:gap-7">
+      <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-card">
+        <ProjectCover id={`${projectId}:folders`} folders={3} live aspect={16 / 7} />
+      </div>
+      <div className="min-w-0">
+        <h3 className="pj-name-sm text-foreground">Arrange it in folders</h3>
+        <p className="mt-1.5 max-w-[34ch] text-pretty text-ui leading-relaxed text-muted-foreground">
+          A folder keeps one part of {projectName} together. Drag a chat onto it to file it there.
+        </p>
+        {disabledReason ? (
+          <p className="pj-annot mt-4">{disabledReason}</p>
+        ) : (
+          <Button variant="outline" size="sm" className="mt-4" onClick={onNewFolder}>
+            <Plus className="size-4" aria-hidden="true" /> New folder
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 

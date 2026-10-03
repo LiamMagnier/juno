@@ -654,9 +654,9 @@ export function ConnectorDirectory({
     ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
     : null;
 
-  // The small section title every Customize tab shares (CustomizeSection):
-  // Inter at the UI size, the count muted beside it.
-  const sectionLabel = "mb-4 flex min-h-6 items-center gap-2 text-ui font-medium text-foreground";
+  // The section title every Customize tab shares (CustomizeSection): the
+  // serif at the tile-name rung, the count in mono beside it.
+  const sectionLabel = "customize-title mb-4 flex min-h-6 items-baseline gap-2 text-foreground";
 
   return (
     <section>
@@ -687,7 +687,7 @@ export function ConnectorDirectory({
           >
             <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
           </button>
-          <h2 className="text-ui font-medium text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
+          <h2 className="customize-title text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
         </div>
       ) : null}
 
@@ -713,7 +713,7 @@ export function ConnectorDirectory({
         {connectedItems.length > 0 && (
           <div>
             <h2 className={sectionLabel}>
-              Connected <span className="font-normal tabular-nums text-muted-foreground">{connectedCount}</span>
+              Connected <span className="ed-annot">{connectedCount}</span>
             </h2>
             <TileGrid items={connectedItems} {...gridProps} />
           </div>
@@ -838,10 +838,12 @@ export function tileAnchor(id: string): string {
 }
 
 /**
- * "Add an MCP server": a tile-sized door at the end of Available. Dashed at
- * rest (a place for something, not a thing), and the one tile here that IS a
- * target, so it alone answers the pointer: the hairline firms up, the well
- * lifts a step, the plus turns a quarter. Pressing sinks it a touch.
+ * "Add an MCP server": a tile-sized door at the end of Available. Its mark is
+ * a recess (the cover plate's tone and inner hairline) holding a plus, where
+ * the others hold a logo: a place for something, without the dashed outline
+ * every placeholder tile wears. It is the one tile here that IS a target, so
+ * it alone answers the pointer: the recess firms up, the plus turns a
+ * quarter. Pressing sinks it a touch.
  */
 function AddServerTile({ index: _index, onClick }: { index: number; onClick: () => void }) {
   return (
@@ -851,7 +853,7 @@ function AddServerTile({ index: _index, onClick }: { index: number; onClick: () 
       aria-haspopup="dialog"
       className="group -mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-card px-3 py-2.5 text-left transition-[background-color,transform] duration-fast ease-out-soft hover:bg-accent/60 active:scale-[0.99] active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring motion-reduce:active:scale-100"
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-field border border-dashed border-foreground/20 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:border-foreground/35 group-hover:text-foreground">
+      <span className="empty-well flex size-10 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
         <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
       </span>
       <span className="flex min-w-0 flex-col">

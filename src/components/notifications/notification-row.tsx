@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { AgentFace } from "@/components/agents/agent-face";
-import { NeedsYouDot, formatAgo } from "@/components/agents/agent-bits";
+import { formatAgo } from "@/components/agents/agent-bits";
 import { JunoMark } from "@/components/brand/logo";
 import { isPressing } from "@/components/notifications/inbox-model";
 import type { ClientNotification } from "@/lib/notify/types";
@@ -20,11 +20,13 @@ import { cn } from "@/lib/utils";
  * mark says WHO, an agent's face for an agent's news and Juno's mark for
  * Juno's own, and the words say what.
  *
- * ONE TRAILING SIGNAL (rule 6): the unread dot, in the accent when the row is
- * asking for something (an approval, a question) and muted when it is news.
- * Read rows carry nothing and their title steps down to muted ink, so an
- * unread row outranks a read one even for a reader who cannot see the dot's
- * colour. The state is also in words, for a screen reader.
+ * NO DOT (the owner's rule: no status dots anywhere). Unread is said in the
+ * type: an unread title is set in foreground ink at the medium weight, a read
+ * one steps down to muted ink at the regular weight, so the difference holds
+ * for a reader who cannot tell colours apart. A row that is asking for
+ * something (an approval, a question) and is still unread carries its time in
+ * presence blue, the one live thing in the list. The state is also in words,
+ * for a screen reader.
  *
  * A row that goes somewhere is a link, so it can be opened in a new tab like
  * any other; a row with nowhere to go is a button that only marks it read.
@@ -48,17 +50,15 @@ export function NotificationRow({
         {n.agent ? <AgentFace avatar={n.agent.avatar} size="xs" /> : <JunoMark className="size-4" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-nav", unread ? "text-foreground" : "text-muted-foreground")}>
-          {unread ? <span className="sr-only">Unread: </span> : null}
+        <span className={cn("block truncate text-nav", unread ? "font-medium text-foreground" : "text-muted-foreground")}>
+          {unread ? <span className="sr-only">{isPressing(n) ? "Unread, needs you: " : "Unread: "}</span> : null}
           {n.title}
         </span>
-        <span className="line-clamp-2 text-caption text-muted-foreground">
-          {formatAgo(n.createdAt)}
-          {n.body ? ` · ${n.body}` : null}
+        <span className="mt-0.5 line-clamp-2 text-caption text-muted-foreground">
+          <span className={cn("ed-annot", unread && isPressing(n) && "ed-presence")}>{formatAgo(n.createdAt)}</span>
+          {n.body ? <span className="ml-1.5">{n.body}</span> : null}
         </span>
       </span>
-      {/* `mt-1.5` centres the 8px dot on the title's 20px line. */}
-      {unread ? <NeedsYouDot className={cn("mt-1.5", !isPressing(n) && "bg-muted-foreground")} /> : null}
     </>
   );
 

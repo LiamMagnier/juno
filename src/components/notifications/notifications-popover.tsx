@@ -130,7 +130,7 @@ export function NotificationsPopover({
         className="flex max-h-[min(36rem,var(--radix-popover-content-available-height))] w-96 flex-col p-0"
       >
         <div className="flex h-12 shrink-0 items-center justify-between gap-3 pl-4 pr-2">
-          <h2 id={headingId} className="text-body font-medium text-foreground">
+          <h2 id={headingId} className="font-serif text-heading text-foreground">
             Notifications
           </h2>
           {unread > 0 ? (

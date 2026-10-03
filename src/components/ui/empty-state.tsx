@@ -1,4 +1,5 @@
 import type { IconComponent } from "@/components/ui/icons";
+import { EmptyMark } from "@/components/ui/empty-mark";
 
 import { cn } from "@/lib/utils";
 
@@ -9,31 +10,27 @@ import { cn } from "@/lib/utils";
  * to take, not how important it is.
  *
  *   "page"   The state owns the content column, so it is drawn OPEN: no box,
- *            no edge, a glyph tile, a heading and a sentence on the page
- *            itself, the way Claude and ChatGPT draw theirs. It used to sit in
- *            a dashed recess the height of the column, which read as a drop
- *            zone for files rather than as an answer, and at page size the
- *            frame was the loudest thing on the screen.
+ *            no edge, the brand's mark, a serif line and a sentence on the
+ *            page itself.
  *
  *   "panel"  The state sits inside a card, a sidebar section or a list, where
- *            it needs a boundary to say where the empty part is. That is the
- *            one place the dashed well stays: a dashed recess reads as a space
- *            waiting to be filled.
+ *            it needs a boundary to say where the empty part is: a quiet
+ *            tonal recess with an inner hairline, the ground a project's
+ *            cover plate sits on. It used to be a dashed well, which read as
+ *            a drop zone (and a placeholder tile) rather than an answer.
  *
- * TWO TONES, and the difference is the tile, not the page. An error used to be
- * a red-tinted box with a red title, which reads as an alarm for what is
- * usually a retry. Now only the glyph tile takes the destructive tint; the
- * heading stays in foreground ink and the sentence under it says what happened
- * and what is safe. A panel error keeps a solid hairline instead of the dashed
- * one, because a failure is not a placeholder and must not look like one.
+ * THE MARK, NOT A GLYPH IN A TILE. An empty state draws the construction in
+ * miniature (empty-mark.tsx): three orbits on the number line and the
+ * presence trajectory, in the same dot matrix as Home, Memory and the
+ * Projects covers. A glyph in a tonal square was the generic shape every app
+ * draws; `icon` is still accepted, and still used, but only by an ERROR,
+ * where the glyph takes the destructive tint and says what kind of thing
+ * failed. A failure is not a placeholder and must not look like one, so an
+ * error panel keeps a solid hairline instead of the recess.
  *
- * THE GLYPH SITS IN A TILE (docs/design/ICONS_AND_MOTION.md §3): one muted
- * mark on a small tonal square, the way Claude and Linear set theirs. A bare
- * glyph floating over a sentence read as a stray icon; in a tile it reads as
- * the object the page is about. The mark does not articulate
- * (`motion="none"`): an empty state is sometimes rendered inside a link or a
- * clickable row, and a glyph that tilts because the page around it is
- * hoverable is saying something about an action that is not there.
+ * THE TITLE IS SERIF. Newsreader is the family for the few things meant to be
+ * read as a sentence (editorial.css); "No routines yet" is one. Page size
+ * takes `ed-h3`, panel size the 18px rung the folder tiles use.
  *
  * THE PAGE TITLE IS AN `<h2>`. The route's `<h1>` is the page header above it,
  * and a page whose only content is "No projects yet" has to list that line in
@@ -44,7 +41,7 @@ import { cn } from "@/lib/utils";
  * It arrives on the workhorse entrance (`rise-in`): an empty state appears
  * because the reader filtered, searched or opened something, and a 6px settle
  * says "this is the answer" where a cut says "the page broke". Reduced motion
- * keeps the fade.
+ * keeps the fade, and the mark is drawn still.
  */
 export function EmptyState({
   icon: Icon,
@@ -74,47 +71,41 @@ export function EmptyState({
         "flex flex-col items-center justify-center text-center motion-safe:animate-rise-in",
         page
           ? "px-6 py-16"
-          : // `border-dashed` / `border-solid` are utilities, so they win the
-            // border-style over `.surface-inset`'s shorthand while its fill and
-            // hairline colour stay.
-            cn("surface-inset rounded-card px-4 py-7", isError ? "border-solid" : "border-dashed"),
+          : cn(
+              "rounded-card px-4 py-7",
+              isError ? "border border-border/80 bg-background" : "empty-well"
+            ),
         className
       )}
       // A failed load is a status message; an empty list is just the page.
       role={isError ? "status" : undefined}
     >
-      {Icon && (
-        <span
-          aria-hidden="true"
-          className={cn(
-            "grid shrink-0 place-items-center",
-            page ? "size-12 rounded-field" : "size-9 rounded-control",
-            // At page size the tile is RAISED (premium brief rule 3: hairline
-            // and a soft tinted throw), so the page's one object reads as an
-            // object lifted off the paper, the same rung as the composer and
-            // the starting-point tiles. In a panel it stays a flat tonal
-            // square: the panel's well is already the boundary.
-            isError
-              ? "bg-destructive/10 text-destructive"
-              : page
-                ? "surface-key text-muted-foreground"
-                : "bg-secondary text-muted-foreground"
-          )}
-        >
-          <Icon motion="none" className={page ? "size-6" : "size-5"} />
-        </span>
+      {isError ? (
+        Icon && (
+          <span
+            aria-hidden="true"
+            className={cn(
+              "grid shrink-0 place-items-center bg-destructive/10 text-destructive",
+              page ? "size-12 rounded-field" : "size-9 rounded-control"
+            )}
+          >
+            <Icon motion="none" className={page ? "size-6" : "size-5"} />
+          </span>
+        )
+      ) : (
+        <EmptyMark size={size} />
       )}
       <Title
         className={cn(
-          "text-foreground",
-          page ? "text-heading" : "text-body font-semibold",
-          Icon && (page ? "mt-4" : "mt-3")
+          "text-balance text-foreground",
+          page ? "ed-h3" : "font-serif text-heading",
+          (Icon || !isError) && (page ? "mt-4" : "mt-3")
         )}
       >
         {title}
       </Title>
       {description && (
-        <p className={cn("max-w-sm text-pretty text-body text-muted-foreground", page ? "mt-1.5" : "mt-1")}>
+        <p className={cn("max-w-sm text-pretty text-muted-foreground", page ? "mt-2 text-body" : "mt-1 text-ui")}>
           {description}
         </p>
       )}

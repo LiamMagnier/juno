@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "@/components/ui/icons";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { AppIcons, StatusIcons } from "@/lib/app-icons";
+import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import {
   skillAttention,
@@ -24,7 +24,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * shapes fighting over one edge.
  */
 export const skillLibraryRowClass =
-  "group/row relative flex min-h-16 items-center gap-3 px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none sm:px-4";
+  "group/row relative flex min-h-16 items-center gap-3 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none ";
 
 /**
  * A skill inside a source starts where the source's NAME starts: the row's
@@ -73,7 +73,6 @@ export function SkillRow({
   href,
   onToggle,
   inheritedOff = false,
-  glyph = true,
   indent = false,
   className,
   style,
@@ -82,7 +81,12 @@ export function SkillRow({
   href: string;
   onToggle: (enabled: boolean) => void;
   inheritedOff?: boolean;
-  /** The skill glyph in the leading column. Off inside a source, where the group's avatar already says what these are. */
+  /**
+   * Accepted for the source group's call and ignored: a skill row has no
+   * leading glyph any more. A column of identical document marks down the
+   * left of "Your skills" said nothing the serif name does not; a source keeps
+   * its avatar, because that one tells two sources apart.
+   */
   glyph?: boolean;
   /** Inside a source: the text starts under the group's name, not under its avatar. */
   indent?: boolean;
@@ -98,17 +102,6 @@ export function SkillRow({
       className={cn(skillLibraryRowClass, indent && skillLibraryIndentClass, className)}
       style={style}
     >
-      {glyph && !indent ? (
-        // The same 28px tile a source's avatar sits in, so the leading column
-        // reads as one column down both sections.
-        <span aria-hidden="true" className={cn(skillLibraryLeadClass, "rounded-control border border-foreground/[0.07] bg-card")}>
-          <AppIcons.skills
-            motion="none"
-            className="size-4 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/row:text-foreground"
-          />
-        </span>
-      ) : null}
-
       <div
         className={cn(
           "min-w-0 flex-1 transition-opacity duration-fast ease-out-soft",
@@ -117,17 +110,14 @@ export function SkillRow({
       >
         <Link
           href={href}
-          className="block truncate text-body font-medium leading-snug text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+          className="ed-name block truncate text-foreground outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
         >
           {skill.name}
         </Link>
-        <p className="mt-0.5 flex min-w-0 items-center gap-x-2 text-ui text-muted-foreground">
+        <p className="mt-1 flex min-w-0 items-baseline gap-x-2.5 text-ui text-muted-foreground">
           {skill.description ? <span className="truncate">{skill.description}</span> : null}
           <span
-            className={cn(
-              "shrink-0 text-caption",
-              origin.caution ? "font-medium text-warning-foreground" : undefined
-            )}
+            className={cn("ed-annot shrink-0", origin.caution && "!text-warning-foreground")}
           >
             {origin.label}
           </span>

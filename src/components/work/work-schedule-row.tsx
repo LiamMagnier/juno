@@ -186,10 +186,9 @@ export function WorkScheduleRow({
       >
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {/* `text-body`, matching the task row's title — see the note there.
-                Four sibling lists were all setting their primary line one pixel
-                off the scale and one pixel from their own subtitle. */}
-            <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
+            {/* The serif name, as every named thing in Customize and Projects
+                is set (editorial.css `.ed-name`). */}
+            <span className="ed-name min-w-0 truncate text-foreground">
               {schedule.name}
             </span>
             {/* No "Paused" tag: the line under the schedule starts with the
@@ -207,7 +206,7 @@ export function WorkScheduleRow({
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
           </span>
-          <span className="mt-1 block truncate text-caption tabular-nums text-muted-foreground">
+          <span className="ed-annot mt-1.5 block truncate">
             {nextFireSentence(schedule)}
             {schedule.lastRunAt !== null && ` · last ran ${workTimeAgo(schedule.lastRunAt)}`}
             {notify !== null && ` · ${notify}`}

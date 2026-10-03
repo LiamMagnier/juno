@@ -129,7 +129,7 @@ export function SkillSourceGroup({
         // emphasis rung, once. Opacity only, under the row's own content.
         <motion.span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 bg-selected"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-card bg-selected"
           initial={{ opacity: 1 }}
           animate={{ opacity: 0 }}
           transition={{ ...transition.emphasis, delay: highlightFadeDelaySeconds(reduce) }}
@@ -147,11 +147,11 @@ export function SkillSourceGroup({
             aria-expanded={expanded}
             aria-controls={bodyId}
             onClick={() => onExpandedChange(!expanded)}
-            className="block max-w-full truncate text-left text-body font-medium leading-snug text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+            className="ed-name block max-w-full truncate text-left text-foreground outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
           >
             <span translate="no">{label}</span>
           </button>
-          <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 text-ui text-muted-foreground">
+          <p className="ed-annot mt-1 flex min-w-0 flex-wrap items-center gap-x-3">
             {/* The counts are one unit, so a narrow row wraps between them and
                 the update marker, never inside them. */}
             <span className="inline-flex items-center gap-x-1.5 whitespace-nowrap">
@@ -253,12 +253,13 @@ export function SkillSourceGroup({
 
       <Collapse open={expanded}>
         {/* A half step of the tonal fill under the children: the folder's
-            inside, read without a second box or a tree line. */}
+            inside, read without a hairline box or a tree line. A card (12)
+            with a 4px frame, so its rows' control radius (8) is concentric. */}
         <div
           id={bodyId}
           role="list"
           aria-label={label}
-          className="divide-y divide-foreground/[0.06] border-t border-foreground/[0.06] bg-foreground/[0.02]"
+          className="ed-list mb-2 mt-1 rounded-card bg-foreground/[0.022] p-1"
         >
           {skills.map((skill, index) => (
             <SkillRow

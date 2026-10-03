@@ -19,7 +19,6 @@ import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FEATURE_NAMES } from "@/lib/brand/names";
-import { cn } from "@/lib/utils";
 
 /**
  * Everything that starts without the reader typing a fresh prompt.
@@ -91,13 +90,10 @@ export default function AutomationsPage() {
     </Button>
   );
 
-  // A hairline list, like Skills: the rows go square inside it and the list
-  // clips their tonal hover. The row recipe carries a transparent 1px border
-  // on every side, which the list's divider colour would otherwise paint, so
-  // only the dividers between rows are kept. Each row deals itself in (WorkScheduleRow's own
-  // stagger), so the list does not animate as well.
+  // A hairline list, like Skills (customizeListClass). Each row deals itself
+  // in (WorkScheduleRow's own stagger), so the list does not animate as well.
   const list = (rows: ClientWorkSchedule[], offset: number) => (
-    <div className={cn(customizeListClass, "[&>*]:rounded-none [&>*]:!border-x-0 [&>*:last-child]:!border-b-0")}>
+    <div className={customizeListClass}>
       {rows.map((schedule, index) => (
         <WorkScheduleRow key={schedule.id} schedule={schedule} index={offset + index} onChanged={replace} />
       ))}
@@ -142,7 +138,7 @@ export default function AutomationsPage() {
           {paused.length > 0 && (
             <CustomizeSection title="Paused" meta={paused.length}>
               {list(paused, active.length)}
-              <p className="mt-3 max-w-prose text-caption text-muted-foreground">
+              <p className="mt-4 max-w-prose text-ui text-muted-foreground">
                 These keep their history and start again from their next run when you turn them back on.
               </p>
             </CustomizeSection>

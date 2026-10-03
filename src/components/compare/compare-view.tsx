@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus } from "@/components/ui/icons";
+import { ArrowRight, Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   ComposerPrimaryAction,
@@ -292,7 +292,7 @@ export function CompareView() {
         // counted the panes the page draws directly below it.
         lede="Ask up to three models at once and compare their answers and cost."
         actions={
-          <span className="text-right text-caption text-muted-foreground">
+          <span className="ed-annot text-right">
             Comparisons aren&rsquo;t saved
           </span>
         }
@@ -374,36 +374,42 @@ export function CompareView() {
         )}
       >
         {!hasRun && (
-          <div className="flex shrink-0 flex-col items-center gap-3 pb-8 pt-4 text-center motion-safe:animate-rise-in">
+          <div className="shrink-0 pb-6 pt-1 motion-safe:animate-rise-in">
             {/* No second heading. This was a display-size "Same prompt,
                 different minds" and a sentence under it, a hero stacked under
                 the page's own title and lede that said the same thing twice.
                 What is left is the part that acts: three prompts to start
-                with, under a label that says so. */}
-            <p className="text-ui text-muted-foreground">Start with one of these</p>
-            <div className="flex w-full max-w-2xl flex-wrap justify-center gap-2">
+                with. Not a centred row of bordered chips (the stock "try one
+                of these" shape): a short list of sentences on hairlines, read
+                as prose, each one sending itself to every model. */}
+            <p className="ed-annot mb-1.5">Try one</p>
+            <ul className="ed-list -mx-3 max-w-2xl">
               {SAMPLE_PROMPTS.map((sample, i) => (
-                <button
-                  key={sample}
-                  type="button"
-                  onClick={() => {
-                    setPrompt(sample);
-                    runAll(sample);
-                  }}
-                  // The shared helper, not a tenth private formula. `120 + i*45`
-                  // held the last starter back 210ms for no reason the user can
-                  // see — and these are the first things anyone clicks on
-                  // /compare, which is the case staggerDelay is capped for.
-                  style={staggerDelay(i, "tight")}
-                  // `.pressable`: the hover cross-fade and the press dip on
-                  // their own rungs, which the hand-typed transition list here
-                  // had no transform in — the card snapped when pressed.
-                  className="pressable rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-ui leading-5 text-foreground/80 [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-selected motion-safe:animate-rise-in motion-reduce:active:scale-100"
-                >
-                  {sample}
-                </button>
+                <li key={sample}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrompt(sample);
+                      runAll(sample);
+                    }}
+                    // The shared helper, not a tenth private formula. `120 + i*45`
+                    // held the last starter back 210ms for no reason the user can
+                    // see — and these are the first things anyone clicks on
+                    // /compare, which is the case staggerDelay is capped for.
+                    style={staggerDelay(i, "tight")}
+                    className="pressable group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left [animation-fill-mode:backwards] hover:bg-accent active:bg-selected motion-safe:animate-rise-in motion-reduce:active:scale-100"
+                  >
+                    <span className="ed-name min-w-0 flex-1 text-foreground/85 transition-colors duration-fast group-hover:text-foreground">
+                      {sample}
+                    </span>
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="size-4 shrink-0 -translate-x-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100 motion-reduce:translate-x-0 coarse:translate-x-0 coarse:opacity-100"
+                    />
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
 

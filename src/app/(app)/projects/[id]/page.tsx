@@ -5,7 +5,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ImageOff, ImagePlus, Loader2, Maximize2 } from "@/components/ui/icons";
+import { ImageOff, ImagePlus, Loader2, Maximize2, Plus } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,7 @@ import { madeInConversations } from "@/lib/artifact-links";
 import {
   DeleteProjectDialog,
   MoveToDialog,
-  NewTile,
+  FoldersEmpty,
   ProjectNameDialog,
   ProjectSheet,
   ProjectTile,
@@ -1004,35 +1004,57 @@ export default function ProjectDetailPage() {
                   }
                 />
 
-                {/* Folders: the projects inside this one. Each is a drop
-                    target, so a chat or a sibling folder can be dragged in;
-                    the dashed tile makes a new one here. */}
+                {/* Folders: the projects inside this one, drawn as the
+                    Projects grid draws a project (cover, serif name, one mono
+                    line) at a smaller size. Each is a drop target, so a chat
+                    or a sibling folder can be dragged in. Making one is a
+                    quiet verb in the section's header, not a dashed
+                    placeholder tile; with none yet, the section is an
+                    invitation in the same language. */}
                 {isOwnerView && (
                   <section className="pj mt-10" aria-labelledby="pj-folders-title">
-                    <div className="mb-4 flex items-baseline justify-between gap-3">
-                      <h2 id="pj-folders-title" className="pj-name text-foreground">Folders</h2>
-                      <span className="pj-annot">
-                        {folders.length
-                          ? `${folders.length} inside · drag chats onto one`
-                          : "Arrange this project your way"}
-                      </span>
+                    <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
+                      <h2 id="pj-folders-title" className="flex items-baseline gap-2 text-foreground">
+                        <span className="pj-name">Folders</span>
+                        {folders.length > 0 && <span className="pj-annot">{folders.length}</span>}
+                      </h2>
+                      {folders.length > 0 &&
+                        (folderRefusal ? (
+                          <span className="pj-annot text-right">{folderRefusal}</span>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="-mr-2 text-muted-foreground"
+                            onClick={() => setFolderDialog(true)}
+                          >
+                            <Plus className="size-4" aria-hidden="true" /> New folder
+                          </Button>
+                        ))}
                     </div>
-                    <ul className="ed-arrive grid gap-3 @[30rem]/page:grid-cols-2 @[64rem]/page:grid-cols-3">
-                      {folders.map((folder) => (
-                        <li key={folder.id} className="min-w-0">
-                          <ProjectTile
-                            compact
-                            project={folder}
-                            allProjects={tree}
-                            onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
-                            onDropInto={(drag) => handleDrop(folder.id, drag)}
-                          />
-                        </li>
-                      ))}
-                      <li className="min-w-0">
-                        <NewTile label="New folder" onClick={() => setFolderDialog(true)} disabledReason={folderRefusal} />
-                      </li>
-                    </ul>
+                    {folders.length > 0 ? (
+                      <ul className="pj-grid grid gap-3 @[30rem]/page:grid-cols-2 @[80rem]/page:grid-cols-3 @[80rem]/page:gap-4">
+                        {folders.map((folder, i) => (
+                          <li key={folder.id} className="min-w-0">
+                            <ProjectTile
+                              compact
+                              index={i}
+                              project={folder}
+                              allProjects={tree}
+                              onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
+                              onDropInto={(drag) => handleDrop(folder.id, drag)}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <FoldersEmpty
+                        projectId={data.project.id}
+                        projectName={data.project.name}
+                        onNewFolder={() => setFolderDialog(true)}
+                        disabledReason={folderRefusal}
+                      />
+                    )}
                   </section>
                 )}
 

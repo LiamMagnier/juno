@@ -70,7 +70,7 @@ import { cn } from "@/lib/utils";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { ArtifactPreview, DesignPoster } from "@/components/artifacts/artifact-preview";
+import { ArtifactPreview } from "@/components/artifacts/artifact-preview";
 import { IconSwap } from "@/components/ui/icon-swap";
 import ArtifactsLoading from "./loading";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
@@ -140,7 +140,7 @@ interface Item {
  * row itself pretending to be a card leaving the page.
  */
 const rowClass =
-  "group relative flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+  "group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
 
 /**
  * The two view modes, and where the choice is kept.
@@ -639,7 +639,7 @@ function ArtifactsHome() {
                 className="pl-9"
               />
             </div>
-            <span className="ml-auto text-caption tabular-nums text-muted-foreground" aria-live="polite">
+            <span className="ed-annot ml-auto" aria-live="polite">
               {filtered.length === items.length ? items.length : `${filtered.length} of ${items.length}`}{" "}
               {items.length === 1 ? "artifact" : "artifacts"}
             </span>
@@ -756,12 +756,11 @@ function ArtifactsHome() {
             <Skeleton className="h-9 w-full max-w-xs rounded-field" />
             <Skeleton className="ml-auto h-9 w-40 rounded-menu" />
           </div>
-          <ul className="mt-5 space-y-1" aria-hidden="true">
+          <ul className="-mx-3 mt-5 space-y-1" aria-hidden="true">
             {[...Array(6)].map((_, i) => (
-              <li key={i} className="flex items-center gap-3 px-3 py-2.5" style={staggerDelay(i, "tight")}>
-                <Skeleton className="size-9 shrink-0 rounded-field" />
-                <span className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="block h-3 w-48 max-w-full rounded-xs" />
+              <li key={i} className="flex items-center gap-4 px-3 py-3.5" style={staggerDelay(i, "tight")}>
+                <span className="min-w-0 flex-1 space-y-2.5">
+                  <Skeleton className="block h-3.5 w-48 max-w-full rounded-xs" />
                   <Skeleton className="block h-2.5 w-28 rounded-xs" />
                 </span>
                 <Skeleton className="hidden h-2.5 w-40 rounded-xs sm:block" />
@@ -897,38 +896,34 @@ function ArtifactsHome() {
           })}
         </ul>
       ) : (
-        <ul className="mt-5 space-y-1" aria-label={`${filtered.length} ${filtered.length === 1 ? "artifact" : "artifacts"}`}>
+        /*
+         * The list, in the editorial language Projects and Memory set: no
+         * glyph-in-a-tile at the head of every row (six of the same square
+         * down the left edge was the loudest thing in the list, and said
+         * nothing the kind column does not), a serif name, the chat it came
+         * from in the interface sans, and kind, version and age as a mono
+         * annotation in fixed columns, the way the eye reads a column down a
+         * list. Rows sit on hairlines rather than floating on hover alone.
+         * On a phone the columns fold into one mono line under the name.
+         * Grid view keeps the pictures (a design's poster, a site's render).
+         */
+        <ul
+          className="ed-list -mx-3 mt-5"
+          aria-label={`${filtered.length} ${filtered.length === 1 ? "artifact" : "artifacts"}`}
+        >
           {filtered.map((item, i) => {
-            const Icon = ICONS[item.type] ?? FileCode2;
             const rt = runtimeFor(item.type, item.language);
+            const age = (
+              <time dateTime={item.updatedAt} title={new Date(item.updatedAt).toLocaleString()}>
+                {timeAgo(item.updatedAt)}
+              </time>
+            );
             return (
               <li
                 key={item.id}
                 style={staggerDelay(i, "tight")}
-                data-icon-trigger=""
                 className={`${rowClass} motion-safe:animate-rise-in [animation-fill-mode:backwards]`}
               >
-                {/* The kind glyph on an inset tile — the row's one piece of depth
-                    at rest, and the one thing that moves under the pointer: its
-                    ink steps up to the row's foreground and the glyph lifts.
-                    A design shows its poster in the same tile instead: the
-                    picture says which design far faster than its name does,
-                    and every design's glyph is the same glyph. `alt=""`
-                    because the title beside it already names it. */}
-                <span className="surface-inset flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-                  {item.type === "DESIGN" ? (
-                    <DesignPoster
-                      artifactId={item.id}
-                      version={item.version}
-                      alt=""
-                      className="p-1"
-                      glyphClassName="size-4"
-                    />
-                  ) : (
-                    <Icon className="size-4" motion="lift" aria-hidden />
-                  )}
-                </span>
-
                 {/* The stretched link: the whole row opens the artifact; the
                     actions menu sits above it (relative z-10) so it stays
                     clickable. */}
@@ -936,27 +931,19 @@ function ArtifactsHome() {
                   href={artifactHref(item.id)}
                   className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                 >
-                  <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
-                  <span className="mt-0.5 block truncate text-caption text-muted-foreground">
+                  <span className="ed-name block truncate text-foreground">{item.title || "Untitled artifact"}</span>
+                  <span className="mt-1 block truncate text-ui text-muted-foreground">
                     {item.conversationTitle ? `in “${item.conversationTitle}”` : "Not in a chat"}
+                  </span>
+                  <span className="ed-annot mt-1.5 block truncate sm:hidden">
+                    {rt.label}
+                    {item.version > 1 && ` · v${item.version}`} · {age}
                   </span>
                 </Link>
 
-                {/* Kind, version and age in fixed columns, the way the
-                    Library's list sets Type, Size and Added: down a list of
-                    rows the eye reads a column, and a run of dotted fragments
-                    of different lengths lined up with nothing. */}
-                <span className="hidden w-24 shrink-0 truncate text-caption text-muted-foreground sm:block">{rt.label}</span>
-                <span className="hidden w-8 shrink-0 text-caption tabular-nums text-muted-foreground sm:block">
-                  {item.version > 1 ? `v${item.version}` : ""}
-                </span>
-                <time
-                  dateTime={item.updatedAt}
-                  title={new Date(item.updatedAt).toLocaleString()}
-                  className="hidden w-16 shrink-0 text-right text-caption tabular-nums text-muted-foreground sm:block"
-                >
-                  {timeAgo(item.updatedAt)}
-                </time>
+                <span className="ed-annot hidden w-24 shrink-0 truncate sm:block">{rt.label}</span>
+                <span className="ed-annot hidden w-8 shrink-0 sm:block">{item.version > 1 ? `v${item.version}` : ""}</span>
+                <span className="ed-annot hidden w-16 shrink-0 text-right sm:block">{age}</span>
 
                 <div className="relative z-10 flex shrink-0 items-center">
                   {renderActions(item)}

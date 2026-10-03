@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Markdown } from "@/components/chat/markdown";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { CompareModelPicker } from "@/components/compare/compare-model-picker";
+import { ProjectCover } from "@/components/projects/project-cover";
+import "@/components/projects/projects.css";
 import { isPaneStreaming, type PaneRun } from "@/components/compare/use-compare";
 import { resolveModel, type ModelId } from "@/lib/models";
 import { cn, formatTokens, formatUsd } from "@/lib/utils";
@@ -134,10 +136,22 @@ export function ComparePane({
       {/* Answer — independent scroll on desktop; natural height when stacked. */}
       <div className="min-h-0 flex-1 md:overflow-y-auto">
         {run.status === "idle" ? (
-          <div className="flex h-full min-h-40 items-center justify-center px-6 py-8">
+          <div className="flex h-full min-h-40 flex-col items-center justify-center px-6 py-8 text-center">
+            {/* Each model wears its own drawing, the deterministic dot-matrix
+                vignette a project's cover is (project-cover.tsx), keyed to the
+                model's id: same prompt, a different construction per mind.
+                Then its name in the serif and its one line, so an idle pane
+                reads as the contender rather than as a caption floating in
+                an empty column. */}
+            <div className="relative aspect-[16/7] w-full max-w-[18rem]">
+              <ProjectCover key={modelId} id={`compare:${modelId}`} folders={2} aspect={16 / 7} />
+            </div>
+            <p className="mt-4 font-serif text-title text-foreground">
+              {model?.name ?? "Choose a model"}
+            </p>
             {/* No alpha: /60 over black landed at ~3.3:1, and this is the only copy
                 in an idle pane — the first thing anyone reads on /compare. */}
-            <p className="max-w-[32ch] text-center text-caption leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 max-w-[34ch] text-pretty text-ui leading-relaxed text-muted-foreground">
               {model?.description ?? "Pick a model to put in the race."}
             </p>
           </div>

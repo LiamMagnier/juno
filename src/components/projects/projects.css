@@ -88,6 +88,8 @@
 .pj-cover-art { position: absolute; inset: 0; transform-origin: 50% 60%; }
 .pj-cover-dots { --dots-pitch: 3.4px; --dots-strength: 0.9; --dots-floor: 0.5; }
 .dark .pj-cover-dots { --dots-strength: 0.95; }
+/* A folder's plate is half the height of a project's, so its dots are finer. */
+.pj-cover-art-sm .pj-cover-dots { --dots-pitch: 2.6px; }
 
 /* Pin and menu: a small glass capsule over the cover's corner, surfaced on
    hover or focus, always there on touch. A pinned tile shows the filled pin
@@ -137,12 +139,10 @@
   background: var(--pj-presence-soft);
 }
 
-/* The new-folder tile: a dashed hairline at the same radius as its siblings. */
-.pj-new {
-  border: 1px dashed hsl(var(--foreground) / 0.16);
-  transition: border-color 180ms var(--pj-ease), color 180ms var(--pj-ease), background-color 180ms var(--pj-ease);
+/* The Folders section's empty state arrives on the grid's own beat. */
+@media (prefers-reduced-motion: no-preference) {
+  .pj-empty { animation: pj-arrive 720ms var(--pj-ease) 120ms backwards; }
 }
-.pj-new:hover { border-color: hsl(var(--foreground) / 0.32); background: hsl(var(--foreground) / 0.02); }
 
 /* The instructions sheet: a writing field inside a 6px frame. No ring on
    focus; the field's line turns presence blue instead. */
