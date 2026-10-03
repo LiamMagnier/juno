@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { Archive, ArrowUpCircle, Keyboard, LogOut, ShieldCheck } from "@/components/ui/icons";
+import { Archive, ArrowUpCircle, Keyboard, LogOut, ShieldCheck, User } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -266,9 +266,10 @@ export function UserMenu({
 
         <Separator />
 
-        {/* The account. Profile is not a row of its own any more: it opened
-            Settings on its Account section, one click from this Settings. */}
+        {/* The account: the profile (a year of tokens and models), then
+            Settings, where the name and photo are edited. */}
         <DropdownMenuGroup>
+          <MenuRow href="/profile" onSelect={leave} icon={<User className="size-4" />} label="Profile" />
           <MenuRow
             onSelect={() => {
               leave();

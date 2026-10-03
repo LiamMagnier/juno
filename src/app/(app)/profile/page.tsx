@@ -1,19 +1,10 @@
-import { redirect } from "next/navigation";
+import { ProfilePage } from "@/components/profile/profile-page";
 
 /**
- * /profile is Settings → Account.
- *
- * The page that stood here drew the same data the account section draws —
- * the year of activity, the model mix, the lifetime ledger — with its own
- * heatmap (max-fraction levels, local-date keys) beside the account
- * section's (quantile levels, UTC keys), so one account had two different
- * pictures of one history, plus a verbatim copy of the avatar upload and a
- * hardcoded "Member since Aug 2026" fallback. One usage surface now, and the
- * `profile` alias in settings-sections.ts already pointed here.
- *
- * A server redirect rather than a client one, so the old URL costs a reader
- * nothing but the round trip; links inside the product go to /settings directly.
+ * The account's profile: name, photo, and a year of tokens and models
+ * (src/components/profile). Editing the name and photo stays in Settings,
+ * Account; this page reads, it does not edit.
  */
-export default function ProfilePage() {
-  redirect("/settings?section=account");
+export default function Profile() {
+  return <ProfilePage />;
 }
