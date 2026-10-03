@@ -102,3 +102,30 @@
 @keyframes ed-draw { to { stroke-dashoffset: 0; } }
 @keyframes ed-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
 @keyframes ed-breathe { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.15; transform: scale(1.6); } }
+
+/* The page backdrop (page-backdrop.tsx): the homepage construction behind a
+   product page's header, quieter, and gone before the toolbar under it. The
+   number line runs along the title; the orbits open to the right of it. */
+.page-backdrop.alv { background: transparent; }
+.page-backdrop {
+  -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 92%), linear-gradient(to right, transparent 0%, #000 30%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to bottom, #000 35%, transparent 92%), linear-gradient(to right, transparent 0%, #000 30%);
+  mask-composite: intersect;
+  opacity: 0.6;
+}
+.page-backdrop__drawing {
+  position: absolute;
+  left: 68%;
+  top: 58%;
+  width: 1500px;
+  aspect-ratio: 3 / 2;
+  translate: -50% -50%;
+}
+.page-backdrop__drawing svg { width: 100%; height: 100%; overflow: visible; }
+/* Hairlines only behind a page: the presence trajectory is the homepage's one
+   live object, and cut off by the header band it read as a stray line. */
+.page-backdrop :is(.alv-tick, .alv-trajectory, .alv-node, .alv-node-ring) { display: none; }
+@container page (max-width: 40rem) {
+  .page-backdrop__drawing { left: 60%; width: 900px; }
+}

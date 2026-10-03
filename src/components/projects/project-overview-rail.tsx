@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, FileText, Loader2, NotebookPen, Plus, type IconComponent } from "@/components/ui/icons";
+import { ArrowRight, FileText, Loader2, Plus, type IconComponent } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -115,14 +115,16 @@ export function ProjectOverviewRail({
   const memoryCount = memory?.activeCount ?? 0;
 
   return (
-    <Card className={cn("overflow-hidden", className)}>
+    // Arrives a beat after the column beside it (the homepage's long
+    // decelerate), so the page settles left to right rather than all at once.
+    <Card className={cn("overflow-hidden [animation-delay:80ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in", className)}>
       {/* A band, not a picture. At 16/7 the cover was 133px on a 304px rail,
           which put Instructions that far below the composer it is supposed to
           sit level with — the decoration outranking the thing the reader came
           for. 16/5 keeps the project's image present at ~95px and the section
           content near the top of the card. */}
       {coverUrl && (
-        <div className="group/cover relative aspect-[16/5] w-full overflow-hidden border-b border-border/60 bg-muted">
+        <div className="group/cover relative aspect-[16/5] w-full overflow-hidden border-b border-foreground/[.07] bg-muted">
           <img src={coverUrl} className="size-full object-cover" alt="" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
             <Button variant="secondary" size="sm" onClick={onPickCover} disabled={uploadingCover}>
@@ -135,7 +137,7 @@ export function ProjectOverviewRail({
         </div>
       )}
 
-      <div className="divide-y divide-border/60">
+      <div className="divide-y divide-foreground/[.07]">
         <RailSection
           title="Instructions"
           action={
@@ -260,7 +262,6 @@ export function ProjectOverviewRail({
         <RailSection
           title="Memory"
           count={memoryCount}
-          icon={NotebookPen}
           action={
             <div className="-mr-2 flex items-center gap-1">
               <span className="pr-1 text-caption text-muted-foreground">
@@ -364,7 +365,7 @@ function RailSection({
       <div className="flex min-h-7 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           {Icon && <Icon className="size-3.5 text-muted-foreground" aria-hidden={true} />}
-          <CardEyebrow className="truncate font-sans text-caption font-medium">{title}</CardEyebrow>
+          <CardEyebrow className="truncate font-sans text-caption font-medium tracking-[0.01em]">{title}</CardEyebrow>
           {count !== undefined && count > 0 && (
             <span className="text-caption tabular-nums text-muted-foreground">
               {count.toLocaleString()}
@@ -373,7 +374,7 @@ function RailSection({
         </div>
         {action}
       </div>
-      <div className="mt-3">{children}</div>
+      <div className="mt-2">{children}</div>
     </section>
   );
 }
@@ -422,10 +423,10 @@ function RailMore({ onClick, children }: { onClick: () => void; children: React.
     <button
       type="button"
       onClick={onClick}
-      className="-mx-2 mt-1.5 flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+      className="group/more -mx-2 mt-1.5 flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
     >
       {children}
-      <ArrowRight className="size-3 shrink-0" aria-hidden="true" />
+      <ArrowRight className="size-3 shrink-0 transition-transform duration-base ease-out-expo group-hover/more:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
     </button>
   );
 }

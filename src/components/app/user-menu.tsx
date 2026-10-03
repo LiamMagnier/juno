@@ -20,6 +20,7 @@ import { PLANS, planRank } from "@/lib/plans";
 import { DotIdenticon, DotFillBar } from "@/components/signature/dot-matrix";
 import { cn } from "@/lib/utils";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
+import { menuEntranceClass, menuInsetSeparatorClass } from "@/components/chat/composer-plus-menu";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModifierKeyLabel } from "@/components/ui/platform";
@@ -59,23 +60,34 @@ function MenuRow({
 }) {
   const inner = (
     <>
-      <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">{icon}</span>
+      {/* No ink on the slot: the row's recipe inks the glyph muted at rest
+          and brightens it with the row, which a fixed colour here blocked. */}
+      <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {shortcut && (
-        <span className="shrink-0 font-mono text-caption text-muted-foreground">{shortcut}</span>
+        <span className="shrink-0 font-mono text-caption tracking-[0.02em] text-muted-foreground/80">{shortcut}</span>
       )}
     </>
   );
   if (href) {
     return (
       <DropdownMenuItem asChild onSelect={onSelect}>
-        <Link href={href} className="flex w-full items-center gap-2.5">
+        {/* asChild: the item's classes land on the Link alongside these, so
+            the row height is stated here (min-h-9 outranks the recipe's 8). */}
+        <Link href={href} className={cn("flex w-full items-center gap-2.5", rowHeight)}>
           {inner}
         </Link>
       </DropdownMenuItem>
     );
   }
-  return <DropdownMenuItem onSelect={onSelect}>{inner}</DropdownMenuItem>;
+  return <DropdownMenuItem onSelect={onSelect} className={rowHeight}>{inner}</DropdownMenuItem>;
+}
+
+/** The brief's menu row: 36px (44 on a coarse pointer, from the recipe). */
+const rowHeight = "min-h-9";
+
+function Separator() {
+  return <DropdownMenuSeparator className={menuInsetSeparatorClass} />;
 }
 
 /**
@@ -194,22 +206,22 @@ export function UserMenu({
         align={compact ? "end" : "start"}
         side={compact ? "right" : "top"}
         sideOffset={compact ? 12 : 6}
-        className={compact ? MENU_W_WIDE : "w-[var(--radix-dropdown-menu-trigger-width)] min-w-64"}
+        className={cn(compact ? MENU_W_WIDE : "w-[var(--radix-dropdown-menu-trigger-width)] min-w-64", menuEntranceClass)}
       >
-        {/* Identity: who you are, on what plan, reachable where. */}
-        <div className="flex items-center gap-3 px-2.5 pb-3 pt-2.5">
-          <UserAvatar className="size-8" />
+        {/* Identity: who you are, on what plan, reachable where. The avatar
+            shares the rows' left edge (px-2.5), and the name and email share
+            one text column, so the header and the list below read as one
+            object. */}
+        <div className="flex items-center gap-3 px-2.5 pb-2.5 pt-2">
+          <UserAvatar className="size-9" />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span translate="no" className="min-w-0 truncate text-ui font-medium text-foreground">
+            <div className="flex items-baseline gap-2">
+              <span translate="no" className="min-w-0 truncate text-ui font-medium tracking-[-0.005em] text-foreground">
                 {user.name ?? user.email?.split("@")[0]}
               </span>
-              {/* Neutral, not the accent. The accent is for state and the
-                  primary action (FLAT_UI.md §2.4); a plan is a fact about the
-                  account. Sans, like the rest of the menu's metadata: mono is
-                  kept for keys and ids. */}
-              {/* Words, not a pill: no badges anywhere (owner rule). */}
-              <span translate="no" className="shrink-0 text-caption text-muted-foreground">
+              {/* Words, not a pill: no badges anywhere (owner rule). Neutral,
+                  not the accent: a plan is a fact about the account. */}
+              <span translate="no" className="ml-auto shrink-0 text-caption text-muted-foreground">
                 {`${plan.name} plan`}
               </span>
             </div>
@@ -220,23 +232,31 @@ export function UserMenu({
         </div>
 
         {/* Usage: the ONE place the quota is drawn. The sidebar footer says
-            nothing about usage below 80% and one word above it.
-            `bg-secondary`, the popover's recessed rung, so the block reads as
-            a block inside the menu. */}
-        <div className="mx-1 rounded-control bg-secondary px-2.5 py-2">
+            nothing about usage below 80% and one word above it. A hairline
+            block rather than a filled one (the homepage's product windows draw
+            structure with 1px lines, not slabs), flush with the rows' edges and
+            at their radius, with its text on the rows' text column. */}
+        <div className="rounded-control border border-foreground/[0.08] px-[9px] py-2.5">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-caption text-muted-foreground">Messages</span>
             {/* tabular-nums: this counter changes in place as messages are sent,
                 and proportional digits make the readout shuffle sideways when
                 9 becomes 10. */}
-            <span className="truncate text-caption font-medium tabular-nums text-foreground">
+            {/* A count is a figure (mono, like the menu's key hints); "No cap"
+                is a word and stays in the sans. */}
+            <span
+              className={cn(
+                "truncate text-caption tabular-nums text-foreground",
+                quota.limit != null && "font-mono tracking-[0.02em]"
+              )}
+            >
               {quota.limit == null ? "No cap" : `${quota.used} / ${quota.limit}`}
             </span>
           </div>
           {quota.limit != null ? (
             <DotFillBar value={quota.used} max={quota.limit} dots={18} className="mt-2" />
           ) : (
-            <p className="mt-1.5 text-caption leading-4 text-muted-foreground">
+            <p className="mt-1 text-caption leading-4 text-muted-foreground">
               {quota.plan === "OWNER"
                 ? "Everything unlocked, with no usage cap."
                 : "All models, with a monthly token limit."}
@@ -244,7 +264,7 @@ export function UserMenu({
           )}
         </div>
 
-        <DropdownMenuSeparator />
+        <Separator />
 
         {/* The account. Profile is not a row of its own any more: it opened
             Settings on its Account section, one click from this Settings. */}
@@ -273,7 +293,7 @@ export function UserMenu({
           )}
         </DropdownMenuGroup>
 
-        <DropdownMenuSeparator />
+        <Separator />
 
         {/* Juno beyond this tab. "Get the apps" goes to the download page,
             which reads the release feed and lists every platform with its
@@ -297,14 +317,18 @@ export function UserMenu({
           />
         </DropdownMenuGroup>
 
-        <DropdownMenuSeparator />
+        <Separator />
 
-        {/* Sign out: the one row that ends something, drawn the way every
-            destructive row in the product is (`variant="destructive"`): red
-            ink at rest and a red TINT under the pointer or the keyboard. The
-            glyph leaves through its own door on highlight (`LogOut`'s nudge),
-            once. */}
-        <DropdownMenuItem variant="destructive" onSelect={() => void signOutToSignIn()}>
+        {/* Sign out: alone under its own hairline, in the list's own ink.
+            It ends a session, not data, so it is not drawn as a destructive
+            row: red at rest made the quietest exit in the menu its loudest
+            object. The label sits a step back (muted) and comes forward with
+            its glyph on highlight; the glyph still leaves through its own door
+            (`LogOut`'s nudge), once. */}
+        <DropdownMenuItem
+          onSelect={() => void signOutToSignIn()}
+          className={cn(rowHeight, "text-muted-foreground focus:text-foreground")}
+        >
           <LogOut className="size-4 shrink-0" />
           <span>Sign out</span>
         </DropdownMenuItem>

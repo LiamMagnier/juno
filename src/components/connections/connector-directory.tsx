@@ -147,7 +147,7 @@ function AppLogo({ item }: { item: DirectoryItem; size?: "row" | "sheet" }) {
     <span
       className={cn(
         "flex shrink-0 items-center justify-center overflow-hidden text-muted-foreground",
-        "size-10 rounded-field border border-foreground/[0.07] bg-card dark:border-white/[0.08]",
+        "size-10 rounded-field border border-foreground/[0.08] bg-card",
       )}
     >
       {item.source === "custom" ? (
@@ -243,7 +243,7 @@ function ConnectorTile({
       {landed ? (
         <motion.span
           aria-hidden="true"
-          className="pointer-events-none absolute -inset-x-2.5 inset-y-0 -z-10 rounded-control bg-selected"
+          className="pointer-events-none absolute -inset-x-3 inset-y-0 -z-10 rounded-card bg-selected"
           initial={{ opacity: 1 }}
           animate={{ opacity: 0 }}
           transition={{ ...transition.emphasis, delay: reduce ? 0.6 : 1.1 }}
@@ -254,19 +254,19 @@ function ConnectorTile({
           type="button"
           onClick={onOpen}
           aria-haspopup="dialog"
-          className="-mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-field px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/60 active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+          className="group/row -mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-card px-3 py-2.5 text-left transition-[background-color,transform] duration-fast ease-out-soft hover:bg-accent/60 active:scale-[0.99] active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring motion-reduce:active:scale-100"
         >
           {body}
           <span className={cn("shrink-0 text-ui", status === "Couldn’t reach it" ? "text-foreground" : "text-muted-foreground")}>{status}</span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-[color,transform] duration-fast ease-out-soft group-hover/row:translate-x-0.5 group-hover/row:text-foreground motion-reduce:transition-none" aria-hidden="true" />
         </button>
       ) : (
-        <div className="group/row -mx-3 flex min-h-[68px] items-center gap-3.5 rounded-field px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
+        <div className="group/row -mx-3 flex min-h-[68px] items-center gap-3.5 rounded-card px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
           {body}
           {needsSetup ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button asChild variant="secondary" size="sm" className="h-7 shrink-0 rounded-full px-3">
+                <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5 px-3">
                   <a href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`} target="_blank" rel="noreferrer">
                     Set up
                     <ActionIcons.external className="size-3.5" />
@@ -284,7 +284,7 @@ function ConnectorTile({
             </span>
           ) : (
             custom ? (
-              <Button size="sm" variant="secondary" disabled={busy} loading={busy} onClick={onConnect} className="h-7 shrink-0 rounded-full px-3 coarse:h-10">
+              <Button size="sm" variant="outline" disabled={busy} loading={busy} onClick={onConnect} className="shrink-0 gap-1.5 px-3">
                 <KeyRound className="size-3.5" aria-hidden="true" />
                 Sign in
               </Button>
@@ -298,7 +298,7 @@ function ConnectorTile({
                     loading={busy}
                     onClick={onConnect}
                     aria-label={`Connect ${item.label}`}
-                    className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground coarse:size-11"
+                    className="size-8 shrink-0 rounded-control text-muted-foreground hover:text-foreground active:scale-[0.9] coarse:size-11"
                   >
                     <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover/row:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
                   </Button>
@@ -329,7 +329,7 @@ function TileGrid({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-x-12 gap-y-1 @[40rem]/page:grid-cols-2">
+    <div className="grid grid-cols-1 gap-x-10 gap-y-1 @[40rem]/page:grid-cols-2">
       {items.map((item) => (
         <ConnectorTile
           key={item.key}
@@ -654,7 +654,9 @@ export function ConnectorDirectory({
     ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
     : null;
 
-  const sectionLabel = "mb-3 flex items-baseline gap-2 text-title font-medium text-foreground";
+  // The small section title every Customize tab shares (CustomizeSection):
+  // Inter at the UI size, the count muted beside it.
+  const sectionLabel = "mb-4 flex min-h-6 items-center gap-2 text-ui font-medium text-foreground";
 
   return (
     <section>
@@ -662,30 +664,30 @@ export function ConnectorDirectory({
           beside it, and no chip row; a category is opened from its section. */}
       <div className="flex items-center gap-2">
         <label className="relative block min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search apps"
             aria-label="Search apps"
-            className="h-11 rounded-full pl-11 text-body"
+            className="h-9 rounded-field border-foreground/[0.1] pl-10 text-ui hover:border-foreground/20 focus-visible:border-foreground/35 coarse:h-11"
           />
         </label>
         {headerAction}
       </div>
 
       {activeCategory ? (
-        <div className="mt-8 flex items-center gap-2 motion-safe:animate-fade-in">
+        <div className="mt-6 flex items-center gap-1.5 motion-safe:animate-fade-in">
           <button
             type="button"
             onClick={() => setCategory(null)}
             aria-label="All apps"
-            className="pressable grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+            className="pressable -ml-2 grid size-8 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
           >
             <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
           </button>
-          <h2 className="text-title font-medium text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
+          <h2 className="text-ui font-medium text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
         </div>
       ) : null}
 
@@ -711,7 +713,7 @@ export function ConnectorDirectory({
         {connectedItems.length > 0 && (
           <div>
             <h2 className={sectionLabel}>
-              Connected <span className="tabular-nums">{connectedCount}</span>
+              Connected <span className="font-normal tabular-nums text-muted-foreground">{connectedCount}</span>
             </h2>
             <TileGrid items={connectedItems} {...gridProps} />
           </div>
@@ -721,7 +723,7 @@ export function ConnectorDirectory({
           <>
             {registryItems.some((i) => !i.connected) && (
               <div className={cn(connectedItems.length > 0 && "mt-10")}>
-                <h2 className="mb-3 text-title font-medium text-foreground">Built in</h2>
+                <h2 className={sectionLabel}>Built in</h2>
                 <TileGrid items={registryItems.filter((i) => !i.connected)} {...gridProps} />
               </div>
             )}
@@ -729,13 +731,13 @@ export function ConnectorDirectory({
               <div
                 key={section.category.id}
                 className="mt-10 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                style={{ animationDelay: `${Math.min(sectionIndex, 5) * 60}ms` }}
+                style={{ animationDelay: `${Math.min(sectionIndex, 7) * 30}ms` }}
               >
-                <h2 className="mb-3">
+                <h2 className="mb-4 flex min-h-6 items-center">
                   <button
                     type="button"
                     onClick={() => setCategory(section.category.id)}
-                    className="group inline-flex items-center gap-1 text-title font-medium text-foreground"
+                    className="group inline-flex items-center gap-1 rounded-xs text-ui font-medium text-foreground"
                   >
                     {section.category.label}
                     <ChevronRight
@@ -750,7 +752,7 @@ export function ConnectorDirectory({
             {addTile && <div className="mt-10">{addTile}</div>}
           </>
         ) : (availableItems.length > 0 || loading || addTile) && (
-          <div className={cn(connectedItems.length > 0 && "mt-8")}>
+          <div className={cn(connectedItems.length > 0 && "mt-10")}>
             <h2 className={sectionLabel}>{connectedItems.length > 0 ? "More apps" : "Apps you can connect"}</h2>
             <TileGrid items={availableItems} {...gridProps} trailing={<>{skeletons}{addTile}</>} />
           </div>
@@ -847,14 +849,14 @@ function AddServerTile({ index: _index, onClick }: { index: number; onClick: () 
       type="button"
       onClick={onClick}
       aria-haspopup="dialog"
-      className="group -mx-2.5 flex min-h-[60px] w-[calc(100%+1.25rem)] items-center gap-3.5 rounded-control px-2.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+      className="group -mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-card px-3 py-2.5 text-left transition-[background-color,transform] duration-fast ease-out-soft hover:bg-accent/60 active:scale-[0.99] active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring motion-reduce:active:scale-100"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-dashed border-border text-muted-foreground group-hover:text-foreground">
-        <Plus className="size-4" aria-hidden="true" />
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-field border border-dashed border-foreground/20 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:border-foreground/35 group-hover:text-foreground">
+        <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
       </span>
       <span className="flex min-w-0 flex-col">
-        <span className="text-ui font-medium leading-5 text-foreground">Add an MCP server</span>
-        <span className="truncate text-ui leading-[18px] text-muted-foreground">Bring your own tools: any MCP server that signs in with OAuth.</span>
+        <span className="truncate text-body font-medium leading-6 text-foreground">Add an MCP server</span>
+        <span className="truncate text-ui leading-5 text-muted-foreground">Bring your own tools: any MCP server that signs in with OAuth.</span>
       </span>
     </button>
   );

@@ -65,8 +65,11 @@ export function ProjectChatList({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
+      {/* One row at every width, every control 36px (44 on touch): the field
+          fills the row up to New chat. Its count appears only while a search
+          is narrowing the list, inside the field beside what was typed. */}
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
@@ -76,14 +79,19 @@ export function ProjectChatList({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search chats…"
             aria-label="Search chats in this project"
-            className="pl-9"
+            className={cn("pl-9", query.trim() && "pr-16")}
           />
+          {query.trim() && (
+            <span
+              aria-live="polite"
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-caption tabular-nums text-muted-foreground motion-safe:animate-fade-in"
+            >
+              {filtered.length} of {conversations.length}
+            </span>
+          )}
         </div>
-        <span className="text-caption tabular-nums text-muted-foreground">
-          {filtered.length} of {conversations.length}
-        </span>
-        <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto">
-          <Plus className="size-3.5" aria-hidden="true" />
+        <Button type="button" variant="secondary" onClick={onNewChat} className="shrink-0">
+          <Plus className="size-4" aria-hidden="true" />
           New chat
         </Button>
       </div>
@@ -108,13 +116,16 @@ export function ProjectChatList({
           }
         />
       ) : (
-        <div className="space-y-5">
+        // `-mx-3`: the rows keep their 12px hover inset and their icons sit
+        // on the column's edge. Where the page is wide enough to have a
+        // margin (the two-column Overview), the icons hang into it instead
+        // (16px icon + 12px gap further out), so the chat titles sit on the
+        // same line as the tabs, the composer and the section labels.
+        <div className="-mx-3 space-y-5 @4xl/page:-ml-10">
           {pinned.length > 0 && (
             <section aria-label="Pinned chats">
-              <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
-                Pinned · {pinned.length}
-              </p>
-              <ul className="space-y-1">
+              <SectionLabel label="Pinned" count={pinned.length} />
+              <ul className="space-y-px">
                 {pinned.map((chat, i) => (
                   <ChatRow key={chat.id} chat={chat} index={i} {...rowProps} />
                 ))}
@@ -125,11 +136,9 @@ export function ProjectChatList({
           {unpinned.length > 0 && (
             <section aria-label="Recent chats">
               {pinned.length > 0 && (
-                <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
-                  Recent · {unpinned.length}
-                </p>
+                <SectionLabel label="Recent" count={unpinned.length} />
               )}
-              <ul className="space-y-1">
+              <ul className="space-y-px">
                 {unpinned.map((chat, i) => (
                   <ChatRow key={chat.id} chat={chat} index={pinned.length + i} {...rowProps} />
                 ))}
@@ -139,6 +148,20 @@ export function ProjectChatList({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A group's label with its count as a muted number after it, the rail's
+ * section-label voice. Its inset matches the rows' text, including where the
+ * rows' icons hang into the margin.
+ */
+function SectionLabel({ label, count }: { label: string; count: number }) {
+  return (
+    <p className="mb-1 flex items-center gap-1.5 px-3 text-caption font-medium tracking-[0.01em] text-muted-foreground @4xl/page:pl-10">
+      {label}
+      <span className="font-normal tabular-nums text-muted-foreground/70">{count.toLocaleString()}</span>
+    </p>
   );
 }
 
@@ -167,7 +190,7 @@ function ChatRow({
 
   return (
     <li
-      className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      className="group flex min-h-14 w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft focus-within:bg-accent/60 hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
       style={staggerDelay(index, "tight")}
     >
       <MessageSquare
@@ -178,7 +201,7 @@ function ChatRow({
         href={`/chat/${chat.id}`}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
-        <span className="truncate text-ui font-medium text-foreground">{chat.title}</span>
+        <span className="truncate text-ui font-medium tracking-[-0.006em] text-foreground">{chat.title}</span>
         <span className="text-caption tabular-nums text-muted-foreground">
           Updated {timeAgo(chat.lastMessageAt)}
         </span>
@@ -187,10 +210,14 @@ function ChatRow({
       {/* The resting "pinned" mark fades out as the action cluster fades in,
           rather than blinking out with `hidden` — it keeps its 14px, so the
           title never reflows under the pointer. */}
+      {/* The resting mark sits on the row's end, centred in the last key's
+          28px, so pinned marks form one column down the list; it fades out
+          as the action cluster fades in over the same place. */}
+      <div className="relative flex shrink-0 items-center">
       {chat.pinned && (
         <Pin
           weight="fill"
-          className="size-3.5 shrink-0 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 motion-reduce:transition-none"
+          className="pointer-events-none absolute right-[7px] top-1/2 size-3.5 -translate-y-1/2 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 coarse:opacity-0 motion-reduce:transition-none"
           aria-hidden="true"
         />
       )}
@@ -247,6 +274,7 @@ function ChatRow({
             <ActionIcons.delete className="size-3.5" aria-hidden="true" />
           </Pressable>
         )}
+      </div>
       </div>
     </li>
   );

@@ -21,15 +21,15 @@ export default function ConnectionsLoading() {
           so a placeholder for one would reserve room nothing fills. */}
       <AppPageHeaderSkeleton headingWidth="w-72" />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-9 w-56 rounded-menu" />
-        <Skeleton className="h-9 w-72 max-w-full rounded-field" />
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-9 min-w-0 flex-1 rounded-field coarse:h-11" />
+        <Skeleton className="h-9 w-20 shrink-0 rounded-control coarse:h-11" />
       </div>
 
       {/* The tile's own anatomy, from the component the directory's catalog
           fetch renders too — the route transition and the fetch are two
           moments of one load and draw one picture. */}
-      <div className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-x-10 gap-y-1 @[40rem]/page:grid-cols-2">
         {[...Array(6)].map((_, i) => (
           <ConnectorTileSkeleton key={i} index={i} />
         ))}

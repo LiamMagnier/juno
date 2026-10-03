@@ -20,7 +20,9 @@ import { CustomConnectorDialog } from "@/components/connections/custom-connector
 import { beginCustomConnectorSignIn } from "@/components/connections/custom-connector-api";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { useApp } from "@/components/app/app-provider";
-import { PRODUCT_NAME } from "@/lib/brand/names";
+import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { AppPageHeader } from "@/components/app/app-page";
+import { customizeHeaderClass } from "@/components/customize/customize-section";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -284,6 +286,14 @@ export default function ConnectionsPage() {
 
   return (
     <CustomizeFrame current="apps">
+      {/* The same header every Customize tab opens on. Add stays beside the
+          search, where people look for an app before deciding to bring one. */}
+      <AppPageHeader
+        backdrop
+        heading={FEATURE_NAMES.apps.label}
+        lede={`The services ${PRODUCT_NAME} can work in. You decide what each one may do.`}
+        className={customizeHeaderClass}
+      />
       {/* No count in the header. It carried a "{n} connected" badge directly
           above a toolbar whose "Connected" segment prints the same number —
           and the segment is the control that filters to them, so its copy of
@@ -299,11 +309,14 @@ export default function ConnectionsPage() {
         // The toolbar's placeholder too, as loading.tsx draws it: without it
         // the grid dropped 60px the moment the connectors arrived.
         <div role="status" aria-label="Loading connections">
-          <div className="mb-6 flex flex-wrap items-center gap-2" aria-hidden="true">
-            <Skeleton className="h-9 w-56 rounded-menu" />
-            <Skeleton className="h-9 w-72 max-w-full rounded-field" />
+          <div className="mb-6 flex items-center gap-2" aria-hidden="true">
+            <Skeleton className="h-9 min-w-0 flex-1 rounded-field coarse:h-11" />
+            <Skeleton className="h-9 w-20 shrink-0 rounded-control coarse:h-11" />
           </div>
-          <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
+          <div className="mb-4 flex h-6 items-center" aria-hidden="true">
+            <Skeleton className="h-3.5 w-24 rounded-sm" />
+          </div>
+          <div className="grid grid-cols-1 gap-x-10 gap-y-1 @[40rem]/page:grid-cols-2">
             {[...Array(6)].map((_, i) => (
               <ConnectorTileSkeleton key={i} index={i} />
             ))}
@@ -312,7 +325,7 @@ export default function ConnectionsPage() {
       ) : (
         <ConnectorDirectory
           headerAction={
-            <Button variant="secondary" onClick={() => setAddMcpOpen(true)} className="h-11 shrink-0 rounded-full px-4">
+            <Button variant="outline" onClick={() => setAddMcpOpen(true)} className="shrink-0 gap-1.5 px-3.5">
               <Plus className="size-4" aria-hidden="true" />
               Add
             </Button>
@@ -339,7 +352,7 @@ export default function ConnectionsPage() {
 
       <StandingGrants />
 
-      <p className="mt-8 text-caption text-muted-foreground">
+      <p className="mt-10 border-t border-foreground/[0.06] pt-4 text-caption text-muted-foreground">
         {`${PRODUCT_NAME} asks before anything that changes something in an app, unless you allowed it. Open an app to see who can use it and when it was last used.`}
       </p>
 

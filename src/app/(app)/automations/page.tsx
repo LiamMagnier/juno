@@ -8,13 +8,18 @@ import { LoadError } from "@/components/ui/load-error";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
-import { EditorialSection, PageHero } from "@/components/app/editorial";
-import { RoutinesWeek } from "@/components/work/routines-week";
+import { AppPageHeader } from "@/components/app/app-page";
+import {
+  CustomizeSection,
+  customizeHeaderClass,
+  customizeListClass,
+} from "@/components/customize/customize-section";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FEATURE_NAMES } from "@/lib/brand/names";
+import { cn } from "@/lib/utils";
 
 /**
  * Everything that starts without the reader typing a fresh prompt.
@@ -86,13 +91,13 @@ export default function AutomationsPage() {
     </Button>
   );
 
-  const next = active
-    .map((schedule) => schedule.nextRunAt)
-    .filter((at): at is string => at !== null)
-    .sort()[0];
-
+  // A hairline list, like Skills: the rows go square inside it and the list
+  // clips their tonal hover. The row recipe carries a transparent 1px border
+  // on every side, which the list's divider colour would otherwise paint, so
+  // only the dividers between rows are kept. Each row deals itself in (WorkScheduleRow's own
+  // stagger), so the list does not animate as well.
   const list = (rows: ClientWorkSchedule[], offset: number) => (
-    <div className="ed-stagger -mx-3 space-y-0.5">
+    <div className={cn(customizeListClass, "[&>*]:rounded-none [&>*]:!border-x-0 [&>*:last-child]:!border-b-0")}>
       {rows.map((schedule, index) => (
         <WorkScheduleRow key={schedule.id} schedule={schedule} index={offset + index} onChanged={replace} />
       ))}
@@ -101,22 +106,13 @@ export default function AutomationsPage() {
 
   return (
     <CustomizeFrame current="routines">
-      <PageHero
+      <AppPageHeader
+        backdrop
         heading={FEATURE_NAMES.routines.label}
         lede="Tasks that start themselves, on a schedule or when something changes."
         actions={action}
-        figures={
-          schedules && schedules.length > 0
-            ? [
-                { label: "Active", value: active.length },
-                { label: "Paused", value: paused.length },
-                { label: "Next run", value: next ? nextIn(next) : "None set", small: true },
-              ]
-            : undefined
-        }
-        aside={schedules && active.some((schedule) => schedule.nextRunAt) ? <RoutinesWeek schedules={schedules} /> : undefined}
+        className={customizeHeaderClass}
       />
-      <div className="h-14" aria-hidden="true" />
       {failed ? (
         <LoadError
           title="Couldn’t load your routines"
@@ -124,11 +120,11 @@ export default function AutomationsPage() {
           onRetry={() => void load()}
         />
       ) : schedules === null ? (
-        <EditorialSection title="Active">
-          <div className="-mx-3">
+        <CustomizeSection title="Active">
+          <div className={customizeListClass}>
             <WorkRowSkeletons />
           </div>
-        </EditorialSection>
+        </CustomizeSection>
       ) : schedules.length === 0 ? (
         <EmptyState
           icon={AppIcons.automations}
@@ -137,40 +133,22 @@ export default function AutomationsPage() {
           action={action}
         />
       ) : (
-        <div className="space-y-16">
+        <div className="space-y-10">
           {active.length > 0 && (
-            <EditorialSection
-              title="Active"
-              meta={<span>{active.length === 1 ? "1 routine" : `${active.length} routines`}</span>}
-            >
+            <CustomizeSection title="Active" meta={active.length}>
               {list(active, 0)}
-            </EditorialSection>
+            </CustomizeSection>
           )}
           {paused.length > 0 && (
-            <EditorialSection
-              title="Paused"
-              meta={<span>{paused.length === 1 ? "1 routine" : `${paused.length} routines`}</span>}
-            >
-              <p className="mb-4 max-w-[34rem] text-ui text-muted-foreground">
+            <CustomizeSection title="Paused" meta={paused.length}>
+              {list(paused, active.length)}
+              <p className="mt-3 max-w-prose text-caption text-muted-foreground">
                 These keep their history and start again from their next run when you turn them back on.
               </p>
-              {list(paused, active.length)}
-            </EditorialSection>
+            </CustomizeSection>
           )}
         </div>
       )}
     </CustomizeFrame>
   );
-}
-
-/** "in 3 hours", "tomorrow": the next run as a reader says it. */
-function nextIn(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 60_000) return "Now";
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `In ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `In ${hours} h`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "Tomorrow" : `In ${days} days`;
 }

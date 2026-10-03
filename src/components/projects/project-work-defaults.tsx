@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Loader2 } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Card, CardEyebrow } from "@/components/ui/card";
+import { SettingsGroup, SettingsHint, SettingsRow } from "@/components/projects/project-settings-group";
 import { Collapse } from "@/components/ui/collapse";
 import { Pressable } from "@/components/ui/pressable";
 import {
@@ -72,12 +72,14 @@ export function ProjectWorkDefaults({
   onSave,
   saving,
   dirty,
+  className,
 }: {
   value: WorkProjectDefaults;
   onChange: (next: WorkProjectDefaults) => void;
   onSave: () => void;
   saving: boolean;
   dirty: boolean;
+  className?: string;
 }) {
   const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
   const [connectorsFailed, setConnectorsFailed] = React.useState(false);
@@ -121,15 +123,25 @@ export function ProjectWorkDefaults({
   };
 
   return (
-    <Card className="p-5">
-      <CardEyebrow className="font-sans text-caption font-medium">Task defaults</CardEyebrow>
-      <p className="mt-1 text-body text-muted-foreground">
-        {`What a task filed in this project starts with. Each of these is a starting point, not a permission: a task can still be told something different, and nothing here gives ${PRODUCT_NAME} anything your account has not already allowed.`}
-      </p>
-
-      <div className="mt-5 space-y-5">
-        <label className="block space-y-2">
-          <span className="text-body font-medium text-foreground">How often it asks</span>
+    <SettingsGroup
+      className={className}
+      title="Task defaults"
+      description={`What a task filed in this project starts with. Each of these is a starting point, not a permission: a task can still be told something different, and nothing here gives ${PRODUCT_NAME} anything your account has not already allowed.`}
+      footer={
+        <>
+          <p className="text-caption leading-relaxed text-muted-foreground">
+            Tasks already created keep what they were created with.
+          </p>
+          {/* "Save". Every group on the Settings tab saves the group it is
+              in, under the same word, in the same corner. */}
+          <Button onClick={onSave} disabled={saving || !dirty} size="sm" className="gap-2">
+            {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+            Save
+          </Button>
+        </>
+      }
+    >
+        <SettingsRow label="How often it asks">
           <Select
             value={value.permissionPolicy ?? INHERIT}
             onValueChange={(next) =>
@@ -154,16 +166,15 @@ export function ProjectWorkDefaults({
               ))}
             </SelectContent>
           </Select>
-          <span className="block text-caption leading-relaxed text-muted-foreground">
+          <SettingsHint>
             {value.permissionPolicy === undefined
               ? WORK_APPROVAL_MODE_SUMMARY[DEFAULT_WORK_PERMISSION_POLICY]
               : WORK_APPROVAL_MODE_SUMMARY[value.permissionPolicy]}{" "}
             {`A project can only ask ${PRODUCT_NAME} to be more careful than the default, never less. A task that wants to be left alone has to say so itself.`}
-          </span>
-        </label>
+          </SettingsHint>
+        </SettingsRow>
 
-        <label className="block space-y-2">
-          <span className="text-body font-medium text-foreground">Model</span>
+        <SettingsRow label="Model">
           <Select
             value={value.model ?? INHERIT}
             onValueChange={(next) =>
@@ -182,15 +193,15 @@ export function ProjectWorkDefaults({
               ))}
             </SelectContent>
           </Select>
-          <span className="block text-caption leading-relaxed text-muted-foreground">
+          <SettingsHint>
             Only the models the task runner can drive. One your plan does not include is dropped
             when the task is created rather than refusing it, so the task still runs.
-          </span>
-        </label>
+          </SettingsHint>
+        </SettingsRow>
 
-        <div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-body font-medium text-foreground">
+        <SettingsRow label="Connected apps" as="div">
+          <div className="flex min-h-9 items-center justify-between gap-4">
+            <span className="text-ui text-muted-foreground">
               Only these connected apps
             </span>
             {/* Disabled until the list lands, because the "on" branch below
@@ -270,12 +281,12 @@ export function ProjectWorkDefaults({
             </Collapse>
           </div>
           {restricted && chosen.length === 0 ? (
-            <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
+            <SettingsHint>
               Tasks filed here reach no connected app at all. Switch one on, or switch this off
               to leave the choice to the task.
-            </p>
+            </SettingsHint>
           ) : (
-            <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
+            <SettingsHint>
               {restricted
                 ? "A task filed here can pick among these and cannot add to them. Your connections are unchanged: "
                 : "Tasks filed here choose their own apps, from everything you have connected: "}
@@ -286,24 +297,9 @@ export function ProjectWorkDefaults({
                 manage them
               </Link>
               .
-            </p>
+            </SettingsHint>
           )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* "Save". Every card on the Settings tab saves the card it is in,
-              and this was the third different spelling of that one verb —
-              "Save", "Save assistant defaults", "Save task defaults" — for
-              three buttons a reader sees together. */}
-          <Button onClick={onSave} disabled={saving || !dirty} size="sm" className="gap-2">
-            {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-            Save
-          </Button>
-          <p className="text-caption leading-relaxed text-muted-foreground">
-            Tasks already created keep what they were created with.
-          </p>
-        </div>
-      </div>
-    </Card>
+        </SettingsRow>
+    </SettingsGroup>
   );
 }

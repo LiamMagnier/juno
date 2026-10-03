@@ -101,7 +101,7 @@ export function SkillRow({
       {glyph && !indent ? (
         // The same 28px tile a source's avatar sits in, so the leading column
         // reads as one column down both sections.
-        <span aria-hidden="true" className={cn(skillLibraryLeadClass, "rounded-md bg-secondary")}>
+        <span aria-hidden="true" className={cn(skillLibraryLeadClass, "rounded-control border border-foreground/[0.07] bg-card")}>
           <AppIcons.skills
             motion="none"
             className="size-4 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/row:text-foreground"

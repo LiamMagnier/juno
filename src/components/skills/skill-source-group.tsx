@@ -258,7 +258,7 @@ export function SkillSourceGroup({
           id={bodyId}
           role="list"
           aria-label={label}
-          className="divide-y divide-border/70 border-t border-border/70 bg-secondary/40"
+          className="divide-y divide-foreground/[0.06] border-t border-foreground/[0.06] bg-foreground/[0.02]"
         >
           {skills.map((skill, index) => (
             <SkillRow

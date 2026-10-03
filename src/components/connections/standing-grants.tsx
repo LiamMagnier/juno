@@ -32,7 +32,7 @@ export function StandingGrants() {
   // Silent when there is nothing to list: each app's details say "Every change asks first".
   if (grants !== null && grants.length === 0 && !error) return null;
   return <section className="mt-10" aria-labelledby="standing-approvals-title">
-    <h2 id="standing-approvals-title" className="text-ui font-medium text-muted-foreground">Allowed without asking</h2>
+    <h2 id="standing-approvals-title" className="text-ui font-medium text-foreground">Allowed without asking</h2>
     <p className="mt-1 max-w-prose text-ui text-muted-foreground">Changes you chose to let run without asking. Set one back to Ask first at any time.</p>
     {error ? <p role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-ui text-muted-foreground">{error} <Button variant="secondary" size="sm" onClick={() => void load()}>Try again</Button></p> : null}
     {grants === null && !error ? <p className="mt-4 text-ui text-muted-foreground" role="status">Loading…</p> : <ul className="mt-2 flex flex-col">{grants?.map((grant) => <li key={grant.id} className="flex min-h-[56px] items-center justify-between gap-4 py-2 [&+&]:shadow-[0_-1px_0_hsl(var(--border))]">

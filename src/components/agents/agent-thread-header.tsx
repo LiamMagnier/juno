@@ -147,7 +147,7 @@ export function AgentThreadHeader({
         >
           <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-serif text-body-lg leading-6 text-foreground">{agent.name}</span>
+            <span className="block truncate font-serif text-body-lg leading-6 tracking-[-0.012em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
             {attention ? (
               <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite">
                 {sentence}
@@ -271,6 +271,10 @@ export function AgentThreadHeader({
  * The empty thread greets in the agent's own voice. No suggestion chips: the
  * composer below is the invitation, and its placeholder says what to type.
  */
+function GREETING_RISE(step: number): React.CSSProperties {
+  return { animationDelay: `${80 + step * 40}ms`, animationDuration: "var(--dur-slow)", animationTimingFunction: "cubic-bezier(.16, 1, .3, 1)", animationFillMode: "both" };
+}
+
 export function AgentGreeting({
   agent,
   onSelectSuggestion: _onSelectSuggestion,
@@ -280,14 +284,20 @@ export function AgentGreeting({
 }) {
   const paused = agent.status === "paused";
   return (
-    <div className="flex flex-col items-center text-center motion-safe:animate-rise-in" data-face-trigger>
+    <div className="flex flex-col items-center text-center" data-face-trigger>
       <span className="motion-safe:animate-agent-arrive">
         <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} spread={0.6} name={agent.name} gaze />
       </span>
-      <h1 className="mt-8 text-balance font-serif text-display font-normal text-foreground">
+      {/* The homepage's display finish: tight serif tracking, optical sizing,
+          a calm lede, and the two lines arriving a beat after the face on
+          the same expo ease. */}
+      <h1
+        className="mt-7 text-balance font-serif text-display font-normal leading-[1.02] tracking-[-0.032em] text-foreground [font-optical-sizing:auto] motion-safe:animate-rise-in"
+        style={GREETING_RISE(1)}
+      >
         {`Hi, I’m ${agent.name}.`}
       </h1>
-      <p className="mt-3 max-w-md text-body-lg text-muted-foreground">
+      <p className="mt-3.5 max-w-md text-pretty text-body-lg text-muted-foreground motion-safe:animate-rise-in" style={GREETING_RISE(2)}>
         {paused
           ? "I’m paused. Resume me from the menu above when you need me."
           : "Tell me what to take care of. I’ll set myself up and start."}

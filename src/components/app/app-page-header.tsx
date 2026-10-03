@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { PageBackdrop } from "@/components/app/page-backdrop";
 
 /**
  * The way an app page opens: back + eyebrow, display heading, optional lede,
@@ -79,6 +80,7 @@ export function AppPageHeader({
   actions,
   backHref,
   backLabel,
+  backdrop = false,
   className,
 }: {
   /**
@@ -99,13 +101,16 @@ export function AppPageHeader({
    */
   backHref?: string;
   backLabel?: string;
+  /** The homepage's orbit construction, faint behind the header (page-backdrop.tsx). */
+  backdrop?: boolean;
   className?: string;
 }) {
   return (
     // Full --border: this rule separates the header from the page body, so it
     // carries layout. The alpha came from a light-theme habit and now compounds
     // with a token that already dropped five points for the black ground.
-    <header className={cn("mb-7 @[40rem]/page:mb-8", className)}>
+    <header className={cn("mb-7 @[40rem]/page:mb-8", backdrop && "relative isolate", className)}>
+      {backdrop && <PageBackdrop />}
       {/* The whole row is conditional now, and so is each half of it. A page
           with neither a parent nor a section opens on its name — no leading
           row, and no 28px of empty chrome where one used to be. */}

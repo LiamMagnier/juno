@@ -219,10 +219,10 @@ export function AgentFaceStudio({
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-1">
-              <Button type="button" variant="ghost" className="rounded-full" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="button" className="rounded-full px-6" disabled={!dirty} loading={saving} onClick={() => void save()}>
+              <Button type="button" className="px-5" disabled={!dirty} loading={saving} onClick={() => void save()}>
                 Save
               </Button>
             </div>

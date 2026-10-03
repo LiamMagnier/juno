@@ -3,7 +3,8 @@
 import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
-import { EmptyGreeting } from "@/components/chat/empty-state";
+import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
+import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { HomeSuggestions } from "@/components/chat/home-suggestions";
 import { loadMentionFixtures, loadSuggestionFixtures } from "./mention-fixtures";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
@@ -223,6 +224,52 @@ function HomeView(common: React.ComponentProps<typeof Composer>) {
   );
 }
 
+/**
+ * `?view=private`: the home with incognito on, as chat-view draws it: the
+ * header band's toggle at the right, the two greetings stacked in one cell so
+ * they cross-fade, the composer in private mode. The toggle works, so the off
+ * state and the swap can be checked too.
+ */
+function PrivateView(common: React.ComponentProps<typeof Composer>) {
+  const [on, setOn] = React.useState(true);
+  // `&field=0` draws the greeting without its construction, for comparison.
+  const [field, setField] = React.useState(true);
+  React.useEffect(() => setField(new URLSearchParams(window.location.search).get("field") !== "0"), []);
+  return (
+    <section data-fixture="private" className="relative flex min-h-dvh flex-col">
+      <div className="flex h-11 shrink-0 items-center justify-end gap-1 px-3">
+        <PrivateChatToggle active={on} onToggle={() => setOn((v) => !v)} />
+      </div>
+      <div className="chat-home page-gutter relative isolate">
+        <div className="chat-home__greet grid w-full grid-cols-1 grid-rows-1 justify-items-center">
+          <div
+            aria-hidden={on}
+            className={cn("col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft", on ? "pointer-events-none opacity-0" : "opacity-100")}
+          >
+            <EmptyGreeting />
+          </div>
+          <div
+            aria-hidden={!on}
+            className={cn("col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft", on ? "opacity-100" : "pointer-events-none opacity-0")}
+          >
+            <PrivateGreeting field={field} />
+          </div>
+        </div>
+        <div className="chat-home__composer relative isolate w-full">
+          <Composer
+            {...common}
+            frame="landing"
+            privateMode={on}
+            placeholder={on ? "How can I help you today?" : undefined}
+            footnote={on ? <p className="py-1">Incognito chats are not saved or added to memory.</p> : undefined}
+          />
+        </div>
+        <div className="chat-home__suggest" />
+      </div>
+    </section>
+  );
+}
+
 /** A thread's foot: a stub transcript and the docked composer, as the column holds it. */
 function DockView(common: React.ComponentProps<typeof Composer>) {
   return (
@@ -246,10 +293,10 @@ function DockView(common: React.ComponentProps<typeof Composer>) {
 export function ComposerLandingFixture() {
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
-  const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks">("all");
+  const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks" | "private">("all");
   React.useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("view");
-    if (wanted === "home" || wanted === "dock" || wanted === "tasks") setView(wanted);
+    if (wanted === "home" || wanted === "dock" || wanted === "tasks" || wanted === "private") setView(wanted);
     // `?model=<id>` opens on a named model, so the effort dial can be checked.
     const wantedModel = new URLSearchParams(window.location.search).get("model");
     if (wantedModel) setModel(wantedModel as ModelId);
@@ -275,6 +322,7 @@ export function ComposerLandingFixture() {
     <AppProvider bootstrap={BOOTSTRAP}>
       <main className="app-main-canvas min-h-dvh bg-background text-foreground">
         {view === "all" || view === "home" ? <HomeView {...common} /> : null}
+        {view === "private" ? <PrivateView {...common} /> : null}
         {view === "all" || view === "dock" ? <DockView {...common} /> : null}
         {view === "all" || view === "tasks" ? (
           <section className="page-gutter mx-auto w-full max-w-3xl space-y-6 py-10">

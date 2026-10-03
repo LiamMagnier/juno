@@ -173,6 +173,9 @@ export function WorkScheduleRow({
         workRowClass,
         workRowEnterClass,
         "gap-0 p-0 [&:has(>a:active)]:bg-secondary",
+        // On a phone the controls go under the text instead of beside it, so
+        // the name and schedule get the whole width rather than a third of it.
+        "max-sm:flex-col max-sm:items-stretch",
         !schedule.enabled && "opacity-75"
       )}
       style={staggerDelay(index, "tight")}
@@ -220,9 +223,9 @@ export function WorkScheduleRow({
           they are always there. */}
       <div
         className={cn(
-          "flex shrink-0 items-center gap-1 py-3 pr-2.5",
+          "flex shrink-0 items-center gap-1 py-3 pr-2.5 max-sm:-mt-1 max-sm:pb-2.5 max-sm:pl-1.5 max-sm:pt-0",
           "transition-opacity duration-fast ease-out-soft",
-          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100",
+          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100 max-sm:opacity-100",
           busy !== null && "opacity-100"
         )}
       >

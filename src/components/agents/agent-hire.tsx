@@ -326,6 +326,7 @@ export function AgentHire({
   return (
     <AppPage measure="wide">
       <AppPageHeader
+        backdrop
         heading={FEATURE_NAMES.createAgent.label}
         lede="An agent with its own brief, goals and memory. It works in the cloud and asks before anything it cannot take back."
         backHref="/agents"

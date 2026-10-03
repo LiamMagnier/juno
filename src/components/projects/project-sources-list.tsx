@@ -70,18 +70,18 @@ function getFileIcon(mime: string, kind: string) {
 function indexLabel(state: string | undefined) {
   switch (state) {
     case "ready":
-      return { label: "Indexed", pip: "bg-success" };
+      return { label: "Indexed", tone: "" };
     case "degraded":
-      return { label: "Partly indexed", pip: "bg-warning" };
+      return { label: "Partly indexed", tone: "" };
     case "stale":
-      return { label: "Re-indexing", pip: "bg-warning" };
+      return { label: "Re-indexing", tone: "" };
     case "failed":
-      return { label: "Index failed", pip: "bg-destructive" };
+      return { label: "Index failed", tone: "text-destructive" };
     case "queued":
     case "extracting":
     case "ocr":
     case "indexing":
-      return { label: "Indexing…", pip: "bg-warning" };
+      return { label: "Indexing…", tone: "" };
     default:
       return null;
   }
@@ -160,14 +160,16 @@ export function ProjectSourcesList({
         disabled={uploading}
         aria-label={onDropFiles ? "Drop files here or click to upload" : "Upload files"}
         className={cn(
-          "group surface-inset flex w-full flex-col items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-8 text-center transition-colors duration-fast ease-out-soft hover:border-foreground/30 disabled:cursor-progress motion-reduce:transition-none",
-          dragging && "border-primary/60 bg-primary/5"
+          // One compact row rather than a 220px slab: the well is an offer,
+          // not the page's subject, and the list it fills sits right under it.
+          "group flex w-full items-center gap-4 rounded-card border border-dashed border-foreground/[.12] p-4 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-foreground/[.02] disabled:cursor-progress motion-reduce:transition-none",
+          dragging && "border-primary/60 bg-primary/5 hover:border-primary/60 hover:bg-primary/5"
         )}
         {...dropHandlers}
       >
         <span
           className={cn(
-            "surface-raised flex size-10 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
+            "flex size-9 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
             dragging && "text-primary group-hover:text-primary"
           )}
         >
@@ -177,17 +179,21 @@ export function ProjectSourcesList({
             <FileUp className="size-4" aria-hidden="true" />
           )}
         </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-ui font-medium text-foreground">
           {uploading ? "Uploading…" : dragging ? "Drop to add to this project" : onDropFiles ? "Drop files here, or click to browse" : "Click to upload files"}
         </span>
         <span className="text-caption text-muted-foreground">
           {`PDFs, documents, code and data, indexed so ${PRODUCT_NAME} can cite them.`}
         </span>
+        </span>
       </button>
 
       {/* Toolbar */}
+      {/* The search fills the row; the filter and Upload sit together on the
+          right edge. Under 40rem the search takes its own line. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
+        <div className="relative w-full @[40rem]/page:w-auto @[40rem]/page:min-w-64 @[40rem]/page:flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
@@ -200,10 +206,12 @@ export function ProjectSourcesList({
             className="pl-9"
           />
         </div>
+        <div className="flex w-full items-center gap-2 @[40rem]/page:w-auto">
         <SegmentedControl
           value={filter}
           onChange={setFilter}
           ariaLabel="Show"
+          className="h-9 coarse:h-11"
           options={[
             { value: "all", label: "All", count: total },
             { value: "files", label: "Files", count: nonCoverFiles.length },
@@ -212,15 +220,15 @@ export function ProjectSourcesList({
         />
         <Button
           type="button"
-          size="sm"
           variant="secondary"
           onClick={onUploadClick}
           loading={uploading}
           className="ml-auto"
         >
-          <Upload className="size-3.5" aria-hidden="true" />
+          <Upload className="size-4" aria-hidden="true" />
           Upload
         </Button>
+        </div>
       </div>
 
       {visibleCount === 0 ? (
@@ -245,23 +253,25 @@ export function ProjectSourcesList({
           }
         />
       ) : (
-        <div className="space-y-6">
+        // `-mx-3`: rows keep their hover inset, their marks sit on the column edge.
+        <div className="-mx-3 space-y-6">
           {showFiles && filteredFiles.length > 0 && (
             <section aria-label="Files">
-              <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
-                Files · {filteredFiles.length}
+              <p className="mb-1 flex items-center gap-1.5 px-3 text-caption font-medium tracking-[0.01em] text-muted-foreground">
+                Files
+                <span className="font-normal tabular-nums text-muted-foreground/70">{filteredFiles.length}</span>
               </p>
-              <ul className="space-y-1">
+              <ul className="space-y-px">
                 {filteredFiles.map((file, i) => {
                   const Icon = getFileIcon(file.mimeType, file.kind);
                   const status = indexLabel(file.knowledge?.state);
                   return (
                     <li
                       key={file.id}
-                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                       style={staggerDelay(i, "tight")}
                     >
-                      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                         <Icon className="size-4" aria-hidden="true" />
                       </span>
                       <a
@@ -273,12 +283,8 @@ export function ProjectSourcesList({
                         <span className="truncate text-ui font-medium text-foreground">{file.fileName}</span>
                         <span className="flex items-center gap-2 text-caption tabular-nums text-muted-foreground">
                           <span>{formatBytes(file.size)}</span>
-                          {status && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className={cn("size-2 rounded-full", status.pip)} aria-hidden="true" />
-                              {status.label}
-                            </span>
-                          )}
+                          {/* The state in words, no coloured pip (no status dots). */}
+                          {status && <span className={status.tone || undefined}>· {status.label}</span>}
                         </span>
                       </a>
 
@@ -310,10 +316,11 @@ export function ProjectSourcesList({
 
           {showArtifacts && filteredArtifacts.length > 0 && (
             <section aria-label="Artifacts">
-              <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
-                Artifacts · {filteredArtifacts.length}
+              <p className="mb-1 flex items-center gap-1.5 px-3 text-caption font-medium tracking-[0.01em] text-muted-foreground">
+                Artifacts
+                <span className="font-normal tabular-nums text-muted-foreground/70">{filteredArtifacts.length}</span>
               </p>
-              <ul className="space-y-1">
+              <ul className="space-y-px">
                 {filteredArtifacts.map((art, i) => (
                   <li
                     key={art.id}
@@ -326,9 +333,9 @@ export function ProjectSourcesList({
                         they had clicked (L27). */}
                     <Link
                       href={artifactPath(art.id)}
-                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
-                      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                         <AppIcons.artifacts className="size-4" aria-hidden="true" />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">

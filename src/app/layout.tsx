@@ -3,6 +3,11 @@ import localFont from "next/font/local";
 import "./globals.css";
 import "@/components/public/public.css";
 import "@/components/ui/juno-icons/icons.css";
+// The homepage construction and the editorial kit, global because product
+// pages draw the construction behind their headers (page-backdrop.tsx) and
+// tests load those components without a CSS loader.
+import "@/components/home/alv-base.css";
+import "@/components/app/editorial.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";

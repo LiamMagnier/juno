@@ -10,7 +10,13 @@ import { Kbd } from "@/components/ui/kbd";
 import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GitHubMark } from "@/components/connections/connector-logos";
-import { EditorialSection, PageHero } from "@/components/app/editorial";
+import { AppPageHeader } from "@/components/app/app-page";
+import {
+  CustomizeSection,
+  customizeFieldClass,
+  customizeHeaderClass,
+  customizeListClass,
+} from "@/components/customize/customize-section";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { staggerDelay } from "@/lib/motion";
@@ -167,18 +173,10 @@ export function SkillsLibraryView({
   const filtered = library ? filterLibrary(library, query) : null;
   const hasAny = library !== null && (library.yours.length > 0 || library.sources.length > 0);
 
-  const allSkills = library ? [...library.yours, ...library.sources.flatMap((source) => source.skills)] : [];
-  const figures = hasAny
-    ? [
-        { label: "Skills", value: library?.total ?? allSkills.length },
-        { label: "Turned on", value: allSkills.filter((skill) => skill.enabled).length },
-        { label: "Sources", value: library?.sources.length ?? 0 },
-      ]
-    : undefined;
-
   return (
     <CustomizeFrame current="skills">
-      <PageHero
+      <AppPageHeader
+        backdrop
         heading="Skills"
         lede={`Instructions ${PRODUCT_NAME} follows for a specific job. Type / in chat to use one.`}
         actions={
@@ -188,9 +186,8 @@ export function SkillsLibraryView({
             onCreateWithJuno={actions.onCreateWithJuno}
           />
         }
-        figures={figures}
+        className={customizeHeaderClass}
       />
-      <div className="h-14" aria-hidden="true" />
 
       {error !== null && library === null ? (
         <LoadError
@@ -204,7 +201,7 @@ export function SkillsLibraryView({
         <SkillsEmptyState onImport={actions.onImport} onWrite={actions.onWrite} />
       ) : (
         <>
-          <label className="relative mb-10 block @container/search">
+          <label className="relative mb-6 block @container/search">
             <span className="sr-only">Search skills</span>
             <Search
               aria-hidden="true"
@@ -222,7 +219,10 @@ export function SkillsLibraryView({
                 }
               }}
               placeholder="Search skills"
-              className="surface-inset h-10 w-full rounded-field border border-input pl-10 pr-12 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/60 focus-visible:border-foreground/70 coarse:h-11 [&::-webkit-search-cancel-button]:hidden"
+              className={cn(
+                "surface-inset h-9 w-full rounded-field border pl-10 pr-12 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground coarse:h-11 [&::-webkit-search-cancel-button]:hidden",
+                customizeFieldClass
+              )}
             />
             <Kbd
               aria-hidden="true"
@@ -322,13 +322,13 @@ function LibrarySection({
   children: React.ReactNode;
 }) {
   return (
-    <EditorialSection title={title} meta={<span className="tabular-nums">{count}</span>} className="mb-16 last:mb-0">
+    <CustomizeSection title={title} meta={count} className="mb-10 last:mb-0">
       {/* The container draws the hairlines and clips the rows' hover fill to
           its corners; the rows themselves stay square and flat. */}
-      <div role="list" className="overflow-hidden rounded-card border border-border/70 divide-y divide-border/60">
+      <div role="list" className={customizeListClass}>
         {children}
       </div>
-    </EditorialSection>
+    </CustomizeSection>
   );
 }
 
@@ -340,9 +340,11 @@ function LibrarySection({
 export function SkillsLibrarySkeleton() {
   return (
     <div role="status" aria-label="Loading skills">
-      <Skeleton className="mb-7 h-10 w-full rounded-field" />
-      <Skeleton className="mb-2.5 h-5 w-28 rounded-sm" />
-      <div className="overflow-hidden rounded-card border border-border divide-y divide-border/70">
+      <Skeleton className="mb-6 h-9 w-full rounded-field coarse:h-11" />
+      <div className="mb-4 flex h-6 items-center">
+        <Skeleton className="h-3.5 w-24 rounded-sm" />
+      </div>
+      <div className={customizeListClass}>
         {[0, 1, 2].map((row) => (
           <div key={row} className={cn(skillLibraryRowClass, "hover:bg-transparent")}>
             <Skeleton className="size-7 shrink-0 rounded-md" />

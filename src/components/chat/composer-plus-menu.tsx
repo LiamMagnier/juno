@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
  * The composer's `+` menu (docs/design/FLAT_UI.md §3).
  *
  * One `.surface-float` menu on the shared recipe (`menu-recipe.ts`): a 14px
- * shell with p-1, so its 32px rows sit concentric at `rounded-control`. The
+ * shell with p-1.5, so its 36px rows sit concentric at `rounded-control` (8). The
  * same shell and the same row as every kebab in the product — this menu used
  * to be a near-copy of that one, differing only in the numbers nobody chooses.
  * Three groups separated by a hairline
@@ -109,7 +109,22 @@ export type PlusMenuSection = PlusMenuItem[];
  * visibly two different objects. They are one object now; anything this menu
  * needs on top is stated here, beside the rows that need it.
  */
-export const plusMenuRowClass = menuRowClass;
+export const plusMenuRowClass = cn(menuRowClass, "min-h-9");
+
+/**
+ * How a menu arrives (REFINEMENT_BRIEF: ~180ms, .97 → 1 from the trigger side,
+ * on the homepage's ease). The shell's own `animate-pop-in` already anchors to
+ * the trigger (`origin-popper`) and drifts toward it; this tightens it to the
+ * brief's numbers at the call site. The scale is set under `motion-safe` only,
+ * so the reduced tier keeps its identity scale and gets the fade alone.
+ * Exported so the account menu arrives the same way.
+ */
+export const menuEntranceClass =
+  "motion-safe:[--motion-scale-from:0.97] " +
+  "data-[state=open]:[animation-duration:180ms] data-[state=open]:[animation-timing-function:var(--ease-out-expo)]";
+
+/** The hairline between groups, inset to the rows' text edge rather than run to the shell. */
+export const menuInsetSeparatorClass = "mx-2.5 my-1.5 bg-foreground/[0.08]";
 
 /** The 16px glyph slot at the head of a row. */
 export function PlusMenuGlyph({ icon: Icon, className }: { icon: IconComponent; className?: string }) {
@@ -122,7 +137,7 @@ export function PlusMenuGlyph({ icon: Icon, className }: { icon: IconComponent; 
 
 /** One hairline between sections. */
 export function PlusMenuSeparator({ className }: { className?: string }) {
-  return <DropdownMenuSeparator className={className} />;
+  return <DropdownMenuSeparator className={cn(menuInsetSeparatorClass, className)} />;
 }
 
 /**
@@ -179,7 +194,7 @@ export const PlusMenuRow = React.forwardRef<
         )}
       </span>
       {detail && (
-        <span className="max-w-[7rem] shrink-0 truncate font-mono text-caption text-muted-foreground">
+        <span className="max-w-[7rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80 tabular-nums">
           {detail}
         </span>
       )}
@@ -191,14 +206,17 @@ export const PlusMenuRow = React.forwardRef<
         <span
           aria-hidden="true"
           className={cn(
-            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-            ticked ? "bg-primary" : "bg-foreground/15",
+            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo motion-reduce:transition-none",
+            ticked ? "bg-foreground" : "bg-foreground/[0.14]",
           )}
         >
           <span
             className={cn(
-              "absolute left-0.5 top-0.5 size-3 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.2)] transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-              ticked && "translate-x-3",
+              // On, the thumb takes the page's ground: the track is the
+              // homepage's solid primary (near-white in the dark theme), and a
+              // white thumb on it vanished. Off, a white thumb on a faint track.
+              "absolute left-0.5 top-0.5 size-3 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform,background-color] duration-base ease-out-expo motion-reduce:transition-none",
+              ticked ? "translate-x-3 bg-background" : "bg-white",
             )}
           />
         </span>
@@ -358,10 +376,9 @@ export function PlusMenu({
           event.preventDefault();
           back();
         }}
-        // No padding restated: the shell's own p-1 is what makes its 14px edge
-        // concentric with the 10px rows inside it, and a p-1.5 here was quietly
-        // breaking that for the one menu people open most.
-        className={cn(MENU_W_WIDE, "max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
+        // No padding restated: the shell's own p-1.5 is what makes its 14px
+        // edge concentric with the 8px rows inside it (14 − 6 = 8).
+        className={cn(MENU_W_WIDE, menuEntranceClass, "max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
       >
         {compact && panel?.kind === "sub" ? (
           // The panel arrives from the right and the root list comes back from
@@ -432,11 +449,11 @@ export function PlusMenu({
                         <PlusMenuGlyph icon={item.icon} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.detail && (
-                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-caption text-muted-foreground">
+                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80">
                             {item.detail}
                           </span>
                         )}
-                        <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/60" />
+                        <ChevronRight aria-hidden="true" className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuSub key={item.id} onOpenChange={item.onOpenChange}>
@@ -444,7 +461,7 @@ export function PlusMenu({
                           <PlusMenuGlyph icon={item.icon} />
                           <span className="min-w-0 flex-1 truncate">{item.label}</span>
                           {item.detail && (
-                            <span className="mr-1 max-w-[6rem] shrink-0 truncate font-mono text-caption text-muted-foreground">
+                            <span className="mr-0.5 max-w-[6rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80">
                               {item.detail}
                             </span>
                           )}
@@ -454,8 +471,11 @@ export function PlusMenu({
                             only the width is stated here. */}
                         <DropdownMenuSubContent
                           sideOffset={6}
+                          // Its first row level with the row that opened it:
+                          // the shell's p-1.5 would otherwise drop it 6px low.
+                          alignOffset={-6}
                           collisionPadding={16}
-                          className={cn("flex flex-col", MENU_W_WIDE)}
+                          className={cn("flex flex-col", MENU_W_WIDE, menuEntranceClass)}
                         >
                           {item.render()}
                         </DropdownMenuSubContent>

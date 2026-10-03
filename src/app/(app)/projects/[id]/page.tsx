@@ -10,7 +10,8 @@ import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardEyebrow } from "@/components/ui/card";
+import { CardEyebrow } from "@/components/ui/card";
+import { SettingsGroup, SettingsHint, SettingsRow } from "@/components/projects/project-settings-group";
 import { Collapse } from "@/components/ui/collapse";
 import {
   Dialog,
@@ -810,7 +811,7 @@ export default function ProjectDetailPage() {
               compressing the labels. It scrolls now, and `-mx-*`/`px-*` let the
               first and last trigger reach the column's own edge rather than
               sitting inside a second margin. */}
-          <div className="-mx-1 mb-6 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="-mx-1 mb-5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               {/* Tasks and Code are shown when they hold something, or when a
@@ -901,12 +902,10 @@ export default function ProjectDetailPage() {
                 <section className="mt-8">
                   {/* `min-h-7` is the rail's section-header height, so this
                       eyebrow sits on the rail's own header grid. No count
-                      beside it: the tab above carries one and the list's own
-                      toolbar carries "N of M" 40px below, and three counts of
-                      the same thing on one screen is how a page stops being
-                      read. */}
+                      beside it: the tab above carries one, and the list's
+                      search shows its own while it narrows the list. */}
                   <div className="mb-3 flex min-h-7 items-center">
-                    <CardEyebrow className="font-sans text-caption font-medium">Chats in this project</CardEyebrow>
+                    <CardEyebrow className="font-sans text-caption font-medium tracking-[0.01em]">Chats in this project</CardEyebrow>
                   </div>
                   <ProjectChatList
                     projectId={data.project.id}
@@ -1008,32 +1007,36 @@ export default function ProjectDetailPage() {
             />
           </TabsContent>
 
-          {/* Settings Tab: Instructions & Assistant Configuration */}
+          {/* Settings Tab: Instructions & Assistant Configuration.
+
+              One column, on the Overview's own grid: the groups take the
+              composer's column width, so every left edge on the page (title,
+              tabs, composer, these cards) is the same line, and a form never
+              stretches to ~1300px on a wide window. Three groups, each the
+              same shape (project-settings-group.tsx): head, hairline rows with
+              the label left and the control right, Save in the footer. */}
           <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
-            <div className="space-y-6">
-              {/* Instructions Editor */}
-              <Card className="p-5">
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    {/* Eyebrow and one body line, the shape the Tools card
-                        beside it uses. There was an h2 between them — "How
-                        Juno behaves in this project" — which is the eyebrow's
-                        own gloss; the line that carries new information is
-                        the one saying where the text is injected. */}
-                    <CardEyebrow className="font-sans text-caption font-medium">System instructions</CardEyebrow>
-                    <p className="mt-1 text-body text-muted-foreground">
-                      Prepended to every chat, work run, and code session in this project.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setInstructionsOpen(true)}
-                    >
-                      <Maximize2 className="size-3.5" />
-                      Full editor
-                    </Button>
+            <div className="grid gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
+            <div className="min-w-0 space-y-6">
+              <SettingsGroup
+                className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                title="System instructions"
+                description="Prepended to every chat, work run, and code session in this project."
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setInstructionsOpen(true)}>
+                    <Maximize2 className="size-3.5" />
+                    Full editor
+                  </Button>
+                }
+                footer={
+                  <>
+                    <span className="flex flex-wrap items-center gap-x-1 text-caption tabular-nums">
+                      <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
+                        {instructions.length.toLocaleString()} chars
+                        {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
+                      </span>
+                      <span className="text-muted-foreground">· Updated {timeAgo(data.project.updatedAt)}</span>
+                    </span>
                     <Button
                       size="sm"
                       onClick={saveInstructions}
@@ -1042,111 +1045,81 @@ export default function ProjectDetailPage() {
                       {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
                       Save
                     </Button>
-                  </div>
+                  </>
+                }
+              >
+                <div className="px-5 pb-5">
+                  <Textarea
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    placeholder={`How should ${PRODUCT_NAME} behave? (role, tone, constraints…)`}
+                    spellCheck={false}
+                    aria-label="Project instructions"
+                    className="min-h-[14rem] text-body leading-relaxed"
+                  />
                 </div>
+              </SettingsGroup>
 
-                <Textarea
-                  value={instructions}
-                  onChange={(e) => setInstructions(e.target.value)}
-                  placeholder={`How should ${PRODUCT_NAME} behave? (role, tone, constraints…)`}
-                  spellCheck={false}
-                  aria-label="Project instructions"
-                  className="min-h-[16rem] text-body leading-relaxed"
-                />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-caption tabular-nums">
-                  <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
-                    {instructions.length.toLocaleString()} chars
-                    {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
-                  </span>
-                  <span className="text-muted-foreground">Updated {timeAgo(data.project.updatedAt)}</span>
-                </div>
-              </Card>
-
-              {/* Assistant Configuration. `@4xl/page`, not `lg:` — the split
-                  has to happen when this COLUMN is wide enough to hold two
-                  cards, and the window width says nothing about that while
-                  the sidebar is taking 256px of it (PREMIUM_AUDIT §2b). */}
-              <div className="grid items-start gap-6 @4xl/page:grid-cols-2">
-                <Card className="p-5">
-                  {/* The same two-line head the card beside it and the
-                      instructions card above it open with: eyebrow, then one
-                      line saying what the controls under it do. This card had
-                      the eyebrow alone, so of the three cards on the tab, two
-                      explained themselves and one did not. */}
-                  <div className="min-h-9">
-                    <CardEyebrow className="font-sans text-caption font-medium">Identity and model</CardEyebrow>
-                    <p className="mt-1 text-body text-muted-foreground">
-                      {`What ${PRODUCT_NAME} is called here, and which model answers by default.`}
+              {/* Identity, model and tools in ONE group, because one Save
+                  writes all three (`saveWorkspace`). As two cards side by side
+                  the Tools card had no Save of its own and read as if its
+                  switch applied the moment it moved. */}
+              <SettingsGroup
+                className="[animation-delay:40ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                title="Identity and model"
+                description={`What ${PRODUCT_NAME} is called here, and which model answers by default.`}
+                footer={
+                  <>
+                    <span />
+                    <Button onClick={saveWorkspace} disabled={savingWorkspace} size="sm" className="gap-2">
+                      {savingWorkspace && <Loader2 className="size-3.5 animate-spin" />}
+                      Save
+                    </Button>
+                  </>
+                }
+              >
+                <SettingsRow label="Persona name">
+                  <Input
+                    value={workspace.personaName ?? ""}
+                    onChange={(event) =>
+                      setWorkspace((current) => ({
+                        ...current,
+                        personaName: event.target.value || undefined,
+                      }))
+                    }
+                    placeholder={data.project.name}
+                  />
+                </SettingsRow>
+                <SettingsRow label="Preferred model">
+                  <Select
+                    value={workspace.preferredModelId ?? "account-default"}
+                    onValueChange={(value) =>
+                      setWorkspace((current) => ({
+                        ...current,
+                        preferredModelId: value === "account-default" ? undefined : value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="account-default">Account default</SelectItem>
+                      {models
+                        .filter((model) => model.modality === "chat")
+                        .map((model) => (
+                          <SelectItem key={model.id} value={model.id}>
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow label="Tools" as="div">
+                  <div className="flex min-h-9 items-center justify-between gap-4">
+                    <p className="text-pretty text-ui text-muted-foreground">
+                      {`Narrow what ${PRODUCT_NAME} may reach for while answering here.`}
                     </p>
-                  </div>
-                  <div className="mt-4 space-y-4">
-                    <label className="block space-y-2">
-                      <span className="text-body font-medium text-foreground">Persona name</span>
-                      <Input
-                        value={workspace.personaName ?? ""}
-                        onChange={(event) =>
-                          setWorkspace((current) => ({
-                            ...current,
-                            personaName: event.target.value || undefined,
-                          }))
-                        }
-                        placeholder={data.project.name}
-                      />
-                    </label>
-                    <label className="block space-y-2">
-                      <span className="text-body font-medium text-foreground">Preferred model</span>
-                      <Select
-                        value={workspace.preferredModelId ?? "account-default"}
-                        onValueChange={(value) =>
-                          setWorkspace((current) => ({
-                            ...current,
-                            preferredModelId: value === "account-default" ? undefined : value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="account-default">Account default</SelectItem>
-                          {models
-                            .filter((model) => model.modality === "chat")
-                            .map((model) => (
-                              <SelectItem key={model.id} value={model.id}>
-                                {model.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </label>
-                    <div className="pt-2">
-                      {/* "Save", like the other two on this tab. Each card is
-                          plainly labelled and each button sits inside the card
-                          it saves, so "Save assistant defaults" was naming its
-                          own container — and naming it differently from the
-                          two buttons doing the identical job beside it. */}
-                      <Button onClick={saveWorkspace} disabled={savingWorkspace} size="sm" className="gap-2">
-                        {savingWorkspace && <Loader2 className="size-3.5 animate-spin" />}
-                        Save
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    {/* `min-h-9` on both cards' heads, and the same two rungs
-                        of type in the same order, so the first control in each
-                        card starts on the same line when they sit side by
-                        side. The body line here was `font-medium
-                        text-foreground` against the other card's muted
-                        description — one of the two was a second title. */}
-                    <div className="min-h-9 min-w-0">
-                      <CardEyebrow className="font-sans text-caption font-medium">Tools</CardEyebrow>
-                      <p className="mt-1 text-body text-muted-foreground">
-                        {`Narrow what ${PRODUCT_NAME} may reach for while answering here.`}
-                      </p>
-                    </div>
                     <Switch
                       checked={workspace.allowedTools !== undefined}
                       onCheckedChange={(checked) =>
@@ -1156,27 +1129,26 @@ export default function ProjectDetailPage() {
                         }))
                       }
                       aria-label="Restrict assistant tools"
-                      className="mt-0.5 shrink-0"
+                      className="shrink-0"
                     />
                   </div>
                   {/* The list unfolds under the switch and folds back the
                       same way when it is switched off (ICONS_AND_MOTION §2.2
-                      rule 6), where it used to vanish in a frame. The wrapper
-                      goes `inert` with the switch, so a row still on screen
-                      while the fold plays cannot be toggled — a press there
-                      would put the restriction back — and Collapse unmounts
-                      the rows after. The gutter (`-mx-1` out, `px-1` back in)
-                      keeps the switches' focus outlines inside the fold's clip. */}
+                      rule 6). The wrapper goes `inert` with the switch, so a
+                      row still on screen while the fold plays cannot be
+                      toggled, and Collapse unmounts the rows after. The gutter
+                      (`-mx-1` out, `px-1` back in) keeps the switches' focus
+                      outlines inside the fold's clip. */}
                   <div className="contents" inert={workspace.allowedTools === undefined}>
                     <Collapse
                       open={workspace.allowedTools !== undefined}
                       className="-mx-1"
-                      innerClassName="px-1 pt-4"
+                      innerClassName="px-1 pt-3"
                     >
-                      <div className="divide-y divide-border/70 border-y border-border/70">
+                      <div className="divide-y divide-foreground/[.07] border-y border-foreground/[.07]">
                         {WORKSPACE_TOOLS.map((tool) => (
                           <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
-                            <span className="text-body text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
+                            <span className="text-ui text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
                             <Switch
                               checked={workspace.allowedTools?.includes(tool) ?? false}
                               onCheckedChange={(checked) => setWorkspaceTool(tool, checked)}
@@ -1185,25 +1157,16 @@ export default function ProjectDetailPage() {
                           </label>
                         ))}
                       </div>
-                      {/* Under the list, and only when there IS one. With the
-                          switch off there is no restriction to qualify, and the
-                          card's own description two lines up already says what the
-                          switch does — so this was a third sentence explaining the
-                          same control to a reader who had not used it yet. It
-                          folds with the list it qualifies. */}
-                      <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
+                      <SettingsHint>
                         {`Restrictions narrow what is available while ${PRODUCT_NAME} generates in this project. They do not disconnect anything.`}
-                      </p>
+                      </SettingsHint>
                     </Collapse>
                   </div>
-                </Card>
-              </div>
+                </SettingsRow>
+              </SettingsGroup>
 
-              {/* Full width rather than a third cell in the grid above: this is
-                  the only card here whose rows are a list that grows with the
-                  account's connected apps, and a two-column cell would set it
-                  in a column half the width of the list it has to show. */}
               <ProjectWorkDefaults
+                className="[animation-delay:80ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 value={workDefaults}
                 onChange={setWorkDefaults}
                 onSave={() => void saveWorkDefaults()}
@@ -1213,6 +1176,7 @@ export default function ProjectDetailPage() {
                   JSON.stringify(serializeWorkDefaults(savedWorkDefaults))
                 }
               />
+            </div>
             </div>
           </TabsContent>
         </Tabs>

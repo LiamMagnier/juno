@@ -7,7 +7,7 @@ import { MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { AppPage } from "@/components/app/app-page";
+import { AppPage, AppPageHeader, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { ComposerShell, ComposerPrimaryAction, composerFieldClass } from "@/components/ui/composer-shell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -43,6 +43,23 @@ import { AGENT_NOUN, AGENT_STATE_NAMES, BRAND, FEATURE_NAMES } from "@/lib/brand
  * the words under it are its state.
  */
 
+/**
+ * The homepage's finish on the page title: tight serif tracking with optical
+ * sizing (alv-display), one rung calmer than the hero.
+ */
+const TITLE_FINISH = "[&_h1]:tracking-[-0.03em] [&_h1]:[font-optical-sizing:auto]";
+
+/** Quiet entrance: rise 6px on the homepage's expo ease, staggered 30ms, capped at eight steps. */
+const RISE = "motion-safe:animate-rise-in";
+function stagger(step: number): React.CSSProperties {
+  return {
+    animationDelay: `${Math.min(step, 8) * 30}ms`,
+    animationDuration: "var(--dur-slow)",
+    animationTimingFunction: "cubic-bezier(.16, 1, .3, 1)",
+    animationFillMode: "both",
+  };
+}
+
 function agentHref(agent: ClientAgent): string {
   return agent.conversationId ? `/chat/${encodeURIComponent(agent.conversationId)}` : `/agents/${encodeURIComponent(agent.id)}`;
 }
@@ -67,33 +84,40 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
 
   return (
     <AppPage measure="wide">
-      <header className="flex flex-col gap-1.5">
-        <h1 className="font-serif text-page-title font-normal text-foreground">{BRAND.orbit.label}</h1>
-        <p className="max-w-[56ch] text-pretty text-body text-muted-foreground">
-          <TeamSentence agents={ordered} />
-        </p>
-      </header>
+      <AppPageHeader
+        backdrop
+        heading={BRAND.orbit.label}
+        lede={<TeamSentence agents={ordered} />}
+        className={TITLE_FINISH}
+      />
 
-      <div className="mt-7 max-w-3xl">
+      <div className={cn("max-w-3xl", RISE)} style={stagger(1)}>
         <DescribeAgent team={ordered} autoFocus={focusComposer} />
       </div>
 
-      <ul aria-label={BRAND.orbit.description} className="mt-10 grid grid-cols-2 gap-x-2 gap-y-1 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-6">
-        {ordered.map((agent) => (
-          <li key={agent.id} className="min-w-0">
+      {/* The lineup: faces on the page itself, no card at rest. A hairline
+          above it marks the section the way the homepage's frames do. The
+          field, the lineup and Needs you share one column (max-w-3xl), so
+          every edge on the page lines up with the title. */}
+      <ul
+        aria-label={BRAND.orbit.description}
+        className="mt-8 grid max-w-3xl grid-cols-2 gap-1 border-t border-foreground/[0.07] pt-6 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-5"
+      >
+        {ordered.map((agent, index) => (
+          <li key={agent.id} className={cn("min-w-0", RISE)} style={stagger(index + 2)}>
             <Portrait agent={agent} onChanged={refresh} />
           </li>
         ))}
       </ul>
 
       {attention.length > 0 ? (
-        <section aria-labelledby="orbit-needs-you" className="mt-11 pb-16">
-          <h2 id="orbit-needs-you" className="mb-2.5 text-ui font-medium text-muted-foreground">
+        <section aria-labelledby="orbit-needs-you" className="mt-8 max-w-3xl pb-16">
+          <h2 id="orbit-needs-you" className="mb-3 text-ui font-medium text-muted-foreground">
             {FEATURE_NAMES.needsYou.label}
           </h2>
           <ul className="flex flex-col gap-2">
-            {attention.map((agent) => (
-              <li key={agent.id}>
+            {attention.map((agent, index) => (
+              <li key={agent.id} className={RISE} style={stagger(Math.min(ordered.length, 6) + 2 + index)}>
                 <Attention agent={agent} />
               </li>
             ))}
@@ -150,16 +174,16 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
         href={agentHref(agent)}
         data-face-trigger
         aria-label={`${agent.name}${agent.role ? `, ${agent.role}` : ""}. ${words}`}
-        className="flex flex-col items-center rounded-panel px-2 pb-4 pt-3.5 text-center transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        className="flex flex-col items-center rounded-card border border-transparent px-3 pb-4 pt-3 text-center transition-[background-color,border-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.08] hover:bg-foreground/[0.025] active:scale-[.99] motion-reduce:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
       >
         <span className="grid size-24 place-items-center @[40rem]/page:size-28">
           <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : agent.state} size={88} spread={0.3} gaze />
         </span>
-        <span className="mt-3.5 max-w-full truncate font-serif text-heading font-normal text-foreground">{agent.name}</span>
+        <span className="mt-3 max-w-full truncate font-serif text-heading font-normal tracking-[-0.015em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
         {agent.role ? <span className="mt-0.5 max-w-full truncate text-ui text-muted-foreground">{agent.role}</span> : null}
         <span
           className={cn(
-            "mt-2 line-clamp-2 max-w-[18ch] text-ui",
+            "mt-2.5 line-clamp-2 max-w-[20ch] text-pretty text-ui",
             waiting ? "font-medium text-[hsl(var(--attention))]" : paused ? "text-muted-foreground" : "text-foreground/80",
           )}
           aria-live="polite"
@@ -170,7 +194,7 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`More for ${agent.name}`}
-          className="absolute right-2 top-2 grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/portrait:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+          className="absolute right-1 top-1 grid size-8 place-items-center rounded-control text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast ease-out-soft hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 group-hover/portrait:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
         >
           <MoreHorizontal className="size-4" aria-hidden="true" />
         </DropdownMenuTrigger>
@@ -196,7 +220,7 @@ function Attention({ agent }: { agent: ClientAgent }) {
   const when = agent.task ? formatAgo(agent.task.lastActivityAt) : null;
   const href = agent.task?.conversationId ? `/chat/${encodeURIComponent(agent.task.conversationId)}` : agentHref(agent);
   return (
-    <div className="flex gap-3.5 rounded-card bg-muted px-4 py-4 dark:bg-card">
+    <div className="surface-raised flex gap-3.5 rounded-card p-4">
       <span className="shrink-0">
         <AgentPresence avatar={agent.avatar} state={agent.state} size={28} spread={0.2} />
       </span>
@@ -207,9 +231,9 @@ function Attention({ agent }: { agent: ClientAgent }) {
           {where ? ` in ${where}` : ""}
           {when ? `, ${when}` : ""}
         </p>
-        <p className="mt-1 text-body leading-[23px] text-foreground">{sentence}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" asChild className="rounded-full">
+        <p className="mt-1 text-pretty text-body leading-[23px] text-foreground">{sentence}</p>
+        <div className="mt-3.5 flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" asChild>
             <Link href={href}>{blocked ? "See what’s needed" : "Answer in the chat"}</Link>
           </Button>
         </div>
@@ -228,7 +252,7 @@ function FirstAgent() {
         <HeroComposer
           team={[]}
           heading={
-            <h1 className="text-balance text-center font-serif text-display font-normal text-foreground">
+            <h1 className="text-balance text-center font-serif text-display font-normal tracking-[-0.03em] text-foreground [font-optical-sizing:auto]">
               {`Who should take care of it${firstName ? `, ${firstName}` : ""}?`}
             </h1>
           }
@@ -305,35 +329,37 @@ function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; auto
         event.preventDefault();
         void create(value);
       }}
-      className="rounded-panel bg-background px-4 pb-2.5 pt-3 shadow-[0_0_0_1px_hsl(var(--border))] transition-shadow duration-fast ease-out-soft focus-within:shadow-[0_0_0_1px_hsl(var(--foreground)/0.25)] has-[textarea:focus-visible]:shadow-[0_0_0_2px_hsl(var(--ring)/0.55)] @[40rem]/page:pl-[18px] @[40rem]/page:pr-3"
+      className="rounded-panel border border-foreground/[0.1] bg-background p-2 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/[0.2] has-[textarea:focus-visible]:shadow-[0_0_0_3px_hsl(var(--ring)/0.18)]"
     >
-      <label htmlFor={id} className="block text-ui font-medium text-foreground/80">
-        {`What should a new ${AGENT_NOUN.singular} take care of?`}
-      </label>
-      <textarea
-        id={id}
-        ref={field}
-        value={value}
-        rows={1}
-        autoFocus={autoFocus}
-        disabled={busy}
-        maxLength={6000}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            void create(value);
-          }
-          if (event.key === "Tab" && !value) {
-            event.preventDefault();
-            setValue(EXAMPLES[0]);
-          }
-        }}
-        placeholder={EXAMPLES[0]}
-        className="mt-1 block min-h-6 w-full resize-none bg-transparent text-body leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-70"
-      />
-      <div className="mt-2 flex flex-col items-stretch gap-2.5 @[40rem]/page:flex-row @[40rem]/page:items-center @[40rem]/page:justify-between">
-        <p className="text-caption leading-4 text-muted-foreground" aria-live="polite">
+      <div className="px-2.5 pt-2.5">
+        <label htmlFor={id} className="block text-ui font-medium text-foreground/80">
+          {`What should a new ${AGENT_NOUN.singular} take care of?`}
+        </label>
+        <textarea
+          id={id}
+          ref={field}
+          value={value}
+          rows={1}
+          autoFocus={autoFocus}
+          disabled={busy}
+          maxLength={6000}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void create(value);
+            }
+            if (event.key === "Tab" && !value) {
+              event.preventDefault();
+              setValue(EXAMPLES[0]);
+            }
+          }}
+          placeholder={EXAMPLES[0]}
+          className="mt-1 block min-h-6 w-full resize-none bg-transparent text-body leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-70"
+        />
+      </div>
+      <div className="mt-3 flex flex-col items-stretch gap-2.5 @[40rem]/page:flex-row @[40rem]/page:items-center @[40rem]/page:justify-between">
+        <p className="px-2.5 text-caption leading-4 text-muted-foreground" aria-live="polite">
           {error ? (
             <span role="alert" className="text-destructive-ink">
               {error}
@@ -346,7 +372,7 @@ function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; auto
             "It asks before sending, paying or deleting anything. You choose how it looks next."
           )}
         </p>
-        <Button type="submit" size="sm" disabled={busy || !value.trim()} loading={busy} className="shrink-0 rounded-full coarse:h-11">
+        <Button type="submit" disabled={busy || !value.trim()} loading={busy} className="shrink-0 px-3.5 disabled:opacity-40">
           {FEATURE_NAMES.createAgent.label}
         </Button>
       </div>
@@ -423,11 +449,10 @@ function AgentsHomeSkeleton() {
   return (
     <AppPage measure="wide">
       <div role="status" aria-label={`Loading your ${AGENT_NOUN.plural}`}>
-        <Skeleton className="h-9 w-32" />
-        <Skeleton className="mt-3 h-4 w-80 max-w-full" />
-        <Skeleton className="mt-7 h-[104px] w-full max-w-3xl rounded-panel" />
-        <div className="mt-10 grid grid-cols-2 gap-2 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-6">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
+        <AppPageHeaderSkeleton headingWidth="w-32" />
+        <Skeleton className="h-[118px] w-full max-w-3xl rounded-panel" />
+        <div className="mt-8 grid max-w-3xl grid-cols-2 gap-1 border-t border-foreground/[0.07] pt-6 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((i) => (
             <div key={i} className="flex flex-col items-center gap-3 py-4">
               <Skeleton className="size-24 rounded-full" />
               <Skeleton className="h-4 w-16" />

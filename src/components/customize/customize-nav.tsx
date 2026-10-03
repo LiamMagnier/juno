@@ -47,8 +47,13 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
   React.useEffect(() => setPressed(null), [pathname]);
   const shown = pressed ?? current;
   return (
-    <nav aria-label={FEATURE_NAMES.customize.label} className={cn("flex justify-center", className)}>
-      <div className="flex max-w-full gap-1 overflow-x-auto rounded-full bg-muted p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    // Raised over the page header, whose orbit backdrop reaches up behind it,
+    // and on an opaque shell so no line crosses the tabs.
+    <nav aria-label={FEATURE_NAMES.customize.label} className={cn("relative z-10 flex justify-center", className)}>
+      {/* A rounded-menu shell on a hairline, its thumb concentric inside it
+          (14 outer, 4 inset, 10 thumb; the hairline is an inset shadow so it
+          takes no room from the inset), the homepage's quiet chrome. */}
+      <div className="flex max-w-full gap-0.5 overflow-x-auto rounded-menu bg-muted p-1 shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.07)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {destinations.map((item) => {
           const selected = shown === item.id;
           return (
@@ -61,8 +66,12 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
               prefetch
               onClick={() => setPressed(item.id)}
               aria-current={current === item.id ? "page" : undefined}
+              // rounded-field is 10px (tailwind.config.ts), exactly 14 − 4. The
+              // concentric rule's own px table still reads field as 12 and
+              // control as 10, so it misfires here.
+              // eslint-disable-next-line design-system/concentric-radius
               className={cn(
-                "relative flex h-8 shrink-0 items-center rounded-full px-4 text-ui transition-colors duration-fast ease-out-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring active:scale-[0.98] coarse:h-11",
+                "relative flex h-8 shrink-0 items-center rounded-field px-3.5 text-ui transition-[color,transform] duration-fast ease-out-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring active:scale-[0.97] motion-reduce:active:scale-100 coarse:h-10",
                 selected ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -72,7 +81,7 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
                 <motion.span
                   layoutId="customize-tab-pill"
                   aria-hidden="true"
-                  className="surface-key absolute inset-0 rounded-full"
+                  className="surface-key absolute inset-0 rounded-field"
                   transition={{ type: "spring", stiffness: 520, damping: 40 }}
                 />
               )}
@@ -89,7 +98,7 @@ export function CustomizeFrame({ current, children }: { current: CustomizeTab; c
   return (
     <AppPage measure="wide">
       <div className="mx-auto w-full max-w-5xl">
-        <CustomizeNav current={current} className="mb-8" />
+        <CustomizeNav current={current} className="mb-10" />
         {/* The page arrives under a still frame: a short rise, not a reload. */}
         <div className="min-w-0 motion-safe:animate-rise-in">{children}</div>
       </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentFace } from "@/components/agents/agent-face";
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -34,7 +35,6 @@ import {
 import { FilePreview, useFilePreview } from "@/components/chat/file-preview";
 import { DesignPoster } from "@/components/artifacts/artifact-preview";
 import { ArtifactLifecycleActions } from "@/components/artifacts/artifact-lifecycle-actions";
-import { AgentFace } from "@/components/agents/agent-face";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import { kindLabel, type LibraryItem, type LibraryUpload } from "@/components/library/library-types";
 import type { LibraryMadeItem } from "@/lib/library-made";
@@ -308,13 +308,14 @@ export function EntryPreview({ entry }: { entry: LibraryEntry }) {
 
 /* —————————————————————————————— Parts —————————————————————————————— */
 
-function MadeBy({ entry, size = 16, comma = false }: { entry: LibraryEntry; size?: number; comma?: boolean }) {
+function MadeBy({ entry, size = 16, comma = false, compact = false }: { entry: LibraryEntry; size?: number; comma?: boolean; compact?: boolean }) {
   const agent = entry.made?.agent;
   if (!agent) return null;
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground/100">
       <AgentFace avatar={normalizeAgentAvatar(agent.avatar, agent.id)} size={size} />
-      <span className="truncate text-foreground/80">
+      {/* `compact`: on a phone's two-column grid the face alone says who; the name returns at 40rem. */}
+      <span className={cn("truncate text-foreground/80", compact && "hidden @[40rem]/page:inline")}>
         {agent.name}
         {comma ? "," : ""}
       </span>
@@ -430,6 +431,19 @@ export function EntryMenu({ entry, actions, className }: { entry: LibraryEntry; 
 
 /* —————————————————————————————— Grid tile —————————————————————————————— */
 
+/**
+ * The tile's frame: one quiet card (`surface-raised`, 12) holding its preview
+ * inset by `p-1` (4), so the preview's corners are `rounded-control` (8), the
+ * concentric radius, and the meta's text sits 12px in from the card's edge,
+ * the same inset as its bottom. Hover lifts a pixel and takes the hairline to
+ * foreground 12%; press settles to .99. Reduced motion keeps only the tone.
+ */
+const TILE =
+  "group/tile surface-raised relative flex h-full min-w-0 flex-col rounded-card p-1 transition-[transform,border-color,box-shadow] duration-[160ms] ease-out-soft hover:-translate-y-px hover:border-foreground/[0.12] hover:shadow-raised-lg active:translate-y-0 active:scale-[0.99] active:duration-press motion-reduce:transition-[border-color] motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 dark:hover:border-white/[0.12]";
+/** The inset preview well: the page ground, 8px corners, its 1px hairline drawn ABOVE the picture (::after) so an image cannot cover it. */
+const PREVIEW =
+  "relative aspect-[4/3] overflow-hidden rounded-control bg-background after:pointer-events-none after:absolute after:inset-0 after:rounded-control after:shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.06)] dark:after:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]";
+
 export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: FileActions }) {
   const when = libraryWhen(entry.at);
   const external = Boolean(entry.file || entry.made?.kind === "deliverable");
@@ -439,30 +453,33 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
      * doesn't look good"). The miniature, the name and one quiet line of
      * type and date share a single quiet card, the whole card is the target,
      * and the chat link waits for the pointer instead of sitting on every
-     * tile. The miniature runs flush to the card's top edge, so its corners
-     * are the card's own (no inner radius to keep concentric).
+     * tile. Every tile is the same size: a 4:3 preview and a fixed two-line
+     * meta, and no problem line (owner).
      */
-    <div className="group/tile surface-raised relative flex h-full min-w-0 flex-col overflow-hidden rounded-card transition-[transform,box-shadow] duration-base ease-out-soft hover:-translate-y-px hover:shadow-raised-lg motion-reduce:hover:translate-y-0">
+    <div className={TILE}>
       <a
         href={entry.href}
         {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
         aria-label={`Open ${entry.title}, ${entry.type}, ${when}`}
         className="absolute inset-0 z-[1] rounded-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
-      <div className="relative aspect-[4/3] overflow-hidden border-b border-foreground/[0.06] bg-background dark:border-white/[0.06]">
+      <div className={PREVIEW}>
         <EntryPreview entry={entry} />
       </div>
       <EntryMenu
         entry={entry}
         actions={actions}
-        className="absolute right-2 top-2 z-[2] rounded-control bg-background/90 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 [&:has([data-state=open])]:opacity-100"
+        className="absolute right-3 top-3 z-[2] rounded-control bg-background/85 opacity-0 shadow-[0_0_0_1px_hsl(var(--foreground)/0.08)] backdrop-blur-md transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 [&:has([data-state=open])]:opacity-100"
       />
-      <div className="flex min-w-0 flex-col gap-1 px-3 pb-3 pt-2.5">
-        <span className="truncate text-ui font-medium leading-5 text-foreground">{entry.title}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-caption leading-[18px] text-muted-foreground">
+      <div className="flex min-w-0 flex-col gap-0.5 px-2 pb-2 pt-2.5">
+        <span className="truncate text-ui font-medium leading-5 tracking-[-0.006em] text-foreground">{entry.title}</span>
+        <span className="flex h-5 min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
           <TypeGlyph type={entry.type} className="size-3.5 shrink-0" />
-          <span className="truncate">{entry.made?.agent ? <MadeBy entry={entry} /> : entry.type}</span>
-          <span aria-hidden="true">·</span>
+          {/* Under 40rem a tile is ~170px wide: the glyph names the type and the word steps out, so the date never truncates. */}
+          <span className={cn("min-w-0 truncate", !entry.made?.agent && "hidden @[40rem]/page:inline")}>
+            {entry.made?.agent ? <MadeBy entry={entry} size={14} compact /> : entry.type}
+          </span>
+          <span aria-hidden="true" className={cn("text-muted-foreground/60", !entry.made?.agent && "hidden @[40rem]/page:inline")}>·</span>
           <span className="shrink-0 tabular-nums">{when}</span>
           <span className="relative z-[2] ml-auto opacity-0 transition-opacity duration-fast ease-out-soft group-hover/tile:opacity-100 focus-within:opacity-100 coarse:opacity-100">
             <ChatLink entry={entry} />
@@ -473,46 +490,52 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
   );
 }
 
-/** A file on its way up, in the grid: its name, its progress, and what went wrong if it did. */
+/**
+ * A file on its way up, in the grid: the same card at the same size as every
+ * other tile, its name, and its progress or the way out of a failure on the
+ * tile's one meta line (no problem paragraph on a tile; the reason rides the
+ * line's title and the list view still says it in full).
+ */
 export function UploadTile({ upload, onRetry, onDismiss }: { upload: LibraryUpload; onRetry: () => void; onDismiss: () => void }) {
   const failed = upload.status === "failed";
   return (
-    <div className="flex min-w-0 flex-col gap-2.5" aria-live="polite">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-control bg-muted dark:bg-card">
+    <div className={cn(TILE, "hover:translate-y-0 hover:shadow-none active:scale-100")} aria-live="polite">
+      <div className={cn(PREVIEW, "bg-muted dark:bg-card")}>
         {upload.previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- a local object URL of the file being uploaded
           <img src={upload.previewUrl} alt="" className="size-full object-cover opacity-60" />
-        ) : null}
+        ) : (
+          <span className="absolute inset-0 grid place-items-center">
+            <TypeGlyph type={upload.kind === "IMAGE" ? "Image" : "File"} className="size-5 text-muted-foreground/70" />
+          </span>
+        )}
         {!failed ? (
-          <span className="absolute inset-x-3 bottom-3 h-1 overflow-hidden rounded-full bg-border">
+          <span className="absolute inset-x-3 bottom-3 h-0.5 overflow-hidden rounded-full bg-foreground/10">
             <span className="block h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft" style={{ width: `${upload.progress}%` }} />
           </span>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-col gap-1 px-0.5">
-        <span className="grid grid-cols-[16px_minmax(0,1fr)] items-start gap-2 text-ui leading-5 text-foreground">
-          <TypeGlyph type={upload.kind === "IMAGE" ? "Image" : "File"} className="mt-0.5" />
-          <span className="truncate">{upload.fileName}</span>
-        </span>
+      <div className="flex min-w-0 flex-col gap-0.5 px-2 pb-2 pt-2.5">
+        <span className="truncate text-ui font-medium leading-5 tracking-[-0.006em] text-foreground">{upload.fileName}</span>
         {failed ? (
-          <span className="grid grid-cols-[16px_minmax(0,1fr)] items-start gap-2 text-caption text-muted-foreground">
-            <AlertCircle className="mt-px size-4" aria-hidden="true" />
-            <span className="text-foreground/75">
-              {upload.error ?? "This file didn’t upload."}{" "}
+          <span className="flex h-5 min-w-0 items-center gap-2 text-caption text-muted-foreground" title={upload.error ?? "This file didn’t upload."}>
+            <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="sr-only">{upload.error ?? "This file didn’t upload."}</span>
+            <span aria-hidden="true" className="truncate">Didn’t upload</span>
+            <span className="ml-auto flex shrink-0 items-center gap-2">
               {upload.retryable !== false ? (
-                <button type="button" onClick={onRetry} className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-border underline-offset-[3px] hover:decoration-foreground">
+                <button type="button" onClick={onRetry} className="inline-flex items-center gap-1 rounded-control font-medium text-foreground hover:underline hover:underline-offset-[3px]">
                   <RotateCcw className="size-3" aria-hidden="true" />
                   Try again
                 </button>
-              ) : null}{" "}
-              <button type="button" onClick={onDismiss} className="inline-flex items-center gap-1 text-muted-foreground underline decoration-border underline-offset-[3px] hover:text-foreground">
+              ) : null}
+              <button type="button" onClick={onDismiss} aria-label="Dismiss" className="grid size-5 place-items-center rounded-control text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
                 <X className="size-3" aria-hidden="true" />
-                Dismiss
               </button>
             </span>
           </span>
         ) : (
-          <span className="pl-6 text-caption tabular-nums text-muted-foreground">
+          <span className="flex h-5 items-center text-caption tabular-nums text-muted-foreground">
             {upload.progress >= 100 ? "Saving…" : `Uploading, ${Math.round(upload.progress)}%`}
           </span>
         )}
@@ -529,8 +552,9 @@ export const LIBRARY_ROW_GRID =
 
 export function LibraryRowHead() {
   return (
-    <div role="row" className={cn(LIBRARY_ROW_GRID, "min-h-8 px-2.5 text-caption font-medium text-muted-foreground")}>
-      <span role="columnheader">Name</span>
+    <div role="row" className={cn(LIBRARY_ROW_GRID, "mb-1 h-9 border-b border-foreground/[0.07] px-2.5 text-caption font-medium text-muted-foreground dark:border-white/[0.07]")}>
+      {/* pl-11: the 32px icon column + 12px gap, so "Name" stands over the names, not the icons. */}
+      <span role="columnheader" className="pl-11">Name</span>
       <span role="columnheader" className="hidden @[48rem]/page:block">Kind</span>
       <span role="columnheader" className="hidden @[48rem]/page:block">Added by</span>
       <span role="columnheader" className="hidden @[48rem]/page:block">From</span>
@@ -550,11 +574,13 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
       role="row"
       className={cn(
         LIBRARY_ROW_GRID,
-        "min-h-[52px] rounded-control px-2.5 py-2 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 [&+&]:shadow-[0_-1px_0_hsl(var(--border))]",
+        "group/row h-12 rounded-control px-2.5 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.04] dark:hover:bg-white/[0.04] [&+&]:shadow-[0_-1px_0_hsl(var(--foreground)/0.07)] [&:hover+&]:shadow-none hover:shadow-none",
       )}
     >
-      <span role="cell" className="flex min-w-0 items-start gap-3">
-        <TypeGlyph type={entry.type} className="mt-0.5 size-5" />
+      <span role="cell" className="flex min-w-0 items-center gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-control bg-foreground/[0.04] shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.06)] dark:bg-white/[0.04]">
+          <TypeGlyph type={entry.type} className="size-4 transition-colors duration-fast ease-out-soft group-hover/row:text-foreground" />
+        </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           <a
             href={entry.href}

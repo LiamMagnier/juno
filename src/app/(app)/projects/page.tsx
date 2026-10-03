@@ -245,7 +245,8 @@ export default function ProjectsPage() {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        heading="Projects"
+        backdrop
+        heading={<span className="tracking-[-0.03em]">Projects</span>}
         lede="A topic’s chats, instructions, and files, kept together."
         actions={
           /* Withheld while the page is empty, on the same argument the toolbar
@@ -254,7 +255,7 @@ export default function ProjectsPage() {
              makes. Two identical primary buttons on one screen is not two
              chances to find it — it is a reader deciding which one is real. */
           empty ? undefined : (
-            <Button onClick={openCreate} size="sm">
+            <Button onClick={openCreate}>
               <Plus className="size-4" aria-hidden="true" /> New project
             </Button>
           )
@@ -266,8 +267,14 @@ export default function ProjectsPage() {
           "No projects yet" on a brand-new account, and on top of the error
           message after a failed load. */}
       {!loading && !empty && !error && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-xs">
+        // One row: the search takes the room (at least 16rem), the filter and
+        // the sort sit together on the right edge. No free-floating "N of M":
+        // the segments carry both counts, and while a search narrows the grid
+        // its result count sits inside the field, beside what was typed.
+        // Under 40rem of column the search takes its own line and the two
+        // controls share the next, each half the width.
+        <div className="flex flex-wrap items-center gap-2 [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+          <div className="relative w-full @[40rem]/page:w-auto @[40rem]/page:min-w-64 @[40rem]/page:flex-1">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
@@ -277,33 +284,41 @@ export default function ProjectsPage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search projects…"
               aria-label="Search projects"
-              className="pl-9"
+              className={cn("pl-9", query.trim() && "pr-16")}
             />
+            {query.trim() && (
+              <span
+                aria-live="polite"
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-caption tabular-nums text-muted-foreground motion-safe:animate-fade-in"
+              >
+                {filteredItems.length} of {items.length}
+              </span>
+            )}
           </div>
-          <SegmentedControl
-            value={filter}
-            onChange={setFilter}
-            ariaLabel="Filter projects"
-            options={[
-              { value: "all", label: "All", count: items.length },
-              { value: "pinned", label: "Pinned", count: pinnedCount },
-            ]}
-          />
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
-            <SelectTrigger className="w-44" aria-label="Sort projects">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="ml-auto text-caption tabular-nums text-muted-foreground">
-            {filteredItems.length} of {items.length}
-          </span>
+          <div className="flex w-full items-center gap-2 @[40rem]/page:w-auto">
+            <SegmentedControl
+              value={filter}
+              onChange={setFilter}
+              ariaLabel="Filter projects"
+              className="h-9 flex-1 coarse:h-11 @[40rem]/page:flex-none"
+              options={[
+                { value: "all", label: "All", count: items.length },
+                { value: "pinned", label: "Pinned", count: pinnedCount },
+              ]}
+            />
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+              <SelectTrigger className="min-w-0 flex-1 @[40rem]/page:w-40 @[40rem]/page:flex-none" aria-label="Sort projects">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       )}
 
@@ -353,12 +368,12 @@ export default function ProjectsPage() {
         // cards and 1024 drew three at 213. The same recipe on every card grid
         // in the app pages (connections, assistants, a project's work and code
         // lists, and each one's skeleton).
-        <ul className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" aria-label="Projects">
+        <ul className="mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3" aria-label="Projects">
           {filteredItems.map((p, i) => (
             <li
               key={p.id}
               className="min-w-0 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              style={staggerDelay(i)}
+              style={staggerDelay(i, "base", 60)}
             >
               <ProjectTile
                 project={p}
@@ -374,14 +389,14 @@ export default function ProjectsPage() {
           {!filtering && (
             <li
               className="min-w-0 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              style={staggerDelay(filteredItems.length)}
+              style={staggerDelay(filteredItems.length, "base", 60)}
             >
               <button
                 type="button"
                 onClick={openCreate}
-                className="surface-inset flex h-full min-h-44 w-full items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-4 text-ui text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
+                className="group/new flex h-full min-h-40 w-full items-center justify-center gap-2 rounded-card border border-dashed border-foreground/[.12] p-4 text-ui font-medium text-muted-foreground transition-[color,border-color,background-color,transform] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-foreground/[.025] hover:text-foreground active:scale-[.99] motion-reduce:transition-none motion-reduce:active:scale-100"
               >
-                <Plus className="size-4" aria-hidden="true" />
+                <Plus className="size-4 transition-transform duration-base ease-out-expo group-hover/new:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
                 New project
               </button>
             </li>
@@ -485,10 +500,12 @@ function ProjectTile({
     // overlay), so the folder should answer the pointer anywhere on it, not
     // only over the name. Hover is tonal and owned by the interactive variant —
     // the tile changes shade, it does not lift (ICONS_AND_MOTION §2.2).
+    // The house card on the homepage's finish: a quiet raised surface whose
+    // hairline firms up and which rises a single pixel on hover (160ms, the
+    // soft decelerate), and settles to .99 while it is held.
     <Card
-      variant="interactive"
       data-icon-trigger=""
-      className="group relative flex h-full min-h-44 flex-col p-4"
+      className="group relative flex h-full flex-col p-4 transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:border-foreground/[.12] hover:bg-foreground/[.015] focus-within:border-foreground/20 active:scale-[.99] motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-reduce:transition-none"
     >
       {/* The mark and the tile's actions share the top row; the name and the
           preview get the card's whole width under them. With the name beside
@@ -496,12 +513,12 @@ function ProjectTile({
           empty column the hover-only actions were holding open. */}
       <div className="flex items-start justify-between gap-3">
         {p.coverUrl ? (
-          <span className="surface-inset flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field">
+          <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-control border border-foreground/[.08]">
             <img src={p.coverUrl} className="size-full object-cover" alt="" />
           </span>
         ) : (
-          <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
-            <FolderIcon className="size-4" aria-hidden="true" />
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+            <FolderIcon className="size-3.5" aria-hidden="true" />
           </span>
         )}
 
@@ -509,7 +526,7 @@ function ProjectTile({
             pinned; otherwise it, like the menu, arrives on hover or focus. */}
         <div
           className={cn(
-            "relative z-10 -mr-1 -mt-1 flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
+            "relative z-10 -mr-1 flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
             p.starred ? "opacity-100" : "opacity-0"
           )}
         >
@@ -568,17 +585,20 @@ function ProjectTile({
 
       <Link
         href={`/projects/${p.id}`}
-        className="mt-3 block truncate text-body font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+        className="mt-3 block truncate text-body font-medium tracking-[-0.011em] text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
       >
         {p.name}
       </Link>
-      <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-muted-foreground">
+      {/* Two lines held open even when the text needs one, so every card in
+          a row is the same height without a min-height doing it. */}
+      <p className="mt-0.5 line-clamp-2 min-h-[2lh] text-caption leading-relaxed text-muted-foreground">
         {promptPreview(p.instructions) || "No instructions yet."}
       </p>
 
       {/* Counts and recency in the interface face: they are furniture read
           at a glance, not telemetry, and in mono they read as a log line. */}
-      <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-caption tabular-nums text-muted-foreground">
+      <div className="mt-auto pt-3">
+      <div className="flex items-center justify-between gap-3 border-t border-foreground/[.07] pt-3 text-caption tabular-nums text-muted-foreground">
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-1.5" title={`${p.conversationCount} chats`}>
             <MessageSquare className="size-3.5" aria-hidden="true" /> {p.conversationCount}
@@ -588,6 +608,7 @@ function ProjectTile({
           </span>
         </div>
         <span className="truncate">Updated {timeAgo(p.updatedAt)}</span>
+      </div>
       </div>
     </Card>
   );

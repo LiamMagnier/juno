@@ -27,7 +27,7 @@ import { useLibraryUploads } from "./use-library-uploads";
 import type { LibraryMadeItem } from "@/lib/library-made";
 import { PLANS } from "@/lib/plans";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { Pressable } from "@/components/ui/pressable";
 
@@ -54,6 +54,15 @@ function mediaKindOf(mimeType: string): Exclude<MediaKind, "all"> | null {
   if (mimeType.startsWith("audio/")) return "audio";
   return null;
 }
+
+/** The toolbar's segmented shells: rounded-menu p-1 on a 1px hairline, one h-9 row. */
+const SHELL = "h-9 gap-0.5 rounded-menu border-foreground/10 bg-transparent p-1 coarse:h-11 dark:border-white/10";
+/**
+ * Same-size tiles on fixed container steps, not auto-fill, so the count is
+ * deliberate: 2 on a phone, 3 from 40rem (a 1024 window), 4 from 56rem (the
+ * wide measure at 1280 and up). One gutter: 12px on a phone, 16px above.
+ */
+const GRID = "grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @[56rem]/page:grid-cols-4";
 
 const VIEW_STORAGE_KEY = "juno-library-home-view";
 const SEARCH_DEBOUNCE_MS = 200;
@@ -242,17 +251,18 @@ export function LibraryHome() {
     <div className="relative h-full" {...handlers}>
       <AppPage measure="wide">
         <AppPageHeader heading={FEATURE_NAMES.library.label}
+          backdrop
           lede={`What ${PRODUCT_NAME} made and the files you gave it, newest first.`}
           actions={
             <>
-              <Button variant="ghost" size="sm" asChild className="font-normal text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="sm" asChild className="h-9 gap-2 border-foreground/10 px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16]">
                 <Link href="/library?view=trash">
                   <Trash2 className="size-4" aria-hidden="true" />
                   Recently deleted
-                  {deletedCount ? <span className="tabular-nums text-muted-foreground">{deletedCount}</span> : null}
+                  {deletedCount ? <span className="-mr-0.5 font-mono text-label leading-none tabular-nums text-muted-foreground/80">{deletedCount}</span> : null}
                 </Link>
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => fileInput.current?.click()}>
+              <Button size="sm" onClick={() => fileInput.current?.click()} className="ml-0.5 h-9 gap-2 px-3.5 active:scale-[0.97] coarse:h-11">
                 <Upload className="size-4" aria-hidden="true" />
                 Upload
               </Button>
@@ -274,15 +284,19 @@ export function LibraryHome() {
           }}
         />
 
-        {/* One row: what to show on the left; search and the view together on the right. */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        {/* One row, one height (h-9): what to show on the left; search and the
+            view together on the right. Both segmented shells are the brief's
+            `rounded-menu p-1` with a hairline, holding 28px keys, so the row's
+            four controls share a top and bottom edge. Under 40rem search and the
+            view take their own full-width line beneath the filter. */}
+        <div className={cn("flex flex-wrap items-center justify-between gap-3", show === "media" ? "mb-3" : "mb-6")}>
           <SegmentedControl
             value={show}
             onChange={setShow}
             ariaLabel="Show"
             columns="content"
-            className="rounded-field p-0.5"
-            optionClassName="h-7 rounded-md px-3 py-0 text-ui coarse:h-9"
+            className={SHELL}
+            optionClassName="h-7 rounded-control px-3 py-0 text-ui coarse:h-9"
             options={[
               { value: "all", label: "All" },
               { value: "made", label: FEATURE_NAMES.artifacts.label },
@@ -292,15 +306,15 @@ export function LibraryHome() {
           />
           <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
             {show === "files" ? (
-              <Button variant="ghost" size="sm" asChild className="hidden font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
+              <Button variant="ghost" size="sm" asChild className="hidden h-9 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
                 <Link href="/library?view=files">Manage files</Link>
               </Button>
             ) : null}
-            <label className="relative flex min-w-0 flex-1 items-center @[40rem]/page:w-56 @[40rem]/page:flex-none">
+            <label className="relative flex min-w-0 flex-1 items-center @[40rem]/page:w-64 @[40rem]/page:flex-none">
               {searching ? (
-                <Loader2 className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground motion-safe:animate-spin" aria-hidden="true" />
+                <Loader2 className="pointer-events-none absolute left-3 size-4 text-muted-foreground motion-safe:animate-spin" aria-hidden="true" />
               ) : (
-                <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" aria-hidden="true" />
+                <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" aria-hidden="true" />
               )}
               <input
                 type="search"
@@ -311,10 +325,10 @@ export function LibraryHome() {
                 }}
                 placeholder="Search the library"
                 aria-label="Search the library"
-                className="h-8 w-full min-w-0 rounded-field border border-border bg-background pl-8 pr-8 text-ui text-foreground outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/40 coarse:h-10 [&::-webkit-search-cancel-button]:hidden"
+                className="h-9 w-full min-w-0 rounded-field border border-foreground/10 bg-transparent pl-9 pr-9 text-ui text-foreground outline-none transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/[0.16] focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-foreground/[0.05] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16] dark:focus-visible:border-white/25 [&::-webkit-search-cancel-button]:hidden"
               />
               {query ? (
-                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-1 grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-1.5 grid size-6 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.06] hover:text-foreground active:scale-90">
                   <X className="size-3.5" aria-hidden="true" />
                 </button>
               ) : null}
@@ -324,8 +338,8 @@ export function LibraryHome() {
               onChange={changeView}
               ariaLabel="View"
               labelHidden
-              className="shrink-0 gap-0.5 rounded-field p-0.5"
-              optionClassName="size-7 rounded-md coarse:size-9"
+              className={`${SHELL} shrink-0`}
+              optionClassName="size-7 rounded-control coarse:size-9"
               options={[
                 { value: "grid", label: "Grid", icon: <LayoutGrid className="size-4" /> },
                 { value: "list", label: "List", icon: <List className="size-4" /> },
@@ -335,7 +349,7 @@ export function LibraryHome() {
         </div>
 
         {show === "media" ? (
-          <div role="group" aria-label="Media type" className="-mt-3 mb-6 flex flex-wrap gap-1.5 motion-safe:animate-fade-in">
+          <div role="group" aria-label="Media type" className="mb-6 flex flex-wrap gap-2 motion-safe:animate-rise-in">
             {([
               ["all", "All media"],
               ["image", "Images"],
@@ -345,6 +359,7 @@ export function LibraryHome() {
               <Pressable
                 key={value}
                 kind="chip"
+                className="h-8 px-3 text-label coarse:h-10"
                 selected={mediaKind === value}
                 aria-pressed={mediaKind === value}
                 onClick={() => setMediaKind(value)}
@@ -374,7 +389,8 @@ export function LibraryHome() {
         {pending ? (
           <LibrarySkeleton view={view} />
         ) : empty ? (
-          q ? (
+          <div className="grid min-h-[min(48vh,28rem)] place-items-center">
+          {q ? (
             <EmptyState
               icon={Search}
               title={`Nothing called “${q}”`}
@@ -402,28 +418,29 @@ export function LibraryHome() {
                 </>
               }
             />
-          )
+          )}
+          </div>
         ) : view === "grid" ? (
           <ul
             aria-label={FEATURE_NAMES.library.label}
-            className="grid grid-cols-2 gap-x-3 gap-y-6 @[40rem]/page:grid-cols-[repeat(auto-fill,minmax(212px,1fr))] @[40rem]/page:gap-x-5 @[40rem]/page:gap-y-7"
+            className={GRID}
           >
             {pendingUploads.map((upload) => (
               <li key={upload.localId} className="min-w-0">
                 <UploadTile upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
               </li>
             ))}
-            {entries.map((entry) => (
-              <li key={entry.key} className="min-w-0 motion-safe:animate-fade-in">
+            {entries.map((entry, index) => (
+              <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}>
                 <EntryTile entry={entry} actions={actions} />
               </li>
             ))}
           </ul>
         ) : (
-          <div role="table" aria-label={FEATURE_NAMES.library.label} className="-mx-2.5 flex flex-col">
+          <div role="table" aria-label={FEATURE_NAMES.library.label} className="-mx-2.5 flex flex-col motion-safe:animate-rise-in">
             <LibraryRowHead />
             {pendingUploads.map((upload) => (
-              <div key={upload.localId} role="row" className="flex min-h-[52px] items-center gap-3 px-2.5 text-caption text-muted-foreground">
+              <div key={upload.localId} role="row" className="flex h-12 items-center gap-3 rounded-control px-2.5 text-caption text-muted-foreground [&+*]:shadow-[0_-1px_0_hsl(var(--foreground)/0.07)]">
                 <span role="cell" className="min-w-0 flex-1 truncate text-ui text-foreground">
                   {upload.fileName}
                 </span>
@@ -439,7 +456,7 @@ export function LibraryHome() {
         )}
 
         {hasMore && !pending ? (
-          <div ref={sentinel} className="mt-8 flex justify-center">
+          <div ref={sentinel} className="mt-6 flex justify-center">
             <Button variant="ghost" size="sm" className="text-muted-foreground" loading={loadingMore} onClick={() => loadMoreRef.current()}>
               Load more
             </Button>
@@ -447,7 +464,7 @@ export function LibraryHome() {
         ) : null}
 
         {!pending && !empty ? (
-          <p className="mt-10 text-caption tabular-nums text-muted-foreground">
+          <p className="mt-6 border-t border-foreground/[0.07] pt-4 text-caption tabular-nums text-muted-foreground dark:border-white/[0.07]">
             {count !== null ? `${count} ${count === 1 ? "item" : "items"}` : null}
             {count !== null && files.storage ? ", " : null}
             {files.storage ? `${formatBytes(files.storage.usedBytes)} of ${formatBytes(files.storage.quotaBytes)} used` : null}
@@ -465,20 +482,28 @@ export function LibraryHome() {
 function LibrarySkeleton({ view }: { view: "grid" | "list" }) {
   if (view === "list") {
     return (
-      <div role="status" aria-label="Loading your Library" className="flex flex-col gap-3">
+      <div role="status" aria-label="Loading your Library" className="flex flex-col">
+        <div className="mb-1 h-9 border-b border-foreground/[0.07] dark:border-white/[0.07]" />
         {[0, 1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-control" />
+          <div key={i} className="flex h-12 items-center gap-3">
+            <Skeleton className="size-8 shrink-0 rounded-control" />
+            <Skeleton className="h-3.5 w-2/5" />
+            <Skeleton className="ml-auto h-3 w-16" />
+          </div>
         ))}
       </div>
     );
   }
   return (
-    <div role="status" aria-label="Loading your Library" className="grid grid-cols-2 gap-x-3 gap-y-6 @[40rem]/page:grid-cols-[repeat(auto-fill,minmax(212px,1fr))] @[40rem]/page:gap-x-5">
+    <div role="status" aria-label="Loading your Library" className={GRID}>
       {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-        <div key={i} className="flex flex-col gap-2.5">
+        <div key={i} className="surface-raised flex flex-col rounded-card p-1">
+          {/* eslint-disable-next-line design-system/concentric-radius -- the rule's table is stale (card 16, control 10); tailwind.config.ts has card 12 and control 8, and 12 − 4 = 8 */}
           <Skeleton className="aspect-[4/3] w-full rounded-control" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/3" />
+          <div className="flex flex-col gap-0.5 px-2 pb-2 pt-2.5">
+            <span className="flex h-5 items-center"><Skeleton className="h-3.5 w-3/4" /></span>
+            <span className="flex h-5 items-center"><Skeleton className="h-3 w-1/3" /></span>
+          </div>
         </div>
       ))}
     </div>

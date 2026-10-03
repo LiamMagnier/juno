@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
@@ -178,6 +179,9 @@ function PaletteShell({
   const listboxId = `${baseId}-listbox`;
   const optionId = React.useCallback((cmdId: string) => `${baseId}-opt-${cmdId}`, [baseId]);
   const listRef = React.useRef<HTMLDivElement>(null);
+  // One highlight, carried between rows by `layoutId` (unique per palette).
+  const highlightId = `${baseId}-highlight`;
+  const reduceMotion = useReducedMotion() ?? false;
   // True when `active` last changed via the keyboard, so we only auto-scroll then
   // (not while the mouse is hovering rows).
   const keyboardNav = React.useRef(false);
@@ -248,7 +252,17 @@ function PaletteShell({
         // times a day, so it is rightly the fastest overlay in the product. Only the
         // `!` goes, now that DialogContent no longer ships a competing
         // tailwindcss-animate chain for it to beat.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out"
+        // The window material is the popover's (BRAND_IDENTITY: popovers may be
+        // translucent, 20px blur), cut with a 1px hairline at foreground 10%
+        // rather than the border token, the homepage's product-window finish.
+        // `sm:p-0` is load-bearing: DialogContent ships `sm:p-6`, which `p-0`
+        // alone does not cancel, so the list sat 24px inside the shell and its
+        // rows were not concentric with it. Now the list's `p-2` (8) inside the
+        // shell's `rounded-panel` (16) holds `rounded-control` (8) rows.
+        // Entrance: the shared pop-in keyframe on the homepage curve
+        // (expo out), from 0.97 and 6px above, origin at the top edge, where the
+        // window hangs from. Reduced motion zeroes both through the tokens.
+        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-foreground/10 bg-popover/[0.88] p-0 backdrop-blur-[20px] backdrop-saturate-150 [--motion-scale-from:0.97] [--pop-shift:-6px] contrast-more:bg-popover sm:p-0 data-[state=open]:[animation:pop-in_260ms_cubic-bezier(0.16,1,0.3,1)_both] data-[state=closed]:animate-pop-out dark:border-white/10"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();
@@ -263,14 +277,14 @@ function PaletteShell({
             only field on a 560px overlay. It was `body` (15px), the same rung
             as the results under it, so the field read as the first row of the
             list rather than as the control that drives it. */}
-        <div className="flex items-center gap-2.5 border-b border-border px-4">
+        <div className="flex h-14 items-center gap-3 border-b border-foreground/[0.07] px-4 coarse:h-16 dark:border-white/[0.07]">
           <AppIcons.search className="size-5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="w-full bg-transparent py-4 text-body-lg outline-none placeholder:text-muted-foreground"
+            className="h-full w-full bg-transparent text-body-lg tracking-[-0.011em] outline-none placeholder:text-muted-foreground/80"
             // `ariaLabel`, not the placeholder. The placeholder is one word
             // now ("Search"), and a one-word accessible name on the only input
             // of an overlay is thinner than what a screen reader had before —
@@ -340,7 +354,7 @@ function PaletteShell({
           className="relative min-h-[13rem] max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-2"
         >
           {/*
-           * THE HIGHLIGHT CROSS-FADES; IT NO LONGER SLIDES.
+           * THE HIGHLIGHT (history: it cross-faded per row; it slides again now, see below).
            *
            * It was one absolutely-positioned bar driven by a layout effect that
            * measured the active row and wrote `translateY` AND `height` into it
@@ -357,9 +371,16 @@ function PaletteShell({
            * menus' own highlight, now that the dark theme's accent sits four
            * points off the popover rather than on it.
            *
-           * Rows are `rounded-field` (12): the shell is `rounded-panel` (20)
-           * and the list insets it by `p-2` (8), so 12 is the concentric
+           * Rows are `rounded-control` (8): the shell is `rounded-panel` (16)
+           * and the list insets it by `p-2` (8), so 8 is the concentric
            * radius.
+           *
+           * Since the refinement pass the fill is ONE element again, but carried
+           * by framer's `layoutId` on a short, critically damped spring rather
+           * than a measured `translateY` + `height`: framer projects the box, so
+           * a two-line row and a one-line row hand over without the bar
+           * stretching, and the arrow keys move it one row in ~120ms. Reduced
+           * motion snaps it.
            */}
           {items.length === 0
             ? emptyState
@@ -385,13 +406,13 @@ function PaletteShell({
                         // Arrives with the row it heads, on that row's beat.
                         style={staggerDelay(Math.min(i, 8), "tight")}
                         className={cn(
-                          "px-2 pb-1 text-ui font-medium text-muted-foreground motion-safe:animate-fade-in [animation-fill-mode:backwards]",
+                          "px-2 pb-1.5 text-caption font-medium text-muted-foreground motion-safe:animate-fade-in [animation-fill-mode:backwards]",
                           // 24px before a later group, matching the break the
                           // sidebar leaves above a section heading. It was 16,
                           // which is the same gap the rows inside a group use
                           // between themselves — so a new group started with no
                           // more ceremony than the next line of the old one.
-                          i === 0 ? "pt-1" : "pt-6"
+                          i === 0 ? "pt-1.5" : "pt-5"
                         )}
                       >
                         {c.group}
@@ -433,7 +454,7 @@ function PaletteShell({
                         // `text-body` (15px) for the same reason: a result is
                         // the reader's own chat or file, and it was set two
                         // rungs under the field that found it.
-                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-field px-2 text-left text-body transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in motion-reduce:transition-none [animation-fill-mode:backwards]",
+                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-control px-2 text-left text-body transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in motion-reduce:transition-none [animation-fill-mode:backwards]",
                         // A fixed 36px when the row is one line — a hair above
                         // the sidebar's 32, because this list is driven by the
                         // arrow keys and its rows are targets as well as text.
@@ -441,7 +462,7 @@ function PaletteShell({
                         // and hangs its glyph and meta off the TITLE rather
                         // than off the centre of the pair.
                         c.snippet ? "items-start py-2 coarse:py-2.5" : "h-9 items-center coarse:h-11",
-                        isActive ? "bg-accent text-foreground" : "text-foreground/75"
+                        isActive ? "text-foreground" : "text-foreground/75"
                       )}
                     >
                       {/* A PLAIN GLYPH, not a plated one. Every row used to
@@ -460,16 +481,25 @@ function PaletteShell({
                           ink goes to full strength on top. `mt-px` on a
                           two-line row drops the glyph onto the title's optical
                           centre rather than its box's. */}
+                      {isActive && (
+                        <motion.span
+                          layoutId={highlightId}
+                          aria-hidden="true"
+                          transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 40, mass: 0.7 }}
+                          style={{ borderRadius: 8 }}
+                          className="absolute inset-0 bg-foreground/[0.06] shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.05)] dark:bg-white/[0.07] dark:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.05)]"
+                        />
+                      )}
                       <span
                         className={cn(
-                          "flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft [&_svg]:size-4.5",
+                          "relative flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft [&_svg]:size-4.5",
                           c.snippet && "mt-px",
                           isActive ? "text-foreground" : "text-muted-foreground"
                         )}
                       >
                         <Icon />
                       </span>
-                      <span className="min-w-0 flex-1">
+                      <span className="relative min-w-0 flex-1">
                         <span className="block truncate">
                           <Marked text={c.label} marks={c.labelMarks ?? []} />
                         </span>
@@ -483,10 +513,10 @@ function PaletteShell({
                         // Full --muted-foreground at the caption rung. At /55 this
                         // composited to ~2.9:1 on black — on the timestamp that is
                         // the only thing telling two same-titled chats apart.
-                        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{c.meta}</span>
+                        <span className="relative shrink-0 font-mono text-caption tabular-nums text-muted-foreground">{c.meta}</span>
                       )}
                       {c.hint && (
-                        <span className="flex shrink-0 items-center gap-1">
+                        <span className="relative flex shrink-0 items-center gap-1">
                           {splitKeys(c.hint).map((k, ki) => (
                             <Kbd key={ki}>{k}</Kbd>
                           ))}
@@ -537,7 +567,7 @@ function PaletteEmpty({
     <div className="flex flex-col items-center px-3 py-10 text-center motion-safe:animate-fade-in">
       <span
         className={cn(
-          "mb-4 flex size-10 items-center justify-center rounded-field",
+          "mb-4 flex size-10 items-center justify-center rounded-card border border-foreground/[0.07]",
           tone === "error" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"
         )}
       >
@@ -820,7 +850,7 @@ function SearchPalette() {
     // point off the popover behind it, so the one band saying "part of your
     // account could not be searched" had no band.
     return (
-      <div className="border-b border-border/60 bg-secondary px-4 py-2">
+      <div className="border-b border-foreground/[0.07] bg-secondary/70 px-4 py-2 dark:border-white/[0.07]">
         {shown.map((c) => (
           <p key={c.type} className="text-caption leading-snug text-muted-foreground">
             <span className="text-foreground/80">{SEARCH_TYPE_LABELS[c.type]}:</span> {c.detail}
@@ -858,7 +888,7 @@ function SearchPalette() {
     // fourteen chips is wider than the dialog. Without it the strip did not
     // scroll; it widened the whole column, so every result row ran past the
     // dialog's right edge and lost its trailing time.
-    <div className="min-w-0 border-b border-border/60 px-4 py-2">
+    <div className="min-w-0 border-b border-foreground/[0.07] px-3 py-2 dark:border-white/[0.07]">
       <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
         <div role="group" aria-label="Filter by type" className="flex shrink-0 gap-1">
           <FilterChip active={type === "all"} onClick={() => setType("all")}>
@@ -873,7 +903,7 @@ function SearchPalette() {
         {/* A hairline between the two groups, because "Everything · Chats · …"
             and "Any time · Today · …" are two questions and a gap alone does
             not say so at this chip spacing. */}
-        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
+        <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-foreground/10" />
         <div role="group" aria-label="Filter by date" className="flex shrink-0 gap-1">
           {SEARCH_WINDOWS.map((w) => (
             <FilterChip key={w} active={dateWindow === w} onClick={() => setDateWindow(w)}>
@@ -881,7 +911,7 @@ function SearchPalette() {
             </FilterChip>
           ))}
         </div>
-        {projects.length > 0 && <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />}
+        {projects.length > 0 && <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-foreground/10" />}
         {projects.length > 0 && (
           // The Radix Select, not a native <select>. This was the only OS popup
           // list in the app shell: its menu ignored --popover, the border tokens
@@ -941,9 +971,9 @@ function SearchPalette() {
   // — a skeleton drawn at a different radius from the thing that replaces it is
   // a visible re-shape at the moment the results land.
   const emptyState = searching ? (
-    <div className="space-y-1 p-2" aria-hidden="true">
+    <div className="space-y-1" aria-hidden="true">
       {[...Array(5)].map((_, i) => (
-        <div key={i} className="skeleton h-9 rounded-field" style={staggerDelay(i, "tight")} />
+        <div key={i} className="skeleton h-9 rounded-control" style={staggerDelay(i, "tight")} />
       ))}
     </div>
   ) : failed ? (

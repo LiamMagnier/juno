@@ -135,26 +135,32 @@ export function ProjectWorkspaceHeader({
     <>
       <AppPageHeader
         className={className}
+        backdrop
         backHref="/projects"
         backLabel="Back to projects"
         eyebrow="Projects"
-        heading={<span className="min-w-0 truncate">{project.name}</span>}
+        heading={<span className="block min-w-0 truncate tracking-[-0.03em]">{project.name}</span>}
         lede={lede}
         actions={
           <>
             <Button
               type="button"
               variant="outline"
-              size="sm"
               onClick={onEditInstructions}
+              aria-label="Instructions"
+              title="Instructions"
+              // On a phone the label folds into the mark, so the three
+              // actions stay on the title's line instead of wrapping between
+              // the title and its lede.
+              className="w-9 border-foreground/[.12] px-0 coarse:w-11 @[40rem]/page:w-auto @[40rem]/page:px-4"
             >
-              <NotebookPen className="size-3.5" aria-hidden="true" />
-              Instructions
+              <NotebookPen className="size-4" aria-hidden="true" />
+              <span className="hidden @[40rem]/page:inline">Instructions</span>
             </Button>
 
             <Pressable
               kind="icon"
-              size="md"
+              size="lg"
               onClick={onToggleStar}
               selected={isStarred}
               aria-pressed={isStarred}
@@ -171,7 +177,7 @@ export function ProjectWorkspaceHeader({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Pressable kind="icon" size="md" aria-label="Project actions" title="Project actions">
+                <Pressable kind="icon" size="lg" aria-label="Project actions" title="Project actions">
                   <ActionIcons.more className="size-4" aria-hidden="true" />
                 </Pressable>
               </DropdownMenuTrigger>

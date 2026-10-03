@@ -35,9 +35,12 @@ export function PrivateChatToggle({
   onToggle: () => void;
 }) {
   /*
-   * Off: a quiet 32px icon button beside Share. On: a graphite pill that
-   * names the mode, so being incognito is never something you have to infer
-   * from a tinted icon. The pill grows out of the button on the base rung.
+   * Off: a quiet 36px circle, the same rung as Share beside it (Pressable's
+   * `icon lg`, a size-5 glyph), so the header cluster is one family. On: the
+   * homepage's solid primary, near-white with dark ink in the dark theme, as a
+   * pill that names the mode, so being incognito is never something you have
+   * to infer from a tinted icon. The pill grows out of the circle on the
+   * homepage's ease, and presses at .97 like the homepage's buttons.
    */
   return (
     <Tooltip>
@@ -49,16 +52,17 @@ export function PrivateChatToggle({
           disabled={disabled}
           onClick={onToggle}
           className={cn(
-            "pressable inline-flex h-8 items-center justify-center gap-1.5 rounded-full text-ui font-medium",
-            "transition-[background-color,color,padding,width] duration-base ease-out-soft disabled:pointer-events-none disabled:opacity-50 coarse:h-11",
-            "motion-reduce:transition-none motion-reduce:active:scale-100",
+            "inline-flex h-9 items-center justify-center gap-2 rounded-full text-ui font-medium outline-none coarse:h-11",
+            "transition-[background-color,color,padding,width,transform] duration-base ease-out-expo active:scale-[0.97] active:duration-75",
+            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-colors motion-reduce:active:scale-100",
             active
-              ? "bg-foreground px-3 text-background hover:bg-foreground/90"
-              : "w-8 text-foreground/70 hover:bg-accent hover:text-foreground coarse:w-11"
+              ? "bg-foreground pl-3 pr-3.5 text-background hover:bg-foreground/90"
+              : "w-9 text-foreground/75 hover:bg-accent hover:text-foreground coarse:w-11"
           )}
         >
-          <IncognitoGlyph className="size-[18px]" />
-          {active ? <span className="motion-safe:animate-fade-in">Incognito</span> : null}
+          <IncognitoGlyph className="size-5" strokeWidth={1.5} />
+          {active ? <span className="tracking-[-0.005em] motion-safe:animate-fade-in">Incognito</span> : null}
         </button>
       </TooltipTrigger>
       <TooltipContent>{active ? "Incognito is on. Nothing is saved." : "Incognito chat"}</TooltipContent>
