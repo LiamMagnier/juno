@@ -111,6 +111,16 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     private var micSplitter: JunoVoiceBandSplitter?
     private var micSplitterRate: Double = 0
     private var storedPlaybackLevel: Double = 0
+    /// Uptime (ns) until which the uplink sends nothing: the ready cue is
+    /// playing, and a chime the provider hears is a turn nobody said.
+    private var storedCueGateUntil: UInt64 = 0
+
+    /// Holds the uplink for the ready cue, plus a pad for output latency.
+    func gateForCue(seconds: Double) {
+        let until = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, seconds) * 1_000_000_000)
+        lock.lock(); defer { lock.unlock() }
+        storedCueGateUntil = until
+    }
 
     var socket: URLSessionWebSocketTask? {
         get { lock.lock(); defer { lock.unlock() }; return storedSocket }
@@ -200,6 +210,7 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         storedMicLevel = 0
         storedMicSpectrum = .silent
         storedPlaybackLevel = 0
+        storedCueGateUntil = 0
         playbackDrain.clear()
         // A session that ends mid-answer leaves this true, and a stale true is a
         // microphone that never uploads again. The controller does re-assign
@@ -239,6 +250,7 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         lock.lock()
         let uplinkSuppressed = storedMuted || storedAssistantSpeaking
             || playbackDrain.isActive
+            || DispatchTime.now().uptimeNanoseconds < storedCueGateUntil
         lock.unlock()
         guard !uplinkSuppressed else { return }
         speechRequest?.append(buffer)
@@ -371,7 +383,25 @@ public final class JunoRealtimeVoiceController {
     /// SwiftUI re-diffs on every partial transcript, several times a second.
     public static let transcriptCapacity = JunoVoiceTranscriptRecord.capacity
 
-    public private(set) var phase: Phase = .idle
+    public private(set) var phase: Phase = .idle {
+        didSet { soundCue(for: phase) }
+    }
+
+    /// The ready and ended chimes — see ``JunoVoiceCues``. Driven from
+    /// ``phase`` so every way a call goes live or stops is covered by one
+    /// line, and the bracket makes repeated reports harmless.
+    private var cueBracket = JunoVoiceCues.Scheduler()
+    private let cuePlayer = JunoVoiceCuePlayer()
+    /// False for the preview harness, whose fake call must stay silent.
+    private var playsCues = true
+
+    private func soundCue(for phase: Phase) {
+        guard let kind = cueBracket.observe(phase), playsCues, JunoVoiceCues.enabled else { return }
+        let seconds = cuePlayer.play(kind)
+        if kind == .start, seconds > 0 {
+            box.gateForCue(seconds: seconds + JunoVoiceCues.micGatePad)
+        }
+    }
 
     /// The conversation as it happened.
     ///
@@ -656,6 +686,7 @@ public final class JunoRealtimeVoiceController {
         }
         closedByUser = false
         reconnectAttempted = false
+        playsCues = true
         if let history { seededHistory = JunoVoiceHistoryEntry.bounded(history) }
         pendingTurnAttachments = []
         record.reset()
@@ -1430,6 +1461,10 @@ public final class JunoRealtimeVoiceController {
                 mode: .voiceChat,
                 options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
+            // The ready cue is a system sound, so it honours the Silent switch
+            // (see ``JunoVoiceCuePlayer``); iOS mutes system sounds while an
+            // app records unless this says otherwise.
+            try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             Self.audioLog.error(
@@ -2328,6 +2363,7 @@ extension JunoRealtimeVoiceController {
         )
         notice = nil
         session = RealtimeSessionMachine(provider: provider)
+        playsCues = false
         phase = .live
         assistantSpeaking = speaking
         sessionPhase = speaking ? .responding : .listening

@@ -47,6 +47,9 @@ import {
   type VoiceLevelSource,
 } from "@/lib/voice-level";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { createVoiceCueScheduler, CUE_MIC_GATE_PAD_S, type VoiceCueScheduler } from "@/lib/voice-cues";
+import { playVoiceCue } from "@/components/voice/voice-cue-player";
+import { uiPref } from "@/lib/ui-prefs";
 
 export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
 
@@ -353,6 +356,27 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const bargeFramesRef = React.useRef<Float32Array[]>([]);
   const bargeSamplesRef = React.useRef(0);
   const interruptRef = React.useRef<() => void>(() => {});
+  /**
+   * The call's two chimes (src/lib/voice-cues.ts): ready once the relay says
+   * the session is live, ended once when a live call stops. While the ready
+   * cue plays, the uplink sends silence (`cueGateUntilRef`, a
+   * performance.now() deadline), so the chime can never reach the model as
+   * speech or open a turn, whatever the browser's echo cancellation does.
+   */
+  const cueGateUntilRef = React.useRef(0);
+  const cuesRef = React.useRef<VoiceCueScheduler | null>(null);
+  if (!cuesRef.current) {
+    cuesRef.current = createVoiceCueScheduler({
+      enabled: () => uiPref("voiceSounds"),
+      play: (kind) => {
+        const seconds = playVoiceCue(kind);
+        if (kind === "start" && seconds > 0) {
+          cueGateUntilRef.current = performance.now() + (seconds + CUE_MIC_GATE_PAD_S) * 1000;
+        }
+      },
+    });
+  }
+  const cues = cuesRef.current;
   // Reconnects re-enter `start` from inside its own socket handlers.
   const startRef = React.useRef<
     | ((
@@ -365,7 +389,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
   React.useEffect(() => {
     statusRef.current = status;
-  }, [status]);
+    cues.observe(status);
+  }, [cues, status]);
 
   React.useEffect(() => {
     transcriptRef.current = transcript;
@@ -775,7 +800,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     let carry = new Float32Array(0);
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
       if (generationRef.current !== generation) return;
-      const chunk = e.data;
+      // Silence, not a gap, while the ready cue plays: the provider's stream
+      // stays continuous and its VAD hears nothing to start a turn on.
+      const chunk = performance.now() < cueGateUntilRef.current ? new Float32Array(e.data.length) : e.data;
       let sum = 0;
       for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
       const rms = Math.sqrt(sum / chunk.length);
@@ -870,6 +897,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setProvider(msg.provider);
           statusRef.current = "live";
           setStatus("live");
+          // Here rather than in the effect: the microphone is already
+          // streaming, so the gate must start with the chime, not a render later.
+          cues.observe("live");
           setError(null);
           reconnectAttemptsRef.current = 0; // a healthy session restores the retry budget
           setReconnectAttempt(0);
@@ -957,7 +987,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           return;
       }
     },
-    [beginUserTurn, flushPlayback, pushTranscript, releaseResources, sealTranscript]
+    [beginUserTurn, cues, flushPlayback, pushTranscript, releaseResources, sealTranscript]
   );
 
   const start = React.useCallback(
@@ -1417,6 +1447,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     releaseResources();
     statusRef.current = "idle";
     setStatus("idle");
+    // Synchronously: End often unmounts the call, and an effect would never run.
+    cues.observe("idle");
     setCapabilities(null);
     capsRef.current = null;
     liveProviderRef.current = null;
@@ -1424,7 +1456,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setModel(null);
     setMuted(false);
     mutedRef.current = false;
-  }, [clearReconnectTimer, releaseResources, sealTranscript]);
+  }, [clearReconnectTimer, cues, releaseResources, sealTranscript]);
 
   // Teardown on unmount.
   React.useEffect(() => () => end(), [end]);

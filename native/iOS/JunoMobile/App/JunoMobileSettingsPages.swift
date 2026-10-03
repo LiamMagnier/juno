@@ -19,6 +19,8 @@ enum JunoMobilePreferences {
   static let voicePushToTalk = "juno.mobile.voice.push-to-talk"
   static let voiceProvider = "juno.mobile.voice.provider"
   static let voiceSpeakerDefault = "juno.mobile.voice.speaker"
+  /// Shared with the controller that plays the chimes, so it reads JunoVoiceKit's key.
+  static let voiceSounds = JunoVoiceCues.defaultsKey
   static let codeDefaultHost = "juno.mobile.code.default-host"
   static let codeApprovalNotifications = "juno.mobile.code.notify-approvals"
   static let codeCompletionNotifications = "juno.mobile.code.notify-completions"
@@ -67,6 +69,7 @@ struct JunoMobileVoiceSettingsView: View {
   @AppStorage(JunoMobilePreferences.voicePushToTalk) private var pushToTalk = false
   @AppStorage(JunoMobilePreferences.voiceProvider) private var providerRaw = ""
   @AppStorage(JunoMobilePreferences.voiceSpeakerDefault) private var speakerDefault = true
+  @AppStorage(JunoMobilePreferences.voiceSounds) private var voiceSounds = true
   @State private var readAloud: JunoMobileReadAloud?
   @State private var selectionHaptic = JunoMobileHapticTrigger()
 
@@ -161,6 +164,15 @@ struct JunoMobileVoiceSettingsView: View {
           }
         }
         .tint(Color.junoAccent)
+        Toggle(isOn: $voiceSounds) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Voice sounds")
+            Text("A soft chime when a call can hear you, and another when it ends. Silent when your iPhone is.")
+              .junoCaption()
+          }
+        }
+        .tint(Color.junoAccent)
+        .accessibilityIdentifier("juno.mobile.voice-sounds")
       } header: {
         Text("Conversations")
       } footer: {

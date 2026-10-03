@@ -1,6 +1,7 @@
 import AVFoundation
 import JunoChatKit
 import JunoDesignSystem
+import JunoVoiceKit
 import SwiftUI
 
 /// Settings › Voice (`sections/voice.tsx`): the voice Juno reads answers in,
@@ -30,6 +31,8 @@ struct DesktopSettingsVoicePane: View {
     ]
 
     @State private var preview = DesktopVoicePreview()
+    /// The web's `voiceSounds` preference: a per-device switch, like there.
+    @AppStorage(JunoVoiceCues.defaultsKey) private var voiceSounds = true
 
     /// Whether the plan includes voice. Unknown until the usage route answers,
     /// and then the picker shows, as it always has on the Mac.
@@ -59,6 +62,17 @@ struct DesktopSettingsVoicePane: View {
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, JunoSpace.snug)
+            }
+
+            Section {
+                DesktopSettingToggleRow(
+                    title: "Voice sounds",
+                    description: "A soft chime when a call can hear you, and another when it ends. On this Mac.",
+                    isOn: $voiceSounds,
+                    identifier: "juno.desktop.settings.voice-sounds"
+                )
+            } header: {
+                DesktopSettingsGroupHeader(title: "Voice conversations")
             }
         }
         .task { if context.plan.value == nil { await context.loadPlan() } }

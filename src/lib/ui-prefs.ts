@@ -26,6 +26,8 @@ export interface UiPrefs {
   followUps: boolean;
   notifyOnReply: boolean;
   replySound: boolean;
+  /** The ready and ended chimes of a voice call (src/lib/voice-cues.ts). */
+  voiceSounds: boolean;
 }
 
 export const UI_PREF_DEFAULTS: UiPrefs = {
@@ -37,6 +39,7 @@ export const UI_PREF_DEFAULTS: UiPrefs = {
   followUps: true,
   notifyOnReply: false,
   replySound: false,
+  voiceSounds: true,
 };
 
 /** Preferences mirrored onto <html> (attribute name → pref key). */
@@ -61,7 +64,7 @@ function sanitize(raw: unknown): UiPrefs {
   pick("transcriptWidth", ["narrow", "medium", "wide"]);
   pick("motion", ["system", "reduced"]);
   pick("sendKey", ["enter", "mod-enter"]);
-  for (const key of ["codeWrap", "followUps", "notifyOnReply", "replySound"] as const) {
+  for (const key of ["codeWrap", "followUps", "notifyOnReply", "replySound", "voiceSounds"] as const) {
     if (typeof r[key] === "boolean") out[key] = r[key] as boolean;
   }
   return out;

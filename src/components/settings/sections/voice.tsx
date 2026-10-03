@@ -13,14 +13,16 @@ import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
-import { VOICES, DEFAULT_VOICE, type VoiceId } from "@/lib/voices";
+import { voicesFor, defaultVoiceFor } from "@/lib/voices";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { Switch } from "@/components/ui/switch";
+import { useUiPref } from "@/lib/ui-prefs";
+import { playVoiceCue } from "@/components/voice/voice-cue-player";
 
 // Short on purpose: a preview is billed per character and the reader may
 // audition a dozen voices in a row. Long enough to hear timbre.
 const VOICE_PREVIEW_TEXT = `Hi, I'm ${PRODUCT_NAME}. This is how I sound when I read an answer aloud.`;
 
-const VOICE_OPTIONS = VOICES.map((v) => ({ value: v.id, label: v.label, description: v.description }));
 
 /**
  * The voice Juno reads answers in.
@@ -37,8 +39,17 @@ export function VoiceSection() {
   const save = useSettingsSave();
   const saves = useSaveStates();
   const plan = PLANS[quota.plan];
-  const activeVoice = (settings.voiceId ?? DEFAULT_VOICE) as VoiceId;
-  const voice = VOICES.find((v) => v.id === activeVoice) ?? VOICES[0];
+  const [voiceSounds, setVoiceSounds] = useUiPref("voiceSounds");
+  // The live provider's voices: Gemini's under Google, OpenAI's under OpenAI.
+  // A saved id from the other provider is not sent to this one (the route
+  // vets it), so the picker shows what will actually be heard: the default.
+  const voices = voicesFor(features.ttsProvider);
+  const voiceOptions = React.useMemo(
+    () => voices.map((v) => ({ value: v.id, label: v.label, description: v.description })),
+    [voices]
+  );
+  const voice = voices.find((v) => v.id === settings.voiceId) ?? voices.find((v) => v.id === defaultVoiceFor(features.ttsProvider)) ?? voices[0];
+  const activeVoice = voice?.id ?? "";
 
   // At most one audition at a time. `previewSeq` is the ownership token:
   // every stop mints a fresh one, so a slow fetch that lands after its click
@@ -100,8 +111,8 @@ export function VoiceSection() {
 
   // Every clause removes a way this could be a control that looks alive and
   // does nothing: serverTts (else the browser speaks in the OS voice),
-  // ttsProvider (the list is OpenAI's), plan.voice (the route refuses without it).
-  const pickerAvailable = features.serverTts && features.ttsProvider === "openai" && plan.voice;
+  // voices (ElevenLabs has none to choose), plan.voice (the route refuses without it).
+  const pickerAvailable = features.serverTts && voices.length > 0 && Boolean(voice) && plan.voice;
   const playing = preview?.id === activeVoice;
   const loading = playing && preview.loading;
 
@@ -111,7 +122,7 @@ export function VoiceSection() {
         {pickerAvailable ? (
           <SettingRow
             label="Voice"
-            description={voice.description}
+            description={voice?.description}
             wide
             status={saves.status("voiceId")}
             control={
@@ -139,7 +150,7 @@ export function VoiceSection() {
                 <ChoiceMenu
                   label="Read-aloud voice"
                   value={activeVoice}
-                  options={VOICE_OPTIONS}
+                  options={voiceOptions}
                   onChange={(voiceId) => {
                     if (voiceId === activeVoice) return;
                     stopPreview();
@@ -162,6 +173,29 @@ export function VoiceSection() {
             }
           />
         )}
+      </SettingsGroup>
+
+      <SettingsGroup title="Voice conversations">
+        <SettingRow
+          label="Voice sounds"
+          htmlFor="voice-sounds"
+          description="A soft chime when a call can hear you, and another when it ends. On this device."
+          control={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  playVoiceCue("start");
+                  window.setTimeout(() => playVoiceCue("end"), 700);
+                }}
+              >
+                Preview
+              </Button>
+              <Switch id="voice-sounds" checked={voiceSounds} onCheckedChange={setVoiceSounds} />
+            </div>
+          }
+        />
       </SettingsGroup>
 
       <p className="pt-6 text-ui text-muted-foreground">
