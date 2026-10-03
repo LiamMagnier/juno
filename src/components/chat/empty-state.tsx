@@ -23,6 +23,28 @@ export function EmptyGreeting() {
 }
 
 /**
+ * The home's field: the homepage's construction, centred on the composer the
+ * way the hero's product window sits on its orbits. The number line runs
+ * through the composer, the orbits open around it, and the one presence
+ * trajectory ends past ℵ₃, the frame's one live object. Drawn once when the
+ * home arrives (alv-draw), faint, masked to an ellipse so it never reaches
+ * the sidebar or the header band. Decorative.
+ */
+export function HomeField({ visible = true }: { visible?: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "alv chat-home__field [&.alv]:bg-transparent",
+        visible ? "opacity-100" : "opacity-0",
+      )}
+    >
+      <Construction />
+    </div>
+  );
+}
+
+/**
  * Incognito's quiet field: the homepage construction (nested orbits on a
  * number line) drawn still and very faint, centred on the mark, so the mark
  * sits at the origin of the brand's own drawing. No trajectory and no ticks:

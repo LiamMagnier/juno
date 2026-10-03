@@ -22,7 +22,6 @@ import { createPortal } from "react-dom";
 import {
   AudioLines,
   Crop,
-  Loader2,
   Mic,
   Plus,
   Scan,
@@ -127,6 +126,8 @@ import type {
 import type { SendOptions, SendResult } from "@/hooks/use-chat";
 import { readSkillInvocation, useChatSkills, YOURS_SOURCE_LABEL } from "@/components/chat/use-chat-skills";
 import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
+import { ComposerTray } from "@/components/chat/composer-tray";
+import { MenuEmpty, MenuLabel, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import {
   MAX_CHAT_CONNECTORS,
@@ -716,7 +717,7 @@ export function Composer({
               // message is asked for; after it, the next one follows up.
               frame === "dock"
               ? "Ask a follow-up"
-              : "Ask anything"));
+              : "How can I help you today?"));
   const [text, setText] = React.useState("");
 
   // Huge pastes stay in `text` for send, but we collapse the textarea DOM so
@@ -2122,6 +2123,8 @@ export function Composer({
   const selectedProject = selectedProjectId
     ? (projects.find((p) => p.id === selectedProjectId) ?? null)
     : null;
+  /** The home's tray (composer-tray.tsx): a brand-new chat on the landing frame only. */
+  const showTray = frame === "landing" && !conversationId && !privateMode && !voiceActive && !steerMode;
   const canAttach = features.storage && !privateMode;
   // One reason, three rows: whichever of the two gates is shut is the one the
   // row should name. Never a row that silently vanishes.
@@ -2283,25 +2286,18 @@ export function Composer({
    */
   const projectPanel = () => (
     <>
-      <PlusMenuRow
-        selected={!selectedProjectId}
-        icon={AppIcons.projects}
-        onSelect={() => onPickProject?.(null)}
-      >
-        No project
-      </PlusMenuRow>
-      <PlusMenuSeparator />
-      <ScrollFade className="min-h-0 flex-1" viewportClassName="max-h-64">
-        {loadingProjects && projects.length === 0 ? (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-          </div>
-        ) : projects.length === 0 ? (
-          <p className="px-2.5 py-3 text-center text-caption text-muted-foreground">
-            No projects yet.
-          </p>
-        ) : (
-          projects.map((project) => (
+      <MenuLabel>Projects</MenuLabel>
+      {loadingProjects && projects.length === 0 ? (
+        <MenuSkeleton rows={2} />
+      ) : projects.length === 0 ? (
+        <MenuEmpty
+          icon={AppIcons.projects}
+          title="No projects yet"
+          hint="A project keeps chats, files and instructions together."
+        />
+      ) : (
+        <ScrollFade className="min-h-0 flex-1" viewportClassName="max-h-64">
+          {projects.map((project) => (
             <PlusMenuRow
               key={project.id}
               selected={selectedProjectId === project.id}
@@ -2310,73 +2306,53 @@ export function Composer({
             >
               {project.name}
             </PlusMenuRow>
-          ))
-        )}
-      </ScrollFade>
+          ))}
+        </ScrollFade>
+      )}
       <PlusMenuSeparator />
       <PlusMenuRow
         icon={Plus}
         disabled={creatingProject}
         onSelect={() => void createProjectAndPick()}
-        className="text-primary"
       >
         {creatingProject ? "Creating…" : "New project"}
       </PlusMenuRow>
+      {selectedProjectId ? (
+        <PlusMenuRow icon={ActionIcons.dismiss} onSelect={() => onPickProject?.(null)}>
+          Remove from project
+        </PlusMenuRow>
+      ) : null}
     </>
   );
 
   const connectorsPanel = () => (
     <>
-      <div className="px-0.5 pb-1.5 pt-0.5">
-        <label className="relative block">
-          {/* Raw `Search`: this filters the connector list in place.
-              `AppIcons.search` is the app's search destination, which this
-              never opens. Key events stay in the field — the menu's typeahead
-              and arrow handling must not see them. */}
-          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={connectorQuery}
-            onChange={(event) => setConnectorQuery(event.target.value)}
-            // ArrowUp passes through too. The list was reachable with
-            // ArrowDown and then had no way back out of it: every other key was
-            // stopped here, so ArrowUp from the first row died in the input and
-            // the flyout became a one-way trip for a keyboard user. Character
-            // keys are still stopped, or the menu's typeahead would fight the
-            // field for every letter typed into it.
-            onKeyDown={(event) => { if (!["Escape", "ArrowDown", "ArrowUp", "Tab"].includes(event.key)) event.stopPropagation(); }}
-            placeholder="Search apps…"
-            aria-label="Search apps"
-            autoFocus
-            className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
-          />
-        </label>
-      </div>
+      {connectors.length > 5 ? (
+        <MenuSearch value={connectorQuery} onChange={setConnectorQuery} placeholder="Search apps" label="Search apps" />
+      ) : (
+        <MenuLabel>Apps in this chat</MenuLabel>
+      )}
       <div className="max-h-56 overflow-y-auto overscroll-contain">
         {connectorsLoading && connectors.length === 0 ? (
-          <div className="flex flex-col gap-1 p-1">
-            {[0, 1, 2].map((row) => (
-              <span key={row} className="skeleton h-9 rounded-control" />
-            ))}
-          </div>
+          <MenuSkeleton rows={3} />
         ) : connectorsFailed && connectors.length === 0 ? (
-          <div className="px-2.5 py-3 text-center">
-            <p className="text-caption text-muted-foreground">Couldn’t load your apps.</p>
-            <button
-              type="button"
-              onClick={() => void refreshConnectors()}
-              className="mt-1 text-caption font-medium text-primary underline-offset-2 hover:underline"
-            >
-              Try again
-            </button>
-          </div>
+          <MenuEmpty
+            icon={AppIcons.connections}
+            title="Couldn’t load your apps"
+            action={
+              <button type="button" onClick={() => void refreshConnectors()} className="cmenu-empty__action">
+                Try again
+              </button>
+            }
+          />
         ) : connectors.length === 0 ? (
-          <PlusMenuRow icon={AppIcons.connections} onSelect={() => router.push("/connections")}>
-            Connect an app
-          </PlusMenuRow>
+          <MenuEmpty
+            icon={AppIcons.connections}
+            title="No apps connected"
+            hint="Connect Gmail, GitHub, Drive and more so chats can use them."
+          />
         ) : visibleConnectors.length === 0 ? (
-          <p className="px-2.5 py-3 text-center text-caption text-muted-foreground">
-            No apps match “{connectorQuery.trim()}”.
-          </p>
+          <MenuEmpty icon={Search} title={`No apps match “${connectorQuery.trim()}”`} />
         ) : (
           visibleConnectors.map((connector) => (
             <PlusMenuRow
@@ -2384,7 +2360,9 @@ export function Composer({
               checked={connectorsEnabled.includes(connector.id)}
               onSelect={() => pickConnector(connector.id)}
               leading={
-                <ConnectorMark id={connector.id} className="size-4 shrink-0 text-foreground" />
+                <span className="cmenu-tile">
+                  <ConnectorMark id={connector.id} className="size-3.5 shrink-0 text-foreground" />
+                </span>
               }
             >
               {connector.label}
@@ -2392,18 +2370,14 @@ export function Composer({
           ))
         )}
       </div>
-      {connectors.length > 0 && (
-        <>
-          <PlusMenuSeparator />
-          <PlusMenuRow
-            icon={AppIcons.connections}
-            detail={`${activeConnectorCount} of ${MAX_CHAT_CONNECTORS} on`}
-            onSelect={() => router.push("/connections")}
-          >
-            Manage connections
-          </PlusMenuRow>
-        </>
-      )}
+      <PlusMenuSeparator />
+      <PlusMenuRow
+        icon={connectors.length > 0 ? AppIcons.connections : Plus}
+        detail={connectors.length > 0 ? `${activeConnectorCount} of ${MAX_CHAT_CONNECTORS} on` : undefined}
+        onSelect={() => router.push("/connections")}
+      >
+        {connectors.length > 0 ? "Manage connections" : "Connect an app"}
+      </PlusMenuRow>
     </>
   );
 
@@ -2611,8 +2585,11 @@ export function Composer({
    * side `placeComposerLayer` picks (below on the home, above in the dock, by
    * room), so neither covers the draft or the composer's own buttons.
    */
+  // The box a menu opens outside of: the composer, or on the home the
+  // composer with its tray, so a menu below never lands on the tray.
+  const layerBoxRef = showTray ? rootRef : shellRef;
   const sideFor = (trigger: HTMLElement | null, need: number, width: number): { box: DOMRect; side: LayerSide } => {
-    const box = shellRef.current?.getBoundingClientRect() ?? trigger?.getBoundingClientRect() ?? new DOMRect();
+    const box = layerBoxRef.current?.getBoundingClientRect() ?? trigger?.getBoundingClientRect() ?? new DOMRect();
     const placed = placeComposerLayer({
       composer: box,
       viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -2670,7 +2647,7 @@ export function Composer({
             : "pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"),
         // The dock's content width (48rem less a gutter each side), read from
         // the gutter the landing column already applies. See the prop.
-        frame === "landing" && "mx-auto max-w-[calc(48rem-2*var(--page-gutter,0px))]"
+        frame === "landing" && "isolate mx-auto max-w-[calc(48rem-2*var(--page-gutter,0px))]"
       )}
     >
       {quotaReached && (
@@ -2704,7 +2681,7 @@ export function Composer({
 
       {/* Existing chats get the persistent scope bar at the top of the chat
           instead; the chip only announces where a brand-new chat will land. */}
-      {selectedProject && !privateMode && !conversationId && (
+      {selectedProject && !privateMode && !conversationId && !showTray && (
         <div className="mb-2 flex">
           {/* Muted glyph on the caption rung (14px, gap-1.5): the folder is a
               label on the chip, not a state, so it does not take the accent. */}
@@ -3188,7 +3165,7 @@ export function Composer({
                   disabled={controlsLocked}
                   thinking={thinkingControl}
                   effortLabel={effortLabel}
-                  layer={{ box: shellRef, pickSide: pickModelSide, onSide: onMenuSide }}
+                  layer={{ box: layerBoxRef, pickSide: pickModelSide, onSide: onMenuSide }}
                 />
               </div>
               {speechSupported && (
@@ -3301,6 +3278,19 @@ export function Composer({
             )}
         </div>
       </DictationSwap>
+      {showTray && (
+        <ComposerTray
+          projectName={selectedProject?.name ?? null}
+          connectors={attachedConnectors}
+          onOpenProjects={loadProjects}
+          onOpenApps={() => void refreshConnectors()}
+          onOpenSkills={() => setSkillsWanted(true)}
+          projectPanel={projectPanel}
+          appsPanel={showConnectors ? connectorsPanel : null}
+          skillsPanel={skillRow ? skillsPanel : null}
+          disabled={plusLocked}
+        />
+      )}
       {/* The dock's bottom inset, with the line in it: 16px under `sm` and
           24px from there, the same heights the padding it replaces had, so a
           chat with a footnote and one without dock at the same height. A

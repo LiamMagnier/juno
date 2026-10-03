@@ -345,15 +345,6 @@
   }
 }
 
-/* ——————————————————————————— Home suggestions ——————————————————————————— */
-
-/* A layer opened below the home composer covers the suggestions, and a draft
-   makes them moot: they step out of the way in the same frame (F0). */
-.chat-home:has([data-layer-below]) .chat-home__suggest,
-.chat-home:has([data-composer-draft]) .chat-home__suggest {
-  visibility: hidden;
-}
-
 /* ——————————————————————————— The controls row ——————————————————————————— */
 
 /* The + turns a quarter into a close mark while its menu is open (C19: base,
@@ -417,14 +408,13 @@
 
 /* ——————————————————————————— The home ——————————————————————————— */
 
-/* The composer sits at the panel's optical centre, a little above the
-   geometric one (the lower track is 18% taller); the greeting rests on it
-   from above and the suggestions hang beneath it, so the composer, not the
-   stack, is what is centred (V3 home, D-033). */
+/* The composer (with its tray) sits at the panel's centre, on both axes; the
+   greeting rests on it from above, so the composer, not the stack, is what is
+   centred (V3 home, D-033; owner, 2026-10-03: true centre, not optical). */
 .chat-home {
   flex: 1 0 auto;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1.18fr);
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
   grid-template-columns: minmax(0, 720px);
   justify-content: center;
   width: 100%;
@@ -433,7 +423,13 @@
   grid-row: 1;
   align-self: end;
   padding-top: 56px;
-  margin-bottom: 20px;
+  margin-bottom: 28px;
+}
+/* The greeting and incognito's taller header share one cell to cross-fade;
+   each rests on the cell's floor, so the short one never floats in the tall
+   one's height above the composer. */
+.chat-home__greet > * {
+  align-self: end;
 }
 .chat-home__composer {
   grid-row: 2;
@@ -443,54 +439,58 @@
   align-self: start;
   padding-bottom: 56px;
 }
+/* The homepage's display voice, at the size a panel can carry. */
 .chat-home__title {
-  font-size: 44px;
-  line-height: 52px;
-  letter-spacing: -0.014em;
-  font-variation-settings: "opsz" 48;
+  font-size: 50px;
+  line-height: 56px;
+  letter-spacing: -0.032em;
+  font-variation-settings: "opsz" 60;
 }
-.chat-home__chips {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 20px;
+
+/* The construction behind the composer (empty-state.tsx, HomeField): the
+   number line through the composer's middle, the orbits opening around it,
+   masked to an ellipse so it fades before the panel's edges. It sits in the
+   composer's own stacking context, under the surface. */
+.chat-home__field {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: max(1500px, 210%);
+  aspect-ratio: 3 / 2;
+  translate: -50% -50%;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 50% 46% at 50% 50%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(ellipse 50% 46% at 50% 50%, #000 30%, transparent 78%);
+  transition: opacity var(--dur-slow) var(--ease-out-soft);
 }
-.chat-home__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 14px 0 11px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.13);
-  font-size: 14px;
-  color: hsl(var(--cmp-ink-2));
-  white-space: nowrap;
-  transition:
-    background-color var(--dur-fast) var(--ease-out-soft),
-    color var(--dur-fast) var(--ease-out-soft);
+.chat-home__field svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
-.dark .chat-home__chip {
-  box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.1);
-}
-.chat-home__chip > svg {
-  flex: none;
-  color: hsl(var(--muted-foreground));
-}
-@media (hover: hover) and (pointer: fine) {
-  .chat-home__chip:hover {
-    background-color: hsl(var(--foreground) / 0.045);
-    color: hsl(var(--foreground));
+
+/* Arrival, on the homepage's beat: the greeting rises first, the tray a
+   step behind the composer, while the construction draws itself under them.
+   Once per arrival; reduced motion lands everything in place. */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-home .chat-home__title {
+    animation: chat-home-rise 900ms var(--alv-ease, cubic-bezier(0.16, 1, 0.3, 1)) 60ms both;
+  }
+  .chat-home .composer-tray {
+    animation: chat-home-tray 900ms var(--alv-ease, cubic-bezier(0.16, 1, 0.3, 1)) 260ms both;
   }
 }
-.chat-home__chip:active {
-  background-color: hsl(var(--foreground) / 0.085);
-  transition-duration: var(--dur-press);
+@keyframes chat-home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
 }
-@media (pointer: coarse) {
-  .chat-home__chip {
-    height: 44px;
+@keyframes chat-home-tray {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
   }
 }
 @media (max-width: 1200px) {
@@ -499,8 +499,7 @@
   }
 }
 /* Phone: the composer stays within the thumb's reach at the foot of the
-   screen; the greeting takes the centre and the suggestions sit on the
-   composer as one row that scrolls under the screen's edge. */
+   screen and the greeting takes the centre. */
 @media (max-width: 760px) {
   .chat-home {
     grid-template-rows: minmax(0, 1fr) auto auto;
@@ -511,9 +510,13 @@
     margin-bottom: 0;
   }
   .chat-home__title {
-    font-size: 32px;
-    line-height: 38px;
-    font-variation-settings: "opsz" 32;
+    font-size: 34px;
+    line-height: 40px;
+    letter-spacing: -0.026em;
+    font-variation-settings: "opsz" 36;
+  }
+  .chat-home__field {
+    width: 900px;
   }
   .chat-home__suggest {
     grid-row: 2;
@@ -523,15 +526,436 @@
     grid-row: 3;
     margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
-  .chat-home__chips {
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    margin: 0 calc(-1 * var(--page-gutter, 16px)) 10px;
-    padding: 2px var(--page-gutter, 16px);
-    scroll-padding-inline: var(--page-gutter, 16px);
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+/* ——————————————————————————— The tray ——————————————————————————— */
+
+/* A shelf the home composer rests on (composer-tray.tsx): inset 14px each
+   side, its top tucked 18px under the composer's lower edge, so it reads as
+   part of the composer rather than as a second card. A tone, not a surface:
+   no border and no shadow, the composer stays the one elevated object. */
+.composer-tray {
+  position: relative;
+  z-index: -1;
+  /* One inset on every visible side: 6px from the composer's lower edge
+     (the 18px tucked under it, plus 6), and 6px left, right and bottom. The
+     corners are concentric with the pills inside: 14 + 6 = 20. */
+  --tray-pad: 6px;
+  --tray-tuck: 18px;
+  margin: calc(-1 * var(--tray-tuck)) 14px 0;
+  padding: calc(var(--tray-tuck) + var(--tray-pad)) var(--tray-pad) var(--tray-pad);
+  border-radius: 0 0 calc(14px + var(--tray-pad)) calc(14px + var(--tray-pad));
+  /* The tone over the page's own ground, so it stays a solid shelf over the
+     construction drawn behind the home. */
+  background:
+    linear-gradient(hsl(var(--foreground) / 0.035), hsl(var(--foreground) / 0.035)),
+    hsl(var(--background));
+}
+.dark .composer-tray {
+  background:
+    linear-gradient(hsl(0 0% 100% / 0.045), hsl(0 0% 100% / 0.045)),
+    hsl(var(--background));
+}
+.composer-tray__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+}
+.composer-tray__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 14rem;
+  height: 28px;
+  padding: 0 9px;
+  /* Outer radius less the inset: 20 − 6. A full pill at 28px tall. */
+  border-radius: 14px;
+  font-size: 13px;
+  color: hsl(var(--cmp-ink-2));
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-soft),
+    color var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.composer-tray__item > svg {
+  flex: none;
+  color: hsl(var(--muted-foreground));
+}
+.composer-tray__item--end {
+  margin-left: auto;
+}
+.composer-tray__chevron {
+  margin-left: -2px;
+  opacity: 0.7;
+  transition: transform var(--dur-base) var(--ease-in-out);
+}
+.composer-tray__item[data-state="open"] .composer-tray__chevron {
+  transform: rotate(180deg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-tray__item:hover {
+    background-color: hsl(var(--foreground) / 0.055);
+    color: hsl(var(--foreground));
   }
+}
+.composer-tray__item[data-state="open"],
+.composer-tray__item:active {
+  background-color: hsl(var(--foreground) / 0.085);
+  color: hsl(var(--foreground));
+}
+.composer-tray__item:active {
+  transform: scale(0.97);
+}
+.composer-tray__item:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+.composer-tray__item:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+/* Alevr Code's tray sits ON its composer: the same shelf turned over, its
+   foot tucked under the composer's top edge, the same 6px inset on every
+   visible side and the same concentric corners. Its chips (composerChipClass)
+   take the tray's 28px pill. */
+.composer-tray--top {
+  /* Slimmer than the home's (owner, 2026-10-03): a 4px inset round 24px
+     chips, corners 12 + 4 = 16. */
+  --tray-pad: 4px;
+  margin: 0 14px calc(-1 * var(--tray-tuck));
+  padding: var(--tray-pad) var(--tray-pad) calc(var(--tray-tuck) + var(--tray-pad));
+  border-radius: calc(12px + var(--tray-pad)) calc(12px + var(--tray-pad)) 0 0;
+}
+.composer-tray--top .composer-tray__row {
+  min-height: 24px;
+}
+.composer-tray .composer-tray__row button {
+  height: 28px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+.composer-tray--top .composer-tray__row button {
+  height: 24px;
+  border-radius: 12px;
+  padding-inline: 8px;
+  font-size: 12.5px;
+}
+/* The apps this chat reaches, as a small overlapping stack of marks. */
+.composer-tray__marks {
+  display: inline-flex;
+  align-items: center;
+}
+.composer-tray__mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background-color: hsl(var(--background));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.08);
+}
+.composer-tray__mark + .composer-tray__mark {
+  margin-left: -6px;
+}
+@media (pointer: coarse) {
+  .composer-tray {
+    border-radius: 0 0 calc(22px + var(--tray-pad)) calc(22px + var(--tray-pad));
+  }
+  .composer-tray__item {
+    height: 44px;
+    border-radius: 22px;
+  }
+  .composer-tray .composer-tray__row button {
+    height: 44px;
+    border-radius: 22px;
+  }
+  .composer-tray--top {
+    border-radius: calc(22px + var(--tray-pad)) calc(22px + var(--tray-pad)) 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-tray__item,
+  .composer-tray__chevron {
+    transition: none;
+  }
+  .composer-tray__item:active {
+    transform: none;
+  }
+}
+/* Phone: the labels give way before the row wraps; the glyphs keep their names. */
+@media (max-width: 480px) {
+  .composer-tray {
+    margin-inline: 10px;
+  }
+  .composer-tray__item--end {
+    display: none;
+  }
+}
+
+/* ——————————————————————————— The composer's menus ——————————————————————————— */
+
+/* composer-menu.tsx. Doubled class selectors on purpose: this sheet is
+   imported before Tailwind's utilities, and the shared shell and row
+   (menu-recipe.ts) arrive as utilities at (0,2,0). */
+.cmenu.cmenu {
+  --cm-radius: 18px;
+  --cm-pad: 6px;
+  --cm-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --cm-dx: 0px;
+  --cm-dy: -6px;
+  position: relative;
+  isolation: isolate;
+  padding: var(--cm-pad);
+  border-radius: var(--cm-radius);
+  border: 1px solid hsl(var(--foreground) / 0.07);
+  background-color: hsl(var(--popover));
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-ink) / 0.04),
+    0 8px 20px -6px hsl(var(--shadow-ink) / 0.08),
+    0 28px 56px -18px hsl(var(--shadow-ink) / 0.16);
+  transform-origin: var(--radix-popper-transform-origin);
+}
+.dark .cmenu.cmenu {
+  border-color: hsl(0 0% 100% / 0.08);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.04),
+    0 8px 20px -6px hsl(0 0% 0% / 0.4),
+    0 28px 56px -18px hsl(0 0% 0% / 0.55);
+}
+/* Travel toward the trigger: a menu below its trigger drops in from it, one
+   above rises from it, a flyout slides out of the row that opened it. */
+.cmenu.cmenu[data-side="top"] { --cm-dy: 6px; }
+.cmenu.cmenu[data-side="right"] { --cm-dy: 0px; --cm-dx: -6px; }
+.cmenu.cmenu[data-side="left"] { --cm-dy: 0px; --cm-dx: 6px; }
+
+.cmenu.cmenu[data-state="open"] {
+  animation: cmenu-in 240ms var(--cm-ease) both;
+}
+.cmenu.cmenu[data-state="closed"] {
+  animation: cmenu-out 130ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+/* The contents settle a beat behind the shell, so the menu reads as a box
+   that opens, then fills, rather than one flat image scaling up. */
+.cmenu.cmenu[data-state="open"] > :not(.cmenu-glide) {
+  animation: cmenu-fill 220ms var(--cm-ease) 40ms both;
+}
+@keyframes cmenu-in {
+  0% {
+    opacity: 0;
+    transform: translate(var(--cm-dx), var(--cm-dy)) scale(0.96);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes cmenu-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes cmenu-fill {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--cm-dy) * -0.5));
+  }
+}
+
+/* Rows: concentric with the shell (18 − 6 = 12), 36px, 14px type. The fill
+   is the glide's, so a row's own highlight is cleared. */
+.cmenu.cmenu [role^="menuitem"] {
+  z-index: 1;
+  min-height: 36px;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: calc(var(--cm-radius) - var(--cm-pad));
+  font-size: 14px;
+  line-height: 20px;
+  color: hsl(var(--foreground));
+  background-color: transparent;
+  transition: color var(--dur-fast) var(--ease-out-soft);
+}
+.cmenu.cmenu [role^="menuitem"]:focus,
+.cmenu.cmenu [role^="menuitem"][data-highlighted] {
+  background-color: transparent;
+}
+/* A flyout's row stays lit while its flyout is open and the pointer is in it. */
+.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
+  background-color: hsl(var(--foreground) / 0.05);
+}
+.cmenu.cmenu [role^="menuitem"].text-destructive {
+  color: hsl(var(--destructive));
+}
+.cmenu.cmenu [role="separator"] {
+  height: 1px;
+  margin: 6px 10px;
+  background-color: hsl(var(--foreground) / 0.07);
+}
+@media (pointer: coarse) {
+  .cmenu.cmenu [role^="menuitem"] {
+    min-height: 44px;
+  }
+}
+
+.cmenu-glide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: calc(var(--cm-radius) - var(--cm-pad));
+  background-color: hsl(var(--foreground) / 0.06);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 200ms var(--cm-ease),
+    width 200ms var(--cm-ease),
+    height 200ms var(--cm-ease),
+    opacity var(--dur-fast) var(--ease-out-soft);
+}
+.dark .cmenu-glide {
+  background-color: hsl(0 0% 100% / 0.075);
+}
+.cmenu-glide[data-on="true"] {
+  opacity: 1;
+}
+.cmenu-glide[data-destructive="true"] {
+  background-color: hsl(var(--destructive) / 0.1);
+}
+
+.cmenu-label {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The filter: a row, not a box. Its hairline is the group break. */
+.cmenu-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  margin: 0 0 6px;
+  padding: 0 10px;
+  border-bottom: 1px solid hsl(var(--foreground) / 0.07);
+  color: hsl(var(--muted-foreground));
+}
+.cmenu-search > input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 14px;
+  color: hsl(var(--foreground));
+}
+.cmenu-search > input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.cmenu-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px 10px;
+}
+.cmenu-empty__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background-color: hsl(var(--foreground) / 0.05);
+  color: hsl(var(--muted-foreground));
+}
+.cmenu-empty__title {
+  display: block;
+  font-size: 14px;
+  line-height: 20px;
+  color: hsl(var(--foreground));
+}
+.cmenu-empty__hint {
+  display: block;
+  margin-top: 1px;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: hsl(var(--muted-foreground));
+  text-wrap: pretty;
+}
+
+.cmenu-skeleton {
+  display: flex;
+  flex-direction: column;
+}
+.cmenu-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+}
+.cmenu-skeleton__row > :first-child {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+}
+.cmenu-skeleton__row > :last-child {
+  width: var(--w, 50%);
+  height: 10px;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmenu.cmenu[data-state="open"] {
+    animation: cmenu-fade 140ms linear both;
+  }
+  .cmenu.cmenu[data-state="closed"] {
+    animation: cmenu-fade 100ms linear reverse both;
+  }
+  .cmenu.cmenu[data-state="open"] > :not(.cmenu-glide) {
+    animation: none;
+  }
+  .cmenu-glide {
+    transition: opacity var(--dur-fast) linear;
+  }
+}
+@keyframes cmenu-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* An app's mark on a tile, so marks of different shapes line up as a column. */
+.cmenu-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -3px;
+  border-radius: 7px;
+  background-color: hsl(var(--background));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.08);
+}
+.cmenu-empty__action {
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  text-decoration: underline;
+  text-decoration-color: hsl(var(--foreground) / 0.25);
+  text-underline-offset: 3px;
+}
+.cmenu-empty__action:hover {
+  text-decoration-color: currentColor;
 }

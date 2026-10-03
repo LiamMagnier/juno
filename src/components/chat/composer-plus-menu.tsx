@@ -23,6 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StatusIcons } from "@/lib/app-icons";
+import { composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -378,8 +379,9 @@ export function PlusMenu({
         }}
         // No padding restated: the shell's own p-1.5 is what makes its 14px
         // edge concentric with the 8px rows inside it (14 − 6 = 8).
-        className={cn(MENU_W_WIDE, menuEntranceClass, "max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
+        className={cn(MENU_W_WIDE, composerMenuClass, "max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
       >
+        <MenuGlide />
         {compact && panel?.kind === "sub" ? (
           // The panel arrives from the right and the root list comes back from
           // the left. `animate-stage-in` multiplies its travel by
@@ -473,10 +475,11 @@ export function PlusMenu({
                           sideOffset={6}
                           // Its first row level with the row that opened it:
                           // the shell's p-1.5 would otherwise drop it 6px low.
-                          alignOffset={-6}
+                          alignOffset={-7}
                           collisionPadding={16}
-                          className={cn("flex flex-col", MENU_W_WIDE, menuEntranceClass)}
+                          className={cn("flex flex-col", MENU_W_WIDE, composerMenuClass)}
                         >
+                          <MenuGlide />
                           {item.render()}
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>

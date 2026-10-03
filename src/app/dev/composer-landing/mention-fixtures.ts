@@ -115,9 +115,3 @@ export async function loadMentionFixtures(query: string): Promise<MentionSearchR
   ).sort((a, b) => MENTION_KIND_ORDER.indexOf(a.kind) - MENTION_KIND_ORDER.indexOf(b.kind));
   return { query, kinds: [...MENTION_KIND_ORDER], items };
 }
-
-/** The home's suggestion lookup (kinds app and project, three each). */
-export async function loadSuggestionFixtures(): Promise<MentionSearchResult> {
-  const items = MENTION_FIXTURES.filter((item) => item.kind === "app" || item.kind === "project");
-  return { query: "", kinds: ["project", "app"], items };
-}

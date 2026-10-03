@@ -4455,7 +4455,7 @@
   .context-token { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; margin: 0 1px; border-radius: 7px; background: hsl(var(--secondary)); color: hsl(var(--foreground)); white-space: nowrap; vertical-align: baseline; }
   .context-token[data-selected] { outline: 1px solid hsl(var(--foreground)); outline-offset: 1px; }
   .context-token-mark { display: inline-grid; width: 16px; height: 16px; place-items: center; vertical-align: middle; color: hsl(var(--muted-foreground)); }
-  .context-composer-field:empty::before { content: attr(data-placeholder); color: hsl(var(--muted-foreground)); pointer-events: none; }
+  .context-composer-field:is(:empty, [data-empty])::before { content: attr(data-placeholder); color: hsl(var(--muted-foreground)); pointer-events: none; }
   @media (prefers-reduced-transparency: reduce) {
     .surface-float { background-color: hsl(var(--popover)); -webkit-backdrop-filter: none; backdrop-filter: none; }
   }

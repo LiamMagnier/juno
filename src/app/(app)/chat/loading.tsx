@@ -19,15 +19,15 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  *  - The band above the column is chat-view's header band, which is `h-11`
  *    from md up on a chat with no title yet and absent below md.
  *  - The column is the home's grid (`.chat-home`, composer.css): the composer
- *    at the panel's optical centre, the greeting resting on it from above.
+ *    at the panel's centre, the greeting resting on it from above.
  *  - The greeting row is chat-view's one-cell grid, which stacks the greeting
  *    and the incognito greeting so the two can cross-fade; the incognito one
  *    is drawn here too, invisible, to give the row its real height.
  *  - The composer is `composerHomeRestHeightClass` from composer-shell.tsx, in
  *    the composer's `landing` frame (composer.tsx): the dock's content width
  *    and no padding of its own.
- *  - Nothing under the composer: suggestions come from the person's own state
- *    and are often absent, so the skeleton reserves none.
+ *  - Under the composer, its tray (composer-tray.tsx), drawn empty at its
+ *    real height so the composer does not move when the page lands.
  */
 export default function NewChatLoading() {
   return (
@@ -47,8 +47,12 @@ export default function NewChatLoading() {
           </div>
         </div>
         <div className="chat-home__composer w-full">
-          <div className="mx-auto max-w-[calc(48rem-2*var(--page-gutter,0px))]">
+          <div className="isolate mx-auto max-w-[calc(48rem-2*var(--page-gutter,0px))]">
             <Skeleton className={cn(composerHomeRestHeightClass, "w-full rounded-composer")} />
+            {/* The tray (composer-tray.tsx), at its real height, empty. */}
+            <div className="composer-tray">
+              <div className="composer-tray__row" />
+            </div>
           </div>
         </div>
       </div>

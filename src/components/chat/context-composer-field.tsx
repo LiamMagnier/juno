@@ -777,6 +777,10 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
         }
         aria-disabled={disabled || undefined}
         data-placeholder={placeholder}
+        // Drawn from the draft, not from `:empty`: a stray node in the editor
+        // (a browser extension's, a restored <br>) hid the hint on a field
+        // that was empty to the reader.
+        data-empty={value === "" ? "" : undefined}
         className={cn(className, "context-composer-field whitespace-pre-wrap break-words")}
         style={style}
         tabIndex={disabled ? -1 : 0}

@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Search } from "@/components/ui/icons";
-import { DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { Plus, Search } from "@/components/ui/icons";
 import { PlusMenuRow, PlusMenuSeparator } from "@/components/chat/composer-plus-menu";
+import { MenuEmpty, MenuLabel, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
 import { YOURS_SOURCE_LABEL, type ChatSkill } from "@/components/chat/use-chat-skills";
 import { AppIcons } from "@/lib/app-icons";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
@@ -105,25 +105,7 @@ export function ComposerSkillsPanel({
   return (
     <>
       {list.length > FILTER_THRESHOLD ? (
-        <div className="px-0.5 pb-1.5 pt-0.5">
-          <label className="relative block">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (!["Escape", "ArrowDown", "ArrowUp", "Tab"].includes(event.key)) event.stopPropagation();
-              }}
-              placeholder="Filter skills…"
-              aria-label="Filter skills"
-              autoFocus
-              className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
-            />
-          </label>
-        </div>
+        <MenuSearch value={query} onChange={setQuery} placeholder="Filter skills" label="Filter skills" />
       ) : null}
       <div className="max-h-72 overflow-y-auto overscroll-contain">
         {/* `skills === null` rather than a loading flag: the read starts when
@@ -131,34 +113,31 @@ export function ComposerSkillsPanel({
             nothing has loaded, and the empty branch would flash "Write or
             import a skill" at somebody who has twelve. */}
         {skills === null && !failed ? (
-          <div className="flex flex-col gap-1 p-1">
-            {[0, 1, 2].map((placeholder) => (
-              <span key={placeholder} className="skeleton h-9 rounded-control" />
-            ))}
-          </div>
+          <MenuSkeleton rows={3} />
         ) : failed && skills === null ? (
-          <div className="px-2.5 py-3 text-center">
-            <p className="text-caption text-muted-foreground">Couldn’t load your skills.</p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-1 text-caption font-medium text-primary underline-offset-2 hover:underline"
-            >
-              Try again
-            </button>
-          </div>
+          <MenuEmpty
+            icon={AppIcons.skills}
+            title="Couldn’t load your skills"
+            action={
+              <button type="button" onClick={onRetry} className="cmenu-empty__action">
+                Try again
+              </button>
+            }
+          />
         ) : list.length === 0 ? (
-          <PlusMenuRow icon={AppIcons.skills} onSelect={onManage}>
-            Write or import a skill
-          </PlusMenuRow>
+          <MenuEmpty
+            icon={AppIcons.skills}
+            title="No skills yet"
+            hint="A skill teaches a method once, for every chat after."
+          />
         ) : visible.length === 0 ? (
-          <p className="px-2.5 py-3 text-center text-caption text-muted-foreground">
-            No skills match “{query.trim()}”.
-          </p>
+          <MenuEmpty icon={Search} title={`No skills match “${query.trim()}”`} />
         ) : grouped ? (
           groups.map((group) => (
             <div key={group.key} role="group" aria-label={group.label}>
-              <DropdownMenuLabel translate={group.yours ? undefined : "no"}>{group.label}</DropdownMenuLabel>
+              <div translate={group.yours ? undefined : "no"}>
+                <MenuLabel>{group.label}</MenuLabel>
+              </div>
               {group.skills.map((skill) => row(skill, false))}
             </div>
           ))
@@ -167,8 +146,8 @@ export function ComposerSkillsPanel({
         )}
       </div>
       <PlusMenuSeparator />
-      <PlusMenuRow icon={AppIcons.skills} onSelect={onManage}>
-        Manage skills
+      <PlusMenuRow icon={list.length === 0 ? Plus : AppIcons.skills} onSelect={onManage}>
+        {list.length === 0 ? "Write or import a skill" : "Manage skills"}
       </PlusMenuRow>
     </>
   );

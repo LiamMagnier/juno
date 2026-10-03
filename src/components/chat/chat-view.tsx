@@ -16,9 +16,8 @@ import { MessageList } from "@/components/chat/message-list";
 import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
-import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
+import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
-import { HomeSuggestions } from "@/components/chat/home-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 /*
@@ -2209,7 +2208,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 spacer instead: it keeps `justify-between` pushing the cluster
                 right and the h-11 collapse exactly as it was. */}
             {headerTitle ? (
-              <h1 className="min-w-0 flex-1 text-ui font-medium text-foreground">
+              <h1 className="shell-title min-w-0 flex-1 text-foreground">
                 <AnimatedTitle
                   title={headerTitle}
                   animate={headerTitleSource === "ai"}
@@ -2589,18 +2588,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     ref={emptyComposerRef}
                     className="chat-home__composer relative isolate w-full"
                   >
+                    {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} /> : null}
                     {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
                     {composer}
                   </div>
-                  {/* At most three, from the person's own state; none when
-                      nothing real exists. A draft or a layer opened below the
-                      composer puts them away in the same frame. */}
-                  <div className="chat-home__suggest">
-                    {!agent && !privateMode && !chat.pendingClarification && handoff !== "leaving" ? (
-                      <HomeSuggestions onPickProject={(projectId) => handlePickProject(projectId)} />
-                    ) : null}
-                  </div>
+                  {/* The third track balances the first, so the composer sits
+                      at the panel's centre. What the suggestions offered (a
+                      project, an app) is the composer's tray now. */}
+                  <div className="chat-home__suggest" />
               </div>
             </div>
           )}

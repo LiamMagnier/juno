@@ -3,10 +3,9 @@
 import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
-import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
+import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
-import { HomeSuggestions } from "@/components/chat/home-suggestions";
-import { loadMentionFixtures, loadSuggestionFixtures } from "./mention-fixtures";
+import { loadMentionFixtures } from "./mention-fixtures";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
@@ -214,11 +213,10 @@ function HomeView(common: React.ComponentProps<typeof Composer>) {
           </div>
         </div>
         <div className="chat-home__composer relative isolate w-full">
+          <HomeField />
           <Composer {...common} frame="landing" />
         </div>
-        <div className="chat-home__suggest">
-          <HomeSuggestions load={loadSuggestionFixtures} onPickProject={() => {}} />
-        </div>
+        <div className="chat-home__suggest" />
       </div>
     </section>
   );
