@@ -67,7 +67,7 @@ const BOOTSTRAP: AppBootstrap = {
     purchasableAnnualPlans: ["PRO"],
     serverStt: true,
     serverTts: true,
-    ttsProvider: "openai",
+    ttsProvider: "google",
     storage: true,
     webSearch: true,
     deepResearch: true,

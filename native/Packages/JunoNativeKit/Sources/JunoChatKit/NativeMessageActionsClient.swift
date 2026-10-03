@@ -83,8 +83,9 @@ public struct NativeMessageActionsClient: Sendable {
 
     // MARK: - Read aloud
 
-    /// Synthesised speech for `text`, as MPEG audio — or **nil when the server
-    /// has no TTS configured**.
+    /// Synthesised speech for `text` — WAV from Gemini TTS, MP3 from the
+    /// OpenAI/ElevenLabs fallbacks; `AVAudioPlayer(data:)` sniffs either — or
+    /// **nil when the server has no TTS configured**.
     ///
     /// Nil rather than an error, because 501 is the documented "fall back to the
     /// platform's own synthesiser" answer, and the web reads it the same way. It
@@ -104,7 +105,7 @@ public struct NativeMessageActionsClient: Sendable {
                 path: "/api/voice/tts",
                 method: .post,
                 headers: try HTTPHeaders([
-                    "accept": "audio/mpeg",
+                    "accept": "audio/wav, audio/mpeg",
                     "content-type": "application/json",
                 ]),
                 body: try JSONEncoder().encode(

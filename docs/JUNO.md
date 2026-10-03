@@ -2161,14 +2161,20 @@ when unconfigured:
 
 | Feature | Route | Default model | Fallback |
 |---|---|---|---|
-| Read aloud | `POST /api/voice/tts` | `gpt-4o-mini-tts` | `speechSynthesis` |
+| Read aloud | `POST /api/voice/tts` | `gemini-3.8-flash-tts` (WAV), then `gpt-4o-mini-tts` / ElevenLabs (MP3) | `speechSynthesis` |
 | Dictation | `POST /api/voice/stt` | `gpt-4o-transcribe` | Web Speech recognition |
 
-Set `OPENAI_API_KEY` + `STT_PROVIDER`/`TTS_PROVIDER` to enable server-side quality.
+Read-aloud turns on by itself when the Google key is set (`GOOGLE_API_KEY`/`GEMINI_API_KEY`):
+Gemini 3.8 Flash TTS via the Interactions API, then OpenAI, then ElevenLabs as fallbacks
+when their keys are set (`src/lib/tts-order.ts`, `src/lib/tts.ts`). `TTS_PROVIDER`
+(`google` | `openai` | `elevenlabs`) forces one to the front. The route returns each
+provider's real content type (`audio/wav` from Gemini, `audio/mpeg` otherwise) and vets the
+saved voice per provider (`src/lib/voices.ts`); the settings picker lists the live
+provider's voices. Set `OPENAI_API_KEY` + `STT_PROVIDER` to enable server dictation.
 Dictation records with `MediaRecorder` alongside Web Speech (live preview only; the final
 transcript is always re-transcribed server-side with the browser locale as a language
-hint — the biggest accuracy win for non-English). Overrides: `STT_MODEL`, `TTS_MODEL`,
-`TTS_VOICE`, plus `DEEPGRAM_API_KEY` / `ELEVENLABS_API_KEY`+`ELEVENLABS_VOICE_ID`.
+hint — the biggest accuracy win for non-English). Overrides: `STT_MODEL`,
+`GOOGLE_TTS_MODEL`/`GOOGLE_TTS_VOICE`, `TTS_MODEL`/`TTS_VOICE` (OpenAI), plus `DEEPGRAM_API_KEY` / `ELEVENLABS_API_KEY`+`ELEVENLABS_VOICE_ID`.
 `/api/voice/transcript` persists a `VoiceTranscriptSession`.
 
 ### 10.2 Realtime speech-to-speech relay
@@ -2770,7 +2776,7 @@ gracefully when absent.
 | Extra providers | `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ZHIPU_API_KEY`, `MOONSHOT_API_KEY`, `DEEPSEEK_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `MINIMAX_API_KEY`, `MIMO_API_KEY`, `DASHSCOPE_API_KEY`, `SEEDANCE_API_KEY`, `LONGCAT_API_KEY` (+ optional `*_BASE_URL`) |
 | Connectors | `COMPOSIO_API_KEY`, `GITHUB_OAUTH_CLIENT_ID`/`_SECRET` (+ `GITHUB_MCP_URL`), `FIGMA_OAUTH_CLIENT_ID`/`_SECRET`/`FIGMA_OAUTH_SCOPE`/`FIGMA_MCP_URL`, `NOTION_MCP_URL`, `APPLE_MUSIC_TEAM_ID`/`_KEY_ID`/`_PRIVATE_KEY` |
 | Web search / deep research | `TAVILY_API_KEY` |
-| Voice (read-aloud/dictation) | `STT_PROVIDER`, `TTS_PROVIDER`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`/`_VOICE_ID`, `STT_MODEL`/`TTS_MODEL`/`TTS_VOICE` |
+| Voice (read-aloud/dictation) | `STT_PROVIDER`, `TTS_PROVIDER`, `GOOGLE_API_KEY` (Gemini TTS), `GOOGLE_TTS_MODEL`/`GOOGLE_TTS_VOICE`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`/`_VOICE_ID`, `STT_MODEL`/`TTS_MODEL`/`TTS_VOICE` |
 | Voice relay | `NEXT_PUBLIC_VOICE_RELAY_URL` (build-time gate), `VOICE_RELAY_URL`, `GEMINI_LIVE_API_KEY`, `ALLOWED_ORIGINS`, `RELAY_*` overrides |
 | Cloud Code | `CLOUD_CODE_SECRET`, `GITHUB_DISPATCH_TOKEN`, `CLOUD_CODE_REPO`, `GITHUB_APP_ID`/`GITHUB_APP_PRIVATE_KEY` (§9.3, the runner's narrowed git credential), `GITHUB_APP_WEBHOOK_SECRET` (§9.4 — without it Auto-fix is not offered) |
 | Work browser | `WORK_BROWSER_EXECUTABLE` (a Chromium the worker already has; without a browser on the worker the `browser` tool reports itself unavailable on its first call and the run carries on with `web_fetch`) |

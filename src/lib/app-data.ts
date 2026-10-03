@@ -5,7 +5,7 @@ import { listConversations } from "@/lib/queries";
 import { getQuota, planFromAccount } from "@/lib/usage";
 import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
 import { effectiveBudget } from "@/lib/spend-ceiling";
-import { env, isStripeConfigured, isStorageAvailable, isServerTtsConfigured } from "@/lib/env";
+import { isStripeConfigured, isStorageAvailable, isServerTtsConfigured, activeTtsProvider } from "@/lib/env";
 import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
@@ -207,8 +207,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       purchasableAnnualPlans: purchasablePlans("year"),
       serverStt: isAnySttAvailable(),
       serverTts: isServerTtsConfigured(),
-      // The voice picker lists OpenAI voices, so it must know which provider is live.
-      ttsProvider: isServerTtsConfigured() ? (env.voice.ttsProvider === "elevenlabs" ? "elevenlabs" : "openai") : null,
+      // The voice picker lists the live provider's voices, so it must know which that is.
+      ttsProvider: activeTtsProvider(),
       storage: isStorageAvailable(),
       // "Web is possible on this deployment" (SPEC §3.6): a provider with
       // native search, OR a keyed engine for Juno's own web_search — which is

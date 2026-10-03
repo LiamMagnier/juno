@@ -6,6 +6,10 @@
  * expose `isXConfigured()` helpers so the app can degrade gracefully.
  */
 
+import { providerApiKey } from "@/lib/providers";
+import { ttsProviderOrder } from "@/lib/tts-order";
+import type { TtsProvider } from "@/lib/voices";
+
 function required(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing required environment variable: ${name}`);
@@ -154,15 +158,25 @@ export const env = {
 
   // Voice (optional — falls back to the browser's Web Speech API, i.e. the OS
   // voice, which reads non-English text with an English accent and transcribes
-  // non-English speech poorly. Set STT_PROVIDER/TTS_PROVIDER to fix both.)
+  // non-English speech poorly. Read-aloud turns on by itself when the Google
+  // key is set (Gemini 3.8 Flash TTS); STT_PROVIDER enables dictation.)
   voice: {
     sttProvider: process.env.STT_PROVIDER, // "openai" | "deepgram"
-    ttsProvider: process.env.TTS_PROVIDER, // "openai" | "elevenlabs"
+    // Unset: Gemini when GOOGLE_API_KEY/GEMINI_API_KEY is set, then OpenAI, then
+    // ElevenLabs as fallbacks. Set to force one to the front (see tts-order.ts).
+    ttsProvider: process.env.TTS_PROVIDER, // "google" | "openai" | "elevenlabs"
+    // Gemini TTS reads each language natively (130+, auto-detected) and returns
+    // a complete WAV. gemini-3.8-flash-lite-tts is the cheaper sibling.
+    googleTtsModel: process.env.GOOGLE_TTS_MODEL || "gemini-3.8-flash-tts",
+    // Deliberately unvetted, like TTS_VOICE: lets an operator adopt a voice
+    // Google ships before voices.ts lists it.
+    googleTtsVoice: process.env.GOOGLE_TTS_VOICE || "Kore",
     openaiApiKey: process.env.OPENAI_API_KEY,
     // gpt-4o-transcribe is markedly more accurate than whisper-1 on French and
     // other non-English speech; override only to pin an older/cheaper model.
     sttModel: process.env.STT_MODEL || "gpt-4o-transcribe",
-    // gpt-4o-mini-tts speaks each language natively rather than transliterating.
+    // OpenAI's model and voice. gpt-4o-mini-tts speaks each language natively
+    // rather than transliterating.
     ttsModel: process.env.TTS_MODEL || "gpt-4o-mini-tts",
     ttsVoice: process.env.TTS_VOICE || "alloy",
     deepgramApiKey: process.env.DEEPGRAM_API_KEY,
@@ -319,9 +333,21 @@ export function isServerSttConfigured(): boolean {
   return false;
 }
 
-export function isServerTtsConfigured(): boolean {
+/** The server TTS engines to try, in order — empty when server TTS is off. */
+export function serverTtsOrder(): TtsProvider[] {
   const v = env.voice;
-  if (v.ttsProvider === "openai") return Boolean(v.openaiApiKey);
-  if (v.ttsProvider === "elevenlabs") return Boolean(v.elevenlabsApiKey);
-  return false;
+  return ttsProviderOrder(v.ttsProvider, {
+    google: Boolean(providerApiKey("google")),
+    openai: Boolean(v.openaiApiKey),
+    elevenlabs: Boolean(v.elevenlabsApiKey),
+  });
+}
+
+export function isServerTtsConfigured(): boolean {
+  return serverTtsOrder().length > 0;
+}
+
+/** The provider read-aloud uses when nothing fails — what the voice picker lists. */
+export function activeTtsProvider(): TtsProvider | null {
+  return serverTtsOrder()[0] ?? null;
 }
