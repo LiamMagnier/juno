@@ -325,42 +325,59 @@ function ModeThumb({ tone }: { tone: "light" | "dark" }) {
   );
 }
 
-function ThemeCards({ value, onChange }: { value: ClientSettings["theme"]; onChange: (v: ClientSettings["theme"]) => void }) {
-  const option = useRadioGroup(MODE_CARDS, MODE_CARDS.findIndex((m) => m.value === value), (m) => onChange(m.value));
+/**
+ * A visual choice: a thumbnail per option with its name under it, one radio
+ * group with the roving tab stop. Mode, chat font and transcript width are all
+ * drawn with it, so the three read as one control family. The selection is
+ * graphite (the foreground ink), not the accent: picking an accent should not
+ * recolour the cards that sit beside it.
+ */
+function ChoiceCards<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  className,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string; thumb: React.ReactNode }[];
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  const option = useRadioGroup(options, options.findIndex((o) => o.value === value), (o) => onChange(o.value));
   return (
-    <div role="radiogroup" aria-label="Mode" className="grid max-w-md grid-cols-3 gap-3">
-      {MODE_CARDS.map((mode, i) => {
-        const selected = mode.value === value;
+    <div role="radiogroup" aria-label={label} className={cn("grid gap-3", className)}>
+      {options.map((o, i) => {
+        const selected = o.value === value;
         return (
           <button
-            key={mode.value}
+            key={o.value}
             type="button"
             role="radio"
             aria-checked={selected}
-            onClick={() => onChange(mode.value)}
+            onClick={() => onChange(o.value)}
             {...option(i)}
-            className="group flex flex-col gap-2 text-left outline-none"
+            className="group flex min-w-0 flex-col gap-2 text-left outline-none"
           >
             <span
               className={cn(
-                "relative block aspect-[16/10] overflow-hidden rounded-field border transition-[box-shadow,border-color] duration-fast ease-out-soft",
+                "relative block aspect-[16/10] overflow-hidden rounded-field border transition-[box-shadow,border-color,transform] duration-base ease-out-soft group-active:scale-[0.98] motion-reduce:transition-none",
                 selected
-                  ? "border-primary shadow-[0_0_0_1px_hsl(var(--primary))]"
-                  : "border-border group-hover:border-foreground/25",
+                  ? "border-foreground shadow-[0_0_0_1px_hsl(var(--foreground))]"
+                  : "border-border group-hover:-translate-y-px group-hover:border-foreground/30 motion-reduce:group-hover:translate-y-0",
                 "group-focus-visible:shadow-[0_0_0_2px_hsl(var(--ring))]"
               )}
             >
-              {mode.value === "system" ? (
-                <span className="absolute inset-0 flex">
-                  <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 w-[200%]"><ModeThumb tone="light" /></span></span>
-                  <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 -left-full w-[200%]"><ModeThumb tone="dark" /></span></span>
-                </span>
-              ) : (
-                <ModeThumb tone={mode.value} />
-              )}
+              {o.thumb}
             </span>
-            <span className={cn("text-ui transition-colors duration-fast", selected ? "font-medium text-foreground" : "text-muted-foreground group-hover:text-foreground")}>
-              {mode.label}
+            <span
+              className={cn(
+                "truncate text-ui transition-colors duration-fast",
+                selected ? "font-medium text-foreground" : "text-muted-foreground group-hover:text-foreground"
+              )}
+            >
+              {o.label}
             </span>
           </button>
         );
@@ -369,23 +386,76 @@ function ThemeCards({ value, onChange }: { value: ClientSettings["theme"]; onCha
   );
 }
 
+function ThemeCards({ value, onChange }: { value: ClientSettings["theme"]; onChange: (v: ClientSettings["theme"]) => void }) {
+  return (
+    <ChoiceCards
+      label="Mode"
+      value={value}
+      onChange={onChange}
+      className="max-w-md grid-cols-3"
+      options={MODE_CARDS.map((mode) => ({
+        value: mode.value,
+        label: mode.label,
+        thumb:
+          mode.value === "system" ? (
+            <span className="absolute inset-0 flex">
+              <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 w-[200%]"><ModeThumb tone="light" /></span></span>
+              <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 -left-full w-[200%]"><ModeThumb tone="dark" /></span></span>
+            </span>
+          ) : (
+            <ModeThumb tone={mode.value} />
+          ),
+      }))}
+    />
+  );
+}
+
 /* ——— Reading: chat font, width, motion (this device) ——————————————————— */
 
-const FONT_OPTIONS: { value: ChatFont; label: string }[] = [
-  { value: "default", label: "Default" },
-  { value: "system", label: "System" },
-  { value: "serif", label: "Serif" },
-  { value: "mono", label: "Mono" },
+const FONT_OPTIONS: { value: ChatFont; label: string; className?: string; style?: React.CSSProperties }[] = [
+  { value: "default", label: "Default", className: "font-sans" },
+  { value: "system", label: "System", style: { fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif' } },
+  { value: "serif", label: "Serif", className: "font-serif" },
+  { value: "mono", label: "Mono", className: "font-mono" },
 ];
-const WIDTH_OPTIONS: { value: TranscriptWidth; label: string }[] = [
-  { value: "narrow", label: "Narrow" },
-  { value: "medium", label: "Medium" },
-  { value: "wide", label: "Wide" },
+const WIDTH_OPTIONS: { value: TranscriptWidth; label: string; measure: string }[] = [
+  { value: "narrow", label: "Narrow", measure: "w-[42%]" },
+  { value: "medium", label: "Medium", measure: "w-[60%]" },
+  { value: "wide", label: "Wide", measure: "w-[82%]" },
 ];
 const MOTION_OPTIONS: { value: MotionPref; label: string }[] = [
   { value: "system", label: "System" },
   { value: "reduced", label: "Reduced" },
 ];
+
+/** A specimen of a chat face: the letters, then two lines of a reply. */
+function FontThumb({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <span className="flex h-full w-full flex-col justify-center gap-1.5 bg-muted/40 px-3">
+      <span className={cn("text-title leading-none text-foreground", className)} style={style}>
+        Aa
+      </span>
+      <span className="flex flex-col gap-1">
+        <span className="h-1 w-4/5 rounded-full bg-foreground/15" />
+        <span className="h-1 w-3/5 rounded-full bg-foreground/10" />
+      </span>
+    </span>
+  );
+}
+
+/** The transcript at a width: the reply's measure and the composer under it. */
+function WidthThumb({ measure }: { measure: string }) {
+  return (
+    <span className="flex h-full w-full flex-col items-center justify-between bg-muted/40 py-2.5">
+      <span className={cn("flex flex-col gap-1 transition-[width] duration-base ease-out-soft", measure)}>
+        <span className="h-1 w-full rounded-full bg-foreground/20" />
+        <span className="h-1 w-11/12 rounded-full bg-foreground/15" />
+        <span className="h-1 w-2/3 rounded-full bg-foreground/10" />
+      </span>
+      <span className={cn("h-2.5 rounded-sm border border-foreground/15 bg-background", measure)} />
+    </span>
+  );
+}
 
 function ReadingGroup() {
   const [chatFont, setChatFont] = useUiPref("chatFont");
@@ -393,28 +463,24 @@ function ReadingGroup() {
   const [motion, setMotion] = useUiPref("motion");
   return (
     <SettingsGroup title="Reading" description="Set for this device only.">
-      <SettingRow
-        label="Chat font"
-        description="The typeface replies and your messages are set in."
-        wide
-        control={
-          <SegmentedControl
-            ariaLabel="Chat font"
-            value={chatFont}
-            onChange={setChatFont}
-            options={FONT_OPTIONS}
-            className="w-full @[34rem]/pane:w-auto"
-          />
-        }
-      />
-      <SettingRow
-        label="Transcript width"
-        description="How wide the conversation and the composer can grow."
-        wide
-        control={
-          <SegmentedControl ariaLabel="Transcript width" value={width} onChange={setWidth} options={WIDTH_OPTIONS} className="w-full @[34rem]/pane:w-auto" />
-        }
-      />
+      <SettingBlock label="Chat font" description="The typeface replies and your messages are set in.">
+        <ChoiceCards
+          label="Chat font"
+          value={chatFont}
+          onChange={setChatFont}
+          className="grid-cols-2 @[30rem]/pane:grid-cols-4"
+          options={FONT_OPTIONS.map((f) => ({ value: f.value, label: f.label, thumb: <FontThumb className={f.className} style={f.style} /> }))}
+        />
+      </SettingBlock>
+      <SettingBlock label="Transcript width" description="How wide the conversation and the composer can grow.">
+        <ChoiceCards
+          label="Transcript width"
+          value={width}
+          onChange={setWidth}
+          className="max-w-md grid-cols-3"
+          options={WIDTH_OPTIONS.map((w) => ({ value: w.value, label: w.label, thumb: <WidthThumb measure={w.measure} /> }))}
+        />
+      </SettingBlock>
       <SettingRow
         label="Motion"
         description="Reduce animation in streaming replies and across the interface."

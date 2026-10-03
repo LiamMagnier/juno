@@ -72,7 +72,28 @@ export function SettingsRail({
 }) {
   const reduce = useReducedMotion() ?? false;
   const listRef = React.useRef<HTMLDivElement>(null);
+  const searchRef = React.useRef<HTMLInputElement>(null);
   const [query, setQuery] = React.useState("");
+
+  // "/" puts the cursor in the search field, as it does in most full-window
+  // settings, unless the reader is already typing somewhere.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input,textarea,select,[contenteditable=true],[role=menu],[role=listbox]")) return;
+      const field = searchRef.current;
+      // Not while the field is hidden (the stacked strip has no search).
+      if (!field || field.offsetParent === null) return;
+      // Inside a dialog, only the dialog the rail itself lives in (the modal).
+      const dialog = target?.closest("[role=dialog]");
+      if (dialog && !dialog.contains(field)) return;
+      e.preventDefault();
+      field.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const q = query.trim().toLowerCase();
   /** The rail in group order, filtered by the search field (label or keywords). */
   const groups = React.useMemo(
@@ -187,20 +208,39 @@ export function SettingsRail({
   /** The search field and group heads exist only as a column; as a strip the
    *  rail is one flat scroller, where a heading would be a stray word. */
   const searchField = (
-    <div className="relative mb-3 @[16rem]/rail:hidden">
-      <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    <div className="group/search relative mb-4 @[16rem]/rail:hidden">
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors duration-fast ease-out-soft group-focus-within/search:text-foreground"
+      />
       <input
+        ref={searchRef}
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          // Esc clears a query first, then lets go of the field; it never
+          // reaches the page's own Esc (which leaves settings) from here.
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          if (query) setQuery("");
+          else e.currentTarget.blur();
+        }}
         placeholder="Search settings"
         aria-label="Search settings"
-        className="h-8 w-full rounded-control border border-transparent bg-foreground/[0.05] pl-8 pr-2.5 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground hover:bg-foreground/[0.07] focus:border-border focus:bg-background coarse:h-11 [&::-webkit-search-cancel-button]:hidden"
+        className="peer h-9 w-full rounded-control border border-transparent bg-foreground/[0.045] pl-8 pr-8 text-ui text-foreground outline-none transition-[background-color,border-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:bg-foreground/[0.07] focus:border-border focus:bg-background focus:shadow-[0_1px_2px_hsl(var(--foreground)/0.06)] coarse:h-11 [&::-webkit-search-cancel-button]:hidden"
       />
+      {/* The key that opens the field, shown only while it is empty and idle. */}
+      <kbd
+        aria-hidden="true"
+        className="pointer-events-none absolute right-2 top-1/2 grid h-5 min-w-5 -translate-y-1/2 place-items-center rounded-xs border border-border/80 px-1 font-mono text-micro leading-none text-muted-foreground transition-opacity duration-fast ease-out-soft peer-focus:opacity-0 peer-[:not(:placeholder-shown)]:opacity-0 coarse:hidden"
+      >
+        /
+      </kbd>
     </div>
   );
   const groupLabel = (label: string) => (
-    <p className="px-2.5 pb-1 pt-3 text-caption font-medium text-muted-foreground first:pt-0 @[16rem]/rail:hidden" aria-hidden="true">
+    <p className="ed-annot px-2.5 pb-1.5 pt-5 first:pt-0 @[16rem]/rail:hidden" aria-hidden="true">
       {label}
     </p>
   );

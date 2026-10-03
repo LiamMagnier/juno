@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { StatusIcons } from "@/lib/app-icons";
-import { transition } from "@/lib/motion";
+import { spring, transition } from "@/lib/motion";
 
 export type SaveState = "idle" | "saving" | "saved" | "failed";
 
@@ -18,8 +18,9 @@ const FAILED_HOLD_MS = 5000;
  * It sits beside the row's label rather than beside the control, so its
  * arrival moves nothing the pointer is on. Saving shows nothing: every write
  * is optimistic, the control already shows the new value, and a spinner that
- * flashes for 80ms reads as a glitch. Success is a check and one word that
- * fade in on the fast rung and out on the exit rung. Failure says so in the
+ * flashes for 80ms reads as a glitch. Success is a check that lands with a
+ * small settle and one word that slides in beside it, then both fade out on
+ * the exit rung. Failure says so in the
  * destructive ink and stays a little longer; the toast from
  * `useSettingsSave` carries the server's reason.
  *
@@ -27,29 +28,32 @@ const FAILED_HOLD_MS = 5000;
  * only the words inside it come and go.
  */
 export function SaveStatus({ state }: { state: SaveState }) {
+  const reduce = useReducedMotion() ?? false;
+  // The words slide in a few pixels from the label they sit beside, and the
+  // mark lands with a small settle a beat ahead of them: one small event,
+  // read left to right. Under reduced motion both simply fade.
+  const word = {
+    initial: reduce ? { opacity: 0 } : { opacity: 0, x: -4, filter: "blur(2px)" },
+    animate: { opacity: 1, x: 0, filter: "blur(0px)", transition: transition.base },
+    exit: { opacity: 0, transition: transition.exit },
+  };
+  const mark = {
+    initial: reduce ? { opacity: 0 } : { opacity: 0, scale: 0.4, rotate: -30 },
+    animate: { opacity: 1, scale: 1, rotate: 0, transition: reduce ? transition.fast : spring.emphasized },
+  };
   return (
     <span role="status" aria-live="polite" className="inline-flex shrink-0 items-center text-caption">
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} mode="wait">
         {state === "saved" && (
-          <motion.span
-            key="saved"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: transition.fast }}
-            exit={{ opacity: 0, transition: transition.exit }}
-            className="inline-flex items-center gap-1 text-muted-foreground"
-          >
-            <StatusIcons.success className="size-3.5 text-success-ink" aria-hidden />
+          <motion.span key="saved" {...word} className="inline-flex items-center gap-1 text-muted-foreground">
+            <motion.span {...mark} className="inline-flex">
+              <StatusIcons.success className="size-3.5 text-success-ink" aria-hidden />
+            </motion.span>
             Saved
           </motion.span>
         )}
         {state === "failed" && (
-          <motion.span
-            key="failed"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: transition.fast }}
-            exit={{ opacity: 0, transition: transition.exit }}
-            className="inline-flex items-center gap-1 text-destructive-ink"
-          >
+          <motion.span key="failed" {...word} className="inline-flex items-center gap-1 text-destructive-ink">
             <StatusIcons.error className="size-3.5" aria-hidden />
             Not saved
           </motion.span>

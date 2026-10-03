@@ -69,13 +69,14 @@ test("a titled SettingsGroup draws its title, its note and its aside", () => {
   assert.ok(/<h3[^>]*>Connected apps<\/h3>/.test(html));
   assert.ok(html.includes("The lede."));
   assert.ok(html.includes('data-aside=""'));
-  // The September 2026 settings rework: a group is named in the interface's
-  // own sans, a step above its rows, and its note is quieter than the rows it
-  // introduces. It was a 12px mono eyebrow over a 15px note, which read as
-  // developer metadata over a louder paragraph.
+  // The October 2026 editorial pass: a group is named in the document serif
+  // (the editorial kit's ed-h3, as Memory and Instructions name their blocks),
+  // a step above its rows, and its note is quieter than the rows it
+  // introduces. It was once a 12px mono eyebrow over a 15px note, which read
+  // as developer metadata over a louder paragraph.
   const h3 = html.match(/<h3 class="([^"]*)"/)?.[1] ?? "";
   assert.ok(!/font-mono/.test(h3), "the group title is not set in mono");
-  assert.ok(/text-body-lg/.test(h3) && /font-semibold/.test(h3), "the group title sits a step above the row labels");
+  assert.ok(/\bed-h3\b/.test(h3), "the group title is the editorial serif, a step above the row labels");
   assert.ok(/<p class="[^"]*text-ui[^"]*">The lede\.<\/p>/.test(html), "the group note is on the text-ui rung");
 });
 
@@ -126,9 +127,10 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
   // the sharing itself: the heading bar takes its height from `text-title` in
   // em, and loading.tsx holds none of those numbers by hand.
   //
-  // The pane header is the section's name and nothing else since the
-  // September 2026 rework (its lede was a table of contents for the groups
-  // under it), so the skeleton draws no lede bar either.
+  // The pane header is the section's name in the serif (ed-h2) and a one-line
+  // lede on what the section is for since the October 2026 editorial pass,
+  // so the skeleton draws a heading bar in the serif's line box and one
+  // text-body bar for the lede.
   const settingRow = fs.readFileSync(SETTING_ROW, "utf8");
   const loading = fs.readFileSync(SETTINGS_LOADING, "utf8");
 
@@ -136,8 +138,8 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
     /export function SettingsPaneHeaderSkeleton/.test(settingRow),
     "the pane header's skeleton lives beside the pane header"
   );
-  assert.ok(/h-\[1\.25em\] w-32 text-title/.test(settingRow), "heading bar tracks the text-title line box");
-  assert.ok(!/mt-1 h-6 w-72/.test(settingRow), "no lede bar for a header that has no lede");
+  assert.ok(/h-\[1\.15em\] w-40 ed-h2/.test(settingRow), "heading bar tracks the ed-h2 line box");
+  assert.ok(/mt-2 h-\[1\.6em\] w-80 max-w-full rounded-xs text-body/.test(settingRow), "lede bar is one text-body line box");
   assert.ok(/SettingsPaneHeaderSkeleton/.test(loading), "loading.tsx imports the shared skeleton");
   assert.ok(
     !/border-b border-border pb-4/.test(loading),

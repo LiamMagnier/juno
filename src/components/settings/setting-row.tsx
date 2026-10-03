@@ -26,12 +26,15 @@ import { cn } from "@/lib/utils";
  * now draw one picture. The only lines inside a card are the hairlines between
  * its rows.
  *
- * The type ladder, top down: the pane's section name at `text-title`, a
- * group's title at `text-body-lg` semibold, a row's label at `text-body` medium,
- * and every note, group or row, at `text-ui` in muted ink. A group's note is
- * deliberately quieter than the rows under it; it used to be `text-body`, as
- * loud as the labels it introduced. The group title was a 12px mono eyebrow,
- * which read as developer metadata rather than as the name of a group.
+ * The type ladder, top down (the editorial pass, October 2026): the pane's
+ * section name in the serif at `ed-h2` with a one-line lede under it, a
+ * group's title in the serif at `ed-h3`, a row's label at `text-body` medium,
+ * and every note, group or row, at `text-ui` in muted ink. The serif is the
+ * document voice the editorial pages (Memory, Instructions, Routines) set, so
+ * settings read as the same kind of page; the rows and their controls stay in
+ * the interface sans. The `ed-*` classes come from editorial.css, which
+ * settings-pane.tsx loads (this module stays free of CSS imports so the
+ * render tests can load it under plain Node).
  */
 /**
  * The grouped card a SettingsGroup draws its rows in. Exported so a skeleton
@@ -72,12 +75,12 @@ export function SettingsGroup({
   const hasHeader = title != null || Boolean(description) || aside != null;
   return (
     // The irreversible group stands a little further off the groups above it.
-    <section className={cn("pt-8 first:pt-0", tone === "destructive" && "pt-12", className)}>
+    <section className={cn("pt-10 first:pt-0", tone === "destructive" && "pt-14", className)}>
       {hasHeader && (
-        <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-2.5">
+        <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-3">
           <div className="min-w-0 flex-1">
-            {title != null && <h3 className="text-body-lg font-semibold text-foreground">{title}</h3>}
-            {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
+            {title != null && <h3 className="ed-h3 text-foreground">{title}</h3>}
+            {description && <p className="mt-1 max-w-[36rem] text-pretty text-ui text-muted-foreground">{description}</p>}
           </div>
           {aside && <div className="flex shrink-0 items-center gap-3">{aside}</div>}
         </div>
@@ -136,7 +139,7 @@ export function SettingRow({
     <div className={cn("py-4", className)}>
       <div
         className={cn(
-          "flex items-center justify-between gap-x-6 gap-y-3",
+          "flex items-center justify-between gap-x-8 gap-y-3",
           wide && "flex-col items-stretch @[34rem]/pane:flex-row @[34rem]/pane:items-center"
         )}
       >
@@ -153,7 +156,7 @@ export function SettingRow({
             </Label>
             {status !== undefined && <SaveStatus state={status} />}
           </div>
-          {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
+          {description && <p className="mt-0.5 max-w-[34rem] text-pretty text-ui text-muted-foreground">{description}</p>}
         </div>
         {control && (
           <div className={cn("flex shrink-0 items-center gap-2", wide && "min-w-0 @[34rem]/pane:justify-end")}>
@@ -201,31 +204,30 @@ export function SettingBlock({
 }
 
 /**
- * The pane's opening: the section's name, and nothing else.
- *
- * It used to carry a lede and a full-width rule. The lede was a table of
- * contents for the groups directly below it ("Theme, accent, language and
- * text size." over groups titled Appearance and Language), and on the page
- * the rule sat 80px under the page header's own. The groups name themselves.
+ * The pane's opening: the section's name in the serif, and one line on what
+ * the section is FOR (not a list of the groups under it, which name
+ * themselves). The lede is optional: a caller with nothing to add passes none.
  */
-export function SettingsPaneHeader({ title }: { title: React.ReactNode }) {
+export function SettingsPaneHeader({ title, lede }: { title: React.ReactNode; lede?: React.ReactNode }) {
   return (
-    <header className="mb-7">
-      <h2 className="text-title">{title}</h2>
+    <header className="mb-10">
+      <h2 className="ed-h2 text-foreground">{title}</h2>
+      {lede && <p className="mt-2 max-w-[34rem] text-pretty text-body text-muted-foreground">{lede}</p>}
     </header>
   );
 }
 
 /**
  * The pane header's placeholder, drawn from the header's own metrics.
- * `h-[1.25em]` on an element carrying `text-title` is that rung's line box
- * expressed in the token itself, so the placeholder cannot drift from the
- * heading it stands in for.
+ * `h-[1.15em]` on an element carrying `ed-h2` is that heading's line box
+ * expressed in the class itself, and the lede bar is one `text-body` line at
+ * the lede's `mt-2`, so the placeholder cannot drift from what replaces it.
  */
 export function SettingsPaneHeaderSkeleton() {
   return (
-    <header className="mb-7" aria-hidden="true">
-      <Skeleton className="h-[1.25em] w-32 text-title" />
+    <header className="mb-10" aria-hidden="true">
+      <Skeleton className="h-[1.15em] w-40 ed-h2" />
+      <Skeleton className="mt-2 h-[1.6em] w-80 max-w-full rounded-xs text-body" />
     </header>
   );
 }

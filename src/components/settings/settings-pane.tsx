@@ -17,7 +17,11 @@ import { DataPrivacySection } from "@/components/settings/sections/data-privacy"
 import { AccountSection } from "@/components/settings/sections/account";
 import { BillingSection } from "@/components/settings/sections/billing";
 import { duration, ease, transition } from "@/lib/motion";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 import { cn } from "@/lib/utils";
+// The serif and mono of the editorial kit (ed-h2, ed-h3, ed-annot, ed-stagger)
+// that the settings primitives are set in.
+import "@/components/app/editorial.css";
 
 const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   general: GeneralSection,
@@ -34,6 +38,27 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   notifications: NotificationsSection,
   capabilities: CapabilitiesSection,
   keyboard: KeyboardSection,
+};
+
+/**
+ * One line under each section's name on what the section is for. Purpose,
+ * not a table of contents: the groups below name themselves.
+ */
+const SECTION_LEDES: Record<SettingsSectionId, string> = {
+  general: "The language the interface speaks, and the way to everything else.",
+  appearance: `How ${PRODUCT_NAME} looks, and how its replies read.`,
+  notifications: `When ${PRODUCT_NAME} should reach you, here and in your inbox.`,
+  personalization: `What ${PRODUCT_NAME} knows about you, and how it answers.`,
+  keyboard: "Sending, and every shortcut worth knowing.",
+  capabilities: "What a reply can reach for without being asked.",
+  memory: `What ${PRODUCT_NAME} carries from one conversation to the next.`,
+  models: "Which models answer, and where each new message starts.",
+  connectors: `The apps ${PRODUCT_NAME} can read from and act in, and what it asks first.`,
+  voice: "The voice that reads replies aloud, and how it listens.",
+  devices: `The Macs ${PRODUCT_NAME} can work on, and what it may do there.`,
+  data: "Your conversations: take them with you, bring them in, or let them go.",
+  account: "Who you are here, how you sign in, and the way out.",
+  billing: "Your plan, what you have used, and the ceiling you set.",
 };
 
 /**
@@ -119,15 +144,22 @@ export function SettingsPane({
   return (
     <div
       ref={rootRef}
-      className={className}
+      // `ed` scopes the editorial kit's variables (its easing, its hairlines),
+      // which the stagger below reads.
+      className={cn("ed", className)}
       role={tabpanel ? "tabpanel" : "region"}
       id={tabpanel ? settingsPanelId(section) : undefined}
       aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
     >
       <SettingsPaneHeader
         title={
-          <span key={section} id={headingId} className={cn(switched && "motion-safe:animate-fade-in")}>
+          <span key={section} id={headingId} className={cn("block", switched && "motion-safe:animate-fade-in")}>
             {meta.label}
+          </span>
+        }
+        lede={
+          <span key={section} className={cn("block", switched && "motion-safe:animate-fade-in")}>
+            {SECTION_LEDES[section]}
           </span>
         }
       />
@@ -138,7 +170,10 @@ export function SettingsPane({
           initial="hidden"
           animate="visible"
           exit="exit"
-          className="min-w-0"
+          // The groups arrive one after another (the editorial kit's stagger,
+          // nothing under reduced motion): each section's root is a fragment
+          // of SettingsGroups, so they are this wrapper's children.
+          className="ed-stagger min-w-0"
         >
           <Section />
         </motion.div>
