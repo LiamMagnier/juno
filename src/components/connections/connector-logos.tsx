@@ -22,11 +22,6 @@ import { cn } from "@/lib/utils";
  * drawing the rest of the product uses for the same idea.
  */
 
-/** A gradient id that is valid inside `url(#…)` whatever `useId` returns. */
-function useSvgId(prefix: string) {
-  return `${prefix}-${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-}
-
 export function GitHubMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" className={className}>
@@ -66,80 +61,27 @@ export function NotionMark({ className }: { className?: string }) {
   );
 }
 
-/*
- * The three Apple apps are drawn as their app icons — a 64-unit rounded
- * square — because the icon IS the brand mark for a first-party app.
+/**
+ * Apple's own app icons (from the macOS apps, cropped to the squircle), so
+ * Calendar, Mail and Music look exactly like they do in the Dock.
  */
-/** iOS's corner is ~22.5% of the side; a plain rx reads the same at 22px. */
-const APPLE_ICON_RADIUS = 14.4;
+function AppleAppIcon({ name, className }: { name: "calendar" | "mail" | "music"; className?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- a 128px static asset; next/image adds nothing here
+    <img src={`/brand/apps/apple-${name}.png`} alt="" aria-hidden="true" draggable={false} className={cn("object-contain", className)} />
+  );
+}
 
 export function AppleCalendarMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
-      <rect x=".5" y=".5" width="63" height="63" rx={APPLE_ICON_RADIUS} fill="#fff" stroke="#000" strokeOpacity=".12" />
-      <text
-        x="32"
-        y="20"
-        textAnchor="middle"
-        fill="#FF3B30"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif"
-        fontSize="11"
-        fontWeight="600"
-        letterSpacing=".4"
-      >
-        MON
-      </text>
-      <text
-        x="32"
-        y="49"
-        textAnchor="middle"
-        fill="#1C1C1E"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
-        fontSize="31"
-        fontWeight="300"
-        letterSpacing="-1"
-      >
-        17
-      </text>
-    </svg>
-  );
+  return <AppleAppIcon name="calendar" className={className} />;
 }
 
 export function AppleMailMark({ className }: { className?: string }) {
-  const id = useSvgId("apple-mail");
-  return (
-    <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#1AD6FD" />
-          <stop offset="1" stopColor="#1D62F0" />
-        </linearGradient>
-      </defs>
-      <rect width="64" height="64" rx={APPLE_ICON_RADIUS} fill={`url(#${id})`} />
-      <rect x="12" y="19" width="40" height="27" rx="3.5" fill="#fff" />
-      <path d="M13.5 21 32 35.5 50.5 21" fill="none" stroke="#1D62F0" strokeOpacity=".28" strokeWidth="1.6" strokeLinejoin="round" />
-    </svg>
-  );
+  return <AppleAppIcon name="mail" className={className} />;
 }
 
 export function AppleMusicMark({ className }: { className?: string }) {
-  const id = useSvgId("apple-music");
-  return (
-    <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FA5A6E" />
-          <stop offset="1" stopColor="#FA233B" />
-        </linearGradient>
-      </defs>
-      <rect width="64" height="64" rx={APPLE_ICON_RADIUS} fill={`url(#${id})`} />
-      <g fill="#fff" transform="translate(3 2)">
-        <path d="M24.5 22.2 43.5 17v22.5h-3V22.1l-13 3.5v18h-3z" />
-        <ellipse cx="21" cy="43.6" rx="6.2" ry="4.7" transform="rotate(-20 21 43.6)" />
-        <ellipse cx="37" cy="39.5" rx="6.2" ry="4.7" transform="rotate(-20 37 39.5)" />
-      </g>
-    </svg>
-  );
+  return <AppleAppIcon name="music" className={className} />;
 }
 
 export function LinearMark({ className }: { className?: string }) {
