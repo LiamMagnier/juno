@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { DotRings } from "@/components/home/dot-construction";
 
 /**
  * What Alevr remembers, drawn as the homepage's construction: nested orbits
- * at a 1.5 ratio around you, one point per topic. A topic's distance from the
+ * at a 1.5 ratio around you, in the dot matrix, one point per topic. A topic's distance from the
  * centre is its rank (the topics Alevr knows most about sit closest), its size
  * is how many memories it holds. The one presence trajectory travels to the
  * topic of the most recent memory, the only live object in the frame.
@@ -31,6 +32,8 @@ const ORBITS = [0, 1, 2, 3].map((k) => {
   const rx = BASE * RATIO ** k;
   return { rx, ry: rx * FLAT };
 });
+/** The orbits for the dot matrix, as fractions of the drawing's box. */
+const DOT_RINGS = ORBITS.map(({ rx, ry }, k) => ({ rx: rx / W, ry: ry / H, faint: k === 3 }));
 /** How many topics the second and third orbits hold; the rest share the fourth. */
 const CAPACITY = [2, 3];
 /** Each orbit starts its points at a different angle so no two line up on a spoke. */
@@ -40,15 +43,6 @@ function at(orbit: number, deg: number) {
   const { rx, ry } = ORBITS[orbit];
   const t = (deg * Math.PI) / 180;
   return { x: CX + rx * Math.cos(t), y: CY + ry * Math.sin(t) };
-}
-
-function arc(orbit: number, from: number, to: number, steps = 36) {
-  const pts: string[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const p = at(orbit, from + ((to - from) * i) / steps);
-    pts.push(`${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
-  }
-  return `M${pts.join("L")}`;
 }
 
 interface Placed extends ConstellationTopic {
@@ -115,38 +109,25 @@ export function MemoryConstellation({
   const live = placed.find((p) => p.id === liveTopicId) ?? null;
   const [peek, setPeek] = React.useState<string | null>(null);
   const peeked = placed.find((p) => p.id === peek) ?? null;
+  // Spokes and the trajectory are dots, drawn under the points: a spoke lifts
+  // when its topic is hovered, focused or open in the list below.
+  const lit = peek ?? activeId;
+  const lines = React.useMemo(
+    () => placed.map((p) => ({ x1: 0.5, y1: 0.5, x2: p.x / W, y2: p.y / H, strength: p.id === lit ? 0.46 : 0.16 })),
+    [placed, lit],
+  );
+  const arcs = React.useMemo(() => (live ? [{ ring: live.orbit, from: live.deg - 64, to: live.deg }] : undefined), [live]);
 
   return (
     <div className="relative">
+    <DotRings rings={DOT_RINGS} lines={lines} arcs={arcs} className="mem-dots" />
     <svg
       viewBox={`0 0 ${W} ${H}`}
       role="group"
       aria-label="Your topics"
-      className="h-auto w-full overflow-visible"
+      className="relative h-auto w-full overflow-visible"
       preserveAspectRatio="xMidYMid meet"
     >
-      {ORBITS.map(({ rx, ry }, k) => (
-        <ellipse
-          key={k}
-          cx={CX}
-          cy={CY}
-          rx={rx}
-          ry={ry}
-          pathLength={1}
-          aria-hidden="true"
-          className={`mem-orbit mem-draw ${k === 3 ? "mem-orbit-faint" : ""}`}
-          style={{ ["--i" as string]: k }}
-        />
-      ))}
-      {live && (
-        <path
-          d={arc(live.orbit, live.deg - 64, live.deg)}
-          pathLength={1}
-          aria-hidden="true"
-          className="mem-trajectory mem-draw"
-          style={{ ["--i" as string]: 8 }}
-        />
-      )}
 
       <circle cx={CX} cy={CY} r={3} aria-hidden="true" className="mem-center mem-pop" />
       <text x={CX} y={CY + 20} textAnchor="middle" aria-hidden="true" className="mem-label mem-pop">
@@ -177,7 +158,6 @@ export function MemoryConstellation({
               }
             }}
           >
-            <line x1={CX} y1={CY} x2={p.x} y2={p.y} className="mem-spoke" aria-hidden="true" />
             {isLive && (
               <>
                 <circle cx={p.x} cy={p.y} r={p.r + 7} className="mem-node-ring mem-breathe" aria-hidden="true" />

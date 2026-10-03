@@ -7,6 +7,7 @@ import "@/components/ui/juno-icons/icons.css";
 // pages draw the construction behind their headers (page-backdrop.tsx) and
 // tests load those components without a CSS loader.
 import "@/components/home/alv-base.css";
+import "@/components/home/dot-construction.css";
 import "@/components/app/editorial.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";

@@ -23,12 +23,14 @@ export function EmptyGreeting() {
 }
 
 /**
- * The home's field: the homepage's construction, centred on the composer the
- * way the hero's product window sits on its orbits. The number line runs
- * through the composer, the orbits open around it, and the one presence
- * trajectory ends past ℵ₃, the frame's one live object. Drawn once when the
- * home arrives (alv-draw), faint, masked to an ellipse so it never reaches
- * the sidebar or the header band. Decorative.
+ * The home's field: the homepage's construction as a dot matrix, centred on
+ * the composer the way the hero's product window sits on its orbits. The
+ * number line crosses the composer on the diagonal, the orbits open around
+ * it, and the one presence trajectory travels the fourth orbit, the frame's
+ * one live object. No ℵ marks: at this size they crowd the greeting. It draws itself on when the home arrives, faint, masked to
+ * an ellipse so it never reaches the sidebar or the header band; it pauses
+ * whenever it is hidden or off screen. No pointer parallax in the product.
+ * Decorative.
  */
 export function HomeField({ visible = true }: { visible?: boolean }) {
   return (
@@ -39,14 +41,14 @@ export function HomeField({ visible = true }: { visible?: boolean }) {
         visible ? "opacity-100" : "opacity-0",
       )}
     >
-      <Construction />
+      <Construction ticks={false} paused={!visible} />
     </div>
   );
 }
 
 /**
  * Incognito's quiet field: the homepage construction (nested orbits on a
- * number line) drawn still and very faint, centred on the mark, so the mark
+ * number line, in dots) drawn still and very faint, centred on the mark, so the mark
  * sits at the origin of the brand's own drawing. No trajectory and no ticks:
  * presence blue means something live, and a private chat has nothing live to
  * show. Static (no draw-on), masked to a soft ellipse so it never reaches the
@@ -57,8 +59,8 @@ function PrivateField() {
     <div
       aria-hidden="true"
       className={cn(
-        "alv pointer-events-none absolute left-1/2 top-6 -z-10 aspect-[3/2] w-[36rem] sm:w-[56rem] -translate-x-1/2 -translate-y-1/2 opacity-50 [&.alv]:bg-transparent",
-        "[mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_12%,transparent_72%)] [&_svg]:size-full",
+        "alv pointer-events-none absolute left-1/2 top-6 -z-10 aspect-[3/2] w-[36rem] sm:w-[56rem] -translate-x-1/2 -translate-y-1/2 opacity-60 [&.alv]:bg-transparent",
+        "[mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_12%,transparent_72%)]",
       )}
     >
       <Construction animate={false} ticks={false} trajectory={false} />

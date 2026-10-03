@@ -68,32 +68,25 @@
 .alv-ghost-btn:active { transform: scale(.97); }
 .alv-ghost-btn:focus-visible { outline: 2px solid var(--alv-ink); outline-offset: 2px; }
 
-/* The construction: hairline orbits, one trajectory. */
-.alv-orbit { fill: none; stroke: var(--alv-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.alv-orbit-faint { stroke: var(--alv-hair); }
-.alv-axis { stroke: var(--alv-hair); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.alv-trajectory { fill: none; stroke: var(--alv-presence); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linecap: round; }
-.alv-node { fill: var(--alv-presence); }
-.alv-node-ring { fill: none; stroke: var(--alv-presence); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .35; }
-.alv-tick { fill: var(--alv-sub); font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .02em; }
+/* The construction is a dot matrix now (dot-construction.css); each surface below only places it. */
 @media (prefers-reduced-motion: no-preference) {
-  .alv-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: alv-draw 2200ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 110ms + 200ms); }
-  .alv-fade-late { opacity: 0; animation: alv-fade 900ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 110ms + 1300ms); }
   .alv-enter { opacity: 0; transform: translateY(24px); animation: alv-enter 1000ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
 }
-@keyframes alv-draw { to { stroke-dashoffset: 0; } }
-@keyframes alv-fade { to { opacity: 1; } }
 @keyframes alv-enter { to { opacity: 1; transform: none; } }
 
 
 /* ───────────────────── Access (sign in, sign up, recovery) ───────────────────── */
 .alv-access { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 13fr); min-height: 100dvh; }
-.alv-access-panel { position: sticky; top: 0; height: calc(100dvh - 24px); margin: 12px 0 12px 12px; border-radius: 24px; background: #111213; color: #e8e9eb; overflow: hidden; isolation: isolate; display: flex; flex-direction: column; justify-content: space-between; padding: 24px 40px 48px;
-  --alv-line: rgb(255 255 255 / .13); --alv-hair: rgb(255 255 255 / .07); --alv-presence: #97a6e6; --alv-sub: #95979c; }
-.alv-access-panel::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(70% 50% at 80% 10%, rgb(151 166 230 / .13), transparent 70%); }
+/* The panel is the deep ground (dot-construction.css .alv-deep): the drawing at
+   the prototype's scale (innermost orbit ~7.5% of the panel's width), its
+   centre a little above the middle, giving way before the promise so the
+   headline reads clean. */
+.alv-access-panel { position: sticky; top: 0; height: calc(100dvh - 24px); margin: 12px 0 12px 12px; border-radius: 24px; overflow: hidden; isolation: isolate; display: flex; flex-direction: column; justify-content: space-between; padding: 24px 40px 48px;
+  --alv-line: rgb(255 255 255 / .13); --alv-hair: rgb(255 255 255 / .07); --alv-presence: #97a6e6; --alv-sub: #95979c; --deep-haze-x: 64%; --deep-haze-y: 44%; }
 .alv-access-panel > a:focus-visible { outline-color: #e8e9eb; }
-.alv-access-construction { position: absolute; left: 50%; top: 46%; width: 190%; aspect-ratio: 3 / 2; translate: -50% -50%; z-index: -1; pointer-events: none; }
-.alv-access-construction svg { width: 100%; height: 100%; overflow: visible; }
+.alv-access-construction { position: absolute; inset: 0; z-index: -1; pointer-events: none; --construction-y: .43; --construction-zoom: .86;
+  -webkit-mask-image: linear-gradient(to bottom, #000 56%, transparent 80%); mask-image: linear-gradient(to bottom, #000 56%, transparent 80%); }
+@media (min-height: 1000px) { .alv-access-construction { --construction-zoom: .96; } }
 .alv-access-promise .alv-display { font-size: clamp(56px, 5.6vw, 88px); }
 .alv-access-promise p:last-child { margin-top: 16px; font-size: 16px; line-height: 24px; color: #b4b6ba; max-width: 24em; }
 .alv-access-main { display: flex; flex-direction: column; min-height: 100dvh; padding: 0 56px; }
@@ -116,8 +109,14 @@
 
 /* ───────────────────── Recovery states ───────────────────── */
 .alv-state { position: relative; flex: 1; display: grid; place-items: center; overflow: hidden; padding: 48px 24px 96px; }
-.alv-state-construction { position: absolute; left: 50%; top: 74%; width: max(1300px, 110vw); aspect-ratio: 3 / 2; translate: -50% -50%; z-index: 0; pointer-events: none; }
-.alv-state-construction svg { width: 100%; height: 100%; overflow: visible; }
+/* The drawing sits low, under the way back: a clearing behind the message
+   keeps the copy first, and it fades out before the frame's edges (and the
+   footer rule) rather than ending in a crop. */
+.alv-state-construction { position: absolute; inset: 0; z-index: 0; pointer-events: none; --construction-y: .78; --construction-span: max(1240px, 96vw);
+  -webkit-mask-image: radial-gradient(38% 30% at 50% 46%, transparent 52%, #000 100%), linear-gradient(to bottom, #000 58%, transparent 97%);
+  -webkit-mask-composite: source-in;
+  mask-image: radial-gradient(38% 30% at 50% 46%, transparent 52%, #000 100%), linear-gradient(to bottom, #000 58%, transparent 97%);
+  mask-composite: intersect; }
 .alv-state-copy { position: relative; z-index: 1; display: grid; justify-items: center; text-align: center; max-width: 640px; }
 .alv-state-identifier { font-family: var(--font-serif), Newsreader, serif; font-size: 15px; line-height: 20px; letter-spacing: .02em; color: var(--alv-sub); font-variant-numeric: tabular-nums; margin-bottom: 20px; }
 .alv-state-identifier span { display: inline-block; padding: 0 0 2px; border-bottom: 1px solid var(--alv-line); }
@@ -127,11 +126,10 @@
 .alv-state-actions :is(a, button) { min-height: 48px; }
 
 /* ───────────────────── Download stage ───────────────────── */
-.alv-download-stage { position: relative; height: 100%; min-height: 320px; border-radius: 24px; background: #111213; overflow: hidden; isolation: isolate; display: grid; place-items: center;
-  --alv-line: rgb(255 255 255 / .13); --alv-hair: rgb(255 255 255 / .07); --alv-presence: #97a6e6; --alv-sub: #95979c; }
-.alv-download-stage::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(55% 45% at 50% 50%, rgb(151 166 230 / .12), transparent 70%); }
-.alv-download-construction { position: absolute; left: 50%; top: 50%; width: 220%; aspect-ratio: 3 / 2; translate: -50% -50%; z-index: -1; }
-.alv-download-construction svg { width: 100%; height: 100%; overflow: visible; }
+/* The deep ground (.alv-deep), with the app icon at the drawing's origin: the
+   innermost orbits close round it, the trajectory passes in front. */
+.alv-download-stage { position: relative; height: 100%; min-height: 320px; border-radius: 24px; overflow: hidden; isolation: isolate; display: grid; place-items: center; --deep-haze-x: 50%; --deep-haze-y: 50%; }
+.alv-download-construction { position: absolute; inset: 0; z-index: -1; pointer-events: none; --construction-zoom: 1.7; }
 .alv-download-icon { width: clamp(112px, 12vw, 168px); height: auto; filter: drop-shadow(0 24px 40px rgb(0 0 0 / .5)); }
 @media (prefers-reduced-motion: no-preference) {
   .alv-download-icon { animation: alv-enter 1100ms var(--alv-ease) 400ms both; }

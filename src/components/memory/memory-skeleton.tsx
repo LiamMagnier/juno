@@ -1,5 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemoryHeaderActionsSkeleton } from "@/components/memory/memory-header";
+import { DotRings } from "@/components/home/dot-construction";
 
 /*
  * The memory page before its data lands, drawn in the page's own shape: the
@@ -47,15 +48,13 @@ export function MemoryPageSkeleton() {
   );
 }
 
-/** The constellation's rings without points: the shape the drawing lands in. */
+/** The constellation's rings without points, still and faint: the shape the drawing lands in. */
+const RINGS_AT_REST = [68, 102, 153, 229.5].map((rx) => ({ rx: rx / 640, ry: (rx * 0.52) / 360, faint: true }));
 function OrbitsAtRest() {
-  const rings = [68, 102, 153, 229.5];
   return (
-    <svg viewBox="0 0 640 360" className="mt-10 h-auto w-full px-2">
-      {rings.map((rx) => (
-        <ellipse key={rx} cx={320} cy={180} rx={rx} ry={rx * 0.52} className="mem-orbit mem-orbit-faint" />
-      ))}
-    </svg>
+    <div className="relative mt-10 aspect-[16/9] w-full">
+      <DotRings rings={RINGS_AT_REST} animate={false} className="mem-dots" />
+    </div>
   );
 }
 

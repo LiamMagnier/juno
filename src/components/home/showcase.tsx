@@ -6,6 +6,7 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
 import { ThinkingMark } from "@/components/brand/thinking-mark";
 import type { Provider } from "@/lib/providers";
+import { DotRings } from "./dot-construction";
 
 /**
  * From a question to finished work: one wide stage, three scenes. The tabs
@@ -73,6 +74,8 @@ const SOURCES = [
   { m: "R", t: "What users try first", x: 22, y: 78 },
   { m: "A", t: "Onboarding teardown", x: 8, y: 52 },
 ];
+/** The research map's orbits, as fractions of the map. */
+const SC_RINGS = [0.2, 0.34, 0.48].map((r) => ({ cy: 0.52, rx: r, ry: r * 0.92 }));
 const PLAN = ["Find activation benchmarks", "Read four case studies", "Compare how teams measure", "Write the brief with sources"];
 
 function ResearchScene({ on }: { on: boolean }) {
@@ -82,14 +85,26 @@ function ResearchScene({ on }: { on: boolean }) {
     const ids = SOURCES.map((_, i) => window.setTimeout(() => setRead(i + 1), 500 + i * 780));
     return () => ids.forEach(clearTimeout);
   }, [on]);
+  // Each source read draws a line of dots out to it; only the one being read
+  // now is presence blue (the frame's one live object), the rest settle to ink.
+  const links = React.useMemo(
+    () =>
+      SOURCES.map((s, i) => ({
+        x1: 0.5,
+        y1: 0.52,
+        x2: s.x / 100,
+        y2: s.y / 100,
+        tone: i === read - 1 ? ("presence" as const) : ("ink" as const),
+        strength: i === read - 1 ? 0.5 : 0.34,
+        on: i < read,
+      })),
+    [read],
+  );
   const step = Math.min(PLAN.length - 1, Math.floor((read / SOURCES.length) * (PLAN.length - 1)));
   return (
     <div className="alv-sc-research">
       <div className="alv-sc-map">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-          {[0.2, 0.34, 0.48].map((r, i) => <ellipse key={i} cx={50} cy={52} rx={r * 100} ry={r * 92} className="alv-sc-ring" />)}
-          {SOURCES.map((s, i) => <line key={s.t} x1={50} y1={52} x2={s.x} y2={s.y} className="alv-sc-link" data-on={i < read || undefined} />)}
-        </svg>
+        <DotRings rings={SC_RINGS} lines={links} animate={on} />
         <div className="alv-sc-question"><Telescope className="size-4" aria-hidden /><span>How do the best teams measure onboarding?</span></div>
         {SOURCES.map((s, i) => (
           <span key={s.t} className="alv-sc-source" data-on={i < read || undefined} style={{ left: `${s.x}%`, top: `${s.y}%` }}>

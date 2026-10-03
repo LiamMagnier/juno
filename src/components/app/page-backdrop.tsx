@@ -9,18 +9,19 @@ import { Construction } from "@/components/home/construction";
  * header: the owner's favourite thing about the homepage, "that background
  * that mix space & mathematics", carried into the app.
  *
- * One drawing for every page, so they all share it exactly. It sits behind the
- * header's text (an isolated stacking context on the header), centred on the
- * right of the title column, quieter than on the homepage, and fades out
- * towards the page body so it never sits behind content people read. It draws
- * itself once on arrival (the homepage's own `alv-draw`), and rests under
- * reduced motion. Decorative: hidden from assistive technology.
+ * One drawing for every page, so they all share it exactly: the dot matrix
+ * (dot-construction.tsx) behind the header's text (an isolated stacking
+ * context on the header), its origin right of the title column, quieter than
+ * on the homepage, faded out towards the page body so it never sits behind
+ * content people read. It draws itself on once on arrival, ring by ring, then
+ * only sways; no trajectory and no ticks (the homepage's live frame keeps
+ * those), no pointer parallax. Still under reduced motion. Decorative.
  */
 export function PageBackdrop() {
   return (
     <div aria-hidden="true" className="page-backdrop alv pointer-events-none absolute -inset-x-16 -top-20 -z-10 h-[15rem] overflow-hidden">
       <div className="page-backdrop__drawing">
-        <Construction />
+        <Construction ticks={false} trajectory={false} />
       </div>
     </div>
   );

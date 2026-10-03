@@ -178,7 +178,7 @@ function OtherCell({
  * server-only, and this page is also rendered by the feed tests.
  */
 function MacStage() {
-  return <div className="alv-download-stage" aria-hidden="true">
+  return <div className="alv-download-stage alv-deep" aria-hidden="true">
     <div className="alv-download-construction"><Construction /></div>
     <Image src="/brand/app-icon-mac.png" alt="" width={168} height={168} priority className="alv-download-icon" />
   </div>;

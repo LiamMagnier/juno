@@ -3,6 +3,7 @@
 import * as React from "react";
 import { LazyMotion, domAnimation, m, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { User } from "@/components/ui/icons";
+import { DotRings } from "./dot-construction";
 
 /**
  * Orbit: you at the centre, your agents on their own orbits around you. As
@@ -28,6 +29,8 @@ const ORBITS = [
   { rx: 0.46, ry: 0.5 },
 ];
 const TRAVEL = 46;
+/** The same orbits for the dot matrix (fractions of the box); the outermost is faint. */
+const DOT_RINGS = ORBITS.map((o, i) => ({ rx: o.rx, ry: o.ry, faint: i === 2 }));
 
 function point(orbit: number, deg: number) {
   const o = ORBITS[orbit];
@@ -65,11 +68,7 @@ export function OrbitScene() {
   return (
     <LazyMotion features={domAnimation}>
       <div ref={ref} className="alv-orbit-map" aria-hidden>
-        <svg viewBox="0 0 1600 900" preserveAspectRatio="none">
-          {ORBITS.map((o, i) => (
-            <m.ellipse key={i} cx={800} cy={450} rx={o.rx * 1600} ry={o.ry * 900} className={i === 2 ? "alv-orbit alv-orbit-faint" : "alv-orbit"} style={reduce ? undefined : { pathLength: draw }} />
-          ))}
-        </svg>
+        <DotRings rings={DOT_RINGS} progress={reduce ? undefined : draw} animate={!reduce} className="alv-orbit-dots" />
         <div className="alv-orbit-you">
           <span className="alv-you-disc" role="img" aria-label="You"><User aria-hidden className="size-7" /></span>
         </div>

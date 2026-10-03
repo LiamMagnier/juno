@@ -26,6 +26,7 @@ import {
   type ParamsByModel,
 } from "@/lib/media-params-ui";
 import { cn } from "@/lib/utils";
+import { DotRings } from "@/components/home/dot-construction";
 
 /*
  * THE GENERATION ROW: what an image, video or music model lets a person pick
@@ -45,7 +46,7 @@ import { cn } from "@/lib/utils";
  * two weights (400, 500).
  *
  * The aspect ratio opens the FRAME CHOOSER: a stage on the left where the
- * chosen or hovered ratio is drawn as a hairline frame on a faint
+ * chosen or hovered ratio is drawn as a hairline frame on a faint dot-matrix
  * construction (the number line through its centre, two orbits, mono ticks)
  * and morphs between ratios, the ratio set large in Newsreader with its name
  * and output size in mono; on the right a grid of proportional tiles, tall to
@@ -531,6 +532,15 @@ const STAGE_H = 160;
 const FRAME_W = 116;
 const FRAME_H = 88;
 const BASE = 100;
+/** The stage's construction as a tiny dot matrix: two orbits, the number line and its cross axis (fractions of the stage). */
+const STAGE_RINGS = [
+  { rx: 64 / STAGE_W, ry: 22 / STAGE_H },
+  { rx: 98 / STAGE_W, ry: 33 / STAGE_H, faint: true },
+];
+const STAGE_LINES = [
+  { x1: 0, y1: 0.5, x2: 1, y2: 0.5, strength: 0.2 },
+  { x1: 0.5, y1: 10 / STAGE_H, x2: 0.5, y2: 1 - 10 / STAGE_H, strength: 0.2 },
+];
 
 function stageFrame(value: unknown): { w: number; h: number; auto: boolean } {
   const r = aspectRatioValue(value);
@@ -652,14 +662,9 @@ function FrameChooser({
           }}
         >
           <div className="cframe__stage" aria-hidden="true">
+            <div className="cframe__plot">
+            <DotRings rings={STAGE_RINGS} lines={STAGE_LINES} stagger={0.05} draw={0.56} delay={0.06} className="cframe__dots" />
             <svg className="cframe__svg" viewBox={`0 0 ${STAGE_W} ${STAGE_H}`}>
-              <line className="cframe__axis cframe__draw" x1="0" x2={STAGE_W} y1={STAGE_H / 2} y2={STAGE_H / 2} pathLength={1} style={{ ["--i" as string]: 0 }} />
-              <line className="cframe__axis cframe__draw" x1={STAGE_W / 2} x2={STAGE_W / 2} y1="10" y2={STAGE_H - 10} pathLength={1} style={{ ["--i" as string]: 1 }} />
-              <ellipse className="cframe__orbit cframe__draw" cx={STAGE_W / 2} cy={STAGE_H / 2} rx="64" ry="22" pathLength={1} style={{ ["--i" as string]: 2 }} />
-              <ellipse className="cframe__orbit cframe__orbit--faint cframe__draw" cx={STAGE_W / 2} cy={STAGE_H / 2} rx="98" ry="33" pathLength={1} style={{ ["--i" as string]: 3 }} />
-              {[-98, -64, 64, 98].map((dx) => (
-                <line key={dx} className="cframe__tick" x1={STAGE_W / 2 + dx} x2={STAGE_W / 2 + dx} y1={STAGE_H / 2 - 3} y2={STAGE_H / 2 + 3} />
-              ))}
               <text className="cframe__tick-label" x={STAGE_W / 2 + 67} y={STAGE_H / 2 + 12}>
                 ℵ<tspan fontSize="5.5" dy="2">0</tspan>
               </text>
@@ -692,6 +697,7 @@ function FrameChooser({
                 ))}
               </g>
             </svg>
+            </div>
             <div className="cframe__caption">
               <span key={ratioText} className="cframe__ratio">
                 {ratioText}

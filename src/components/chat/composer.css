@@ -447,27 +447,30 @@
   font-variation-settings: "opsz" 60;
 }
 
-/* The construction behind the composer (empty-state.tsx, HomeField): the
-   number line through the composer's middle, the orbits opening around it,
-   masked to an ellipse so it fades before the panel's edges. It sits in the
+/* The construction behind the composer (empty-state.tsx, HomeField): the dot
+   matrix with its origin on the composer, the number line crossing it on the
+   diagonal and the orbits opening around it, masked to an ellipse so it fades
+   well before the panel's edges. The box is only as big as what the mask
+   lets through (one canvas ~1.7× the composer, not a 1500px-wide bitmap);
+   the drawing keeps roughly the old scale through --construction-zoom. It sits in the
    composer's own stacking context, under the surface. */
 .chat-home__field {
   position: absolute;
   left: 50%;
   top: 50%;
   z-index: -1;
-  width: max(1500px, 210%);
-  aspect-ratio: 3 / 2;
+  width: max(1080px, 170%);
+  height: 640px;
   translate: -50% -50%;
   pointer-events: none;
-  -webkit-mask-image: radial-gradient(ellipse 50% 46% at 50% 50%, #000 30%, transparent 78%);
-  mask-image: radial-gradient(ellipse 50% 46% at 50% 50%, #000 30%, transparent 78%);
+  --construction-zoom: 1.15;
+  --dots-strength: 0.56;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 28%, transparent 76%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 28%, transparent 76%);
   transition: opacity var(--dur-slow) var(--ease-out-soft);
 }
-.chat-home__field svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+.dark .chat-home__field {
+  --dots-strength: 0.66;
 }
 
 /* Arrival, on the homepage's beat: the greeting rises first, the tray a
@@ -516,7 +519,9 @@
     font-variation-settings: "opsz" 36;
   }
   .chat-home__field {
-    width: 900px;
+    width: 720px;
+    height: 520px;
+    --construction-span: 860px;
   }
   .chat-home__suggest {
     grid-row: 2;

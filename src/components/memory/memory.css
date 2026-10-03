@@ -68,27 +68,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The constellation */
-.mem-orbit {
-  fill: none;
-  stroke: var(--mem-line);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-.mem-orbit-faint { stroke: var(--mem-hair); }
-.mem-spoke {
-  stroke: var(--mem-hair);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-  transition: stroke 240ms var(--mem-ease);
-}
-.mem-trajectory {
-  fill: none;
-  stroke: var(--mem-presence);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
+/* The constellation: orbits, spokes and the trajectory are the dot matrix
+   (DotRings, dot-construction.css) under the SVG's points and labels. */
+.mem-dots { --dots-pitch: 3.6px; --dots-strength: 0.74; }
+.dark .mem-dots { --dots-strength: 0.82; }
 .mem-node { fill: hsl(var(--foreground)); transition: transform 320ms var(--mem-ease), fill 200ms; transform-box: fill-box; transform-origin: center; }
 .mem-node-hit { fill: transparent; cursor: pointer; }
 .mem-node-ring { fill: none; stroke: var(--mem-presence); stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -107,20 +90,12 @@
 .mem-star:hover .mem-label,
 .mem-star:focus-visible .mem-label,
 .mem-star[data-active] .mem-label { fill: hsl(var(--foreground)); }
-.mem-star:hover .mem-spoke,
-.mem-star[data-active] .mem-spoke { stroke: var(--mem-line); }
 .mem-star { outline: none; }
 .mem-star:focus-visible .mem-node-hit { stroke: hsl(var(--foreground)); stroke-width: 1; }
 
 /* Entrances. Everything here is drawn or set once; nothing loops except the
    one live ring, which breathes slowly and rests under reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
-  .mem-draw {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: mem-draw 1800ms var(--mem-ease) forwards;
-    animation-delay: calc(var(--i, 0) * 90ms + 120ms);
-  }
   .mem-pop {
     opacity: 0;
     animation: mem-pop 700ms var(--mem-ease) forwards;
@@ -136,7 +111,6 @@
   .mem-reveal { opacity: 0; transform: translateY(18px); transition: opacity 800ms var(--mem-ease), transform 800ms var(--mem-ease); }
   .mem-reveal[data-on] { opacity: 1; transform: none; }
 }
-@keyframes mem-draw { to { stroke-dashoffset: 0; } }
 @keyframes mem-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
 @keyframes mem-rise { to { opacity: 1; transform: none; } }
 @keyframes mem-breathe {

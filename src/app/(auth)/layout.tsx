@@ -4,17 +4,17 @@ import { PublicBrand, PublicFrame } from "@/components/public/public-frame";
 import { Construction } from "@/components/home/construction";
 
 /**
- * Access: the form on the page ground, beside one charcoal panel that carries
- * the construction and the promise. The panel is the same deliberate dark
+ * Access: the form on the page ground, beside one deep panel that carries
+ * the dot-matrix construction and the promise. The panel is the same deliberate dark
  * object as the homepage's Code slab. Phones drop it so the fields come first.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <PublicFrame className="alevr-auth alv">
       <div className="alv-access">
-        <aside className="alv-access-panel">
+        <aside className="alv-access-panel alv-deep">
           <PublicBrand height={26} tone="current" />
-          <div className="alv-access-construction" aria-hidden="true"><Construction /></div>
+          <div className="alv-access-construction" aria-hidden="true"><Construction parallax /></div>
           <div className="alv-access-promise" aria-hidden="true">
             <p className="alv-display">Go further.</p>
             <p>Chat, agents and code in one calm workspace.</p>

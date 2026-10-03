@@ -45,7 +45,9 @@ export function Hero() {
   // compositor scroll timeline measured against the whole document.
   const copyOpacity = useTransform(p, (v) => 1 - clamp01(v / 0.22));
   const copyY = useTransform(p, [0, 0.3], [0, -96]);
-  const orbitScale = useTransform(p, [0, 0.75], [1, 2.3]);
+  // The orbits widen as the reader scrolls (the set keeps growing), redrawn
+  // at each zoom so the dots stay crisp rather than being scaled as a bitmap.
+  const orbitZoom = useTransform(p, [0, 0.75], [1, 2.3]);
   const orbitOpacity = useTransform(p, (v) => (v < 0.2 ? 1 - v / 2 : 0.9 - 0.55 * clamp01((v - 0.2) / 0.55)));
   const stageY = useTransform(p, [0, 0.5], ["72vh", "12vh"]);
   const stageScale = useTransform(p, [0, 0.5], [0.9, 1]);
@@ -62,8 +64,8 @@ export function Hero() {
     <LazyMotion features={domAnimation}>
       <section ref={ref} className="alv-hero" aria-labelledby="alv-hero-title">
         <div className="alv-hero-pin">
-          <m.div className="alv-hero-construction" style={pinned ? { scale: orbitScale, opacity: orbitOpacity } : undefined}>
-            <Construction />
+          <m.div className="alv-hero-construction" style={pinned ? { opacity: orbitOpacity } : undefined}>
+            <Construction parallax={pinned} zoom={pinned ? orbitZoom : undefined} ticks={wide} axis={false} />
           </m.div>
           <div className="alv-hero-veil" />
           <m.div className="alv-hero-copy" style={pinned ? { opacity: copyOpacity, y: copyY } : undefined}>
