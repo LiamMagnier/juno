@@ -1,0 +1,163 @@
+/*
+ * The thought-process panel, in the homepage's and Memory's language
+ * (src/components/home/alv-base.css, src/components/memory/memory.css):
+ * Newsreader for the one thing to read first (what the run is doing), mono
+ * annotations for figures and section names, hairlines, and presence blue as
+ * the one live object. The live signal is the construction's own dot lattice
+ * with the presence trajectory travelling it; nothing here is a status pill or
+ * a status dot, and at rest nothing moves at all.
+ */
+.tpp {
+  --tpp-line: hsl(var(--foreground) / 0.1);
+  --tpp-dot: hsl(var(--foreground) / 0.2);
+  --tpp-dot-rest: hsl(var(--foreground) / 0.11);
+  --tpp-presence: #2d49c9;
+  --tpp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dots-pitch: 3.4px;
+  --dots-strength: 0.5;
+}
+.dark .tpp {
+  --tpp-line: hsl(var(--foreground) / 0.12);
+  --tpp-dot: hsl(var(--foreground) / 0.26);
+  --tpp-dot-rest: hsl(var(--foreground) / 0.1);
+  --tpp-presence: #97a6e6;
+  --dots-strength: 0.62;
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────── */
+.tpp-display {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 34px;
+  line-height: 1.05;
+  letter-spacing: -0.028em;
+  font-optical-sizing: auto;
+}
+.tpp-h3 {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.tpp-figure {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.012em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.tpp-annot {
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.tpp-prose p {
+  line-height: 1.7;
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+
+/* ── The hero's orbits: a quiet corner of the construction, faded into the
+      sheet so the heading always reads over paper. ───────────────────────── */
+.tpp-orbits {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 55%), linear-gradient(180deg, #000 60%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 55%), linear-gradient(180deg, #000 60%, transparent 100%);
+  mask-composite: intersect;
+  transition: opacity 900ms var(--tpp-ease);
+}
+.tpp-orbits[data-rest] { opacity: 0.7; }
+
+/* ── The lattice: the drawing's isometric cell grid as a band of dots. ───── */
+.tpp-lattice {
+  --_pitch: 6px;
+  --_row: 5.2px;
+  position: relative;
+  background:
+    radial-gradient(circle, var(--_ink, var(--tpp-dot)) 0.85px, transparent 1.25px) 0 0 / var(--_pitch) calc(var(--_row) * 2),
+    radial-gradient(circle, var(--_ink, var(--tpp-dot)) 0.85px, transparent 1.25px) calc(var(--_pitch) / 2) var(--_row) / var(--_pitch) calc(var(--_row) * 2);
+}
+/* The presence trajectory: the same lattice in blue, revealed by a travelling
+   comet (sharp head, long tail). It exists only while the run works. */
+.tpp-lattice::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle, var(--tpp-presence) 1px, transparent 1.4px) 0 0 / var(--_pitch) calc(var(--_row) * 2),
+    radial-gradient(circle, var(--tpp-presence) 1px, transparent 1.4px) calc(var(--_pitch) / 2) var(--_row) / var(--_pitch) calc(var(--_row) * 2);
+  -webkit-mask: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.18) 45%, rgb(0 0 0 / 0.6) 82%, #000 96%, transparent 100%) 0 0 / 46% 100% no-repeat;
+  mask: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.18) 45%, rgb(0 0 0 / 0.6) 82%, #000 96%, transparent 100%) 0 0 / 46% 100% no-repeat;
+  opacity: 0;
+  transition: opacity 500ms var(--tpp-ease);
+}
+.tpp-lattice[data-live]::after { opacity: 1; }
+.tpp-lattice[data-rest] { --_ink: var(--tpp-dot-rest); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tpp-lattice[data-live]::after {
+    animation: tpp-travel 2600ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+}
+/* Reduced motion: the trajectory holds still at the leading edge. The state
+   word above it already says the run is working; this keeps the colour. */
+@media (prefers-reduced-motion: reduce) {
+  .tpp-lattice::after { -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@keyframes tpp-travel {
+  from { -webkit-mask-position: -120% 0; mask-position: -120% 0; }
+  to { -webkit-mask-position: 220% 0; mask-position: 220% 0; }
+}
+
+/* The running step's marker: a 3 × 3 patch of the same lattice, the
+   trajectory crossing it on the diagonal. Settled kinds keep their glyphs. */
+.tpp-cell {
+  --_pitch: 4.6px;
+  --_row: 4px;
+  width: 13.8px;
+  height: 12px;
+  border-radius: 2px;
+}
+.tpp-cell[data-live]::after {
+  -webkit-mask: linear-gradient(120deg, transparent 0%, rgb(0 0 0 / 0.35) 40%, #000 70%, transparent 100%) 0 0 / 200% 200% no-repeat;
+  mask: linear-gradient(120deg, transparent 0%, rgb(0 0 0 / 0.35) 40%, #000 70%, transparent 100%) 0 0 / 200% 200% no-repeat;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tpp-cell[data-live]::after { animation: tpp-cross 1400ms ease-in-out infinite; }
+}
+@keyframes tpp-cross {
+  from { -webkit-mask-position: 120% 120%; mask-position: 120% 120%; }
+  to { -webkit-mask-position: -20% -20%; mask-position: -20% -20%; }
+}
+
+/* ── Entrances. The panel settles in from its edge; the hero rises line by
+      line; steps rise once, on the first paint of their id. ─────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .tpp-enter { animation: tpp-enter 520ms var(--tpp-ease) both; }
+  .tpp-rise {
+    animation: tpp-rise 760ms var(--tpp-ease) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 60ms);
+  }
+  .tpp-step {
+    animation: tpp-rise 560ms var(--tpp-ease) both;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+  .tpp-swap { animation: tpp-fade 420ms var(--tpp-ease) both; }
+}
+@keyframes tpp-enter { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes tpp-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes tpp-fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* The compact title in the header crossfades in once the hero has scrolled
+   out of view, so what the run is doing is never off screen. */
+.tpp-compact { transition: opacity 260ms var(--tpp-ease), transform 260ms var(--tpp-ease); }
+.tpp-compact[data-hidden] { opacity: 0; transform: translateY(4px); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tpp-compact { transition: opacity 120ms linear; }
+  .tpp-compact[data-hidden] { transform: none; }
+}

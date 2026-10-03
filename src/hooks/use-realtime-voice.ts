@@ -10,6 +10,7 @@ import {
   type VoiceHistoryEntry,
   type VoiceProviderId,
   type VoiceServerMessage,
+  DEFAULT_VOICE_PROVIDER,
   PLAYBACK_SAMPLE_RATE,
   VOICE_HISTORY_MAX_TOTAL_CHARS,
   VOICE_HISTORY_MAX_TURN_CHARS,
@@ -231,7 +232,7 @@ async function attachmentToJpegBase64(attachment: ClientAttachment): Promise<str
  */
 export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {}) {
   const [status, setStatus] = React.useState<RealtimeVoiceStatus>("idle");
-  const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "qwen");
+  const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? DEFAULT_VOICE_PROVIDER);
   const [thinking, setThinkingState] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   /** The model the relay says is serving the call — never a guess from the id. */

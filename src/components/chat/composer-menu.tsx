@@ -78,6 +78,43 @@ export function MenuGlide() {
   return <span ref={ref} aria-hidden="true" className="cmenu-glide" data-on="false" />;
 }
 
+/**
+ * Says whether the list it sits in has more above or below the fold, as
+ * `data-more-above` / `data-more-below` on that scroller. `.cmenu-scroll`
+ * reads them to fade the edge rows out, so a menu capped to a short window
+ * reads as a list that scrolls, not one cut off by whatever it sits against.
+ */
+export function MenuScrollEdges() {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  React.useLayoutEffect(() => {
+    const list = ref.current?.parentElement;
+    if (!list) return;
+    let frame = 0;
+    const read = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const above = list.scrollTop > 1;
+        const below = list.scrollHeight - list.clientHeight - list.scrollTop > 1;
+        list.toggleAttribute("data-more-above", above);
+        list.toggleAttribute("data-more-below", below);
+      });
+    };
+    read();
+    list.addEventListener("scroll", read, { passive: true });
+    const resize = new ResizeObserver(read);
+    resize.observe(list);
+    const changes = new MutationObserver(read);
+    changes.observe(list, { childList: true, subtree: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      list.removeEventListener("scroll", read);
+      resize.disconnect();
+      changes.disconnect();
+    };
+  }, []);
+  return <span ref={ref} hidden aria-hidden="true" />;
+}
+
 /** A small heading over a group of rows. */
 export function MenuLabel({ children }: { children: React.ReactNode }) {
   return <div className="cmenu-label">{children}</div>;

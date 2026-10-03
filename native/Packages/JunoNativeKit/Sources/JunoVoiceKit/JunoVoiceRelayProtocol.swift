@@ -24,11 +24,11 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
 
     public var id: String { rawValue }
 
-    /// The provider this deployment can actually fund and operate. Voice is a
-    /// separate realtime product from the selected text model, so silently
-    /// mapping a Gemini chat to an unpaid Gemini Live credential only adds a
-    /// 15-second timeout before the working Qwen session can begin.
-    public static let productionDefault: Self = .qwen
+    /// The provider a call opens on when the person has not picked one:
+    /// Gemini Live, the same default as the web (`DEFAULT_VOICE_PROVIDER` in
+    /// `src/lib/voice-relay-protocol.ts`). A stored pick (iOS Settings) still
+    /// wins; this is only the default.
+    public static let productionDefault: Self = .gemini
 
     public var displayName: String {
         switch self {

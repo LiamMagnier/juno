@@ -195,6 +195,16 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "project.delete": {
       await requireRevision(tx, accountId, "project", op.entityId, baseRevision);
+      // A folder's subfolders move up to its own parent, as the web's delete
+      // does by default (lib/projects/project-tree.ts); the foreign key's
+      // SetNull alone would lift them all the way to the top level.
+      const folder = await tx.project.findFirst({ where: { id: op.entityId, userId: accountId }, select: { parentId: true } });
+      if (folder) {
+        await tx.project.updateMany({
+          where: { parentId: op.entityId, userId: accountId },
+          data: { parentId: folder.parentId },
+        });
+      }
       const deleted = await tx.project.deleteMany({ where: { id: op.entityId, userId: accountId } });
       if (!deleted.count) throw new ApiV1Error("not_found", 404, "The project was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "project", op.entityId), deleted: true } };

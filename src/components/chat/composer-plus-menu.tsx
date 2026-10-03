@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StatusIcons } from "@/lib/app-icons";
-import { composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
+import { composerMenuClass, MenuGlide, MenuScrollEdges } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -155,8 +155,15 @@ export const PlusMenuRow = React.forwardRef<
     selected?: boolean;
     note?: string;
     detail?: string;
-    /** A second, muted line under the label. */
+    /** A muted descriptor after the label, on its line. */
     description?: string;
+    /**
+     * The description on a line of its own under the label, for a list where
+     * every row carries one (the skills flyout): the name stays whole and the
+     * description truncates, rather than the two splitting one line between
+     * them and the name losing.
+     */
+    stacked?: boolean;
     /** Keep the menu open after this row is picked (a radio that sets a mode, say). */
     keepOpen?: boolean;
     /** A brand mark or any element in place of the set's glyph. */
@@ -164,7 +171,7 @@ export const PlusMenuRow = React.forwardRef<
     onSelect?: () => void;
   }
 >(function PlusMenuRow(
-  { icon, checked, selected, note, detail, description, keepOpen, leading, className, children, onSelect, ...props },
+  { icon, checked, selected, note, detail, description, stacked, keepOpen, leading, className, children, onSelect, ...props },
   ref,
 ) {
   const toggle = checked !== undefined;
@@ -188,12 +195,22 @@ export const PlusMenuRow = React.forwardRef<
       {/* The description rides the label's line, muted, rather than a second
           line: a two-line row in a list of one-line rows broke the rhythm of
           the whole menu for the sake of two words. */}
-      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-        <span className="truncate">{children}</span>
-        {description && (
+      {stacked && description ? (
+        <span className="flex min-w-0 flex-1 flex-col py-1.5">
+          <span className="truncate">{children}</span>
           <span className="truncate text-caption font-normal text-muted-foreground">{description}</span>
-        )}
-      </span>
+        </span>
+      ) : (
+        // The name is the row: it keeps its whole width (up to the row's) and
+        // only the descriptor gives way. Shrinking both evenly cut a skill's
+        // name to one letter beside a long description.
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span className="min-w-0 max-w-full shrink-0 truncate">{children}</span>
+          {description && (
+            <span className="min-w-0 truncate text-caption font-normal text-muted-foreground">{description}</span>
+          )}
+        </span>
+      )}
       {detail && (
         <span className="max-w-[7rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80 tabular-nums">
           {detail}
@@ -270,6 +287,19 @@ export interface PlusMenuLayer {
   onSide?: (side: "top" | "bottom" | null) => void;
 }
 
+/**
+ * The height the root list takes unscrolled: 36px rows, 13px hairlines
+ * between groups, the shell's 6px padding and 1px border each side. It used
+ * to ask for a flat 300 while the list ran to ~420, so the composer chose a
+ * side that "had room" and the menu arrived cut off against the composer's
+ * edge, reading as if it slid under it.
+ */
+export function plusMenuNeed(sections: PlusMenuSection[]): number {
+  const groups = sections.filter((section) => section.length > 0);
+  const rows = groups.reduce((sum, section) => sum + section.length, 0);
+  return rows * 36 + Math.max(0, groups.length - 1) * 13 + 14;
+}
+
 export function PlusMenu({
   open,
   onOpenChange,
@@ -324,7 +354,7 @@ export function PlusMenu({
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
-      if (next && layer && triggerRef.current) setPlaced(layer.pick(triggerRef.current, 300));
+      if (next && layer && triggerRef.current) setPlaced(layer.pick(triggerRef.current, plusMenuNeed(sections)));
       onOpenChange(next);
     }}>
       <Tooltip>
@@ -379,9 +409,10 @@ export function PlusMenu({
         }}
         // No padding restated: the shell's own p-1.5 is what makes its 14px
         // edge concentric with the 8px rows inside it (14 − 6 = 8).
-        className={cn(MENU_W_WIDE, composerMenuClass, "max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
+        className={cn(MENU_W_WIDE, composerMenuClass, "cmenu-scroll max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
       >
         <MenuGlide />
+        <MenuScrollEdges />
         {compact && panel?.kind === "sub" ? (
           // The panel arrives from the right and the root list comes back from
           // the left. `animate-stage-in` multiplies its travel by

@@ -10,6 +10,12 @@ export interface AppUser {
   name: string | null;
   email: string | null;
   image: string | null;
+  /**
+   * The @handle the account chose (src/lib/username.ts); null until it picks
+   * one, when the profile shows an email-derived handle instead. Optional so
+   * fixtures that predate it stay valid; the bootstrap always sends it.
+   */
+  username?: string | null;
 }
 
 export interface ClientFolder {

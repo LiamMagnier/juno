@@ -1,17 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, FileText, Loader2, Plus, type IconComponent } from "@/components/ui/icons";
+import { ArrowRight, CornerDownRight, FileText, Loader2, Plus, type IconComponent } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Card, CardEyebrow } from "@/components/ui/card";
 import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { summaryExcerpt, type SummaryData } from "@/components/memory/memory-model";
 import { formatBytes, cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import "@/components/projects/projects.css";
 
 export interface RailFileItem {
   id: string;
@@ -79,6 +79,7 @@ export function ProjectOverviewRail({
   onRemoveCover,
   uploadingCover = false,
   instructions,
+  inherited = [],
   onEditInstructions,
   files,
   fileCount,
@@ -96,6 +97,8 @@ export function ProjectOverviewRail({
   /** A cover write is in flight — distinct from `uploading`, which is sources. */
   uploadingCover?: boolean;
   instructions: string;
+  /** The folders above this one whose instructions or files it inherits. */
+  inherited?: { id: string; name: string; instructions: string; fileCount: number }[];
   onEditInstructions: () => void;
   files: RailFileItem[];
   /** Every source filed here — files plus artifacts — not just the ones shown. */
@@ -113,18 +116,26 @@ export function ProjectOverviewRail({
   const memorySummary = memory?.summary ? summaryExcerpt(memory.summary.content) : "";
   const memoryFacts = memory?.facts ?? [];
   const memoryCount = memory?.activeCount ?? 0;
+  const inheritedFiles = inherited.reduce((sum, level) => sum + level.fileCount, 0);
+  const inheritedNames = inherited.filter((level) => level.instructions.trim()).map((level) => level.name);
 
   return (
     // Arrives a beat after the column beside it (the homepage's long
     // decelerate), so the page settles left to right rather than all at once.
-    <Card className={cn("overflow-hidden [animation-delay:80ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in", className)}>
+    // A hairline card (12) with a 4px frame: the cover band and every row reach
+    // the frame and take the control radius (8 = 12 - 4); text sits on the
+    // 16px inset (frame + the rows' own 12px).
+    <aside
+      aria-label="About this project"
+      className={cn("pj pj-card nest-card nest-p-1 overflow-hidden [animation-delay:80ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in", className)}
+    >
       {/* A band, not a picture. At 16/7 the cover was 133px on a 304px rail,
           which put Instructions that far below the composer it is supposed to
           sit level with — the decoration outranking the thing the reader came
           for. 16/5 keeps the project's image present at ~95px and the section
           content near the top of the card. */}
       {coverUrl && (
-        <div className="group/cover relative aspect-[16/5] w-full overflow-hidden border-b border-foreground/[.07] bg-muted">
+        <div className="group/cover relative mb-1 aspect-[16/5] w-full overflow-hidden rounded-inner bg-muted">
           <img src={coverUrl} className="size-full object-cover" alt="" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
             <Button variant="secondary" size="sm" onClick={onPickCover} disabled={uploadingCover}>
@@ -137,7 +148,7 @@ export function ProjectOverviewRail({
         </div>
       )}
 
-      <div className="divide-y divide-foreground/[.07]">
+      <div className="divide-y divide-[var(--pj-hair)]">
         <RailSection
           title="Instructions"
           action={
@@ -157,12 +168,12 @@ export function ProjectOverviewRail({
             <button
               type="button"
               onClick={onEditInstructions}
-              className="-mx-2 block w-full rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+              className="-mx-3 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
             >
-              <p className="line-clamp-4 whitespace-pre-wrap break-words text-caption leading-relaxed text-muted-foreground">
+              <p className="line-clamp-4 whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground/80">
                 {instructions}
               </p>
-              <p className="mt-2 text-caption tabular-nums text-muted-foreground">
+              <p className="pj-annot mt-2">
                 {instructions.length.toLocaleString()} chars · {plural(instructionLines, "line")}
               </p>
             </button>
@@ -175,6 +186,12 @@ export function ProjectOverviewRail({
                 </Button>
               }
             />
+          )}
+          {inheritedNames.length > 0 && (
+            <p className="pj-annot mt-2 flex items-start gap-1.5">
+              <CornerDownRight className="mt-px size-3 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{`Also follows ${inheritedNames.join(", then ")}`}</span>
+            </p>
           )}
         </RailSection>
 
@@ -210,11 +227,11 @@ export function ProjectOverviewRail({
             />
           ) : (
             <>
-              <ul className="-mx-2 space-y-0.5">
+              <ul className="-mx-3 space-y-px">
                 {files.slice(0, FILE_PREVIEW).map((file) => (
                   <li
                     key={file.id}
-                    className="group/file flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                    className="group/file flex items-center gap-2 rounded-inner px-3 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                   >
                     <FileText
                       className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/file:text-foreground motion-reduce:transition-none"
@@ -229,7 +246,7 @@ export function ProjectOverviewRail({
                       <span className="block truncate text-ui font-medium text-foreground">
                         {file.fileName}
                       </span>
-                      <span className="block text-caption tabular-nums text-muted-foreground">
+                      <span className="pj-annot block">
                         {formatBytes(file.size)}
                       </span>
                     </a>
@@ -257,6 +274,12 @@ export function ProjectOverviewRail({
               )}
             </>
           )}
+          {inheritedFiles > 0 && (
+            <p className="pj-annot mt-2 flex items-start gap-1.5">
+              <CornerDownRight className="mt-px size-3 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{`Plus ${plural(inheritedFiles, "file")} from the folders above`}</span>
+            </p>
+          )}
         </RailSection>
 
         <RailSection
@@ -264,9 +287,7 @@ export function ProjectOverviewRail({
           count={memoryCount}
           action={
             <div className="-mr-2 flex items-center gap-1">
-              <span className="pr-1 text-caption text-muted-foreground">
-                Only you
-              </span>
+              <span className="pj-annot pr-1">Only you</span>
               <Pressable
                 kind="icon"
                 size="sm"
@@ -301,12 +322,12 @@ export function ProjectOverviewRail({
                 <button
                   type="button"
                   onClick={onManageMemory}
-                  className="-mx-2 mb-2 block w-full rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                  className="-mx-3 mb-2 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                 >
                   <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground/85">
                     {memorySummary}
                   </p>
-                  <p className="mt-1.5 text-caption tabular-nums text-muted-foreground">
+                  <p className="pj-annot mt-1.5">
                     Summary · updated {timeAgo(memory.summary.updatedAt)}
                   </p>
                 </button>
@@ -337,7 +358,7 @@ export function ProjectOverviewRail({
           )}
         </RailSection>
       </div>
-    </Card>
+    </aside>
   );
 }
 
@@ -361,13 +382,13 @@ function RailSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="p-4">
+    <section className="px-3 py-3.5">
       <div className="flex min-h-7 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-baseline gap-2">
           {Icon && <Icon className="size-3.5 text-muted-foreground" aria-hidden={true} />}
-          <CardEyebrow className="truncate font-sans text-caption font-medium tracking-[0.01em]">{title}</CardEyebrow>
+          <h3 className="pj-name-sm truncate text-foreground">{title}</h3>
           {count !== undefined && count > 0 && (
-            <span className="text-caption tabular-nums text-muted-foreground">
+            <span className="pj-annot">
               {count.toLocaleString()}
             </span>
           )}
@@ -423,7 +444,7 @@ function RailMore({ onClick, children }: { onClick: () => void; children: React.
     <button
       type="button"
       onClick={onClick}
-      className="group/more -mx-2 mt-1.5 flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+      className="group/more -mx-3 mt-1.5 flex w-[calc(100%+1.5rem)] items-center gap-1.5 rounded-inner px-3 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
     >
       {children}
       <ArrowRight className="size-3 shrink-0 transition-transform duration-base ease-out-expo group-hover/more:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />

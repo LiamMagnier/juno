@@ -383,7 +383,8 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
           {/* The rows are radios, so their section is the group that names
               them — a `role="radio"` with no radiogroup is announced as a
               choice between nothing. */}
-          <section role="radiogroup" aria-labelledby={voiceHeadingId} className="flex flex-col gap-0.5 p-2">
+          {/* `p-1`: the 8px rows sit 4px inside the 12px popover, 12 − 4 = 8. */}
+          <section role="radiogroup" aria-labelledby={voiceHeadingId} className="flex flex-col gap-0.5 p-1">
             <h3 id={voiceHeadingId} className="px-2.5 pb-1 pt-1 text-caption font-medium text-muted-foreground">Voice</h3>
             {VOICE_PROVIDERS.map((id) => {
               const unavailable = voice.availability?.[id] === false;
@@ -421,7 +422,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               anything is furniture, and this one carries a cost warning that
               would be a lie on a provider with no reasoning mode. */}
           {voice.capabilities?.thinkingChoice && (
-            <section className="border-t border-border p-2">
+            <section className="border-t border-border p-1">
               <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
                   <span className="text-ui font-medium text-foreground">Reasoning</span>

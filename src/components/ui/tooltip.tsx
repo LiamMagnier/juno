@@ -30,7 +30,7 @@ const Tooltip = TooltipPrimitive.Root;
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
 /**
- * A small `.surface-float` at `rounded-control` (10) — the same material as
+ * A small `.surface-float` at `rounded-control` (8) — the same material as
  * the menu it appears beside, opaque so a transient micro-label stays legible
  * over arbitrary content. Not inverted: an inked slab was the single
  * brightest object on the dark theme, flaring on every hover.

@@ -59,7 +59,7 @@ const DialogOverlay = React.forwardRef<
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 /**
- * The panel is `.overlay-glass` at `rounded-panel` (20): opaque, because a
+ * The panel is `.overlay-glass` at `rounded-panel` (16): opaque, because a
  * dialog holds content that has to be read, and glass is for chrome.
  *
  * Centring lives on the INDEPENDENT `translate` property, not on a

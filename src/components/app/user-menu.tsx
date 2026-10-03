@@ -29,8 +29,8 @@ import { useModifierKeyLabel } from "@/components/ui/platform";
  * Account menu: the menu recipe's row, unaltered, so every item lines up with
  * every other menu in the product: [16px muted glyph] · gap-2.5 · label ·
  * (right-aligned mono shortcut), 32px tall (44 on a coarse pointer), at the
- * row's `rounded-control` inside the shell's `rounded-menu` at `p-1`
- * (14 − 4 = 10). No radius, height or padding override here.
+ * row's `rounded-inner` inside the shell's `nest-menu` at `nest-p-1.5`
+ * (14 − 6 = 8). No radius, height or padding override here.
  *
  * FOUR GROUPS, in the order a person reaches for them: who you are and what
  * you have used; the account itself (Settings, an upgrade when there is one to
@@ -320,15 +320,16 @@ export function UserMenu({
 
         <Separator />
 
-        {/* Sign out: alone under its own hairline, in the list's own ink.
-            It ends a session, not data, so it is not drawn as a destructive
-            row: red at rest made the quietest exit in the menu its loudest
-            object. The label sits a step back (muted) and comes forward with
-            its glyph on highlight; the glyph still leaves through its own door
-            (`LogOut`'s nudge), once. */}
+        {/* Sign out: alone under its own hairline. Quiet at rest — red at
+            rest made the quietest exit in the menu its loudest object — and
+            red when highlighted, the destructive row's live state
+            (`.danger-hover`): it ends the session, so the moment the pointer
+            or the keyboard lands on it says so. The glyph follows the label's
+            ink and still leaves through its own door (`LogOut`'s nudge). */}
         <DropdownMenuItem
+          variant="destructive"
           onSelect={() => void signOutToSignIn()}
-          className={cn(rowHeight, "text-muted-foreground focus:text-foreground")}
+          className={cn(rowHeight, "text-muted-foreground")}
         >
           <LogOut className="size-4 shrink-0" />
           <span>Sign out</span>

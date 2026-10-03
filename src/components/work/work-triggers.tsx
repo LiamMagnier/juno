@@ -476,7 +476,7 @@ export function TriggerListEditor({
                         : "A schedule needs at least one trigger. Change this one instead."
                   }
                   aria-label="Remove this trigger"
-                  className="text-muted-foreground hover:text-destructive"
+                  className="danger-hover text-muted-foreground"
                 >
                   <ActionIcons.delete className="size-4" aria-hidden="true" />
                 </Button>

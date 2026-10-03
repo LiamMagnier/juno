@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Plus, Search } from "@/components/ui/icons";
 import { PlusMenuRow, PlusMenuSeparator } from "@/components/chat/composer-plus-menu";
-import { MenuEmpty, MenuLabel, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
+import { MenuEmpty, MenuLabel, MenuScrollEdges, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
 import { YOURS_SOURCE_LABEL, type ChatSkill } from "@/components/chat/use-chat-skills";
 import { AppIcons } from "@/lib/app-icons";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
@@ -87,11 +87,14 @@ export function ComposerSkillsPanel({
         selected={armed}
         leading={
           skill.sourceOwner ? (
-            <SkillSourceAvatar owner={skill.sourceOwner} size="xs" className="mt-0.5" />
+            <SkillSourceAvatar owner={skill.sourceOwner} size="xs" />
           ) : undefined
         }
         icon={skill.sourceOwner ? undefined : AppIcons.skills}
+        // Name over description: every row here has both, and side by side
+        // on one line a long description squeezed the name to a letter.
         description={skill.description || undefined}
+        stacked
         // The source rides the trailing slot in the flat list. The armed row
         // keeps its tick there instead: which one is armed matters more.
         note={labelled && !armed ? (skill.yours ? YOURS_SOURCE_LABEL : (skill.sourceLabel ?? undefined)) : undefined}
@@ -107,7 +110,8 @@ export function ComposerSkillsPanel({
       {list.length > FILTER_THRESHOLD ? (
         <MenuSearch value={query} onChange={setQuery} placeholder="Filter skills" label="Filter skills" />
       ) : null}
-      <div className="max-h-72 overflow-y-auto overscroll-contain">
+      <div className="cmenu-scroll max-h-72 min-h-0 overflow-y-auto overscroll-contain">
+        <MenuScrollEdges />
         {/* `skills === null` rather than a loading flag: the read starts when
             this flyout opens, so for its first frame nothing is loading AND
             nothing has loaded, and the empty branch would flash "Write or

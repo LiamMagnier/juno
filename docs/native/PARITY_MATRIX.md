@@ -22,16 +22,16 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-300 routes: 183 native, 52 planned, 52 web only, 13 internal. 47 pages: on the Mac 35 native, 2 partial, 3 planned, 7 web only; on iOS 19 native, 6 partial, 15 planned, 7 web only.
+301 routes: 183 native, 53 planned, 52 web only, 13 internal. 47 pages: on the Mac 33 native, 4 partial, 3 planned, 7 web only; on iOS 17 native, 8 partial, 15 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
-| [Sign-in and account security](#auth) | – | – | 15 | 3 | 6 | 0 |
+| [Sign-in and account security](#auth) | – | – | 15 | 4 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 10 | 4 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
-| [Projects](#projects) | 2/2 | 2/2 | 1 | 1 | 1 | 0 |
+| [Projects](#projects) | 0/2 (+2 partial) | 0/2 (+2 partial) | 1 | 1 | 1 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
@@ -69,6 +69,7 @@ Browser sign-in hands the apps a PKCE code; everything after that is `/api/v1/au
 | `/api/account/mfa/start` | POST | Native | JunoChatKit |  |
 | `/api/account/password` | POST | Native | JunoChatKit |  |
 | `/api/account/sessions/revoke` | POST | Native | JunoChatKit |  |
+| `/api/account/username` | GET, PATCH | Planned |  | Choosing the @username (Settings › Account › Username on the web). The apps do not show or edit it yet, and have no profile screen to show it on (/profile is planned). |
 | `/api/account/verification` | GET, POST | Planned |  | The web's check-your-inbox banner for an unverified email; the apps do not show it yet. |
 | `/api/auth/[...nextauth]` | GET, POST | Web only |  | The web's session (Auth.js). The apps sign in through the browser and hold /api/v1/auth tokens. |
 | `/api/auth/forgot-password` | POST | Native | JunoChatKit |  |
@@ -168,13 +169,13 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
-| `/projects` | Native | Native | DesktopProjectsScreen |  |
-| `/projects/[id]` | Native | Native | DesktopProjectPage |  |
+| `/projects` | Partial | Partial | DesktopProjectsScreen | Folders (Project.parentId) are planned: the apps list every project flat and do not yet nest folders under their project, move one with Move to… or drag and drop, or ask whether a deleted folder's subfolders go up a level or go with it. |
+| `/projects/[id]` | Partial | Partial | DesktopProjectPage | Folders are planned: no breadcrumbs, Folders section or New folder yet, and the app does not show the instructions and files a folder inherits from the projects above it (the server already prepends them to its chats). |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/projects` | GET, POST | Native | JunoDesktop |  |
-| `/api/projects/[id]` | GET, PATCH, DELETE | Web only |  | The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89). |
+| `/api/projects/[id]` | GET, PATCH, DELETE | Web only |  | The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89). Moving a project into a folder (PATCH parentId), the folder fields on GET (breadcrumbs, children, inherited) and DELETE ?children=lift\|cascade are web-only until native folders land; a sync project.delete lifts a folder's subfolders up a level, as the web does by default. |
 | `/api/projects/[id]/members` | GET, POST | Planned |  | Project members (sharing a project); not in the apps yet. |
 
 <a id="library"></a>

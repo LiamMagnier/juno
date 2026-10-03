@@ -4,7 +4,7 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { ChevronDown, ChevronUp } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
-import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
+import { menuGlyphInkClass, menuRowClass, menuShellFrameClass } from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";
 
 const Select = SelectPrimitive.Root;
@@ -44,10 +44,13 @@ SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
  * two appear side by side (a Select inside a settings panel, a kebab on the row
  * behind it) and have to be one object.
  *
- * The shell's own `p-1` is dropped here and moved onto the Viewport, because
+ * The shell's own inset is dropped here and moved onto the Viewport, because
  * Radix needs the scroll buttons OUTSIDE the padded box — padding on the
- * Content would put a 4px band of popover between the button and the shell
- * edge, and the list would slide through it.
+ * Content would put a band of popover between the button and the shell edge,
+ * and the list would slide through it. The Viewport takes the SAME inset the
+ * dropdown shell has (`nest-p-1.5`, 6px): it was `p-1`, so a Select's rows
+ * (8px) sat 4px inside a 14px shell — off-centre by 2px at every corner, beside
+ * a dropdown whose rows were right.
  */
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
@@ -59,8 +62,8 @@ const SelectContent = React.forwardRef<
       className={cn(
         // pop-in/out fill `both`, which would permanently cancel translate-y utilities —
         // the trigger gap comes from sideOffset instead.
-        menuShellClass,
-        "relative min-w-[8rem] overflow-hidden p-0 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))]",
+        menuShellFrameClass,
+        "relative min-w-[8rem] overflow-hidden max-h-[min(24rem,var(--radix-select-content-available-height,24rem))]",
         className
       )}
       position={position}
@@ -74,7 +77,7 @@ const SelectContent = React.forwardRef<
         <ChevronUp className="size-4" />
       </SelectPrimitive.ScrollUpButton>
       <SelectPrimitive.Viewport
-        className={cn("p-1", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]")}
+        className={cn("nest-p-1.5", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]")}
       >
         {children}
       </SelectPrimitive.Viewport>

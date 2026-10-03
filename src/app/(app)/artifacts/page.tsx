@@ -648,7 +648,7 @@ function ArtifactsHome() {
               onChange={changeView}
               options={VIEW_OPTIONS}
               ariaLabel="Artifact view"
-              className="h-9 shrink-0"
+              className="shrink-0"
             />
           </div>
           {/* Shown while a filter is on even when it is the only chip — an
@@ -663,7 +663,7 @@ function ArtifactsHome() {
                 // `w-max`, not `w-fit`: fit-content shrinks to the strip, and
                 // the grid's equal columns then crush eight labels into each
                 // other on a phone instead of letting the strip scroll.
-                className="h-9 w-max"
+                className="w-max"
                 columns="content"
                 optionClassName="whitespace-nowrap"
                 options={(["ALL", ...chips] as const).map((t) => ({

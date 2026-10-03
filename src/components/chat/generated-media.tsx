@@ -312,7 +312,7 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
           onClick={() => onEdit(frameRef.current?.getBoundingClientRect())}
           aria-label={`Edit ${attachment.fileName}`}
           // The media-overlay action: caption mono, hairline, a press that dips.
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="absolute right-1 top-1 z-20 inline-flex h-8 items-center gap-1.5 rounded-control border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <ActionIcons.edit className="size-3.5" aria-hidden="true" /> Edit
         </button>
@@ -443,7 +443,7 @@ export function GeneratedVideo({ attachment, handoff }: { attachment: ClientAtta
           aria-label={`Open ${attachment.fileName} in a new tab`}
           // The same media-overlay action as an image's Edit: out of the way of
           // the native controls along the bottom edge.
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/video:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="absolute right-1 top-1 z-20 inline-flex h-8 items-center gap-1.5 rounded-control border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/video:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
           <ActionIcons.external className="size-3.5" aria-hidden="true" />

@@ -1268,7 +1268,7 @@ function VariableRow({
           // `sm` (4), not `control` (10): this spans the full width of a 16px
           // card padded by `p-3` (12), so its bottom corners sit exactly on the
           // card's inner corners and 16 − 12 = 4 is what they are.
-          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 text-caption text-muted-foreground hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50 coarse:min-h-9"
+          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 danger-hover text-caption text-muted-foreground disabled:pointer-events-none disabled:opacity-50 coarse:min-h-9"
         >
           <ActionIcons.delete className="size-3" aria-hidden />
           Delete variable

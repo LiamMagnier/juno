@@ -877,6 +877,46 @@
   background-color: hsl(var(--destructive) / 0.1);
 }
 
+/* A capped list's edges (MenuScrollEdges): the rows fade into the shell where
+   more of the list waits, so a menu cut to a short window reads as one that
+   scrolls. Sticky, so the fade rides the scroller's edge; a zero-height box in
+   the flow (the negative margin cancels its height), so it moves no row. The
+   inset matches the scroller's own padding so it spans edge to edge. */
+.cmenu-scroll {
+  --cms-pad: 0px;
+}
+.cmenu.cmenu.cmenu-scroll {
+  --cms-pad: var(--cm-pad);
+}
+.cmenu-scroll::before,
+.cmenu-scroll::after {
+  content: "";
+  position: sticky;
+  z-index: 2;
+  display: block;
+  height: 28px;
+  margin-inline: calc(var(--cms-pad) * -1);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms var(--ease-out-soft);
+}
+.cmenu-scroll::before {
+  top: calc(var(--cms-pad) * -1);
+  margin-top: calc(var(--cms-pad) * -1);
+  margin-bottom: calc(-28px + var(--cms-pad));
+  background: linear-gradient(to bottom, hsl(var(--popover)), hsl(var(--popover) / 0));
+}
+.cmenu-scroll::after {
+  bottom: calc(var(--cms-pad) * -1);
+  margin-top: calc(-28px + var(--cms-pad));
+  margin-bottom: calc(var(--cms-pad) * -1);
+  background: linear-gradient(to top, hsl(var(--popover)), hsl(var(--popover) / 0));
+}
+.cmenu-scroll[data-more-above]::before,
+.cmenu-scroll[data-more-below]::after {
+  opacity: 1;
+}
+
 .cmenu-label {
   padding: 6px 10px 4px;
   font-size: 12px;

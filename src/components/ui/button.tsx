@@ -47,9 +47,10 @@ const buttonVariants = cva(
         default: "control-primary border-primary/90",
         destructive:
           "border-destructive bg-destructive text-destructive-foreground shadow-none hover:brightness-[1.06] active:brightness-[.94]",
-        // Destructive hover language: calm at rest (outline + red text), fills
-        // destructive red on hover via .danger-hover (globals.css) — the one
-        // opt-in for delete/disconnect/remove controls that shouldn't shout.
+        // Destructive hover language: calm at rest (outline + red text), a red
+        // tint and a red hairline on hover via .danger-hover (globals.css) —
+        // the one opt-in for delete/disconnect/remove/sign-out controls that
+        // shouldn't shout. The solid fill stays the dialog's confirm button.
         "destructive-outline": "danger-hover border-border bg-transparent text-destructive shadow-none",
         // Flat at rest → tonal fill on hover → the on tone (`--selected`, a
         // rung past hover in both themes) while held, so a press deepens the

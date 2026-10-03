@@ -1126,7 +1126,7 @@ export function CanvasPanel({
             <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "console" | "code")} className="flex min-h-0 flex-1 flex-col">
               {/* Workspace tab row — view switcher left, view-contextual actions right. */}
               <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
-                <TabsList className="h-8 rounded-field p-0.5">
+                <TabsList size="sm">
                   <TabsTrigger value="preview" className="gap-1.5">
                     {rt.mode === "console" ? <Terminal className="size-3.5" aria-hidden /> : null}
                     {rt.mode === "console" ? "Output" : isDesign ? "Design" : "Preview"}
@@ -1175,8 +1175,8 @@ export function CanvasPanel({
                     onChange={setPreviewWidth}
                     ariaLabel="Preview width"
                     labelHidden
-                    className="h-7 shrink-0"
-                    optionClassName="px-2"
+                    size="sm"
+                    className="shrink-0"
                     options={[
                       { value: "full", label: "Fit the panel", icon: <Monitor className="size-3.5" aria-hidden /> },
                       { value: "tablet", label: "Tablet · 834px", icon: <Tablet className="size-3.5" aria-hidden /> },
@@ -1411,7 +1411,9 @@ export function CanvasPanel({
             onPointerDown={(e) => e.preventDefault()}
             /* z-toolbar, not z-toast: a selection toolbar must clear the popper
                layer but must never cover a toast, which is the top of the product. */
-            className="surface-float overlay-glass fixed z-toolbar flex items-center gap-0.5 rounded-menu p-1 motion-safe:animate-pop-in"
+            /* `rounded-card` (12) at p-1 so its 8px keys are concentric (12 − 4);
+               the same bar as the document viewer's selection actions. */
+            className="surface-float overlay-glass fixed z-toolbar flex items-center gap-0.5 rounded-card p-1 motion-safe:animate-pop-in"
           >
             {/* The glyphs take the row's ink rather than the accent: coral is
                 for state and the primary action, and neither verb here is

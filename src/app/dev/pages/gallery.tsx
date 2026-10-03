@@ -29,6 +29,7 @@ import {
   NOTIFICATIONS,
   PROJECTS,
   PROJECT_DETAIL,
+  FOLDER_DETAIL,
   PROJECT_MEMORY,
   RECENTS,
   SCHEDULES,
@@ -98,7 +99,12 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
 
   if (path === "/api/projects") return shell ? json({ projects: PROJECTS }) : own({ projects: PROJECTS }, { projects: [] });
   if (path.startsWith("/api/projects/") && path.endsWith("/memory")) return json(PROJECT_MEMORY);
-  if (path.startsWith("/api/projects/")) return own(PROJECT_DETAIL, { ...PROJECT_DETAIL, conversations: [], files: [] });
+  if (path.startsWith("/api/projects/")) {
+    // A folder answers as one (breadcrumbs, inherited instructions); any
+    // other id answers as Atlas, the project that holds folders.
+    const detail = path.endsWith("/p-atlas-interviews") ? FOLDER_DETAIL : PROJECT_DETAIL;
+    return own(detail, { ...detail, conversations: [], files: [] });
+  }
   if (path === "/api/library") {
     const deleted = url.searchParams.get("deleted") === "1" || url.searchParams.get("deleted") === "true" || url.searchParams.get("includeDeleted") === "true";
     const q = (url.searchParams.get("q") ?? "").toLowerCase();

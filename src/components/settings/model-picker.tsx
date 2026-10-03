@@ -197,7 +197,7 @@ export function ModelCombobox({
           role="listbox"
           aria-label={label}
           aria-multiselectable={mode === "multi" || undefined}
-          className="max-h-[min(22rem,var(--radix-popover-content-available-height,22rem))] overflow-y-auto overscroll-contain p-1"
+          className="max-h-[min(22rem,var(--radix-popover-content-available-height,22rem))] overflow-y-auto overscroll-contain p-1.5"
         >
           {rows.length === 0 && (
             <p className="px-2.5 py-6 text-center text-ui text-muted-foreground">No models match that search.</p>

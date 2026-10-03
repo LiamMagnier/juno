@@ -17,6 +17,7 @@ import {
   type SettingsSectionId,
 } from "@/components/settings/settings-sections";
 import { PROVIDERS, type Provider } from "@/lib/providers";
+import { checkUsername } from "@/lib/username";
 import type { AppBootstrap } from "@/types/app";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +25,7 @@ const DAY_MS = 86_400_000;
 const NOW = Date.UTC(2026, 8, 22, 15, 0, 0);
 
 const BOOTSTRAP: AppBootstrap = {
-  user: { id: "dev-user", name: "Liam", email: "liam@example.com", image: null },
+  user: { id: "dev-user", name: "Liam", email: "liam@example.com", image: null, username: null },
   settings: {
     theme: "system",
     accent: "coral",
@@ -163,10 +164,30 @@ function fixtureFor(url: URL, method: string, hostsParam: string | null): unknow
     };
   }
   if (path === "/api/profile/usage/breakdown") return breakdown();
+  if (path === "/api/account/username") return usernameFixture(url, method);
   if (path === "/api/account/mfa") {
     return { enabled: true, pending: false, enabledAt: new Date(NOW - 60 * DAY_MS).toISOString(), recoveryCodesRemaining: 8, hasPassword: true };
   }
   return undefined;
+}
+
+/**
+ * The username field's server, for its states: these names are taken, any
+ * other valid one is available, and a save answers with the name it was sent.
+ * `?username=` on the page sets the account's current one.
+ */
+const TAKEN_USERNAMES = new Set(["maren", "alex", "liam", "tomas"]);
+let pendingUsername: string | null = null;
+function usernameFixture(url: URL, method: string): unknown {
+  if (method === "PATCH") return { ok: true, username: pendingUsername, handle: pendingUsername };
+  const check = url.searchParams.get("check");
+  if (check === null) return { username: null, handle: "liam" };
+  const result = checkUsername(check);
+  if (!result.ok) return { username: check, available: false, problem: result.problem, message: result.message };
+  pendingUsername = result.username;
+  return TAKEN_USERNAMES.has(result.username)
+    ? { username: result.username, available: false, problem: "taken", message: "That username is taken." }
+    : { username: result.username, available: true };
 }
 
 /**
@@ -282,11 +303,16 @@ export function SettingsGallery() {
   installFixtures(params.get("hosts"));
 
   const [modalSection, setModalSection] = React.useState<SettingsSectionId>(section);
+  const username = params.get("username");
+  const bootstrap = React.useMemo<AppBootstrap>(
+    () => ({ ...BOOTSTRAP, user: { ...BOOTSTRAP.user, username: username || null } }),
+    [username]
+  );
 
   if (frame === "logos") return <LogoSheet />;
 
   return (
-    <AppProvider bootstrap={BOOTSTRAP}>
+    <AppProvider bootstrap={bootstrap}>
       {frame === "modal" ? (
         <main className="app-main-canvas min-h-dvh">
           <SettingsModal open onOpenChange={() => {}} section={modalSection} onSectionChange={setModalSection} via="pointer" />

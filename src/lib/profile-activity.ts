@@ -1,4 +1,5 @@
 import type { Provider } from "@/lib/providers";
+import { displayHandle } from "@/lib/username";
 
 /**
  * The profile page's activity, as data and as pure arithmetic.
@@ -36,6 +37,13 @@ export interface ModelUsage {
 }
 
 export interface ProfileActivity {
+  /**
+   * The account's chosen username, null until it picks one. Optional on the
+   * type only so fixtures may omit it; the server always sends both fields.
+   */
+  username?: string | null;
+  /** The @handle to show: the username, or the email-derived fallback (`profileHandle`). */
+  handle?: string;
   /** The IANA zone the days were cut in. */
   timeZone: string;
   /** Today in that zone, YYYY-MM-DD. */
@@ -321,22 +329,13 @@ export function formatDayShort(key: string, locale = "en-US"): string {
 }
 
 /**
- * The @handle under the name. Accounts have no username, so it is derived:
- * the email's local part (never the domain), lowercased, with a "+tag" and
- * anything outside [a-z0-9._-] dropped; failing that, the name as a slug.
+ * The @handle under the name: the username the account chose, or, until it
+ * has chosen one, a handle derived from the email's local part (never the
+ * domain), lowercased, with a "+tag" and anything outside [a-z0-9._-]
+ * dropped; failing that, the name as a slug (src/lib/username.ts).
  */
-export function profileHandle(user: { name: string | null; email: string | null }): string {
-  const local = user.email?.split("@")[0]?.split("+")[0] ?? "";
-  const fromEmail = local.toLowerCase().replace(/[^a-z0-9._-]/g, "");
-  if (fromEmail) return fromEmail;
-  const fromName = (user.name ?? "")
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ".")
-    .replace(/[^a-z0-9._-]/g, "");
-  return fromName || "you";
+export function profileHandle(user: { username?: string | null; name: string | null; email: string | null }): string {
+  return displayHandle(user);
 }
 
 /**

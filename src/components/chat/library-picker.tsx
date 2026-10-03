@@ -149,7 +149,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
           value={tab}
           onChange={setTab}
           ariaLabel="Filter your library"
-          className="h-9 w-fit max-w-full"
+          className="w-fit max-w-full"
           options={TABS.map((t) => ({ value: t.key, label: t.label }))}
         />
 
@@ -220,7 +220,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "absolute left-2 top-2 flex size-5 items-center justify-center rounded-xs border backdrop-blur-xs transition-colors duration-fast ease-out-soft",
+                        "absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-sm border backdrop-blur-xs transition-colors duration-fast ease-out-soft",
                         isSel
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border/80 bg-background/80 text-transparent group-hover:border-foreground/40"

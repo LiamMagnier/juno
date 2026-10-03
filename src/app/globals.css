@@ -271,8 +271,10 @@
     --sidebar-selected-border: 216.000 5.618% 82.549%;
 
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
-       tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
-       popover 16 · panel 20); this is the one value CSS-side recipes read. */
+       tailwind.config.ts (control 8 · field 10 · card 12 · popover 12 ·
+       menu 14 · panel 16 · composer 22); this is the one value CSS-side
+       recipes read. A CSS recipe nesting a box in a card writes its corner as
+       `calc(var(--radius) - <inset>)`, never as a second literal. */
     --radius: 12px;
 
     /* ---- Motion tokens ------------------------------------------------------
@@ -1109,21 +1111,47 @@
   }
 
   /* Destructive hover language — every dangerous control (delete, disconnect,
-     remove, revoke) speaks the same way on hover: the background fills
-     destructive red and text and icon go white. Composable with any Button
-     variant, menu item, or bare .pressable control — the host element's own
-     transition animates the fill; this class only adds the hover state. The
-     selector is doubled so the hover state (0,3,0) outranks variant hover
-     utilities (e.g. ghost's hover:bg-accent).
+     remove, revoke, sign out) speaks the same way when it is live: the text
+     and icon go destructive red over a subtle red tint. ONE recipe for every
+     host — a Button of any variant, a bare .pressable icon, and a Radix menu
+     row (`DropdownMenuItem variant="destructive"`, which stamps
+     `data-highlighted` whether the pointer or the arrow keys put it there).
+     The host's own transition animates the change; this class only adds the
+     live state. The selector is doubled so the live state (0,3,0) outranks
+     variant hover utilities (ghost's hover:bg-accent, a row's focus:bg-accent,
+     a muted label's focus:text-foreground).
+
+     A tint, not a solid red fill: a filled red pill under the pointer read as
+     the CONFIRM button of a dialog that had not opened yet, and it put a
+     white-on-red flash on the quietest exits in the product (Sign out, a row's
+     remove). The confirm button in the dialog keeps the solid fill
+     (`variant="destructive"`), so the two steps stay distinguishable.
 
      The icon no longer swells here. It used to scale to 1.08 on top of the
      glyph's own hover articulation (`svg.icon[data-motion]` above — a trash
      can already lifts), which gave one glyph two gestures at once; a glyph
      carries at most one (docs/design/ICONS_AND_MOTION.md §1.3). */
-  .danger-hover.danger-hover:hover {
-    border-color: hsl(var(--destructive));
-    background-color: hsl(var(--destructive));
-    color: hsl(var(--destructive-foreground));
+  .danger-hover.danger-hover:hover,
+  .danger-hover.danger-hover:focus-visible,
+  .danger-hover.danger-hover[data-highlighted] {
+    border-color: hsl(var(--destructive) / 0.32);
+    background-color: hsl(var(--destructive) / 0.09);
+    color: hsl(var(--destructive-ink));
+  }
+  /* The glyph follows the label even where a host inks it on its own (the
+     menu row's muted/foreground glyph rule). */
+  .danger-hover.danger-hover:hover svg,
+  .danger-hover.danger-hover:focus-visible svg,
+  .danger-hover.danger-hover[data-highlighted] svg {
+    color: hsl(var(--destructive-ink));
+  }
+  /* On the dark grounds the lighter red needs a little more tint to read as a
+     fill at all; the same 9% vanished against #111. */
+  .dark .danger-hover.danger-hover:hover,
+  .dark .danger-hover.danger-hover:focus-visible,
+  .dark .danger-hover.danger-hover[data-highlighted] {
+    border-color: hsl(var(--destructive) / 0.38);
+    background-color: hsl(var(--destructive) / 0.14);
   }
 
   /* ---- Surfaces (docs/design/FLAT_UI.md §2) ---------------------------------
@@ -2462,21 +2490,27 @@
     padding-left: 8px;
     border-left: 1px solid hsl(var(--border));
   }
+  /* CONCENTRIC WITH THE BLOCK. The header's keys close the block's top-right
+     corner, so they sit the same 6px in from its top edge (the header's own
+     6px padding, 24px keys in its 24px content box) and from its right edge
+     (12px padding less 6), and take 14 − 6 = 8. They were 26px keys at 10px,
+     5px down and 9px in — two insets into one corner, and a radius neither
+     inset produces. */
   .aicss-cb-actions {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
     gap: 2px;
-    margin: -7px -3px -7px auto;
+    margin: 0 -6px 0 auto;
   }
   /* The glyph-only header control (wrap). The copy button's metrics, square. */
   .aicss-cb-icon {
     display: inline-grid;
     place-items: center;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 8px; /* 14 − 6, see .aicss-cb-actions */
     background: none;
     color: hsl(var(--muted-foreground));
     cursor: pointer;
@@ -2496,12 +2530,12 @@
     align-items: center;
     gap: 4px;
     margin: 0;
-    padding: 3px 3px 3px 7px;
+    height: 24px;
+    padding: 0 3px 0 7px;
     border: 0;
-    /* `control` — the rung for a small button. 7px was off the ladder entirely. */
-    /* `control` (10px), the rung for small buttons — it was 9px, which is on
-       no rung at all and one pixel from the one it wanted. */
-    border-radius: 10px;
+    /* `control` (8px), the small-button rung — and exactly 14 − 6 for a key
+       seated 6px inside the block's corner (see .aicss-cb-actions). */
+    border-radius: 8px;
     background: none;
     color: hsl(var(--muted-foreground));
     font-size: 12px;
@@ -3620,8 +3654,15 @@
  * top-left corner. On the warm flat toast that was the only cold, un-tokened
  * object in the product, and it appeared on every one of the ~285 toasts the
  * app raises. It is now the same recipe as every other bare glyph affordance:
- * a circular tonal control on the toast's own ground, inside its edge, on the
- * trailing side where a dismiss belongs.
+ * a tonal control on the toast's own ground, inside its edge, on the trailing
+ * side where a dismiss belongs.
+ *
+ * CONCENTRIC WITH THE TOAST. It sat 8px in from a 12px corner as a full circle
+ * (radius 12), so its hover plate was rounder than the corner it sits in and
+ * struck from a different centre. It now sits 4px in and takes 12 − 4 = 8
+ * (`rounded-control`), computed from the toast's own `--radius` and its own
+ * inset so the two cannot drift. The ::before hit area (inset −4px) now ends
+ * exactly on the toast's edge.
  *
  * UNLAYERED, AND AT THIS SPECIFICITY, ON PURPOSE — the part worth recording.
  * Sonner appends its stylesheet to <head> at RUNTIME (`__insertCSS` in
@@ -3632,12 +3673,13 @@
  * attributes is (0,5,0): it wins on specificity alone, so source order stops
  * mattering and a sonner bump cannot quietly take the chip back. */
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
-  inset-inline: auto 0.5rem;
-  top: 0.5rem;
+  --toast-close-inset: 0.25rem;
+  inset-inline: auto var(--toast-close-inset);
+  top: var(--toast-close-inset);
   transform: none;
   height: 1.5rem;
   width: 1.5rem;
-  border-radius: 9999px;
+  border-radius: calc(var(--radius) - var(--toast-close-inset));
   border-color: transparent;
   background: transparent;
   color: hsl(var(--muted-foreground));

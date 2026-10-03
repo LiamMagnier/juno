@@ -14,6 +14,9 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * `Ask Juno` leads because it is what the person came for; Explain is the one
  * question common enough to be worth a button of its own. */
 
+// The keys are `rounded-control` (8) seated 4px inside a `rounded-card` (12)
+// bar: 12 − 4 = 8. The bars were the 14px `menu` rung at the same 4px inset,
+// which left every key 2px too square for the corner around it.
 const ACTION = "h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5";
 
 export function SelectionActions({
@@ -41,7 +44,7 @@ export function SelectionActions({
       // is acting on.
       onPointerDown={(e) => e.preventDefault()}
       className={cn(
-        "surface-float overlay-glass z-toolbar flex items-center gap-0.5 rounded-menu p-1 motion-safe:animate-pop-in",
+        "surface-float overlay-glass z-toolbar flex items-center gap-0.5 rounded-card p-1 motion-safe:animate-pop-in",
         className,
       )}
     >
@@ -179,7 +182,7 @@ export function AreaActions({
       aria-label="Area actions"
       onPointerDown={(e) => e.stopPropagation()}
       style={{ top, left: rect.x + rect.w / 2 }}
-      className="surface-float overlay-glass absolute z-toolbar flex -translate-x-1/2 items-center gap-0.5 whitespace-nowrap rounded-menu p-1 motion-safe:animate-pop-in"
+      className="surface-float overlay-glass absolute z-toolbar flex -translate-x-1/2 items-center gap-0.5 whitespace-nowrap rounded-card p-1 motion-safe:animate-pop-in"
     >
       <Button type="button" variant="ghost" size="sm" onClick={onAsk} disabled={busy} className={ACTION}>
         {busy ? (

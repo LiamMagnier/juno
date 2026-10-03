@@ -20,7 +20,9 @@ import { IconSwap } from "@/components/ui/icon-swap";
 import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { DotRings } from "@/components/home/dot-construction";
 import { Button } from "@/components/ui/button";
+import "@/components/chat/thought-process.css";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -35,7 +37,6 @@ import { MENU_W } from "@/components/ui/menu-recipe";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
   TOOLS_DESCRIPTION,
@@ -93,7 +94,7 @@ function Prose({ text, className }: { text: string; className?: string }) {
     [text],
   );
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("tpp-prose space-y-3.5", className)}>
       {paras.map((p, i) => (
         // Keyed by position: a trace can and does repeat a paragraph verbatim.
         <p
@@ -200,6 +201,19 @@ const HEADER_LABEL = {
   stopped: "Stopped",
 } as const;
 
+/**
+ * The hero's corner of the construction: nested orbits at the homepage's 1.5
+ * ratio, flattened as Memory's constellation is, in fractions of the drawing's
+ * box (the right two thirds of the hero). While the run works, one presence
+ * arc draws itself onto the third orbit and ends on a point; at rest the
+ * orbits stay and the arc is gone, which is the calm.
+ */
+const HERO_RINGS = [0, 1, 2, 3].map((k) => {
+  const rx = 0.11 * 1.5 ** k;
+  return { cx: 0.7, cy: 0.42, rx, ry: rx * 0.74, faint: k === 3 };
+});
+const HERO_ARCS = [{ ring: 2, from: 150, to: 330 }];
+
 const PHASE_LABEL: Record<PhaseKey, string> = {
   research: "Research",
   think: "Think",
@@ -214,7 +228,9 @@ function StepMarker({ step }: { step: Step }) {
     return <SourceFavicon url={step.source.url} variant="cluster" />;
   }
   if (step.kind === "think") {
-    return <span className="size-[7px] rounded-full bg-current" aria-hidden="true" />;
+    // A patch of the construction's lattice, in the row's ink: reasoning is
+    // drawn in the same dots the live marker uses, at rest.
+    return <span className="tpp-lattice tpp-cell [--_ink:currentColor]" aria-hidden="true" />;
   }
   if (step.kind === "tool" && step.icon) {
     return <ReceiptGlyph kind={step.icon} className="size-3" />;
@@ -670,9 +686,46 @@ export function ThoughtProcessPanel({
   const recapSentence = streaming ? (live?.message ?? "Thinking") : summary;
 
   const toolCalls = run.calls.filter((c) => !c.warn).length;
-  const figureThird = run.sourceCount > 0 || toolCalls === 0
-    ? { value: String(run.sourceCount), caption: "Sources" }
-    : { value: String(toolCalls), caption: "Tool calls" };
+
+  /**
+   * THE FIGURES — only the ones that mean something.
+   *
+   * The old row reserved three boxes and printed "—" for a cost that had not
+   * landed and "0" for sources a run never looked for. A figure that says
+   * nothing is noise in the one place the eye lands first. Elapsed is always
+   * meaningful once there is a clock; cost appears when the money could be
+   * read; sources and tool calls when there were any. At most three, so the
+   * row never wraps in the narrowest dock.
+   */
+  const figures = React.useMemo(() => {
+    const out: { key: string; value: string; caption: string }[] = [];
+    if (run.elapsedMs !== null) {
+      out.push({ key: "elapsed", value: formatSpan(run.elapsedMs, { live: streaming }), caption: "Elapsed" });
+    }
+    if (money) out.push({ key: "cost", value: money, caption: "Cost" });
+    if (run.sourceCount > 0) out.push({ key: "sources", value: String(run.sourceCount), caption: run.sourceCount === 1 ? "Source" : "Sources" });
+    if (toolCalls > 0) out.push({ key: "tools", value: String(toolCalls), caption: toolCalls === 1 ? "Tool call" : "Tool calls" });
+    return out.slice(0, 3);
+  }, [run.elapsedMs, run.sourceCount, streaming, money, toolCalls]);
+
+  /* ── THE COMPACT TITLE ───────────────────────────────────────────────────
+   * The hero says what the run is doing in display type; once it scrolls out
+   * of the panel the same words crossfade into the header, so the state and
+   * the clock are never off screen while the reader is deep in the trace. */
+  const heroRef = React.useRef<HTMLHeadingElement>(null);
+  const [heroVisible, setHeroVisible] = React.useState(true);
+  React.useEffect(() => {
+    const el = heroRef.current;
+    const root = scrollerRef.current;
+    if (!el || !root || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([entry]) => setHeroVisible(entry.isIntersecting), {
+      root,
+      // The heading counts as gone once it has slid under the header.
+      threshold: 0.6,
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   /**
    * ONE ANNOUNCER, RUN-LEVEL ONLY.
@@ -716,13 +769,20 @@ export function ThoughtProcessPanel({
       ref={rootRef}
       tabIndex={-1}
       aria-labelledby={`${id}-title`}
-      className="flex size-full flex-col bg-card focus:outline-none"
+      data-state={streaming ? "live" : run.stopped ? "stopped" : "done"}
+      className="tpp tpp-enter flex size-full flex-col bg-card focus:outline-none"
     >
-      {/* ── HEADER — one row, 48px, Claude's footer geometry ──────────────── */}
+      {/* ── HEADER — one row, 48px ───────────────────────────────────────── */}
       {/* `min-h-12`, not `h-12`: `pt-safe` pads INTO a fixed height, so on a
           phone where this dock is the topmost surface the notch would have
-          eaten the header's content rather than sitting above it. */}
-      <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/60 pl-3 pr-2 pt-safe">
+          eaten the header's content rather than sitting above it. The
+          hairline appears only once the content scrolls under it. */}
+      <header
+        className={cn(
+          "flex min-h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 pt-safe transition-colors duration-base",
+          heroVisible ? "border-transparent" : "border-[var(--tpp-line)]",
+        )}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Below the split this dock covers the chat entirely, so the close
               control has to read as a way BACK rather than as a dismissal. The
@@ -738,23 +798,41 @@ export function ThoughtProcessPanel({
             <TooltipContent side="bottom">Back to chat</TooltipContent>
           </Tooltip>
 
-          {/* The Continuum thinking mark while the run works (it moves only
-              when the run's phase changes, never on a loop), and nothing at
-              rest: a settled run needs no status mark, and a decorative dot is
-              not one. The box is kept so the title never shifts. */}
-          <span className="hidden w-4 shrink-0 items-center justify-center @[50rem]/split:flex">
-            {streaming ? <ThinkingMark phase={!live || live.message === "Thinking" ? "thinking" : "working"} size={16} eventKey={live?.message} className="text-muted-foreground" /> : null}
-          </span>
-
-          <h2 id={`${id}-title`} className="min-w-0 truncate text-ui font-medium text-foreground">
-            <span className="sr-only">Thought process — </span>
-            {statusWord}
-          </h2>
-          {run.elapsedMs !== null && (
-            <span className="shrink-0 font-mono text-ui tabular-nums text-muted-foreground">
-              · {formatSpan(run.elapsedMs, { live: streaming })}
+          {/* Two labels in one place, crossfading: the panel's name while the
+              hero is in view, and the hero's own words (state and clock) once
+              it has scrolled away. Both are aria-hidden: the hero's heading is
+              the panel's accessible name. */}
+          <div className="relative min-w-0 flex-1 self-stretch">
+            <span
+              aria-hidden="true"
+              data-hidden={heroVisible ? undefined : ""}
+              className="tpp-compact tpp-annot absolute inset-y-0 left-0 flex items-center"
+            >
+              Thought process
             </span>
-          )}
+            <span
+              aria-hidden="true"
+              data-hidden={heroVisible ? "" : undefined}
+              className="tpp-compact absolute inset-0 flex min-w-0 items-center gap-2"
+            >
+              {/* The Continuum thinking mark while the run works (it moves
+                  only when the run's phase changes, never on a loop). */}
+              {streaming ? (
+                <ThinkingMark
+                  phase={!live || live.message === "Thinking" ? "thinking" : "working"}
+                  size={14}
+                  eventKey={live?.message}
+                  className="shrink-0 text-[var(--tpp-presence)]"
+                />
+              ) : null}
+              <span className="min-w-0 truncate font-serif text-body-lg leading-none tracking-[-0.01em] text-foreground">
+                {statusWord}
+              </span>
+              {run.elapsedMs !== null && (
+                <span className="tpp-annot shrink-0">{formatSpan(run.elapsedMs, { live: streaming })}</span>
+              )}
+            </span>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
@@ -937,73 +1015,76 @@ export function ThoughtProcessPanel({
           onScroll={onScroll}
           onKeyDown={onSpineKeyDown}
           aria-live="off"
-          className="size-full overflow-y-auto overscroll-contain px-3 pb-8 pt-0"
+          className="size-full overflow-y-auto overscroll-contain px-4 pb-10 pt-0"
         >
-          {/* ── RECAP — fixed height, no reflow on settle ─────────────────── */}
-          <div className="border-b border-border/60 px-0 pb-4 pt-3">
-            {/* `min-h` holds two lines at text-body's leading so the box never
-                changes height when the sentence does. Keyed on `streaming` so
-                the swap is a crossfade rather than a rewrite. */}
-            <p
-              key={streaming ? "live" : "done"}
-              className="min-h-[2.6rem] text-body text-foreground/85 motion-safe:animate-fade-in"
-            >
-              {recapSentence}
-            </p>
+          {/* ── HERO — what it is doing, how long, and what it cost ────────── */}
+          {/* The first thing the eye lands on answers the one question a
+              person watching a run has: the state word in the greeting's
+              serif, the sentence under it, the figures that mean something,
+              then the lattice, which carries the trajectory while the run
+              works and rests as the hero's hairline once it has finished. */}
+          <div className="relative -mx-4 overflow-hidden px-4 pb-5 pt-5">
+            <DotRings
+              rings={HERO_RINGS}
+              arcs={streaming ? HERO_ARCS : undefined}
+              stagger={0.08}
+              draw={1.6}
+              className="tpp-orbits !left-auto !w-[60%]"
+            />
+            <div className="relative">
+              <h2 ref={heroRef} id={`${id}-title`} className="tpp-display tpp-rise text-foreground" style={{ ["--i" as string]: 0 }}>
+                <span className="sr-only">Thought process: </span>
+                {/* Keyed on the word so a phase change crossfades rather than
+                    rewriting in place. */}
+                <span key={statusWord} className="tpp-swap inline-block">
+                  {statusWord}
+                </span>
+              </h2>
+              {/* `min-h` holds two lines so the box never changes height when
+                  the sentence does. Keyed on `streaming` so the settle is a
+                  crossfade rather than a rewrite. */}
+              <p
+                className="tpp-rise mt-2.5 min-h-[2.75rem] max-w-[34ch] text-pretty text-ui leading-[1.55] text-muted-foreground"
+                style={{ ["--i" as string]: 1 }}
+              >
+                <span key={streaming ? "live" : "done"} className="tpp-swap block">
+                  {recapSentence}
+                </span>
+              </p>
 
-            {/* Two voices in this figure block, `ui` and `label`. The rows
-                below keep their older recipe of ui over caption, so the panel
-                as a whole is still one voice over the two that
-                docs/design/PREMIUM_AUDIT.md §3 rule 5 allows; what the rule
-                does settle here is numerals, none above ui size anywhere in
-                chrome. These were 17px mono figures over micro captions — the
-                loudest type in the panel spent on three numbers nobody acts
-                on. Ink carries the hierarchy now: foreground for the figure,
-                muted for its name. */}
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              <div className="min-w-0">
-                <div className="truncate font-mono text-ui tabular-nums text-foreground">
-                  {run.elapsedMs === null ? "—" : formatSpan(run.elapsedMs, { live: streaming })}
-                </div>
-                <div className="mt-0.5 truncate font-mono text-label text-muted-foreground">Elapsed</div>
-              </div>
-              <div className="min-w-0">
-                {/* THE ONE PLACE THIS PANEL PRINTS A PLACEHOLDER, and it is
-                    correct here precisely because the box is reserved: the
-                    alternative is a figure row that grows a third column when
-                    `usage` lands, which is the reflow the old design spent a
-                    comment defending. */}
-                <div
-                  className={cn(
-                    "truncate font-mono text-ui tabular-nums",
-                    money ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {money ?? "—"}
-                </div>
-                <div className="mt-0.5 truncate font-mono text-label text-muted-foreground">Cost</div>
-              </div>
-              <div className="min-w-0">
-                <div className="truncate font-mono text-ui tabular-nums text-foreground">{figureThird.value}</div>
-                <div className="mt-0.5 truncate font-mono text-label text-muted-foreground">
-                  {figureThird.caption}
-                </div>
-              </div>
+              {figures.length > 0 && (
+                <dl className="tpp-rise mt-4 flex flex-wrap gap-y-3" style={{ ["--i" as string]: 2 }}>
+                  {figures.map((f) => (
+                    <div
+                      key={f.key}
+                      className="flex min-w-0 flex-col-reverse gap-1.5 border-l border-[var(--tpp-line)] px-4 first:border-l-0 first:pl-0"
+                    >
+                      <dt className="tpp-annot">{f.caption}</dt>
+                      <dd className="tpp-figure truncate text-foreground">{f.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </div>
 
-            {/* NOTICE — absent when the run was clean. There is no "no
-                warnings" state: its absence is the signal.
+            <div
+              aria-hidden="true"
+              data-live={streaming ? "" : undefined}
+              data-rest={streaming ? undefined : ""}
+              className="tpp-lattice tpp-rise relative mt-5 h-[10.4px]"
+              style={{ ["--i" as string]: 3 }}
+            />
 
-                The dark tint is separated out. --warning is a 58%-lightness
-                fill in dark, so 5% of it over the --card panel is a 2.6-point
-                step — the one block that has to be noticed was the quietest
-                thing in the panel. 5% is still right over light paper. */}
+            {/* NOTICE — absent when the run was clean. There is no "no
+                warnings" state: its absence is the signal. Warning is the one
+                hue besides presence, because it is state. */}
             {(warnings.length > 0 || !!finishNote) && (
               <section
                 aria-labelledby={`${id}-notice`}
-                className="-mx-3 mt-3 border-l-2 border-warning/35 bg-warning/5 px-3 py-2 dark:bg-warning/10"
+                className="tpp-rise relative mt-4 border-l border-warning/50 pl-3"
+                style={{ ["--i" as string]: 4 }}
               >
-                <h3 id={`${id}-notice`} className="flex items-center gap-1.5 font-mono text-label text-warning">
+                <h3 id={`${id}-notice`} className="tpp-annot flex items-center gap-1.5 !text-warning">
                   <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />
                   Notice
                 </h3>
@@ -1050,19 +1131,17 @@ export function ThoughtProcessPanel({
                     speak in six. */}
                 <h3
                   id={`${id}-phase-${section.key}`}
-                  className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-label text-muted-foreground"
+                  className="sticky top-0 z-10 -mx-4 flex items-baseline justify-between gap-2 bg-card px-4 pb-2 pt-5"
                 >
-                  <span>{PHASE_LABEL[section.key]}</span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {plural(section.steps.length, "step")}
-                  </span>
+                  <span className="tpp-h3 text-foreground">{PHASE_LABEL[section.key]}</span>
+                  <span className="tpp-annot">{plural(section.steps.length, "step")}</span>
                 </h3>
                 {section.key === "think" && toolsMissingDetail && (
                   <p className="mb-1 text-caption text-muted-foreground">{TOOLS_NO_DETAIL_NOTE}</p>
                 )}
                 {/* The hairline spine. 10px is the centre of the 20px marker
                     column, which sits flush with the scroller's px-3. */}
-                <ol className="relative before:absolute before:inset-y-1 before:left-[0.625rem] before:w-px before:bg-border before:content-['']">
+                <ol className="relative before:absolute before:inset-y-2 before:left-[0.625rem] before:w-px before:bg-[var(--tpp-line)] before:content-['']">
                   {section.steps.map((step, i) => (
                     <StepRow
                       key={step.id}
@@ -1088,7 +1167,7 @@ export function ThoughtProcessPanel({
 
           {/* ── DETAILS — one disclosure, closed ──────────────────────────── */}
           {(detailRows.length > 0 || memorySteps.length > 0) && (
-            <div className="mt-6 border-t border-border/60 pt-3">
+            <div className="mt-8 border-t border-[var(--tpp-line)] pt-2">
               <button
                 type="button"
                 onClick={() => setDetailsOpen((v) => !v)}
@@ -1097,16 +1176,23 @@ export function ThoughtProcessPanel({
                 // `.pressable` alone times the hover fill and the dip; a
                 // `transition-colors` beside it replaced that list, so the
                 // press snapped instead of dipping.
-                className="pressable flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-ui text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+                className="pressable group/details -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-2 rounded-control px-2 py-2 text-left hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
               >
-                <ChevronRight
-                  aria-hidden="true"
-                  className={cn(
-                    "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                    detailsOpen && "rotate-90",
-                  )}
-                />
-                Details
+                <span className="tpp-h3 !text-body-lg text-foreground/85 group-hover/details:text-foreground">Details</span>
+                <span className="flex items-center gap-2">
+                  {/* What is inside, before it is opened: the model's name is
+                      the one fact most people open Details for. */}
+                  {!detailsOpen && detailRows[0] ? (
+                    <span className="tpp-annot max-w-[12rem] truncate">{detailRows[0].value}</span>
+                  ) : null}
+                  <ChevronRight
+                    aria-hidden="true"
+                    className={cn(
+                      "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                      detailsOpen && "rotate-90",
+                    )}
+                  />
+                </span>
               </button>
               {/* Collapse, not `{detailsOpen && …}` inside a hand-rolled grid:
                   the conditional unmounted the content the moment the button
@@ -1117,20 +1203,18 @@ export function ThoughtProcessPanel({
               <Collapse open={detailsOpen}>
                 <div id={`${id}-details`}>
                   {detailRows.length > 0 && (
-                    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-2 pt-2">
+                    <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 pb-1 pt-3">
                       {detailRows.map((f) => (
                         <React.Fragment key={f.label}>
-                          <dt className="text-ui text-muted-foreground">{f.label}</dt>
-                          <dd className="min-w-0 break-words text-ui text-foreground/80">{f.value}</dd>
+                          <dt className="tpp-annot pt-px">{f.label}</dt>
+                          <dd className="min-w-0 break-words text-ui text-foreground/85">{f.value}</dd>
                         </React.Fragment>
                       ))}
                     </dl>
                   )}
                   {memorySteps.length > 0 && (
                     <>
-                      <h4 className="mt-4 px-2 font-mono text-label text-muted-foreground">
-                        Memory used
-                      </h4>
+                      <h4 className="tpp-annot mt-5">Memory used</h4>
                       <ol className="relative mt-1">
                         {memorySteps.map((step, i) => (
                           <StepRow
@@ -1260,19 +1344,23 @@ function StepRow({
     expanded && "bg-secondary hover:bg-secondary",
   );
 
+  /* The running step wears the lattice with the trajectory crossing it: the
+   * one live object in the spine, drawn in the construction's language rather
+   * than as a ring or a dot. Every settled kind keeps its own glyph, on the
+   * sheet's colour so the spine hairline passes behind it. */
   const marker = (
     <span
       className={cn(
-        "col-start-1 row-start-1 flex size-5 items-center justify-center rounded-full ring-4 ring-card",
-        step.running
-          ? "text-primary ring-2 ring-primary/35"
-          : step.failed
-            ? "text-warning"
-            : "text-muted-foreground/80",
-        expanded && "ring-secondary",
+        "col-start-1 row-start-1 flex size-5 items-center justify-center rounded-full bg-card",
+        step.running ? "text-[var(--tpp-presence)]" : step.failed ? "text-warning" : "text-muted-foreground/80",
+        expanded && "bg-secondary",
       )}
     >
-      <StepMarker step={step} />
+      {step.running ? (
+        <span aria-hidden="true" data-live="" className="tpp-lattice tpp-cell" />
+      ) : (
+        <StepMarker step={step} />
+      )}
     </span>
   );
 
@@ -1457,11 +1545,12 @@ function StepRow({
       // A new step fades up ONCE, on the first paint of its id. A settled panel
       // staggers its rows in on the tight rung; a live one does not, because a
       // row arriving mid-stream is one row, not a list.
-      className={cn(
-        "group/step relative",
-        !streaming && "motion-safe:animate-fade-in-up [animation-fill-mode:backwards]",
-      )}
-      style={streaming ? undefined : staggerDelay(index, "tight")}
+      // Every step rises once, on the first paint of its id: a settled panel
+      // staggers its rows in sequence; a live one does not, because a row
+      // arriving mid-stream is one row, not a list. The delay is read only
+      // when the animation starts, so a later re-render never replays it.
+      className="tpp-step group/step relative"
+      style={{ ["--i" as string]: streaming ? 0 : Math.min(index, 8) + 3 }}
     >
       {openable ? (
         <button

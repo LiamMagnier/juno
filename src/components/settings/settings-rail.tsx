@@ -183,7 +183,7 @@ export function SettingsRail({
           layoutId={indicatorId}
           aria-hidden="true"
           transition={spring.standard}
-          // The radius rides `style` (rounded-control's 10px) so framer keeps
+          // The radius rides `style` (rounded-control's 8px) so framer keeps
           // the corners true while it scales the fill between two chips of
           // different widths. `-inset-px` covers the row's border box.
           className="pointer-events-none absolute -inset-px bg-selected"

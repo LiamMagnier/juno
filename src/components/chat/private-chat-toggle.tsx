@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { IncognitoGlyph } from "@/components/chat/incognito-glyph";
+import { IncognitoGlyph, useIncognitoLook } from "@/components/chat/incognito-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -41,11 +41,18 @@ export function PrivateChatToggle({
    * pill that names the mode, so being incognito is never something you have
    * to infer from a tinted icon. The pill grows out of the circle on the
    * homepage's ease, and presses at .97 like the homepage's buttons.
+   *
+   * The glasses look at the pointer once it comes within reach of the button
+   * (`useIncognitoLook`): a small invitation before the press, quiet at rest,
+   * still under reduced motion and on touch.
    */
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const look = useIncognitoLook(buttonRef, !disabled);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
+          ref={buttonRef}
           type="button"
           aria-label={active ? "Leave incognito" : "Turn on incognito"}
           aria-pressed={active}
@@ -61,7 +68,7 @@ export function PrivateChatToggle({
               : "w-9 text-foreground/75 hover:bg-accent hover:text-foreground coarse:w-11"
           )}
         >
-          <IncognitoGlyph className="size-5" strokeWidth={1.5} />
+          <IncognitoGlyph className="size-5" strokeWidth={1.5} look={look} />
           {active ? <span className="tracking-[-0.005em] motion-safe:animate-fade-in">Incognito</span> : null}
         </button>
       </TooltipTrigger>

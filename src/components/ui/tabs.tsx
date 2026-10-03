@@ -4,6 +4,7 @@ import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { motion, useReducedMotion } from "framer-motion";
 
+import { SEGMENTED_METRICS, type SegmentedSize } from "@/components/ui/segmented-control";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -45,11 +46,18 @@ const Tabs = React.forwardRef<
 });
 Tabs.displayName = TabsPrimitive.Root.displayName;
 
+/** The list's rung, for its triggers' height and their thumb's radius. */
+const TabsSizeContext = React.createContext<SegmentedSize>("md");
+
 /**
  * Inset track, raised thumb (docs/design/FLAT_UI.md §2.2). The list is
- * `.surface-inset` at `rounded-menu` (14) with p-1, so the 10px
- * `rounded-control` thumb sits concentric inside it. SegmentedControl is the
- * same idiom; the two now move the same way too.
+ * `.surface-inset` with the same 4px all round at both rungs, and the thumb's
+ * radius is the track's minus hairline and padding, so the two curves stay
+ * parallel: `md` is 36px at `rounded-menu` (14) holding a 9px thumb, `sm` is
+ * 32px at `rounded-card` (12) holding a 7px one. The numbers are
+ * SegmentedControl's (SEGMENTED_METRICS) — the same idiom, drawn and moved
+ * the same way. Pass `size`, never a height: a forced `h-8` with `p-0.5` is
+ * what left the canvas's Preview / Code thumb 2px off the track's edge.
  *
  * `isolate` makes the list the stacking context the thumb is painted in: the
  * thumb sits at `-z-10` inside whichever trigger is active, which puts it
@@ -58,16 +66,19 @@ Tabs.displayName = TabsPrimitive.Root.displayName;
  */
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn(
-      "surface-inset isolate inline-flex h-9 items-center justify-center rounded-menu p-1 text-muted-foreground",
-      className
-    )}
-    {...props}
-  />
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List> & { size?: SegmentedSize }
+>(({ className, size = "md", ...props }, ref) => (
+  <TabsSizeContext.Provider value={size}>
+    <TabsPrimitive.List
+      ref={ref}
+      className={cn(
+        "surface-inset isolate inline-flex items-center justify-center gap-1 p-1 text-muted-foreground",
+        SEGMENTED_METRICS[size].track,
+        className
+      )}
+      {...props}
+    />
+  </TabsSizeContext.Provider>
 ));
 TabsList.displayName = TabsPrimitive.List.displayName;
 
@@ -87,15 +98,17 @@ TabsList.displayName = TabsPrimitive.List.displayName;
 const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, children, value, ...props }, ref) => {
+>(({ className, children, value, style, ...props }, ref) => {
   const context = React.useContext(TabsThumbContext);
   const thumb = props.asChild ? null : context;
   const reduceMotion = useReducedMotion() ?? false;
+  const metrics = SEGMENTED_METRICS[React.useContext(TabsSizeContext)];
   const thumbId = thumb !== null && thumb.value === value ? thumb.id : null;
   return (
     <TabsPrimitive.Trigger
       ref={ref}
       value={value}
+      style={{ borderRadius: metrics.thumbRadius, ...style }}
       className={cn(
         // Scoped transition, not transition-all: the latter puts width, height,
         // padding and font-size on the compositor's critical path for a change
@@ -105,7 +118,8 @@ const TabsTrigger = React.forwardRef<
         // the thumb's, which covers the border box. The inactive hover is a
         // faint wash below the thumb's own contrast: it says "you can press
         // here", not "a second selected state".
-        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border border-transparent px-3 py-1 text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
+        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-transparent text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
+        metrics.segment,
         thumb === null && "data-[state=active]:surface-key data-[state=active]:border-border/60",
         className
       )}
@@ -124,7 +138,7 @@ const TabsTrigger = React.forwardRef<
               // corners true while it scales the box between two triggers of
               // different widths.
               className="surface-key pointer-events-none absolute -inset-px -z-10 border-border/60"
-              style={{ borderRadius: 8 }}
+              style={{ borderRadius: metrics.thumbRadius }}
             />
           )}
           {children}

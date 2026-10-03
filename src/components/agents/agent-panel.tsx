@@ -375,7 +375,7 @@ export function AgentProfile({
           type="button"
           size="sm"
           variant="ghost"
-          className="rounded-full text-muted-foreground hover:text-destructive"
+          className="danger-hover rounded-full text-muted-foreground"
           onClick={() => setConfirm("retire")}
         >
           Retire

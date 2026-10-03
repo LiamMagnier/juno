@@ -213,3 +213,17 @@ test("the bar names the model actually answering", () => {
   assert.match(voiceHook, /setModel\(msg\.model \?\? null\)/);
   assert.match(voiceBar, /voice\.model/);
 });
+
+test("a call opens on Gemini unless the caller picked another provider", async () => {
+  const { DEFAULT_VOICE_PROVIDER, VOICE_PROVIDERS } = await import("../src/lib/voice-relay-protocol");
+  assert.equal(DEFAULT_VOICE_PROVIDER, "gemini");
+  assert.ok(VOICE_PROVIDERS.includes(DEFAULT_VOICE_PROVIDER));
+  // The hook's own default is the shared constant, and an explicit pick wins.
+  assert.match(voiceHook, /opts\.defaultProvider \?\? DEFAULT_VOICE_PROVIDER/);
+  assert.doesNotMatch(voiceHook, /\?\? "qwen"/);
+  const nativeProtocol = readFileSync(
+    new URL("../native/Packages/JunoNativeKit/Sources/JunoVoiceKit/JunoVoiceRelayProtocol.swift", import.meta.url),
+    "utf8",
+  );
+  assert.match(nativeProtocol, /static let productionDefault: Self = \.gemini/);
+});

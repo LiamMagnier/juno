@@ -97,7 +97,7 @@ export function ProfileGallery() {
   return (
     <div className="h-dvh bg-background text-foreground">
       <ProfileView key={`${fixture}-${dark}`} identity={identity} activity={activity} failed={fixture === "error"} onRetry={() => {}} editHref="#" />
-      <nav className="fixed bottom-3 right-3 z-10 flex gap-1 rounded-menu border border-border/60 bg-background/90 p-1 text-caption backdrop-blur" aria-label="Fixtures">
+      <nav className="fixed bottom-3 right-3 z-10 flex gap-1 rounded-card border border-border/60 bg-background/90 p-1 text-caption backdrop-blur" aria-label="Fixtures">
         {["heavy", "new", "loading", "error"].map((f) => (
           <Link key={f} href={`?fixture=${f}${dark ? "&theme=dark" : ""}`} className="rounded-control px-2 py-1 hover:bg-accent" aria-current={f === fixture ? "page" : undefined}>
             {f}

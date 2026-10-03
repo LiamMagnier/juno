@@ -37,6 +37,11 @@ model User {
   /// this column to authorize the object, so it needs an index (see @@index).
   image          String?
   hashedPassword String? // null for OAuth-only users
+  /// The @handle the account chose (src/lib/username.ts). Stored lowercased
+  /// (a CHECK constraint in the migration holds it), so this plain unique
+  /// index is case-insensitive uniqueness. Null until one is picked; the
+  /// profile then shows a handle derived from the email instead.
+  username       String?   @unique
   // Incremented after a password reset, a password change, or "sign out
   // everywhere". JWTs carry the version they were issued with, so every older
   // session becomes invalid immediately.
@@ -682,10 +687,21 @@ model Project {
   // Stable source identity for idempotent Juno package imports. Nullable so
   // ordinary projects and legacy rows remain untouched.
   importSourceId      String?
+  /// The folder this project sits in; null for a top-level project. Projects
+  /// nest as folders (src/lib/projects/project-tree.ts holds the rules: no
+  /// cycles, at most MAX_PROJECT_DEPTH levels, owner and parent share a user).
+  /// A subfolder inherits its ancestors' instructions and files, parent first.
+  ///
+  /// SetNull at the database is only the floor: the API and sync deletes move
+  /// a folder's children up to ITS parent (or delete them, when asked) before
+  /// the row goes, so a child is never silently lifted to the top level.
+  parentId            String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent             Project?               @relation("ProjectTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children           Project[]              @relation("ProjectTree")
   conversations      Conversation[]
   files              Attachment[]
   workSessions       WorkSession[]
@@ -699,6 +715,7 @@ model Project {
 
   @@unique([userId, importSourceId])
   @@index([userId, updatedAt])
+  @@index([parentId])
 }
 
 /// A collaborator membership on a Project with explicit role permissions.

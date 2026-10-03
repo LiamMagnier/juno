@@ -347,7 +347,7 @@ export function WorkHostSettings({
             ariaLabel={`How often ${PRODUCT_NAME} asks before acting on this Mac`}
             // The labels are phrases now, not words, so the segments wrap on a
             // narrow window rather than truncating a promise mid-sentence.
-            optionClassName="whitespace-normal px-3 py-1 text-ui leading-snug"
+            optionClassName="h-auto min-h-[1.625rem] whitespace-normal px-3 py-1 text-ui leading-snug coarse:h-auto coarse:min-h-[2.125rem]"
             className="max-w-xl"
           />
           <p className="mt-2 text-caption leading-relaxed text-muted-foreground">

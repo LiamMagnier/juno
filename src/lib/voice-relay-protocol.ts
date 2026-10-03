@@ -95,6 +95,15 @@ export const VOICE_PROVIDER_LABELS: Record<VoiceProviderId, string> = {
   mock: "Mock (dev)",
 };
 
+/**
+ * The provider a call opens on when the caller has not picked one: Gemini
+ * Live. A pick in the switcher still wins for the rest of that call, and a
+ * provider the relay reports as unavailable still falls back down
+ * `VOICE_PROVIDERS`. The native apps pin the same default
+ * (`JunoVoiceProvider.productionDefault`).
+ */
+export const DEFAULT_VOICE_PROVIDER: VoiceProviderId = "gemini";
+
 /** Providers shown in the switcher (mock appears only in dev builds). */
 export const VOICE_PROVIDERS: VoiceProviderId[] =
   process.env.NODE_ENV === "development"

@@ -115,10 +115,13 @@ const DropdownMenuItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean;
     /**
-     * `destructive` for a row that deletes, disconnects or revokes. Reddens
-     * the label AND tints the focus fill, so the one row in a menu that cannot
-     * be undone does not highlight exactly like Rename — keyboard users hit
-     * that hardest, since focus is the only signal they get.
+     * `destructive` for a row that deletes, disconnects, revokes or signs out.
+     * Reddens the label AND takes the product's one destructive live state
+     * (`.danger-hover`, globals.css: red ink over a red tint), so the one row
+     * in a menu that cannot be undone does not highlight exactly like Rename —
+     * keyboard users hit that hardest, since focus is the only signal they
+     * get. A row that should sit quiet at rest (Sign out) states its own
+     * muted `text-*` class; it still turns red when highlighted.
      */
     variant?: "default" | "destructive";
   }
@@ -130,7 +133,7 @@ const DropdownMenuItem = React.forwardRef<
       // The destructive row does NOT take the muted glyph ink: its icon should
       // carry the same red as its label, which it does by inheriting.
       variant === "destructive"
-        ? "text-destructive focus:bg-destructive/10 focus:text-destructive"
+        ? "danger-hover text-destructive-ink"
         : cn(menuGlyphInkClass, "focus:bg-accent focus:text-accent-foreground"),
       inset && "pl-8",
       className

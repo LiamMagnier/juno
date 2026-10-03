@@ -86,17 +86,21 @@ export function CompareModelPicker({
         </Pressable>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className="flex w-80 flex-col overflow-hidden p-0">
-        <div className="relative border-b border-border/60 p-2">
-          <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        {/* Concentric with the 12px popover: the field and the rows are 8px
+            (`control`) boxes seated 4px in (`p-1`), 12 − 4 = 8. The search
+            was a 10px field 8px in and the rows 8px boxes 6px in — neither
+            corner matched the shell around it. */}
+        <div className="relative border-b border-border/60 p-1">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search models…"
-            className="h-8 pl-9"
+            className="h-8 rounded-control pl-8"
             autoFocus
           />
         </div>
-        <div className="max-h-72 overflow-y-auto p-1.5">
+        <div className="max-h-72 overflow-y-auto p-1">
           {visible.length === 0 ? (
             <EmptyState size="panel" icon={SearchX} title="No models found" description="Try a different name or provider." />
           ) : (

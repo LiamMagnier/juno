@@ -1,21 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Pin, NotebookPen } from "@/components/ui/icons";
+import { Folder, Pin, NotebookPen, Plus } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ProjectBreadcrumbs,
+  ProjectNameDialog,
+  type ProjectDrag,
+} from "@/components/projects/project-folders";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +45,15 @@ interface ProjectWorkspaceHeaderProps {
   onDelete: () => void;
   /** Extra entries for the actions menu, placed before the destructive group. */
   menuExtras?: React.ReactNode;
+  /** The folders above this project, root first (owner only). */
+  breadcrumbs?: { id: string; name: string }[];
+  /** Drop a folder or a chat on a crumb to move it there. */
+  onDropOnCrumb?: (targetId: string | null, drag: ProjectDrag) => void;
+  acceptOnCrumb?: (drag: ProjectDrag, targetId: string | null) => boolean;
+  onMove?: () => void;
+  onNewFolder?: () => void;
+  /** Why a folder can't be made here (too deep), or null. */
+  newFolderRefusal?: string | null;
   className?: string;
 }
 
@@ -75,19 +79,21 @@ export function ProjectWorkspaceHeader({
   onRename,
   onDelete,
   menuExtras,
+  breadcrumbs = [],
+  onDropOnCrumb,
+  acceptOnCrumb,
+  onMove,
+  onNewFolder,
+  newFolderRefusal,
   className,
 }: ProjectWorkspaceHeaderProps) {
   const [renameOpen, setRenameOpen] = React.useState(false);
-  const [nameDraft, setNameDraft] = React.useState(project.name);
   const [renaming, setRenaming] = React.useState(false);
 
-  const openRename = () => {
-    setNameDraft(project.name);
-    setRenameOpen(true);
-  };
+  const openRename = () => setRenameOpen(true);
 
-  const handleSaveName = async () => {
-    const next = nameDraft.trim();
+  const handleSaveName = async (draft: string) => {
+    const next = draft.trim();
     if (!next || next === project.name) {
       setRenameOpen(false);
       return;
@@ -125,20 +131,32 @@ export function ProjectWorkspaceHeader({
     ...(stats.workCount ? [plural(stats.workCount, "task")] : []),
     ...(stats.codeCount ? [plural(stats.codeCount, "code session")] : []),
   ];
+  // Mono, like every count in the editorial pages: figures read at a glance.
   const lede = (
-    <span className="text-caption tabular-nums">
-      {counts.join(" · ")} · Updated {timeAgo(project.updatedAt)}
+    <span className="pj-annot flex flex-wrap gap-x-4 gap-y-1">
+      {counts.map((count) => (
+        <span key={count}>{count}</span>
+      ))}
+      <span>Updated {timeAgo(project.updatedAt)}</span>
     </span>
   );
+  const parent = breadcrumbs[breadcrumbs.length - 1];
 
   return (
     <>
       <AppPageHeader
         className={className}
         backdrop
-        backHref="/projects"
-        backLabel="Back to projects"
-        eyebrow="Projects"
+        backHref={parent ? `/projects/${parent.id}` : "/projects"}
+        backLabel={parent ? `Back to ${parent.name}` : "Back to projects"}
+        eyebrow={
+          <ProjectBreadcrumbs
+            crumbs={breadcrumbs}
+            current={project.name}
+            onDropInto={onDropOnCrumb}
+            accept={acceptOnCrumb}
+          />
+        }
         heading={<span className="block min-w-0 truncate tracking-[-0.03em]">{project.name}</span>}
         lede={lede}
         actions={
@@ -186,6 +204,18 @@ export function ProjectWorkspaceHeader({
                   <ActionIcons.edit className="size-4" aria-hidden="true" />
                   <span>Rename</span>
                 </DropdownMenuItem>
+                {onNewFolder && (
+                  <DropdownMenuItem onSelect={onNewFolder} disabled={!!newFolderRefusal}>
+                    <Plus className="size-4" aria-hidden="true" />
+                    <span>New folder inside</span>
+                  </DropdownMenuItem>
+                )}
+                {onMove && (
+                  <DropdownMenuItem onSelect={onMove}>
+                    <Folder className="size-4" aria-hidden="true" />
+                    <span>Move to…</span>
+                  </DropdownMenuItem>
+                )}
                 {/* No "Edit instructions" item. The outline Instructions button
                     ~50px to the left of this menu is the same handler with the
                     same glyph and a standing hit target; a menu whose items
@@ -211,34 +241,14 @@ export function ProjectWorkspaceHeader({
         }
       />
 
-      <Dialog open={renameOpen} onOpenChange={(open) => { if (!open) setRenameOpen(false); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Rename project</DialogTitle>
-            <DialogDescription>Change the name of this project.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="project-rename">Project name</Label>
-            <Input
-              id="project-rename"
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              placeholder="New project name"
-              autoFocus
-              aria-label="Project name"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleSaveName();
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenameOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveName} loading={renaming} disabled={!nameDraft.trim()}>
-              Rename project
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ProjectNameDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        mode="rename"
+        initialName={project.name}
+        busy={renaming}
+        onSubmit={(name) => void handleSaveName(name)}
+      />
     </>
   );
 }

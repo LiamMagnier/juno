@@ -26,8 +26,8 @@ import containerQueries from "@tailwindcss/container-queries";
  *                         the composed .surface-{raised,raised-lg,inset,float} / .control-{neu,primary}
  *                         classes in globals.css, not the bare shadows. shadow-{soft,lift,glass}
  *                         are the legacy in-flow rungs, cut from the same two inks.
- * Radius ................ control 10 · field 12 · menu 14 · card 16 (= lg = surface = popover) ·
- *                         panel 20 (= composer). Pills remain explicit rounded-full.
+ * Radius ................ control 8 · field 10 · card 12 (= lg = surface = popover) · menu 14 ·
+ *                         panel 16 · composer 22. Nested: nest-<rung> nest-p-<n> → rounded-inner.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
  * Thinking .............. animate-thinking-matrix (3×3 mark) · animate-status-glow ·
  *                         animate-icon-breathe + .scroll-fade-y (globals.css)
@@ -138,13 +138,18 @@ const config: Config = {
       borderRadius: {
         // The Soft UI radius ladder (docs/design/SOFT_UI.md §2.3), single source.
         //
-        //   control 10 · field 12 · menu 14 · card 16 · popover 16 · panel 20 · full
+        //   control 8 · field 10 · card 12 · menu 14 · panel 16 · composer 22 · full
         //
-        // Concentric rule: outer radius = inner radius + padding. A 16px card
-        // with p-1.5 (6px) holds 10px controls; a 20px panel with p-1 (4px)
-        // holds 16px cards; a 14px menu with p-1 holds 10px items.
+        // Concentric rule: inner radius = outer radius − padding, with the SAME
+        // padding on every side the two boxes share. A 12px card with p-1 (4px)
+        // holds 8px controls; a 14px menu with p-1.5 (6px) holds 8px rows; a
+        // 16px panel with p-1 holds 12px cards; the 22px composer's controls,
+        // 10px in, are 12 (`composer-action`). Write it with `nest-<rung>` +
+        // `nest-p-<step>` on the parent and `rounded-inner` on the child (the
+        // plugin at the bottom of this file) and the arithmetic is done for
+        // you; `design-system/concentric-radius` (eslint) checks the rest.
         //
-        // `lg` IS `card` (= --radius, 16px) and `panel` is 20px. The old
+        // `lg` IS `card` (= --radius, 12px) and `panel` is 16px. The old
         // `lg/surface` duality — two names for one 16px value, and a `lg` that
         // was quietly a different number from `card` — is gone: `surface` and
         // `popover` remain as ALIASES of `card` so no call site breaks, but they
@@ -179,10 +184,10 @@ const config: Config = {
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",
-        // The two composer-seated control radii. The primary action sits at
-        // `composer-action` at its 36px rest size and morphs to
-        // `composer-control` as it widens to 44px while busy — the corner
-        // curvature has to fall as the box grows or the button visibly inflates.
+        // The two composer-seated control radii. Every control on the composer's
+        // controls row — the `+`, the mic, the primary action — sits 10px in
+        // from the 22px shell, so it takes `composer-action` (22 − 10 = 12).
+        // `composer-control` is the tighter seat for a control inset further.
         // Both are nested inside the composer shell and neither is on the main
         // ladder, which is exactly why they need names: they are derived, not
         // chosen. They move WITH the shell — nesting reads as concentric only
@@ -198,6 +203,19 @@ const config: Config = {
         // For overlays that must trace whatever they are laid over (drag scrims,
         // focus rings on an unknown parent). A keyword, not a magic number.
         inherit: "inherit",
+        // THE CONCENTRIC CHILD. `rounded-inner` is its parent's radius minus its
+        // parent's padding, read off the two custom properties the parent sets
+        // with `nest-<rung>` and `nest-p-<step>` (the plugin below):
+        //
+        //   <div class="nest-menu nest-p-1.5">        14px shell, 6px inset
+        //     <div class="rounded-inner">…</div>      → 8px, by construction
+        //
+        // Move the shell a rung or change its padding and the child follows —
+        // the arithmetic lives in one place instead of in a comment beside every
+        // nested box. The fallbacks are the menu recipe's own numbers (14 − 6 =
+        // 8), so a row rendered outside any `nest-*` parent is still a control.
+        // A calc, not px, so the native token mirror skips it (it reads px only).
+        inner: "max(0px, calc(var(--r-outer, 14px) - var(--pad, 6px)))",
       },
       boxShadow: {
         // The Soft UI depth kit (globals.css `--shadow-*`, per theme). Prefer the
@@ -920,6 +938,27 @@ const config: Config = {
      * written. This is the missing half.
      */
     containerQueries,
+    /*
+     * The concentric pair (see `rounded-inner` above). `nest-card` is
+     * `rounded-card` that also publishes its radius as `--r-outer`; `nest-p-1`
+     * is `p-1` that also publishes its inset as `--pad`. Both read the real
+     * ladders, so there is no second table to keep in step.
+     */
+    plugin(({ matchUtilities, theme }) => {
+      const radii = Object.fromEntries(
+        Object.entries((theme("borderRadius") ?? {}) as Record<string, string>).filter(
+          ([name]) => !["inner", "inherit", "full", "none", "logo", "DEFAULT"].includes(name),
+        ),
+      );
+      matchUtilities(
+        { nest: (value: string) => ({ "--r-outer": value, borderRadius: value }) },
+        { values: radii },
+      );
+      matchUtilities(
+        { "nest-p": (value: string) => ({ "--pad": value, padding: value }) },
+        { values: theme("spacing") as Record<string, string> },
+      );
+    }),
     // `coarse:` → touch devices, for 44px hit areas (WCAG AA).
     plugin(({ addVariant, addUtilities }) => {
       addVariant("coarse", "@media (pointer: coarse)");

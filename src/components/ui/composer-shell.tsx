@@ -465,9 +465,13 @@ export const composerChevronClass =
  * ring, which exists for a control flush inside a clipping parent; the
  * controls row sits 10px inside a composer surface that does not clip, so the
  * outline's 2px offset has room and the one indicator is the house one.
+ *
+ * `rounded-composer-action` (12), concentric with the shell: the `+` seats the
+ * composer's bottom-left corner 10px in from a 22px curve, and 22 − 10 = 12.
+ * It was a circle (16), rounder than the corner around it allows.
  */
 export const composerIconButtonClass =
-  "size-8 shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-8 shrink-0 rounded-composer-action border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row
@@ -624,7 +628,11 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // (globals.css), which follows the round corner. The ring and
           // card-coloured ring offset it used to add painted a halo on top of
           // it (ICONS_AND_MOTION.md §2.2, rule 3).
-          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full",
+          // `rounded-composer-action` (12), not a circle: the disc closes the
+          // composer's bottom-right corner from 10px in, and a 22px corner
+          // inset by 10 leaves 12. A full circle there (18) was struck from a
+          // different centre than the shell's own curve around it.
+          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-composer-action",
           face === "voice"
             ? // Empty, the disc is the quiet voice entry: a tone step and the
               // second ink, so the field (the thing to do) leads and the disc
@@ -860,7 +868,7 @@ export function ComposerAttachmentTile({
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${upload.fileName}`}
-          className="absolute right-0.5 top-0.5 grid size-6 coarse:size-8 place-items-center rounded-full bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+          className="absolute right-0.5 top-0.5 grid size-6 coarse:size-8 place-items-center rounded-xs bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none coarse:opacity-100"
         >
           <ActionIcons.dismiss className="size-3" aria-hidden="true" />
         </button>
@@ -891,7 +899,11 @@ export function ComposerAttachmentRow({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-wrap gap-2 px-4 pt-3.5 empty:hidden", className)}>
+    // `p-3.5` on the two seated sides: the first tile sits 14px in from the
+    // composer's 22px corner on BOTH axes, so its 8px corner (22 − 14) is
+    // concentric. It was 16px across and 14px down — two different insets
+    // into one corner, which no single radius can be concentric with.
+    <div className={cn("flex flex-wrap gap-2 px-3.5 pt-3.5 empty:hidden", className)}>
       <MotionConfig reducedMotion="user">
         <AnimatePresence initial={false}>
           {uploads.map((upload) => (

@@ -8,14 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MENU_W } from "@/components/ui/menu-recipe";
+import { dragSourceProps } from "@/components/projects/project-folders";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -32,9 +25,9 @@ export interface ProjectConversationItem {
 interface ProjectChatListProps {
   projectId: string;
   conversations: ProjectConversationItem[];
-  allProjects?: { id: string; name: string }[];
   onTogglePin: (id: string, current: boolean) => void;
-  onMoveChat?: (chatId: string, targetProjectId: string) => void;
+  /** Opens the Move to… picker for this chat. Rows also drag onto folders. */
+  onRequestMove?: (chat: ProjectConversationItem) => void;
   onDeleteChat?: (chat: ProjectConversationItem) => void;
   onNewChat: () => void;
   className?: string;
@@ -43,9 +36,8 @@ interface ProjectChatListProps {
 export function ProjectChatList({
   projectId,
   conversations,
-  allProjects = [],
   onTogglePin,
-  onMoveChat,
+  onRequestMove,
   onDeleteChat,
   onNewChat,
   className,
@@ -61,7 +53,7 @@ export function ProjectChatList({
   const pinned = filtered.filter((c) => c.pinned);
   const unpinned = filtered.filter((c) => !c.pinned);
 
-  const rowProps = { allProjects, currentProjectId: projectId, onTogglePin, onMoveChat, onDeleteChat };
+  const rowProps = { currentProjectId: projectId, onTogglePin, onRequestMove, onDeleteChat };
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -158,9 +150,9 @@ export function ProjectChatList({
  */
 function SectionLabel({ label, count }: { label: string; count: number }) {
   return (
-    <p className="mb-1 flex items-center gap-1.5 px-3 text-caption font-medium tracking-[0.01em] text-muted-foreground @4xl/page:pl-10">
+    <p className="pj-annot mb-1 flex items-center gap-2 px-3 @4xl/page:pl-10">
       {label}
-      <span className="font-normal tabular-nums text-muted-foreground/70">{count.toLocaleString()}</span>
+      <span className="text-muted-foreground/70">{count.toLocaleString()}</span>
     </p>
   );
 }
@@ -172,25 +164,23 @@ function SectionLabel({ label, count }: { label: string; count: number }) {
 function ChatRow({
   chat,
   index,
-  allProjects,
   currentProjectId,
   onTogglePin,
-  onMoveChat,
+  onRequestMove,
   onDeleteChat,
 }: {
   chat: ProjectConversationItem;
   index: number;
-  allProjects: { id: string; name: string }[];
   currentProjectId: string;
   onTogglePin: (id: string, current: boolean) => void;
-  onMoveChat?: (chatId: string, targetProjectId: string) => void;
+  onRequestMove?: (chat: ProjectConversationItem) => void;
   onDeleteChat?: (chat: ProjectConversationItem) => void;
 }) {
-  const otherProjects = allProjects.filter((p) => p.id !== currentProjectId);
 
   return (
     <li
-      className="group flex min-h-14 w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft focus-within:bg-accent/60 hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      {...dragSourceProps({ kind: "chat", id: chat.id, projectId: currentProjectId })}
+      className="group flex min-h-14 w-full items-center gap-3 rounded-control px-3 py-2 data-[dragging]:opacity-40 text-left transition-colors duration-fast ease-out-soft focus-within:bg-accent/60 hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
       style={staggerDelay(index, "tight")}
     >
       <MessageSquare
@@ -202,7 +192,7 @@ function ChatRow({
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
         <span className="truncate text-ui font-medium tracking-[-0.006em] text-foreground">{chat.title}</span>
-        <span className="text-caption tabular-nums text-muted-foreground">
+        <span className="pj-annot">
           Updated {timeAgo(chat.lastMessageAt)}
         </span>
       </Link>
@@ -240,26 +230,16 @@ function ChatRow({
           />
         </Pressable>
 
-        {onMoveChat && otherProjects.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" size="sm" aria-label="Move chat to another project" title="Move to project">
-                <FolderInput className="size-3.5" aria-hidden="true" />
-              </Pressable>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className={MENU_W}>
-              <DropdownMenuLabel>Move to project</DropdownMenuLabel>
-              {otherProjects.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onSelect={() => onMoveChat(chat.id, p.id)}
-                  className="truncate"
-                >
-                  {p.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {onRequestMove && (
+          <Pressable
+            kind="icon"
+            size="sm"
+            onClick={() => onRequestMove(chat)}
+            aria-label={`Move “${chat.title}”`}
+            title="Move to…"
+          >
+            <FolderInput className="size-3.5" aria-hidden="true" />
+          </Pressable>
         )}
 
         {onDeleteChat && (

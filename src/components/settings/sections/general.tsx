@@ -317,7 +317,7 @@ function ModeThumb({ tone }: { tone: "light" | "dark" }) {
           <span className={cn("h-1 w-4/5 rounded-full", dark ? "bg-white/30" : "bg-black/25")} />
           <span className={cn("h-1 w-3/5 rounded-full", dark ? "bg-white/20" : "bg-black/15")} />
         </span>
-        <span className={cn("flex h-2.5 items-center justify-end rounded-sm border px-0.5", dark ? "border-white/15 bg-white/5" : "border-black/10 bg-white")}>
+        <span className={cn("flex h-2.5 items-center justify-end rounded-micro border px-0.5", dark ? "border-white/15 bg-white/5" : "border-black/10 bg-white")}>
           <span className="size-1.5 rounded-full bg-primary" />
         </span>
       </span>

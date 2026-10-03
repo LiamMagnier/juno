@@ -17,6 +17,8 @@ import {
   workDefaultsSchema,
   WORK_DEFAULTS_VERSION,
 } from "@/lib/work/projects";
+import { MOVE_REFUSAL_MESSAGES, validateProjectMove } from "@/lib/projects/project-tree";
+import { deleteProjectFolder, loadOwnerProjectTree } from "@/lib/projects/project-tree-server";
 
 export const runtime = "nodejs";
 
@@ -90,10 +92,49 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .map((document) => [document.attachmentId as string, document])
   );
 
+  /*
+   * Folders. Drawn for the owner only: the tree a project sits in is the
+   * owner's filing, and a collaborator who was given one project must not
+   * learn the names of the folders around it.
+   *
+   * `breadcrumbs` are the ancestors root first; `children` the subfolders
+   * directly inside, with their own counts; `inherited` the ancestors whose
+   * instructions or files every chat here also receives (see
+   * mergeInheritedProjectContext in lib/projects/project-tree.ts).
+   */
+  const isOwner = project.userId === user.id;
+  const tree = isOwner
+    ? await prisma.project.findMany({
+        where: { userId: user.id },
+        select: {
+          id: true,
+          parentId: true,
+          name: true,
+          instructions: true,
+          updatedAt: true,
+          starred: true,
+          _count: { select: { conversations: true, files: { where: { deletedAt: null, fileName: { not: "__cover__" } } } } },
+        },
+      })
+    : [];
+  const byId = new Map(tree.map((node) => [node.id, node]));
+  const lineage: typeof tree = [];
+  {
+    const seen = new Set<string>([project.id]);
+    let cursor = isOwner ? project.parentId : null;
+    while (cursor && !seen.has(cursor) && byId.has(cursor)) {
+      seen.add(cursor);
+      lineage.unshift(byId.get(cursor)!);
+      cursor = byId.get(cursor)!.parentId;
+    }
+  }
+  const childCountOf = (id: string) => tree.filter((node) => node.parentId === id).length;
+
   return NextResponse.json({
     project: {
       id: project.id,
       name: project.name,
+      parentId: isOwner ? project.parentId : null,
       instructions: project.instructions,
       starred: project.starred,
       updatedAt: project.updatedAt.toISOString(),
@@ -131,6 +172,28 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       })
     ),
     workspace: parseWorkspaceConfig(project.workspace?.config),
+    breadcrumbs: lineage.map((node) => ({ id: node.id, name: node.name })),
+    children: tree
+      .filter((node) => node.parentId === project.id)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((node) => ({
+        id: node.id,
+        name: node.name,
+        instructions: node.instructions,
+        starred: node.starred,
+        updatedAt: node.updatedAt.toISOString(),
+        conversationCount: node._count.conversations,
+        fileCount: node._count.files,
+        childCount: childCountOf(node.id),
+      })),
+    inherited: lineage
+      .filter((node) => node.instructions.trim() || node._count.files > 0)
+      .map((node) => ({
+        id: node.id,
+        name: node.name,
+        instructions: node.instructions,
+        fileCount: node._count.files,
+      })),
   });
 }
 
@@ -159,6 +222,12 @@ const patchSchema = z.object({
    * keeps "absent" expressible, and absent is what "inherit" means here.
    */
   workDefaults: workDefaultsSchema.optional(),
+  /**
+   * Move the project into another of the owner's projects (a folder), or to
+   * the top level with null. Owner only, cycle- and depth-checked against the
+   * owner's whole tree (validateProjectMove).
+   */
+  parentId: z.string().min(1).max(200).nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -172,7 +241,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const { workspace, workDefaults, ...projectPatch } = parsed.data;
+  const { workspace, workDefaults, parentId, ...projectPatch } = parsed.data;
+  if (parentId !== undefined) {
+    // Filing is the owner's: a collaborator could otherwise pull a shared
+    // project into (or out of) the owner's folders.
+    const owned = await prisma.project.findFirst({ where: { id, userId: user.id }, select: { parentId: true } });
+    if (!owned) return NextResponse.json({ error: "Only the owner can move this project" }, { status: 403 });
+    if (owned.parentId !== parentId) {
+      const check = validateProjectMove(await loadOwnerProjectTree(user.id), id, parentId);
+      if (!check.ok) {
+        return NextResponse.json(
+          { error: MOVE_REFUSAL_MESSAGES[check.reason], reason: check.reason },
+          { status: check.reason === "parent_not_found" ? 404 : 409 }
+        );
+      }
+      await prisma.project.update({ where: { id, userId: user.id }, data: { parentId } });
+    }
+  }
   if (Object.keys(projectPatch).length > 0 || workDefaults !== undefined) {
     const data = {
       ...projectPatch,
@@ -213,7 +298,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -223,6 +308,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   // Conversations are kept (projectId set null); project files cascade-delete.
   // Owner-only, and the owner is the requester: scope the delete to them.
-  await prisma.project.delete({ where: { id, userId: user.id } });
-  return NextResponse.json({ ok: true });
+  //
+  // A folder's subfolders move up to its own parent unless `?children=cascade`
+  // asks for the whole subtree to go (the delete dialog asks the reader).
+  const mode = new URL(req.url).searchParams.get("children") === "cascade" ? "cascade" : "lift";
+  const result = await deleteProjectFolder(user.id, id, mode);
+  if (!result.deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ ok: true, deleted: result.deleted, moved: result.moved });
 }

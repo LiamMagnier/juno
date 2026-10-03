@@ -54,6 +54,37 @@ export type SegmentedOption<T extends string> = {
   disabled?: boolean;
 };
 
+export type SegmentedSize = "md" | "sm";
+
+/**
+ * The two rungs, worked out once. Every number follows from three rules:
+ * equal padding on all four sides (p-1), segments of a fixed height so the
+ * track's height is exactly segment + 2 × padding + 2 × hairline, and a thumb
+ * radius of track radius − hairline − padding so the two curves stay parallel.
+ *
+ *   md: 26 + 8 + 2 = 36 (coarse 34 → 44) · rounded-menu 14 → thumb 9
+ *   sm: 22 + 8 + 2 = 32 (coarse 30 → 40) · rounded-card 12 → thumb 7
+ *
+ * Exported so `TabsList`, the same idiom on Radix, reads the same numbers.
+ */
+export const SEGMENTED_METRICS: Record<
+  SegmentedSize,
+  { track: string; segment: string; iconSegment: string; thumbRadius: number }
+> = {
+  md: {
+    track: "rounded-menu",
+    segment: "h-[1.625rem] px-3 coarse:h-[2.125rem]",
+    iconSegment: "h-[1.625rem] w-8 coarse:h-[2.125rem] coarse:w-10",
+    thumbRadius: 9,
+  },
+  sm: {
+    track: "rounded-card",
+    segment: "h-[1.375rem] px-2.5 coarse:h-[1.875rem]",
+    iconSegment: "h-[1.375rem] w-7 coarse:h-[1.875rem] coarse:w-9",
+    thumbRadius: 7,
+  },
+};
+
 export function SegmentedControl<T extends string>({
   value,
   onChange,
@@ -64,6 +95,7 @@ export function SegmentedControl<T extends string>({
   className,
   optionClassName,
   columns = "equal",
+  size = "md",
 }: {
   value: T;
   onChange: (value: T) => void;
@@ -83,7 +115,17 @@ export function SegmentedControl<T extends string>({
    * columns would stretch "All" to the width of "Components".
    */
   columns?: "equal" | "content";
+  /**
+   * `md` (the default) is the 36px toolbar rung, level with an `Input` or a
+   * `SelectTrigger` beside it. `sm` is the 32px rung for a dense header row
+   * (the canvas toolbar, an artifact card's header). The track is the size;
+   * callers do not set a height on it — a forced height used to crush the
+   * segments into the track's padding, so the thumb sat 5px from the top
+   * edge and 3px from the bottom, its hairline grazing the track's.
+   */
+  size?: SegmentedSize;
 }) {
+  const metrics = SEGMENTED_METRICS[size];
   const refs = React.useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
   const reduceMotion = useReducedMotion() ?? false;
   // `layoutId` is global to the page, so two controls on screen at once must
@@ -121,10 +163,12 @@ export function SegmentedControl<T extends string>({
       aria-label={ariaLabel}
       className={cn(
         // `.surface-inset` (SOFT_UI.md): the recess the thumb stands out of.
-        // Concentric: track `rounded-menu` (14) − p-1 (4) = the thumb's
-        // `rounded-control` (10). TabsList shares this string — two renderings
-        // of one idiom.
-        "surface-inset relative gap-1 rounded-menu p-1",
+        // The same 4px all round, at every size, so the thumb sits dead centre
+        // in the well. Concentric: the thumb's radius is the track's minus the
+        // hairline (1) and the padding (4) — see SEGMENTED_METRICS. TabsList
+        // shares these numbers: two renderings of one idiom.
+        "surface-inset relative gap-1 p-1",
+        metrics.track,
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
       )}
@@ -160,15 +204,18 @@ export function SegmentedControl<T extends string>({
             tabIndex={selected ? 0 : -1}
             onClick={() => !opt.disabled && onChange(opt.value)}
             onKeyDown={handleKeyDown}
+            style={{ borderRadius: metrics.thumbRadius }}
             className={cn(
               // The key and its legend dip TOGETHER: the thumb is a child of
               // the segment, so one transform moves both. --dur-press, matching
               // `.pressable`.
-              "group relative flex items-center justify-center rounded-control font-medium",
+              // No radius class: the hover wash takes the thumb's radius from
+              // `style` below, so the wash and the key are the same shape.
+              "group relative flex items-center justify-center font-medium",
               "transition-[color,transform,background-color] duration-fast ease-out-soft",
               "active:scale-[0.97] active:duration-press disabled:pointer-events-none disabled:opacity-50",
               "motion-reduce:transition-none motion-reduce:active:scale-100",
-              labelHidden ? "size-8 coarse:size-10" : "gap-1.5 px-3 py-1 text-ui",
+              labelHidden ? metrics.iconSegment : cn("gap-1.5 text-ui", metrics.segment),
               selected
                 ? "text-foreground"
                 : // A faint wash names the target under the pointer — far below
@@ -188,14 +235,14 @@ export function SegmentedControl<T extends string>({
                 // so framer can keep the corners true while it scales the box
                 // between two segments of different widths.
                 className="absolute inset-0"
-                style={{ borderRadius: 8 }}
+                style={{ borderRadius: metrics.thumbRadius }}
               >
                 {/* Carriage / body: framer's layout projection owns the outer
                     transform, so the deformation needs a node of its own. */}
                 <motion.span
                   aria-hidden="true"
-                  style={{ ...thumbSquash, borderRadius: 8 }}
-                  className="surface-key block size-full rounded-control"
+                  style={{ ...thumbSquash, borderRadius: metrics.thumbRadius }}
+                  className="surface-key block size-full"
                 />
               </motion.span>
             )}

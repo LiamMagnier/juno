@@ -10,17 +10,8 @@ import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { CardEyebrow } from "@/components/ui/card";
 import { SettingsGroup, SettingsHint, SettingsRow } from "@/components/projects/project-settings-group";
 import { Collapse } from "@/components/ui/collapse";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -56,6 +47,21 @@ import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/pro
 import { ProjectCodeList } from "@/components/projects/project-code-list";
 import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/projects/project-sources-list";
 import { madeInConversations } from "@/lib/artifact-links";
+import {
+  DeleteProjectDialog,
+  MoveToDialog,
+  NewTile,
+  ProjectNameDialog,
+  ProjectSheet,
+  ProjectTile,
+  canDropInto,
+  newFolderRefusal,
+  type FolderProject,
+  type MoveSubject,
+  type ProjectDrag,
+} from "@/components/projects/project-folders";
+import { ProjectInstructionsDialog, type InheritedInstructions } from "@/components/projects/project-instructions-dialog";
+import { MOVE_REFUSAL_MESSAGES, type DeleteChildrenMode, type MoveRefusal } from "@/lib/projects/project-tree";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
@@ -87,7 +93,15 @@ interface Detail {
     updatedAt: string;
     /** What a Work task filed here inherits. `{}` for a project never asked. */
     workDefaults: WorkProjectDefaults;
+    /** The folder it sits in; null at the top level (and for a collaborator). */
+    parentId?: string | null;
   };
+  /** The folders above it, root first. */
+  breadcrumbs?: { id: string; name: string }[];
+  /** The folders directly inside it. */
+  children?: (FolderProject & { conversationCount: number; fileCount: number; childCount: number })[];
+  /** Ancestors whose instructions or files every chat here also receives. */
+  inherited?: InheritedInstructions[];
   conversations: {
     id: string;
     title: string;
@@ -153,8 +167,14 @@ export default function ProjectDetailPage() {
   // This project's memory — its own summary and the facts learned in its
   // chats. null until it arrives; the rail holds its place meanwhile.
   const [projectMemory, setProjectMemory] = React.useState<RailProjectMemory | null>(null);
-  // Store all projects for moving chats
-  const [allProjects, setAllProjects] = React.useState<{ id: string; name: string }[]>([]);
+  // Every project the account has, as a tree: the Move to… picker and the
+  // drop checks read it.
+  const [allProjects, setAllProjects] = React.useState<FolderProject[]>([]);
+  const [moving, setMoving] = React.useState<MoveSubject | null>(null);
+  const [moveBusy, setMoveBusy] = React.useState(false);
+  const [folderDialog, setFolderDialog] = React.useState(false);
+  const [folderBusy, setFolderBusy] = React.useState(false);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
   // Chat pending deletion — a real dialog, matching the project-delete confirm.
   const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
   const [workspace, setWorkspace] = React.useState<WorkspaceConfig>({});
@@ -244,6 +264,17 @@ export default function ProjectDetailPage() {
     }
   }, [id]);
 
+  const loadAllProjects = React.useCallback(() => {
+    fetch("/api/projects")
+      .then((res) => res.json())
+      .then((p) => {
+        if (p && Array.isArray(p.projects)) {
+          setAllProjects(p.projects.map((row: FolderProject) => ({ ...row, parentId: row.parentId ?? null })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const refreshKnowledgeAfterUpload = React.useCallback(() => {
     // These are bounded refreshes of the durable state machine, not a guessed
     // progress animation. If the background invocation was killed, the UI
@@ -272,13 +303,7 @@ export default function ProjectDetailPage() {
       })
       .catch(() => setProjectMemory({ summary: null, facts: [], activeCount: 0 }));
 
-    // Fetch all projects
-    fetch("/api/projects")
-      .then((res) => res.json())
-      .then((p) => {
-        if (p && Array.isArray(p.projects)) setAllProjects(p.projects);
-      })
-      .catch(() => {});
+    loadAllProjects();
 
     // Fetch this project's delegated tasks.
     //
@@ -335,13 +360,21 @@ export default function ProjectDetailPage() {
         }
       })
       .catch(() => {});
-  }, [load, id]);
+  }, [load, id, loadAllProjects]);
 
   React.useEffect(() => {
     const refresh = () => void load();
+    const refreshTree = () => {
+      void load();
+      loadAllProjects();
+    };
     window.addEventListener("juno:sync", refresh);
-    return () => window.removeEventListener("juno:sync", refresh);
-  }, [load]);
+    window.addEventListener("projects:sync", refreshTree);
+    return () => {
+      window.removeEventListener("juno:sync", refresh);
+      window.removeEventListener("projects:sync", refreshTree);
+    };
+  }, [load, loadAllProjects]);
 
   /** The artifacts made in this project's chats. Derived rather than stored, so
    *  a chat moved out of the project (or deleted from it) takes its artifacts
@@ -591,13 +624,68 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const deleteProject = async () => {
-    const r = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    if (r.ok) {
+  const deleteProject = async (mode: DeleteChildrenMode) => {
+    setDeleteBusy(true);
+    const r = await fetch(`/api/projects/${id}?children=${mode}`, { method: "DELETE" }).catch(() => null);
+    setDeleteBusy(false);
+    if (r?.ok) {
       window.dispatchEvent(new CustomEvent("projects:sync"));
-      router.push("/projects");
+      // Up one level: the folder this one sat in, or the list.
+      const parent = data?.breadcrumbs?.[data.breadcrumbs.length - 1];
+      router.push(parent ? `/projects/${parent.id}` : "/projects");
+    } else toast.error("Couldn’t delete project.");
+  };
+
+  /** Moves a project (this one or one of its folders) under `parentId`. */
+  const moveProject = async (projectId: string, parentId: string | null) => {
+    const r = await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentId }),
+    }).catch(() => null);
+    if (!r || !r.ok) {
+      const d = r ? await r.json().catch(() => ({})) : {};
+      toast.error(d.reason ? MOVE_REFUSAL_MESSAGES[d.reason as MoveRefusal] : "Couldn’t move project.");
+      return false;
     }
-    else toast.error("Couldn’t delete project.");
+    const target = parentId ? allProjects.find((p) => p.id === parentId)?.name : null;
+    toast.success(target ? `Moved into ${target}.` : "Moved to the top level.");
+    window.dispatchEvent(new CustomEvent("projects:sync"));
+    return true;
+  };
+
+  /** A folder or a chat dropped on a folder tile or a breadcrumb. */
+  const handleDrop = (targetId: string | null, drag: ProjectDrag) => {
+    if (drag.kind === "project") void moveProject(drag.id, targetId);
+    else if (targetId) void moveChat(drag.id, targetId);
+  };
+
+  const confirmMove = async (targetId: string | null) => {
+    if (!moving) return;
+    setMoveBusy(true);
+    const ok = moving.kind === "project" ? await moveProject(moving.id, targetId) : await moveChat(moving.id, targetId);
+    setMoveBusy(false);
+    if (ok) setMoving(null);
+  };
+
+  const createFolder = async (name: string) => {
+    setFolderBusy(true);
+    try {
+      const r = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name || undefined, parentId: id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Couldn’t create the folder.");
+      setFolderDialog(false);
+      window.dispatchEvent(new CustomEvent("projects:sync"));
+      router.push(`/projects/${d.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn’t create the folder.");
+    } finally {
+      setFolderBusy(false);
+    }
   };
 
   // Quick Action: Star chat
@@ -642,13 +730,13 @@ export default function ProjectDetailPage() {
   };
 
   // Quick Action: Move chat
-  const moveChat = async (chatId: string, targetProjectId: string | null) => {
+  const moveChat = async (chatId: string, targetProjectId: string | null): Promise<boolean> => {
     const r = await fetch(`/api/conversations/${chatId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId: targetProjectId }),
-    });
-    if (r.ok) {
+    }).catch(() => null);
+    if (r?.ok) {
       setData((cur) => {
         if (!cur) return null;
         return {
@@ -660,9 +748,11 @@ export default function ProjectDetailPage() {
         ? allProjects.find((p) => p.id === targetProjectId)?.name ?? "another project"
         : "no project";
       toast.success(`Chat moved to ${targetProjectName}.`);
-    } else {
-      toast.error("Couldn’t move chat.");
+      window.dispatchEvent(new CustomEvent("projects:sync"));
+      return true;
     }
+    toast.error("Couldn’t move chat.");
+    return false;
   };
 
   // Two terminal states, two tones. A missing project is not a failure the user
@@ -732,7 +822,6 @@ export default function ProjectDetailPage() {
 
   const workspaceFiles = data.files.filter((f) => f.fileName !== "__cover__");
   const instructionsDirty = instructions !== data.project.instructions;
-  const instructionLines = instructions ? instructions.split("\n").length : 0;
   const nearInstructionsLimit = instructions.length > INSTRUCTIONS_SOFT_WARN;
 
   /**
@@ -750,6 +839,16 @@ export default function ProjectDetailPage() {
   const chats = data.conversations.filter((c) => c.kind !== "code");
   const codeSessions = data.conversations.filter((c) => c.kind === "code");
   const sourceCount = workspaceFiles.length + projectArtifacts.length;
+  const folders = data.children ?? [];
+  const crumbs = data.breadcrumbs ?? [];
+  const inherited = data.inherited ?? [];
+  // The tree as the picker and the drop checks need it; until the list
+  // arrives, this project and its folders are enough to draw the page.
+  const tree: FolderProject[] = allProjects.length
+    ? allProjects
+    : [{ id: data.project.id, name: data.project.name, parentId: data.project.parentId ?? null }, ...folders.map((f) => ({ ...f, parentId: data.project.id }))];
+  const folderRefusal = newFolderRefusal(tree, data.project.id);
+  const isOwnerView = data.breadcrumbs !== undefined;
 
   return (
     <AppPage measure="wide">
@@ -775,6 +874,12 @@ export default function ProjectDetailPage() {
             window.dispatchEvent(new CustomEvent("projects:sync"));
           }}
           onDelete={() => setDeleteOpen(true)}
+          breadcrumbs={crumbs}
+          onDropOnCrumb={isOwnerView ? handleDrop : undefined}
+          acceptOnCrumb={(drag, targetId) => (drag.kind === "chat" ? targetId !== null && targetId !== id : canDropInto(tree, drag, targetId))}
+          onMove={isOwnerView ? () => setMoving({ kind: "project", id: data.project.id, name: data.project.name, parentId: data.project.parentId ?? null }) : undefined}
+          onNewFolder={isOwnerView ? () => setFolderDialog(true) : undefined}
+          newFolderRefusal={folderRefusal}
           /* The cover's home. It was a 96px dashed slab at the head of the
              Overview rail — the first thing the eye met on the page, offering
              the one action here that changes nothing about how the project
@@ -899,20 +1004,47 @@ export default function ProjectDetailPage() {
                   }
                 />
 
-                <section className="mt-8">
-                  {/* `min-h-7` is the rail's section-header height, so this
-                      eyebrow sits on the rail's own header grid. No count
-                      beside it: the tab above carries one, and the list's
-                      search shows its own while it narrows the list. */}
-                  <div className="mb-3 flex min-h-7 items-center">
-                    <CardEyebrow className="font-sans text-caption font-medium tracking-[0.01em]">Chats in this project</CardEyebrow>
+                {/* Folders: the projects inside this one. Each is a drop
+                    target, so a chat or a sibling folder can be dragged in;
+                    the dashed tile makes a new one here. */}
+                {isOwnerView && (
+                  <section className="pj mt-10" aria-labelledby="pj-folders-title">
+                    <div className="mb-4 flex items-baseline justify-between gap-3">
+                      <h2 id="pj-folders-title" className="pj-name text-foreground">Folders</h2>
+                      <span className="pj-annot">
+                        {folders.length
+                          ? `${folders.length} inside · drag chats onto one`
+                          : "Arrange this project your way"}
+                      </span>
+                    </div>
+                    <ul className="ed-arrive grid gap-3 @[30rem]/page:grid-cols-2 @[64rem]/page:grid-cols-3">
+                      {folders.map((folder) => (
+                        <li key={folder.id} className="min-w-0">
+                          <ProjectTile
+                            compact
+                            project={folder}
+                            allProjects={tree}
+                            onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
+                            onDropInto={(drag) => handleDrop(folder.id, drag)}
+                          />
+                        </li>
+                      ))}
+                      <li className="min-w-0">
+                        <NewTile label="New folder" onClick={() => setFolderDialog(true)} disabledReason={folderRefusal} />
+                      </li>
+                    </ul>
+                  </section>
+                )}
+
+                <section className="mt-10">
+                  <div className="mb-4 flex min-h-7 items-baseline">
+                    <h2 className="pj-name text-foreground">Chats</h2>
                   </div>
                   <ProjectChatList
                     projectId={data.project.id}
                     conversations={chats}
-                    allProjects={allProjects}
                     onTogglePin={togglePin}
-                    onMoveChat={moveChat}
+                    onRequestMove={(chat) => setMoving({ kind: "chat", id: chat.id, name: chat.title, projectId: data.project.id })}
                     onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
                     onNewChat={() => {
                       router.push(`/chat?project=${id}`);
@@ -926,7 +1058,8 @@ export default function ProjectDetailPage() {
                 onPickCover={() => coverRef.current?.click()}
                 onRemoveCover={removeCover}
                 uploadingCover={uploadingCover}
-                instructions={instructions}
+                instructions={data.project.instructions}
+                inherited={inherited}
                 onEditInstructions={() => setInstructionsOpen(true)}
                 files={workspaceFiles}
                 fileCount={sourceCount}
@@ -1048,7 +1181,7 @@ export default function ProjectDetailPage() {
                   </>
                 }
               >
-                <div className="px-5 pb-5">
+                <div className="px-4 pb-4">
                   <Textarea
                     value={instructions}
                     onChange={(e) => setInstructions(e.target.value)}
@@ -1209,164 +1342,86 @@ export default function ProjectDetailPage() {
         }}
       />
 
-      {/* Delete Project Confirm Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete this project?</DialogTitle>
-            <DialogDescription>
-              Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={deleteProject}>Delete project</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteProjectDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        project={data.project}
+        parentName={crumbs[crumbs.length - 1]?.name}
+        folderCount={folders.length}
+        busy={deleteBusy}
+        onConfirm={(mode) => void deleteProject(mode)}
+      />
 
-      {/* Delete Chat Confirm Dialog — replaces window.confirm(), which was the only
-          native-modal holdout on the page. */}
-      <Dialog open={chatToDelete !== null} onOpenChange={(open) => !open && setChatToDelete(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete this chat?</DialogTitle>
-            <DialogDescription>
-              “{chatToDelete?.title}{`” and its messages are removed for good. Anything ${PRODUCT_NAME} made in it stays in your Library. This can’t be undone.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
+      <MoveToDialog
+        open={moving !== null}
+        onOpenChange={(open) => !open && setMoving(null)}
+        subject={moving}
+        projects={tree}
+        busy={moveBusy}
+        onConfirm={(target) => void confirmMove(target)}
+      />
+
+      <ProjectNameDialog
+        open={folderDialog}
+        onOpenChange={setFolderDialog}
+        mode="folder"
+        parentName={data.project.name}
+        busy={folderBusy}
+        onSubmit={(name) => void createFolder(name)}
+      />
+
+      <ProjectSheet
+        open={chatToDelete !== null}
+        onOpenChange={(open) => !open && setChatToDelete(null)}
+        annot="Delete chat"
+        title={`Delete “${chatToDelete?.title ?? ""}”?`}
+        description={`Its messages are removed for good. Anything ${PRODUCT_NAME} made in it stays in your Library. This can’t be undone.`}
+        footer={
+          <>
             <Button variant="ghost" onClick={() => setChatToDelete(null)}>Cancel</Button>
             <Button variant="destructive" onClick={() => chatToDelete && deleteChat(chatToDelete.id)}>
               Delete chat
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      />
 
-      {/* Project instructions — a real editing surface. People paste multi-hundred-line
-          system prompts here, so the dialog owns a fixed tall frame (clamped by
-          DialogContent's max-h) and the textarea takes every pixel left between the
-          header and the status bar. */}
-      <Dialog open={instructionsOpen} onOpenChange={(open) => (open ? setInstructionsOpen(true) : requestCloseInstructions())}>
-        <DialogContent
-          // `overflow-hidden` evicts DialogContent's own overflow-y-auto (twMerge) —
-          // the textarea, not the dialog, must be the scroll container.
-          className="flex h-[46rem] max-w-3xl flex-col gap-0 overflow-hidden p-0"
-          // Backdrop clicks are ignored outright while dirty — an accidental click
-          // shouldn't even cost a confirm. Escape and X are deliberate, so they
-          // route through the confirm instead of being swallowed (a dead Escape
-          // key reads as a broken dialog).
-          onInteractOutside={(e) => {
-            if (instructionsDirty) e.preventDefault();
-          }}
-          onEscapeKeyDown={(e) => {
-            if (!instructionsDirty) return;
-            e.preventDefault();
-            setConfirmDiscard(true);
-          }}
-        >
-          <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-6 py-5 pr-14 text-left">
-            <CardEyebrow className="font-sans text-caption font-medium">Project instructions</CardEyebrow>
-            <DialogTitle className="mt-2 text-title">
-              {`How ${PRODUCT_NAME} behaves in this project`}
-            </DialogTitle>
-            {/* `text-body` is the prose rung this description wanted; DialogDescription
-                itself only sets `text-ui`. It could not be passed until utils.ts
-                registered the fontSize keys — twMerge read it as a colour and evicted the
-                component's own text-muted-foreground. Both survive the merge now. */}
-            <DialogDescription className="mt-1.5 text-body">
-              {`Prepended to every chat here. ${PRODUCT_NAME} reads this before your first message, alongside the referenced files.`}
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* The arithmetic this comment used to state — "panel radius 28 − p-5
-              (20) = 8" — no longer describes anything: the dialog is rounded-panel
-              (18) since the ladder landed, so 18 − 20 leaves no concentric
-              constraint at all and the well simply takes Textarea's own
-              rounded-field. */}
-          <div className="flex min-h-0 flex-1 flex-col p-5">
-            <Textarea
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault();
-                  void saveInstructionsAndClose();
-                }
-              }}
-              placeholder={`How should ${PRODUCT_NAME} behave? (role, tone, constraints…)\n\nPaste a full system prompt. Headings, bullets and code fences all keep their shape.`}
-              spellCheck={false}
-              autoFocus
-              aria-label="Project instructions"
-              // Monospace: this is a prompt, so alignment and indentation carry meaning.
-              className="min-h-0 flex-1 resize-none px-4 py-3.5 text-body leading-relaxed"
-            />
-          </div>
-
-          {/* bg-secondary, not bg-muted/30. The dialog is an overlay-glass panel at
-              the popover rung, so 30% of a 9.5% token over 13% landed the footer a
-              point DARKER than the panel — a recess nobody asked for and nobody
-              could see. Inside a floating layer the recessed rung is --secondary. */}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-secondary px-6 py-4">
-            <div className="flex items-center gap-3 text-caption tabular-nums">
-              <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
-                {instructions.length.toLocaleString()} chars
-              </span>
-              <span aria-hidden className="text-border">|</span>
-              <span className="text-muted-foreground">{plural(instructionLines, "line")}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* bg-accent, not bg-background: a key cap has to read as RAISED, and
-                  --background inside a floating dialog is pure black on dark — 13
-                  points below the panel, i.e. a hole in the footer rather than a
-                  key sitting on it. */}
-              <kbd className="hidden rounded-xs border border-border/60 bg-accent px-1.5 py-0.5 font-mono text-caption text-muted-foreground sm:inline-block">
-                ⌘↵
-              </kbd>
-              <Button variant="ghost" size="sm" onClick={requestCloseInstructions}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={saveInstructionsAndClose}
-                disabled={!instructionsDirty || savingInstructions}
-              >
-                {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
-                Save instructions
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ProjectInstructionsDialog
+        open={instructionsOpen}
+        projectName={data.project.name}
+        value={instructions}
+        onChange={setInstructions}
+        dirty={instructionsDirty}
+        saving={savingInstructions}
+        inherited={inherited}
+        onSave={() => void saveInstructionsAndClose()}
+        onRequestClose={requestCloseInstructions}
+        onOpen={() => setInstructionsOpen(true)}
+      />
 
       {/* Sibling, not nested: two live focus traps fight each other, and this must
-          be able to take focus while the instructions dialog is still open behind it. */}
-      <Dialog open={confirmDiscard} onOpenChange={(open) => !open && setConfirmDiscard(false)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Discard your changes?</DialogTitle>
-            <DialogDescription>
-              These instructions haven’t been saved. Closing now loses what you wrote.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
+          be able to take focus while the instructions sheet is still open behind it. */}
+      <ProjectSheet
+        open={confirmDiscard}
+        onOpenChange={(open) => !open && setConfirmDiscard(false)}
+        annot="Unsaved instructions"
+        title="Discard your changes?"
+        description="These instructions haven’t been saved. Closing now loses what you wrote."
+        footer={
+          <>
             <Button variant="ghost" onClick={() => setConfirmDiscard(false)}>
               Keep editing
             </Button>
             <Button variant="destructive" onClick={discardInstructions}>
               Discard
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      />
     </AppPage>
   );
 }
 
-function plural(n: number, noun: string) {
-  return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
-}
 
 /**
  * How many things are behind a tab, said the same way on every tab that has

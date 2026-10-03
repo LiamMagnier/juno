@@ -79,8 +79,8 @@ const STATIC_LEVEL = { current: 0 };
 function fakeVoice(s: CallSnapshot): VoiceController {
   return {
     status: s.status,
-    provider: "qwen",
-    model: s.status === "live" ? "qwen3-omni-flash" : null,
+    provider: "gemini",
+    model: s.status === "live" ? "gemini-3.8-live" : null,
     thinking: false,
     notice: null,
     error: s.error,

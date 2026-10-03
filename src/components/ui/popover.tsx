@@ -11,7 +11,7 @@ const PopoverAnchor = PopoverPrimitive.Anchor;
 /**
  * The floating tier: `.surface-float` + `.overlay-glass` (despite the name, an
  * OPAQUE popover fill, a lighter hairline and `--shadow-float` — see the note
- * in globals.css) at `rounded-popover` (16). One material for popover,
+ * in globals.css) at `rounded-popover` (12). One material for popover,
  * dropdown and select — they open beside each other and must read as the same
  * object; the popover takes the card rung rather than the menu's 14 because it
  * holds content, not a list of verbs. Pops in on the spring from 0.96 with 4px

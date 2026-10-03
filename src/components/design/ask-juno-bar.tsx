@@ -140,7 +140,12 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
         // rung as every other popover now.
         // The one edge on the canvas that must be found: it darkens while the
         // field has focus, the way the composer's does.
-        className="flex items-center gap-2 rounded-popover overlay-glass p-1.5 pl-2.5 transition-colors duration-fast ease-out-soft focus-within:border-foreground/30"
+        // `p-1` on every side: the scope chip and the send key are 8px keys
+        // seated 4px inside a 12px shell (12 − 4 = 8). It was `p-1.5 pl-2.5`,
+        // which seated them 6px in (wanting 6) and gave the left corner a
+        // different inset from the right. The field carries its own left
+        // padding instead, so the placeholder still starts where it did.
+        className="flex items-center gap-2 rounded-popover overlay-glass p-1 transition-colors duration-fast ease-out-soft focus-within:border-foreground/30"
       >
         {/* No leading glyph. The sparkle that used to sit here said nothing the
             placeholder does not already say in words, and it was the one piece
@@ -205,7 +210,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
                 : `Ask ${PRODUCT_NAME} to change this design…`
           }
           aria-label={`Ask ${PRODUCT_NAME} to change this design`}
-          className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-ui outline-none placeholder:text-muted-foreground disabled:opacity-60"
+          className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-ui outline-none first:pl-2.5 placeholder:text-muted-foreground disabled:opacity-60"
         />
 
         {/* The hint says what the accessible name says. Radix closes it on
@@ -217,9 +222,8 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
               size="icon-sm"
               disabled={!draft.trim() || busy || blocked}
               aria-label={busy ? `${PRODUCT_NAME} is working` : `Ask ${PRODUCT_NAME}`}
-              // `control` (10), not `field` (12): the bar is a 16px shell with
-              // `p-1.5` (6), so its seated controls are 16 − 6 = 10. The same
-              // arithmetic the dropdown shell and the segmented track already use.
+              // `control` (8), not `field` (10): the bar is a 12px shell with
+              // `p-1` (4), so its seated controls are 12 − 4 = 8.
               className="shrink-0 rounded-control"
             >
               {/* Send and busy share one key and cross-fade — the arrow does not

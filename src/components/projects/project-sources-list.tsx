@@ -1,5 +1,7 @@
 "use client";
 
+import "@/components/projects/projects.css";
+
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -162,14 +164,14 @@ export function ProjectSourcesList({
         className={cn(
           // One compact row rather than a 220px slab: the well is an offer,
           // not the page's subject, and the list it fills sits right under it.
-          "group flex w-full items-center gap-4 rounded-card border border-dashed border-foreground/[.12] p-4 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-foreground/[.02] disabled:cursor-progress motion-reduce:transition-none",
+          "group flex w-full items-center gap-4 rounded-card border border-dashed border-foreground/[.12] p-1.5 pr-4 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-foreground/[.02] disabled:cursor-progress motion-reduce:transition-none",
           dragging && "border-primary/60 bg-primary/5 hover:border-primary/60 hover:bg-primary/5"
         )}
         {...dropHandlers}
       >
         <span
           className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
+            "flex size-11 shrink-0 items-center justify-center rounded-xs border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
             dragging && "text-primary group-hover:text-primary"
           )}
         >
@@ -211,7 +213,6 @@ export function ProjectSourcesList({
           value={filter}
           onChange={setFilter}
           ariaLabel="Show"
-          className="h-9 coarse:h-11"
           options={[
             { value: "all", label: "All", count: total },
             { value: "files", label: "Files", count: nonCoverFiles.length },
@@ -257,9 +258,9 @@ export function ProjectSourcesList({
         <div className="-mx-3 space-y-6">
           {showFiles && filteredFiles.length > 0 && (
             <section aria-label="Files">
-              <p className="mb-1 flex items-center gap-1.5 px-3 text-caption font-medium tracking-[0.01em] text-muted-foreground">
+              <p className="pj-annot mb-1 flex items-center gap-2 px-3">
                 Files
-                <span className="font-normal tabular-nums text-muted-foreground/70">{filteredFiles.length}</span>
+                <span className="text-muted-foreground/70">{filteredFiles.length}</span>
               </p>
               <ul className="space-y-px">
                 {filteredFiles.map((file, i) => {
@@ -268,10 +269,10 @@ export function ProjectSourcesList({
                   return (
                     <li
                       key={file.id}
-                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                      className="group flex w-full items-center gap-3 rounded-field p-1.5 pr-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                       style={staggerDelay(i, "tight")}
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-sm border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                         <Icon className="size-4" aria-hidden="true" />
                       </span>
                       <a
@@ -281,7 +282,7 @@ export function ProjectSourcesList({
                         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
                       >
                         <span className="truncate text-ui font-medium text-foreground">{file.fileName}</span>
-                        <span className="flex items-center gap-2 text-caption tabular-nums text-muted-foreground">
+                        <span className="pj-annot flex items-center gap-2">
                           <span>{formatBytes(file.size)}</span>
                           {/* The state in words, no coloured pip (no status dots). */}
                           {status && <span className={status.tone || undefined}>· {status.label}</span>}
@@ -316,9 +317,9 @@ export function ProjectSourcesList({
 
           {showArtifacts && filteredArtifacts.length > 0 && (
             <section aria-label="Artifacts">
-              <p className="mb-1 flex items-center gap-1.5 px-3 text-caption font-medium tracking-[0.01em] text-muted-foreground">
+              <p className="pj-annot mb-1 flex items-center gap-2 px-3">
                 Artifacts
-                <span className="font-normal tabular-nums text-muted-foreground/70">{filteredArtifacts.length}</span>
+                <span className="text-muted-foreground/70">{filteredArtifacts.length}</span>
               </p>
               <ul className="space-y-px">
                 {filteredArtifacts.map((art, i) => (
@@ -333,9 +334,9 @@ export function ProjectSourcesList({
                         they had clicked (L27). */}
                     <Link
                       href={artifactPath(art.id)}
-                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                      className="group flex w-full items-center gap-3 rounded-field p-1.5 pr-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-sm border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                         <AppIcons.artifacts className="size-4" aria-hidden="true" />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">

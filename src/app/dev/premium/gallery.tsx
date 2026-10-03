@@ -150,8 +150,8 @@ function useFakeCall(state: { userSpeaking: boolean; awaitingResponse: boolean; 
   }, [level, state.awaitingResponse, state.peak]);
   return {
     status: "live",
-    provider: "qwen",
-    model: "qwen3-omni",
+    provider: "gemini",
+    model: "gemini-3.8-live",
     thinking: false,
     notice: null,
     error: null,

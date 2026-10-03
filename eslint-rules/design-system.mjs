@@ -239,37 +239,48 @@ const noAdHocStacking = {
  * one of the wrapper components below whose radius is fixed in its own source,
  * and the child declares a plain radius of its own.
  */
-const RADIUS_PX = {
+export const RADIUS_PX = {
   none: 0,
   micro: 2,
   sm: 4,
   xs: 6,
   md: 8,
-  control: 10,
+  control: 8,
+  field: 10,
   "composer-control": 10,
-  field: 12,
+  card: 12,
+  popover: 12,
+  surface: 12,
+  lg: 12,
   "composer-action": 12,
   menu: 14,
-  card: 16,
-  popover: 16,
-  surface: 16,
-  lg: 16,
-  panel: 20,
-  composer: 20,
+  panel: 16,
+  composer: 22,
+  stage: 28,
 };
 
-/** px -> the token the message suggests. Mirrors RADIUS_TOKENS, keyed by number. */
-const PX_TO_TOKEN = {
+/**
+ * px -> the token the message suggests. Mirrors RADIUS_TOKENS, keyed by number.
+ *
+ * Both tables used to describe the PREVIOUS ladder (control 10 · field 12 ·
+ * card 16 · panel 20). The V3 retune moved every rung and nothing moved these,
+ * so the rule spent a month demanding the old arithmetic — and sites that were
+ * already right had to `eslint-disable` it ("the rule's table is stale"), while
+ * the ones that were wrong passed. `tests/concentric-radius-rule.test.ts` now
+ * reads tailwind.config.ts and fails if the two drift apart again.
+ */
+export const PX_TO_TOKEN = {
   0: "none",
   2: "micro",
   4: "sm",
   6: "xs",
-  8: "md",
-  10: "control",
-  12: "field",
+  8: "control",
+  10: "field",
+  12: "card",
   14: "menu",
-  16: "card",
-  20: "panel",
+  16: "panel",
+  22: "composer",
+  28: "stage",
 };
 
 /**
@@ -280,14 +291,15 @@ const PX_TO_TOKEN = {
  * same commit. Anything not listed is simply not checked — silence is the
  * correct answer for a parent whose radius this rule cannot know.
  */
-const COMPONENT_RADIUS = {
-  Card: 16, // card.tsx — rounded-card
-  DialogContent: 20, // dialog.tsx — rounded-panel
-  SheetContent: 20, // sheet.tsx — rounded-r-panel
-  PopoverContent: 16, // popover.tsx — rounded-popover
-  SelectContent: 16, // select.tsx — rounded-popover
-  DropdownMenuContent: 16, // dropdown-menu.tsx — rounded-popover
-  TooltipContent: 10, // tooltip.tsx — rounded-control
+export const COMPONENT_RADIUS = {
+  Card: 12, // card.tsx — rounded-card
+  DialogContent: 16, // dialog.tsx — rounded-panel
+  SheetContent: 16, // sheet.tsx — rounded-r-panel
+  PopoverContent: 12, // popover.tsx — rounded-popover
+  SelectContent: 14, // select.tsx — rounded-menu (menu-recipe.ts)
+  DropdownMenuContent: 14, // dropdown-menu.tsx — rounded-menu (menu-recipe.ts)
+  DropdownMenuSubContent: 14, // dropdown-menu.tsx — rounded-menu (menu-recipe.ts)
+  TooltipContent: 8, // tooltip.tsx — rounded-control
 };
 
 /** `p-3` -> 12. Symmetric padding only: px-/py- do not inset all four corners. */
@@ -316,6 +328,39 @@ const PADDING_PX = {
 const PLAIN_PADDING = /(?:^|\s)p-([0-9.]+|px)(?=\s|$)/;
 
 /**
+ * Module-level `const X = "…"` class strings, by name. A recipe hoisted into a
+ * constant (`const TILE = "… rounded-card p-1"`, `className={cn(TILE, …)}`) is
+ * still a literal parent; reading identifiers is what lets the rule see the
+ * many list wells and tiles written that way. Filled per file in `create`.
+ */
+let constStrings = new Map();
+
+function collectConstStrings(program) {
+  const map = new Map();
+  const evaluate = (node) => {
+    if (!node) return null;
+    if (node.type === "Literal" && typeof node.value === "string") return node.value;
+    if (node.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0].value.raw;
+    if (node.type === "BinaryExpression" && node.operator === "+") {
+      const l = evaluate(node.left);
+      const r = evaluate(node.right);
+      return l !== null && r !== null ? l + r : null;
+    }
+    return null;
+  };
+  for (const statement of program.body) {
+    const decl = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+    if (!decl || decl.type !== "VariableDeclaration" || decl.kind !== "const") continue;
+    for (const d of decl.declarations) {
+      if (d.id.type !== "Identifier") continue;
+      const value = evaluate(d.init);
+      if (value !== null) map.set(d.id.name, value);
+    }
+  }
+  return map;
+}
+
+/**
  * Every string literal reachable from a className expression, including the
  * arguments of a `cn(...)`/`clsx(...)` call and both arms of a ternary. Returned
  * joined, because a radius and a padding written in two different arguments of
@@ -326,10 +371,12 @@ function classStrings(node) {
   switch (node.type) {
     case "Literal":
       return typeof node.value === "string" ? node.value : "";
+    case "Identifier":
+      return constStrings.get(node.name) ?? "";
     case "JSXExpressionContainer":
       return classStrings(node.expression);
     case "TemplateLiteral":
-      return node.quasis.map((q) => q.value.raw).join(" ");
+      return [...node.quasis.map((q) => q.value.raw), ...node.expressions.map(classStrings)].join(" ");
     case "CallExpression":
       return node.arguments.map(classStrings).join(" ");
     case "ConditionalExpression":
@@ -339,6 +386,8 @@ function classStrings(node) {
       return `${classStrings(node.consequent)} ${classStrings(node.alternate)}`;
     case "LogicalExpression":
       return classStrings(node.right);
+    case "BinaryExpression":
+      return node.operator === "+" ? `${classStrings(node.left)}${classStrings(node.right)}` : "";
     default:
       return "";
   }
@@ -374,6 +423,31 @@ function radiiIn(classes) {
 const PARTIAL_WIDTH = /(?:^|\s)(?:w-(?:\d+\/\d+|\d+(?:\.\d+)?|px|fit|min|max|auto|screen|\[)|size-(?!full)[\w.[]+)/;
 
 /**
+ * Controls are never "content standing in for text". A 32px key seated in a
+ * toolbar's corner is exactly the nested box this rule exists for, however
+ * narrow it is — the partial-width exemption above is for skeleton bars and
+ * labels, and it was quietly exempting every icon key in every floating bar.
+ */
+const CONTROL_ELEMENT = /^(?:button|a|input|select|textarea|Button|IconButton|Pressable|Link|Input|Textarea)$/;
+
+/**
+ * The radius a control component carries in its own source, for a child that
+ * states none at the call site. `<Button>` is `rounded-control` except at
+ * `size="lg"` (`rounded-field`); Input and Textarea are `rounded-field`.
+ */
+function componentRadius(child, name) {
+  if (name === "Button") {
+    const size = child.openingElement.attributes.find(
+      (a) => a.type === "JSXAttribute" && a.name?.name === "size",
+    );
+    return size?.value?.type === "Literal" && size.value.value === "lg" ? "field" : "control";
+  }
+  if (name === "IconButton") return "control";
+  if (name === "Input" || name === "Textarea") return "field";
+  return null;
+}
+
+/**
  * Whether anything is actually drawn at this child's corners. A radius on a box
  * with no fill, edge, shadow or clip is invisible — it exists for a focus ring
  * or out of habit — and rounding it differently changes nothing a person sees.
@@ -384,7 +458,9 @@ const PARTIAL_WIDTH = /(?:^|\s)(?:w-(?:\d+\/\d+|\d+(?:\.\d+)?|px|fit|min|max|aut
  */
 function paintsACorner(classes, name) {
   if (/^[A-Z]/.test(name)) return true;
-  return /(?:^|\s)(?:bg-|border(?![-\w]*transparent)|shadow-|ring-|surface-|overlay-|overflow-hidden)/.test(classes);
+  // A state variant paints too: a ghost key is bare at rest and a filled
+  // rounded box under the pointer, and that hover plate is the corner people see.
+  return /(?:^|\s)(?:[\w-]+:)*(?:bg-|border(?![-\w]*transparent)|shadow-|ring-|surface-|overlay-|control-|overflow-hidden)/.test(classes);
 }
 
 /**
@@ -443,6 +519,34 @@ function renderedChildren(nodes, depth = 0) {
   return out;
 }
 
+/**
+ * The children the parent's padding actually seats, looking THROUGH plain
+ * wrappers. A `<details>` or a `<li>` with no radius, no padding and no paint
+ * of its own passes its parent's inset straight to what it holds: the
+ * upgrade page's FAQ well seated its rows through a `<details>` each and was
+ * never checked, because the rows were grandchildren.
+ */
+const INSETS = /(?:^|\s)(?:[\w-]+:)*-?(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr)-(?!0(?:\s|$))/;
+function seatedChildren(nodes, depth = 0) {
+  const out = [];
+  for (const child of renderedChildren(nodes)) {
+    const name = elementName(child);
+    const classes = classNameOf(child);
+    const transparent =
+      depth < 3 &&
+      /^[a-z]/.test(name) &&
+      !/^(?:button|a|input|select|textarea|img|summary)$/.test(name) &&
+      radiiIn(classes).length === 0 &&
+      !/(?:^|\s)rounded-/.test(classes) &&
+      !INSETS.test(classes) &&
+      !/(?:^|\s)(?:absolute|fixed)(?=\s|$)/.test(classes) &&
+      !paintsACorner(classes, name);
+    if (transparent) out.push(...seatedChildren(child.children, depth + 1));
+    else out.push(child);
+  }
+  return out;
+}
+
 const concentricRadius = {
   meta: {
     type: "problem",
@@ -466,6 +570,9 @@ const concentricRadius = {
 
   create(context) {
     return {
+      Program(program) {
+        constStrings = collectConstStrings(program);
+      },
       JSXElement(element) {
         const classes = classNameOf(element);
         const name = elementName(element);
@@ -476,14 +583,18 @@ const concentricRadius = {
         if (declared.length === 1) {
           parentPx = RADIUS_PX[declared[0]];
         } else if (declared.length === 0) {
-          parentPx = COMPONENT_RADIUS[name];
+          // `nest-<rung>` (tailwind.config.ts) is a radius that also publishes
+          // itself for `rounded-inner` children; a child that states its own
+          // radius under it is still checked.
+          const nest = /(?:^|\s)nest-(?!p-)([a-z-]+)(?=\s|$)/.exec(classes);
+          parentPx = nest ? RADIUS_PX[nest[1]] : COMPONENT_RADIUS[name];
         }
         // `rounded-full`, `rounded-logo`, `rounded-inherit`, a directional
         // variant, or two radii in two ternary arms: nothing to be concentric
         // with, so say nothing.
         if (typeof parentPx !== "number") return;
 
-        const padding = PLAIN_PADDING.exec(classes);
+        const padding = PLAIN_PADDING.exec(classes) ?? /(?:^|\s)nest-p-([0-9.]+|px)(?=\s|$)/.exec(classes);
         if (!padding) return; // px-/py- alone does not inset all four corners
         const paddingPx = PADDING_PX[padding[1]];
         if (typeof paddingPx !== "number" || paddingPx === 0) return;
@@ -491,18 +602,26 @@ const concentricRadius = {
         const expectedPx = parentPx - paddingPx;
         if (expectedPx <= 0) return; // the child has no corner left to round
 
-        for (const child of renderedChildren(element.children)) {
+        for (const child of seatedChildren(element.children)) {
           const childClasses = classNameOf(child);
           // Out of flow, so the parent's padding never insets it.
           if (/(?:^|\s)(?:absolute|fixed)(?=\s|$)/.test(childClasses)) continue;
+          // Pushed off the parent's inset by a margin of its own: not seated at
+          // the padding, so the padding is not the distance to the corner.
+          if (/(?:^|\s)-?m[trblxy]?-(?!0(?:\s|$))/.test(childClasses)) continue;
           // A pill is a pill at any size, and a mark owns its own shape.
           if (/(?:^|\s)rounded-(?:full|logo|inherit|none)(?=\s|$)/.test(childClasses)) continue;
           // Narrower than the box it sits in: content, not a nested surface.
-          if (PARTIAL_WIDTH.test(childClasses)) continue;
+          const childName = elementName(child);
+          if (!CONTROL_ELEMENT.test(childName) && PARTIAL_WIDTH.test(childClasses)) continue;
           // Nothing drawn at the corners, so the radius is not a visible edge.
           if (!paintsACorner(childClasses, elementName(child))) continue;
 
-          const childRadii = radiiIn(childClasses);
+          let childRadii = radiiIn(childClasses);
+          if (childRadii.length === 0) {
+            const own = componentRadius(child, childName);
+            if (own) childRadii = [own];
+          }
           if (childRadii.length !== 1) continue; // absent, or conditional — not ours to guess
           const actual = childRadii[0];
           const actualPx = RADIUS_PX[actual];

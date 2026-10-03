@@ -77,7 +77,7 @@ export function AccountSecuritySection({ email }: { email: string }) {
         label="This session"
         description="Sign out on this device. Other devices stay signed in."
         control={
-          <Button variant="outline" size="sm" onClick={() => void signOutToSignIn()}>
+          <Button variant="outline" size="sm" className="danger-hover" onClick={() => void signOutToSignIn()}>
             Sign out
           </Button>
         }
@@ -728,7 +728,7 @@ function SignOutEverywhereRow() {
         label="Sign out everywhere"
         description="Ends every session on every device, including this one. Use it if you've lost a phone or laptop."
         control={
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+          <Button variant="outline" size="sm" className="danger-hover" onClick={() => setOpen(true)}>
             Sign out everywhere
           </Button>
         }

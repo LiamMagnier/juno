@@ -122,8 +122,9 @@ export function ArtifactReadView({
             value={view}
             onChange={setView}
             ariaLabel="View"
-            className="h-7 shrink-0"
-            optionClassName="px-2.5 text-caption"
+            size="sm"
+            className="shrink-0"
+            optionClassName="text-caption"
             options={[
               { value: "preview", label: "Preview" },
               { value: "source", label: "Source" },

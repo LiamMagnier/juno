@@ -235,7 +235,9 @@ function PrivateView(common: React.ComponentProps<typeof Composer>) {
   React.useEffect(() => setField(new URLSearchParams(window.location.search).get("field") !== "0"), []);
   return (
     <section data-fixture="private" className="relative flex min-h-dvh flex-col">
-      <div className="flex h-11 shrink-0 items-center justify-end gap-1 px-3">
+      {/* pr-1.5: chat-view's cluster sits 6px off the panel's right edge, so
+          the toggle's centre is 24px in, level with the sidebar's own inset. */}
+      <div className="flex h-11 shrink-0 items-center justify-end gap-1 pl-3 pr-1.5">
         <PrivateChatToggle active={on} onToggle={() => setOn((v) => !v)} />
       </div>
       <div className="chat-home page-gutter relative isolate">

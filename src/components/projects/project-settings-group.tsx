@@ -1,6 +1,6 @@
 import * as React from "react";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import "@/components/projects/projects.css";
 
 /**
  * The project Settings tab's one shape: a card holding a head (what the
@@ -31,23 +31,25 @@ export function SettingsGroup({
   style?: React.CSSProperties;
 }) {
   return (
-    <Card className={cn("@container/group", className)} style={style}>
-      <div className="flex items-start justify-between gap-4 p-5">
+    // A hairline card (12) with a 4px frame. The footer's Save sits on the
+    // frame in the bottom corner, so its control radius (8) is 12 - 4.
+    <section className={cn("pj pj-card nest-card nest-p-1 @container/group", className)} style={style}>
+      <div className="flex items-start justify-between gap-4 px-4 pb-4 pt-4">
         <div className="min-w-0">
-          <h2 className="text-ui font-medium tracking-[-0.006em] text-foreground">{title}</h2>
+          <h2 className="pj-name text-foreground">{title}</h2>
           {description && (
-            <p className="mt-0.5 max-w-prose text-pretty text-ui text-muted-foreground">{description}</p>
+            <p className="mt-1.5 max-w-prose text-pretty text-ui text-muted-foreground">{description}</p>
           )}
         </div>
         {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
       </div>
       {children}
       {footer && (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-foreground/[.07] px-5 py-3">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-[var(--pj-hair)] pl-4 pt-1">
           {footer}
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -70,7 +72,7 @@ export function SettingsRow({
   return (
     <Tag
       className={cn(
-        "grid gap-x-8 gap-y-2 border-t border-foreground/[.07] px-5 py-4 @[36rem]/group:grid-cols-[12rem_minmax(0,1fr)]",
+        "grid gap-x-8 gap-y-2 border-t border-[var(--pj-hair)] px-4 py-4 @[36rem]/group:grid-cols-[12rem_minmax(0,1fr)]",
         className
       )}
     >

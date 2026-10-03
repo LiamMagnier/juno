@@ -75,7 +75,7 @@ export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
   connectors: "apps connectors integrations mcp permissions github google",
   voice: "voice read aloud speech dictation tts",
   devices: "devices mac computer host permissions code",
-  account: "profile picture name email password security two-step sign out delete account sessions",
+  account: "profile picture name username handle email password security two-step sign out delete account sessions",
   data: "export import data privacy shared links delete conversations chatgpt claude",
   billing: "plan upgrade billing usage spend limit invoice subscription",
 };

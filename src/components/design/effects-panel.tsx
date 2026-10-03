@@ -1493,7 +1493,7 @@ export const iconButtonClass =
  *  that recolours the glyph (an accent status badge) replaces only this half. */
 export const ICON_TONE = {
   neutral: "text-muted-foreground hover:bg-accent hover:text-foreground",
-  destructive: "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
+  destructive: "danger-hover text-muted-foreground",
 } as const;
 
 /**

@@ -27,6 +27,7 @@ import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { openSettings } from "@/components/settings/settings-sections";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { AccountSecuritySection } from "@/components/auth/account-security";
+import { UsernameRow } from "@/components/settings/sections/account-username";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { PLANS } from "@/lib/plans";
 import type { PushPreferences } from "@/lib/notify/types";
@@ -176,6 +177,7 @@ export function AccountSection() {
             Change name
           </Button>
         </div>
+        <UsernameRow user={user} />
       </SettingsGroup>
 
       {/* Two-step verification, password, email address and sessions live

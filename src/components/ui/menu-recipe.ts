@@ -36,10 +36,12 @@
  * verbs you scan. `ui` (13px) is the scale's own dense-UI rung and already what
  * the `+` menu, Select and every chip in the product use.
  *
- * Concentric, per the radius ladder's own note: "a 14px menu with p-1 holds
- * 10px items." The shell was at `rounded-popover` (16) with p-1.5 — the CARD
- * rung, one step too round for a 224px list, and the reason menus read bubbly
- * beside the flat surfaces they open over.
+ * Concentric: inner radius = outer radius − padding. The shell is the 14px
+ * `menu` rung inset by 6px, so a row is 8. That arithmetic is no longer a
+ * comment — the shell publishes both numbers (`nest-menu nest-p-1.5`, the
+ * tailwind.config.ts plugin) and the row reads them back as `rounded-inner`,
+ * so a host that re-pads its list (Select's Viewport) or a future rung change
+ * moves the rows with it instead of leaving them off-centre.
  *
  * ── The `:not([class*='…'])` guards, which are not a trick ────────────────
  *
@@ -65,10 +67,19 @@
  * buttons that must sit outside any padding. Putting either here means one of
  * the two fighting the other in the cascade.
  */
-export const menuShellClass =
-  "surface-float overlay-glass z-popper origin-popper rounded-menu p-1.5 " +
+export const menuShellFrameClass =
+  "surface-float overlay-glass z-popper origin-popper nest-menu " +
   "max-w-[calc(100vw-1rem)] " +
   "data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out";
+
+/**
+ * The frame plus its 6px inset. Split from the frame because the `nest-*`
+ * utilities are plugin output, emitted AFTER Tailwind's core `p-*` — so a
+ * `p-0` at a call site would not undo a `nest-p-1.5` here. A host that pads
+ * somewhere else (Select pads its Viewport) takes the bare frame instead of
+ * fighting the cascade.
+ */
+export const menuShellClass = `${menuShellFrameClass} nest-p-1.5`;
 
 /**
  * One row. 32px at 13px with a 16px glyph, and 44px on a coarse pointer —
@@ -89,7 +100,7 @@ export const menuShellClass =
  */
 export const menuRowClass =
   "menu-item group/menu-item relative flex min-h-8 cursor-pointer select-none items-center gap-2.5 " +
-  "rounded-control px-2.5 py-1.5 text-ui outline-none " +
+  "rounded-inner px-2.5 py-1.5 text-ui outline-none " +
   "transition-colors duration-fast ease-out-soft " +
   "data-[disabled]:pointer-events-none data-[disabled]:opacity-50 " +
   "[&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 " +
@@ -150,8 +161,8 @@ export const menuLabelClass =
   "px-2.5 pb-1 pt-1.5 text-caption font-medium text-muted-foreground";
 
 /**
- * The hairline between groups. `-mx-1` cancels the shell's p-1 so it runs edge
- * to edge.
+ * The hairline between groups. `-mx-1.5` cancels the shell's p-1.5 so it runs
+ * edge to edge (it was `-mx-1` against a 6px inset — 2px short at both ends).
  *
  * 10%, and the number was walked to rather than picked. It carried 12%, which
  * inside a 224px panel reads as a rule dividing two menus rather than as the
@@ -161,7 +172,7 @@ export const menuLabelClass =
  * still lighter than the shell's own edge, which is the ordering that matters:
  * the hairline inside a panel must never out-draw the hairline around it.
  */
-export const menuSeparatorClass = "-mx-1 my-1 h-px bg-foreground/10";
+export const menuSeparatorClass = "-mx-1.5 my-1 h-px bg-foreground/10";
 
 /**
  * THE WIDTH LADDER — two rungs, and the reason there are only two.

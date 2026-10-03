@@ -1,0 +1,142 @@
+/*
+ * Projects, in the editorial language (src/components/app/editorial.css):
+ * serif names, mono annotations, hairlines, presence blue for the one live
+ * object, and the dot-matrix construction as the folders' map.
+ *
+ * Every nested rounded element follows the concentric rule on the ladder
+ * (tailwind.config.ts): inner radius = outer radius - the padding between
+ * them. The tile is a card (12) with a 4px frame, so anything that reaches
+ * its edge (cover band, folder rows) is a control (8). The instructions sheet
+ * is a panel (16) with a 6px frame, so its writing field is a field (10).
+ */
+.pj {
+  --pj-line: hsl(var(--foreground) / 0.11);
+  --pj-hair: hsl(var(--foreground) / 0.07);
+  --pj-presence: #2d49c9;
+  --pj-presence-soft: rgb(45 73 201 / 0.07);
+  --pj-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dark .pj {
+  --pj-line: hsl(var(--foreground) / 0.13);
+  --pj-hair: hsl(var(--foreground) / 0.08);
+  --pj-presence: #97a6e6;
+  --pj-presence-soft: rgb(151 166 230 / 0.1);
+}
+
+.pj-name {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.18;
+  letter-spacing: -0.014em;
+  font-optical-sizing: auto;
+}
+.pj-name-sm {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.pj-annot {
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* The tile: a hairline card with a 4px frame. Hover firms the line and lifts
+   a pixel; a drag over it turns the line presence blue (it will take the
+   drop). */
+.pj-tile {
+  border: 1px solid var(--pj-line);
+  background: hsl(var(--card));
+  transition:
+    border-color 180ms var(--pj-ease),
+    background-color 180ms var(--pj-ease),
+    transform 260ms var(--pj-ease),
+    box-shadow 260ms var(--pj-ease);
+}
+.pj-tile:hover { border-color: hsl(var(--foreground) / 0.2); }
+.pj-tile:focus-within { border-color: hsl(var(--foreground) / 0.24); }
+@media (prefers-reduced-motion: no-preference) {
+  .pj-tile:hover { transform: translateY(-1px); box-shadow: 0 10px 30px -18px hsl(var(--foreground) / 0.28); }
+  .pj-tile:active { transform: none; }
+}
+.pj-tile[data-drop="over"] {
+  border-color: var(--pj-presence);
+  background: var(--pj-presence-soft);
+  box-shadow: 0 0 0 3px var(--pj-presence-soft);
+}
+.pj-tile[data-drop="refuse"] { opacity: 0.55; }
+.pj-tile[data-dragging] { opacity: 0.4; }
+
+/* A still surface in the same material (the Overview rail, settings groups). */
+.pj-card {
+  border: 1px solid var(--pj-line);
+  background: hsl(var(--card));
+}
+
+/* A drop target that is not a tile: breadcrumbs, the top level. */
+.pj-drop[data-drop="over"] {
+  color: var(--pj-presence);
+  background: var(--pj-presence-soft);
+}
+
+/* The new-folder tile: a dashed hairline at the same radius as its siblings. */
+.pj-new {
+  border: 1px dashed hsl(var(--foreground) / 0.16);
+  transition: border-color 180ms var(--pj-ease), color 180ms var(--pj-ease), background-color 180ms var(--pj-ease);
+}
+.pj-new:hover { border-color: hsl(var(--foreground) / 0.32); background: hsl(var(--foreground) / 0.02); }
+
+/* The instructions sheet: a writing field inside a 6px frame. No ring on
+   focus; the field's line turns presence blue instead. */
+.pj-sheet {
+  border: 1px solid var(--pj-hair);
+  background: hsl(var(--foreground) / 0.018);
+  transition: border-color 200ms var(--pj-ease), background-color 200ms var(--pj-ease);
+}
+.dark .pj-sheet { background: hsl(var(--foreground) / 0.03); }
+.pj-sheet:focus-within {
+  border-color: color-mix(in srgb, var(--pj-presence) 55%, transparent);
+  background: hsl(var(--background));
+}
+.pj-sheet textarea { outline: none; box-shadow: none; }
+.pj-sheet textarea::placeholder { color: hsl(var(--muted-foreground) / 0.8); }
+
+/* The picker's tree: a guide line per level, drawn as a hairline. */
+.pj-guide { border-left: 1px solid var(--pj-hair); }
+
+/* The folders map (projects-orbit.tsx). */
+.pj-dots { --dots-pitch: 3.6px; --dots-strength: 0.7; }
+.dark .pj-dots { --dots-strength: 0.8; }
+.pj-node { fill: hsl(var(--foreground)); transition: transform 320ms var(--pj-ease); transform-box: fill-box; transform-origin: center; }
+.pj-node-live { fill: var(--pj-presence); }
+.pj-node-ring { fill: none; stroke: var(--pj-presence); stroke-width: 1; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; }
+.pj-node-hit { fill: transparent; cursor: pointer; }
+.pj-label {
+  fill: hsl(var(--muted-foreground));
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: fill 200ms;
+}
+.pj-star { outline: none; }
+.pj-star:hover .pj-label,
+.pj-star:focus-visible .pj-label { fill: hsl(var(--foreground)); }
+.pj-star:hover .pj-node,
+.pj-star:focus-visible .pj-node { transform: scale(1.35); }
+.pj-star:focus-visible .pj-node-hit { stroke: hsl(var(--foreground)); stroke-width: 1; }
+.pj-center { fill: hsl(var(--foreground)); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pj-pop { opacity: 0; animation: pj-pop 700ms var(--pj-ease) forwards; animation-delay: calc(var(--i, 0) * 60ms + 500ms); }
+  .pj-breathe { animation: pj-breathe 3200ms ease-in-out infinite; }
+  .pj-unfold { animation: pj-unfold 420ms var(--pj-ease) both; }
+}
+@keyframes pj-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes pj-breathe { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.12; transform: scale(1.7); } }
+@keyframes pj-unfold { from { opacity: 0; transform: translateY(-4px); } }

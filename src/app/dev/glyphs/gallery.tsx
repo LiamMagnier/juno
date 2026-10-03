@@ -234,7 +234,7 @@ function MenuPanel({ library }: { library: ReactNode }) {
 
 function SettingsPanel({ models }: { models: IconComponent }) {
   return (
-    <div className="surface-inset flex w-full flex-col gap-1 rounded-card p-1.5 sm:w-56">
+    <div className="surface-inset flex w-full flex-col gap-1 rounded-card p-1 sm:w-56">
       {SETTINGS_SECTIONS.map((section) => {
         const selected = section.id === "models";
         const Icon = section.id === "models" ? models : section.icon;

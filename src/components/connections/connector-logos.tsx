@@ -1,21 +1,31 @@
-import { CalendarClock, Database, Globe, Mail, Music2, Plug, Terminal } from "@/components/ui/icons";
+import * as React from "react";
+import { Database, Globe, Plug, Terminal } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /*
  * Inline brand marks so the dashboard needs no network fetch and stays
- * theme-aware: GitHub inherits currentColor; Figma keeps its brand palette
- * (raw hex lives only in SVG fill attributes, never classNames).
+ * theme-aware: GitHub and Linear inherit currentColor; every other brand keeps
+ * its own palette (raw hex lives only in SVG fill attributes, never
+ * classNames).
  *
- * TWO KINDS OF MARK LIVE HERE, and only one of them is drawn in this file.
- * GitHub, Figma, Notion, Linear and Slack are BRAND marks — the shape is the
- * company's, so it is drawn here and stays. Postgres, the terminal, web search
- * and the three Apple apps were never brand marks: they were a database
- * cylinder, a prompt, a magnifier, a calendar, an envelope and a pair of notes,
- * hand-drawn at a 1.5px stroke beside the icon set's 1px line. Those are
- * interface glyphs, so they come from `@/components/ui/icons` like every other
- * glyph — the same drawing the rest of the product uses for the same idea
- * (the Apple Music sign-in button already drew `Music2`).
+ * TWO KINDS OF MARK LIVE HERE. GitHub, Figma, Notion, Linear, Slack and the
+ * three Apple apps are BRANDS: the shape and colour are the company's, so they
+ * are drawn here in full colour, the way the reader sees them in their dock.
+ * The Apple apps had been drawn as the icon set's calendar, envelope and notes,
+ * which made the three apps a reader recognises at a glance the only rows on
+ * the Apps page that had to be read rather than seen. They are the app icons
+ * now: Mail's blue envelope, Calendar's white page with the red weekday, and
+ * Music's red note.
+ *
+ * Postgres, the terminal and web search are interface CONCEPTS, not apps you
+ * sign in to, so they still come from `@/components/ui/icons` — the same
+ * drawing the rest of the product uses for the same idea.
  */
+
+/** A gradient id that is valid inside `url(#…)` whatever `useId` returns. */
+function useSvgId(prefix: string) {
+  return `${prefix}-${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+}
 
 export function GitHubMark({ className }: { className?: string }) {
   return (
@@ -38,50 +48,116 @@ export function FigmaMark({ className }: { className?: string }) {
 }
 
 export function NotionMark({ className }: { className?: string }) {
-  // Theme-aware take on the Notion mark: a page outline in currentColor with a
-  // filled "N", so it reads correctly on both light and dark tiles.
+  // The official mark: a white page with a black outline and N. It carries
+  // its own white fill, so it reads on a light or a dark tile alike.
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+    <svg viewBox="0 0 100 100" fill="none" aria-hidden="true" className={className}>
       <path
-        d="M4.6 4.3 15.7 3.4c.5-.04.9.1 1.2.4l3 3c.2.2.3.5.3.8v11.2c0 .6-.4 1-1 1.1l-11.1.8c-.5.04-1-.15-1.3-.5l-2.4-3c-.2-.25-.3-.55-.3-.85V5.4c0-.6.4-1 1-1.1Z"
-        className="stroke-current"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
+        fill="#fff"
+        d="M6.017 4.313l55.333 -4.087c6.797 -0.583 8.543 -0.19 12.817 2.917l17.663 12.443c2.913 2.14 3.883 2.723 3.883 5.053v68.243c0 4.277 -1.553 6.807 -6.99 7.193L24.467 99.967c-4.08 0.193 -6.023 -0.39 -8.16 -3.113L3.3 79.94c-2.333 -3.113 -3.3 -5.443 -3.3 -8.167V11.113c0 -3.497 1.553 -6.413 6.017 -6.8z"
       />
-      <path d="M9 8.4v7.2m0-7.2 5.4 7.2m0-7.2v7.2" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        fill="#000"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M61.35 0.227l-55.333 4.087C1.553 4.7 0 7.617 0 11.113v60.66c0 2.723 0.967 5.053 3.3 8.167l13.007 16.913c2.137 2.723 4.08 3.307 8.16 3.113l64.257 -3.89c5.433 -0.387 6.99 -2.917 6.99 -7.193V20.64c0 -2.21 -0.873 -2.847 -3.443 -4.733L74.167 3.143c-4.273 -3.107 -6.02 -3.5 -12.817 -2.917zM25.92 19.523c-5.247 0.353 -6.437 0.433 -9.417 -1.99L8.927 11.507c-0.77 -0.78 -0.383 -1.753 1.557 -1.947l53.193 -3.887c4.467 -0.39 6.793 1.167 8.54 2.527l9.123 6.61c0.39 0.197 1.36 1.36 0.193 1.36l-54.933 3.307 -0.68 0.047zM19.803 88.3V30.367c0 -2.53 0.777 -3.697 3.103 -3.893L86 22.78c2.14 -0.193 3.107 1.167 3.107 3.693v57.547c0 2.53 -0.39 4.67 -3.883 4.863l-60.377 3.5c-3.493 0.193 -5.043 -0.97 -5.043 -4.083zm59.6 -54.827c0.387 1.75 0 3.5 -1.75 3.7l-2.91 0.577v42.773c-2.527 1.36 -4.853 2.137 -6.797 2.137 -3.107 0 -3.883 -0.973 -6.21 -3.887l-19.03 -29.94v28.967l6.02 1.363s0 3.5 -4.857 3.5l-13.39 0.777c-0.39 -0.78 0 -2.723 1.357 -3.11l3.497 -0.97v-38.3L30.48 40.667c-0.39 -1.75 0.58 -4.277 3.3 -4.473l14.367 -0.967 19.8 30.327v-26.83l-5.047 -0.58c-0.39 -2.143 1.163 -3.7 3.103 -3.89l13.4 -0.78z"
+      />
     </svg>
   );
 }
 
+/*
+ * The three Apple apps are drawn as their app icons — a 64-unit rounded
+ * square — because the icon IS the brand mark for a first-party app.
+ */
+/** iOS's corner is ~22.5% of the side; a plain rx reads the same at 22px. */
+const APPLE_ICON_RADIUS = 14.4;
+
 export function AppleCalendarMark({ className }: { className?: string }) {
-  return <CalendarClock className={className} aria-hidden="true" />;
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
+      <rect x=".5" y=".5" width="63" height="63" rx={APPLE_ICON_RADIUS} fill="#fff" stroke="#000" strokeOpacity=".12" />
+      <text
+        x="32"
+        y="20"
+        textAnchor="middle"
+        fill="#FF3B30"
+        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif"
+        fontSize="11"
+        fontWeight="600"
+        letterSpacing=".4"
+      >
+        MON
+      </text>
+      <text
+        x="32"
+        y="49"
+        textAnchor="middle"
+        fill="#1C1C1E"
+        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+        fontSize="31"
+        fontWeight="300"
+        letterSpacing="-1"
+      >
+        17
+      </text>
+    </svg>
+  );
 }
 
 export function AppleMailMark({ className }: { className?: string }) {
-  return <Mail className={className} aria-hidden="true" />;
+  const id = useSvgId("apple-mail");
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#1AD6FD" />
+          <stop offset="1" stopColor="#1D62F0" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx={APPLE_ICON_RADIUS} fill={`url(#${id})`} />
+      <rect x="12" y="19" width="40" height="27" rx="3.5" fill="#fff" />
+      <path d="M13.5 21 32 35.5 50.5 21" fill="none" stroke="#1D62F0" strokeOpacity=".28" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 export function AppleMusicMark({ className }: { className?: string }) {
-  return <Music2 className={className} aria-hidden="true" />;
+  const id = useSvgId("apple-music");
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#FA5A6E" />
+          <stop offset="1" stopColor="#FA233B" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx={APPLE_ICON_RADIUS} fill={`url(#${id})`} />
+      <g fill="#fff" transform="translate(3 2)">
+        <path d="M24.5 22.2 43.5 17v22.5h-3V22.1l-13 3.5v18h-3z" />
+        <ellipse cx="21" cy="43.6" rx="6.2" ry="4.7" transform="rotate(-20 21 43.6)" />
+        <ellipse cx="37" cy="39.5" rx="6.2" ry="4.7" transform="rotate(-20 37 39.5)" />
+      </g>
+    </svg>
+  );
 }
 
 export function LinearMark({ className }: { className?: string }) {
+  // Linear's mark is monochrome by design, so it takes the row's ink.
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="m3.5 18.5 15-15M8.5 20.5l12-12M3.5 13.5l10-10M3.5 8.5l5-5M13.5 20.5l7-7"
-        className="stroke-current"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z" />
     </svg>
   );
 }
 
 export function SlackMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
-      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path fill="#E01E5A" d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" />
+      <path fill="#36C5F0" d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z" />
+      <path fill="#2EB67D" d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312z" />
+      <path fill="#ECB22E" d="M15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
     </svg>
   );
 }

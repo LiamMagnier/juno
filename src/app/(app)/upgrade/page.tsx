@@ -306,11 +306,11 @@ export default function UpgradePage() {
           Questions
         </h2>
         <p className="mt-1 text-body text-muted-foreground">The short version of the terms, before you agree to them.</p>
-        {/* Disclosure rows in a well: `surface-inset` at rounded-card with p-1.5
-            holds `rounded-control` rows (16 = 10 + 6, concentric). Each row is
+        {/* Disclosure rows in a well: `surface-inset` at rounded-card with p-1
+            holds `rounded-control` rows (12 = 8 + 4, concentric). Each row is
             the house tonal-hover row; the caret turns and the answer opens on
             the same rung (see FAQ_DISCLOSURE). */}
-        <div className="surface-inset mt-4 rounded-card p-1.5">
+        <div className="surface-inset mt-4 rounded-card p-1">
           {faq.map((entry) => (
             <details key={entry.q} className={FAQ_DISCLOSURE}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-ui font-medium transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">

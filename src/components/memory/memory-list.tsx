@@ -279,7 +279,7 @@ export function MemoryList({
                     type="button"
                     aria-label="Clear search"
                     onClick={() => onQueryChange("")}
-                    className="absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in coarse:size-9"
+                    className="absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in coarse:size-9"
                   >
                     <ActionIcons.dismiss className="size-3.5" />
                   </button>

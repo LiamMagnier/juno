@@ -81,8 +81,10 @@ export function WorkSection({
  * Rows are text on the well at rest — a transparent border, no fill — and take
  * a tonal fill on hover (`workRowClass`), so on a bare page a stack of them has
  * no edge to read as a list without this. It is the inset frame the sidebar
- * uses for the same job: a recess the rows sit in, `rounded-card` outside with
- * `p-1.5` so the `rounded-control` rows inside are concentric with it.
+ * uses for the same job: a recess the rows sit in, `rounded-card` (12) outside
+ * with `p-1` (4) so the `rounded-control` (8) rows inside are concentric with
+ * it. It was `p-1.5`, which wants 6px rows — the arithmetic of the old 16px
+ * card, left behind when the ladder moved.
  */
 export function WorkList({
   className,
@@ -90,7 +92,7 @@ export function WorkList({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("surface-inset space-y-0.5 rounded-card p-1.5", className)} {...props}>
+    <div className={cn("surface-inset space-y-0.5 rounded-card p-1", className)} {...props}>
       {children}
     </div>
   );

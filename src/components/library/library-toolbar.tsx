@@ -131,7 +131,7 @@ export function LibraryToolbar({
         value={kind}
         onChange={onKindChange}
         ariaLabel="Filter by type"
-        className="h-9 w-fit max-w-full shrink-0"
+        className="w-fit max-w-full shrink-0"
         options={KINDS.map((option) => ({
           value: option.key,
           label: option.label,
@@ -158,7 +158,7 @@ export function LibraryToolbar({
             {selectToggle.allSelected ? "Clear selection" : "Select all"}
           </Button>
         )}
-        <SegmentedControl value={view} onChange={onViewChange} options={VIEW_OPTIONS} ariaLabel="View" className="h-9 shrink-0" />
+        <SegmentedControl value={view} onChange={onViewChange} options={VIEW_OPTIONS} ariaLabel="View" className="shrink-0" />
       </div>
     </div>
   );

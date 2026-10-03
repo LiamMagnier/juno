@@ -44,7 +44,7 @@ const VIEWS = [
  * of five figures, the activity chart and the models it went to. No
  * showcase, no public toggle and no Share: profiles are not public, and a
  * button that cannot do what it says is not shipped. Edit goes to Settings,
- * Account, where the name and photo are changed.
+ * Account, with the username field open (the photo is changed there too).
  *
  * Drawn from props so the dev gallery renders it with fixtures
  * (src/app/dev/profile); ProfilePage feeds it from /api/profile/activity.
@@ -54,7 +54,7 @@ export function ProfileView({
   activity,
   failed = false,
   onRetry,
-  editHref = "/settings?section=account",
+  editHref = "/settings?section=account&focus=username",
 }: {
   identity: ProfileIdentity;
   /** Null while loading. */

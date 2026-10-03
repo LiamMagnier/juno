@@ -64,7 +64,7 @@ const TOAST_ICONS: NonNullable<ToasterProps["icons"]> = {
 };
 
 /**
- * Toasts are `.surface-float` at `rounded-card` (16): a card that floats, on
+ * Toasts are `.surface-float` at `rounded-card` (12): a card that floats, on
  * the same material as every other floating layer. The `group-[.toaster]:`
  * variant is what makes the components-layer class beat sonner's own
  * `[data-sonner-toast][data-styled]` styles — it compiles to a three-class

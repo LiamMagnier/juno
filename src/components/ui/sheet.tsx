@@ -13,7 +13,7 @@ const SheetTrigger = DialogPrimitive.Trigger;
 const SheetClose = DialogPrimitive.Close;
 
 /**
- * `.surface-float` with `rounded-panel` (20) on the INNER edge only — the
+ * `.surface-float` with `rounded-panel` (16) on the INNER edge only — the
  * edge it slides in from stays square against the viewport. It travels on the
  * sheet-in/out keyframes (drawer easing in, accelerate out); `--sheet-from`
  * tells the keyframe which side, and because the keyframe multiplies it by

@@ -504,7 +504,10 @@ export function ArtifactInlineCard({
             // No local focus ring: globals.css `:focus-visible` is authoritative,
             // and this header alone used to fork it two ways (ring-ring on the
             // segments, ring-primary/40 here and on Open).
-            className="-m-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-field p-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/40"
+            // The hover plate hugs the 32px icon tile by 2px, so its corner is
+            // the tile's 10 + 2 = 12 (`rounded-card`). It was a 10px plate 6px
+            // around a 10px tile — the tile as round as the plate it sat in.
+            className="-m-0.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-card p-0.5 pr-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/40"
           >
             {identity}
           </button>
@@ -520,10 +523,11 @@ export function ArtifactInlineCard({
               onChange={setView}
               options={viewOptions}
               ariaLabel="Artifact view"
+              // The 32px rung, the card header's control height; everything
+              // else — material, radii, the gliding thumb — is the primitive's.
+              size="sm"
               className="shrink-0"
-              // Keeps the card header's 32px control height; everything else —
-              // material, radii, the gliding thumb — is the primitive's.
-              optionClassName="h-6 gap-1 px-2.5 text-caption"
+              optionClassName="gap-1 text-caption"
             />
           )}
           {onOpen && (
@@ -623,12 +627,11 @@ export function ArtifactInlineCard({
               <div
                 className={cn(
                   "h-full",
-                  // Concentric with the card: `rounded-card` (16) minus the 8px
-                  // mat is 8, the `md` rung. This comment used to say "14px
-                  // outer minus the 8px mat is 6" and land on `xs` — wrong
-                  // twice, since the card is 16 and 16 − 8 is 8. The sheet was
-                  // 2px too square against the card's own bottom corners.
-                  isSandboxPreview && "overflow-hidden rounded-md bg-white ring-1 ring-inset ring-border/70"
+                  // Concentric with the card: `rounded-card` (12) minus the 8px
+                  // mat is 4, the `sm` rung. It was `md` (8) — the arithmetic
+                  // of the old 16px card, so the sheet sat 4px too round
+                  // against the card's own bottom corners.
+                  isSandboxPreview && "overflow-hidden rounded-sm bg-white ring-1 ring-inset ring-border/70"
                 )}
               >
                 <RuntimePreview

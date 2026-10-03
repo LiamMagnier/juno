@@ -789,7 +789,7 @@ export function MotionPanel({
               type="button"
               disabled={readOnly}
               onClick={() => deleteKeyframe(selected.track, selected.index)}
-              className="pressable flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-micro text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
+              className="pressable flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-micro text-muted-foreground danger-hover disabled:pointer-events-none disabled:opacity-40"
             >
               <ActionIcons.delete className="size-3" aria-hidden />
               Delete keyframe

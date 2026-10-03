@@ -8,6 +8,7 @@ import {
   addDays,
   computeStreaks,
   isValidTimeZone,
+  profileHandle,
   rankModels,
   todayIn,
   type ActivityDay,
@@ -58,7 +59,7 @@ export async function getProfileActivity(
        WHERE "userId" = ${userId} AND "state" IN ('completed', 'partially_completed')
          AND "startedAt" IS NOT NULL AND "finishedAt" IS NOT NULL
     `),
-    prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true, username: true, name: true, email: true } }),
   ]);
 
   const today = todayIn(timeZone, now);
@@ -101,6 +102,8 @@ export async function getProfileActivity(
   const merged = [...byLabel.values()];
 
   return {
+    username: account?.username ?? null,
+    handle: account ? profileHandle(account) : "you",
     timeZone,
     today,
     memberSince: account?.createdAt.toISOString() ?? null,

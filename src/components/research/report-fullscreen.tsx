@@ -107,7 +107,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
                       <Phrase text={RESEARCH_COPY.report.contents} />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="max-h-[70dvh] w-80 overflow-y-auto p-2">
+                  <PopoverContent align="start" className="max-h-[70dvh] w-80 overflow-y-auto p-1">
                     <Contents toc={toc} anchorPrefix={anchorPrefix} onPick={() => setTocOpen(false)} />
                   </PopoverContent>
                 </Popover>

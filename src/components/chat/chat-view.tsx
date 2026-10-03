@@ -2224,7 +2224,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             ) : (
               <div className="min-w-0 flex-1" aria-hidden="true" />
             )}
-            <div className="hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
+            {/* The cluster sits out in the panel's corner, not on the
+                title's gutter: its last control's centre is 24px in from the
+                right edge, the same inset the sidebar's collapse control keeps
+                from the sidebar's edge, so the two header rows close on the
+                same rhythm at either side of the window. On the 32px gutter it
+                floated 50px in, reading as lost in the page rather than placed. */}
+            <div className="-mr-[calc(var(--page-gutter)-0.375rem)] hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
           </div>
         )}
 

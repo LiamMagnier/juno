@@ -55,8 +55,14 @@ function mediaKindOf(mimeType: string): Exclude<MediaKind, "all"> | null {
   return null;
 }
 
-/** The toolbar's segmented shells: rounded-menu p-1 on a 1px hairline, one h-9 row. */
-const SHELL = "h-9 gap-0.5 rounded-menu border-foreground/10 bg-transparent p-1 coarse:h-11 dark:border-white/10";
+/**
+ * The toolbar's segmented shells: the primitive's 36px rung (44 on touch) on
+ * the search field's hairline. Height, padding and radii are the primitive's
+ * own — this used to force `h-9` on a track holding 28px keys, which left 26px
+ * inside the padding, so every key overhung the track's bottom by 2px and its
+ * hairline ran into the track's.
+ */
+const SHELL = "border-foreground/10 bg-transparent dark:border-white/10";
 /**
  * Same-size tiles on fixed container steps, not auto-fill, so the count is
  * deliberate: 2 on a phone, 3 from 40rem (a 1024 window), 4 from 56rem (the
@@ -285,9 +291,9 @@ export function LibraryHome() {
         />
 
         {/* One row, one height (h-9): what to show on the left; search and the
-            view together on the right. Both segmented shells are the brief's
-            `rounded-menu p-1` with a hairline, holding 28px keys, so the row's
-            four controls share a top and bottom edge. Under 40rem search and the
+            view together on the right. Both segmented shells are the
+            primitive's 36px rung, so the row's four controls share a top and
+            bottom edge. Under 40rem search and the
             view take their own full-width line beneath the filter. */}
         <div className={cn("flex flex-wrap items-center justify-between gap-3", show === "media" ? "mb-3" : "mb-6")}>
           <SegmentedControl
@@ -296,7 +302,6 @@ export function LibraryHome() {
             ariaLabel="Show"
             columns="content"
             className={SHELL}
-            optionClassName="h-7 rounded-control px-3 py-0 text-ui coarse:h-9"
             options={[
               { value: "all", label: "All" },
               { value: "made", label: FEATURE_NAMES.artifacts.label },
@@ -339,7 +344,6 @@ export function LibraryHome() {
               ariaLabel="View"
               labelHidden
               className={`${SHELL} shrink-0`}
-              optionClassName="size-7 rounded-control coarse:size-9"
               options={[
                 { value: "grid", label: "Grid", icon: <LayoutGrid className="size-4" /> },
                 { value: "list", label: "List", icon: <List className="size-4" /> },
@@ -498,7 +502,7 @@ function LibrarySkeleton({ view }: { view: "grid" | "list" }) {
     <div role="status" aria-label="Loading your Library" className={GRID}>
       {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
         <div key={i} className="surface-raised flex flex-col rounded-card p-1">
-          {/* eslint-disable-next-line design-system/concentric-radius -- the rule's table is stale (card 16, control 10); tailwind.config.ts has card 12 and control 8, and 12 − 4 = 8 */}
+          {/* 12 − 4 = 8: concentric inside the p-1 card. */}
           <Skeleton className="aspect-[4/3] w-full rounded-control" />
           <div className="flex flex-col gap-0.5 px-2 pb-2 pt-2.5">
             <span className="flex h-5 items-center"><Skeleton className="h-3.5 w-3/4" /></span>

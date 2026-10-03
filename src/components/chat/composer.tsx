@@ -3347,6 +3347,7 @@ export function Composer({
           appsPanel={showConnectors ? connectorsPanel : null}
           skillsPanel={skillRow ? skillsPanel : null}
           disabled={plusLocked}
+          layer={mediaLayer}
           params={
             mediaParams.caps ? (
               <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="bottom" layer={mediaLayer} />

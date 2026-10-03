@@ -260,7 +260,7 @@ export function RightColumnShell(props: RightColumnShellProps) {
                     <MoreHorizontal className="size-4" />
                   </IconButton>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="flex w-auto flex-col items-stretch gap-1 p-1.5">
+                <PopoverContent align="end" className="flex w-auto flex-col items-stretch gap-1 p-1">
                   {headerActions}
                 </PopoverContent>
               </Popover>

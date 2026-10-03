@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * A glyph you can press, as a key: `.control-neu` at `rounded-control` (10) —
+ * A glyph you can press, as a key: `.control-neu` at `rounded-control` (8) —
  * a hairline at rest, a tonal fill on hover, the `--selected` tone (one rung
  * past hover) while held or while `aria-pressed`, and the shared 0.97 dip
  * under the finger. Every size grows to a 44px target on a coarse pointer.

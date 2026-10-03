@@ -11,6 +11,7 @@ import {
   Download,
   LayoutGrid,
   List as ListIcon,
+  Monitor,
   Pencil,
   Pin,
   Plug,
@@ -20,7 +21,9 @@ import {
   Scan,
   Search,
   Settings,
+  Smartphone,
   Star,
+  Tablet,
   Trash2,
   type IconComponent,
 } from "@/components/ui/icons";
@@ -314,6 +317,8 @@ export function ControlsGallery() {
   const [agree, setAgree] = React.useState<boolean | "indeterminate">(true);
   const [plan, setPlan] = React.useState("monthly");
   const [tab, setTab] = React.useState("overview");
+  const [canvasTab, setCanvasTab] = React.useState("preview");
+  const [previewWidth, setPreviewWidth] = React.useState<"full" | "tablet" | "phone">("full");
   const [volume, setVolume] = React.useState([60]);
   const [saving, setSaving] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
@@ -428,7 +433,7 @@ export function ControlsGallery() {
               value={filter}
               onChange={setFilter}
               ariaLabel="Filter files"
-              className="h-9 w-fit max-w-full shrink-0"
+              className="w-fit max-w-full shrink-0"
               options={[
                 { value: "ALL", label: "All", count: 12 },
                 { value: "HTML", label: "Images", count: 5 },
@@ -447,7 +452,7 @@ export function ControlsGallery() {
                 value={view}
                 onChange={setView}
                 ariaLabel="File view"
-                className="h-9 shrink-0"
+                className="shrink-0"
                 options={[
                   { value: "list", label: "List", icon: <ListIcon className="size-3.5" /> },
                   { value: "grid", label: "Grid", icon: <LayoutGrid className="size-3.5" /> },
@@ -499,6 +504,31 @@ export function ControlsGallery() {
               { value: "ALL", label: "All" },
               { value: "HTML", label: "Sites" },
               { value: "MARKDOWN", label: "Documents" },
+            ]}
+          />
+        </Section>
+
+        <Section
+          title="SegmentedControl / TabsList · sm (the canvas toolbar)"
+          note="The 32px rung for a dense header row: rounded-card (12) with p-1 holds a 7px thumb, the same 4px all round as the 36px rung. Preview / Code and the icon-only preview width, side by side as the canvas draws them."
+        >
+          <Tabs value={canvasTab} onValueChange={setCanvasTab}>
+            <TabsList size="sm">
+              <TabsTrigger value="preview">Preview</TabsTrigger>
+              <TabsTrigger value="code">Code</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <SegmentedControl
+            value={previewWidth}
+            onChange={setPreviewWidth}
+            ariaLabel="Preview width"
+            labelHidden
+            size="sm"
+            className="shrink-0"
+            options={[
+              { value: "full", label: "Fit the panel", icon: <Monitor className="size-3.5" aria-hidden /> },
+              { value: "tablet", label: "Tablet · 834px", icon: <Tablet className="size-3.5" aria-hidden /> },
+              { value: "phone", label: "Phone · 390px", icon: <Smartphone className="size-3.5" aria-hidden /> },
             ]}
           />
         </Section>

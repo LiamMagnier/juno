@@ -109,6 +109,7 @@ export const PROJECTS = [
     conversationCount: 14,
     fileCount: 6,
     starred: true,
+    parentId: null,
   },
   {
     id: "p-home",
@@ -118,6 +119,7 @@ export const PROJECTS = [
     conversationCount: 5,
     fileCount: 11,
     starred: false,
+    parentId: null as string | null,
   },
   {
     id: "p-thesis",
@@ -127,6 +129,7 @@ export const PROJECTS = [
     conversationCount: 22,
     fileCount: 38,
     starred: true,
+    parentId: null as string | null,
   },
   {
     id: "p-kanji",
@@ -136,6 +139,7 @@ export const PROJECTS = [
     conversationCount: 3,
     fileCount: 0,
     starred: false,
+    parentId: null as string | null,
   },
   {
     id: "p-pricing",
@@ -145,6 +149,50 @@ export const PROJECTS = [
     conversationCount: 7,
     fileCount: 2,
     starred: false,
+    parentId: null as string | null,
+  },
+  // Folders: Atlas holds Research (which holds Interviews) and Launch; the
+  // thesis holds Fieldwork. Drawn nested on /dev/pages?page=projects and as
+  // the Folders section of /dev/pages/project/p-atlas.
+  {
+    id: "p-atlas-research",
+    name: "Research",
+    instructions: "Summarise sources before giving an opinion. Quote customers exactly.",
+    updatedAt: ago(6),
+    conversationCount: 6,
+    fileCount: 4,
+    starred: false,
+    parentId: "p-atlas" as string | null,
+  },
+  {
+    id: "p-atlas-interviews",
+    name: "Customer interviews",
+    instructions: "",
+    updatedAt: ago(20),
+    conversationCount: 9,
+    fileCount: 12,
+    starred: false,
+    parentId: "p-atlas-research" as string | null,
+  },
+  {
+    id: "p-atlas-launch",
+    name: "Launch plan",
+    instructions: "Dates in ISO format. Flag anything that blocks the November beta.",
+    updatedAt: ago(9),
+    conversationCount: 4,
+    fileCount: 1,
+    starred: false,
+    parentId: "p-atlas" as string | null,
+  },
+  {
+    id: "p-thesis-field",
+    name: "Fieldwork",
+    instructions: "",
+    updatedAt: ago(90),
+    conversationCount: 3,
+    fileCount: 9,
+    starred: false,
+    parentId: "p-thesis" as string | null,
   },
 ];
 
@@ -156,6 +204,7 @@ export const PROJECT_DETAIL = {
     starred: true,
     updatedAt: ago(2),
     workDefaults: {},
+    parentId: null as string | null,
   },
   conversations: [
     { id: "c-1", title: "Why the sync worker drops cursors under load", lastMessageAt: ago(1), pinned: true, kind: "chat", codeWorkspaceName: null, codeWorkspacePath: null },
@@ -170,6 +219,36 @@ export const PROJECT_DETAIL = {
     { id: "f-3", fileName: "beta-cohort.csv", mimeType: "text/csv", size: 42_000, url: "#", kind: "FILE", knowledge: null },
   ],
   workspace: {},
+  breadcrumbs: [] as { id: string; name: string }[],
+  children: [
+    { id: "p-atlas-launch", name: "Launch plan", parentId: "p-atlas", instructions: "Dates in ISO format. Flag anything that blocks the November beta.", starred: false, updatedAt: ago(9), conversationCount: 4, fileCount: 1, childCount: 0 },
+    { id: "p-atlas-research", name: "Research", parentId: "p-atlas", instructions: "Summarise sources before giving an opinion. Quote customers exactly.", starred: false, updatedAt: ago(6), conversationCount: 6, fileCount: 4, childCount: 1 },
+  ],
+  inherited: [] as { id: string; name: string; instructions: string; fileCount: number }[],
+};
+
+/** A folder two levels down: what /dev/pages/project/p-atlas-interviews shows. */
+export const FOLDER_DETAIL = {
+  ...PROJECT_DETAIL,
+  project: {
+    ...PROJECT_DETAIL.project,
+    id: "p-atlas-interviews",
+    name: "Customer interviews",
+    instructions: "Quote people exactly. Tag each finding with the company it came from.",
+    starred: false,
+    parentId: "p-atlas-research" as string | null,
+  },
+  conversations: PROJECT_DETAIL.conversations.slice(1, 3),
+  files: PROJECT_DETAIL.files.slice(2),
+  breadcrumbs: [
+    { id: "p-atlas", name: "Atlas launch" },
+    { id: "p-atlas-research", name: "Research" },
+  ],
+  children: [],
+  inherited: [
+    { id: "p-atlas", name: "Atlas launch", instructions: PROJECTS[0].instructions, fileCount: 3 },
+    { id: "p-atlas-research", name: "Research", instructions: "Summarise sources before giving an opinion. Quote customers exactly.", fileCount: 4 },
+  ],
 };
 
 export const PROJECT_MEMORY = {

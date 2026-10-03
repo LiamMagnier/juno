@@ -85,6 +85,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       name: true,
       image: true,
       email: true,
+      username: true,
       subscription: {
         select: { plan: true, status: true, createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
       },
@@ -163,7 +164,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
   };
 
   return {
-    user: { id: user.id, name: account?.name ?? user.name ?? null, email: user.email ?? null, image: account?.image ?? user.image ?? null },
+    user: { id: user.id, name: account?.name ?? user.name ?? null, email: user.email ?? null, image: account?.image ?? user.image ?? null, username: account?.username ?? null },
     settings: clientSettings,
     quota,
     spend: {

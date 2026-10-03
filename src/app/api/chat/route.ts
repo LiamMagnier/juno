@@ -170,6 +170,7 @@ import { ensureAttachmentText } from "@/lib/knowledge";
 import { isPdfAttachment, providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
+import { loadProjectLineage } from "@/lib/projects/project-tree-server";
 import {
   codeSessionRefusal,
   emptySubmissionRefusal,
@@ -2342,12 +2343,16 @@ async function handleChat(req: Request) {
   // filed into a project its owner owns, so this finds the same row it always
   // did; unscoped, the ownership guard refused it and every turn in a project
   // chat failed before it started.
-  const projectRow = conversation.projectId
-    ? await prisma.project.findUnique({
-        where: { id: conversation.projectId, userId: conversation.userId },
-        select: { name: true, instructions: true, files: { select: { id: true, fileName: true, extractedText: true } } },
-      })
+  //
+  // Folders: a chat in a subfolder inherits every ancestor's instructions and
+  // files, root first, then the folder's own (mergeInheritedProjectContext in
+  // lib/projects/project-tree.ts). `projectLineage` is that chain; a project
+  // with no parent is a lineage of one and merges to exactly its own row, so
+  // nothing changes for a project that is not inside a folder.
+  const projectLineage = conversation.projectId
+    ? await loadProjectLineage(conversation.userId, conversation.projectId)
     : null;
+  const projectRow = projectLineage?.merged ?? null;
   const assistantProjectRow = projectRow
     ? {
         ...projectRow,
@@ -2373,7 +2378,19 @@ async function handleChat(req: Request) {
           // `same_provider` means the provider they picked for this turn.
           conversationProvider: modelInfo.provider,
         };
-        const retrieved = selectedKnowledgeFileIds === undefined
+        // Inside a folder the documents span the lineage, so they are
+        // retrieved by attachment (every inherited file's id) rather than by
+        // the one project id, which would miss the ancestors' indexed files.
+        const inheritedFileIds =
+          selectedKnowledgeFileIds === undefined && (projectLineage?.depth ?? 1) > 1
+            ? projectRow.files.map((file) => file.id)
+            : undefined;
+        const retrieved = inheritedFileIds
+          ? await retrieveAttachmentKnowledge({
+              ...retrievalOptions,
+              attachmentIds: inheritedFileIds,
+            })
+          : selectedKnowledgeFileIds === undefined
           ? await retrieveProjectKnowledge({
               ...retrievalOptions,
               projectId: conversation.projectId,

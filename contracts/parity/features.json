@@ -19,6 +19,10 @@
         "/api/account/mfa/start": "native",
         "/api/account/password": "native",
         "/api/account/sessions/revoke": "native",
+        "/api/account/username": {
+          "status": "planned",
+          "note": "Choosing the @username (Settings › Account › Username on the web). The apps do not show or edit it yet, and have no profile screen to show it on (/profile is planned)."
+        },
         "/api/account/verification": {
           "status": "planned",
           "note": "The web's check-your-inbox banner for an unverified email; the apps do not show it yet."
@@ -181,21 +185,23 @@
       "title": "Projects",
       "pages": {
         "/projects": {
-          "mac": "native",
-          "ios": "native",
-          "screen": "DesktopProjectsScreen"
+          "mac": "partial",
+          "ios": "partial",
+          "screen": "DesktopProjectsScreen",
+          "note": "Folders (Project.parentId) are planned: the apps list every project flat and do not yet nest folders under their project, move one with Move to… or drag and drop, or ask whether a deleted folder's subfolders go up a level or go with it."
         },
         "/projects/[id]": {
-          "mac": "native",
-          "ios": "native",
-          "screen": "DesktopProjectPage"
+          "mac": "partial",
+          "ios": "partial",
+          "screen": "DesktopProjectPage",
+          "note": "Folders are planned: no breadcrumbs, Folders section or New folder yet, and the app does not show the instructions and files a folder inherits from the projects above it (the server already prepends them to its chats)."
         }
       },
       "routes": {
         "/api/projects": "native",
         "/api/projects/[id]": {
           "status": "web-only",
-          "note": "The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89)."
+          "note": "The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89). Moving a project into a folder (PATCH parentId), the folder fields on GET (breadcrumbs, children, inherited) and DELETE ?children=lift|cascade are web-only until native folders land; a sync project.delete lifts a folder's subfolders up a level, as the web does by default."
         },
         "/api/projects/[id]/members": {
           "status": "planned",

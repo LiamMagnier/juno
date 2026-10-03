@@ -335,7 +335,7 @@ function MediaDropzone({
           // has to stay findable over a dark video a pure-black chip held by a
           // /60 hairline. The same fix DialogCloseButton already carries.
           // `.pressable` carries the colour cross-fade and the press dip.
-          className="pressable absolute right-2 top-2 grid size-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur hover:border-border hover:bg-popover hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-9"
+          className="pressable absolute right-1 top-1 grid size-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur hover:border-border hover:bg-popover hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-9"
         >
           <ActionIcons.dismiss className="size-4" />
         </button>

@@ -314,8 +314,8 @@ export function CodeSessionBanner({
                     {report ? checksLabel(report) : autoFixState?.enabled ? "Auto-fix on" : "Auto-fix off"}
                   </ChipLabel>
                 </PopoverTrigger>
-                {/* 16px shell − p-1.5 (6) = the 10px rung every row inside uses. */}
-                <PopoverContent align="end" className="w-80 p-1.5">
+                {/* 12px shell − p-1 (4) = the 8px rung every row inside uses. */}
+                <PopoverContent align="end" className="w-80 p-1">
                   <ChecksAndAutoFix report={report} autoFix={autoFix} />
                 </PopoverContent>
               </Popover>
