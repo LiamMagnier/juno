@@ -115,6 +115,18 @@ function useFrameMorph(ref: React.RefObject<HTMLElement | null>, shapeKey: strin
   }, [ref, shapeKey, enabled]);
 }
 
+/**
+ * The frame's height, in flow: padding-top as a share of the width. Every
+ * other child of a frame is absolutely positioned, so without this the frame's
+ * height rested on CSS `aspect-ratio` alone, and a frame that lost it (seen in
+ * production after a reload: 480 × 0 with the picture fully loaded) had no
+ * height at all. This holds in every layout and browser.
+ */
+function FrameSpacer({ ratio }: { ratio: number }) {
+  const safe = clampRatio(ratio);
+  return <span aria-hidden="true" className="block" style={{ paddingTop: `${(100 / safe).toFixed(4)}%` }} />;
+}
+
 /** Pauses the field's drift while it is offscreen or the tab is hidden. */
 function useFieldPause(ref: React.RefObject<HTMLElement | null>) {
   React.useEffect(() => {
@@ -193,7 +205,10 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
   // Reveal once per mount, and only for a turn that was generating here.
   const fresh = React.useRef(!!handoff);
   const frameRef = React.useRef<HTMLDivElement>(null);
-  useFrameMorph(frameRef, ratio.toFixed(4), !reduced);
+  // Only a picture that arrived in this session morphs from its placeholder.
+  // One loaded from history (a reload) never animates its box: a height
+  // morph measured from a collapsed first frame left it 0px tall.
+  useFrameMorph(frameRef, ratio.toFixed(4), !reduced && !!handoff);
 
   React.useEffect(() => {
     if (phase !== "revealing") return;
@@ -248,6 +263,7 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
       data-phase={phase}
       style={style}
     >
+      <FrameSpacer ratio={ratio} />
       {(phase === "loading" || phase === "revealing") && <GenerationField still={!handoff || reduced} />}
       {phase === "revealing" && layerSrc && (
         <>
@@ -338,7 +354,7 @@ export function GeneratedVideo({ attachment, handoff }: { attachment: ClientAtta
   const fresh = React.useRef(!!handoff);
   const cardRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  useFrameMorph(cardRef, ratio.toFixed(4), !reduced);
+  useFrameMorph(cardRef, ratio.toFixed(4), !reduced && !!handoff);
 
   React.useEffect(() => {
     if (phase !== "revealing") return;
@@ -389,6 +405,7 @@ export function GeneratedVideo({ attachment, handoff }: { attachment: ClientAtta
       data-phase={phase}
       style={{ aspectRatio: String(ratio), width: `${frameWidth("video", ratio)}px`, maxWidth: "100%" }}
     >
+      <FrameSpacer ratio={ratio} />
       {(phase === "loading" || phase === "revealing") && <GenerationField still={!handoff || reduced} />}
       <canvas ref={canvasRef} aria-hidden="true" className={cn("gen-layer gen-layer--blur", phase !== "revealing" && "hidden")} />
       <div className="gen-sharp">
