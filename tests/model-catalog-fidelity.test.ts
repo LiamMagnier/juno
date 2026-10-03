@@ -28,6 +28,9 @@ test("model catalog fidelity: every displayed model has matching providerModel",
 });
 
 test("image catalog includes every active provider image variant", () => {
+  // Active only: a model past its `retiresOn` date leaves the catalog on its
+  // own (Nano Banana, google:gemini-2.5-flash-image, retired 2026-10-02), so it
+  // is not listed here.
   const imageIds = new Set(GEN_MODELS.filter((model) => model.modality === "image").map((model) => model.id));
   for (const id of [
     "openai:gpt-image-2",
@@ -37,7 +40,6 @@ test("image catalog includes every active provider image variant", () => {
     "google:gemini-3-pro-image",
     "google:gemini-3.1-flash-image",
     "google:gemini-3.1-flash-lite-image",
-    "google:gemini-2.5-flash-image",
     "xai:grok-imagine-image-2.0",
     "xai:grok-imagine-image-quality",
     "xai:grok-imagine-image",
