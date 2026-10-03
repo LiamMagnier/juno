@@ -31,7 +31,7 @@ for (const m of all) {
   if (!m.provider || !(PROVIDER_LIST as string[]).includes(m.provider)) errors.push(`${m.id}: unknown provider "${m.provider}"`);
   if (!m.providerModel) errors.push(`${m.id}: missing providerModel`);
   if (!m.name) errors.push(`${m.id}: missing display name`);
-  if (!["chat", "image", "video"].includes(m.modality)) errors.push(`${m.id}: invalid modality "${m.modality}"`);
+  if (!["chat", "image", "video", "audio"].includes(m.modality)) errors.push(`${m.id}: invalid modality "${m.modality}"`);
   if (!m.status || !["current", "legacy", "deprecated"].includes(m.status)) errors.push(`${m.id}: missing/invalid status "${m.status}"`);
   if (!m.family) errors.push(`${m.id}: missing family`);
   if (![1, 2, 3].includes(m.cost)) errors.push(`${m.id}: invalid cost tier ${m.cost}`);
@@ -126,7 +126,7 @@ for (const d of DISCOVERED) {
 }
 for (const id of UNAVAILABLE) {
   if (!curatedIds.has(id)) errors.push(`generated UNAVAILABLE id ${id} does not exist in the curated lists`);
-  else if (curatedGenIds.has(id)) errors.push(`generated UNAVAILABLE id ${id} is an image/video model — sync must never prune generative models`);
+  else if (curatedGenIds.has(id)) errors.push(`generated UNAVAILABLE id ${id} is an image/video/audio model — sync must never prune generative models`);
   if (migrationTargets.has(id)) errors.push(`generated UNAVAILABLE id ${id} is the migration target of a retired model`);
 }
 

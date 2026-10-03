@@ -2,11 +2,9 @@
 
 import * as React from "react";
 import nextDynamic from "next/dynamic";
-import Image from "next/image";
-import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Volume2 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -82,6 +80,8 @@ const CitationAuditPanel = nextDynamic(
   { ssr: false },
 );
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
+import { GeneratedImage, GeneratedImageGrid, GeneratedVideo, useGenerationHandoff } from "@/components/chat/generated-media";
+import { AudioAttachment } from "@/components/chat/audio-attachment";
 /**
  * Split: a full-screen editor that mounts only once a reader has pressed Edit
  * on a generated image, and 31 kB of source that every transcript was loading
@@ -188,195 +188,6 @@ function StreamStatus({
           ) : undefined
         }
       />
-    </div>
-  );
-}
-
-/**
- * A generated image keeps the same square footprint as its in-flight card while
- * the browser fetches and decodes the final pixels. The neutral frame arrives
- * immediately; only the pixels dissolve in, so completion never collapses and
- * re-expands the transcript.
- */
-function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAttachment; onEdit?: () => void }) {
-  const [ready, setReady] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
-  const protectedLocalUrl = requiresViewerCredentials(attachment.url);
-
-  const revealAfterDecode = (event: React.SyntheticEvent<HTMLImageElement>) => {
-    const image = event.currentTarget;
-    const reveal = () => {
-      setFailed(false);
-      setReady(true);
-    };
-    // `load` can fire before a large bitmap has finished decoding. Waiting for
-    // decode avoids revealing one blank frame; older browsers simply fall back
-    // to the normal load event.
-    if (typeof image.decode === "function") {
-      void image.decode().catch(() => undefined).then(reveal);
-    } else {
-      reveal();
-    }
-  };
-
-  return (
-    <div className="group/media relative w-full max-w-[320px] motion-safe:animate-fade-in">
-      <a
-        href={attachment.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={
-          failed
-            ? `Preview unavailable. Open ${attachment.fileName} in a new tab`
-            : `Open ${attachment.fileName} in a new tab`
-        }
-        // `bg-muted` at full strength, not `/35`. The placeholder frame is drawn
-        // on the transcript ground, which is now #000, so muted at 35% resolved
-        // to ~3% lightness — a frame the same colour as the page, holding a
-        // "Preparing image" label with nothing behind it. Named rung instead.
-        // A hairline, not a shadow: the frame sits in the reading column, and
-        // hover darkens the edge rather than lifting the card off the page.
-        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted transition-colors duration-fast ease-out-soft hover:border-border"
-      >
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
-            ready && "opacity-0"
-          )}
-        >
-          <span className="flex flex-col items-center gap-2 px-5 text-center">
-            {failed ? <ImageOff className="size-5" /> : <ImageIcon className="size-5 opacity-70" />}
-            <span className="font-mono text-caption">
-              {failed ? "Preview unavailable · open original" : "Preparing image"}
-            </span>
-          </span>
-        </div>
-        <Image
-          src={attachment.url}
-          alt={attachment.fileName}
-          fill
-          // The protected local-storage route requires the browser's session
-          // cookie. Next's internal optimizer fetch does not forward it.
-          unoptimized={protectedLocalUrl}
-          sizes="(max-width: 640px) calc(100vw - 2rem), 320px"
-          onLoad={revealAfterDecode}
-          onError={() => {
-            setReady(false);
-            setFailed(true);
-          }}
-          className={cn(
-            "object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
-            ready && "opacity-100"
-          )}
-        />
-      </a>
-      {failed && (
-        <span role="status" aria-live="polite" className="sr-only">
-          Preview unavailable for {attachment.fileName}. Open the original file instead.
-        </span>
-      )}
-      {onEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit ${attachment.fileName}`}
-          // `caption`, matching the video card's "Open" pill — the same
-          // media-overlay action role. `label` is the uppercase-eyebrow rung;
-          // its 0.10em tracking has no business on a mixed-case verb.
-          // The press dips at --dur-press, not the fast rung the reveal and
-          // the colour run on: a press that eases in is felt as lag.
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
-        >
-          <ActionIcons.edit className="size-3.5" aria-hidden="true" /> Edit
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** Generated video (kind FILE, video/*) — stable 16:9 chrome, revealed when playable. */
-function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
-  const [ready, setReady] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
-
-  const visibleStatus = failed ? "Preview unavailable" : ready ? "Ready" : "Preparing";
-  const accessibleStatus = failed
-    ? `Video preview unavailable for ${attachment.fileName}`
-    : ready
-      ? `${attachment.fileName} is ready`
-      : `Preparing ${attachment.fileName}`;
-
-  return (
-    // Named rungs, not alpha. `bg-card/75` and `bg-muted/35` were tuned against
-    // the old 9%-lightness ground; over #000 they resolve to ~4.9% and ~3.3%,
-    // so the card, its stage and the page were three shades of nothing.
-    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-field border border-border/60 bg-card transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-fade-in">
-      <div className="relative aspect-video min-w-0 overflow-hidden bg-muted">
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
-            ready && "opacity-0"
-          )}
-        >
-          <span className="flex flex-col items-center gap-2 px-5 text-center">
-            <VideoIcon className="size-5 opacity-70" />
-            <span className="font-mono text-caption">
-              {failed ? "Video preview unavailable" : "Preparing video"}
-            </span>
-          </span>
-        </div>
-        <video
-          controls={ready}
-          playsInline
-          preload="auto"
-          src={attachment.url}
-          title={attachment.fileName}
-          aria-label={attachment.fileName}
-          aria-hidden={!ready}
-          tabIndex={ready ? 0 : -1}
-          onLoadStart={() => {
-            setReady(false);
-            setFailed(false);
-          }}
-          onLoadedData={() => {
-            setFailed(false);
-            setReady(true);
-          }}
-          onError={() => {
-            setReady(false);
-            setFailed(true);
-          }}
-          className={cn(
-            "absolute inset-0 size-full object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
-            ready ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-          )}
-        />
-      </div>
-      <div className="flex min-w-0 items-center justify-between gap-3 border-t border-border/60 bg-card px-3.5">
-        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-          <VideoIcon className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="shrink-0 font-mono text-caption text-foreground/75">Video</span>
-          <span aria-hidden="true" className="text-border">·</span>
-          <span role="status" aria-live="polite" className="min-w-0 truncate text-caption">
-            <span aria-hidden="true">{visibleStatus}</span>
-            <span className="sr-only">{accessibleStatus}</span>
-          </span>
-        </div>
-        <a
-          href={attachment.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Open ${attachment.fileName} in a new tab`}
-          // The press dips at --dur-press, not the fast rung the hover fill
-          // runs on: a press that eases in is felt as lag.
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-fast ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
-        >
-          Open
-          <ActionIcons.external className="size-3.5" aria-hidden="true" />
-        </a>
-      </div>
     </div>
   );
 }
@@ -884,6 +695,9 @@ export const MessageItem = React.memo(function MessageItem({
   // Image-edit dialog target; kept mounted through the close animation.
   const [editTarget, setEditTarget] = React.useState<ClientAttachment | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
+  // The shape this turn's generation asked for, kept past the placeholder so
+  // the result lands in the same box and reveals (generated-media.tsx).
+  const generationHandoff = useGenerationHandoff(message.error ? null : message.progress);
   // The long user bubble, for scrolling it back into view after "Show less".
   const bubbleRef = React.useRef<HTMLDivElement>(null);
   /*
@@ -1268,13 +1082,17 @@ export const MessageItem = React.memo(function MessageItem({
   // Assistant message
   const showCursor = message.streaming && message.content.length === 0;
   const hasRunTrace = !!view.reasoning?.trim() || !!view.activity?.length;
-  // Generated media: image attachments + video files (kind FILE, video/* mime).
-  const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || a.mimeType.startsWith("video/"));
+  // Generated media: image attachments + video and audio files (kind FILE, video/* or audio/* mime).
+  const isPlayable = (a: ClientAttachment) => a.mimeType.startsWith("video/") || a.mimeType.startsWith("audio/");
+  const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || isPlayable(a));
   // Anything else an answer carries is a document it produced — a tile that
   // opens in the viewer, the same object a sent file is.
-  const fileAttachments = message.attachments.filter((a) => a.kind === "FILE" && !a.mimeType.startsWith("video/"));
+  const fileAttachments = message.attachments.filter((a) => a.kind === "FILE" && !isPlayable(a));
   const hasTextContent = view.content.trim().length > 0;
-  const isMediaOnly = mediaAttachments.length > 0 && !hasTextContent;
+  // A generated track carries its lyrics as text, but it is still a media
+  // turn: regenerating it through the chat stream would ask a music model to talk.
+  const isMediaOnly =
+    mediaAttachments.length > 0 && (!hasTextContent || mediaAttachments.some((a) => a.mimeType.startsWith("audio/")));
   const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
   // Finish state comes from `view`: paging back to an older version hides the
   // current answer's continue/finish chrome (it doesn't describe that version).
@@ -1445,28 +1263,39 @@ export const MessageItem = React.memo(function MessageItem({
                 ))}
               </div>
             )}
-            {mediaAttachments.length > 0 && (
-              <div className="mb-1 flex flex-wrap gap-2">
-                {mediaAttachments.map((a) =>
-                  a.mimeType.startsWith("video/") ? (
-                    <VideoAttachment key={a.id} attachment={a} />
-                  ) : (
-                    <GeneratedImageAttachment
-                      key={a.id}
-                      attachment={a}
-                      onEdit={
-                        onImageEdit && currentModelId && !privateMode && !busy
-                          ? () => {
-                              setEditTarget(a);
-                              setEditOpen(true);
-                            }
-                          : undefined
-                      }
+            {mediaAttachments.length > 0 && (() => {
+              const editFor = (a: ClientAttachment) =>
+                onImageEdit && currentModelId && !privateMode && !busy
+                  ? () => {
+                      setEditTarget(a);
+                      setEditOpen(true);
+                    }
+                  : undefined;
+              const images = mediaAttachments.filter((a) => a.kind === "IMAGE" && !isPlayable(a));
+              const others = mediaAttachments.filter((a) => !images.includes(a));
+              return (
+                // A track's lyrics read as their own block under the player, not as its caption.
+                <div className={cn("flex flex-wrap gap-2", hasTextContent && mediaAttachments.some((a) => a.mimeType.startsWith("audio/")) ? "mb-4" : "mb-1")}>
+                  {images.length > 1 ? (
+                    // One request, several pictures: the grid the placeholder held.
+                    <GeneratedImageGrid
+                      attachments={images}
+                      handoff={generationHandoff}
+                      renderTile={(a, i) => <GeneratedImage key={a.id} attachment={a} handoff={generationHandoff} index={i} tile onEdit={editFor(a)} />}
                     />
-                  )
-                )}
-              </div>
-            )}
+                  ) : (
+                    images.map((a) => <GeneratedImage key={a.id} attachment={a} handoff={generationHandoff} onEdit={editFor(a)} />)
+                  )}
+                  {others.map((a) =>
+                    a.mimeType.startsWith("video/") ? (
+                      <GeneratedVideo key={a.id} attachment={a} handoff={generationHandoff} />
+                    ) : (
+                      <AudioAttachment key={a.id} attachment={a} />
+                    )
+                  )}
+                </div>
+              );
+            })()}
             {/* The tail fade wraps the prose ONLY. On the whole answer body it
                 landed on the trailing dot's own line instead of the line being
                 written, and it would have dimmed the bottom edge of a message

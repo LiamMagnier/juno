@@ -92,7 +92,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     public let requiredPlan: String
     public let availability: String
     public let lifecycle: String
-    /// What the model produces: "chat", "image" or "video". Drives the picker's
+    /// What the model produces: "chat", "image", "video" or "audio". Drives the picker's
     /// top-level sections.
     public let modality: String
     /// Superseded within its family — collapsed behind "Older models" rather
@@ -642,6 +642,9 @@ public struct NativeMediaProgress: Equatable, Sendable {
     public enum Modality: String, Equatable, Sendable {
         case image
         case video
+        /// Music (Lyria). The server stores the track as an audio/* FILE and
+        /// may put its lyrics in the assistant turn's text.
+        case audio
     }
 
     public let modality: Modality

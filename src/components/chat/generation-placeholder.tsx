@@ -1,41 +1,65 @@
 "use client";
 
 import * as React from "react";
-import { Play } from "@/components/ui/icons";
-import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
+import { useLiveSeconds } from "@/components/chat/live-line";
+import { GenerationField } from "@/components/chat/generated-media";
+import {
+  DEFAULT_RATIO,
+  formatElapsed,
+  frameWidth,
+  gridWidth,
+  outputCount,
+  requestedRatio,
+} from "@/components/chat/generation-frame";
 import { cn } from "@/lib/utils";
+import type { MediaModality } from "@/lib/models";
 
 /**
  * Media-generation work surface shown while /api/generate runs
- * (INTERACTION_SPEC M9).
+ * (INTERACTION_SPEC M9). The motion spec is at the top of generation.css.
  *
- * The box is reserved at the shape the result will take, on the quiet tone a
- * card sits on, so nothing reflows when the picture lands. Inside it, the live
- * line every working row in the transcript uses (live-line.tsx): the Continuum
- * mark beside the truthful stage ("Creating image") and real seconds. No dot
- * lattice, no pixel mosaic, no shimmer: the old lattice was the retired mark,
- * and a mosaic that "reveals" an image the provider has not sent is a picture
- * of progress rather than progress.
+ * The frame is drawn at the ratio the request asked for (`progress.aspect`,
+ * stamped when the generation starts; the modality's default otherwise), at
+ * the same width the finished picture will take, so the result lands in this
+ * box and morphs to its own shape rather than replacing it. Inside: a soft,
+ * slowly drifting field, and one quiet line with the truthful stage and real
+ * seconds.
  *
- * Still no percentage and no bar: most providers report no progress, and an
- * indeterminate sweep looks exactly like a determinate one.
+ * No preview, because the provider sends no partial image: the field is
+ * weather, not a picture of progress. A percentage only when the provider
+ * reports one (video), with a determinate hairline under it. No logo, no
+ * spinner, no pill.
  */
 
-const STAGE_DETAILS: Record<"image" | "video", Record<string, string>> = {
+const STAGE_DETAILS: Record<MediaModality, Record<string, string>> = {
   image: {
     queued: "Preparing",
-    generating: "Creating image",
+    generating: "Composing",
     polling: "Refining",
-    downloading: "Retrieving",
+    downloading: "Developing",
     uploading: "Saving",
   },
   video: {
     queued: "Preparing",
-    generating: "Creating video",
+    generating: "Composing",
     polling: "Rendering",
     downloading: "Retrieving",
     uploading: "Saving",
   },
+  audio: {
+    queued: "Preparing",
+    generating: "Composing",
+    uploading: "Saving",
+  },
+};
+
+/** What the screen reader hears before the stage word, and when the wait earns a sentence. */
+const MODALITY_NAME: Record<MediaModality, string> = { image: "Image", video: "Video", audio: "Music" };
+const LONG_WAIT_SECONDS: Record<MediaModality, number> = { image: 20, video: 15, audio: 20 };
+const LONG_WAIT_NOTE: Record<MediaModality, string> = {
+  image: "Detailed images can take a minute.",
+  video: "Longer clips can take a couple of minutes.",
+  audio: "A full song can take a minute or two.",
 };
 
 /** Title-case fallback for a stage the server grew after this shipped. */
@@ -43,57 +67,88 @@ function friendlyLabel(stage: string): string {
   return `${stage.charAt(0).toUpperCase()}${stage.slice(1)}`;
 }
 
-function stageDetail(modality: "image" | "video", stage: string): string {
-  return STAGE_DETAILS[modality][stage] ?? friendlyLabel(stage);
+export function stageDetail(modality: MediaModality, stage: string, pct?: number): string {
+  const word = STAGE_DETAILS[modality][stage] ?? friendlyLabel(stage);
+  return typeof pct === "number" && Number.isFinite(pct) && pct > 0 && pct < 100 ? `${word} ${Math.round(pct)}%` : word;
 }
 
 interface GenerationPlaceholderProps {
-  progress: { modality: "image" | "video"; stage: string; pct?: number };
+  progress: { modality: MediaModality; stage: string; pct?: number; aspect?: string; count?: number };
 }
 
 export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) {
-  const { modality, stage } = progress;
-  const isVideo = modality === "video";
-  const detail = stageDetail(modality, stage);
+  const { modality, stage, pct } = progress;
   const seconds = useLiveSeconds(true);
-
+  const detail = stageDetail(modality, stage, pct);
   /*
    * Said once the wait is long enough to doubt: renders genuinely can run past
    * a minute, and a reader who is not told that will assume a stall and leave.
-   * Per-modality thresholds because the doubt arrives at different times: a
-   * video is expected to take a while, an image is not.
+   * Per-modality thresholds because the doubt arrives at different times.
+   * Inside the frame, so it never moves the thread.
    */
-  const longWait = seconds >= (isVideo ? 15 : 20);
+  const longWait = seconds >= LONG_WAIT_SECONDS[modality];
+  const hasPct = typeof pct === "number" && Number.isFinite(pct) && pct > 0;
+  const count = modality === "image" ? outputCount(progress.count) : 1;
+  const ratio = modality === "audio" ? DEFAULT_RATIO.audio : requestedRatio(modality, progress.aspect);
+
+  const line = (
+    <div className="gen-stage">
+      {/* The line names the work for a screen reader too: the stage word
+          alone ("Refining") means nothing spoken. The clock is not read. */}
+      <p className="gen-stage__row text-ui">
+        <span className="gen-stage__word" role="status" aria-live="polite">
+          <span className="sr-only">{MODALITY_NAME[modality]} generation: </span>
+          {detail}
+        </span>
+        {seconds >= 1 && (
+          <span className="gen-stage__time font-mono text-caption" aria-hidden="true">
+            {formatElapsed(seconds)}
+          </span>
+        )}
+      </p>
+      {longWait && <p className="gen-stage__note text-caption motion-safe:animate-fade-in">{LONG_WAIT_NOTE[modality]}</p>}
+    </div>
+  );
+
+  const progressBar = hasPct ? (
+    <div className="gen-progress" aria-hidden="true">
+      <span className="gen-progress__fill" style={{ "--gen-pct": Math.min(1, pct / 100) } as React.CSSProperties} />
+    </div>
+  ) : null;
+
+  if (count > 1) {
+    return (
+      <div
+        className="gen-root relative w-full"
+        data-modality={modality}
+        data-stage={stage}
+        data-phase="loading"
+        style={{ maxWidth: `min(100%, ${gridWidth(count, ratio)}px)` }}
+      >
+        <div className="gen-grid">
+          {Array.from({ length: count }, (_, i) => (
+            <div key={i} className="gen-frame" style={{ aspectRatio: String(ratio) }}>
+              <GenerationField />
+            </div>
+          ))}
+        </div>
+        {line}
+      </div>
+    );
+  }
 
   return (
     <div
+      // Full column width, capped at the frame the result will take.
+      className={cn("gen-root gen-frame w-full", modality === "audio" && "h-[104px] max-w-[min(100%,480px)]")}
       data-modality={modality}
       data-stage={stage}
-      className={cn("w-full", isVideo ? "max-w-[min(100%,440px)]" : "max-w-[min(100%,288px)]")}
+      data-phase="loading"
+      style={modality === "audio" ? undefined : { maxWidth: `min(100%, ${frameWidth(modality, ratio)}px)`, aspectRatio: String(ratio) }}
     >
-      <div
-        className={cn(
-          "relative flex flex-col justify-end overflow-hidden rounded-field bg-muted p-3",
-          isVideo ? "aspect-video" : "aspect-square"
-        )}
-      >
-        {isVideo && (
-          // The set's play mark in its house weight: it says "this will be a
-          // video", not "playing". The class draws the disc around it.
-          <div className="generation-media__play" aria-hidden="true">
-            <Play className="generation-media__play-icon" motion="none" />
-          </div>
-        )}
-        {/* The line names the work for a screen reader too: the stage word
-            alone ("Refining") means nothing spoken. */}
-        <span className="sr-only">{isVideo ? "Video" : "Image"} generation: </span>
-        <LiveLine text={detail} phase="working" seconds={seconds} immediate />
-      </div>
-      {longWait && (
-        <p className="mt-2 text-ui text-muted-foreground motion-safe:animate-fade-in" role="status" aria-live="polite">
-          {isVideo ? "Longer clips can take a couple of minutes." : "Still working. Detailed images can take a minute."}
-        </p>
-      )}
+      <GenerationField />
+      {line}
+      {progressBar}
     </div>
   );
 }

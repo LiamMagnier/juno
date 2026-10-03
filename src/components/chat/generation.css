@@ -1,0 +1,247 @@
+/*
+ * GENERATED MEDIA: the wait and the arrival.
+ *
+ * Read with generation-frame.ts (the numbers) and generated-media.tsx (the
+ * phases). Two moments, both honest about what Alevr knows:
+ *
+ *   The wait. The frame is drawn at the ratio the request asked for and holds
+ *   a soft, slowly evolving field: out-of-focus ink, one faint tone of the
+ *   presence blue, film grain, and the four hairline corners of the
+ *   construction. No partial image is shown because the provider sends none;
+ *   the field is weather, not a fake preview. One quiet line names the stage
+ *   and counts real seconds; a video adds its real percentage.
+ *
+ *   The arrival. The real picture enters as a heavy blur over the field, then
+ *   resolves from the top down: a 10px-blur layer leads, the sharp image
+ *   follows, each behind a travelling soft edge (mask-position on a 250%-tall
+ *   gradient). Meanwhile the frame morphs from the requested ratio to the
+ *   picture's own, so it never sits letterboxed in a grey box.
+ *
+ * Only transform, opacity and mask-position animate. The field pauses when
+ * it is offscreen or the tab is hidden ([data-paused], set by the component).
+ * Reduced motion: the field holds still and the picture crossfades.
+ */
+
+.gen-root {
+  --gen-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* The edge travels: an even stride with a soft landing. Expo here would
+     resolve 80% of the picture in the first fifth and then crawl. */
+  --gen-travel: cubic-bezier(0.4, 0, 0.2, 1);
+  --gen-reveal: 1500ms;
+  --gen-lead: 220ms;
+  --gen-presence: rgb(45 73 201 / 0.11);
+  --gen-ink: hsl(var(--foreground) / 0.075);
+  --gen-light: hsl(var(--background) / 0.75);
+  --gen-hair: hsl(var(--foreground) / 0.08);
+  --gen-tick: hsl(var(--foreground) / 0.2);
+}
+.dark .gen-root {
+  --gen-presence: rgb(151 166 230 / 0.13);
+  --gen-ink: hsl(var(--foreground) / 0.06);
+  --gen-light: hsl(var(--background) / 0.55);
+  --gen-hair: hsl(var(--foreground) / 0.1);
+  --gen-tick: hsl(var(--foreground) / 0.22);
+}
+
+/* ---- The frame ------------------------------------------------------------ */
+
+.gen-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: hsl(var(--muted));
+  isolation: isolate;
+}
+.gen-grid .gen-frame { border-radius: 10px; }
+/* The hairline sits over the picture, not around it: an image with a white
+   sky still has an edge on a white page. */
+.gen-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--gen-hair);
+  pointer-events: none;
+}
+
+.gen-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 4px;
+}
+
+/* ---- The field ------------------------------------------------------------ */
+
+.gen-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: hsl(var(--muted));
+  contain: strict;
+}
+.gen-field__blob {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform;
+  animation: 22s var(--ease-breathe, cubic-bezier(0.45, 0, 0.55, 1)) infinite alternate both;
+}
+/* Two pools of ink, one of light, one breath of presence. Positions are set
+   so the four never sit on one another at rest, and the periods are coprime
+   so the field never visibly loops. */
+.gen-field__blob--a { left: -20%; top: -25%; width: 85%; height: 95%; background: radial-gradient(closest-side, var(--gen-ink), transparent); animation-name: gen-drift-a; animation-duration: 19s; }
+.gen-field__blob--b { right: -25%; bottom: -30%; width: 90%; height: 100%; background: radial-gradient(closest-side, var(--gen-ink), transparent); animation-name: gen-drift-b; animation-duration: 23s; }
+.gen-field__blob--c { left: 20%; top: 15%; width: 70%; height: 75%; background: radial-gradient(closest-side, var(--gen-light), transparent); animation-name: gen-drift-c; animation-duration: 29s; }
+.gen-field__blob--p { left: 25%; top: 30%; width: 80%; height: 85%; background: radial-gradient(closest-side, var(--gen-presence), transparent); animation-name: gen-drift-p; animation-duration: 31s; }
+
+@keyframes gen-drift-a { 0% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(22%, 14%, 0) scale(1.18); } 100% { transform: translate3d(8%, 30%, 0) scale(0.92); } }
+@keyframes gen-drift-b { 0% { transform: translate3d(0, 0, 0) scale(1.05); } 50% { transform: translate3d(-18%, -10%, 0) scale(0.9); } 100% { transform: translate3d(-30%, -24%, 0) scale(1.12); } }
+@keyframes gen-drift-c { 0% { transform: translate3d(-10%, 8%, 0) scale(0.9); } 50% { transform: translate3d(14%, -12%, 0) scale(1.1); } 100% { transform: translate3d(-4%, -20%, 0) scale(1); } }
+@keyframes gen-drift-p { 0% { transform: translate3d(10%, 6%, 0) scale(0.85); } 50% { transform: translate3d(-24%, -18%, 0) scale(1.15); } 100% { transform: translate3d(-8%, -34%, 0) scale(0.95); } }
+
+/* Grain, so the field reads as a picture out of focus rather than a gradient. */
+.gen-field__grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+  mix-blend-mode: overlay;
+}
+.dark .gen-field__grain { opacity: 0.09; }
+
+/* The construction: four hairline corners, the frame being measured out. */
+.gen-field__tick {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--gen-tick);
+  border-style: solid;
+  border-width: 0;
+}
+.gen-field__tick--tl { left: 10px; top: 10px; border-left-width: 1px; border-top-width: 1px; }
+.gen-field__tick--tr { right: 10px; top: 10px; border-right-width: 1px; border-top-width: 1px; }
+.gen-field__tick--bl { left: 10px; bottom: 10px; border-left-width: 1px; border-bottom-width: 1px; }
+.gen-field__tick--br { right: 10px; bottom: 10px; border-right-width: 1px; border-bottom-width: 1px; }
+.gen-grid .gen-field__tick { display: none; }
+
+.gen-field[data-paused] .gen-field__blob { animation-play-state: paused; }
+
+/* ---- The stage line --------------------------------------------------------- */
+
+.gen-stage {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+.gen-stage__row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.gen-stage__word { color: hsl(var(--foreground) / 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gen-stage__time { color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.gen-stage__note { color: hsl(var(--muted-foreground)); text-wrap: pretty; }
+/* Corner ticks sit at 10px; at 16px the line clears the lower pair. */
+
+/* A determinate hairline, only when the provider reports a real percentage. */
+.gen-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  height: 2px;
+  background: hsl(var(--foreground) / 0.06);
+}
+.gen-progress__fill {
+  position: absolute;
+  inset: 0;
+  background: hsl(var(--foreground) / 0.5);
+  transform-origin: left center;
+  transform: scaleX(var(--gen-pct, 0));
+  transition: transform 600ms var(--gen-ease);
+}
+
+/* ---- The arrival -------------------------------------------------------------- */
+
+.gen-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.gen-layer--blur { z-index: 1; filter: blur(28px) saturate(1.15); transform: scale(1.15); opacity: 0; }
+.gen-layer--mid { z-index: 2; filter: blur(9px) saturate(1.05); transform: scale(1.04); }
+.gen-sharp { position: absolute; inset: 0; z-index: 3; opacity: 0; transition: opacity 360ms var(--gen-ease); }
+.gen-sharp img, .gen-sharp video { object-fit: cover; }
+
+.gen-root[data-phase="shown"] .gen-sharp { opacity: 1; }
+.gen-root[data-phase="failed"] .gen-sharp { opacity: 0; }
+
+/* The travelling edge: a gradient 2.5 frames tall, black over its top 40%,
+   clear below 60%. At mask-position 100% the frame sees only the clear part;
+   at 0% only the black. The 20% between is a soft edge half a frame tall. */
+.gen-root[data-phase="revealing"] .gen-layer--mid,
+.gen-root[data-phase="revealing"] .gen-sharp {
+  opacity: 1;
+  transition: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 60%, transparent 100%);
+  -webkit-mask-size: 100% 250%;
+  mask-size: 100% 250%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0 100%;
+  mask-position: 0 100%;
+  animation: gen-sweep var(--gen-reveal) var(--gen-travel) both;
+}
+.gen-root[data-phase="revealing"] .gen-layer--mid { animation-delay: var(--gen-delay, 0ms); }
+.gen-root[data-phase="revealing"] .gen-sharp {
+  animation-name: gen-sweep, gen-settle;
+  animation-timing-function: var(--gen-travel), var(--gen-ease);
+  animation-delay: calc(var(--gen-delay, 0ms) + var(--gen-lead));
+}
+.gen-root[data-phase="revealing"] .gen-layer--blur {
+  animation: gen-blur-in 900ms var(--gen-ease) both;
+  animation-delay: var(--gen-delay, 0ms);
+}
+.gen-root[data-phase="revealing"] .gen-field {
+  animation: gen-fade-out 700ms var(--gen-ease) both;
+  animation-delay: var(--gen-delay, 0ms);
+}
+
+@keyframes gen-sweep {
+  from { -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+  to { -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@keyframes gen-settle { from { transform: scale(1.025); } to { transform: scale(1); } }
+@keyframes gen-blur-in {
+  from { opacity: 0; transform: scale(1.3); }
+  to { opacity: 1; transform: scale(1.15); }
+}
+@keyframes gen-fade-out { to { opacity: 0; } }
+@keyframes gen-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Failure and loading overlays for a picture that will not decode. */
+.gen-note {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 0 20px;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gen-field__blob { animation: none; }
+  .gen-progress__fill { transition: none; }
+  .gen-sharp { transition-duration: 200ms; }
+}

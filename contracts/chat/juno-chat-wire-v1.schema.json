@@ -12,7 +12,7 @@
   "x-native-summary": {
     "native": 190,
     "planned": 220,
-    "web-only": 43,
+    "web-only": 45,
     "unclassified": 0
   },
   "x-native-only": {
@@ -2383,6 +2383,7 @@
                 "modality": {
                   "type": "string",
                   "enum": [
+                    "audio",
                     "image",
                     "video"
                   ],
@@ -2393,6 +2394,14 @@
                   "x-native": "web-only"
                 },
                 "pct": {
+                  "type": "number",
+                  "x-native": "web-only"
+                },
+                "aspect": {
+                  "type": "string",
+                  "x-native": "web-only"
+                },
+                "count": {
                   "type": "number",
                   "x-native": "web-only"
                 }

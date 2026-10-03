@@ -71,6 +71,7 @@ import {
 } from "@/lib/model-metrics";
 import { isModelLocked, readRecent } from "@/lib/model-picker";
 import { cn } from "@/lib/utils";
+import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 type Filter = "all" | "favorites" | Provider;
@@ -78,8 +79,8 @@ type Filter = "all" | "favorites" | Provider;
 /** Below this many rows the list is the answer; a "Recent" copy only pads it. */
 const RECENT_MIN_LIST = 8;
 
-const MODALITY_ORDER: Modality[] = ["chat", "image", "video"];
-const MODALITY_LABEL: Record<Modality, string> = { chat: "Text", image: "Image", video: "Video" };
+const MODALITY_ORDER: Modality[] = ["chat", "image", "video", "audio"];
+const MODALITY_LABEL: Record<Modality, string> = { chat: "Text", image: "Image", video: "Video", audio: "Audio" };
 
 
 
@@ -97,6 +98,11 @@ function formatRetirementDate(iso: string): string {
 
 /** "$3 · $15" — input and output per million tokens, or "Free". */
 function priceLabel(m: ModelInfo): string {
+  // Music is billed by the track, not by the token: say what one costs.
+  if (m.modality === "audio") {
+    const usd = audioRequestCostMicroUsd(m.id) / 1_000_000;
+    return `$${usd.toFixed(2)} a ${/clip/i.test(m.id) ? "clip" : "song"}`;
+  }
   const metrics = getModelMetrics(m);
   if (metrics.inputUsdPerMTok === 0 && metrics.outputUsdPerMTok === 0) return "Free";
   return `${formatPrice(metrics.inputUsdPerMTok)} · ${formatPrice(metrics.outputUsdPerMTok)}`;
@@ -287,7 +293,7 @@ function DetailPanel({
               <Stat label="Cost" value={priceLabel(model)} score={11 - expensivenessScore(metrics)} />
             </div>
 
-            {metrics.inputUsdPerMTok + metrics.outputUsdPerMTok > 0 && (
+            {model.modality !== "audio" && metrics.inputUsdPerMTok + metrics.outputUsdPerMTok > 0 && (
               <dl className="mt-4 space-y-1 font-mono text-micro tabular-nums text-muted-foreground">
                 <div className="flex items-baseline justify-between gap-2">
                   <dt>In / MTok</dt>
@@ -435,7 +441,7 @@ function RailTile({
 /** One group of rows in the list, with its past generations folded away. */
 type Group = { key: string; label: string; models: ModelInfo[]; legacy: ModelInfo[]; byModality: boolean };
 
-/** Text → image → video, then the catalog's own order (generation, date, power). */
+/** Text → image → video → audio, then the catalog's own order (generation, date, power). */
 function sortByModality<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort(
     (a, b) => MODALITY_ORDER.indexOf(a.modality ?? "chat") - MODALITY_ORDER.indexOf(b.modality ?? "chat"),
@@ -666,7 +672,7 @@ export function ModelCatalogue({
         aria-selected={active}
         // The row shows a name; the label carries what the panel shows, so a
         // screen reader is not made to travel to a second pane for the facts.
-        aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price} per million tokens` : ""}${locked ? `, needs ${PLANS[effectiveMinPlan(m.minPlan)].name}` : ""}`}
+        aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price}${m.modality === "audio" ? "" : " per million tokens"}` : ""}${locked ? `, needs ${PLANS[effectiveMinPlan(m.minPlan)].name}` : ""}`}
         disabled={soon}
         onPointerMove={() => {
           if (pointerActive.current) setCursorKey(key);

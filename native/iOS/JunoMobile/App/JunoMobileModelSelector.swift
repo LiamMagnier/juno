@@ -183,6 +183,7 @@ struct JunoMobileModelSection: Identifiable {
         ("chat", "Chat", .conversation),
         ("image", "Image", .photos),
         ("video", "Video", .artifacts),
+        ("audio", "Audio", .audioLines),
     ]
 }
 

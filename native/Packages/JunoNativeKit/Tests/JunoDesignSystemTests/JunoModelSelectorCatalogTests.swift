@@ -50,13 +50,14 @@ final class JunoModelSelectorCatalogTests: XCTestCase {
         let models = [
             model("image", modality: .image),
             model("text"),
+            model("audio", modality: .audio),
             model("video", modality: .video),
             model("older", legacy: true),
         ]
 
         let groups = JunoModelSelectorCatalog.groups(models: models, providerID: nil, query: "")
         XCTAssertEqual(groups.map(\.id), ["anthropic"])
-        XCTAssertEqual(groups[0].current.map(\.id), ["text", "modality:image", "image", "modality:video", "video"])
+        XCTAssertEqual(groups[0].current.map(\.id), ["text", "modality:image", "image", "modality:video", "video", "modality:audio", "audio"])
         XCTAssertEqual(groups[0].legacy.map(\.id), ["older"])
         XCTAssertEqual(groups[0].legacyCount, 1)
     }

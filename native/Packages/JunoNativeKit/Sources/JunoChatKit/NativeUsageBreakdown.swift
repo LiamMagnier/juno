@@ -143,6 +143,7 @@ public struct NativeUsageSurfaceTotals: Identifiable, Equatable, Sendable {
         case "task": "Tasks"
         case "image": "Images"
         case "video": "Video"
+        case "audio": "Music"
         case "voice": "Voice"
         default: surface.capitalized
         }
@@ -155,6 +156,7 @@ public struct NativeUsageSurfaceTotals: Identifiable, Equatable, Sendable {
         case "task": "clock"
         case "image": "photo"
         case "video": "film"
+        case "audio": "music.note"
         case "voice": "waveform"
         default: "circle.dashed"
         }
@@ -169,6 +171,7 @@ public struct NativeUsageSurfaceTotals: Identifiable, Equatable, Sendable {
         case "task": .tasks
         case "image": .image
         case "video": .image
+        case "audio": .audioLines
         case "voice": .mic
         default: .circleDashed
         }

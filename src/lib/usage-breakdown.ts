@@ -25,6 +25,8 @@ export const USAGE_SURFACES = [
   "task",
   "image",
   "video",
+  // Generated music (Lyria), billed per song.
+  "audio",
   "voice",
   // Work runs and deep research's per-search vendor fees now reach the ledger.
   // Named here rather than left to fall through as raw strings, because the

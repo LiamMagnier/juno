@@ -82,6 +82,7 @@ struct ChatComposerTests {
         #expect(ChatComposerPlaceholder.text() == "Message Juno…")
         #expect(ChatComposerPlaceholder.text(modality: "image") == "Describe an image to generate…")
         #expect(ChatComposerPlaceholder.text(modality: "video") == "Describe a video to generate…")
+        #expect(ChatComposerPlaceholder.text(modality: "audio") == "Describe a song or a sound to generate…")
         #expect(ChatComposerPlaceholder.text(isPrivate: true) == "How can I help you today?")
         #expect(ChatComposerPlaceholder.text(isPrivate: true, isClarifying: true) == "Or type your own answer…")
         #expect(ChatComposerPlaceholder.text(quote: .modify) == "Describe the change…")

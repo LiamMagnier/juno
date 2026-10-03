@@ -7,6 +7,7 @@ import { isWorkCapableModel } from "@/lib/work/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
 import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
 import { isVideoGenSupported } from "@/lib/video-gen";
+import { isAudioGenSupported } from "@/lib/audio-gen-core";
 
 // The native manifest builder lives in its own module because this one reaches
 // for `model-discovery`, which is server-only — the manifest shape itself is
@@ -21,7 +22,7 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
 
   const configured = new Set(configuredProviders());
   const chat = await discoverModels();
-  const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)));
+  const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)) && (model.modality !== "audio" || isAudioGenSupported(model)));
   const byId = new Map<string, ModelInfo>();
   for (const model of [...chat, ...generated]) byId.set(model.id, model);
   // Every configured lab is listed, INCLUDING one whose account is out of

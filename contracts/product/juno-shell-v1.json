@@ -257,6 +257,12 @@
           "optional": true
         },
         {
+          "id": "sketch",
+          "label": "Sketch",
+          "kind": "action",
+          "icon": "Pencil"
+        },
+        {
           "id": "library",
           "label": "Add from Library",
           "kind": "action",
@@ -316,6 +322,7 @@
           [
             "files",
             "screenshot",
+            "sketch",
             "library"
           ],
           [

@@ -29,8 +29,10 @@ import {
   SquareDashedMousePointer,
   TextQuote,
   AtSign,
+  Pencil,
 } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
+import { useComposerSketch } from "@/components/chat/sketch/use-composer-sketch";
 import { toast } from "sonner";
 import {
   ActionIcons,
@@ -127,6 +129,7 @@ import type { SendOptions, SendResult } from "@/hooks/use-chat";
 import { readSkillInvocation, useChatSkills, YOURS_SOURCE_LABEL } from "@/components/chat/use-chat-skills";
 import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
 import { ComposerTray } from "@/components/chat/composer-tray";
+import { ComposerMediaParams, useMediaParams } from "@/components/chat/composer-media-params";
 import { MenuEmpty, MenuLabel, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import {
@@ -566,6 +569,9 @@ export function Composer({
     [onToggleProMode, onReasoningChange, reasoningEffort, resolved],
   );
   const modality = resolved?.modality ?? "chat";
+  // An image, video or music model's choices (aspect, resolution, length,
+  // sound, count, format), remembered per model: composer-media-params.tsx.
+  const mediaParams = useMediaParams(model);
 
   // Switching models: drop a thinking effort the new model can't do (e.g. "max"
   // when moving to Gemini) so we never show — or send — an unsupported tier.
@@ -670,10 +676,11 @@ export function Composer({
   const sendOptions = React.useMemo<SendOptions | undefined>(
     () => {
       const armed = skillArmed && skillSlug ? { skillSlug } : null;
+      if (modality !== "chat" && mediaParams.request) return { ...armed, mediaParams: mediaParams.request };
       if (research && researchAvailable) return { deepResearch: true, researchEffort, ...armed };
       return armed ?? undefined;
     },
-    [research, researchAvailable, researchEffort, skillArmed, skillSlug],
+    [modality, mediaParams.request, research, researchAvailable, researchEffort, skillArmed, skillSlug],
   );
   const outgoingOptions = React.useMemo<SendOptions | undefined>(
     () =>
@@ -712,7 +719,9 @@ export function Composer({
           ? "Describe an image to generate…"
           : modality === "video"
             ? "Describe a video to generate…"
-            : // An invitation, not a syntax lesson: @ and / are taught by
+            : modality === "audio"
+              ? "Describe a song or a sound to generate…"
+              : // An invitation, not a syntax lesson: @ and / are taught by
               // the + menu and the palette (gallery revision 2). The first
               // message is asked for; after it, the next one follows up.
               frame === "dock"
@@ -874,6 +883,14 @@ export function Composer({
     },
     [addFiles, uploads.length, voiceActive, voiceCanSeeImages],
   );
+
+  // Sketch (components/chat/sketch): a drawing that lands on the row as an
+  // ordinary image upload, and reopens from its tile to keep drawing.
+  const sketch = useComposerSketch({
+    addFiles: addComposerFiles,
+    removeUpload: remove,
+    imageModel: modality === "image",
+  });
 
   /*
    * Files dropped on the composer, through the Library's depth-counted hook
@@ -1550,6 +1567,19 @@ export function Composer({
         group: "commands",
         icon: ComposerIcons.canvas,
       },
+      ...(features.storage && !privateMode
+        ? [
+            {
+              id: "sketch",
+              key: "sketch",
+              label: "/sketch",
+              hint: "Draw a sketch to attach",
+              group: "commands" as const,
+              icon: Pencil,
+              run: sketch.openSketch,
+            },
+          ]
+        : []),
       ...(onOpenVoiceMode
         ? [
             {
@@ -1667,6 +1697,9 @@ export function Composer({
       },
     ],
     [
+      features.storage,
+      privateMode,
+      sketch.openSketch,
       webSearchEnabled,
       onToggleWebSearch,
       researchAvailable,
@@ -2514,6 +2547,17 @@ export function Composer({
             : []),
           {
             kind: "action",
+            id: "sketch",
+            label: "Sketch",
+            icon: Pencil,
+            detail: "/sketch",
+            disabled: !canAttach,
+            note: attachNote,
+            // After the menu has handed focus back, so the sheet keeps it.
+            onSelect: () => window.setTimeout(sketch.openSketch, 0),
+          },
+          {
+            kind: "action",
             id: "library",
             label: "Add from Library",
             icon: AppIcons.library,
@@ -2612,6 +2656,8 @@ export function Composer({
     (side: "top" | "bottom" | null) => setMenuLayer(side === null ? null : side === "bottom" ? "below" : "above"),
     [],
   );
+  /** The generation row's menus open by the same rule as the + menu: outside the composer, never over the draft. */
+  const mediaLayer = { pick: pickMenuLayer, onSide: onMenuSide };
   /** The effort, in words, only when it is not the model's usual one (C17: "Opus Deep"). */
   const effortLabel =
     !isAuto && resolved && effortOptions.length >= 2 && reasoningEffort !== defaultReasoning(resolved)
@@ -2639,6 +2685,10 @@ export function Composer({
       className={cn(
         "w-full",
         frame === "dock" && "page-gutter mx-auto transcript-column",
+        // The generation shelf tucks under the dock with z-index -1; without
+        // its own stacking context this wrapper would sit on top of it and
+        // take its clicks (composer-media-params.css).
+        frame === "dock" && mediaParams.caps && "isolate",
         // With a footnote the line takes the inset's 16 / 24px itself (see
         // the slot below), so only the home indicator stays as padding.
         frame === "dock" &&
@@ -2782,7 +2832,12 @@ export function Composer({
               )}
 
             {!privateMode && (
-              <ComposerAttachmentRow uploads={uploads} onRemove={remove} />
+              <ComposerAttachmentRow
+                uploads={uploads}
+                onRemove={remove}
+                labelFor={sketch.sketchLabel}
+                openerFor={(upload) => (sketch.canReopen(upload) ? () => sketch.openUpload(upload) : undefined)}
+              />
             )}
 
             {quote && (
@@ -3276,6 +3331,7 @@ export function Composer({
                 existingCount={uploads.length}
               />
             )}
+            {sketch.dialog}
         </div>
       </DictationSwap>
       {showTray && (
@@ -3289,7 +3345,18 @@ export function Composer({
           appsPanel={showConnectors ? connectorsPanel : null}
           skillsPanel={skillRow ? skillsPanel : null}
           disabled={plusLocked}
+          params={
+            mediaParams.caps ? (
+              <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="bottom" layer={mediaLayer} />
+            ) : null
+          }
         />
+      )}
+      {/* In a thread the generation row gets the shelf to itself. */}
+      {!showTray && mediaParams.caps && !voiceActive && !steerMode && (
+        <div className="composer-tray composer-tray--params">
+          <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" layer={mediaLayer} />
+        </div>
       )}
       {/* The dock's bottom inset, with the line in it: 16px under `sm` and
           24px from there, the same heights the padding it replaces had, so a

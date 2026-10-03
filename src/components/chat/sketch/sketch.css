@@ -1,0 +1,586 @@
+/*
+ * SKETCH: a white sheet of paper in an Alevr frame (sketch-dialog.tsx).
+ *
+ * One rule everywhere, the composer's: equal padding on every side, and an
+ * inner radius that is the outer radius minus that padding.
+ *   sheet 28 − 12 = paper 16      tool pill 18 − 4 = keys 14
+ *   ink ring 14 − 3 = chip 11     confirm 22 (a pill on the footer row)
+ * Hairlines, never borders that compete with the ink. The paper stays white
+ * in dark mode: it is what the model will see.
+ */
+
+.sketch-sheet {
+  --sk-frame: #f3f4f5;
+  --sk-hair: hsl(var(--foreground) / 0.07);
+  --sk-line: hsl(var(--foreground) / 0.12);
+  --sk-key-hover: hsl(var(--foreground) / 0.06);
+  --sk-key-on: hsl(var(--foreground) / 0.09);
+  --sk-pill: hsl(var(--popover));
+  --sk-presence: #2d49c9;
+  --sk-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --sk-pad: 12px;
+  --sk-radius: 28px;
+  --sk-rail: 40px;
+
+  position: fixed;
+  z-index: var(--z-modal);
+  inset: 24px;
+  margin: auto;
+  width: min(1120px, calc(100vw - 48px));
+  height: min(800px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-columns: var(--sk-rail) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head head"
+    "rail room"
+    "foot foot";
+  gap: var(--sk-pad);
+  padding: var(--sk-pad);
+  border-radius: var(--sk-radius);
+  border: 1px solid var(--sk-hair);
+  background: var(--sk-frame);
+  color: hsl(var(--foreground));
+  box-shadow:
+    0 1px 1px rgb(25 27 30 / 0.04),
+    0 24px 64px -24px rgb(25 27 30 / 0.22),
+    0 64px 120px -48px rgb(25 27 30 / 0.18);
+  outline: none;
+  transform-origin: 50% 60%;
+}
+.dark .sketch-sheet {
+  --sk-frame: #18191b;
+  --sk-hair: hsl(0 0% 100% / 0.08);
+  --sk-line: hsl(0 0% 100% / 0.14);
+  --sk-key-hover: hsl(0 0% 100% / 0.07);
+  --sk-key-on: hsl(0 0% 100% / 0.1);
+  --sk-pill: #222326;
+  --sk-presence: #97a6e6;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.04),
+    0 24px 64px -24px rgb(0 0 0 / 0.6),
+    0 64px 120px -48px rgb(0 0 0 / 0.5);
+}
+
+.sketch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: rgb(14 15 17 / 0.32);
+  backdrop-filter: blur(6px);
+}
+.dark .sketch-overlay {
+  background: rgb(0 0 0 / 0.55);
+}
+
+/* ——— motion: the composer menus' arrival, larger ——— */
+@media (prefers-reduced-motion: no-preference) {
+  .sketch-sheet[data-state="open"] {
+    animation: sketch-in 280ms var(--sk-ease) both;
+  }
+  .sketch-sheet[data-state="closed"] {
+    animation: sketch-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+}
+.sketch-overlay[data-state="open"] {
+  animation: sketch-fade-in 220ms ease-out both;
+}
+.sketch-overlay[data-state="closed"] {
+  animation: sketch-fade-out 140ms ease-in both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sketch-sheet[data-state="open"] {
+    animation: sketch-fade-in 160ms ease-out both;
+  }
+  .sketch-sheet[data-state="closed"] {
+    animation: sketch-fade-out 120ms ease-in both;
+  }
+}
+@keyframes sketch-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sketch-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@keyframes sketch-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sketch-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ——— head: close + title · tools · history ——— */
+.sketch-head {
+  grid-area: head;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.sketch-head__start,
+.sketch-head__end {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sketch-head__end {
+  justify-content: flex-end;
+}
+.sketch-title {
+  margin: 0 0 0 8px;
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  font-optical-sizing: auto;
+}
+
+/* A round key in the frame: close, undo, redo, clear. */
+.sketch-key {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  transition:
+    background-color 120ms,
+    color 120ms,
+    transform 70ms,
+    opacity 120ms;
+}
+.sketch-key:hover:not(:disabled) {
+  background: var(--sk-key-hover);
+  color: hsl(var(--foreground));
+}
+.sketch-key:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.sketch-key:disabled {
+  opacity: 0.35;
+}
+.sketch-key:focus-visible,
+.sketch-tool:focus-visible,
+.sketch-size:focus-visible,
+.sketch-ink:focus-visible,
+.sketch-ink:has(input:focus-visible),
+.sketch-confirm:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* The tool pill: 18 radius, 4 inset, 14-radius keys and one highlight that glides. */
+.sketch-tools-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.sketch-tools {
+  --pad: 4px;
+  --key: 36px;
+  --gap: 2px;
+  position: relative;
+  display: flex;
+  gap: var(--gap);
+  padding: var(--pad);
+  border-radius: calc(14px + var(--pad));
+  border: 1px solid var(--sk-hair);
+  background: var(--sk-pill);
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-ink) / 0.04),
+    0 8px 20px -10px hsl(var(--shadow-ink) / 0.12);
+}
+.sketch-tools__glide {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  width: var(--key);
+  height: var(--key);
+  border-radius: 14px;
+  background: var(--sk-key-on);
+  transform: translateX(calc(var(--i) * (var(--key) + var(--gap))));
+  transition: transform 220ms var(--sk-ease);
+}
+.sketch-tool {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
+  color: hsl(var(--muted-foreground));
+  transition:
+    color 120ms,
+    transform 70ms,
+    background-color 120ms;
+}
+.sketch-tool:hover {
+  color: hsl(var(--foreground));
+}
+.sketch-tool:active {
+  transform: scale(0.94);
+}
+.sketch-tool[aria-pressed="true"],
+.sketch-tool[aria-checked="true"] {
+  color: hsl(var(--foreground));
+}
+.sketch-tool--small {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+.sketch-tool--small[aria-checked="true"] {
+  background: var(--sk-key-on);
+}
+.sketch-tip-key {
+  margin-left: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The shapes flyout: hangs under the pill, over the paper's top edge. 14 − 4 = 10. */
+.sketch-shapes {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid var(--sk-hair);
+  background: var(--sk-pill);
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-ink) / 0.04),
+    0 8px 20px -6px hsl(var(--shadow-ink) / 0.12);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sketch-shapes {
+    animation: sketch-flyout 200ms var(--sk-ease) both;
+  }
+}
+@keyframes sketch-flyout {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
+/* ——— rail: five sizes ——— */
+.sketch-rail {
+  grid-area: rail;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0;
+  border-radius: 20px;
+  border: 1px solid var(--sk-hair);
+  background: var(--sk-pill);
+}
+.sketch-size {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  transition:
+    background-color 120ms,
+    transform 70ms;
+}
+.sketch-size:hover {
+  background: var(--sk-key-hover);
+}
+.sketch-size:active {
+  transform: scale(0.92);
+}
+.sketch-size__dot {
+  width: var(--d);
+  height: var(--d);
+  border-radius: 999px;
+  background: hsl(var(--muted-foreground) / 0.55);
+  transition: background-color 120ms;
+}
+.sketch-size[aria-checked="true"] .sketch-size__dot {
+  background: hsl(var(--foreground));
+}
+
+/* ——— the paper ——— */
+.sketch-room {
+  grid-area: room;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+.sketch-paper {
+  position: absolute;
+  overflow: hidden;
+  border-radius: calc(var(--sk-radius) - var(--sk-pad));
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgb(25 27 30 / 0.06),
+    0 1px 2px rgb(25 27 30 / 0.05);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+  color-scheme: light;
+}
+.dark .sketch-paper {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+.sketch-paper[data-tool="select"] {
+  cursor: default;
+}
+.sketch-paper[data-tool="text"] {
+  cursor: text;
+}
+.sketch-paper[data-tool="eraser"] {
+  cursor: none;
+}
+.sketch-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sketch-text {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  font-weight: 500;
+  white-space: pre;
+  outline: 1px dashed rgb(45 73 201 / 0.7);
+  outline-offset: 4px;
+  border-radius: 2px;
+  caret-color: #2d49c9;
+}
+.sketch-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: none;
+  color: #8a8d93;
+  font-size: 15px;
+  line-height: 22px;
+}
+.sketch-empty span:first-child {
+  color: #4a4d53;
+}
+
+/* ——— foot: inks · hint · attach ——— */
+.sketch-foot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.sketch-inks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px;
+}
+.sketch-inks::-webkit-scrollbar {
+  display: none;
+}
+.sketch-ink {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1.5px transparent;
+  transition:
+    box-shadow 160ms var(--sk-ease),
+    transform 70ms;
+}
+.sketch-ink:active {
+  transform: scale(0.9);
+}
+.sketch-ink[data-on] {
+  box-shadow: inset 0 0 0 1.5px hsl(var(--foreground));
+}
+.sketch-ink__chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  transition: transform 160ms var(--sk-ease);
+}
+.dark .sketch-ink__chip {
+  /* Ink is drawn for white paper; on the dark frame its edge needs a hairline. */
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+}
+.sketch-ink[data-on] .sketch-ink__chip {
+  transform: scale(0.82);
+}
+.sketch-ink--custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.sketch-ink--custom .sketch-ink__chip {
+  background: conic-gradient(from 180deg, #e1463e, #f5b417, #2f9e5b, #1aa2c8, #2d49c9, #9046c9, #d9408f, #e1463e);
+}
+/* A custom ink in use shows itself inside the rainbow ring. */
+.sketch-ink--custom[data-on] .sketch-ink__chip[style] {
+  background:
+    radial-gradient(circle, var(--ink) 0 52%, transparent 54%),
+    conic-gradient(from 180deg, #e1463e, #f5b417, #2f9e5b, #1aa2c8, #2d49c9, #9046c9, #d9408f, #e1463e);
+}
+.sketch-hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  font-size: 13px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sketch-confirm {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 18px 0 16px;
+  border-radius: 22px;
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  font-size: 14px;
+  font-weight: 500;
+  transition:
+    opacity 120ms,
+    transform 70ms;
+}
+.sketch-confirm:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.sketch-confirm:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.sketch-confirm:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.sketch-confirm[aria-busy] {
+  opacity: 0.6;
+}
+
+/* ——— phone: a full-screen sheet; sizes join the foot ——— */
+@media (max-width: 639px) {
+  .sketch-sheet {
+    --sk-pad: 8px;
+    /* The device's own corner is the outer radius here (~28): 28 − 8 = 20. */
+    --sk-radius: 28px;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+    border: 0;
+    padding: max(var(--sk-pad), env(safe-area-inset-top)) var(--sk-pad) max(var(--sk-pad), env(safe-area-inset-bottom));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "head"
+      "room"
+      "rail"
+      "foot";
+  }
+  .sketch-paper {
+    border-radius: 20px;
+  }
+  .sketch-head {
+    grid-template-columns: auto 1fr auto;
+  }
+  .sketch-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .sketch-tools {
+    --key: 34px;
+    --gap: 1px;
+    --pad: 3px;
+  }
+  .sketch-tool {
+    width: 34px;
+    height: 34px;
+    border-radius: 14px;
+  }
+  .sketch-tools__glide {
+    border-radius: 14px;
+  }
+  .sketch-head__end .sketch-key {
+    width: 34px;
+    height: 34px;
+  }
+  .sketch-rail {
+    flex-direction: row;
+    justify-self: center;
+    padding: 0 4px;
+  }
+  .sketch-hint {
+    display: none;
+  }
+  .sketch-inks {
+    flex: 1;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  }
+  .sketch-confirm {
+    padding: 0 16px 0 14px;
+  }
+}

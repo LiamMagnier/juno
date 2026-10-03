@@ -7,6 +7,9 @@ import { MessageList } from "@/components/chat/message-list";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { CodeActivity } from "@/components/code/code-activity";
 import { Markdown } from "@/components/chat/markdown";
+import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
+import { lyricsMarkdown } from "@/lib/audio-gen-core";
+import { encodeWav } from "@/lib/wav";
 import { writtenPaths } from "@/lib/chat/tool-receipt";
 import { Button } from "@/components/ui/button";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
@@ -406,6 +409,85 @@ const CODE_BODY = [
   "```",
 ].join("\n");
 
+/* ---- Generated music ----------------------------------------------------- */
+
+const LYRICS = `[Verse]
+Streetlights hum a quiet tune
+Rain is keeping time
+Every window holds a room
+And none of them are mine
+
+[Chorus]
+Slow down, slow down
+Let the city breathe
+Slow down, slow down
+Midnight on the eaves`;
+
+/**
+ * Twenty seconds of a soft three-note figure, synthesised in the browser and
+ * encoded with the dictation WAV writer, so the player has a real file to load
+ * without a binary fixture in the repo or a Gemini key.
+ */
+function useSampleTrackUrl(): string | null {
+  const [url, setUrl] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const rate = 16_000;
+    const seconds = 20;
+    const samples = rate * seconds;
+    const pcm = new Float32Array(samples);
+    const notes = [220, 277.18, 329.63, 277.18];
+    for (let i = 0; i < samples; i++) {
+      const t = i / rate;
+      const beat = Math.floor(t * 2) % notes.length;
+      const env = Math.exp(-((t * 2) % 1) * 3);
+      pcm[i] = 0.18 * env * Math.sin(2 * Math.PI * notes[beat] * t);
+    }
+    const blobUrl = URL.createObjectURL(encodeWav({ chunks: [pcm], sampleRate: rate, samples }));
+    setUrl(blobUrl);
+    return () => URL.revokeObjectURL(blobUrl);
+  }, []);
+  return url;
+}
+
+function AudioDemo() {
+  const url = useSampleTrackUrl();
+  if (!url) return null;
+  const track = (id: string, fileName: string, content: string): ChatMessage =>
+    msg({
+      id,
+      role: "ASSISTANT",
+      model: "google:lyria-3.5",
+      content,
+      attachments: [{ id: `${id}-file`, kind: "FILE", fileName, mimeType: "audio/wav", size: 640_044, url }],
+    });
+  const turns = [
+    { label: "A song with its lyrics", m: track("audio-lyrics", "Lyria 3.5 — Rain on the city at midnight, slow and warm.wav", lyricsMarkdown(LYRICS)) },
+    { label: "An instrumental clip", m: track("audio-clip", "Lyria 3 Clip — A bright chiptune loop.wav", "") },
+  ];
+  return (
+    <div className="space-y-10">
+      <div>
+        <Label>Composing</Label>
+        <GenerationPlaceholder progress={{ modality: "audio", stage: "generating" }} />
+      </div>
+      {turns.map(({ label, m }) => (
+        <div key={m.id}>
+          <Label>{label}</Label>
+          <MessageItem
+            message={m}
+            isLast
+            busy={false}
+            artifactsByIdentifier={NO_ARTIFACTS}
+            onOpenArtifact={noop}
+            onFeedback={noop}
+            canFeedback={false}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CodeReceiptsDemo() {
   const written = React.useMemo(() => writtenPaths(CODE_EVENTS), []);
   return (
@@ -472,6 +554,12 @@ export function TranscriptGallery({ only }: { only?: string }) {
                   </div>
                 ))}
               </div>
+            </Section>
+          )}
+
+          {show("audio") && (
+            <Section id="audio" title="Generated music" note="A Lyria track in the transcript: the player, the lyrics under it, and the placeholder that holds its place while it composes.">
+              <AudioDemo />
             </Section>
           )}
 

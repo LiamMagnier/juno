@@ -87,13 +87,13 @@ import Testing
 
     @Test func thePlusMenusRowsAreTheContractsInTitleCase() {
         #expect(JunoShellPlusMenu.chat == [
-            [.files, .screenshot, .library],
+            [.files, .screenshot, .sketch, .library],
             [.mention, .skill],
             [.research, .search, .memory],
             [.project, .connectors],
         ])
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
-            "Add Photos and Files", "Take a Screenshot", "Add from Library",
+            "Add Photos and Files", "Take a Screenshot", "Sketch", "Add from Library",
             "Mention a File, App or Agent", "Run a Skill",
             "Deep Field", "Web Search", "Memory",
             "Add to Project", "Apps",

@@ -137,7 +137,14 @@ export function applyStreamChunk(state: LiveMessage, chunk: StreamChunk): LiveMe
     case "progress":
       return {
         ...state,
-        progress: { modality: state.progress?.modality ?? "image", stage: chunk.stage, ...(chunk.pct === undefined ? {} : { pct: chunk.pct }) },
+        progress: {
+          modality: state.progress?.modality ?? "image",
+          stage: chunk.stage,
+          ...(chunk.pct === undefined ? {} : { pct: chunk.pct }),
+          // The requested shape stamped at start survives every stage.
+          ...(state.progress?.aspect === undefined ? {} : { aspect: state.progress.aspect }),
+          ...(state.progress?.count === undefined ? {} : { count: state.progress.count }),
+        },
       };
     case "done": {
       // The persisted shape replaces the live one; only the React identity carries over.

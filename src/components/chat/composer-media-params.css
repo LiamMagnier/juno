@@ -1,0 +1,786 @@
+/* ——————————————— The generation row (composer-media-params.tsx) ———————————————
+
+   ONE LINE on the composer's tray shelf (composer.css `.composer-tray`), in
+   the tray's own language: 28px pills at radius 14 (the shelf's 20 less its
+   6px inset). A segmented group is one 28px pill with a 2px inset, so its
+   segments and its gliding thumb are 24px at radius 12 (14 − 2): equal
+   padding on every side, inner radius = outer radius − padding. Two weights
+   (400, 500), values in tabular numerals, presence blue only for the one
+   chosen thing in an open panel. No dots, no badges.
+
+   Motion: one ease, the brand's expo-out (cubic-bezier(.16, 1, .3, 1)).
+     thumb / glide   320 / 240ms, transform (+ width), no travel on arrival
+     frame morph     320ms, transform: scale on a non-scaling hairline
+     panel           the `.cmenu` growth from the trigger; construction
+                     draws in once (560ms, stroke-dashoffset, 50ms stagger);
+                     tiles rise 4px in a 16ms stagger
+   Reduced motion keeps the fades and drops every travel, glide and morph. */
+
+@property --cp-fade-l {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --cp-fade-r {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.cparams,
+.cparams-menu,
+.cparams-length,
+.cframe,
+.cparams-tip {
+  --cp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --cp-presence: #2d49c9;
+  --cp-ink: hsl(var(--foreground));
+  --cp-sub: hsl(var(--muted-foreground));
+  --cp-hair: hsl(var(--foreground) / 0.08);
+  --cp-line: hsl(var(--foreground) / 0.13);
+  --cp-mono: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+  --cp-serif: var(--font-serif), Newsreader, Georgia, serif;
+}
+.dark .cparams,
+.dark .cparams-menu,
+.dark .cparams-length,
+.dark .cframe,
+.dark .cparams-tip {
+  --cp-presence: #97a6e6;
+  --cp-hair: hsl(var(--foreground) / 0.09);
+  --cp-line: hsl(var(--foreground) / 0.15);
+}
+
+/* ——— The row ——— */
+
+.cparams {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 28px;
+  /* Wider than the shelf: scroll sideways inside the row, never wrap. Each
+     edge fades only while there is more that way (data-fade-*, set from the
+     scroll position). */
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-padding-inline: 28px;
+  -webkit-overflow-scrolling: touch;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--cp-fade-l), #000 calc(100% - var(--cp-fade-r)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--cp-fade-l), #000 calc(100% - var(--cp-fade-r)), transparent 100%);
+  transition:
+    --cp-fade-l 200ms var(--cp-ease),
+    --cp-fade-r 200ms var(--cp-ease);
+}
+.cparams::-webkit-scrollbar {
+  display: none;
+}
+.cparams[data-fade-start="true"] {
+  --cp-fade-l: 28px;
+}
+.cparams[data-fade-end="true"] {
+  --cp-fade-r: 28px;
+}
+.cparams[data-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.cparams__chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px 0 9px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  color: hsl(var(--cmp-ink-2, var(--foreground)));
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-soft),
+    color var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.cparams__chip > svg {
+  flex: none;
+  color: var(--cp-sub);
+}
+.cparams__chevron {
+  margin-left: -1px;
+  opacity: 0.6;
+  transition: transform 320ms var(--cp-ease);
+}
+.cparams__chip[data-state="open"] .cparams__chevron {
+  transform: rotate(180deg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cparams__chip:hover {
+    background-color: hsl(var(--foreground) / 0.055);
+    color: var(--cp-ink);
+  }
+}
+.cparams__chip[data-state="open"],
+.cparams__chip:active {
+  background-color: hsl(var(--foreground) / 0.085);
+  color: var(--cp-ink);
+}
+.cparams__chip:active {
+  transform: scale(0.97);
+}
+.cparams__chip:focus-visible,
+.cparams__seg-item:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+
+/* The shape glyph: a ratio drawn as a hairline frame, centred in a square. */
+.cparams__glyph {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+/* Small and square-cornered (1px), so a 1:1 frame reads as a frame, not as a checkbox. */
+.cparams__frame {
+  display: block;
+  border: 1.25px solid currentColor;
+  border-radius: 1px;
+  color: hsl(var(--foreground) / 0.62);
+  transition:
+    width 320ms var(--cp-ease),
+    height 320ms var(--cp-ease);
+}
+.cparams__frame--auto {
+  border-style: dashed;
+}
+
+/* Segmented: one pill; the chosen segment is a raised thumb that glides. */
+.cparams__seg {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 28px;
+  padding: 2px;
+  border-radius: 14px;
+  background-color: hsl(var(--foreground) / 0.045);
+}
+.dark .cparams__seg {
+  background-color: hsl(0 0% 100% / 0.05);
+}
+.cparams__thumb {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  height: 24px;
+  border-radius: 12px;
+  background-color: hsl(var(--background));
+  box-shadow:
+    0 0 0 0.5px hsl(var(--foreground) / 0.09),
+    0 1px 2px hsl(var(--shadow-ink, 0 0% 0%) / 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 320ms var(--cp-ease),
+    width 320ms var(--cp-ease),
+    opacity var(--dur-fast) var(--ease-out-soft);
+}
+.cparams__thumb[data-on="true"] {
+  opacity: 1;
+}
+.dark .cparams__thumb {
+  background-color: hsl(0 0% 100% / 0.12);
+  box-shadow: inset 0 0.5px 0 hsl(0 0% 100% / 0.08);
+}
+.cparams__seg-item {
+  position: relative;
+  z-index: 1;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--cp-sub);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: color 200ms var(--cp-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cparams__seg-item:hover {
+    color: var(--cp-ink);
+  }
+}
+.cparams__seg-item[aria-checked="true"] {
+  color: var(--cp-ink);
+}
+/* Ruled out by the rest of the combination: still pickable, drawn quieter;
+   its tooltip says what picking it moves. */
+.cparams__seg-item[data-conflict] {
+  color: hsl(var(--muted-foreground) / 0.55);
+}
+
+/* Sound: a pill; off is said twice, in the word and in a stroke across the
+   glyph that draws itself in (no strikethrough on the word). */
+.cparams__chip--toggle {
+  padding-inline: 9px 11px;
+}
+.cparams__chip--toggle[aria-pressed="true"] {
+  color: var(--cp-ink);
+}
+.cparams__chip--toggle[aria-pressed="false"] {
+  color: var(--cp-sub);
+}
+.cparams__sound {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+}
+.cparams__sound > svg {
+  transition: opacity 200ms var(--cp-ease);
+}
+.cparams__sound::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 19px;
+  height: 1.25px;
+  margin: -0.625px 0 0 -9.5px;
+  border-radius: 1px;
+  background-color: currentColor;
+  /* A gap either side so the stroke reads as cutting the glyph, not as part of it. */
+  box-shadow: 0 0 0 1.25px hsl(var(--tray-ground, var(--background)));
+  transform: rotate(-45deg) scaleX(0);
+  transition: transform 260ms var(--cp-ease);
+}
+.cparams__sound[data-on="false"] > svg {
+  opacity: 0.72;
+}
+.cparams__sound[data-on="false"]::after {
+  transform: rotate(-45deg) scaleX(1);
+}
+.cparams__toggle-state {
+  color: var(--cp-sub);
+}
+
+/* Facts the model fixes ("With sound", "30s clip"): a mono annotation. */
+.cparams__fact {
+  flex: none;
+  padding: 0 8px;
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--cp-sub);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Resolution becomes 720p": what a pick would move, in a quiet mono line. */
+.cparams-note {
+  display: block;
+  font-family: var(--cp-mono);
+  font-size: 10.5px;
+  line-height: 14px;
+  letter-spacing: 0.01em;
+  font-weight: 400;
+  color: var(--cp-sub);
+  white-space: nowrap;
+}
+.cparams-note::before {
+  content: "→ ";
+  opacity: 0.7;
+}
+.cparams-tip.cparams-tip {
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--cp-sub);
+}
+
+/* ——— Option menus (the `.cmenu` recipe, composer.css) ——— */
+
+/* The menu's name, set as an annotation rather than a heading. */
+.cparams-head {
+  padding: 8px 10px 6px;
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--cp-sub);
+}
+.cparams-menu.cparams-menu {
+  min-width: 13rem;
+  max-height: min(26rem, var(--radix-dropdown-menu-content-available-height, 26rem));
+  overflow-y: auto;
+}
+.cmenu.cmenu .cparams-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 6px;
+  outline: none;
+  cursor: default;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.cparams-row__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+.cparams-row__label {
+  white-space: nowrap;
+}
+.cparams-row__meta {
+  flex: none;
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--cp-sub);
+}
+/* The chosen row: a presence hairline at its leading edge and the label at
+   500. The one blue thing in the menu. */
+.cparams-row::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  width: 1.5px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 1px;
+  background-color: var(--cp-presence);
+  transform: scaleY(0);
+  transition: transform 240ms var(--cp-ease);
+}
+.cparams-row[data-state="checked"]::before {
+  transform: scaleY(1);
+}
+.cparams-row[data-state="checked"] .cparams-row__label {
+  font-weight: 500;
+}
+.cparams-row[data-conflict] .cparams-row__label {
+  color: var(--cp-sub);
+}
+
+/* ——— The frame chooser ——— */
+
+.cframe.cframe {
+  display: grid;
+  grid-template-columns: 188px auto;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  max-height: var(--radix-popover-content-available-height, none);
+  overflow: auto;
+  outline: none;
+}
+.cframe__stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 236px;
+  padding: 10px 14px 14px;
+  /* Concentric with the shell: 18 − 6. */
+  border-radius: 12px;
+  background-color: hsl(var(--foreground) / 0.025);
+  overflow: hidden;
+}
+.dark .cframe__stage {
+  background-color: hsl(0 0% 100% / 0.03);
+}
+.cframe__svg {
+  display: block;
+  width: 160px;
+  height: 128px;
+  margin: 0 auto;
+  overflow: visible;
+}
+.cframe__axis {
+  stroke: var(--cp-hair);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.cframe__orbit {
+  fill: none;
+  stroke: var(--cp-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.cframe__orbit--faint {
+  stroke: var(--cp-hair);
+}
+.cframe__tick {
+  stroke: hsl(var(--foreground) / 0.22);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.cframe__tick-label {
+  fill: var(--cp-sub);
+  font-family: var(--cp-mono);
+  font-size: 8px;
+}
+/* The frame: a 100-unit square scaled to the ratio, its hairline kept 1.25px
+   by non-scaling-stroke, so the morph is a pure transform. It is filled with
+   the stage's own ground so the construction passes BEHIND it. */
+.cframe__rect {
+  fill: hsl(var(--popover));
+  fill-opacity: 0.6;
+  stroke: hsl(var(--foreground) / 0.82);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 320ms var(--cp-ease);
+}
+.cframe__rect[data-auto] {
+  stroke-dasharray: 3 3;
+  stroke: hsl(var(--foreground) / 0.55);
+}
+.cframe__corner {
+  transition: transform 320ms var(--cp-ease);
+}
+.cframe__corner > path {
+  fill: none;
+  stroke: hsl(var(--foreground) / 0.4);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.cframe__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.cframe__ratio {
+  font-family: var(--cp-serif);
+  font-size: 34px;
+  line-height: 36px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--cp-ink);
+}
+.cframe__annot {
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: var(--cp-sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cframe__note {
+  margin-top: 4px;
+}
+
+.cframe__grid {
+  --cols: 4;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 56px);
+  grid-auto-rows: 60px;
+  gap: 4px;
+  /* Centred beside the stage, so a single row doesn't leave a well under it. */
+  align-content: center;
+}
+.cframe__glide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 12px;
+  background-color: hsl(var(--foreground) / 0.055);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 240ms var(--cp-ease),
+    width 240ms var(--cp-ease),
+    height 240ms var(--cp-ease),
+    opacity var(--dur-fast) var(--ease-out-soft);
+}
+.dark .cframe__glide {
+  background-color: hsl(0 0% 100% / 0.07);
+}
+.cframe__glide[data-on="true"] {
+  opacity: 1;
+}
+.cframe__tile {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 12px;
+  outline: none;
+  color: var(--cp-ink);
+}
+.cframe__tile:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+.cframe__well {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+.cframe__shape {
+  display: block;
+  border: 1.25px solid hsl(var(--foreground) / 0.5);
+  border-radius: 1.5px;
+  transition: border-color 200ms var(--cp-ease);
+}
+.cframe__shape[data-auto] {
+  border-style: dashed;
+}
+.cframe__label {
+  font-family: var(--cp-mono);
+  font-size: 10.5px;
+  line-height: 12px;
+  letter-spacing: 0.01em;
+  color: var(--cp-sub);
+  font-variant-numeric: tabular-nums;
+}
+.cframe__tile:hover .cframe__shape,
+.cframe__tile:focus-visible .cframe__shape {
+  border-color: hsl(var(--foreground) / 0.8);
+}
+/* The current frame: a presence hairline round the tile, its shape and
+   number in presence. The one blue object in the panel. */
+.cframe__tile[aria-checked="true"] {
+  box-shadow: inset 0 0 0 1px var(--cp-presence);
+}
+.cframe__tile[aria-checked="true"] .cframe__shape {
+  border-color: var(--cp-presence);
+}
+.cframe__tile[aria-checked="true"] .cframe__label {
+  color: var(--cp-presence);
+}
+.cframe__tile[data-conflict] .cframe__shape {
+  border-color: hsl(var(--foreground) / 0.28);
+}
+.cframe__tile[data-conflict] .cframe__label {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The construction draws itself once, as the home's does. */
+  .cframe[data-state="open"] .cframe__draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: cframe-draw 560ms var(--cp-ease) forwards;
+    animation-delay: calc(var(--i, 0) * 50ms + 60ms);
+  }
+  .cframe[data-state="open"] .cframe__tile {
+    animation: cframe-rise 300ms var(--cp-ease) both;
+    animation-delay: calc(var(--i, 0) * 16ms + 70ms);
+  }
+  .cframe[data-state="open"][data-side="top"] .cframe__tile {
+    --cp-rise: -4px;
+  }
+  .cframe__ratio {
+    animation: cframe-text 220ms var(--cp-ease) both;
+  }
+}
+@keyframes cframe-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes cframe-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--cp-rise, 4px));
+  }
+}
+@keyframes cframe-text {
+  from {
+    opacity: 0.35;
+    transform: translateY(2px);
+  }
+}
+
+/* A phone: the stage on top, short, beside its caption; the grid below. */
+@media (max-width: 560px) {
+  .cframe.cframe {
+    grid-template-columns: minmax(0, 1fr);
+    width: calc(100vw - 24px);
+  }
+  .cframe__stage {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    min-height: 0;
+    padding: 6px 14px 6px 6px;
+  }
+  .cframe__svg {
+    width: 130px;
+    height: 104px;
+    margin: 0;
+  }
+  .cframe__caption {
+    margin: 0;
+    padding: 0;
+  }
+  .cframe__ratio {
+    font-size: 30px;
+    line-height: 32px;
+  }
+  .cframe__grid.cframe__grid {
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  }
+}
+
+/* ——— Length: a figure, a ruler, a slider ——— */
+
+.cparams-length.cparams-length {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(18rem, calc(100vw - 24px));
+  padding: 6px 14px 16px;
+  outline: none;
+}
+.cparams-length__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -8px 0 -10px;
+}
+.cparams-length__value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cparams-length__num {
+  font-family: var(--cp-serif);
+  font-size: 34px;
+  line-height: 40px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--cp-ink);
+}
+.cparams-length__unit {
+  margin-left: 2px;
+  font-size: 20px;
+  color: var(--cp-sub);
+}
+.cparams-length__slider {
+  margin-top: 4px;
+}
+.cparams-length__ruler {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  height: 26px;
+  /* Radix maps min and max to the track's two ends, so the ruler spans it edge to edge. */
+  padding: 0;
+  margin-top: 2px;
+  order: 1;
+}
+.cparams-length__tick {
+  position: relative;
+  width: 1px;
+  height: 5px;
+  background-color: hsl(var(--foreground) / 0.16);
+  transition: background-color 200ms var(--cp-ease);
+}
+.cparams-length__tick[data-major] {
+  height: 9px;
+}
+.cparams-length__tick[data-on] {
+  background-color: hsl(var(--foreground) / 0.5);
+}
+.cparams-length__ruler[data-auto] .cparams-length__tick {
+  background-color: hsl(var(--foreground) / 0.16);
+}
+.cparams-length__tick-label {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--cp-mono);
+  font-size: 10.5px;
+  line-height: 12px;
+  color: var(--cp-sub);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ——— On the tray ——— */
+
+/* The shelf on its own, under the dock composer in a thread. */
+.composer-tray--params {
+  display: flex;
+  margin-top: calc(-1 * var(--tray-tuck));
+}
+
+/* ——— Touch: 44px targets, still one line ——— */
+
+@media (pointer: coarse) {
+  .cparams__chip,
+  .cparams__seg {
+    height: 44px;
+    border-radius: 22px;
+  }
+  .cparams__seg {
+    padding: 4px;
+  }
+  .cparams__thumb {
+    top: 4px;
+    height: 36px;
+    border-radius: 18px;
+  }
+  .cparams__seg-item {
+    height: 36px;
+    border-radius: 18px;
+    padding: 0 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cparams,
+  .cparams__chip,
+  .cparams__chevron,
+  .cparams__seg-item,
+  .cparams__thumb,
+  .cparams__frame,
+  .cparams__sound::after,
+  .cparams-row::before,
+  .cframe__rect,
+  .cframe__corner,
+  .cframe__glide {
+    transition: opacity var(--dur-fast) linear;
+  }
+  .cparams__chip:active {
+    transform: none;
+  }
+  .cframe[data-state="open"] .cframe__tile,
+  .cframe[data-state="open"] .cframe__svg {
+    animation: cframe-fade 160ms linear both;
+  }
+}
+@keyframes cframe-fade {
+  from {
+    opacity: 0;
+  }
+}

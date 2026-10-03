@@ -257,6 +257,41 @@ export function sniffVideoMime(b: Uint8Array): string | null {
 }
 
 /**
+ * An MPEG audio frame header (MP3 and its MPEG-2/2.5 siblings), checked field
+ * by field rather than on the 11-bit sync alone: `FF Ex` is common enough in
+ * arbitrary binary that sync-only would call random files songs. Layer, version,
+ * bitrate and sample-rate each have one reserved/invalid value, and a real frame
+ * never carries any of them.
+ */
+function isMpegAudioFrame(b: Uint8Array): boolean {
+  if (b.length < 4 || b[0] !== 0xff || (b[1] & 0xe0) !== 0xe0) return false;
+  const version = (b[1] >> 3) & 0x03; // 01 is reserved
+  const layer = (b[1] >> 1) & 0x03; // 00 is reserved (and is what ADTS AAC uses)
+  const bitrate = (b[2] >> 4) & 0x0f; // 1111 is invalid
+  const sampleRate = (b[2] >> 2) & 0x03; // 11 is reserved
+  return version !== 0x01 && layer !== 0x00 && bitrate !== 0x0f && sampleRate !== 0x03;
+}
+
+/**
+ * Verify real audio type from magic bytes: MP3 (ID3 tag or a valid MPEG frame
+ * header), WAV (RIFF/WAVE), FLAC and Ogg. Generated music (Lyria) is MP3 by
+ * default and WAV on request; the rest are here so a sniff never has to guess.
+ */
+export function sniffAudioMime(b: Uint8Array): string | null {
+  if (b.length >= 3 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return "audio/mpeg"; // "ID3"
+  if (
+    b.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && // "RIFF"
+    b[8] === 0x57 && b[9] === 0x41 && b[10] === 0x56 && b[11] === 0x45 // "WAVE"
+  )
+    return "audio/wav";
+  if (b.length >= 4 && b[0] === 0x66 && b[1] === 0x4c && b[2] === 0x61 && b[3] === 0x43) return "audio/flac"; // "fLaC"
+  if (b.length >= 4 && b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) return "audio/ogg"; // "OggS"
+  if (isMpegAudioFrame(b)) return "audio/mpeg";
+  return null;
+}
+
+/**
  * The Content-Type to SERVE a sniffed video with, for `<video src>`.
  *
  * A QuickTime file is the same ISO-BMFF container as mp4, and the H.264/HEVC +

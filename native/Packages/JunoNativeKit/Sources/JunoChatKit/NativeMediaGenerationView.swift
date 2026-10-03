@@ -30,6 +30,16 @@ public struct NativeMediaGenerationView: View {
     }
 
     private var isVideo: Bool { progress.modality == .video }
+    private var isAudio: Bool { progress.modality == .audio }
+
+    /// The work, named for a screen reader: the stage word alone means nothing spoken.
+    private var workName: String {
+        switch progress.modality {
+        case .image: "Image"
+        case .video: "Video"
+        case .audio: "Music"
+        }
+    }
 
     /// The server's stage word, in the reader's language.
     ///
@@ -39,7 +49,7 @@ public struct NativeMediaGenerationView: View {
     private var detail: String {
         switch progress.stage {
         case "queued": "Preparing"
-        case "generating": isVideo ? "Creating video" : "Creating image"
+        case "generating": isAudio ? "Composing" : isVideo ? "Creating video" : "Creating image"
         case "polling": isVideo ? "Rendering" : "Refining"
         case "downloading": "Retrieving"
         case "uploading": "Saving"
@@ -49,7 +59,9 @@ public struct NativeMediaGenerationView: View {
 
     /// The web's reassurance, verbatim (`generation-placeholder.tsx`).
     private var longWaitLine: String {
-        isVideo
+        isAudio
+            ? "A full song can take a minute or two."
+            : isVideo
             ? "Longer clips can take a couple of minutes."
             : "Still working. Detailed images can take a minute."
     }
@@ -72,8 +84,10 @@ public struct NativeMediaGenerationView: View {
                     playPlate
                 }
             }
-            .aspectRatio(isVideo ? 16.0 / 9.0 : 1, contentMode: .fit)
-            .frame(maxWidth: isVideo ? 440 : 288, alignment: .leading)
+            // A track has no picture: its canvas is a strip the height of the
+            // web's player card rather than a square.
+            .aspectRatio(isAudio ? 480.0 / 104.0 : isVideo ? 16.0 / 9.0 : 1, contentMode: .fit)
+            .frame(maxWidth: isAudio ? 480 : isVideo ? 440 : 288, alignment: .leading)
             .clipShape(Self.canvasShape)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -95,7 +109,7 @@ public struct NativeMediaGenerationView: View {
         .accessibilityAddTraits(.updatesFrequently)
         // Keyed on the modality, so a picture's clock does not carry over to
         // a clip — and restarted by a new placeholder, not by a stage change.
-        .task(id: isVideo) {
+        .task(id: progress.modality) {
             longWait = false
             try? await Task.sleep(for: longWaitDelay)
             guard !Task.isCancelled else { return }
@@ -107,12 +121,12 @@ public struct NativeMediaGenerationView: View {
         // A live region announces what changed, so each stage is said once —
         // with the work named, because "Refining" alone means nothing spoken.
         .onChange(of: detail) { _, stage in
-            AccessibilityNotification.Announcement("\(isVideo ? "Video" : "Image") generation: \(stage)").post()
+            AccessibilityNotification.Announcement("\(workName) generation: \(stage)").post()
         }
     }
 
     private var accessibilityLabel: String {
-        let base = "\(isVideo ? "Video" : "Image") generation in progress — \(detail)"
+        let base = "\(workName) generation in progress — \(detail)"
         return longWait ? "\(base). \(longWaitLine)" : base
     }
 

@@ -2,6 +2,15 @@ import "server-only";
 import { providerApiKey, providerBaseUrl } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
 import { isGoogleOmniModel, parseGoogleOmniInteraction } from "@/lib/video-gen-core";
+import type { MediaWire } from "@/lib/media-params";
+import {
+  minimaxVideoBody,
+  pollXaiVideo,
+  seedanceStartBody,
+  startXaiVideo,
+  veoStartBody,
+  zhipuVideoBody,
+} from "@/lib/media-gen-core";
 
 export { parseGoogleOmniInteraction } from "@/lib/video-gen-core";
 
@@ -35,7 +44,8 @@ export type VideoJobPoll =
   | { status: "done"; bytes?: Buffer; url?: string; mimeType?: string; downloadHeaders?: Record<string, string> };
 
 interface VideoAdapter {
-  start(model: ModelInfo, prompt: string): Promise<string>;
+  /** `wire` is the person's choices (media-params.ts); null sends today's request unchanged. */
+  start(model: ModelInfo, prompt: string, wire: MediaWire | null): Promise<string>;
   poll(model: ModelInfo, id: string): Promise<VideoJobPoll>;
 }
 
@@ -153,10 +163,10 @@ const googleOmniAdapter: VideoAdapter = {
 };
 
 const googleVeoAdapter: VideoAdapter = {
-  async start(model, prompt) {
+  async start(model, prompt, wire) {
     const { ok, status, data, text } = await fetchJson<GoogleOperation>(
       `${GOOGLE_API_BASE}/models/${model.providerModel}:predictLongRunning`,
-      { method: "POST", headers: googleHeaders(), body: JSON.stringify({ instances: [{ prompt }] }) }
+      { method: "POST", headers: googleHeaders(), body: JSON.stringify(veoStartBody(prompt, wire)) }
     );
     if (!ok || !data.name) {
       throw new Error(`${model.name} rejected the request (${status}). ${text.slice(0, 160)}`);
@@ -205,12 +215,12 @@ function minimaxError(data: MiniMaxBaseResp, fallback: string): string {
 }
 
 const minimaxAdapter: VideoAdapter = {
-  async start(model, prompt) {
+  async start(model, prompt, wire) {
     const { base, headers } = minimaxAuth();
     const { ok, status, data, text } = await fetchJson<MiniMaxBaseResp & { task_id?: string }>(`${base}/video_generation`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model: model.providerModel, prompt: prompt.slice(0, 2000) }),
+      body: JSON.stringify(minimaxVideoBody(model.providerModel, prompt, wire)),
     });
     if (!ok || (data.base_resp?.status_code != null && data.base_resp.status_code !== 0) || !data.task_id) {
       throw new Error(`${model.name} rejected the request (${status}). ${minimaxError(data, text).slice(0, 160)}`);
@@ -259,12 +269,12 @@ function zhipuAuth(): { base: string; headers: Record<string, string> } {
 }
 
 const zhipuAdapter: VideoAdapter = {
-  async start(model, prompt) {
+  async start(model, prompt, wire) {
     const { base, headers } = zhipuAuth();
     const { ok, status, data, text } = await fetchJson<ZhipuVideoTask>(`${base}/videos/generations`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model: model.providerModel, prompt }),
+      body: JSON.stringify(zhipuVideoBody(model.providerModel, prompt, wire)),
     });
     if (!ok || !data.id) {
       throw new Error(`${model.name} rejected the request (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
@@ -307,12 +317,12 @@ function seedanceAuth(): { base: string; headers: Record<string, string> } {
 }
 
 const seedanceAdapter: VideoAdapter = {
-  async start(model, prompt) {
+  async start(model, prompt, wire) {
     const { base, headers } = seedanceAuth();
     const { ok, status, data, text } = await fetchJson<ArkVideoTask>(`${base}/contents/generations/tasks`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model: model.providerModel, content: [{ type: "text", text: prompt }] }),
+      body: JSON.stringify(seedanceStartBody(model.providerModel, prompt, wire)),
     });
     if (!ok || !data.id) {
       throw new Error(`${model.name} rejected the request (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
@@ -338,12 +348,31 @@ const seedanceAdapter: VideoAdapter = {
   },
 };
 
+// ---- xAI (Grok Imagine Video) — /videos/generations → /videos/{request_id} ----
+// Request and parsing live in media-gen-core.ts (startXaiVideo / pollXaiVideo).
+
+function xaiCall(): { apiKey: string; baseUrl?: string } {
+  const apiKey = providerApiKey("xai");
+  if (!apiKey) throw new Error("xAI API key is not configured.");
+  return { apiKey, baseUrl: providerBaseUrl("xai") };
+}
+
+const xaiAdapter: VideoAdapter = {
+  async start(model, prompt, wire) {
+    return startXaiVideo(model, prompt, wire, xaiCall());
+  },
+  async poll(model, id) {
+    return pollXaiVideo(model, id, xaiCall());
+  },
+};
+
 function adapterFor(model: ModelInfo): VideoAdapter | null {
   if (isGoogleOmniModel(model)) return googleOmniAdapter;
   if (model.provider === "google" && model.providerModel.startsWith("veo-")) return googleVeoAdapter;
   if (model.provider === "minimax") return minimaxAdapter;
   if (model.provider === "zhipu") return zhipuAdapter;
   if (model.provider === "seedance") return seedanceAdapter;
+  if (model.provider === "xai" && model.providerModel.startsWith("grok-imagine-video")) return xaiAdapter;
   return null;
 }
 
@@ -355,10 +384,10 @@ export function videoGenUnsupportedMessage(model: ModelInfo): string {
   return `Video generation for ${model.name} is not wired yet — try Veo, Gemini Omni, or Hailuo.`;
 }
 
-export async function startVideoJob(model: ModelInfo, prompt: string): Promise<VideoJobHandle> {
+export async function startVideoJob(model: ModelInfo, prompt: string, wire: MediaWire | null = null): Promise<VideoJobHandle> {
   const adapter = adapterFor(model);
   if (!adapter) throw new Error(videoGenUnsupportedMessage(model));
-  const id = await adapter.start(model, prompt);
+  const id = await adapter.start(model, prompt, wire);
   return { model, id };
 }
 
@@ -372,9 +401,10 @@ export async function pollVideoJob(handle: VideoJobHandle): Promise<VideoJobPoll
 export async function generateVideo(
   model: ModelInfo,
   prompt: string,
-  onProgress?: (p: VideoProgress) => void
+  onProgress?: (p: VideoProgress) => void,
+  wire: MediaWire | null = null
 ): Promise<GeneratedVideo> {
-  const handle = await startVideoJob(model, prompt);
+  const handle = await startVideoJob(model, prompt, wire);
   onProgress?.({ stage: "queued", note: `${model.name} accepted the job` });
 
   const deadline = Date.now() + OVERALL_CAP_MS;

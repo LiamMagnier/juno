@@ -3,13 +3,16 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
-import { resolveModel, imageEditSupport } from "@/lib/models";
+import { resolveModel, imageEditSupport, type MediaModality } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
-import { checkBudget, recordSpend, budgetExceededMessage } from "@/lib/spend";
+import { checkBudget, recordSpend, budgetExceededMessage, mediaRequestCost } from "@/lib/spend";
 import { planRank } from "@/lib/plans";
 import { generateImage, editImage } from "@/lib/image-gen";
 import { generateVideo, isVideoGenSupported, videoGenUnsupportedMessage } from "@/lib/video-gen";
+import { generateAudio, isAudioGenSupported } from "@/lib/audio-gen";
+import { lyricsMarkdown } from "@/lib/audio-gen-core";
+import { generationCost, outputFileName, planGeneration, promptWithSuffix } from "@/lib/media-gen-core";
 import { buildObjectKey, deleteObject, putObject, getObjectBytes } from "@/lib/storage";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
@@ -19,8 +22,16 @@ import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace
 import type { StreamChunk } from "@/types/chat";
 
 export const runtime = "nodejs";
-// Video jobs poll up to ~240s before the generation itself gives up.
+// Video jobs poll up to ~240s before the generation itself gives up; a full
+// Lyria song is one synchronous call held to the same 240s.
 export const maxDuration = 300;
+
+const NEW_TITLE: Record<MediaModality, string> = { image: "New image", video: "New video", audio: "New track" };
+const FAILED: Record<MediaModality, string> = {
+  image: "Image generation failed.",
+  video: "Video generation failed.",
+  audio: "Music generation failed.",
+};
 
 const schema = z.object({
   conversationId: z.string().cuid().optional(),
@@ -40,6 +51,16 @@ const schema = z.object({
         .optional(),
       maskDataUrl: z.string().optional(),
     })
+    .optional(),
+  /**
+   * The person's choices for this generation (aspect, resolution, length,
+   * sound, count, format...; src/lib/media-params.ts). Cleaned server-side by
+   * normalizeParams, so a stale or hand-made value never reaches a provider.
+   * Absent (the native apps today) means today's request, unchanged.
+   */
+  params: z
+    .record(z.string().max(32), z.union([z.string().max(32), z.number().finite(), z.boolean()]))
+    .refine((value) => Object.keys(value).length <= 16)
     .optional(),
 });
 
@@ -119,6 +140,23 @@ export async function POST(req: Request) {
   if (model.modality === "video" && !isVideoGenSupported(model)) {
     return NextResponse.json({ error: videoGenUnsupportedMessage(model) }, { status: 400 });
   }
+  if (model.modality === "audio" && !isAudioGenSupported(model)) {
+    return NextResponse.json({ error: `${model.name} can't generate audio here yet.` }, { status: 400 });
+  }
+  const media = model.modality;
+
+  // The choices, cleaned against what this model actually takes, and what one
+  // output and the whole request cost with them.
+  const genPlan = planGeneration(model.id, parsed.data.params, { edit: !!edit });
+  const baseCost = mediaRequestCost(model.id, media);
+  const cost = generationCost(baseCost, model.id, media, genPlan);
+  // Honest admission: a request its choices made dearer than one flat
+  // generation (four images, a 15s 1080p clip) must fit in what is left. A
+  // default request keeps today's gate exactly.
+  if (cost.estimateMicroUsd > baseCost && budget.remainingMicroUsd != null && cost.estimateMicroUsd > budget.remainingMicroUsd) {
+    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
+  }
+  const providerPrompt = promptWithSuffix(prompt, genPlan.wire);
 
   // Validate the edit request (source attachment + mask) before metering.
   let editSource: { storageKey: string; mimeType: string } | null = null;
@@ -172,12 +210,11 @@ export async function POST(req: Request) {
         }
       };
       let keepalive: ReturnType<typeof setInterval> | null = null;
-      let outputStorageKey: string | null = null;
+      const outputStorageKeys: string[] = [];
       let outputPersistenceCommitted = false;
       try {
         if (!conversationId) {
-          const fallback = model.modality === "video" ? "New video" : "New image";
-          const title = prompt.replace(/\s+/g, " ").trim().slice(0, 60) || fallback;
+          const title = prompt.replace(/\s+/g, " ").trim().slice(0, 60) || NEW_TITLE[media];
           const convo = await prisma.conversation.create({
             data: { userId: user.id, projectId, title, model: model.id },
             select: { id: true, title: true },
@@ -194,81 +231,110 @@ export async function POST(req: Request) {
         const title = isNew ? prompt.replace(/\s+/g, " ").trim().slice(0, 60) : "";
         send({ type: "meta", conversationId: conversationId!, userMessageId: userMsg.id, title });
 
-        let bytes: Buffer;
-        let mimeType: string;
-        let ext: string;
-        let fileName: string;
+        // One entry per file the provider returned: one for video and audio,
+        // up to the chosen count for images.
+        let outputs: Array<{ bytes: Buffer; mimeType: string; ext: string }>;
+        let baseName: string;
         let kind: "IMAGE" | "FILE";
+        // What the assistant turn says alongside the file: a song's lyrics.
+        let replyText = "";
 
-        if (model.modality === "video") {
+        if (media === "audio") {
+          // One synchronous call that can run for minutes: keep the stream
+          // alive with the same 8s re-send as video so no proxy calls it idle.
+          const composing: StreamChunk = { type: "progress", stage: "generating" };
+          send(composing);
+          keepalive = setInterval(() => send(composing), 8_000);
+          const track = await generateAudio(model, providerPrompt, genPlan.wire);
+          clearInterval(keepalive);
+          keepalive = null;
+          outputs = [track];
+          kind = "FILE";
+          baseName = `${model.name} — ${title || "track"}`;
+          replyText = track.lyrics ? lyricsMarkdown(track.lyrics) : "";
+        } else if (model.modality === "video") {
           // Re-send the last progress frame every 8s so slow polls / downloads
           // never leave the SSE stream silent for more than 10s.
           let lastProgress: StreamChunk = { type: "progress", stage: "queued" };
           send(lastProgress);
           keepalive = setInterval(() => send(lastProgress), 8_000);
-          const video = await generateVideo(model, prompt, (p) => {
-            lastProgress = { type: "progress", stage: p.stage, pct: p.pct, note: p.note };
-            send(lastProgress);
-          });
+          const video = await generateVideo(
+            model,
+            providerPrompt,
+            (p) => {
+              lastProgress = { type: "progress", stage: p.stage, pct: p.pct, note: p.note };
+              send(lastProgress);
+            },
+            genPlan.wire
+          );
           clearInterval(keepalive);
           keepalive = null;
-          bytes = video.bytes;
-          mimeType = video.mimeType;
-          ext = video.ext;
+          outputs = [video];
           kind = "FILE";
-          fileName = `${model.name} — ${title || "video"}.${ext}`;
+          baseName = `${model.name} — ${title || "video"}`;
         } else {
           send({ type: "progress", stage: "generating" });
-          let img;
           if (edit && editSource) {
             const src = await getObjectBytes(editSource.storageKey);
-            img = await editImage(
-              model,
-              prompt,
-              { bytes: Buffer.from(src.bytes), mimeType: editSource.mimeType },
-              { maskPng: maskPng ?? undefined, region: edit.region }
-            );
+            outputs = [
+              await editImage(
+                model,
+                providerPrompt,
+                { bytes: Buffer.from(src.bytes), mimeType: editSource.mimeType },
+                { maskPng: maskPng ?? undefined, region: edit.region },
+                genPlan.wire
+              ),
+            ];
           } else {
-            img = await generateImage(model, prompt);
+            outputs = (await generateImage(model, providerPrompt, genPlan.wire, genPlan.count)).slice(0, genPlan.count);
           }
-          bytes = img.bytes;
-          mimeType = img.mimeType;
-          ext = img.ext;
           kind = "IMAGE";
-          fileName = edit ? `${model.name} — edit.${ext}` : `${model.name} — ${title || "image"}.${ext}`;
+          baseName = edit ? `${model.name} — edit` : `${model.name} — ${title || "image"}`;
         }
 
-        // The provider call is done and cost real money — ledger the flat
-        // per-request media cost even if the upload/persist below fails.
-        await recordSpend({
-          userId: user.id,
-          model: model.id,
-          kind: model.modality === "video" ? "video" : "image",
-        });
+        // The provider call is done and cost real money — ledger it even if
+        // the upload/persist below fails. One row per file actually returned,
+        // each at the price its choices carry (a provider that returned two of
+        // four images billed two). Without choices: today's flat figure.
+        for (let i = 0; i < outputs.length; i += 1) {
+          await recordSpend({
+            userId: user.id,
+            model: model.id,
+            kind: media,
+            ...(genPlan.params ? { costUsd: cost.perOutputMicroUsd / 1_000_000 } : {}),
+          });
+        }
 
         send({ type: "progress", stage: "uploading" });
-        const key = buildObjectKey(user.id, `juno-${model.providerModel}.${ext}`);
-        outputStorageKey = key;
-        await putObject(key, bytes, mimeType);
+        const files = outputs.map((output, index) => ({
+          ...output,
+          key: buildObjectKey(user.id, `juno-${model.providerModel}.${output.ext}`),
+          fileName: outputFileName(baseName, output.ext, index, outputs.length).slice(0, 120),
+        }));
+        for (const file of files) {
+          outputStorageKeys.push(file.key);
+          await putObject(file.key, file.bytes, file.mimeType);
+        }
+        const totalBytes = files.reduce((sum, file) => sum + file.bytes.byteLength, 0);
 
         const assistant = await prisma.$transaction(async (tx) => {
-          const capacity = await lockedLibraryCapacity(tx, user.id, plan, bytes.byteLength);
+          const capacity = await lockedLibraryCapacity(tx, user.id, plan, totalBytes);
           assertLibraryCapacity(capacity);
           const created = await tx.message.create({
             data: {
               conversationId: conversationId!,
               role: "ASSISTANT",
               model: model.id,
-              content: encryptMessageText(""),
+              content: encryptMessageText(replyText),
               attachments: {
-                create: {
+                create: files.map((file) => ({
                   userId: user.id,
                   conversationId: conversationId!,
                   kind,
-                  fileName: fileName.slice(0, 120),
-                  mimeType,
-                  size: bytes.length,
-                  storageKey: key,
+                  fileName: file.fileName,
+                  mimeType: file.mimeType,
+                  size: file.bytes.length,
+                  storageKey: file.key,
                   origin: "generated",
                   parserState: "skipped",
                   versions: {
@@ -276,14 +342,14 @@ export async function POST(req: Request) {
                       version: 1,
                       origin: "generated",
                       kind,
-                      fileName: fileName.slice(0, 120),
-                      mimeType,
-                      size: bytes.length,
-                      storageKey: key,
+                      fileName: file.fileName,
+                      mimeType: file.mimeType,
+                      size: file.bytes.length,
+                      storageKey: file.key,
                       parserState: "skipped",
                     },
                   },
-                },
+                })),
               },
             },
             include: { attachments: { where: { deletedAt: null } } },
@@ -299,13 +365,12 @@ export async function POST(req: Request) {
         const message = await serializeMessage(assistant);
         send({ type: "done", message, artifacts: [], memoryUpdated: false, quota: quotaRes.quota });
       } catch (err) {
-        if (outputStorageKey && !outputPersistenceCommitted) {
-          await deleteObject(outputStorageKey).catch(() => undefined);
+        if (!outputPersistenceCommitted) {
+          for (const key of outputStorageKeys) await deleteObject(key).catch(() => undefined);
         }
         // The generation failed after metering — refund the message.
         const quota = await refundMessage(user.id, plan).catch(() => quotaRes.quota);
-        const fallback = model.modality === "video" ? "Video generation failed." : "Image generation failed.";
-        const msg = err instanceof Error ? err.message : fallback;
+        const msg = err instanceof Error ? err.message : FAILED[media];
         send({ type: "error", message: msg, quota });
       } finally {
         if (keepalive) clearInterval(keepalive);

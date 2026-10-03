@@ -3,12 +3,20 @@ import OpenAI, { toFile } from "openai";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { imageEditSupport, type ModelInfo } from "@/lib/models";
 import type { GenerateEditPayload } from "@/types/chat";
+import type { MediaWire } from "@/lib/media-params";
+import {
+  imageFrom,
+  minimaxImageBody,
+  minimaxImageItems,
+  openAIImageEditExtras,
+  openAIImageGenerateBody,
+  openAIImageItems,
+  requestGeminiImage,
+  type GeneratedImage,
+  type GoogleContentPart,
+} from "@/lib/media-gen-core";
 
-export interface GeneratedImage {
-  bytes: Buffer;
-  mimeType: string;
-  ext: string;
-}
+export type { GeneratedImage } from "@/lib/media-gen-core";
 
 export interface SourceImage {
   bytes: Buffer;
@@ -43,47 +51,30 @@ function regionInstruction(region: NonNullable<ImageEditOptions["region"]>): str
   );
 }
 
-type GoogleContentPart =
-  | { text: string }
-  | { inlineData: { mimeType: string; data: string } };
-
 // Gemini ("Nano Banana") generates images via the native generateContent API,
-// not the OpenAI-compatible /images endpoint — so it gets its own path.
-async function googleImageRequest(model: ModelInfo, parts: GoogleContentPart[]): Promise<GeneratedImage> {
+// not the OpenAI-compatible /images endpoint — so it gets its own path
+// (media-gen-core.ts requestGeminiImage, where the tests reach it).
+async function googleImageRequest(
+  model: ModelInfo,
+  parts: GoogleContentPart[],
+  wire: MediaWire | null,
+  opts: { edit?: boolean } = {}
+): Promise<GeneratedImage> {
   const key = providerApiKey("google");
   if (!key) throw new Error("Google API key is not configured.");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.providerModel}:generateContent`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: { responseModalities: ["IMAGE"] },
-    }),
-    signal: AbortSignal.timeout(110_000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Gemini image generation failed (${res.status}). ${text.slice(0, 160)}`);
-  }
-  const data = await res.json();
-  const outParts: Array<{ inlineData?: { data: string; mimeType?: string } }> =
-    data?.candidates?.[0]?.content?.parts ?? [];
-  const inline = outParts.find((p) => p.inlineData?.data)?.inlineData;
-  if (!inline) throw new Error("Gemini returned no image — try rephrasing your prompt.");
-  const mimeType = inline.mimeType ?? "image/png";
-  return { bytes: Buffer.from(inline.data, "base64"), mimeType, ext: extFor(mimeType) };
+  return requestGeminiImage(model, parts, wire, { apiKey: key }, opts);
 }
 
-async function generateGoogleImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
-  return googleImageRequest(model, [{ text: prompt }]);
+async function generateGoogleImage(model: ModelInfo, prompt: string, wire: MediaWire | null): Promise<GeneratedImage[]> {
+  return [await googleImageRequest(model, [{ text: prompt }], wire)];
 }
 
 async function editGoogleImage(
   model: ModelInfo,
   prompt: string,
   source: SourceImage,
-  opts: ImageEditOptions
+  opts: ImageEditOptions,
+  wire: MediaWire | null
 ): Promise<GeneratedImage> {
   const parts: GoogleContentPart[] = [
     { inlineData: { mimeType: source.mimeType, data: source.bytes.toString("base64") } },
@@ -101,10 +92,10 @@ async function editGoogleImage(
     instruction = `Edit the provided image: ${prompt}`;
   }
   parts.push({ text: instruction });
-  return googleImageRequest(model, parts);
+  return googleImageRequest(model, parts, wire, { edit: true });
 }
 
-async function minimaxImageRequest(payload: Record<string, unknown>): Promise<GeneratedImage> {
+async function minimaxImageRequest(payload: Record<string, unknown>, max = 1): Promise<GeneratedImage[]> {
   const apiKey = providerApiKey("minimax");
   if (!apiKey) throw new Error("MiniMax API key is not configured.");
   const base = (providerBaseUrl("minimax") ?? "https://api.minimax.io/v1").replace(/\/$/, "");
@@ -127,22 +118,13 @@ async function minimaxImageRequest(payload: Record<string, unknown>): Promise<Ge
   if (!res.ok || (data.base_resp?.status_code != null && data.base_resp.status_code !== 0)) {
     throw new Error(`MiniMax image generation failed (${res.status}). ${(data.base_resp?.status_msg || text).slice(0, 160)}`);
   }
-  const b64 = data.data?.image_base64?.[0] ?? data.data?.images?.find((i) => i.b64_json || i.base64)?.b64_json ?? data.data?.images?.find((i) => i.base64)?.base64;
-  if (b64) return { bytes: Buffer.from(b64, "base64"), mimeType: "image/png", ext: "png" };
-  const url = data.data?.image_urls?.[0] ?? data.data?.images?.find((i) => i.url)?.url;
-  if (url) return { bytes: await downloadBytes(url), mimeType: "image/png", ext: "png" };
-  throw new Error("MiniMax returned no image — try rephrasing your prompt.");
+  const items = minimaxImageItems(data, max);
+  if (!items.length) throw new Error("MiniMax returned no image — try rephrasing your prompt.");
+  return Promise.all(items.map(async (item) => imageFrom(item.b64 ? Buffer.from(item.b64, "base64") : await downloadBytes(item.url!), "png")));
 }
 
-async function generateMiniMaxImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
-  return minimaxImageRequest({
-    model: model.providerModel,
-    prompt: prompt.slice(0, 1500),
-    aspect_ratio: "1:1",
-    response_format: "url",
-    n: 1,
-    prompt_optimizer: true,
-  });
+async function generateMiniMaxImage(model: ModelInfo, prompt: string, wire: MediaWire | null, count: number): Promise<GeneratedImage[]> {
+  return minimaxImageRequest(minimaxImageBody(model.providerModel, prompt, wire), count);
 }
 
 // MiniMax has no mask endpoint — the source goes in as a subject reference and
@@ -154,7 +136,7 @@ async function editMiniMaxImage(
   opts: ImageEditOptions
 ): Promise<GeneratedImage> {
   const fullPrompt = opts.region ? `${prompt}\n\n${regionInstruction(opts.region)}` : prompt;
-  return minimaxImageRequest({
+  const [image] = await minimaxImageRequest({
     model: model.providerModel,
     prompt: fullPrompt.slice(0, 1500),
     subject_reference: [
@@ -164,24 +146,27 @@ async function editMiniMaxImage(
     n: 1,
     prompt_optimizer: true,
   });
+  return image;
 }
 
 // OpenAI + xAI (and other OpenAI-compatible labs) expose /images/generations.
-async function generateOpenAICompatImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
+async function generateOpenAICompatImage(model: ModelInfo, prompt: string, wire: MediaWire | null, count: number): Promise<GeneratedImage[]> {
   const apiKey = providerApiKey(model.provider);
   if (!apiKey) throw new Error(`${PROVIDERS[model.provider].label} API key is not configured.`);
   // Image generation is a paid, non-idempotent operation. Do not let the SDK
   // silently create a second image when the first request's response is lost.
   const client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 0 });
 
-  const params: OpenAI.Images.ImageGenerateParams = { model: model.providerModel, prompt, n: 1 };
-  if (model.provider === "openai") params.size = "1024x1024";
+  // Extra fields (xAI's aspect_ratio / resolution, Muse's reasoning_strength)
+  // are not in the SDK's types; the SDK posts the body as given.
+  const params = openAIImageGenerateBody(model, prompt, wire) as unknown as OpenAI.Images.ImageGenerateParamsNonStreaming;
+  const format = typeof wire?.body.output_format === "string" ? wire.body.output_format : null;
 
   const result = await client.images.generate(params);
-  const item = result.data?.[0];
-  if (item?.b64_json) return { bytes: Buffer.from(item.b64_json, "base64"), mimeType: "image/png", ext: "png" };
-  if (item?.url) return { bytes: await downloadBytes(item.url), mimeType: "image/png", ext: "png" };
-  throw new Error("No image was returned.");
+  const items = openAIImageItems(result, count);
+  if (!items.length) throw new Error("No image was returned.");
+  // The bytes say what the file is; the format asked for is only the fallback.
+  return Promise.all(items.map(async (item) => imageFrom(item.b64 ? Buffer.from(item.b64, "base64") : await downloadBytes(item.url!), format)));
 }
 
 // OpenAI-compatible /images/edits: image + optional mask (transparent = edit here).
@@ -189,7 +174,8 @@ async function editOpenAICompatImage(
   model: ModelInfo,
   prompt: string,
   source: SourceImage,
-  opts: ImageEditOptions
+  opts: ImageEditOptions,
+  wire: MediaWire | null
 ): Promise<GeneratedImage> {
   const apiKey = providerApiKey(model.provider);
   if (!apiKey) throw new Error(`${PROVIDERS[model.provider].label} API key is not configured.`);
@@ -212,18 +198,32 @@ async function editOpenAICompatImage(
     n: 1,
   };
   if (usableMask) params.mask = await toFile(usableMask, "mask.png", { type: "image/png" });
+  const extras = openAIImageEditExtras(model, wire);
+  Object.assign(params, extras);
+  const format = typeof extras.output_format === "string" ? extras.output_format : null;
 
-  const result = await client.images.edit(params);
-  const item = result.data?.[0];
-  if (item?.b64_json) return { bytes: Buffer.from(item.b64_json, "base64"), mimeType: "image/png", ext: "png" };
-  if (item?.url) return { bytes: await downloadBytes(item.url), mimeType: "image/png", ext: "png" };
+  const result = await client.images.edit(params as OpenAI.Images.ImageEditParamsNonStreaming);
+  const [item] = openAIImageItems(result, 1);
+  if (item?.b64) return imageFrom(Buffer.from(item.b64, "base64"), format);
+  if (item?.url) return imageFrom(await downloadBytes(item.url), format);
   throw new Error("No edited image was returned.");
 }
 
-export async function generateImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
-  if (model.provider === "google") return generateGoogleImage(model, prompt);
-  if (model.provider === "minimax") return generateMiniMaxImage(model, prompt);
-  return generateOpenAICompatImage(model, prompt);
+/**
+ * Generate one or more images. `wire` carries the person's choices
+ * (media-params.ts wireParams); null sends today's request unchanged. `count`
+ * caps how many results are kept: the provider is asked for that many through
+ * `n` in `wire`, and a provider that returns more is not trusted to bill less.
+ */
+export async function generateImage(
+  model: ModelInfo,
+  prompt: string,
+  wire: MediaWire | null = null,
+  count = 1
+): Promise<GeneratedImage[]> {
+  if (model.provider === "google") return generateGoogleImage(model, prompt, wire);
+  if (model.provider === "minimax") return generateMiniMaxImage(model, prompt, wire, count);
+  return generateOpenAICompatImage(model, prompt, wire, count);
 }
 
 /** Region/mask-based edit of an existing image. Throws a friendly capability
@@ -232,12 +232,13 @@ export async function editImage(
   model: ModelInfo,
   prompt: string,
   source: SourceImage,
-  opts: ImageEditOptions = {}
+  opts: ImageEditOptions = {},
+  wire: MediaWire | null = null
 ): Promise<GeneratedImage> {
   if (model.modality !== "image" || imageEditSupport(model.provider) === "none") {
     throw new Error(`${model.name} can't edit images — try GPT Image, Nano Banana, or Grok Imagine.`);
   }
-  if (model.provider === "google") return editGoogleImage(model, prompt, source, opts);
+  if (model.provider === "google") return editGoogleImage(model, prompt, source, opts, wire);
   if (model.provider === "minimax") return editMiniMaxImage(model, prompt, source, opts);
-  return editOpenAICompatImage(model, prompt, source, opts);
+  return editOpenAICompatImage(model, prompt, source, opts, wire);
 }

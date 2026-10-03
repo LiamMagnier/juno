@@ -587,6 +587,49 @@
 .composer-tray__item--end {
   margin-left: auto;
 }
+/* An image, video or music model: the tray is ONE line, the model's
+   generation row (composer-media-params.css, scrolling sideways inside itself
+   when it is wider than the shelf) and a compact Project control pinned at
+   the end, after a hairline. The control drops its word when the shelf is
+   tight and keeps its icon, its tooltip and its accessible name. */
+.composer-tray--media {
+  container-type: inline-size;
+}
+.composer-tray__line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 28px;
+}
+.composer-tray__rule {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background-color: hsl(var(--foreground) / 0.1);
+}
+.composer-tray__item--project {
+  flex: none;
+  max-width: 9.5rem;
+}
+@container (max-width: 520px) {
+  .composer-tray__project-label {
+    display: none;
+  }
+  .composer-tray__item--project {
+    padding-inline: 8px 6px;
+    gap: 4px;
+  }
+}
+/* A long row (GPT Image's six controls) asks for the word's room too. */
+.composer-tray__line[data-tight] .composer-tray__project-label {
+  display: none;
+}
+.composer-tray__line[data-tight] .composer-tray__item--project {
+  padding-inline: 8px 6px;
+  gap: 4px;
+}
 .composer-tray__chevron {
   margin-left: -2px;
   opacity: 0.7;

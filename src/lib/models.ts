@@ -8,7 +8,10 @@ export type ModelId = string;
 
 export type CostTier = 1 | 2 | 3; // relative: $ cheap → $$$ expensive
 
-export type Modality = "chat" | "image" | "video";
+export type Modality = "chat" | "image" | "video" | "audio";
+
+/** What /api/generate produces: every modality but chat. */
+export type MediaModality = Exclude<Modality, "chat">;
 
 /**
  * Lifecycle status, verified against official provider docs (see docs/models.md
@@ -54,7 +57,7 @@ export interface ModelInfo {
    */
   agenticTools: boolean;
   cost: CostTier;
-  modality: Modality; // chat (text) · image · video
+  modality: Modality; // chat (text) · image · video · audio
   webSearch: boolean; // can search the web + cite sources (chat models)
   status?: ModelStatus; // set on every curated entry; discovered models default to "current"
   family?: string; // product family (sonnet, gpt, veo…) — one current per family per modality
@@ -602,7 +605,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", comingSoon: true, released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE: native 1M context via LongCat Sparse Attention." }),
 ];
 
-/** Image / video generation models — grouped by lab in the picker; each runs
+/** Image / video / audio generation models — grouped by lab in the picker; each runs
  *  through /api/generate (not the chat stream). Hidden unless the lab's key is set. */
 const GENERATIVE: ModelInfo[] = [
   // —— Image ——
@@ -658,7 +661,21 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "minimax", id: "MiniMax-Hailuo-2.3", name: "Hailuo 2.3", family: "hailuo", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 3, description: "MiniMax text/image-to-video with strong motion." }),
   def({ provider: "minimax", id: "MiniMax-Hailuo-2.3-Fast", name: "Hailuo 2.3 Fast", family: "hailuo-fast", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Low-latency image-to-video tier." }),
   def({ provider: "minimax", id: "MiniMax-Hailuo-02", name: "Hailuo 02", family: "hailuo", status: "legacy", released: "2025-06", modality: "video", minPlan: "MAX", cost: 3, description: "Previous-generation Hailuo." }),
+
+  // —— Audio ——
+  // Google's Lyria, through the Gemini Interactions API (`audio-gen.ts`): one
+  // synchronous POST /interactions returns the track as base64 MP3 plus the
+  // lyrics/structure as text. 44.1 kHz stereo, SynthID-watermarked. Priced per
+  // song, not per token (`mediaRequestCost`): $0.08 a full song, $0.04 a clip.
+  // `lyria-realtime-exp` is deliberately absent: it is a live WebSocket stream
+  // and nothing here plays a stream of music.
+  def({ provider: "google", id: "lyria-3.5", name: "Lyria 3.5", family: "lyria", status: "current", released: "2026-09", modality: "audio", minPlan: "PRO", cost: 2, description: "Full songs of a couple of minutes: verses, choruses and a bridge, with vocals and lyrics." }),
+  def({ provider: "google", id: "lyria-3-clip-preview", name: "Lyria 3 Clip", family: "lyria-clip", status: "current", released: "2026-03", modality: "audio", minPlan: "PRO", cost: 1, description: "Thirty-second clips, loops and sketches: the quick way to try an idea." }),
+  def({ provider: "google", id: "lyria-3-pro-preview", name: "Lyria 3 Pro", family: "lyria", status: "legacy", released: "2026-03", modality: "audio", minPlan: "PRO", cost: 2, description: "The previous full-song Lyria, kept for tracks begun on it." }),
 ];
+
+/** The audio model a new audio conversation starts on. */
+export const DEFAULT_AUDIO_MODEL: ModelId = "google:lyria-3.5";
 
 // —— Generated-sync merge (src/lib/models.generated.ts, written by scripts/sync-models.ts) ——
 

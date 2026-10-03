@@ -89,6 +89,7 @@ public enum JunoModelModality: String, CaseIterable, Sendable {
     case chat
     case image
     case video
+    case audio
 
     /// Anything the server sends that this build does not know about is treated
     /// as a chat model rather than dropped — a new modality should degrade to a
@@ -102,6 +103,7 @@ public enum JunoModelModality: String, CaseIterable, Sendable {
         case .chat: "Chat"
         case .image: "Image"
         case .video: "Video"
+        case .audio: "Audio"
         }
     }
 
@@ -110,6 +112,7 @@ public enum JunoModelModality: String, CaseIterable, Sendable {
         case .chat: "bubble.left.and.text.bubble.right"
         case .image: "photo"
         case .video: "film"
+        case .audio: "waveform"
         }
     }
 }

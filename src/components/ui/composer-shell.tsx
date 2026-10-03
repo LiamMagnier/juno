@@ -718,9 +718,15 @@ function fileExtension(name: string) {
 export function ComposerAttachmentTile({
   upload,
   onRemove,
+  label,
+  onOpen,
   className,
 }: {
   upload: PendingUpload;
+  /** A word under an image tile naming what made it ("Sketch"). */
+  label?: string | null;
+  /** Makes the tile a button that reopens what made it (a sketch's editor). */
+  onOpen?: () => void;
   /**
    * Whether Juno can actually READ this file, once indexing has settled.
    *
@@ -827,6 +833,19 @@ export function ComposerAttachmentTile({
           </span>
         </>
       )}
+      {isImage && label ? (
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-px text-center font-mono text-micro uppercase leading-4 text-muted-foreground">
+          {label}
+        </span>
+      ) : null}
+      {onOpen && upload.status === "done" ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Edit ${label ? label.toLowerCase() : upload.fileName}`}
+          className="absolute inset-0 rounded-inherit focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        />
+      ) : null}
       {upload.status === "uploading" && (
         <span className="absolute inset-0 grid place-items-center bg-card/70">
           <Loader2 className="size-4 animate-spin text-foreground" aria-hidden="true" />
@@ -857,9 +876,15 @@ export function ComposerAttachmentTile({
 export function ComposerAttachmentRow({
   uploads,
   onRemove,
+  labelFor,
+  openerFor,
   className,
 }: {
   uploads: readonly PendingUpload[];
+  /** A word for a tile ("Sketch"), or null. */
+  labelFor?: (upload: PendingUpload) => string | null;
+  /** What clicking a tile reopens, or undefined for a plain tile. */
+  openerFor?: (upload: PendingUpload) => (() => void) | undefined;
   /** Attachment id → whether its text reached the index (`useAttachmentReadiness`). */
 
   onRemove: (localId: string) => void;
@@ -874,6 +899,8 @@ export function ComposerAttachmentRow({
               <ComposerAttachmentTile
                 upload={upload}
                 onRemove={() => onRemove(upload.localId)}
+                label={labelFor?.(upload)}
+                onOpen={openerFor?.(upload)}
               />
             </motion.div>
           ))}

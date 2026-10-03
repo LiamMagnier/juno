@@ -10,6 +10,7 @@ import { TranscriptGallery } from "./gallery";
  *   conversation  a settled thread: prose, tables, code in several languages,
  *                 a diff, a clamped long block, run strips, versions, actions
  *   states        errors, a token-limit stop, an interrupted partial answer
+ *   audio         a generated Lyria track: the player, its lyrics, the placeholder
  *   streaming     a MessageList replaying a reply chunk by chunk, with the
  *                 follow, the tail fade and "Jump to latest"
  *   shared        the public /share transcript over the same turns

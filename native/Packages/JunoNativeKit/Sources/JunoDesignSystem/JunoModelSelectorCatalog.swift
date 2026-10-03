@@ -96,7 +96,7 @@ public enum JunoModelSelectorCatalog {
         public var legacyCount: Int { legacy.filter { $0.model != nil }.count }
     }
 
-    static let modalityOrder: [JunoModelModality] = [.chat, .image, .video]
+    static let modalityOrder: [JunoModelModality] = [.chat, .image, .video, .audio]
 
     /// Text → image → video, then the manifest's own order — which is the
     /// catalog's canonical generation-then-strength order, the same one the web
@@ -350,6 +350,7 @@ public enum JunoModelSelectorCatalog {
         var out: [Chip] = []
         if model.modality == .image { out.append(Chip(label: "Image", icon: .image)) }
         if model.modality == .video { out.append(Chip(label: "Video", icon: .play)) }
+        if model.modality == .audio { out.append(Chip(label: "Audio", icon: .audioLines)) }
         if model.capabilities.contains(.vision) { out.append(Chip(label: "Vision", icon: .eye)) }
         if model.capabilities.contains(.reasoning) { out.append(Chip(label: "Thinking", icon: .brain)) }
         if model.capabilities.contains(.search) { out.append(Chip(label: "Search", icon: .web)) }

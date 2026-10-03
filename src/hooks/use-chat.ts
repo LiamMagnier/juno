@@ -20,6 +20,7 @@ import { resolveModel } from "@/lib/models";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import { rangesForStoredText, type ContextToken } from "@/lib/chat/context-tokens";
+import { sketchGuideForGeneration } from "@/lib/sketch/sketch-core";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import {
   formatPreflightClarificationVisibleMessage,
@@ -130,6 +131,12 @@ export type SendOptions = {
    * UI phase's — so this is the slot it plugs into.
    */
   context?: ContextToken[];
+  /**
+   * The composer's generation choices for an image, video or audio model
+   * (aspect, resolution, length, sound, count, format; src/lib/media-params.ts).
+   * Sent to /api/generate as `params`, which cleans them against the model.
+   */
+  mediaParams?: Record<string, string | number | boolean>;
 };
 
 export type ImageEditInput = { prompt: string; model: string; edit: GenerateEditPayload };
@@ -659,7 +666,17 @@ export function useChat(opts: UseChatOptions) {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantTempId
-                    ? { ...m, progress: { modality: m.progress?.modality ?? "image", stage: chunk.stage, pct: chunk.pct } }
+                    ? {
+                        ...m,
+                        progress: {
+                          modality: m.progress?.modality ?? "image",
+                          stage: chunk.stage,
+                          pct: chunk.pct,
+                          // The requested shape stamped at start survives every stage.
+                          aspect: m.progress?.aspect,
+                          count: m.progress?.count,
+                        },
+                      }
                     : m
                 )
               );
@@ -1242,6 +1259,7 @@ export function useChat(opts: UseChatOptions) {
       artifactEdit?: ArtifactEditRequest;
       connectors?: string[];
       context?: ContextToken[];
+      mediaParams?: Record<string, string | number | boolean>;
     }): SendResult => {
       const trimmed = input.text.trim();
       const attachments = input.attachments ?? [];
@@ -1273,7 +1291,17 @@ export function useChat(opts: UseChatOptions) {
         activity: [],
         streaming: true,
         // Media generations show their placeholder before the first SSE frame lands.
-        progress: modality === "chat" || opts.privateMode ? null : { modality, stage: "queued" },
+        // The shape and number the request asked for, so the placeholder is
+        // drawn as what will arrive (generation-placeholder.tsx).
+        progress:
+          modality === "chat" || opts.privateMode
+            ? null
+            : {
+                modality,
+                stage: "queued",
+                ...(typeof input.mediaParams?.aspect === "string" ? { aspect: input.mediaParams.aspect } : {}),
+                ...(typeof input.mediaParams?.count === "number" ? { count: input.mediaParams.count } : {}),
+              },
       };
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
@@ -1292,12 +1320,16 @@ export function useChat(opts: UseChatOptions) {
         return { accepted: true };
       }
       if (modality !== "chat") {
+        // A sketch on an image model is the composition guide (lib/sketch).
+        const guide = sketchGuideForGeneration(modality, trimmed, attachments);
         void runGeneration(
           {
             conversationId: convoIdRef.current ?? undefined,
             projectId: convoIdRef.current ? undefined : opts.projectId,
-            prompt: trimmed,
+            prompt: guide.prompt,
+            ...(guide.edit ? { edit: guide.edit } : {}),
             model: opts.model,
+            params: input.mediaParams,
           },
           assistantTempId,
           "/api/generate"
@@ -1411,7 +1443,7 @@ export function useChat(opts: UseChatOptions) {
       const modality = resolveModel(opts.model)?.modality ?? "chat";
       const connectors = options?.connectors;
       if (modality !== "chat" || !trimmed) {
-        return startGeneration({ text: trimmed, attachments, connectors });
+        return startGeneration({ text: trimmed, attachments, connectors, mediaParams: options?.mediaParams });
       }
 
       // An artifact edit goes straight to generation: the target artifact is

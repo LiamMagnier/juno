@@ -188,6 +188,7 @@ enum ChatComposerPlaceholder {
         switch modality {
         case "image": return "Describe an image to generate…"
         case "video": return "Describe a video to generate…"
+        case "audio": return "Describe a song or a sound to generate…"
         default: return "Message Juno…"
         }
     }

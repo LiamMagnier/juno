@@ -129,6 +129,7 @@ export type SpendKind =
   | "task"
   | "image"
   | "video"
+  | "audio"
   | "utility";
 
 /**
@@ -152,6 +153,7 @@ export const DEFAULT_ESTIMATE_MICRO_USD: Record<SpendKind, number> = {
   task: 50_000,
   image: 40_000,
   video: 500_000,
+  audio: 80_000, // one Lyria song at Google's list price
   // Nothing reserves under this kind today: the utility walk is fire-and-check
   // background work that runs to completion and then bills, with no pre-spend
   // gate in front of it (see runUtilityPrompt). The figure is here because the

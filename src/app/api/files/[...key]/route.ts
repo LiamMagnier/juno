@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { headObject, openObjectStream } from "@/lib/storage";
-import { MIME_SNIFF_BYTES, playbackVideoMime, sniffAvifMime, sniffImageMime, sniffVideoMime } from "@/lib/uploads";
+import { MIME_SNIFF_BYTES, playbackVideoMime, sniffAudioMime, sniffAvifMime, sniffImageMime, sniffVideoMime } from "@/lib/uploads";
 import { isAnnouncementMediaKeyOf } from "@/lib/announcement-media";
 import { contentRangeHeader, parseRangeHeader, unsatisfiedRangeHeader } from "@/lib/http-range";
 
@@ -75,6 +75,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   const img = sniffImageMime(prefix) ?? sniffAvifMime(prefix);
   const sniffedVideo = img ? null : sniffVideoMime(prefix);
   const video = sniffedVideo ? playbackVideoMime(sniffedVideo) : null;
+  // Generated music (and any uploaded track) plays in an <audio> element, which
+  // needs a real audio type and Range just as <video> does.
+  const audio = img || video ? null : sniffAudioMime(prefix);
 
   const headers = new Headers();
   headers.set("Cache-Control", "private, max-age=3600");
@@ -83,6 +86,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   } else if (video) {
     // Served inline so <video> can stream it; media bytes can't execute scripts.
     headers.set("Content-Type", video);
+  } else if (audio) {
+    headers.set("Content-Type", audio);
   } else {
     headers.set("Content-Type", "application/octet-stream");
     headers.set("Content-Disposition", "attachment");
@@ -92,7 +97,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   // it sends `Range: bytes=0-1` and expects a 206 Partial Content response, and
   // it uses a suffix range (`bytes=-N`) to find the moov atom of an mp4 that
   // wasn't written faststart.
-  const isMedia = Boolean(img || video);
+  const isMedia = Boolean(img || video || audio);
   if (isMedia) headers.set("Accept-Ranges", "bytes");
 
   const range = isMedia ? parseRangeHeader(req.headers.get("range"), total) : ({ kind: "none" } as const);

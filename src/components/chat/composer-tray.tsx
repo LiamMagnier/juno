@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronDown, Monitor } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { AppIcons } from "@/lib/app-icons";
@@ -15,6 +16,11 @@ import { cn } from "@/lib/utils";
  * its lower edge, holding where the new chat goes and what it can reach.
  *
  *   [ Project ]  [ Apps ◦◦◦ ]  [ Skills ]                    [ Mac app ]
+ *
+ * With an image, video or music model it is one line of that model's
+ * generation choices and a compact Project control at the end:
+ *
+ *   [▭ 16:9 ⌄] [720p | 1080p] [8s ⌄] [Sound on]            | [▣ Project ⌄]
  *
  * Each control opens the same panel the + menu flies out (one list, two
  * doors), below the tray so it never covers the draft. Landing frame only: in
@@ -35,6 +41,7 @@ export function ComposerTray({
   appsPanel,
   skillsPanel,
   disabled,
+  params,
 }: {
   /** The project a new chat will be filed in, or null. */
   projectName: string | null;
@@ -47,6 +54,8 @@ export function ComposerTray({
   appsPanel: (() => React.ReactNode) | null;
   skillsPanel: (() => React.ReactNode) | null;
   disabled?: boolean;
+  /** An image, video or music model's generation row: the tray becomes that row plus a compact Project control. */
+  params?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState<Panel | null>(null);
   // The desktop link is for the browser only; inside the Mac app it would point at itself.
@@ -64,6 +73,37 @@ export function ComposerTray({
   };
 
   const marks = connectors.slice(0, 3);
+
+  // An image, video or music model: ONE line. Its generation choices first,
+  // then where the chat goes as a compact control at the end; Apps, Skills
+  // and the Mac app step away (they say nothing about a picture or a song).
+  if (params) {
+    const projectLabel = projectName ?? "Project";
+    return (
+      <div className="composer-tray composer-tray--media" data-disabled={disabled ? "" : undefined}>
+        <div className="composer-tray__line">
+          {params}
+          <span className="composer-tray__rule" aria-hidden="true" />
+          <Tooltip>
+            <TrayMenu
+              panel="project"
+              open={open}
+              onChange={change}
+              render={projectPanel}
+              disabled={disabled}
+              className="composer-tray__item--project"
+              label={projectName ? `Project: ${projectName}` : "Select project"}
+              tooltip
+            >
+              <AppIcons.projects aria-hidden="true" className="size-4" motion="none" />
+              <span className="composer-tray__project-label truncate">{projectLabel}</span>
+            </TrayMenu>
+            <TooltipContent>{projectName ?? "Select project"}</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="composer-tray" data-disabled={disabled ? "" : undefined}>
@@ -115,6 +155,9 @@ function TrayMenu({
   onChange,
   render,
   disabled,
+  className,
+  label,
+  tooltip,
   children,
 }: {
   panel: Panel;
@@ -122,18 +165,26 @@ function TrayMenu({
   onChange: (panel: Panel, open: boolean) => void;
   render: () => React.ReactNode;
   disabled?: boolean;
+  className?: string;
+  /** The accessible name, when the visible label may be hidden (the compact Project control). */
+  label?: string;
+  /** Wrapped in a Tooltip by the caller: the trigger doubles as its tooltip trigger. */
+  tooltip?: boolean;
   children: React.ReactNode;
 }) {
+  const trigger = (
+    <DropdownMenuTrigger asChild disabled={disabled}>
+      <button type="button" className={cn("composer-tray__item", className)} aria-label={label}>
+        {children}
+        <ChevronDown aria-hidden="true" className="composer-tray__chevron size-3.5" motion="none" />
+      </button>
+    </DropdownMenuTrigger>
+  );
   return (
     <DropdownMenu open={open === panel} onOpenChange={(next) => onChange(panel, next)}>
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <button type="button" className="composer-tray__item">
-          {children}
-          <ChevronDown aria-hidden="true" className="composer-tray__chevron size-3.5" motion="none" />
-        </button>
-      </DropdownMenuTrigger>
+      {tooltip ? <TooltipTrigger asChild>{trigger}</TooltipTrigger> : trigger}
       <DropdownMenuContent
-        align="start"
+        align={tooltip ? "end" : "start"}
         side="bottom"
         sideOffset={8}
         collisionPadding={16}

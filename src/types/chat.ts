@@ -99,7 +99,19 @@ export interface ClientMessage {
   finishReason?: ChatFinishReason | null;
   errorMessage?: string | null;
   /** Client-transient: live /api/generate progress (set by use-chat while a generation runs; never persisted). */
-  progress?: { modality: "image" | "video"; stage: string; pct?: number } | null;
+  progress?: {
+    modality: "image" | "video" | "audio";
+    stage: string;
+    pct?: number;
+    /**
+     * The aspect ratio the request asked for ("16:9", "2:3", "auto"), stamped
+     * when the generation starts so the placeholder is drawn at the shape the
+     * result will take. Absent means the modality's default (generation-media.ts).
+     */
+    aspect?: string;
+    /** How many outputs the request asked for (1 to 4); absent means one. */
+    count?: number;
+  } | null;
   /** Total prompt (input) tokens for this generation, cache included. */
   promptTokens?: number | null;
   /** Output (completion) tokens generated. */

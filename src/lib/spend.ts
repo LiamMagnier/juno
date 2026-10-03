@@ -9,6 +9,7 @@ import { getModelMetrics } from "@/lib/model-metrics";
 import { estimateGenerationCostUsd, estimateTokensFromChars, tokenRate } from "@/lib/pricing";
 import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
+import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
 import {
   DEFAULT_ESTIMATE_MICRO_USD,
   REFERENCE_MONTH_MS,
@@ -121,10 +122,13 @@ export function modelRatesMicroUsdPerToken(modelId: string): { input: number; ou
  *           Muse Image $0.01
  *   video — $0.50 per clip, $0.25 for fast/mini tiers, $0.75 for
  *           cost-tier-3 flagships (Veo 3.1, Seedance 2.0, Hailuo 2.3…)
+ *   audio — Google's per-song list price: Lyria 3.5 and Lyria 3 Pro $0.08 a
+ *           song, Lyria 3 Clip $0.04 a 30-second clip (audio-gen-core.ts)
  */
-export function mediaRequestCost(modelId: string, kind: "image" | "video"): number {
+export function mediaRequestCost(modelId: string, kind: "image" | "video" | "audio"): number {
   const model = resolveModel(modelId);
   const id = (model?.id ?? modelId).toLowerCase();
+  if (kind === "audio") return audioRequestCostMicroUsd(id);
   if (kind === "video") {
     if (/fast|mini|lite/.test(id)) return 250_000;
     return (model?.cost ?? 3) >= 3 ? 750_000 : 500_000;
@@ -211,7 +215,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
     let completionTokens = Math.max(0, input.completionTokens ?? 0);
     let costMicroUsd = 0;
 
-    if (input.kind === "image" || input.kind === "video") {
+    if (input.kind === "image" || input.kind === "video" || input.kind === "audio") {
       if (!promptTokens) promptTokens = estimateTokensFromChars(input.promptChars);
       if (!completionTokens) completionTokens = estimateTokensFromChars(input.completionChars);
       costMicroUsd =

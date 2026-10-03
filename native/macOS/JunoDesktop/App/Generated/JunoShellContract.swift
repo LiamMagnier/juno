@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "7ca10c101e18f008754170354facd5f52eaef97636d5d7aa543dfd6fdcc6b29f"
+    static let digest = "5f1f47baf500c3ec540f6f45a13d116c01d62b7e3d605f2c5dff399bcb0696b8"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -324,6 +324,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     case files
     case voiceFiles = "voice-files"
     case screenshot
+    case sketch
     case library
     case mention
     case project
@@ -346,6 +347,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .files: "Add photos and files"
         case .voiceFiles: "Add files"
         case .screenshot: "Take a screenshot"
+        case .sketch: "Sketch"
         case .library: "Add from Library"
         case .mention: "Mention a file, app or agent"
         case .project: "Add to project"
@@ -363,6 +365,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .files: "Add Photos and Files"
         case .voiceFiles: "Add Files"
         case .screenshot: "Take a Screenshot"
+        case .sketch: "Sketch"
         case .library: "Add from Library"
         case .mention: "Mention a File, App or Agent"
         case .project: "Add to Project"
@@ -379,6 +382,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .files: .action
         case .voiceFiles: .action
         case .screenshot: .action
+        case .sketch: .action
         case .library: .action
         case .mention: .action
         case .project: .submenu
@@ -395,6 +399,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .files: .attach
         case .voiceFiles: .attach
         case .screenshot: .scan
+        case .sketch: .pencil
         case .library: .library
         case .mention: .textCursor
         case .project: .projects
@@ -412,6 +417,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .files: false
         case .voiceFiles: false
         case .screenshot: true
+        case .sketch: false
         case .library: false
         case .mention: true
         case .project: true
@@ -429,6 +435,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .files: nil
         case .voiceFiles: .files
         case .screenshot: nil
+        case .sketch: nil
         case .library: nil
         case .mention: nil
         case .project: nil
@@ -448,7 +455,7 @@ enum JunoShellPlusMenu {
 
     /// The chat composer's groups, in order.
     static let chat: [[JunoShellPlusRow]] = [
-        [.files, .screenshot, .library],
+        [.files, .screenshot, .sketch, .library],
         [.mention, .skill],
         [.research, .search, .memory],
         [.project, .connectors],

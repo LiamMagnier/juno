@@ -240,7 +240,7 @@ public struct JunoModelSelector: View {
     /// (§10.2 #6).
     private func modalityCaption(_ modality: JunoModelModality) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            JunoIconView(modality == .video ? .play : .image, size: 11)
+            JunoIconView(modality == .video ? .play : modality == .audio ? .audioLines : .image, size: 11)
             Text(modality.sectionTitle)
         }
         .junoFont(size: 11, relativeTo: .caption2)
