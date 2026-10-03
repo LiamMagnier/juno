@@ -378,7 +378,11 @@ function EffortPanel({
               "absolute inset-0 rounded-full bg-foreground/85 transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none dark:bg-white/25",
               index === 0 && "opacity-0",
             )}
-            style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2}px))` }}
+            // The fill is a pill that holds the knob with the track's own 4px
+            // inset on every side (36px track, 28px knob): it ends 4px past the
+            // knob, so at the last rung it meets the track's end with no sliver
+            // of the empty track showing, and the radii stay concentric.
+            style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2 + 4}px))` }}
           />
         </div>
         {options.map((option, i) => (
