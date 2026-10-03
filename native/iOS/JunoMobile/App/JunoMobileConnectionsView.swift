@@ -331,6 +331,9 @@ struct JunoMobileConnectionsView: View {
             guard let slug = connector.slug else { return nil }
             return backend
                 .appendingPathComponent("api/connectors/composio/\(slug)/connect")
+        case .custom:
+            // A custom MCP server signs in on its own page, as on the Mac.
+            return NativeCustomConnectorPath.connectURL(backend: backend, id: connector.id)
         }
     }
 }
