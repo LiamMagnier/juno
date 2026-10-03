@@ -12,7 +12,15 @@ import path from "node:path";
 // Shape: { package: "name", advisories: ["GHSA-xxxx-xxxx-xxxx"],
 //          reason: "why it is unreachable or unpatchable", expires: "YYYY-MM-DD" }
 /** @type {{ package: string, advisories: string[], reason: string, expires: string }[]} */
-export const ACCEPTED_ADVISORIES = [];
+export const ACCEPTED_ADVISORIES = [
+  {
+    package: "braces",
+    advisories: ["GHSA-vfj7-8cjw-p6xm"],
+    reason:
+      "No patched release exists (3.0.3 is the latest and is affected). braces arrives only through tailwindcss (chokidar, micromatch) and runs at build time on the repository's own content globs; no request, upload or user string ever reaches it, so the stack-exhaustion pattern cannot be supplied by an attacker. Re-check for a fixed release by the expiry.",
+    expires: "2026-10-17",
+  },
+];
 
 // An exception may not be dated further out than this, so "accepted" always
 // means "looked at this quarter".
