@@ -84,6 +84,24 @@ const nextConfig = {
    */
   experimental: {
     staleTimes: { dynamic: 30, static: 180 },
+    /*
+     * THE REQUEST BODY CEILING WHILE MIDDLEWARE RUNS.
+     *
+     * src/middleware.ts runs on every /api route, and when it does Next 15
+     * clones the request body for it and hands the route handler only the
+     * first `middlewareClientMaxBodySize` bytes — 10 MB by default. Past that
+     * the body is silently TRUNCATED (one console.warn on the server), so
+     * `req.formData()` throws "Failed to parse body as FormData" and every
+     * upload route answered "No file provided." for any file over 10 MB.
+     * That is why announcement videos never uploaded, and why larger chat
+     * attachments failed the same way.
+     *
+     * 120 MB matches nginx's `client_max_body_size 120m`
+     * (deploy/nginx.conf.template), so the proxy stays the one place the
+     * ceiling is set; each route still enforces its own, smaller limit.
+     * Pinned by tests/announcement-media.test.ts.
+     */
+    middlewareClientMaxBodySize: "120mb",
   },
   // bcryptjs is pure JS but we keep it external to the server bundle to avoid
   // any bundler edge cases with its dynamic requires.

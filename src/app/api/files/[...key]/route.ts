@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { headObject, openObjectStream } from "@/lib/storage";
-import { MIME_SNIFF_BYTES, sniffImageMime, sniffVideoMime } from "@/lib/uploads";
+import { MIME_SNIFF_BYTES, playbackVideoMime, sniffAvifMime, sniffImageMime, sniffVideoMime } from "@/lib/uploads";
+import { isAnnouncementMediaKeyOf } from "@/lib/announcement-media";
 import { contentRangeHeader, parseRangeHeader, unsatisfiedRangeHeader } from "@/lib/http-range";
 
 export const runtime = "nodejs";
@@ -15,8 +16,14 @@ export const runtime = "nodejs";
  *  - avatars (`User.image` stores `/api/files/<key>`) — any signed-in user,
  *    since profiles render beyond the owner's own session (admin surfaces);
  *  - announcement media (owner-uploaded, broadcast to every signed-in user).
+ *    Before the announcement is saved no row names the file yet, so the
+ *    uploader may read their own `uploads/<id>/announcements/` objects — that
+ *    is the admin form previewing what it just uploaded. Without it every
+ *    fresh upload previewed as an empty box (the URL 404'd until Save).
  */
 async function canReadObject(userId: string, key: string): Promise<boolean> {
+  if (isAnnouncementMediaKeyOf(userId, key)) return true;
+
   // storageKey is the lookup key, so the query cannot be userId-scoped —
   // ownership is the explicit check on the row instead.
   const attachment = await prismaUnguarded.attachment.findFirst({
@@ -65,8 +72,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   }
 
   const { size: total, prefix } = head;
-  const img = sniffImageMime(prefix);
-  const video = img ? null : sniffVideoMime(prefix);
+  const img = sniffImageMime(prefix) ?? sniffAvifMime(prefix);
+  const sniffedVideo = img ? null : sniffVideoMime(prefix);
+  const video = sniffedVideo ? playbackVideoMime(sniffedVideo) : null;
 
   const headers = new Headers();
   headers.set("Cache-Control", "private, max-age=3600");

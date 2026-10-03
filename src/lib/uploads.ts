@@ -198,17 +198,76 @@ export function sniffImageMime(b: Uint8Array): string | null {
   return null;
 }
 
-/** Verify real video type from magic bytes — mp4 (ftyp box), webm/mkv (EBML). */
+/** The 4-byte ISO-BMFF box type at bytes 4-7, or null. */
+function isoBoxType(b: Uint8Array): string | null {
+  if (b.length < 8) return null;
+  return String.fromCharCode(b[4], b[5], b[6], b[7]);
+}
+
+/** The major brand of an ISO-BMFF `ftyp` box (bytes 8-11), or null. */
+function isoMajorBrand(b: Uint8Array): string | null {
+  if (b.length < 12 || isoBoxType(b) !== "ftyp") return null;
+  return String.fromCharCode(b[8], b[9], b[10], b[11]);
+}
+
+/*
+ * HEIF-family still images share the mp4 container (an `ftyp` box), so a sniff
+ * that reads "ftyp => video" files an iPhone photo or an AVIF as a video. They
+ * are images: AVIF is displayable everywhere current; HEIC only in Safari.
+ */
+const AVIF_BRANDS = new Set(["avif", "avis"]);
+const HEIF_BRANDS = new Set(["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1"]);
+
+/** AVIF still/sequence image, by its `ftyp` brand. */
+export function sniffAvifMime(b: Uint8Array): string | null {
+  const brand = isoMajorBrand(b);
+  return brand && AVIF_BRANDS.has(brand) ? "image/avif" : null;
+}
+
+/** HEIC/HEIF image (Safari-only in browsers), by its `ftyp` brand. */
+export function isHeifImage(b: Uint8Array): boolean {
+  const brand = isoMajorBrand(b);
+  return Boolean(brand && HEIF_BRANDS.has(brand));
+}
+
+/**
+ * QuickTime files written before `ftyp` existed (and some editors' exports
+ * still) open with a movie atom instead: `moov`, `mdat`, `wide`, `free`,
+ * `skip` or `pnot` at bytes 4-7.
+ */
+const LEGACY_QT_ATOMS = new Set(["moov", "mdat", "wide", "free", "skip", "pnot"]);
+
+/** Verify real video type from magic bytes — mp4 (ftyp box), mov, webm/mkv (EBML). */
 export function sniffVideoMime(b: Uint8Array): string | null {
-  // ISO base media (mp4 / mov): bytes 4-7 are the 'ftyp' box type.
-  if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
-    // brand at bytes 8-11 — 'qt  ' => QuickTime, otherwise treat as mp4.
-    const isQt = b[8] === 0x71 && b[9] === 0x74 && b[10] === 0x20 && b[11] === 0x20;
-    return isQt ? "video/quicktime" : "video/mp4";
+  const brand = isoMajorBrand(b);
+  if (brand) {
+    // An ftyp box whose brand names a still image is not a video.
+    if (AVIF_BRANDS.has(brand) || HEIF_BRANDS.has(brand)) return null;
+    // 'qt  ' => QuickTime, otherwise treat as mp4 (isom, mp41/42, M4V , dash…).
+    return brand === "qt  " ? "video/quicktime" : "video/mp4";
   }
+  // The leading byte is the high byte of the atom's 32-bit size, so 0 for any
+  // atom under 16 MB — which also keeps a text file that happens to read
+  // "....free" at bytes 4-7 from being called a movie.
+  const box = isoBoxType(b);
+  if (box && b[0] === 0 && LEGACY_QT_ATOMS.has(box)) return "video/quicktime";
   // Matroska / WebM: EBML magic 1A 45 DF A3.
   if (b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return "video/webm";
   return null;
+}
+
+/**
+ * The Content-Type to SERVE a sniffed video with, for `<video src>`.
+ *
+ * A QuickTime file is the same ISO-BMFF container as mp4, and the H.264/HEVC +
+ * AAC inside is what decides whether it plays. But Firefox refuses a response
+ * labelled `video/quicktime` outright ("HTTP Content-Type not supported")
+ * without looking at the bytes, so a .mov from a Mac screen recording played in
+ * Safari and Chrome and stayed a black box everywhere else. Labelled mp4, every
+ * browser that can decode the codecs plays it.
+ */
+export function playbackVideoMime(sniffed: string): string {
+  return sniffed === "video/quicktime" ? "video/mp4" : sniffed;
 }
 
 export function sanitizeFileName(name: string): string {

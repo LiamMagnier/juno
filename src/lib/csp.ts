@@ -47,7 +47,11 @@ export function buildCsp({ nonce, relayUrl, sandboxOrigin, isDev }: CspOptions):
     "img-src 'self' blob: data: https:",
     "font-src 'self' data:",
     `connect-src ${connect}`,
-    "media-src 'self' blob: data:",
+    // `https:` for the same reason as img-src: the announcement form lets the
+    // owner paste a hosted video URL ("Paste a URL instead"), and without it
+    // that <video> was refused by this policy and rendered as an empty box.
+    // Media cannot execute script, so this widens nothing that runs.
+    "media-src 'self' blob: data: https:",
     `frame-src ${frames}`,
     "worker-src 'self' blob:",
     "object-src 'none'",

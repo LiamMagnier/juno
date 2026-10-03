@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowRight, CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "@/components/ui/icons";
+import { CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,8 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import type { ClientAnnouncement } from "@/lib/announcements";
+import { AnnouncementCard } from "@/components/app/announcement-popup";
+import { ANNOUNCEMENT_ACCEPT, ANNOUNCEMENT_MAX_BYTES } from "@/lib/announcement-media";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -193,50 +195,71 @@ function MediaDropzone({
   onChange: (url: string) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const xhrRef = React.useRef<XMLHttpRequest | null>(null);
   const [dragOver, setDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
+  const [fileName, setFileName] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
   const [urlMode, setUrlMode] = React.useState(false);
 
-  const accept = kind === "image" ? "image/*" : "video/mp4,video/webm,video/quicktime";
+  React.useEffect(() => () => xhrRef.current?.abort(), []);
+
+  const fail = (message: string) => {
+    setUploading(false);
+    setError(message);
+    toast.error(message);
+  };
 
   const upload = (file: File) => {
     setUploading(true);
     setProgress(0);
+    setError(null);
+    setFileName(file.name);
     const fd = new FormData();
     fd.append("file", file);
+    // The server checks the bytes are the kind this field holds.
+    fd.append("kind", kind);
     const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
     xhr.open("POST", "/api/admin/announcements/upload");
     xhr.upload.onprogress = (e) => {
+      // Up to 95%: the last stretch is the server storing it.
       if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 95));
     };
     xhr.onload = () => {
-      setUploading(false);
+      xhrRef.current = null;
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
-          onChange(data.url);
           setProgress(100);
+          setUploading(false);
+          onChange(data.url);
         } catch {
-          toast.error("Upload failed.");
+          fail("Upload failed: the server's answer could not be read.");
         }
-      } else {
-        // nginx rejects oversized bodies with an HTML 413 page before the
-        // request ever reaches Next — surface that instead of a generic error.
-        let msg = xhr.status === 413
-          ? "File too large for the server (proxy body-size limit). Raise client_max_body_size in nginx."
-          : `Upload failed (HTTP ${xhr.status}).`;
-        try {
-          msg = JSON.parse(xhr.responseText).error ?? msg;
-        } catch {
-          /* ignore */
-        }
-        toast.error(msg);
+        return;
       }
+      // nginx rejects oversized bodies with an HTML 413 page before the
+      // request ever reaches Next, so there is no JSON to read.
+      let msg =
+        xhr.status === 413
+          ? "File too large for the server (max 100 MB)."
+          : `Upload failed (HTTP ${xhr.status}).`;
+      try {
+        msg = JSON.parse(xhr.responseText).error ?? msg;
+      } catch {
+        /* not JSON */
+      }
+      fail(msg);
     };
     xhr.onerror = () => {
+      xhrRef.current = null;
+      fail("Upload failed. Check your connection and try again.");
+    };
+    xhr.onabort = () => {
+      xhrRef.current = null;
       setUploading(false);
-      toast.error("Upload failed. Check your connection.");
     };
     xhr.send(fd);
   };
@@ -244,9 +267,19 @@ function MediaDropzone({
   const onFiles = (files: FileList | null) => {
     const f = files?.[0];
     if (!f) return;
-    const ok = kind === "image" ? f.type.startsWith("image/") : f.type.startsWith("video/");
+    // Some systems report no type for .webm/.m4v; the extension decides then,
+    // and the server sniffs the bytes either way.
+    const ext = f.name.toLowerCase().split(".").pop() ?? "";
+    const ok =
+      kind === "image"
+        ? f.type.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "avif"].includes(ext)
+        : f.type.startsWith("video/") || ["mp4", "m4v", "mov", "webm"].includes(ext);
     if (!ok) {
-      toast.error(`Please choose a ${kind} file.`);
+      setError(`That isn't ${kind === "image" ? "an image" : "a video"}. ${kind === "image" ? "PNG, JPG, WebP, GIF or AVIF" : "MP4, MOV or WebM"} only.`);
+      return;
+    }
+    if (f.size > ANNOUNCEMENT_MAX_BYTES) {
+      setError(`${f.name} is ${(f.size / 1024 / 1024).toFixed(0)} MB. The limit is 100 MB.`);
       return;
     }
     upload(f);
@@ -282,7 +315,7 @@ function MediaDropzone({
             retheme, and it drew a hard black letterbox band inside a bg-muted
             card in the light theme. Matches the image branch below. */}
         {kind === "video" ? (
-          <video src={value} className="max-h-44 w-full bg-muted object-contain" muted playsInline controls />
+          <video src={value} className="max-h-44 w-full bg-muted object-contain" muted playsInline controls loop preload="metadata" />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={value} alt="" className="max-h-44 w-full object-contain" />
@@ -315,8 +348,10 @@ function MediaDropzone({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => inputRef.current?.click()}
+        aria-disabled={uploading || undefined}
+        onClick={() => !uploading && inputRef.current?.click()}
         onKeyDown={(e) => {
+          if (uploading) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             inputRef.current?.click();
@@ -348,7 +383,7 @@ function MediaDropzone({
         <input
           ref={inputRef}
           type="file"
-          accept={accept}
+          accept={ANNOUNCEMENT_ACCEPT[kind]}
           className="hidden"
           onChange={(e) => {
             onFiles(e.target.files);
@@ -361,7 +396,10 @@ function MediaDropzone({
             {/* A real bar, not a number that changes in place: a percentage on
                 its own gives no sense of how much is left, and the same upload
                 already draws one in import-history. */}
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">Uploading… {progress}%</p>
+            <p className="max-w-full truncate text-caption text-foreground">{fileName}</p>
+            <p className="font-mono text-caption tabular-nums text-muted-foreground" aria-live="polite">
+              {progress >= 95 ? "Storing…" : `Uploading… ${progress}%`}
+            </p>
             <div className="h-1 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
               <div
                 // motion-reduce:transition-none, like the identical upload bar
@@ -372,6 +410,16 @@ function MediaDropzone({
                 style={{ transform: `scaleX(${progress / 100})` }}
               />
             </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                xhrRef.current?.abort();
+              }}
+              className="rounded-sm text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Cancel
+            </button>
           </>
         ) : (
           <>
@@ -385,11 +433,16 @@ function MediaDropzone({
               <span className="text-primary">browse</span>
             </p>
             <p className="font-mono text-caption text-muted-foreground">
-              {kind === "image" ? "PNG, JPG, WebP, GIF" : "MP4, WebM, MOV"}
+              {kind === "image" ? "PNG, JPG, WebP, GIF, AVIF" : "MP4, MOV, WebM"} · up to 100 MB
             </p>
           </>
         )}
       </div>
+      {error && (
+        <p role="alert" className="text-caption text-destructive">
+          {error}
+        </p>
+      )}
       <button
         type="button"
         onClick={() => setUrlMode(true)}
@@ -572,7 +625,7 @@ export function AnnouncementsAdmin() {
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <Label>Video</Label>
                   <MediaDropzone kind="video" value={draft.videoUrl} onChange={(v) => updateDraft("videoUrl", v)} />
-                  <p className="text-caption text-muted-foreground">Videos autoplay muted, play inline, and stop at the end.</p>
+                  <p className="text-caption text-muted-foreground">Videos autoplay muted, loop, and play inline. Under reduced motion they wait for Play.</p>
                 </div>
 
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -665,51 +718,27 @@ export function AnnouncementsAdmin() {
                   Preview
                 </div>
               </div>
-              <div className="grid gap-0 sm:grid-cols-[13rem_minmax(0,1fr)]">
-                <div className="h-44 sm:h-full">
-                  <AnnouncementMedia draft={draft} />
-                </div>
-                <div className="flex min-h-44 flex-col justify-between gap-6 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    {/* Every rung here is the one announcement-popup.tsx
-                        actually renders, because a preview that is off the
-                        scale of the thing it previews is a preview of nothing:
-                        the eyebrow was caption/primary against the popup's
-                        label/muted, the title was `text-page-title` — a Tailwind
-                        default, not a rung — against `text-title`, and the body
-                        was text-sm against text-body. An editor was choosing
-                        copy length against type that ships two sizes off. */}
-                    <div>
-                      {draft.modelName && <p className="mb-2 font-mono text-label text-muted-foreground">{draft.modelName}</p>}
-                      <h2 className="font-sans text-title leading-tight text-foreground">{draft.title || "[model] just got released"}</h2>
-                      <p className="mt-2 text-body leading-relaxed text-muted-foreground">
-                        {draft.description || "Write a short release description for users here."}
-                      </p>
-                    </div>
-                    {draft.provider !== "none" && <ProviderLogo provider={draft.provider} className="size-9" />}
-                  </div>
-                  {/* The popup's own action row: both controls right-aligned,
-                      the news link an outline Button and the CTA the solid one
-                      with its arrow. The preview drew the news label as bare
-                      underlined text pinned to the opposite edge and the CTA as
-                      a pill, so the one thing this pane exists to show — how
-                      the two labels weigh against each other — was the thing it
-                      got wrong. Buttons here are inert; this is a picture. */}
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {draft.newsHref && (
-                      <Button variant="outline" size="sm" tabIndex={-1}>
-                        {draft.newsLabel || "Read The News"}
-                      </Button>
-                    )}
-                    {draft.ctaLabel && (
-                      <Button size="sm" tabIndex={-1}>
-                        {draft.ctaLabel}
-                        {/* The arrow's own `nudge-r` articulation plays on hover,
-                            exactly as it will on the real popup. */}
-                        <ArrowRight className="size-4" />
-                      </Button>
-                    )}
-                  </div>
+              {/* The popup's own card, at the popup's own width: what is
+                  previewed here is exactly what users will see. Buttons are
+                  inert; this is a picture. */}
+              <div className="p-4">
+                <div className="ann ann-preview mx-auto w-full max-w-[40rem] overflow-hidden rounded-panel overlay-glass">
+                  <AnnouncementCard
+                    animate={false}
+                    announcement={{
+                      title: draft.title || "[model] just got released",
+                      description: draft.description || "Write a short release description for users here.",
+                      imageUrl: draft.imageUrl || null,
+                      videoUrl: draft.videoUrl || null,
+                      provider: draft.provider === "none" ? null : draft.provider,
+                      modelName: draft.modelName || null,
+                      newsLabel: draft.newsLabel || null,
+                      newsHref: draft.newsHref || null,
+                      ctaLabel: draft.ctaLabel || null,
+                      ctaHref: draft.ctaHref || null,
+                      startsAt: draft.startsAt ? new Date(draft.startsAt).toISOString() : null,
+                    }}
+                  />
                 </div>
               </div>
             </Card>

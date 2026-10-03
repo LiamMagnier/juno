@@ -1,0 +1,211 @@
+/*
+ * The announcement: one elevated object (the dialog panel), the media as its
+ * hero, and the homepage's editorial voice under it. Newsreader at one weight
+ * for the headline, the mono annotation for the release line, hairlines for
+ * structure. Presence blue appears only inside the construction drawing, the
+ * one place the homepage uses it.
+ *
+ * Geometry: the panel is `rounded-panel` (16px); the media sits 6px inside it
+ * at 10px, so the two corners stay concentric. Motion runs on the homepage's
+ * easing (--alv-ease) and is gated on `prefers-reduced-motion: no-preference`;
+ * the panel's own modal-in/out (ui/dialog.tsx) handles enter and exit.
+ */
+.ann {
+  --ann-ink: hsl(var(--foreground));
+  --ann-sub: hsl(var(--muted-foreground));
+  --ann-line: hsl(var(--foreground) / .12);
+  --ann-hair: hsl(var(--foreground) / .07);
+  --ann-well: hsl(var(--foreground) / .035);
+  --ann-ease: cubic-bezier(.16, 1, .3, 1);
+  --ann-ease-out: cubic-bezier(.33, 1, .68, 1);
+}
+.dark .ann {
+  --ann-line: hsl(var(--foreground) / .14);
+  --ann-hair: hsl(var(--foreground) / .08);
+  --ann-well: hsl(var(--foreground) / .045);
+}
+
+/* ── Media ─────────────────────────────────────────────────────────────── */
+.ann-media {
+  position: relative;
+  flex: none;
+  margin: 6px 6px 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--ann-well);
+}
+/* A hairline drawn INSIDE the frame and above the media, so bright media
+   still has an edge on a light panel and dark media on a dark one. */
+.ann-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--ann-hair);
+  pointer-events: none;
+}
+.ann-media-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 600ms var(--ann-ease-out);
+}
+.ann-media-layer[data-ready] { opacity: 1; }
+.ann-media-layer[data-contain] { object-fit: contain; padding: 12%; }
+
+/* The construction: what the frame shows with no media, while media loads,
+   and if it fails. Never an empty box. */
+.ann-fallback.alv { position: absolute; inset: 0; z-index: 0; background: transparent; display: grid; place-items: center; }
+.ann-fallback-drawing { position: absolute; left: 50%; top: 50%; width: 128%; aspect-ratio: 3 / 2; translate: -50% -50%; pointer-events: none; }
+.ann-fallback-drawing svg { width: 100%; height: 100%; overflow: visible; }
+.ann-fallback-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  background: hsl(var(--popover));
+  box-shadow: 0 0 0 1px var(--ann-line), 0 0 0 10px hsl(var(--popover) / .6), 0 0 0 11px var(--ann-hair);
+  color: var(--ann-ink);
+}
+.ann-fallback-mark svg { width: 28px; height: 28px; }
+
+/* Media controls sit on the media, on the dialog's own floating chip. */
+.ann-media-control {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border) / .6);
+  background: hsl(var(--popover) / .82);
+  color: var(--ann-ink);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  opacity: .82;
+  transition: opacity 160ms var(--ann-ease-out), transform 90ms var(--ann-ease-out), background-color 160ms var(--ann-ease-out);
+}
+.ann-media:hover .ann-media-control,
+.ann-media-control:focus-visible { opacity: 1; }
+.ann-media-control:hover { background: hsl(var(--popover)); }
+.ann-media-control:active { transform: scale(.92); }
+.ann-media-control:focus-visible { outline: 2px solid var(--ann-ink); outline-offset: 2px; }
+.ann-media-control svg { width: 14px; height: 14px; }
+@media (prefers-reduced-transparency: reduce) {
+  .ann-media-control { background: hsl(var(--popover)); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+/* ── Copy ──────────────────────────────────────────────────────────────── */
+.ann-copy { flex: none; display: grid; gap: 0; padding: 22px 28px 24px; }
+.ann-annot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 16px;
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: .02em;
+  color: var(--ann-sub);
+  font-variant-numeric: tabular-nums;
+}
+.ann-annot svg { width: 14px; height: 14px; flex: none; }
+.ann-annot time { margin-left: auto; }
+.ann-title {
+  margin-top: 14px;
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: clamp(28px, 4.4vw, 38px);
+  line-height: 1.06;
+  letter-spacing: -.028em;
+  font-optical-sizing: auto;
+  color: var(--ann-ink);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.ann-body {
+  margin-top: 12px;
+  max-width: 34em;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ann-sub);
+  text-wrap: pretty;
+  white-space: pre-line;
+}
+.ann-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ann-hair);
+}
+
+/* The homepage's action, at dialog scale: ink fill, 8px corner, one weight. */
+.ann-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 160ms var(--ann-ease-out), border-color 160ms var(--ann-ease-out), color 160ms var(--ann-ease-out), transform 90ms var(--ann-ease-out);
+}
+.ann-btn:active { transform: scale(.97); }
+.ann-btn:focus-visible { outline: 2px solid var(--ann-ink); outline-offset: 2px; }
+.ann-btn svg { width: 16px; height: 16px; transition: transform 260ms var(--ann-ease); }
+.ann-btn:hover svg,
+.ann-btn:focus-visible svg { transform: translateX(3px); }
+.ann-btn-primary { background: var(--ann-ink); border-color: var(--ann-ink); color: hsl(var(--background)); }
+.ann-btn-primary:hover { background: hsl(var(--foreground) / .86); }
+.ann-btn-secondary { background: transparent; border-color: var(--ann-line); color: var(--ann-ink); }
+.ann-btn-secondary:hover { background: hsl(var(--foreground) / .045); border-color: hsl(var(--foreground) / .22); }
+.ann-btn-quiet { background: transparent; color: var(--ann-sub); padding: 0 12px; }
+.ann-btn-quiet:hover { color: var(--ann-ink); background: hsl(var(--foreground) / .045); }
+.ann-btn[aria-disabled="true"] { pointer-events: none; }
+
+@media (max-width: 30rem) {
+  .ann-copy { padding: 18px 18px 18px; }
+  .ann-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+  .ann-actions:has(> :only-child) { grid-auto-columns: 100%; }
+  .ann-btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ann-btn, .ann-btn svg, .ann-media-control { transition: none; }
+  .ann-btn:active, .ann-media-control:active { transform: none; }
+}
+
+/* ── Arrival ───────────────────────────────────────────────────────────── */
+/* The media settles a beat after the panel lands (a slow scale-down, like a
+   lens finding focus); the copy follows line by line. Reduced motion keeps
+   the panel's cross-fade and skips both. */
+@media (prefers-reduced-motion: no-preference) {
+  .ann[data-state="open"] .ann-media { animation: ann-settle 900ms var(--ann-ease) both; }
+  .ann[data-state="open"] .ann-rise { animation: ann-rise 700ms var(--ann-ease) both; animation-delay: calc(var(--i, 0) * 60ms + 140ms); }
+  .ann-preview .ann-media { animation: none; }
+  .ann-preview .ann-rise { animation: none; }
+}
+@keyframes ann-settle { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: none; } }
+@keyframes ann-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

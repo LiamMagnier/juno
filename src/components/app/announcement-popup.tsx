@@ -2,82 +2,298 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogCloseButton, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { JunoMark } from "@/components/brand/logo";
+import { ArrowRight, Pause, Play } from "@/components/ui/icons";
+import { Dialog, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { ContinuumMark } from "@/components/brand/continuum-mark";
 import { ProviderLogo } from "@/components/brand/provider-logo";
+import { Construction } from "@/components/home/construction";
 import type { ClientAnnouncement } from "@/lib/announcements";
-import { staggerDelay } from "@/lib/motion";
+import { PROVIDERS } from "@/lib/providers";
+import { cn } from "@/lib/utils";
+import "./announcement.css";
 
-function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement }) {
-  const videoRef = React.useRef<HTMLVideoElement>(null);
-  // The one thing in the shell that loops forever in the user's peripheral
-  // vision. `prefers-reduced-motion` has to reach it too: read after mount so
-  // the SSR markup does not commit to either answer.
-  const [reducedMotion, setReducedMotion] = React.useState(false);
+/** The fields the card draws. The admin preview passes a draft in this shape. */
+export type AnnouncementView = Pick<
+  ClientAnnouncement,
+  "title" | "description" | "imageUrl" | "videoUrl" | "provider" | "modelName" | "newsLabel" | "newsHref" | "ctaLabel" | "ctaHref"
+> & { startsAt?: string | null };
 
+/**
+ * `prefers-reduced-motion`, read as state after mount so the SSR markup does
+ * not commit to either answer. `autoPlay`/`loop` are attributes the CSS
+ * reduced-motion block cannot reach, so the video needs it as a value.
+ */
+export function useReducedMotionPref(): boolean {
+  const [reduced, setReduced] = React.useState(false);
   React.useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setReducedMotion(mq.matches);
-    mq.addEventListener("change", sync);
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!mq) return;
+    const sync = () => setReduced(mq.matches);
     sync();
+    mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
+  return reduced;
+}
 
-  // Nudge autoplay: some browsers block it until the element is ready even when muted.
-  React.useEffect(() => {
-    const v = videoRef.current;
-    if (v && !reducedMotion) v.play().catch(() => {});
-  }, [reducedMotion]);
-
-  if (announcement.videoUrl) {
-    return (
-      <video
-        ref={videoRef}
-        src={announcement.videoUrl}
-        poster={announcement.imageUrl ?? undefined}
-        // Reduced motion gets the poster frame and a real control bar instead of
-        // a clip that restarts every few seconds behind the text being read.
-        autoPlay={!reducedMotion}
-        muted
-        loop={!reducedMotion}
-        controls={reducedMotion}
-        playsInline
-        preload="auto"
-        // Clean hero clip — no player chrome. Tapping replays if a browser paused it.
-        onClick={() => !reducedMotion && videoRef.current?.play().catch(() => {})}
-        className="size-full cursor-default bg-muted object-cover"
-      />
-    );
-  }
-
-  if (announcement.imageUrl) {
-    const logoLike = announcement.imageUrl.includes("/provider-logos/");
-    return (
-      <img
-        src={announcement.imageUrl}
-        alt=""
-        className={logoLike ? "size-full bg-muted object-contain p-12" : "size-full object-cover"}
-        draggable={false}
-      />
-    );
-  }
-
-  if (announcement.provider) {
-    return (
-      <div className="flex size-full items-center justify-center bg-muted">
-        <ProviderLogo provider={announcement.provider} className="size-20" />
-      </div>
-    );
-  }
-
+/**
+ * What the frame shows with no media, while media loads, and if it fails: the
+ * homepage's construction, drawn once on arrival, with the provider's mark as
+ * the centre node. A broken or slow URL can therefore never leave an empty box.
+ */
+function MediaFallback({ provider, animate }: { provider: AnnouncementView["provider"]; animate: boolean }) {
   return (
-    <div className="flex size-full items-center justify-center bg-muted text-foreground/70">
-      <JunoMark className="size-14" />
+    <div className="ann-fallback alv" aria-hidden="true">
+      <div className="ann-fallback-drawing">
+        <Construction animate={animate} ticks={false} />
+      </div>
+      <span className="ann-fallback-mark">
+        {provider ? <ProviderLogo provider={provider} /> : <ContinuumMark size={28} tone="current" />}
+      </span>
     </div>
   );
 }
+
+type MediaState = "loading" | "ready" | "failed";
+
+/**
+ * The media: a looping muted clip, an image, or the construction. The media
+ * layer fades in over the construction once it can actually paint, so a slow
+ * connection sees the drawing rather than a grey rectangle, and a failed load
+ * simply never covers it.
+ */
+export function AnnouncementMedia({ announcement, animate = true }: { announcement: AnnouncementView; animate?: boolean }) {
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const imgRef = React.useRef<HTMLImageElement>(null);
+  const reduced = useReducedMotionPref();
+  const [state, setState] = React.useState<MediaState>("loading");
+  const [playing, setPlaying] = React.useState(false);
+  const src = announcement.videoUrl || announcement.imageUrl || "";
+
+  React.useEffect(() => {
+    setState("loading");
+  }, [src]);
+
+  // An image that finished before hydration never fires onLoad.
+  React.useEffect(() => {
+    const img = imgRef.current;
+    if (img?.complete) setState(img.naturalWidth > 0 ? "ready" : "failed");
+  }, [src]);
+
+  // Autoplay, nudged: some browsers hold a muted autoplay until the element
+  // is told to play. Reduced motion gets the first frame and a play control.
+  React.useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (reduced) {
+      v.pause();
+      return;
+    }
+    v.play().catch(() => {});
+  }, [reduced, announcement.videoUrl]);
+
+  const toggle = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  };
+
+  const showFallback = state !== "ready" || !src;
+
+  return (
+    <div className="ann-media" data-media-state={src ? state : "none"}>
+      {showFallback && <MediaFallback provider={announcement.provider} animate={animate} />}
+      {announcement.videoUrl ? (
+        <>
+          <video
+            ref={videoRef}
+            key={announcement.videoUrl}
+            src={announcement.videoUrl}
+            poster={announcement.imageUrl ?? undefined}
+            className="ann-media-layer"
+            data-ready={state === "ready" ? "" : undefined}
+            autoPlay={!reduced}
+            loop
+            muted
+            playsInline
+            preload="auto"
+            disablePictureInPicture
+            aria-hidden="true"
+            onLoadedData={() => setState("ready")}
+            onError={() => setState("failed")}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+          />
+          {state === "ready" && (
+            <button
+              type="button"
+              className="ann-media-control"
+              onClick={toggle}
+              aria-label={playing ? "Pause video" : "Play video"}
+              title={playing ? "Pause" : "Play"}
+            >
+              {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
+            </button>
+          )}
+        </>
+      ) : announcement.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- /api/files URLs are session-authorised; the optimiser cannot fetch them.
+        <img
+          ref={imgRef}
+          key={announcement.imageUrl}
+          src={announcement.imageUrl}
+          alt=""
+          draggable={false}
+          className="ann-media-layer"
+          data-ready={state === "ready" ? "" : undefined}
+          data-contain={announcement.imageUrl.includes("/provider-logos/") ? "" : undefined}
+          onLoad={() => setState("ready")}
+          onError={() => setState("failed")}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function releaseDate(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  // A fixed locale and zone: the admin preview is server-rendered, and a
+  // reader-locale date would differ between the server and the browser.
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+/**
+ * The card's body. `inDialog` swaps the heading and description for Radix's
+ * Title/Description so the dialog is labelled by them; the admin preview
+ * renders the same markup outside a dialog with plain elements.
+ */
+export function AnnouncementCard({
+  announcement,
+  inDialog = false,
+  onNews,
+  onCta,
+  onDismiss,
+  animate = true,
+}: {
+  announcement: AnnouncementView;
+  inDialog?: boolean;
+  onNews?: () => void;
+  onCta?: () => void;
+  onDismiss?: () => void;
+  animate?: boolean;
+}) {
+  const Title = inDialog ? DialogTitle : "h2";
+  const Description = inDialog ? DialogDescription : "p";
+  const date = releaseDate(announcement.startsAt);
+  const providerLabel = announcement.provider ? PROVIDERS[announcement.provider]?.label : null;
+  const annotation = announcement.modelName || providerLabel;
+  const hasCta = Boolean(announcement.ctaLabel && announcement.ctaHref);
+  const inert = !inDialog;
+
+  return (
+    <>
+      <AnnouncementMedia announcement={announcement} animate={animate} />
+      <div className="ann-copy">
+        {(annotation || date) && (
+          <p className="ann-annot ann-rise" style={{ ["--i" as string]: 0 }}>
+            {announcement.provider && <ProviderLogo provider={announcement.provider} />}
+            {annotation && <span>{annotation}</span>}
+            {date && <time dateTime={announcement.startsAt ?? undefined}>{date}</time>}
+          </p>
+        )}
+        <Title className="ann-title ann-rise" style={{ ["--i" as string]: 1 }}>
+          {announcement.title}
+        </Title>
+        <Description className="ann-body ann-rise" style={{ ["--i" as string]: 2 }}>
+          {announcement.description}
+        </Description>
+        <div className="ann-actions ann-rise" style={{ ["--i" as string]: 3 }}>
+          {announcement.newsHref ? (
+            <button
+              type="button"
+              className="ann-btn ann-btn-secondary"
+              onClick={onNews}
+              tabIndex={inert ? -1 : undefined}
+              aria-disabled={inert || undefined}
+            >
+              {announcement.newsLabel || "Read more"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ann-btn ann-btn-quiet"
+              onClick={onDismiss}
+              tabIndex={inert ? -1 : undefined}
+              aria-disabled={inert || undefined}
+            >
+              Not now
+            </button>
+          )}
+          {hasCta && (
+            <button
+              type="button"
+              className="ann-btn ann-btn-primary"
+              onClick={onCta}
+              tabIndex={inert ? -1 : undefined}
+              aria-disabled={inert || undefined}
+            >
+              {announcement.ctaLabel}
+              <ArrowRight aria-hidden />
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** The dialog around the card. Separate from the fetch so the dev gallery can drive it. */
+export function AnnouncementDialog({
+  announcement,
+  open,
+  onOpenChange,
+  onFollow,
+}: {
+  announcement: AnnouncementView;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onFollow: (href?: string | null) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        hideClose
+        // Focus lands on the dialog itself (Radix gives it tabIndex -1), so a
+        // screen reader announces the labelled dialog and no button opens
+        // wearing a focus ring it was never asked for. Tab reaches the controls.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+        }}
+        className={cn(
+          // flex, not the primitive's grid: a grid row shrinks the 16:9 media
+          // to fit max-h, and the copy then rode up over the frame.
+          "ann flex max-h-[calc(100dvh-2rem)] max-w-[40rem] flex-col gap-0 overflow-y-auto overscroll-contain p-0 sm:p-0"
+        )}
+      >
+        <AnnouncementCard
+          announcement={announcement}
+          inDialog
+          onNews={() => onFollow(announcement.newsHref)}
+          onCta={() => onFollow(announcement.ctaHref)}
+          onDismiss={() => onOpenChange(false)}
+        />
+        {/* Over the media's corner, on the floating chip, so it stays findable over any frame. */}
+        <DialogCloseButton className="right-3.5 top-3.5 z-20 bg-popover/85 shadow-pop backdrop-blur-sm" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const DISMISSED_KEY = "juno:dismissed_announcements";
 
 export function AnnouncementPopup() {
   const router = useRouter();
@@ -111,12 +327,9 @@ export function AnnouncementPopup() {
       .then((data) => {
         if (data?.announcement) {
           try {
-            const dismissedList = JSON.parse(localStorage.getItem("juno:dismissed_announcements") || "[]");
-            if (dismissedList.includes(data.announcement.id)) {
-              return;
-            }
-          } catch (e) {}
-
+            const dismissedList = JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]");
+            if (dismissedList.includes(data.announcement.id)) return;
+          } catch {}
           setAnnouncement(data.announcement);
         }
       })
@@ -138,12 +351,12 @@ export function AnnouncementPopup() {
     setOpen(false);
 
     try {
-      const dismissedList = JSON.parse(localStorage.getItem("juno:dismissed_announcements") || "[]");
+      const dismissedList = JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]");
       if (!dismissedList.includes(announcement.id)) {
         dismissedList.push(announcement.id);
-        localStorage.setItem("juno:dismissed_announcements", JSON.stringify(dismissedList));
+        localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissedList));
       }
-    } catch (e) {}
+    } catch {}
 
     await fetch(`/api/announcements/${announcement.id}/dismiss`, { method: "POST" }).catch(() => {});
   }, [announcement]);
@@ -161,96 +374,14 @@ export function AnnouncementPopup() {
   if (!announcement) return null;
 
   return (
-    <Dialog
+    <AnnouncementDialog
+      announcement={announcement}
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) dismiss();
         else setOpen(true);
       }}
-    >
-      <DialogContent
-        hideClose
-        className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain p-0 lg:overflow-hidden"
-      >
-        {/* shadow-pop, not Tailwind's stock shadow-sm. `shadow-sm` is
-            `0 1px 2px rgb(0 0 0 / 0.05)` — off the theme-aware --shadow-* ladder
-            and invisible at 5% black on the dark theme, which is precisely where
-            this button floats over arbitrary bright media and most needs an edge. */}
-        <DialogCloseButton className="z-20 bg-popover/85 shadow-pop backdrop-blur-sm" />
-        <div className="grid gap-8 p-6 lg:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)]">
-          {/* Full --border. At /50 on dark this hairline resolved to ~8%, DARKER
-              than both the --muted fill inside it and the --popover shell around
-              it, so the frame read as a groove rather than an edge. */}
-          <div className="h-64 w-full shrink-0 overflow-hidden rounded-card border border-border bg-muted sm:h-80 lg:h-[26rem]">
-            <AnnouncementVisual announcement={announcement} />
-          </div>
-          {/* The copy is dealt in after the panel lands — heading, then the
-              actions — on the `loose` rung the motion scale keeps for a few
-              large, consequential items (the onboarding card uses the same).
-              Travel collapses under reduced motion (`fade-in-up` reads
-              --motion-shift, so no `motion-safe:` guard); the fade stays. */}
-          <div className="flex min-h-0 flex-col justify-between gap-6 py-2 pr-2 lg:min-h-[26rem]">
-            <DialogHeader
-              style={staggerDelay(1, "loose")}
-              className="text-left animate-fade-in-up [animation-fill-mode:backwards]"
-            >
-              <div className="flex items-start justify-between gap-4 pr-12">
-                <div>
-                  {announcement.modelName && (
-                    <div className="mb-2 font-mono text-label text-muted-foreground">{announcement.modelName}</div>
-                  )}
-                  {/* `font-sans text-title` — the scale's rung for a modal
-                      heading, and the family every sibling modal already uses.
-                      `xl`/`2xl` are Tailwind defaults, not rungs on this
-                      project's scale, and this was the one modal title in the
-                      shell set in the UI face. */}
-                  <DialogTitle className="font-sans text-title leading-tight text-foreground">
-                    {announcement.title}
-                  </DialogTitle>
-                </div>
-                {/* A tile here and not in the visual panel: this mark stands
-                    alone beside the title, where a bare 40px mark is the
-                    heaviest ink in the dialog. The panel is already its
-                    mark's container. */}
-                {announcement.provider && (
-                  <ProviderLogo provider={announcement.provider} tile className="size-10" />
-                )}
-              </div>
-              <DialogDescription className="max-w-xl pt-4 text-body leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">
-                {announcement.description}
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* No `mt-6`: the parent column is already `justify-between gap-6`,
-                so the margin stacked a second 24px onto the gap and the action
-                row sat further from the copy than any other modal's does. */}
-            <div
-              style={staggerDelay(2, "loose")}
-              className="flex flex-wrap items-center justify-end gap-3 animate-fade-in-up [animation-fill-mode:backwards]"
-            >
-              {announcement.newsHref ? (
-                <Button variant="outline" onClick={() => followHref(announcement.newsHref)}>
-                  {announcement.newsLabel || "Read more"}
-                </Button>
-              ) : (
-                <Button variant="ghost" onClick={dismiss} className="text-muted-foreground hover:text-foreground">
-                  Not now
-                </Button>
-              )}
-              {announcement.ctaLabel && announcement.ctaHref && (
-                // The arrow's nudge is the icon set's own (`nudge-r`, played
-                // by globals.css on hover AND on keyboard focus); the
-                // hand-written `group-hover:translate-x-0.5` it used to carry
-                // was a second, pointer-only copy of the same gesture.
-                <Button onClick={() => followHref(announcement.ctaHref)}>
-                  {announcement.ctaLabel}
-                  <ArrowRight className="size-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+      onFollow={followHref}
+    />
   );
 }
