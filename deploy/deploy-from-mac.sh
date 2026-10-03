@@ -158,6 +158,9 @@ echo "$(grep -c '=' "$WORK/prod.env") keys"
 # —— Build ——————————————————————————————————————————————————————————————————
 say "Source archive of ${SHA:0:12}"
 git archive --format=tar "$SHA" | gzip -1 > "$WORK/$ARCHIVE"
+# The container builds from that archive, which has no .git, so the secret scan
+# (scripts/check-tracked-secrets.mjs) gets the commit's file list from here.
+git ls-tree -r -z --name-only "$SHA" > "$WORK/tracked-files"
 shasum -a 256 "$WORK/$ARCHIVE" | cut -d' ' -f1 > "$WORK/$ARCHIVE.sha256"
 
 say "Checks and build in a linux/amd64 container ($([ "$SKIP_CHECKS" = 1 ] && echo 'EMERGENCY: gates SKIPPED except security' || echo 'with checks'))"
@@ -170,6 +173,7 @@ build_start=$SECONDS
 docker run --rm -i --platform linux/amd64 \
   -v juno-npm-cache:/root/.npm \
   -v "$WORK/build.env:/run/juno-build.env:ro" \
+  -v "$WORK/tracked-files:/run/juno-tracked-files:ro" -e JUNO_TRACKED_FILES=/run/juno-tracked-files \
   -e JUNO_EMERGENCY_SKIP_GATES="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
   "$IMAGE" bash -c '
     set -Eeuo pipefail

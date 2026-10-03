@@ -1,7 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
+// A build from `git archive` has no .git: deploy-from-mac.sh hands over the
+// commit's own file list (NUL-separated, `git ls-tree -r -z --name-only`).
+const tracked = (
+  process.env.JUNO_TRACKED_FILES
+    ? readFileSync(process.env.JUNO_TRACKED_FILES, "utf8")
+    : execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+)
+  .split("\0")
+  .filter(Boolean);
 const patterns = [
   // Require a PEM body and matching footer. Source code that constructs a PEM
   // wrapper around an environment variable must not look like a committed key.
