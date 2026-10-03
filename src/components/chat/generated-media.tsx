@@ -188,6 +188,7 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
   const [ratio, setRatio] = React.useState(() => attachmentRatio(attachment) ?? handoff?.ratio ?? 1);
   const [phase, setPhase] = React.useState<Phase>("loading");
   const [layerSrc, setLayerSrc] = React.useState<string | null>(null);
+  const sharpRef = React.useRef<HTMLAnchorElement>(null);
   // Reveal once per mount, and only for a turn that was generating here.
   const fresh = React.useRef(!!handoff);
   const frameRef = React.useRef<HTMLDivElement>(null);
@@ -199,8 +200,7 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
     return () => window.clearTimeout(timer);
   }, [phase, index]);
 
-  const onLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
-    const image = event.currentTarget;
+  const settle = (image: HTMLImageElement) => {
     afterDecode(image, () => {
       if (image.naturalWidth && image.naturalHeight) {
         const natural = clampRatio(image.naturalWidth / image.naturalHeight);
@@ -217,12 +217,26 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
       }
     });
   };
+  const onLoad = (event: React.SyntheticEvent<HTMLImageElement>) => settle(event.currentTarget);
+  // A cached picture can finish loading before React attaches onLoad (a page
+  // reload): it would then sit hidden in the frame for good. Settle it here.
+  React.useEffect(() => {
+    const image = sharpRef.current?.querySelector("img");
+    if (image?.complete && image.naturalWidth > 0) settle(image);
+    // Once per picture; settle reads the latest refs itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachment.url]);
 
   const failed = phase === "failed";
   const style = {
     "--gen-delay": `${index * TILE_STAGGER_MS}ms`,
     aspectRatio: String(ratio),
-    width: tile ? "100%" : `min(100%, ${frameWidth("image", ratio)}px)`,
+    // A definite width capped by the column, not `min(100%, …)` alone: inside
+    // an answer column that sizes to its content, a percentage has nothing to
+    // resolve against and the frame collapsed to nothing once the arrival
+    // morph (which sets explicit pixels) ended. Tiles fill their grid cell.
+    width: tile ? "100%" : `${frameWidth("image", ratio)}px`,
+    maxWidth: "100%",
   } as React.CSSProperties;
 
   return (
@@ -248,6 +262,7 @@ export function GeneratedImage({ attachment, handoff, index = 0, tile = false, o
         target="_blank"
         rel="noopener noreferrer"
         aria-label={failed ? `Preview unavailable. Open ${attachment.fileName} in a new tab` : `Open ${attachment.fileName} in a new tab`}
+        ref={sharpRef}
         className="gen-sharp block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <Image
@@ -304,7 +319,7 @@ export function GeneratedImageGrid({
 }) {
   const ratio = handoff?.ratio ?? 1;
   return (
-    <div className="gen-grid" style={{ width: `min(100%, ${gridWidth(attachments.length, ratio)}px)` }}>
+    <div className="gen-grid" style={{ width: `${gridWidth(attachments.length, ratio)}px`, maxWidth: "100%" }}>
       {attachments.map((a, i) => renderTile(a, i))}
     </div>
   );
@@ -371,7 +386,7 @@ export function GeneratedVideo({ attachment, handoff }: { attachment: ClientAtta
       className="gen-root gen-frame group/video"
       data-modality="video"
       data-phase={phase}
-      style={{ aspectRatio: String(ratio), width: `min(100%, ${frameWidth("video", ratio)}px)` }}
+      style={{ aspectRatio: String(ratio), width: `${frameWidth("video", ratio)}px`, maxWidth: "100%" }}
     >
       {(phase === "loading" || phase === "revealing") && <GenerationField still={!handoff || reduced} />}
       <canvas ref={canvasRef} aria-hidden="true" className={cn("gen-layer gen-layer--blur", phase !== "revealing" && "hidden")} />

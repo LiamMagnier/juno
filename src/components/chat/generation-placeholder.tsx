@@ -119,11 +119,11 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
   if (count > 1) {
     return (
       <div
-        className="gen-root relative w-full"
+        className="gen-root relative"
         data-modality={modality}
         data-stage={stage}
         data-phase="loading"
-        style={{ maxWidth: `min(100%, ${gridWidth(count, ratio)}px)` }}
+        style={{ width: `${gridWidth(count, ratio)}px`, maxWidth: "100%" }}
       >
         <div className="gen-grid">
           {Array.from({ length: count }, (_, i) => (
@@ -139,12 +139,13 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
 
   return (
     <div
-      // Full column width, capped at the frame the result will take.
-      className={cn("gen-root gen-frame w-full", modality === "audio" && "h-[104px] max-w-[min(100%,480px)]")}
+      // A definite width capped by the column: a percentage alone collapses
+      // in an answer column that sizes to its content.
+      className={cn("gen-root gen-frame", modality === "audio" && "h-[104px]")}
       data-modality={modality}
       data-stage={stage}
       data-phase="loading"
-      style={modality === "audio" ? undefined : { maxWidth: `min(100%, ${frameWidth(modality, ratio)}px)`, aspectRatio: String(ratio) }}
+      style={modality === "audio" ? { width: "480px", maxWidth: "100%" } : { width: `${frameWidth(modality, ratio)}px`, maxWidth: "100%", aspectRatio: String(ratio) }}
     >
       <GenerationField />
       {line}

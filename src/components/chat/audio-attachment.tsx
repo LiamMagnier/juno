@@ -128,7 +128,7 @@ export function AudioAttachment({ attachment }: { attachment: ClientAttachment }
   return (
     <figure
       data-testid="audio-attachment"
-      className="group/audio w-full max-w-[480px] rounded-field border border-border/60 bg-card px-3.5 pb-3 pt-3.5 transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-fade-in motion-reduce:transition-none"
+      className="group/audio w-[480px] max-w-full rounded-field border border-border/60 bg-card px-3.5 pb-3 pt-3.5 transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-fade-in motion-reduce:transition-none"
     >
       <div className="flex items-center gap-3">
         <button
