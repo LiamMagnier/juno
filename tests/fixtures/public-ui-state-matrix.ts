@@ -55,7 +55,10 @@ export const UI_STATE_FIXTURES = [
       /motion-safe:/,
     ],
     forbidden: [],
-    responsive: [/w-full/, /max-w-\[min\(100%/],
+    // A definite width capped by the column. It was `w-full` with a
+    // `min(100%, …)` cap, which collapsed to nothing inside an answer column
+    // that sizes to its content (2026-10-03: images vanished after a reload).
+    responsive: [/width: `\$\{frameWidth\(/, /maxWidth: "100%"/],
   },
   {
     id: "error",
