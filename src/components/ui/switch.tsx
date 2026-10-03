@@ -60,15 +60,18 @@ const Switch = React.forwardRef<
       ref={ref}
     >
       {/* The thumb has to be the LIGHTEST thing in the control, in both themes:
-          the card fill on paper, the near-white foreground on charcoal. Its
+          the card fill on paper, the near-white foreground on charcoal. Except
+          ON in dark mode: the primary track is itself near-white there (the
+          default accent), and a white thumb vanished into it, so the thumb
+          takes the primary's own foreground, which is dark for every accent. Its
           raised shadow is what makes it read as a key rather than a disc. The
           1px track border leaves 18px inside for a 16px thumb, hence the 1px
           rest offset and the 17px travel. */}
-      <SwitchPrimitives.Thumb className="pointer-events-none block size-4 translate-x-px transition-transform duration-base ease-out-strong motion-reduce:transition-none data-[state=checked]:translate-x-[17px]">
+      <SwitchPrimitives.Thumb className="group/thumb pointer-events-none block size-4 translate-x-px transition-transform duration-base ease-out-strong motion-reduce:transition-none data-[state=checked]:translate-x-[17px]">
         <motion.span
           aria-hidden="true"
           style={squash}
-          className="block size-4 rounded-full bg-card shadow-raised-lg ring-0 dark:bg-foreground"
+          className="block size-4 rounded-full bg-card shadow-raised-lg ring-0 transition-colors duration-base ease-out-soft motion-reduce:transition-none dark:bg-foreground dark:group-data-[state=checked]/thumb:bg-primary-foreground"
         />
       </SwitchPrimitives.Thumb>
     </SwitchPrimitives.Root>
