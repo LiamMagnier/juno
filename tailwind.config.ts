@@ -353,7 +353,7 @@ const config: Config = {
          * are exactly where the gutter steps in globals.css. One set of
          * thresholds for the whole page frame.
          *   display     32px → 48px : m = 4.1667cqi, b = 5.33px = 0.3333rem
-         *   page-title  26px → 32px : m = 1.5625cqi, b = 16px   = 1rem
+         *   page-title  32px → 44px : m = 3.125cqi,  b = 12px   = 0.75rem
          */
         display: [
           "clamp(2rem, 0.3333rem + 4.1667cqi, 3rem)",
@@ -375,9 +375,15 @@ const config: Config = {
          * document: a pure-vw preferred value ignores the user's base font size,
          * so text zoom cannot move it (WCAG 1.4.4).
          */
+        /*
+         * Revamp (owner, 2026-10-03: "use the design system of the website"):
+         * 32px → 44px across the same 640 → 1024 column, at the homepage's
+         * display tracking, so an app page opens in the homepage's voice.
+         *   m = 3.125cqi, b = 12px = 0.75rem
+         */
         "page-title": [
-          "clamp(1.625rem, 1rem + 1.5625cqi, 2rem)",
-          { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "600" },
+          "clamp(2rem, 0.75rem + 3.125cqi, 2.75rem)",
+          { lineHeight: "1.08", letterSpacing: "-0.03em", fontWeight: "600" },
         ],
         title: [
           "1.375rem",

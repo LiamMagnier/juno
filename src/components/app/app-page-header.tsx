@@ -142,12 +142,12 @@ export function AppPageHeader({
       {/* The page's action sits on its TITLE's line (design V3, revision 2),
           not beside the lede's last line, where it floated below the title. */}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <h1 className="min-w-0 text-balance font-serif text-page-title font-normal">{heading}</h1>
+        <h1 className="ed-rise min-w-0 text-balance font-serif text-page-title font-normal" style={{ ["--i" as string]: 0 }}>{heading}</h1>
         {/* max-w-full: on a phone the actions wrap to their own line, and a
             row wider than that line (Admin's four tabs) scrolls inside its own track. */}
-        {actions && <div className="flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-0.5">{actions}</div>}
+        {actions && <div className="ed-rise flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}
       </div>
-      {lede && <p className="mt-1.5 max-w-prose text-pretty text-body text-muted-foreground">{lede}</p>}
+      {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
     </header>
   );
 }
@@ -226,7 +226,7 @@ export function AppPageHeaderSkeleton({
       )}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
-          <Skeleton className={cn("h-[1.15em] max-w-full text-page-title", headingWidth)} />
+          <Skeleton className={cn("h-[1.08em] max-w-full text-page-title", headingWidth)} />
           {lede &&
             // One line is one `text-body` line box: 15px × 1.6 = 24px = h-6.
             // Two lines have to total the same 48px the real paragraph does, so
@@ -234,12 +234,12 @@ export function AppPageHeaderSkeleton({
             // bars, and the arithmetic still lands on the paragraph's height.
             // The second bar is short, the way a last line of prose is.
             (ledeLines > 1 ? (
-              <div className="mt-1.5 max-w-prose space-y-1.5">
+              <div className="mt-2 max-w-prose space-y-1.5">
                 <Skeleton className="h-[21px] w-full rounded-xs" />
                 <Skeleton className="h-[21px] w-2/3 rounded-xs" />
               </div>
             ) : (
-              <Skeleton className="mt-1.5 h-6 w-full max-w-prose rounded-xs" />
+              <Skeleton className="mt-2 h-6 w-full max-w-prose rounded-xs" />
             ))}
         </div>
         {actions && <Skeleton className="h-9 w-32 shrink-0" />}

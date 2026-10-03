@@ -698,36 +698,38 @@ export function CodeComposer({
               addFiles(e.dataTransfer.files);
             }
           }}
-          className="relative w-full"
+          className="relative isolate w-full"
         >
+          {/* The tray (owner, 2026-10-03): the chat home's shelf, turned to sit
+              ON the composer rather than under it, holding where this runs, the
+              project, and what it may do there. The field is shorter for it:
+              the box holds only what is typed and the row that sends it. */}
+          <div className="composer-tray composer-tray--top">
+            <div className="composer-tray__row">
+              <CodeEnvironmentChip target={target} onTargetChange={switchTarget} disabled={submitting} />
+              <CodeTargetPicker
+                target={target}
+                selectedWorkspace={selectedWorkspace}
+                onSelectWorkspace={setSelectedWorkspace}
+                selectedRepo={selectedRepo}
+                onSelectRepo={(r) => {
+                  setSelectedRepo(r);
+                  setBaseRef("");
+                  if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+                }}
+                baseRef={baseRef}
+                onBaseRefChange={setBaseRef}
+                disabled={submitting}
+              />
+              <span className="ml-auto flex min-w-0">
+                <PermissionChip target={target} />
+              </span>
+            </div>
+          </div>
           <ComposerShell
             className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
             dimmed={submitting}
-            above={
-              <>
-                {/* The context row. `px-2.5` is the controls row's inset, so the
-                    first chip's left edge lands on the `+` below it and the two
-                    rows read as one column hanging just outside the text. */}
-                <div className="flex flex-wrap items-center gap-1 px-2.5 pb-0.5 pt-2">
-                  <CodeEnvironmentChip target={target} onTargetChange={switchTarget} disabled={submitting} />
-                  <CodeTargetPicker
-                    target={target}
-                    selectedWorkspace={selectedWorkspace}
-                    onSelectWorkspace={setSelectedWorkspace}
-                    selectedRepo={selectedRepo}
-                    onSelectRepo={(r) => {
-                      setSelectedRepo(r);
-                      setBaseRef("");
-                      if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-                    }}
-                    baseRef={baseRef}
-                    onBaseRefChange={setBaseRef}
-                    disabled={submitting}
-                  />
-                </div>
-                {canAttach && <ComposerAttachmentTray uploads={uploads} onRemove={remove} />}
-              </>
-            }
+            above={canAttach ? <ComposerAttachmentTray uploads={uploads} onRemove={remove} /> : undefined}
             field={
               <textarea
                 ref={textareaRef}
@@ -799,7 +801,6 @@ export function CodeComposer({
                   </Tooltip>
                 )}
 
-                <PermissionChip target={target} />
               </>
             }
             trailing={

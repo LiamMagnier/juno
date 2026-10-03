@@ -1353,7 +1353,7 @@ export function AppSidebar({
                             )}
                           >
                             <JunoOrbit aria-hidden="true" className="size-4" motion="none" />
-                            <span className="min-w-0 truncate">{BRAND.orbit.label}</span>
+                            <span className="shell-annot min-w-0 truncate">{BRAND.orbit.label}</span>
                           </Link>
                           <SectionAction
                             label={FEATURE_NAMES.createAgent.label}
@@ -1745,7 +1745,7 @@ function NeedsYouFold({
               only ? "sidebar-row-selected text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <span className="min-w-0 truncate">{FEATURE_NAMES.needsYou.label}</span>
+            <span className="shell-annot min-w-0 truncate">{FEATURE_NAMES.needsYou.label}</span>
             {/* A count only past three rows (S7): below that the rows are the count. */}
             {items.length > 3 && (
               <span className="shrink-0 whitespace-pre tabular-nums">
@@ -2205,7 +2205,7 @@ function Section({
               weight 500), muted, two steps under the 14px rows. Quiet enough
               to be a label ON the list rather than an object beside it, which
               is how the reference sets them. */}
-          <span className="min-w-0 truncate">{label}</span>
+          <span className="shell-annot min-w-0 truncate">{label}</span>
           {/* The chevron appears with the pointer or focus, and stays while
               the section is folded, because folded is a state the reader has
               to be able to see. `ease-in-out` on the `base` rung: both ends of

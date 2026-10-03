@@ -101,7 +101,7 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
           every edge on the page lines up with the title. */}
       <ul
         aria-label={BRAND.orbit.description}
-        className="mt-8 grid max-w-3xl grid-cols-2 gap-1 border-t border-foreground/[0.07] pt-6 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-5"
+        className="ed-arrive mt-8 grid max-w-3xl grid-cols-2 gap-1 border-t border-foreground/[0.07] pt-6 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-5"
       >
         {ordered.map((agent, index) => (
           <li key={agent.id} className={cn("min-w-0", RISE)} style={stagger(index + 2)}>

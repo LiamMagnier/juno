@@ -4,6 +4,7 @@ import { SaveStatus, type SaveState } from "@/components/settings/save-status";
 import { Button } from "@/components/ui/button";
 import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
+import { PageBackdrop } from "@/components/app/page-backdrop";
 
 /**
  * The shapes every settings section is built from.
@@ -210,8 +211,11 @@ export function SettingBlock({
  */
 export function SettingsPaneHeader({ title, lede }: { title: React.ReactNode; lede?: React.ReactNode }) {
   return (
-    <header className="mb-10">
-      <h2 className="ed-h2 text-foreground">{title}</h2>
+    // The app pages' header (app-page-header.tsx): the display serif at the
+    // page-title rung over the homepage's construction, drawn once.
+    <header className="relative isolate mb-10">
+      <PageBackdrop />
+      <h2 className="text-balance font-serif text-page-title font-normal text-foreground">{title}</h2>
       {lede && <p className="mt-2 max-w-[34rem] text-pretty text-body text-muted-foreground">{lede}</p>}
     </header>
   );
@@ -219,14 +223,14 @@ export function SettingsPaneHeader({ title, lede }: { title: React.ReactNode; le
 
 /**
  * The pane header's placeholder, drawn from the header's own metrics.
- * `h-[1.15em]` on an element carrying `ed-h2` is that heading's line box
+ * `h-[1.08em]` on an element carrying `text-page-title` is that heading's line box
  * expressed in the class itself, and the lede bar is one `text-body` line at
  * the lede's `mt-2`, so the placeholder cannot drift from what replaces it.
  */
 export function SettingsPaneHeaderSkeleton() {
   return (
     <header className="mb-10" aria-hidden="true">
-      <Skeleton className="h-[1.15em] w-40 ed-h2" />
+      <Skeleton className="h-[1.08em] w-40 text-page-title" />
       <Skeleton className="mt-2 h-[1.6em] w-80 max-w-full rounded-xs text-body" />
     </header>
   );

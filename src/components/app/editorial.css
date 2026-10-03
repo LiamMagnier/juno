@@ -129,3 +129,53 @@
 @container page (max-width: 40rem) {
   .page-backdrop__drawing { left: 60%; width: 900px; }
 }
+
+/* ───────────────────── The app shell, in the homepage's voice ─────────────────────
+   Section heads in the sidebar are annotations, like the homepage's ℵ ticks:
+   mono, small, tracked. A conversation's title in the header band is set in
+   the display serif at reading size, so the band reads as a page's running
+   head rather than a toolbar label. */
+.shell-annot {
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.shell-title {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 24px;
+  letter-spacing: -0.012em;
+  font-optical-sizing: auto;
+}
+
+/* A page's body arriving under its header (Projects, Library, Orbit): the
+   first twelve items rise in a short sweep, a beat after the header's own
+   rise; anything later (a filter, the next page of an infinite list) simply
+   appears. `backwards`, not `both`: once it lands the item keeps no
+   animated transform, so its own hover and press transforms still work. */
+@media (prefers-reduced-motion: no-preference) {
+  .ed-arrive > :nth-child(-n + 12) {
+    animation: ed-arrive 760ms var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
+    animation-delay: calc(var(--ed-n, 0) * 45ms + 180ms);
+  }
+  .ed-arrive > :nth-child(2) { --ed-n: 1; }
+  .ed-arrive > :nth-child(3) { --ed-n: 2; }
+  .ed-arrive > :nth-child(4) { --ed-n: 3; }
+  .ed-arrive > :nth-child(5) { --ed-n: 4; }
+  .ed-arrive > :nth-child(6) { --ed-n: 5; }
+  .ed-arrive > :nth-child(7) { --ed-n: 6; }
+  .ed-arrive > :nth-child(8) { --ed-n: 7; }
+  .ed-arrive > :nth-child(9) { --ed-n: 8; }
+  .ed-arrive > :nth-child(10) { --ed-n: 9; }
+  .ed-arrive > :nth-child(11) { --ed-n: 10; }
+  .ed-arrive > :nth-child(12) { --ed-n: 11; }
+}
+@keyframes ed-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}

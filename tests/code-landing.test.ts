@@ -147,19 +147,25 @@ test("/code/new is a redirect rather than a second composer", () => {
 
 /* ─────────────────────── The composer's row, as specified ───────────────── */
 
-test("the composer puts the context chips above the field and the model below it", () => {
+test("the composer's tray holds where it runs, the project and the permission; the model stays below", () => {
+  // The tray sits on the composer (owner, 2026-10-03): the three context chips
+  // moved out of the box into a shelf drawn before the shell, which keeps only
+  // what is typed and the row that sends it.
   const composer = read(COMPOSER);
-  const above = composer.indexOf("above={");
-  const field = composer.indexOf("field={");
-  const leading = composer.indexOf("leading={");
-  const trailing = composer.indexOf("trailing={");
-  assert.ok(above > 0 && field > above && leading > field && trailing > leading, "the shell's slots are in order");
-  const aboveSlot = composer.slice(above, field);
-  assert.match(aboveSlot, /<CodeEnvironmentChip/, "the environment chip sits above the field");
-  assert.match(aboveSlot, /<CodeTargetPicker/, "the repository chip sits above the field");
+  const tray = composer.indexOf('className="composer-tray composer-tray--top"');
+  const shell = composer.indexOf("<ComposerShell", tray);
+  assert.ok(tray > 0 && shell > tray, "the tray is drawn before the shell");
+  const traySlot = composer.slice(tray, shell);
+  assert.match(traySlot, /<CodeEnvironmentChip/, "the environment chip is in the tray");
+  assert.match(traySlot, /<CodeTargetPicker/, "the repository chip is in the tray");
+  assert.match(traySlot, /<PermissionChip/, "the permission mode is in the tray");
+  const field = composer.indexOf("field={", shell);
+  const leading = composer.indexOf("leading={", shell);
+  const trailing = composer.indexOf("trailing={", shell);
+  assert.ok(field > shell && leading > field && trailing > leading, "the shell's slots are in order");
   const leadingSlot = composer.slice(leading, trailing);
   assert.match(leadingSlot, /<ComposerAddMenu/, "`+` is on the left of the controls row");
-  assert.match(leadingSlot, /<PermissionChip/, "the permission mode is on the left of the controls row");
+  assert.ok(!/<PermissionChip/.test(leadingSlot), "the permission chip is not drawn twice");
   assert.match(composer.slice(trailing), /<ModelSelector/, "the model chip is on the right");
 });
 

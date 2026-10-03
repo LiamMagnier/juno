@@ -368,7 +368,7 @@ export default function ProjectsPage() {
         // cards and 1024 drew three at 213. The same recipe on every card grid
         // in the app pages (connections, assistants, a project's work and code
         // lists, and each one's skeleton).
-        <ul className="mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3" aria-label="Projects">
+        <ul className="ed-arrive mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3" aria-label="Projects">
           {filteredItems.map((p, i) => (
             <li
               key={p.id}

@@ -595,7 +595,7 @@ export function LibraryList({
 /* ── Grid ─────────────────────────────────────────────────────────────── */
 
 const gridClass =
-  "grid grid-cols-2 gap-x-3 gap-y-5 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-x-4 @5xl/page:grid-cols-4";
+  "ed-arrive grid grid-cols-2 gap-x-3 gap-y-5 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-x-4 @5xl/page:grid-cols-4";
 
 function GridThumb({ item }: { item: LibraryItem }) {
   // `sizes` can only speak in window widths, so it says the one true thing it

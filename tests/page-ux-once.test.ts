@@ -127,10 +127,9 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
   // the sharing itself: the heading bar takes its height from `text-title` in
   // em, and loading.tsx holds none of those numbers by hand.
   //
-  // The pane header is the section's name in the serif (ed-h2) and a one-line
-  // lede on what the section is for since the October 2026 editorial pass,
-  // so the skeleton draws a heading bar in the serif's line box and one
-  // text-body bar for the lede.
+  // The pane header is the section's name in the serif at the app pages'
+  // `text-page-title` rung (the 2026-10-03 revamp) and a one-line lede, so the
+  // skeleton draws a heading bar in that line box and one text-body bar.
   const settingRow = fs.readFileSync(SETTING_ROW, "utf8");
   const loading = fs.readFileSync(SETTINGS_LOADING, "utf8");
 
@@ -138,7 +137,7 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
     /export function SettingsPaneHeaderSkeleton/.test(settingRow),
     "the pane header's skeleton lives beside the pane header"
   );
-  assert.ok(/h-\[1\.15em\] w-40 ed-h2/.test(settingRow), "heading bar tracks the ed-h2 line box");
+  assert.ok(/h-\[1\.08em\] w-40 text-page-title/.test(settingRow), "heading bar tracks the page-title line box");
   assert.ok(/mt-2 h-\[1\.6em\] w-80 max-w-full rounded-xs text-body/.test(settingRow), "lede bar is one text-body line box");
   assert.ok(/SettingsPaneHeaderSkeleton/.test(loading), "loading.tsx imports the shared skeleton");
   assert.ok(

@@ -62,7 +62,7 @@ const SHELL = "h-9 gap-0.5 rounded-menu border-foreground/10 bg-transparent p-1 
  * deliberate: 2 on a phone, 3 from 40rem (a 1024 window), 4 from 56rem (the
  * wide measure at 1280 and up). One gutter: 12px on a phone, 16px above.
  */
-const GRID = "grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @[56rem]/page:grid-cols-4";
+const GRID = "ed-arrive grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @[56rem]/page:grid-cols-4";
 
 const VIEW_STORAGE_KEY = "juno-library-home-view";
 const SEARCH_DEBOUNCE_MS = 200;

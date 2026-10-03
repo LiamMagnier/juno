@@ -2,6 +2,7 @@ import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { CodeComposer } from "@/components/code/code-composer";
 import type { CodePrefill } from "@/lib/code-prefill";
 import { BRAND } from "@/lib/brand/names";
+import { HomeField } from "@/components/chat/empty-state";
 
 /**
  * The Code landing's column: Alevr Code's lockup, the entry question and the
@@ -41,15 +42,18 @@ export function CodeLanding({ prefill }: { prefill: CodePrefill }) {
       <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">
         {/* Alevr Code's entry line (CODE_SYSTEM.md): the product's lockup at
             identity size, then the question. No name in italics, no hero. */}
-        <p className="mb-3 flex items-center gap-1.5 text-muted-foreground">
+        <p className="ed-rise mb-3 flex items-center gap-1.5 text-muted-foreground" style={{ ["--i" as string]: 0 }}>
           <AlevrLockup height={16} tone="muted" decorative />
           <span className="font-serif text-body leading-none">{BRAND.code.label}</span>
           <span className="sr-only">{BRAND.code.title}</span>
         </p>
-        <h1 className="mb-6 text-balance text-center font-serif text-display font-normal text-foreground sm:mb-8">
+        <h1 className="chat-home__title ed-rise mb-6 text-balance text-center font-serif font-normal text-foreground sm:mb-8" style={{ ["--i" as string]: 1 }}>
           What will you build?
         </h1>
-        <div className="w-full">
+        {/* The chat home's construction, on the composer the same way: one
+            drawing for both products' first screen. */}
+        <div className="relative isolate w-full">
+          <HomeField />
           <CodeComposer prefill={prefill} />
         </div>
       </div>
