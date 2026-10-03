@@ -336,6 +336,8 @@ if (!DB_URL || !canMockModules) {
         emailVerified: new Date(),
       },
     });
+    // Every model needs a paid plan: a FREE account is refused at the paywall.
+    await prisma.subscription.create({ data: { userId: user.id, plan: "PRO", status: "ACTIVE" } });
     signedIn = { id: user.id, email: user.email!, name: user.name! };
     return user;
   }

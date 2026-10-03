@@ -148,18 +148,9 @@ struct DesktopSettingsPlanPane: View {
         if plan.budgetMicroUsd == nil {
             DesktopSettingsNote(text: "Nothing is metering this account. A task Juno starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.")
         } else if id == "FREE" {
-            let allowance = plan.quota.limit ?? DesktopPlanCatalog.free.monthlyMessages ?? 15
-            if let used = plan.quota.used, allowance > 0 {
-                // The month's messages against the allowance: a meter only
-                // because it measures something real.
-                DesktopMeterRow(
-                    title: "Messages this month",
-                    description: "\(used) of \(allowance) on the everyday models. Pro unlocks every model and a monthly budget.",
-                    share: Double(used) / Double(allowance)
-                )
-            } else {
-                DesktopSettingsNote(text: "Free includes \(allowance) messages a month on the everyday models. Pro unlocks every model and a monthly budget.")
-            }
+            // Free includes no messages: every model needs a paid plan, so
+            // there is nothing to meter — only the way out.
+            DesktopSettingsNote(text: "The Free plan doesn’t include any messages. Pro unlocks every model and a monthly budget.")
         } else {
             TimelineView(.periodic(from: .now, by: 30)) { timeline in
                 VStack(spacing: 0) {

@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   await ensureUserDefaults(user.id);
 
   if (isEmailEnabled()) {
-    // The trial cannot spend until this link is opened (src/lib/usage.ts), so
+    // The account cannot spend until this link is opened (src/lib/usage.ts), so
     // a disposable address no longer gets funded model access the instant it
     // is typed. Sign-in still works: the account is reachable and exportable,
     // it just can't cost anything yet.

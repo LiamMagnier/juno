@@ -57,7 +57,7 @@ const FAQ: { q: string; a: string; annualOnly?: boolean }[] = [
   },
   {
     q: "Which models come with each plan?",
-    a: "Free gets the everyday models — Claude Sonnet, GPT Mini, Gemini Flash and friends. Every paid plan unlocks the whole lineup, flagships included; Max tiers add more monthly headroom and the highest priority.",
+    a: "Every model needs a paid plan — Free is an account to import and browse, with no messages included. Every paid plan unlocks the whole lineup, flagships included; Max tiers add more monthly headroom and the highest priority.",
   },
   {
     q: "Is yearly billing cheaper?",

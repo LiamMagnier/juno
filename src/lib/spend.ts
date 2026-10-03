@@ -49,16 +49,13 @@ import {
  * margin; Max 100€ → 79€ → 55€; Max x20 200€ → 158€ → 110€). The 5-hour and
  * weekly windows derive from these proportionally.
  *
- * FREE is a trial, not revenue: 0.15€ covers the 15 messages
- * PLANS.FREE.monthlyMessages grants even on the priciest trial-tier model
- * (Sonnet 5 at $3/$15 ≈ 1¢ per catalog-average request), so the message
- * counter — not this ceiling — is the limit trial users meet; an all-cheap-
- * tier trial settles under 2¢. This figure only stops pathological
- * long-context runs. Owner's call: set back to 0 (with
- * PLANS.FREE.monthlyMessages) to end the trial.
+ * FREE is 0: a Free account cannot call any model (PLANS.FREE.monthlyMessages
+ * is 0 and effectiveMinPlan floors every model at Pro), and this ceiling is the
+ * spend-side twin of that paywall — any path that slipped past the message
+ * quota still meets a zero budget.
  */
 const BUDGET_EUR: Record<Plan, number | null> = {
-  FREE: 0.15,
+  FREE: 0,
   PRO: 11,
   MAX: 55,
   MAX20: 110,

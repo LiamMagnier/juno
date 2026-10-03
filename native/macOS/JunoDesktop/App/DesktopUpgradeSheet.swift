@@ -28,13 +28,12 @@ enum DesktopPlanCatalog {
 
     static let free = Plan(
         id: "FREE", name: "Free", price: 0,
-        tagline: "Try Juno with 15 messages a month.",
-        monthlyMessages: 15, voice: false,
+        tagline: "Create an account and look around.",
+        monthlyMessages: 0, voice: false,
         features: [
-            "15 messages a month to try Juno, free",
-            "Everyday models (Claude Sonnet, GPT Mini, Gemini Flash…)",
-            "Canvas, artifacts & file uploads",
+            "No messages included — chatting needs a paid plan",
             "Import your ChatGPT or Claude history",
+            "Browse the app and read your conversations",
             "Export everything you own, any time",
         ],
         rank: 0
@@ -114,7 +113,7 @@ enum DesktopPlanCatalog {
     /// plans are for sale (the Mac offers Monthly only, P3-8).
     static let questions: [(question: String, answer: String)] = [
         ("What does a plan actually buy?", "A monthly budget of real model usage, metered at the providers' own list prices. Every reply shows its cost on the receipt. Light models stretch the budget; frontier models spend it faster — your call, visibly."),
-        ("Which models come with each plan?", "Free gets the everyday models — Claude Sonnet, GPT Mini, Gemini Flash and friends. Every paid plan unlocks the whole lineup, flagships included; Max tiers add more monthly headroom and the highest priority."),
+        ("Which models come with each plan?", "Every model needs a paid plan — Free is an account to import and browse, with no messages included. Every paid plan unlocks the whole lineup, flagships included; Max tiers add more monthly headroom and the highest priority."),
         ("Can I change or cancel later?", "Any time. Upgrades apply instantly. If you cancel, paid features stay on until the end of the billing period you have already paid for, and your data stays yours to export."),
         ("What does fair use mean?", "Fair use keeps Juno fast for everyone. If your usage ever looks like it needs a conversation, we reach out first — nothing changes on your account without notice."),
     ]

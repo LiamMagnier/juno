@@ -137,6 +137,8 @@ if (!DB_URL) {
     const other = await prisma.user.create({
       data: { email: `ctx-other-${suffix}@example.invalid`, name: "Someone else", emailVerified: new Date() },
     });
+    // Every model needs a paid plan: a FREE account is refused at the paywall.
+    await prisma.subscription.create({ data: { userId: me.id, plan: "PRO", status: "ACTIVE" } });
     signedIn = { id: me.id, email: me.email!, name: me.name! };
 
     const libraryFile = await prisma.attachment.create({

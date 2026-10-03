@@ -265,14 +265,20 @@ if (!DB_URL) {
     assert.doesNotMatch(turn.system, /you cannot run code/);
   });
 
-  test("the same verified model on FREE, or with the sandbox down, carries none and is told so", async () => {
+  test("FREE never reaches the model; with the sandbox down, the turn carries no tool and is told so", async () => {
     await unverifyAll();
     await verify(MODEL);
     execAvailable = true;
+    // Every model needs a paid plan: FREE is refused at the paywall before
+    // any turn — and so any tool — is built.
     await signUp("free", "FREE");
-    const free = await send({ message: "Compute 6 times 7 in Python." }, TEXT_SCRIPT);
-    assert.equal(free.turn.toolSpecs, undefined);
-    assert.match(free.turn.system, /you cannot run code in this chat/);
+    const before = captured.length;
+    script = TEXT_SCRIPT;
+    const chatRoute = await import("@/app/api/chat/route");
+    const refused = await chatRoute.POST(request({ model: MODEL, message: "Compute 6 times 7 in Python." }));
+    assert.equal(refused.status, 402);
+    assert.equal(((await refused.json()) as { code?: string }).code, "PLAN_REQUIRED");
+    assert.equal(captured.length, before, "no model turn was built for FREE");
 
     execAvailable = false;
     await signUp("down", "PRO");

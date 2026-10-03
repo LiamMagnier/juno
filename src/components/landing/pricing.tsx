@@ -23,7 +23,7 @@ export function Pricing() {
             </div>
           ))}
         </div>
-        <p className="mt-6 max-w-prose text-ui leading-relaxed text-muted-foreground">{checkoutOpen ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time; changes apply instantly." : "Prices are per month, before VAT. Checkout opens soon. A free account works today, and everything carries over when you upgrade."}</p>
+        <p className="mt-6 max-w-prose text-ui leading-relaxed text-muted-foreground">{checkoutOpen ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time; changes apply instantly." : "Prices are per month, before VAT. Checkout opens soon. You can create an account today; chatting starts with a paid plan, and everything carries over when you upgrade."}</p>
       </Reveal>
     </Section>
   );

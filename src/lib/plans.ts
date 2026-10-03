@@ -41,29 +41,25 @@ export const PLANS: Record<Plan, PlanConfig> = {
     id: "FREE",
     name: "Free",
     price: 0,
-    tagline: `Try ${PRODUCT_NAME} with 15 messages a month.`,
-    // Trial allowance, not a free tier: enough to feel the product think
-    // before paying, small enough to cost cents. The count is enforced by the
-    // usual message quota; BUDGET_EUR.FREE in spend.ts is the matching hard
-    // spend ceiling, so a trial can never outrun what these 15 messages were
-    // sized for. Pricing is ultimately the owner's call — to end the trial,
-    // set this back to 0 and BUDGET_EUR.FREE back to 0 (and revert the
-    // effectiveMinPlan floor below).
-    monthlyMessages: 15,
+    tagline: "Create an account and look around.",
+    // An account, not a tier: every model needs a paid plan. The zero is
+    // enforced by the usual message quota (the composer and chat view read
+    // `limit === 0` as "this plan includes no messages"), BUDGET_EUR.FREE in
+    // spend.ts is the matching zero spend ceiling, and effectiveMinPlan below
+    // floors every model at Pro — three independent locks on the same rule.
+    monthlyMessages: 0,
     maxUploadMb: 5,
     maxOutputTokens: 8192,
     voice: false,
     canvas: true,
     webSearch: false,
-    // Leading with the allowance, because settings renders only the first
-    // three entries. "Everyday models" = the chat models the catalog itself
-    // prices at minPlan FREE (Sonnet, Haiku, GPT Mini, Gemini Flash…) — the
-    // set effectiveMinPlan below actually unlocks; flagships stay paid.
+    // Leading with the constraint, because settings renders only the first
+    // three entries. Nothing here may promise something that needs a model
+    // reply (canvas, artifacts, uploads): Free cannot send a message.
     features: [
-      `15 messages a month to try ${PRODUCT_NAME}, free`,
-      "Everyday models (Claude Sonnet, GPT Mini, Gemini Flash…)",
-      "Canvas, artifacts & file uploads",
+      "No messages included — chatting needs a paid plan",
       "Import your ChatGPT or Claude history",
+      "Browse the app and read your conversations",
       "Export everything you own, any time",
     ],
   },
@@ -170,18 +166,15 @@ export function planRank(plan: Plan): number {
 }
 
 /**
- * Policy: the catalog's own minPlan is enforced as-is. Models the catalog
- * prices at FREE are the trial tier — what PLANS.FREE.monthlyMessages and
- * BUDGET_EUR.FREE (spend.ts) let a signed-up user actually try — while
- * flagships keep their paid minimum. While FREE granted zero messages this
- * floored everything at Pro; to end the trial, restore
- * `planRank(minPlan) < planRank("PRO") ? "PRO" : minPlan`.
+ * Policy: every model is locked behind a paid plan — the effective minimum is
+ * never below Pro, even for models the catalog itself prices at FREE. Free
+ * accounts can sign up, import and browse, but cannot call any model.
  *
- * Kept as a function although it is now the identity: it is the single seam
- * every lock badge, picker and API gate reads the policy through.
+ * This is the single seam every lock badge, picker and API gate reads the
+ * policy through.
  */
 export function effectiveMinPlan(minPlan: Plan): Plan {
-  return minPlan;
+  return planRank(minPlan) < planRank("PRO") ? "PRO" : minPlan;
 }
 
 /** A model is usable if the user's plan meets the model's effective minimum. */

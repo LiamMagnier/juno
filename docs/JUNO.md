@@ -710,9 +710,9 @@ the model (see §6.3).
 ### 5.5 Quota, budget & moderation gates
 
 - **Message quota:** enforced by `consumeMessage` as a single atomic conditional
-  increment (no TOCTOU). **FREE = 15 messages a month** — a trial allowance sized to
-  `BUDGET_EUR.FREE` (`spend.ts`), so a trial can never outrun what those messages cost
-  (`PLANS.FREE.monthlyMessages` in `plans.ts`; set it back to 0 to end the trial).
+  increment (no TOCTOU). **FREE = 0 messages** — every model needs a paid plan
+  (`PLANS.FREE.monthlyMessages` in `plans.ts`, matched by `BUDGET_EUR.FREE = 0` in
+  `spend.ts` and the Pro floor in `effectiveMinPlan`).
   Paid plans are effectively unlimited on count and governed by the € **budget**
   instead. Over quota → **402** `QUOTA_EXCEEDED`.
 - **Budget:** `checkBudget` before the stream → **402** `budget_exceeded`; a hard
@@ -2224,10 +2224,10 @@ Prices below are the numbers rendered on `/upgrade`, in **EUR**. Note that
 | MAX20 ("Max x20") | 200 | unlimited | 50 | ✓ / ✓ / ✓ |
 | OWNER | – | unlimited | 1000 | ✓ / ✓ / ✓ (env `OWNER_EMAILS`, not purchasable) |
 
-**The catalog's own `minPlan` is enforced as-is** (`effectiveMinPlan` is now the identity,
-kept as the single seam every lock badge, picker and API gate reads): models the catalog
-prices at FREE — Sonnet, Haiku, GPT Mini, Gemini Flash, DeepSeek Flash… — are the trial
-tier a FREE account's 15 messages can use; flagships keep their paid minimum. Video
+**Every model needs a paid plan:** `effectiveMinPlan` floors every model's `minPlan` at
+PRO — the single seam every lock badge, picker and API gate reads — so a FREE account
+can sign up, import and browse but cannot call any model, even ones the catalog prices
+at FREE; flagships keep their own higher minimum. Video
 generation requires MAX. Gating is enforced server-side at the chat/generate routes and
 on upload size.
 

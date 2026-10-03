@@ -176,6 +176,8 @@ if (!DB_URL || !HOST || !TOKEN_FILE) {
     const user = await prisma.user.create({
       data: { email: `exec-route-${suffix}@example.invalid`, name: "Route tester", emailVerified: new Date() },
     });
+    // Every model needs a paid plan: a FREE account is refused at the paywall.
+    await prisma.subscription.create({ data: { userId: user.id, plan: "PRO", status: "ACTIVE" } });
     signedIn = { id: user.id, email: user.email, name: user.name! };
     const key = `test/${suffix}/${fileName}`;
     await putObject(key, Buffer.from(csv), "text/csv");

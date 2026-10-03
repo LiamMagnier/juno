@@ -71,7 +71,7 @@ export function AlevrHome() {
           <div className="alv-closing-construction"><Construction ticks={false} trajectory={false} axis={false} animate={false} /></div>
           <div className="alv-col">
             <h2 id="alv-closing-title" className="alv-display">Go further.</h2>
-            <p className="alv-lede">Start free, and upgrade only when you need more room.</p>
+            <p className="alv-lede">Create an account, then choose the plan that fits your work.</p>
             <div className="alv-actions">
               <PublicAction href="/sign-up">Create account</PublicAction>
               <PublicAction href="/download" secondary>Download for Mac</PublicAction>

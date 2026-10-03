@@ -174,8 +174,7 @@ export function BillingSection() {
           </p>
         ) : quota.plan === "FREE" ? (
           <p className="py-4 text-ui text-muted-foreground">
-            <span>Free includes</span> <span className="tabular-nums">{plan.monthlyMessages ?? 0}</span>{" "}
-            <span>messages a month on the everyday models. Pro unlocks every model and a monthly budget.</span>
+            <span>The Free plan doesn’t include any messages. Pro unlocks every model and a monthly budget.</span>
           </p>
         ) : (
           <>

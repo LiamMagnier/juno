@@ -58,6 +58,8 @@ if (!DB_URL || !canMockModules || !local) {
   async function person(label: string) {
     const tag = `${label}-${Date.now()}-${randomBytes(3).toString("hex")}`;
     const user = await db.user.create({ data: { email: `${tag}@example.invalid`, name: label, emailVerified: new Date() } });
+    // Every model needs a paid plan: a FREE account is refused at the paywall.
+    await db.subscription.create({ data: { userId: user.id, plan: "PRO", status: "ACTIVE" } });
     return { id: user.id, email: user.email!, name: user.name! };
   }
 

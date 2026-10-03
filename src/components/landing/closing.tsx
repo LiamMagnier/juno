@@ -6,7 +6,7 @@ export function Closing() {
   return (
     <section className="alevr-closing">
       <LandingColumn contentClassName="py-16 sm:py-24">
-        <Reveal><h2 className="max-w-2xl font-serif text-display font-medium tracking-tight sm:text-hero">Make room for your next idea.</h2><p className="mt-5 max-w-md text-body-lg text-muted-foreground">A free account gives you room to try Alevr.</p><div className="mt-8"><PublicAction href="/sign-up">Create account</PublicAction></div></Reveal>
+        <Reveal><h2 className="max-w-2xl font-serif text-display font-medium tracking-tight sm:text-hero">Make room for your next idea.</h2><p className="mt-5 max-w-md text-body-lg text-muted-foreground">Create an account, then pick a plan to start working.</p><div className="mt-8"><PublicAction href="/sign-up">Create account</PublicAction></div></Reveal>
       </LandingColumn>
     </section>
   );

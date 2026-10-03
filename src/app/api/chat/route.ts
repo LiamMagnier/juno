@@ -859,6 +859,17 @@ async function handleChat(req: Request) {
     eurPerUsd: eurPerUsd(),
   });
 
+  // Every model needs a paid plan. A plan that includes no messages is refused
+  // here, before model resolution: past this point Auto finds no eligible model
+  // and the reader got "No AI model is available for your plan" — a 503 that
+  // reads like an outage — or a per-model 403, instead of the paywall.
+  if (PLANS[plan].monthlyMessages === 0) {
+    return NextResponse.json(
+      { error: "budget_exceeded", code: "PLAN_REQUIRED", message: budgetExceededMessage(plan) },
+      { status: 402 }
+    );
+  }
+
   // Resolve the project assistant before any tool is admitted. Native clients
   // already hide denied controls, but the server is the trust boundary and the
   // web/iOS clients must receive identical enforcement even on an older build.
