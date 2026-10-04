@@ -154,8 +154,16 @@ const nextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          // Voice mode needs the microphone; everything else stays off.
-          { key: "Permissions-Policy", value: "camera=(), geolocation=(), payment=(), microphone=(self)" },
+          // Voice mode needs the microphone. Payments are allowed for this
+          // origin and Stripe's checkout frames only: `payment=()` switched off
+          // the Payment Request API everywhere, which is what Apple Pay and
+          // Google Pay ride on, so the in-app checkout offered cards alone.
+          // Everything else stays off.
+          {
+            key: "Permissions-Policy",
+            value:
+              'camera=(), geolocation=(), payment=(self "https://js.stripe.com" "https://checkout.stripe.com" "https://hooks.stripe.com"), microphone=(self)',
+          },
           // Ignored over plain http (dev); enforced once served over https.
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
