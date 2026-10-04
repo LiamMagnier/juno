@@ -1,3 +1,4 @@
+import { chatSearchAvailable } from "@/lib/web/search";
 import { apiV1Error, apiV1Json, CONTRACT_VERSION } from "@/lib/api-v1";
 import { requireNativeRequest } from "@/lib/native-request";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     // Must be built with the same plan and order as GET /models, or a client
     // comparing manifest versions would refetch the catalog forever.
     const capabilityProbes = await loadModelCapabilityMap(models.map((model) => model.id));
-    const modelCatalog = nativeModelCatalog(models, plan, nativeModelCapabilityVerdicts(models, capabilityProbes));
+    const modelCatalog = nativeModelCatalog(models, plan, nativeModelCapabilityVerdicts(models, capabilityProbes), { alevrSearch: chatSearchAvailable() });
     return apiV1Json({
       profile: { id: current.user.id, name: current.user.name, email: current.user.email, image: current.user.image },
       subscription: subscription ? {

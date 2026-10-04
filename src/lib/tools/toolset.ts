@@ -64,6 +64,32 @@ function resolvedJunoTool(spec: ToolSpec): ResolvedTool {
   };
 }
 
+/**
+ * A toolset of ready specs and nothing else — specs a turn has already bound
+ * to its state (`src/lib/search/alevr/turn.ts`). The dispatcher runs each one
+ * itself, through its broker port, exactly as it runs a registry spec; the
+ * cross-provider search harness hands one of these to every adapter.
+ */
+export function specChatToolset(specs: readonly ToolSpec[]): ChatToolset {
+  const byName = new Map(specs.map((spec) => [spec.id, spec]));
+  return {
+    tools: specs.map(junoFunctionTool),
+    connectors: [],
+    resolve: (name) => {
+      const spec = byName.get(name);
+      return spec ? resolvedJunoTool(spec) : undefined;
+    },
+    labelFor: (name) => byName.get(name)?.title ?? name,
+    accessFor: (name) => {
+      const spec = byName.get(name);
+      return spec ? (spec.risk === "read" ? "read" : "write") : "unknown";
+    },
+    // Every spec here is dispatched directly; this path is never a way around the broker.
+    execute: async () => ({ text: NOT_DISPATCHED_TEXT, body: NOT_DISPATCHED_TEXT, ok: false }),
+    close: async () => {},
+  };
+}
+
 /** Native tools ask for approval on their own and carry no dispatcher timer; their own flows bound them. */
 const NATIVE_TIMEOUT_MS = 60_000;
 

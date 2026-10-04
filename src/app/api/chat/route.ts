@@ -98,6 +98,9 @@ import { researchEffortFor } from "@/lib/research/auto-effort";
 import { recordCitationAudit } from "@/lib/research/claims";
 import { finalizeChatResearchRun } from "@/lib/research/run";
 import { isWebSearchConfigured } from "@/lib/web-search";
+import { nativeSearchPolicy, planTurnSearch } from "@/lib/search/alevr/policy";
+import { createAlevrSearchTurn } from "@/lib/search/alevr/turn";
+import { chatSearchAvailable } from "@/lib/web/search";
 import { createSseSender, encodeChunk, SSE_HEADERS, type SseSender } from "@/lib/chat-stream";
 import { createStreamLog, shouldLogStream, type StreamLog } from "@/lib/chat/stream-log";
 import { appendChatStreamEvents, sweepChatStreamEvents } from "@/lib/chat-stream-log-store";
@@ -1036,6 +1039,8 @@ async function handleChat(req: Request) {
         plan,
         hasImages,
         wantsWebSearch: !!input.webSearch,
+        // Voice keeps the provider's own search (policy.ts), so it never widens the pool.
+        alevrSearch: !input.voiceMode && chatSearchAvailable(),
       });
       modelInfo = pick.model;
       autoReasoningEffort = pick.reasoningEffort;
@@ -2610,11 +2615,23 @@ async function handleChat(req: Request) {
   const researchRequested = !!input.deepResearch && !input.voiceMode
     && workspacePermits(workspaceConfig, "deepResearch");
   const researchActive = researchRequested && PLANS[plan].webSearch && isWebSearchConfigured();
-  // Native web search: the model searches via its own tool/grounding while it
-  // streams (Gemini Google Search, Claude web_search, Grok Live Search). We
-  // collect the sources it returns from the stream below — no third-party search.
-  const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch
-    && modelInfo.webSearch && workspacePermits(workspaceConfig, "webSearch");
+  // Web search (BRIEF §15): Alevr Search's provider-neutral tools on every
+  // tool-capable model when a backend is configured (`useAlevrSearch`); the
+  // provider's own search (Gemini grounding, Claude web_search, Grok Live
+  // Search…) only as the fallback, or beside it when the operator asks
+  // (`ALEVR_SEARCH_PROVIDER_NATIVE`). `src/lib/search/alevr/policy.ts`.
+  const webRequested = !researchActive && !!input.webSearch && PLANS[plan].webSearch
+    && workspacePermits(workspaceConfig, "webSearch");
+  const searchPlan = planTurnSearch({
+    webRequested,
+    model: modelInfo,
+    alevrAvailable: chatSearchAvailable(),
+    voice: !!input.voiceMode,
+    private: false,
+    policy: nativeSearchPolicy(),
+  });
+  const useWebSearch = searchPlan.native;
+  const useAlevrSearch = searchPlan.alevr;
   const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
 
@@ -2653,7 +2670,7 @@ async function handleChat(req: Request) {
         slug: turnSkillSlug,
         projectId: conversation.projectId,
         capabilities: {
-          webSearch: useWebSearch,
+          webSearch: useWebSearch || useAlevrSearch,
           canvas: canvasOn,
           documents: attachmentToolToggles.documents,
           images: attachmentToolToggles.images,
@@ -2719,6 +2736,9 @@ async function handleChat(req: Request) {
   const untrustedContentInTurn =
     activeConnectors.length > 0 ||
     useWebSearch ||
+    // Alevr Search hands the model pages strangers wrote: the rule that reads
+    // the envelope is on, and the turn writes no memory (INV-34).
+    useAlevrSearch ||
     researchActive ||
     !!projectKnowledge ||
     !!attachmentKnowledge ||
@@ -2869,6 +2889,26 @@ async function handleChat(req: Request) {
     executionGrant.exec.length + executionGrant.skills.length > 0
       ? await openGrantedProviders(installedToolProviders, toolTurn, executionGrant)
       : null;
+  /*
+   * Alevr Search's tools for this turn, bound to its ledger, taint, limits and
+   * sources (`src/lib/search/alevr/turn.ts`). A skill that names its tools
+   * keeps the family only when it asked for web search or page reading.
+   */
+  const alevrSearchTurn =
+    useAlevrSearch && narrowRuntimeToolsForSkill(["web_search", "web_fetch"], appliedSkill).length > 0
+      ? createAlevrSearchTurn({
+          userId: user.id,
+          conversationId: conversation.id,
+          private: false,
+          effort: effectiveReasoningEffort(
+            modelInfo,
+            autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
+          ),
+          voice: !!input.voiceMode,
+          userTexts: input.message ? [input.message] : [],
+          staticContent: untrustedContentInTurn,
+        })
+      : null;
   const verifiedAlternatives =
     execution.codeExecution === "unverified_model"
       ? MODEL_LIST.filter(
@@ -2915,7 +2955,8 @@ async function handleChat(req: Request) {
       appendSkillBlock(
         composeSystemPrompt({
           base: baseSystem,
-          webSearch: useWebSearch,
+          webSearch: useWebSearch && !useAlevrSearch,
+          alevrSearch: useAlevrSearch,
           documentTool: attachmentToolToggles.documents,
           imageTool: attachmentToolToggles.images,
           codeTool: attachmentToolToggles.code,
@@ -3436,11 +3477,11 @@ async function handleChat(req: Request) {
           detail: "Instant — no extra reasoning for this prompt",
         });
       }
-      if (useWebSearch) {
+      if (useWebSearch || useAlevrSearch) {
         sendActivity({
           kind: "search",
           title: "Preparing web search",
-          detail: searchToolLabel(modelInfo.provider),
+          detail: useAlevrSearch ? "Alevr Search" : searchToolLabel(modelInfo.provider),
         });
       }
 
@@ -3807,10 +3848,27 @@ async function handleChat(req: Request) {
           nativeTools: nativeTools.length > 0 ? nativeTools : undefined,
           // The execution and skill tools this turn was granted
           // (`executionEntitlements` above), run behind the runtime broker.
-          toolSpecs: toolProviderSessions?.specs.length ? toolProviderSessions.specs : undefined,
+          toolSpecs:
+            (toolProviderSessions?.specs.length ?? 0) + (alevrSearchTurn?.specs.length ?? 0) > 0
+              ? [...(toolProviderSessions?.specs ?? []), ...(alevrSearchTurn?.specs ?? [])]
+              : undefined,
         });
         for await (const ev of modelStream) {
           stallWatchdog.touch();
+          // The sources Alevr Search's tools produced since the last event.
+          for (const batch of alevrSearchTurn?.drainSources() ?? []) {
+            const found = acc.apply({ type: "sources", sources: batch.sources, origin: batch.origin });
+            if (found.kind !== "sources") continue;
+            for (const source of found.added) {
+              sendActivity({
+                kind: "visit",
+                title: "Visited source",
+                detail: truncate(source.title && source.title !== source.url ? source.title : sourceHost(source.url), 96),
+                url: source.url,
+              });
+            }
+            if (found.all.length) send({ type: "sources", sources: found.all });
+          }
           // While a call runs the turn waits on the tool, which has its own
           // bound: the watchdog is held from its `running` act to its result.
           toolWatch.observe(ev);

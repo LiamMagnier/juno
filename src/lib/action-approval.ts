@@ -135,6 +135,10 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // `unknown`, which asks.
   "juno_runtime:web_fetch": "read_only",
   "juno_runtime:web_search": "read_only",
+  // Alevr Search (BRIEF §15): a news search and a search inside one page the
+  // provenance ledger already allows are reads, like the two above.
+  "juno_runtime:search_news": "read_only",
+  "juno_runtime:find_in_page": "read_only",
   "juno_runtime:search_chats": "read_only",
   // A remote sandbox with no network, on the user's own files (DECISIONS §4b).
   // That rests on the isolation being confirmed, which is a precondition of

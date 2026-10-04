@@ -38,7 +38,11 @@ test("the route decides execution tools from the entitlement rows and the verifi
   assert.match(route, /const toolCallingVerdict = modelToolCallingVerdict\(modelInfo, capabilityProbes, new Date\(\), \{ proMode: useProMode \}\);/);
   assert.match(route, /const execution = executionEntitlements\(\{/);
   assert.match(route, /attachmentToolToggles\.code = execution\.legacyCodeInterpreter;/);
-  assert.match(route, /toolSpecs: toolProviderSessions\?\.specs\.length \? toolProviderSessions\.specs : undefined,/);
+  // The granted execution specs, then Alevr Search's bound tools (BRIEF §15).
+  assert.match(
+    route,
+    /toolSpecs:\s*\(toolProviderSessions\?\.specs\.length \?\? 0\) \+ \(alevrSearchTurn\?\.specs\.length \?\? 0\) > 0\s*\? \[\.\.\.\(toolProviderSessions\?\.specs \?\? \[\]\), \.\.\.\(alevrSearchTurn\?\.specs \?\? \[\]\)\]\s*: undefined,/,
+  );
   assert.match(route, /toolWatch\.observe\(ev\);/);
   // Providers hear of a skill only once it APPLIED (blocked, unscanned and
   // consent-pending skills are not armed), never the slug the request named.

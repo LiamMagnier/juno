@@ -17,9 +17,9 @@ import { PORTABLE_SCHEMA_KEYWORDS, defineTool, portableSchemaProblem, type ToolS
 
 const root = process.cwd();
 
-test("the registry holds the ten tools, each id unique and a valid function name", () => {
+test("the registry holds the twelve tools, each id unique and a valid function name", () => {
   assert.deepEqual([...JUNO_TOOL_IDS], [
-    "web_search", "web_fetch", "read_document", "inspect_image", "run_code",
+    "web_search", "search_news", "web_fetch", "find_in_page", "read_document", "inspect_image", "run_code",
     "search_chats", "current_time", "calculate", "suggest_research", "start_task",
   ]);
   assert.equal(new Set(JUNO_TOOL_IDS).size, JUNO_TOOL_IDS.length);
@@ -78,7 +78,9 @@ test("defineTool refuses a non-portable keyword or a bad name at import", () => 
 test("risk, parallelism, timeouts, icons, brokers and dedupe are as the spec tables say", () => {
   const expected: Record<string, [ToolSpec["risk"], boolean, number, ToolSpec["icon"], ToolSpec["broker"], boolean]> = {
     web_search: ["read", true, 15_000, "search", "juno_runtime", true],
+    search_news: ["read", true, 15_000, "search", "juno_runtime", true],
     web_fetch: ["read", true, 20_000, "globe", "juno_runtime", true],
+    find_in_page: ["read", true, 20_000, "search", "juno_runtime", true],
     read_document: ["read", true, 30_000, "document", "juno_runtime", true],
     inspect_image: ["read", true, 30_000, "image", "juno_runtime", true],
     run_code: ["read", false, 180_000, "code", "juno_runtime", true],

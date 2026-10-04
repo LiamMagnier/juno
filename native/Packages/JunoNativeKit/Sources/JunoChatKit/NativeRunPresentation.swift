@@ -84,9 +84,11 @@ public enum NativeToolPresentation {
         switch call.tool {
         case "web_search", "provider_web_search":
             return query(call).map { line(["Searching the web for"], .quote($0)) } ?? single("Searching the web")
+        case "search_news":
+            return query(call).map { line(["Searching the news for"], .quote($0)) } ?? single("Searching the news")
         case "provider_x_search":
             return query(call).map { line(["Searching X for"], .quote($0)) } ?? single("Searching X")
-        case "web_fetch":
+        case "web_fetch", "find_in_page":
             return domain(call).map { line(["Reading"], .domain($0)) } ?? single("Reading a page")
         case "read_document":
             if call.args["action"] == "search" {
@@ -138,9 +140,11 @@ public enum NativeToolPresentation {
         switch call.tool {
         case "web_search", "provider_web_search":
             return query(call).map { line(["Searched the web for"], .quote($0)) } ?? single("Searched the web")
+        case "search_news":
+            return query(call).map { line(["Searched the news for"], .quote($0)) } ?? single("Searched the news")
         case "provider_x_search":
             return query(call).map { line(["Searched X for"], .quote($0)) } ?? single("Searched X")
-        case "web_fetch":
+        case "web_fetch", "find_in_page":
             return domain(call).map { line(["Read"], .domain($0)) } ?? single("Read a page")
         case "read_document":
             return file(call).map { line(["Read"], .file($0)) } ?? single("Read a document")

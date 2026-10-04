@@ -572,6 +572,10 @@ const connector: Entry = {
 
 const REGISTRY: Record<CanonicalToolId, Entry> = {
   web_search: webSearch,
+  // A news search reads as a search; finding in a page reads as reading it
+  // (its row names the page's host, as `web_fetch`'s does).
+  search_news: webSearch,
+  find_in_page: webFetch,
   provider_web_search: webSearch,
   provider_x_search: xSearch,
   web_fetch: webFetch,
