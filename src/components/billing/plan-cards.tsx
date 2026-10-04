@@ -33,12 +33,17 @@ import { cn } from "@/lib/utils";
 
 export interface PlanCardItem {
   plan: PlanConfig;
-  /** Overrides `plan.name` — /upgrade shows one "Max" card that switches tier. */
+  /** Overrides `plan.name`. */
   name?: string;
-  /** Formatted price. Defaults to `${plan.price} €`. */
-  price?: string;
-  /** The caption after the price — "/ mo", "HT / yr". */
+  /**
+   * Formatted, tax-included price (planPriceParts() in price-display.ts).
+   * Required: the HT figure in `plan.price` must never reach a consumer.
+   */
+  price: string;
+  /** The caption after the price: "/mo incl. VAT". */
   priceSuffix?: string;
+  /** One quiet line under the price: the yearly charge on annual billing. */
+  priceNote?: string | null;
   tagline?: string;
   features?: readonly string[];
   /** The tier the page is steering toward: bigger throw, coral edge, a badge. */
@@ -91,8 +96,8 @@ export function PlanCards({
 function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; action: ReactNode }) {
   const { plan, recommended, current, header } = item;
   const name = item.name ?? plan.name;
-  const price = item.price ?? `${plan.price} €`;
-  const suffix = item.priceSuffix ?? "/ mo";
+  const price = item.price;
+  const suffix = item.priceSuffix ?? "/mo";
   const tagline = item.tagline ?? plan.tagline;
   const features = item.features ?? plan.features;
 
@@ -132,8 +137,11 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
         <span className="text-display tabular-nums">{price}</span>
         <span className="font-mono text-caption text-muted-foreground">{suffix}</span>
       </p>
+      {/* Reserved on every card, so four cards keep one baseline whether or
+          not the interval adds a yearly line. */}
+      <p className="mt-1 min-h-5 text-caption tabular-nums text-muted-foreground">{item.priceNote ?? ""}</p>
 
-      <ul className="mt-5 space-y-2.5">
+      <ul className="mt-4 space-y-2.5">
         {features.map((feature) => (
           <li key={feature} className="flex items-start gap-2 text-ui">
             <StatusIcons.success className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

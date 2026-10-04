@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { PLAN_LIST } from "@/lib/plans";
+import { withVat } from "@/lib/price-display";
 import { env } from "@/lib/env";
 import { AlevrHome } from "@/components/home/home-page";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -80,7 +81,8 @@ function structuredData(): string {
           "@type": "Offer",
           name: plan.name,
           description: plan.tagline,
-          price: plan.price.toFixed(2),
+          // Tax-included, like every price a consumer reads (price-display.ts).
+          price: withVat(plan.price).toFixed(2),
           priceCurrency: "EUR",
           url: `${base}/#pricing`,
           availability: "https://schema.org/InStock",

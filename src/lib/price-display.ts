@@ -79,3 +79,41 @@ export function vatNote(locale = "en"): string {
   }
   return "Prices include 20% French VAT. Checkout shows the exact amount for your country before you pay; EU businesses with a VAT number pay excl. VAT (reverse charge).";
 }
+
+/** The suffix after a zero price, or any price with no VAT on it. */
+export function perMonthPlainSuffix(locale = "en"): string {
+  return locale.startsWith("fr") ? "/mois" : locale.startsWith("de") ? "/Monat" : "/mo";
+}
+
+/** The line under an annual price: what the year actually charges. */
+export function billedYearlyNote(yearly: string, locale = "en"): string {
+  if (locale.startsWith("fr")) return `${yearly} TTC facturés une fois par an`;
+  if (locale.startsWith("de")) return `${yearly} inkl. MwSt. einmal jährlich`;
+  return `${yearly} incl. VAT, billed once a year`;
+}
+
+export type BillingInterval = "month" | "year";
+
+export interface PlanPriceParts {
+  /** The big figure: TTC per month (on annual billing, the year over twelve). */
+  amount: string;
+  /** What follows it: "/mo incl. VAT". */
+  suffix: string;
+  /** Annual billing only: the amount actually charged once a year. */
+  note: string | null;
+}
+
+/**
+ * Every plan price a person reads, in one call: TTC, per month, and on annual
+ * billing the ten-months-for-twelve figure with the yearly charge beside it.
+ */
+export function planPriceParts(htEurPerMonth: number, interval: BillingInterval = "month", locale = "en"): PlanPriceParts {
+  if (htEurPerMonth <= 0) {
+    return { amount: formatEur(0, locale), suffix: perMonthPlainSuffix(locale), note: null };
+  }
+  const p = displayPrice(htEurPerMonth, locale);
+  if (interval === "year") {
+    return { amount: p.yearlyPerMonth, suffix: perMonthSuffix(locale), note: billedYearlyNote(p.yearly, locale) };
+  }
+  return { amount: p.monthly, suffix: perMonthSuffix(locale), note: null };
+}
