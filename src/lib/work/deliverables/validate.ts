@@ -426,7 +426,10 @@ function packageBudgetProblems(zip: JSZip): string[] {
 }
 
 function normalizeZipTarget(baseDirectory: string, target: string): string | null {
-  const stack = baseDirectory.split("/").filter(Boolean);
+  // OPC: a target with a leading "/" is relative to the package root, not to
+  // the part (pptxgenjs writes chart targets that way); resolving it against
+  // the part's folder reported every chart as a missing asset.
+  const stack = target.startsWith("/") ? [] : baseDirectory.split("/").filter(Boolean);
   for (const segment of target.replace(/^\/+/, "").split("/")) {
     if (!segment || segment === ".") continue;
     if (segment === "..") {

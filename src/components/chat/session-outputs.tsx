@@ -58,6 +58,9 @@ const TYPE_LABEL: Record<ArtifactType, string> = {
   CODE: "Code",
   SVG: "Image",
   MERMAID: "Diagram",
+  SPREADSHEET: "Spreadsheet",
+  DOCUMENT: "Document",
+  PRESENTATION: "Deck",
   DESIGN: "Design",
 };
 

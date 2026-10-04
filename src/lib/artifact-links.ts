@@ -170,6 +170,9 @@ export const ARTIFACT_NOUN: Record<ArtifactType, string> = {
   REACT: "App",
   CODE: "Code",
   MERMAID: "Diagram",
+  SPREADSHEET: "Spreadsheet",
+  DOCUMENT: "Document",
+  PRESENTATION: "Deck",
   SVG: "Image",
   MARKDOWN: "Doc",
 };

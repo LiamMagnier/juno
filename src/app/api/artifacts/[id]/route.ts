@@ -70,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // A design body must be a document the editor can open (audit B2): this is
   // the route restore and the Mac and iPhone Save write a whole design through.
   const body = storableContent(artifact.type, parsed.data.content);
-  if (!body.ok) return NextResponse.json({ error: body.error, code: "invalid_design", issues: body.issues }, { status: 422 });
+  if (!body.ok) return NextResponse.json({ error: body.error, code: artifact.type === "DESIGN" ? "invalid_design" : "invalid_body", issues: body.issues }, { status: 422 });
 
   try {
     await saveArtifactVersion({

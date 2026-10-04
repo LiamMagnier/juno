@@ -24,6 +24,7 @@ import {
   type ArtifactTx,
 } from "@/lib/artifact-writes";
 import type { ParsedArtifact } from "@/lib/message-content";
+import { canonicalSemanticBody, isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import type { ClientArtifact } from "@/types/chat";
 
 export { ArtifactVersionConflictError } from "@/lib/artifact-writes";
@@ -44,11 +45,38 @@ const storedForms = new WeakMap<ParsedArtifact, ParsedArtifact | null>();
  * The failure is logged with its reason so it is diagnosable rather than silent.
  */
 function normalizeForStorage(artifact: ParsedArtifact): ParsedArtifact | null {
+  if (isSemanticArtifactType(artifact.type)) {
+    if (storedForms.has(artifact)) return storedForms.get(artifact) ?? null;
+    const stored = canonicalForStorage(artifact);
+    storedForms.set(artifact, stored);
+    return stored;
+  }
   if (artifact.type !== "DESIGN") return artifact;
   if (storedForms.has(artifact)) return storedForms.get(artifact) ?? null;
   const stored = expandForStorage(artifact);
   storedForms.set(artifact, stored);
   return stored;
+}
+
+/**
+ * A workbook, document or deck is stored as its validated model (ids assigned,
+ * formulas canonical), the same body every later operation reads. Chat
+ * verification has already refused one that does not validate; a caller that
+ * skipped it gets the same refusal here, logged, rather than an unreadable row.
+ */
+function canonicalForStorage(artifact: ParsedArtifact): ParsedArtifact | null {
+  if (!isSemanticArtifactType(artifact.type)) return artifact;
+  try {
+    const content = canonicalSemanticBody(artifact.type, artifact.content);
+    if (content.length > CHAT_ARTIFACT_MAX_CHARS) {
+      console.warn(`[artifacts] dropped ${artifact.type} "${artifact.identifier}": ${content.length} characters stored`);
+      return null;
+    }
+    return { ...artifact, content };
+  } catch (error) {
+    console.warn(`[artifacts] dropped an unreadable ${artifact.type} "${artifact.identifier}": ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 function expandForStorage(artifact: ParsedArtifact): ParsedArtifact | null {

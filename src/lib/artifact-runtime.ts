@@ -7,7 +7,7 @@ import type { ArtifactType } from "@/lib/message-content";
  *                panel (JavaScript, TypeScript, Python via Pyodide).
  *  - "none"    → no in-browser runtime; the code is shown, not run.
  */
-export type RunMode = "web" | "console" | "none" | "design";
+export type RunMode = "web" | "console" | "none" | "design" | "semantic";
 
 export interface RuntimeInfo {
   mode: RunMode;
@@ -96,6 +96,11 @@ export function runtimeFor(type: ArtifactType, language?: string | null): Runtim
   // Registry types with a fixed meaning win first. A design document is data
   // the editor owns, not code the sandbox executes.
   if (type === "DESIGN") return { mode: "design", lang: "design", label: "Design", runVerb: "Edit" };
+  // A workbook, document or deck is a model the canvas renders natively
+  // (components/semantic), never code a sandbox runs.
+  if (type === "SPREADSHEET") return { mode: "semantic", lang: "json", label: "Spreadsheet", runVerb: "Edit" };
+  if (type === "DOCUMENT") return { mode: "semantic", lang: "json", label: "Document", runVerb: "Edit" };
+  if (type === "PRESENTATION") return { mode: "semantic", lang: "json", label: "Deck", runVerb: "Edit" };
   if (type === "REACT") return { mode: "web", lang: "tsx", label: "React", runVerb: "Preview" };
   if (type === "HTML") return { mode: "web", lang: "html", label: "HTML", runVerb: "Preview" };
   if (type === "SVG") return { mode: "web", lang: "svg", label: "SVG", runVerb: "Preview" };

@@ -1,4 +1,8 @@
 import "server-only";
+import { legacyChatClientForOrigin } from "@/lib/chat-origin";
+import { buildSemanticEditPrompt } from "@/lib/artifact-ops";
+import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
+import { safeOutline } from "./semantic";
 import { backgroundWorkHint, detectBackgroundWork } from "@/lib/chat/work-intent";
 import { buildSystemPromptSections } from "@/lib/anthropic";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -46,6 +50,7 @@ export function composeTurnSystem({
   attachmentToolToggles,
   executionSections,
   artifactEditTarget,
+  semanticArtifactSection,
   appliedSkill,
   agentContext,
   roomSetup,
@@ -64,6 +69,8 @@ export function composeTurnSystem({
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
   executionSections: string[];
   artifactEditTarget: (ArtifactSourceForEdit & { id: string }) | null;
+  /** This chat's workbooks, documents and decks as addressable outlines (semantic.ts). */
+  semanticArtifactSection: string | null;
   appliedSkill: TurnSkill["appliedSkill"];
   agentContext: TurnApprovals["agentContext"];
   roomSetup: RoomTurnSetup | null;
@@ -81,6 +88,8 @@ export function composeTurnSystem({
     memoryScope: memoryProfile.summaryScope,
     memoryEnabled,
     canvas: canvasOn,
+    // Installed macOS/iOS builds cannot show semantic artifacts yet.
+    semanticArtifacts: legacyChatClientForOrigin(input) === "web",
     voiceMode: input.voiceMode,
     projectContext: promptContext,
     untrustedContent: untrustedContentInTurn,
@@ -91,7 +100,13 @@ export function composeTurnSystem({
     : baseSystemSections.stable;
   const targetedArtifactEditPrompt =
     artifactEditTarget && input.artifactEdit
-      ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
+      ? isSemanticArtifactType(artifactEditTarget.type)
+        ? buildSemanticEditPrompt(
+            artifactEditTarget,
+            input.artifactEdit,
+            safeOutline(artifactEditTarget.type, artifactEditTarget.content, 16_000)
+          )
+        : buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
   // Work as an internal runtime (src/lib/chat/work-intent.ts): a message that
   // reads as a long multi-deliverable job gets one line telling the model so,
@@ -102,7 +117,7 @@ export function composeTurnSystem({
     appendAgentBlock(
       appendSkillBlock(
         composeSystemPrompt({
-          base: baseSystem,
+          base: semanticArtifactSection ? `${baseSystem}\n\n${semanticArtifactSection}` : baseSystem,
           webSearch: useWebSearch && !useAlevrSearch,
           alevrSearch: useAlevrSearch,
           documentTool: attachmentToolToggles.documents,

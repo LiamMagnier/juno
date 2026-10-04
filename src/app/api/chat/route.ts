@@ -13,6 +13,7 @@ import { resolveTurnTokens } from "@/lib/chat/turn/context";
 import { runPrivateTurn } from "@/lib/chat/turn/private-turn";
 import { acceptTurn } from "@/lib/chat/turn/accept";
 import { resolveHistory } from "@/lib/chat/turn/history";
+import { semanticArtifactContext } from "@/lib/chat/turn/semantic";
 import { resolveMemory } from "@/lib/chat/turn/memory";
 import { resolveProjectContext } from "@/lib/chat/turn/project-context";
 import { resolveCapabilities, turnCarriesUntrustedContent } from "@/lib/chat/turn/capabilities";
@@ -252,6 +253,11 @@ async function handleChat(req: Request) {
       attachmentToolToggles,
     });
 
+    // The CURRENT versions of this chat's workbooks, documents and decks, as
+    // addressable outlines, so an edit is a few operations rather than a
+    // regenerated body (src/lib/artifact-ops.ts).
+    const semanticArtifactSection =
+      canvasOn && !artifactEditTarget ? await semanticArtifactContext(conversation.id, user.id) : null;
     const { system, baseSystemSections } = composeTurnSystem({
       user,
       input,
@@ -266,6 +272,7 @@ async function handleChat(req: Request) {
       attachmentToolToggles,
       executionSections: tools.executionSections,
       artifactEditTarget,
+      semanticArtifactSection,
       appliedSkill,
       agentContext,
       roomSetup,

@@ -1,4 +1,8 @@
 import "server-only";
+import { applySemanticEditReply, resolveArtifactOps } from "@/lib/artifact-ops";
+import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
+import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
+import { loadOpsTarget } from "./semantic";
 import type { TurnModel } from "./model";
 import { classifyProviderError } from "@/lib/provider-error";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
@@ -623,13 +627,46 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       // already succeeded.
       stallWatchdog.stop();
 
-      if (artifactEditTarget) {
+      if (artifactEditTarget && isSemanticArtifactType(artifactEditTarget.type)) {
+        // A workbook, document or deck takes operations, applied by the
+        // engine to the selected version; a failure is the same refusal a
+        // bad patch is.
+        let edited: ReturnType<typeof applySemanticEditReply>;
+        try {
+          edited = applySemanticEditReply(artifactEditTarget, acc.text, { author: user.name ?? undefined });
+        } catch (error) {
+          throw new ArtifactPatchError(error instanceof SemanticError ? error.message : "The edit could not be applied.");
+        }
+        targetedArtifactContent = edited.content;
+        acc.replaceText(
+          buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, edited.summary ?? edited.changes.join("; "))
+        );
+      } else if (artifactEditTarget) {
         const patch = parseArtifactPatch(acc.text);
         targetedArtifactContent = applyArtifactPatch(artifactEditTarget.content, patch);
         // Replaces the persisted text but NOT the emitted-character count the
         // accumulator holds: the model wrote the patch, not the whole
         // artifact, and billing the rebuilt text inflates the receipt.
         acc.replaceText(buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, patch.summary));
+      } else {
+        // Operations on an existing workbook, document or deck in an ordinary
+        // turn: applied to its current version and rewritten into the
+        // artifact tag, so verification, the re-emit guard and versioning
+        // below treat the result like any other revision.
+        const resolvedOps = await resolveArtifactOps(
+          acc.text,
+          (identifier) => loadOpsTarget(conversationId, identifier, user.id),
+          { author: user.name ?? undefined }
+        );
+        if (resolvedOps) {
+          acc.replaceText(resolvedOps.text);
+          for (const applied of resolvedOps.applied) {
+            sendActivity({ kind: "artifact", title: `Edited ${applied.title}`, detail: applied.changes.slice(0, 3).join(" · ") });
+          }
+          for (const failed of resolvedOps.failed) {
+            sendActivity({ kind: "artifact", title: "Edit not applied", detail: failed.reason });
+          }
+        }
       }
 
       const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);

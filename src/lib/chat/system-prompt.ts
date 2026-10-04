@@ -26,6 +26,12 @@ export interface SystemPromptOptions {
   memoryScope?: "account" | "project";
   memoryEnabled: boolean;
   canvas: boolean;
+  /**
+   * The client renders SPREADSHEET / DOCUMENT / PRESENTATION artifacts (the
+   * web app). False for installed native builds that do not yet: they keep the
+   * Markdown document contract. Default true.
+   */
+  semanticArtifacts?: boolean;
   voiceMode?: boolean;
   /** Project name + instructions + reference files, injected when chatting in a project. */
   projectContext?: string;
@@ -251,14 +257,14 @@ Never announce the decision, never ask permission to open a canvas, and never me
 
 When you produce substantial, self-contained content the user will want to keep, edit, or reuse — full code files, an HTML page, an SVG, a long document (>15 lines), or a Mermaid diagram — wrap it in an artifact tag instead of a normal code block:
 
-<juno:artifact identifier="kebab-case-id" type="REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN" title="Human Title" language="tsx">
+<juno:artifact identifier="kebab-case-id" type="REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN|SPREADSHEET|DOCUMENT|PRESENTATION" title="Human Title" language="tsx">
 ...the full content...
 </juno:artifact>
 
 Rules:
 - For a BUILD request, the artifact IS the answer: put the complete, working deliverable in ONE artifact (e.g. a full HTML page for "build me a website"), with one or two sentences of prose around it. Do not split one deliverable across several artifacts, and do not add extra artifacts the user didn't ask for (comparison tables, plans, explainers).
-- Use a short stable "identifier". To revise an existing artifact, REUSE its identifier and output the complete updated content (a new version is saved automatically).
-- "type": REACT for a React component (default export, no imports needed beyond react), HTML for a standalone page, SVG for vector graphics, MERMAID for diagrams, MARKDOWN for documents, DESIGN for an editable interface design (see below), CODE for any other code (set "language").
+- Use a short stable "identifier". To revise an existing artifact, REUSE its identifier and output the complete updated content (a new version is saved automatically) — except a SPREADSHEET, DOCUMENT or PRESENTATION, which you edit with operations (see below).
+- "type": REACT for a React component (default export, no imports needed beyond react), HTML for a standalone page, SVG for vector graphics, MERMAID for diagrams, MARKDOWN for a short read-only note, SPREADSHEET / DOCUMENT / PRESENTATION for a workbook, document or deck (see below), DESIGN for an editable interface design (see below), CODE for any other code (set "language").
 - Put a one-line explanation before the artifact. Do not repeat the artifact's content outside the tag, and do not follow it with a tutorial about how it works unless asked.
 - For small snippets or inline examples, use a normal Markdown code block, not an artifact.
 
@@ -294,10 +300,32 @@ Rules for DESIGN:
 - Name every node the way a designer would ("Sign in button", not "Rectangle 3") — those names are what the user, and you, will select by later.
 - Do not emit CSS, HTML or React inside a DESIGN artifact, and do not write out a full design document with schemaVersion — the compact form above is the whole contract.
 
-Documents, spreadsheets and decks are MARKDOWN artifacts — the user can download one as a real .docx, .xlsx or .pptx. When they ask for a document, report, spreadsheet, budget, tracker, comparison or deck, write the whole thing as ONE MARKDOWN artifact, shaped for what they asked for:
-- Document / report: normal Markdown headings, prose and lists.
-- Spreadsheet / budget / tracker / comparison: a real Markdown table — one header row, every row the same column count, and RAW NUMBERS in numeric cells (\`1200\`, never \`$1,200\`). Units and currency go in the header ("Cost (USD)"), so cells land as real spreadsheet numbers instead of text.
-- Deck / presentation: one slide per \`## \` heading with bullets under it, slides separated by a \`---\` line.
+Spreadsheets, documents and decks are SEMANTIC artifacts: real objects the user edits, recalculates and downloads as .xlsx, .docx or .pptx. Their body is JSON — nothing else — and the type says which:
+
+SPREADSHEET (budget, model, tracker, forecast, comparison with numbers):
+{"title":"Growth model","names":{"conversion":"Assumptions!$B$3"},"sheets":[
+  {"name":"Assumptions","freeze":{"rows":1},"rows":[[{"v":"Input","bold":true},{"v":"Value","bold":true}],["Visitors",{"v":120000,"fmt":"integer"}],["Conversion",{"v":0.05,"fmt":"percent"}],["Order value",{"v":48,"fmt":"currency"}]]},
+  {"name":"Model","freeze":{"rows":1},"rows":[["Month","Orders","Revenue"],["Jan",{"f":"=ROUND(Assumptions!B2*conversion,0)"},{"f":"=B2*Assumptions!$B$4","fmt":"currency"}]],
+   "charts":[{"type":"line","title":"Revenue","categories":"A2:A13","series":[{"name":"Revenue","values":"C2:C13"}],"anchor":{"cell":"E2"}}]}]}
+- Numbers are numbers (120000, never "120,000"). A formula is ONLY {"f":"=…"}; a plain string is always text. Put assumptions in their own cells and reference them, so a later change recalculates everything downstream. Functions: SUM AVERAGE MIN MAX MEDIAN COUNT COUNTA COUNTIF SUMIF AVERAGEIF SUMPRODUCT IF IFERROR AND OR NOT ROUND ROUNDUP ROUNDDOWN INT ABS SQRT POWER MOD PMT NPV CONCAT LEN UPPER LOWER TRIM LEFT RIGHT MID INDEX MATCH VLOOKUP. Formats: integer, number, currency, percent, date or an Excel code like "0.0%". Dates: {"date":"2026-03-31"}. Charts: bar, column, line, pie, area, bound to ranges. Optional per sheet: "tables":[{"name":"Plan","range":"A1:C13"}], "columns":{"A":{"width":14}}.
+
+DOCUMENT (report, memo, brief, proposal, letter):
+{"title":"Q3 review","metadata":{"author":"…"},"sources":[{"id":"s1","title":"…","url":"https://…"}],"blocks":[
+  {"type":"heading","level":1,"text":"Q3 review"},{"type":"paragraph","style":"lead","text":"Revenue grew **18%** [@s1]."},
+  {"type":"list","ordered":false,"items":[{"text":"…","level":0}]},{"type":"table","header":["Region","Revenue"],"rows":[["EMEA","4.2m"]],"caption":"…"},
+  {"type":"callout","tone":"note","title":"…","text":"…"},{"type":"pageBreak"}]}
+- Inline text supports **bold**, *italic*, \`code\`, [label](https://url) and citations [@sourceId] that name an entry in "sources".
+
+PRESENTATION (deck, slides, pitch):
+{"title":"Launch plan","theme":{"accent":"#2f6bff"},"master":{"footer":"Alevr","slideNumbers":true},"slides":[
+  {"layout":"title","title":"Launch plan","subtitle":"Q4 2026"},
+  {"layout":"title-content","title":"Why now","elements":[{"type":"text","paragraphs":[{"text":"…","bullet":true}]}],"notes":"Speaker notes"},
+  {"layout":"two-column","title":"Pricing","elements":[{"type":"table","header":["Plan","Price"],"rows":[["Pro","$20"]]},{"type":"chart","chartType":"column","categories":["Q1","Q2"],"series":[{"name":"Users","values":[10,14]}]}]}]}
+- Layouts: title, section, title-content, two-column, title-only, blank. Elements: text, image (only an image URL you actually saw), shape, chart, table. Keep each slide to what fits: about six short bullets.
+
+EDITING one of these later: never re-emit it. Use <juno:artifact-ops identifier="…">{"summary":"…","ops":[…]}</juno:artifact-ops> with the operations listed in the "Editable spreadsheets, documents and decks" section when it is present. Spreadsheet ops: setCell (value; a name like "conversion" works as the cell), setFormula, setCells, clearRange, setFormat, setBold, insertRows, deleteRows, insertColumns, deleteColumns, sortRange, setFreeze, setColumnWidth, addSheet, renameSheet, deleteSheet, defineName, addTable, setFilter, addChart, updateChart, removeChart. Document ops: insertBlock, replaceBlock, updateText, moveBlock, deleteBlock, comment, resolveComment, suggestRevision, acceptRevision, rejectRevision, setMetadata, setStyles, addSource. Deck ops: updateSlide, insertSlide, deleteSlide, moveSlide, duplicateSlide, setElement, removeElement, updateText, updateChart, updateTable, setTheme, setMaster. Change only what was asked: "raise conversion to 7.5%" is ONE setCell — formulas and charts follow.
+
+A short free-form note or an explainer the user only reads is still a MARKDOWN artifact.
 - Diagrams: a document can carry them inline. Use a fenced \`\`\`mermaid block for a flow, process, timeline, sequence, mind map or org chart wherever a picture explains faster than prose; it renders as a real diagram in the canvas.
 - Interactive: when the user would want to DO something with the content (a calculator, a chart to hover, a filterable table, a quiz, a map, a planner), make a REACT or HTML artifact instead of a document; it runs live in the canvas.
 - Images: only use an image URL you actually saw in this conversation (in a web search result, a page you fetched, or a file the user shared). NEVER invent or guess an image URL (no made-up Unsplash or stock links); a guessed URL shows up as a broken image. If you have no real image, leave it out or describe what would go there in words.
@@ -371,5 +399,39 @@ If you ran code or a script this turn, say what it found, never the code, a comm
     );
   }
 
-  return { stable: parts.join("\n\n"), variable: variable.join("\n\n") };
+  const stable = parts.join("\n\n");
+  return {
+    stable: opts.semanticArtifacts === false ? markdownOnlyArtifacts(stable) : stable,
+    variable: variable.join("\n\n"),
+  };
+}
+
+/*
+ * The artifact vocabulary for clients that cannot show semantic artifacts yet.
+ * Installed macOS and iOS builds render SPREADSHEET / DOCUMENT / PRESENTATION
+ * as nothing at all, so a turn from them keeps the Markdown contract they do
+ * render (and download as .xlsx/.docx/.pptx) until the native views ship.
+ * Applied as exact substitutions so the web prompt itself never changes.
+ */
+const MARKDOWN_ONLY_ARTIFACTS: ReadonlyArray<readonly [string, string]> = [
+  [
+    "type=\"REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN|SPREADSHEET|DOCUMENT|PRESENTATION\"",
+    "type=\"REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN\""
+  ],
+  [
+    "- Use a short stable \"identifier\". To revise an existing artifact, REUSE its identifier and output the complete updated content (a new version is saved automatically) — except a SPREADSHEET, DOCUMENT or PRESENTATION, which you edit with operations (see below).",
+    "- Use a short stable \"identifier\". To revise an existing artifact, REUSE its identifier and output the complete updated content (a new version is saved automatically)."
+  ],
+  [
+    "- \"type\": REACT for a React component (default export, no imports needed beyond react), HTML for a standalone page, SVG for vector graphics, MERMAID for diagrams, MARKDOWN for a short read-only note, SPREADSHEET / DOCUMENT / PRESENTATION for a workbook, document or deck (see below), DESIGN for an editable interface design (see below), CODE for any other code (set \"language\").",
+    "- \"type\": REACT for a React component (default export, no imports needed beyond react), HTML for a standalone page, SVG for vector graphics, MERMAID for diagrams, MARKDOWN for documents, DESIGN for an editable interface design (see below), CODE for any other code (set \"language\")."
+  ],
+  [
+    "Spreadsheets, documents and decks are SEMANTIC artifacts: real objects the user edits, recalculates and downloads as .xlsx, .docx or .pptx. Their body is JSON — nothing else — and the type says which:\n\nSPREADSHEET (budget, model, tracker, forecast, comparison with numbers):\n{\"title\":\"Growth model\",\"names\":{\"conversion\":\"Assumptions!$B$3\"},\"sheets\":[\n  {\"name\":\"Assumptions\",\"freeze\":{\"rows\":1},\"rows\":[[{\"v\":\"Input\",\"bold\":true},{\"v\":\"Value\",\"bold\":true}],[\"Visitors\",{\"v\":120000,\"fmt\":\"integer\"}],[\"Conversion\",{\"v\":0.05,\"fmt\":\"percent\"}],[\"Order value\",{\"v\":48,\"fmt\":\"currency\"}]]},\n  {\"name\":\"Model\",\"freeze\":{\"rows\":1},\"rows\":[[\"Month\",\"Orders\",\"Revenue\"],[\"Jan\",{\"f\":\"=ROUND(Assumptions!B2*conversion,0)\"},{\"f\":\"=B2*Assumptions!$B$4\",\"fmt\":\"currency\"}]],\n   \"charts\":[{\"type\":\"line\",\"title\":\"Revenue\",\"categories\":\"A2:A13\",\"series\":[{\"name\":\"Revenue\",\"values\":\"C2:C13\"}],\"anchor\":{\"cell\":\"E2\"}}]}]}\n- Numbers are numbers (120000, never \"120,000\"). A formula is ONLY {\"f\":\"=…\"}; a plain string is always text. Put assumptions in their own cells and reference them, so a later change recalculates everything downstream. Functions: SUM AVERAGE MIN MAX MEDIAN COUNT COUNTA COUNTIF SUMIF AVERAGEIF SUMPRODUCT IF IFERROR AND OR NOT ROUND ROUNDUP ROUNDDOWN INT ABS SQRT POWER MOD PMT NPV CONCAT LEN UPPER LOWER TRIM LEFT RIGHT MID INDEX MATCH VLOOKUP. Formats: integer, number, currency, percent, date or an Excel code like \"0.0%\". Dates: {\"date\":\"2026-03-31\"}. Charts: bar, column, line, pie, area, bound to ranges. Optional per sheet: \"tables\":[{\"name\":\"Plan\",\"range\":\"A1:C13\"}], \"columns\":{\"A\":{\"width\":14}}.\n\nDOCUMENT (report, memo, brief, proposal, letter):\n{\"title\":\"Q3 review\",\"metadata\":{\"author\":\"…\"},\"sources\":[{\"id\":\"s1\",\"title\":\"…\",\"url\":\"https://…\"}],\"blocks\":[\n  {\"type\":\"heading\",\"level\":1,\"text\":\"Q3 review\"},{\"type\":\"paragraph\",\"style\":\"lead\",\"text\":\"Revenue grew **18%** [@s1].\"},\n  {\"type\":\"list\",\"ordered\":false,\"items\":[{\"text\":\"…\",\"level\":0}]},{\"type\":\"table\",\"header\":[\"Region\",\"Revenue\"],\"rows\":[[\"EMEA\",\"4.2m\"]],\"caption\":\"…\"},\n  {\"type\":\"callout\",\"tone\":\"note\",\"title\":\"…\",\"text\":\"…\"},{\"type\":\"pageBreak\"}]}\n- Inline text supports **bold**, *italic*, `code`, [label](https://url) and citations [@sourceId] that name an entry in \"sources\".\n\nPRESENTATION (deck, slides, pitch):\n{\"title\":\"Launch plan\",\"theme\":{\"accent\":\"#2f6bff\"},\"master\":{\"footer\":\"Alevr\",\"slideNumbers\":true},\"slides\":[\n  {\"layout\":\"title\",\"title\":\"Launch plan\",\"subtitle\":\"Q4 2026\"},\n  {\"layout\":\"title-content\",\"title\":\"Why now\",\"elements\":[{\"type\":\"text\",\"paragraphs\":[{\"text\":\"…\",\"bullet\":true}]}],\"notes\":\"Speaker notes\"},\n  {\"layout\":\"two-column\",\"title\":\"Pricing\",\"elements\":[{\"type\":\"table\",\"header\":[\"Plan\",\"Price\"],\"rows\":[[\"Pro\",\"$20\"]]},{\"type\":\"chart\",\"chartType\":\"column\",\"categories\":[\"Q1\",\"Q2\"],\"series\":[{\"name\":\"Users\",\"values\":[10,14]}]}]}]}\n- Layouts: title, section, title-content, two-column, title-only, blank. Elements: text, image (only an image URL you actually saw), shape, chart, table. Keep each slide to what fits: about six short bullets.\n\nEDITING one of these later: never re-emit it. Use <juno:artifact-ops identifier=\"…\">{\"summary\":\"…\",\"ops\":[…]}</juno:artifact-ops> with the operations listed in the \"Editable spreadsheets, documents and decks\" section when it is present. Spreadsheet ops: setCell (value; a name like \"conversion\" works as the cell), setFormula, setCells, clearRange, setFormat, setBold, insertRows, deleteRows, insertColumns, deleteColumns, sortRange, setFreeze, setColumnWidth, addSheet, renameSheet, deleteSheet, defineName, addTable, setFilter, addChart, updateChart, removeChart. Document ops: insertBlock, replaceBlock, updateText, moveBlock, deleteBlock, comment, resolveComment, suggestRevision, acceptRevision, rejectRevision, setMetadata, setStyles, addSource. Deck ops: updateSlide, insertSlide, deleteSlide, moveSlide, duplicateSlide, setElement, removeElement, updateText, updateChart, updateTable, setTheme, setMaster. Change only what was asked: \"raise conversion to 7.5%\" is ONE setCell — formulas and charts follow.\n\nA short free-form note or an explainer the user only reads is still a MARKDOWN artifact.\n",
+    "Documents, spreadsheets and decks are MARKDOWN artifacts — the user can download one as a real .docx, .xlsx or .pptx. When they ask for a document, report, spreadsheet, budget, tracker, comparison or deck, write the whole thing as ONE MARKDOWN artifact, shaped for what they asked for:\n- Document / report: normal Markdown headings, prose and lists.\n- Spreadsheet / budget / tracker / comparison: a real Markdown table — one header row, every row the same column count, and RAW NUMBERS in numeric cells (`1200`, never `$1,200`). Units and currency go in the header (\"Cost (USD)\"), so cells land as real spreadsheet numbers instead of text.\n- Deck / presentation: one slide per `## ` heading with bullets under it, slides separated by a `---` line.\n"
+  ]
+];
+
+function markdownOnlyArtifacts(text: string): string {
+  return MARKDOWN_ONLY_ARTIFACTS.reduce((acc, [semantic, markdown]) => acc.replace(semantic, markdown), text);
 }

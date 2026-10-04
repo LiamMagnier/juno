@@ -3,8 +3,10 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { toast } from "sonner";
-import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "@/components/ui/icons";
+import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal, Table2, FileText, Presentation } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { SemanticArtifactView } from "@/components/semantic/semantic-artifact-view";
+import type { SemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { Markdown } from "@/components/chat/markdown";
 import type { ConsoleEntry, RunStatus } from "@/components/canvas/sandbox-frame";
 
@@ -62,6 +64,9 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   MARKDOWN: CodeIcons.file,
   MERMAID: GitBranch,
   DESIGN: AppIcons.design,
+  SPREADSHEET: Table2,
+  DOCUMENT: FileText,
+  PRESENTATION: Presentation,
 };
 
 /**
@@ -517,7 +522,7 @@ export function ArtifactInlineCard({
 
         <div className="flex shrink-0 items-center gap-1 self-end @[24rem]:self-auto">
           {/* View switcher — hidden while streaming (the write-in IS the view). */}
-          {!isDesign && !streaming && !trashed && hasContent && viewOptions.length > 1 && (
+          {!isDesign && rt.mode !== "semantic" && !streaming && !trashed && hasContent && viewOptions.length > 1 && (
             <SegmentedControl
               value={view}
               onChange={setView}
@@ -606,6 +611,20 @@ export function ArtifactInlineCard({
             <DesignNote>The preview appears once the design is saved.</DesignNote>
           )}
         </div>
+      ) : rt.mode === "semantic" && (streaming || hasContent) ? (
+        /* A workbook, document or deck: its JSON never reaches the transcript.
+           While the model writes it (or writes operations on it) the card says
+           so in words; once saved, it is the real view, read-only here — the
+           canvas is where it is edited. */
+        streaming ? (
+          <div className="flex min-h-[120px] flex-col justify-center gap-1 p-5">
+            <LiveLine text={updated ? `Editing ${title?.trim() || rt.label.toLowerCase()}` : `Writing ${title?.trim() || rt.label.toLowerCase()}`} phase="working" />
+          </div>
+        ) : (
+          <div className="h-[min(44vh,360px)] min-h-[240px] overflow-hidden" onDoubleClick={onOpen}>
+            <SemanticArtifactView type={type as SemanticArtifactType} content={resolvedContent} readOnly />
+          </div>
+        )
       ) : hasContent ? (
         // One stable height across views + a fast cross-fade on switch: the
         // card never jumps, the content quietly trades places.

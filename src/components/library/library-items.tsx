@@ -302,6 +302,9 @@ export function EntryPreview({ entry }: { entry: LibraryEntry }) {
   }
   if (["HTML", "REACT", "CODE", "MERMAID", "SVG"].includes(type) && source) return <SourcePreview source={source} />;
   if (entry.type === "Deck") return <DeckPreview title={entry.title} type={entry.type} />;
+  // A workbook or document body is a model, and the preview is only its head:
+  // never show the JSON, show the page with its title.
+  if (type === "SPREADSHEET" || type === "DOCUMENT") return <PagePreview title={entry.title} lines={[]} type={entry.type} />;
   const prose = source ? proseLines(source, 4) : { title: null, lines: [] };
   return <PagePreview title={prose.title ?? entry.title} lines={prose.lines} type={entry.type} />;
 }
