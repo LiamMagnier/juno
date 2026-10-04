@@ -63,7 +63,7 @@ jobs:
     # one hung job holds the single deploy slot for GitHub's 360-minute default.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -200,7 +200,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -240,7 +240,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The two checks below are filesystem greps and run before `npm ci`, so a
       # migration mistake costs seconds rather than the two minutes it takes to
@@ -469,7 +469,7 @@ jobs:
     # Green runs take about 20s.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -542,7 +542,7 @@ jobs:
     # GitHub's 360-minute default. Healthy runs finish well inside this.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
