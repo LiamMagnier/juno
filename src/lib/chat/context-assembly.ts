@@ -247,16 +247,28 @@ export function buildProjectContext(
     sections.push(`## Project instructions\n${project.instructions.trim()}`);
   }
 
+  const passages = buildProjectPassages(knowledge);
+  if (passages) sections.push(passages);
+  return sections.join("\n\n");
+}
+
+/**
+ * The retrieved project extracts alone, without the project's name and
+ * instructions — for the per-generation context tail (chat/turn-context-tail),
+ * where the chat route puts them since they change with every question.
+ * `buildProjectContext(project, knowledge)` still renders both together for a
+ * caller that has no tail. "" when nothing was retrieved.
+ */
+export function buildProjectPassages(knowledge?: ProjectKnowledge | null): string {
   const passages = knowledge?.passages ?? [];
-  if (passages.length) {
-    sections.push(
-      knowledge?.degraded
-        ? "## Retrieved from project documents\nKeyword matches only — the semantic index is unavailable, so relevant passages may be missing. Say so if the extracts do not answer the question."
-        : "## Retrieved from project documents\nExtracts selected for this question. Cite the source in parentheses when you use one, exactly as it is labelled."
-    );
-    for (const passage of passages) {
-      sections.push(`### ${citation(passage)}\n${wrapUntrusted(citation(passage), passage.text.trim())}`);
-    }
+  if (!passages.length) return "";
+  const sections = [
+    knowledge?.degraded
+      ? "## Retrieved from project documents\nKeyword matches only — the semantic index is unavailable, so relevant passages may be missing. Say so if the extracts do not answer the question."
+      : "## Retrieved from project documents\nExtracts selected for this question. Cite the source in parentheses when you use one, exactly as it is labelled.",
+  ];
+  for (const passage of passages) {
+    sections.push(`### ${citation(passage)}\n${wrapUntrusted(citation(passage), passage.text.trim())}`);
   }
   return sections.join("\n\n");
 }
