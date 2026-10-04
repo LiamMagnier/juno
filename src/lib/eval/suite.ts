@@ -104,9 +104,11 @@ function codeFrom(text: string): string {
 /**
  * Run model-written code against the cases in a SEPARATE Node process under
  * the permission model (`--permission`: no file system, no child processes, no
- * workers, no addons) with a two-second timeout. `node:vm` alone is not a
+ * workers, no addons) with a ten-second timeout. `node:vm` alone is not a
  * security boundary, and in live mode this is code a model wrote.
  */
+const EVAL_CODE_TIMEOUT_MS = 10_000;
+
 function runIsPalindrome(code: string): { ok: boolean; detail: string } {
   const cases: [string, boolean][] = [
     ["A man, a plan, a canal: Panama", true],
@@ -128,7 +130,11 @@ function runIsPalindrome(code: string): { ok: boolean; detail: string } {
     });`;
   const run = spawnSync(process.execPath, ["--permission", "-e", harness], {
     input: code,
-    timeout: 2_000,
+    // Bounds a runaway loop, not the cases (they take milliseconds). Generous
+    // because a cold Node start is slow under emulation on a loaded machine
+    // (the amd64 release container on Apple silicon took over 2 s): a timeout
+    // there failed CORRECT code. The permission model is the security boundary.
+    timeout: EVAL_CODE_TIMEOUT_MS,
     encoding: "utf8",
     env: { NODE_ENV: "production" } as NodeJS.ProcessEnv,
   });
