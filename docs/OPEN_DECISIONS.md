@@ -8,64 +8,41 @@ Everything else from that review has been implemented; see the branch history.
 
 ---
 
-## 1. Consumer prices are displayed excluding tax (review item 60)
+## 1. Consumer prices are displayed excluding tax (review item 60) — **DECIDED, October 2026**
 
-`/upgrade` and `/settings` render `20 €` with the suffix **`HT/mo`** — *hors
-taxes*, a B2B convention. EU consumer law (Directive 98/6/EC; French Code de la
-consommation art. L112-1) requires prices shown to consumers to be **TTC**,
-tax included.
+**The owner charges VAT (20%).** Prices stay HT in `PLANS` (that is what
+Stripe charges, with Stripe Tax adding the buyer's VAT: French rate in France,
+the buyer's own rate for other EU consumers under OSS, reverse charge for
+businesses in another EU state). Every price a person sees goes through
+`displayPrice()` in `src/lib/price-display.ts` and is shown **TTC** with
+`vatNote()` under it (commit 96f3305c). The CGU price table is gone; the
+contract of sale is `/legal/cgv`, whose prices are computed from `PLANS` so
+they cannot drift (branch `pricing/legal`).
 
-**Why this is not fixed in code:** the correct display depends on a fact only
-you know, and getting it wrong misstates a price.
-
-- **If you charge VAT** — the displayed figure must become the TTC amount
-  (`20 €` HT at 20% is `24 €` TTC). Changing the suffix alone would be worse
-  than the status quo: it would state a price you do not charge.
-- **If you are under the VAT franchise** (micro-entrepreneur, art. 293 B CGI) —
-  no VAT is charged, the correct display is a plain `20 €`, and invoices must
-  carry *"TVA non applicable, art. 293 B du CGI"*.
-
-`/legal/mentions-legales` still has an unfilled `[N° TVA]` placeholder, so the
-answer is not inferable from the repo. The CGU currently asserts *"la TVA
-applicable est ajoutée au moment du paiement"*, which is consistent with the
-first case.
-
-Once you know which: the strings are `priceSuffix` in
-`src/app/(app)/upgrade/page.tsx`, one line in `src/app/(app)/settings/page.tsx`,
-`src/components/landing/pricing.tsx`, and the CGU price table.
+Still open, and tracked in `docs/pricing/LEGAL_CHECKLIST.md` §2–3: the OSS
+registration and Stripe Tax settings (owner), and one remaining HT line in
+Settings → Plan & usage (pricing-UI lane).
 
 ---
 
-## 2. Does Free get any messages at all? (review item 7)
+## 2. Does Free get any messages at all? (review item 7) — **DECIDED, October 2026**
 
-`PLANS.FREE.monthlyMessages` is `0` and `BUDGET_EUR.FREE` is `0`, so a Free
-account can never produce a model reply. The UI is now honest about it — the
-composer is gated, the banner says so, and the feature list no longer advertises
-things a Free account cannot reach.
-
-What remains is a pricing question: **every hosted competitor's free tier sends
-messages.** A small monthly allowance on the cheapest model would cost little
-and removes the "I couldn't try it" objection entirely.
-
-If you want it, the change is one number in `src/lib/plans.ts` plus a non-zero
-`BUDGET_EUR.FREE` — but check the interaction first: a nonzero Free budget must
-not accidentally unlock voice (`PLANS.FREE.voice` is false), web search, video
-generation, or scheduled tasks.
+**Yes: about €0.20 of model cost a month, on cost-1 models only** (Claude
+Haiku, GPT-6 Luna, Gemini Flash-Lite, GLM Flash). `BUDGET_EUR.FREE` is 0.2 in
+`src/lib/spend.ts` and `modelRequiredPlan()` admits Free only to models the
+catalogue prices FREE *and* marks cost 1. Voice, web search, Code, agents and
+research stay paid, which was the interaction this item warned about. The CGV
+(art. 3) describes the Free offer.
 
 ---
 
-## 3. Is there a tier under €20? (review item 49)
+## 3. Is there a tier under €20? (review item 49) — **DECIDED, October 2026**
 
-Annual billing now exists, deliberately with **no discount** — twelve months for
-twelve months' price, one invoice instead of twelve, and the page says exactly
-that.
-
-Still open: nothing is sold below €20/month. ChatGPT Go is $8, Gemini AI Plus
-$4.99, Poe $4.99, Chatbox $3.99, Grok Lite $10. Against Juno's actual
-competitive set — multi-provider clients, not ChatGPT — €20 is 2.5–5.7× the
-cheapest rivals, and they all let you try first.
-
-That is a positioning decision, not a defect.
+**Yes: Lite at €9 HT** (€10.80 TTC), fast everyday models plus web search, no
+Code or agents. The line-up is now Free, Lite €9, Pro €20, Plus €50, Max ×5
+€100, Max ×10 €200, Ultra €500 (all HT). Annual billing is **ten months for
+twelve** (`ANNUAL_MONTHS_BILLED`), replacing the earlier no-discount annual
+price. Code and agents start at Pro.
 
 ---
 
@@ -119,18 +96,22 @@ says so out loud.
 
 ---
 
-## 7. Other AI Act / GDPR items (review item 64)
+## 7. Other AI Act / GDPR items (review item 64) — **partly done, October 2026**
 
-- **AI Act Art. 50 transparency.** The *"Juno can be wrong"* footer is a good
-  start. Generated images and video should also be disclosed as AI-generated.
-- **Data residency.** The database is `eu-west-1`, but inference goes wherever
-  the chosen provider is, and Qwen realtime voice goes to Alibaba Cloud
-  Singapore. There is no region selector. See `docs/SUBPROCESSORS.md`.
-- **No cookie banner, on purpose.** Juno sets essential cookies only (the
-  session) and there is genuinely no analytics SDK in the tree, so there is
-  nothing to consent to; the banner that used to ask anyway contradicted its
-  own copy and was removed in September 2026. Adding analytics later means
-  adding consent back at the same time.
+- **AI Act Art. 50 transparency.** Done for images: `/api/generate` writes an
+  IPTC XMP "AI-generated" marking into every PNG, JPEG and WebP it saves
+  (`src/lib/ai-content-marking.ts`), and generated media in chat carries a
+  plain "AI-generated" caption. **Not done:** video and audio files (left as
+  the provider made them; Google's carry SynthID), text, and the caption on
+  public share pages and in the Library. See
+  `docs/pricing/LEGAL_CHECKLIST.md` §8.
+- **Data residency.** Unchanged: the database is `eu-west-1` and the app runs
+  on Azure Sweden Central, but inference goes wherever the chosen provider is.
+  The privacy notice now lists every provider with its country and the
+  intended transfer safeguard; whether each will sign SCCs (and the seven
+  PRC-based ones in particular) is still a fact to establish. Checklist §5.
+- **No cookie banner, on purpose.** Still true and still correct: essential
+  cookies only. Adding analytics means adding consent in the same change.
 
 ---
 
