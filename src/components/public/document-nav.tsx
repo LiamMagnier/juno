@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const DOCUMENTS = [
   { href:"/legal/confidentialite", label:"Privacy" },
   { href:"/legal/cgu", label:"Terms" },
+  { href:"/legal/cgv", label:"Terms of sale" },
   { href:"/legal/mentions-legales", label:"Legal notice" },
 ];
 
