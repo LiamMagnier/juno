@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { routineSpendThisPeriod } from "@/lib/budgets-store";
 import type { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
@@ -47,8 +48,12 @@ export async function GET(req: Request) {
     include: { triggers: true },
   });
 
+  const spent = await routineSpendThisPeriod(user.id, schedules.map((s) => s.id));
   return NextResponse.json({
-    schedules: schedules.map((schedule) => serializeSchedule(schedule, schedule.triggers)),
+    schedules: schedules.map((schedule) => ({
+      ...serializeSchedule(schedule, schedule.triggers),
+      spentThisPeriodMicroUsd: spent.get(schedule.id) ?? 0,
+    })),
   });
 }
 

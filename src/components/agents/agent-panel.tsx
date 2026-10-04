@@ -32,6 +32,9 @@ import {
   updateRoutine,
 } from "@/components/agents/agents-transport";
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
+import { Input } from "@/components/ui/input";
+import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
+import { describeBudgetLine, type BudgetLine } from "@/lib/budgets";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
 import { AGENT_STATE_NAMES } from "@/lib/brand/names";
@@ -354,6 +357,15 @@ export function AgentProfile({
           <p className="text-body text-foreground">{ASKS_COPY[agent.approvalMode]}</p>
           <p className="mt-1 text-ui text-muted-foreground">Ask {agent.name} to change this.</p>
         </Section>
+
+        {detail.budget ? (
+          <BudgetSection
+            name={agent.name}
+            line={detail.budget}
+            busy={busy === "budget"}
+            onSave={(budgetMicroUsd) => act("budget", () => updateAgent(agent.id, { budgetMicroUsd }))}
+          />
+        ) : null}
       </div>
 
       <footer className="mt-12 flex items-center justify-center gap-2">
@@ -429,6 +441,70 @@ export function AgentProfile({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Its own weekly budget (src/lib/agents/budget.ts), in the sentence every
+ * budget surface uses (src/lib/budgets.ts), with the cap editable in place.
+ * A cap only narrows the account's windows; empty means none of its own.
+ */
+function BudgetSection({
+  name,
+  line,
+  busy,
+  onSave,
+}: {
+  name: string;
+  line: BudgetLine;
+  busy: boolean;
+  onSave: (budgetMicroUsd: number | null) => Promise<boolean>;
+}) {
+  const current = line.ceilingMicroUsd == null ? "" : (line.ceilingMicroUsd / 1_000_000).toFixed(2);
+  const [draft, setDraft] = React.useState(current);
+  React.useEffect(() => setDraft(current), [current]);
+  const parsed = draft.trim() === "" ? null : Number(draft);
+  const valid = parsed === null || (Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_MEMBER_BUDGET_MICRO_USD / 1_000_000);
+  const dirty = draft.trim() !== current;
+  const id = React.useId();
+  return (
+    <Section title="What it may spend">
+      <p className="font-mono text-caption tabular-nums text-muted-foreground">{describeBudgetLine(line)}</p>
+      <form
+        className="mt-3 flex items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!valid || !dirty) return;
+          void onSave(parsed === null ? null : Math.round(parsed * 1_000_000));
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <label htmlFor={id} className="text-ui text-muted-foreground">
+            Weekly cap, US dollars
+          </label>
+          <Input
+            id={id}
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.01"
+            value={draft}
+            placeholder="No cap of its own"
+            onChange={(event) => setDraft(event.target.value)}
+            className="mt-1"
+            aria-invalid={!valid || undefined}
+          />
+        </div>
+        <Button type="submit" size="sm" variant="outline" className="rounded-full" disabled={!valid || !dirty} loading={busy}>
+          Save
+        </Button>
+      </form>
+      <p className="mt-1.5 text-caption text-muted-foreground">
+        {valid
+          ? `${name} stops when this or your account’s own limit runs out, whichever comes first.`
+          : "Leave it empty, or enter an amount up to $2,000."}
+      </p>
+    </Section>
   );
 }
 

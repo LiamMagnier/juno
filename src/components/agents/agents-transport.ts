@@ -160,6 +160,8 @@ export interface AgentPatch {
   proactive?: boolean;
   model?: string | null;
   reasoningEffort?: string | null;
+  /** Its own weekly cap in micro-USD, or null for none (src/lib/agents/budget.ts). */
+  budgetMicroUsd?: number | null;
 }
 
 export function updateAgent(id: string, patch: AgentPatch): Promise<AgentOutcome<ClientAgent>> {

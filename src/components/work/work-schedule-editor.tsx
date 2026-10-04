@@ -26,6 +26,7 @@ import {
   type CodePermissionMode,
 } from "@/lib/code-environments";
 import { ceilingFieldValue } from "@/lib/work/budget";
+import { describeRoutineSpend, routineBudgetLines } from "@/lib/budgets";
 import { runLimitFrom } from "@/components/work/clarify/run-disclosure";
 import { useApp } from "@/components/app/app-provider";
 import { MODEL_LIST } from "@/lib/models";
@@ -783,6 +784,19 @@ export function WorkScheduleEditor({
                 limit.window === "session" ? "5-hour" : "weekly"
               } usage limit is used up. A number here is a smaller ceiling for this schedule, and whichever is smaller wins — this, or what the window has left when it fires.`}
         </p>
+        {schedule?.spentThisPeriodMicroUsd !== undefined && (
+          // The ceiling beside the spend it bounds (src/lib/budgets.ts): one
+          // sentence, the same words every budget surface uses.
+          <p className="mt-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+            {describeRoutineSpend(
+              routineBudgetLines({
+                name: schedule.name,
+                maxCostMicroUsd: schedule.budget.maxCostMicroUsd,
+                spentThisMonthMicroUsd: schedule.spentThisPeriodMicroUsd,
+              }).month
+            )}
+          </p>
+        )}
         {!budgetValid && (
           <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
             Each ceiling has to be left empty, or a number of zero or more.

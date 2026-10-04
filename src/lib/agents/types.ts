@@ -8,6 +8,7 @@
  */
 
 import type { Agent, AgentEvent, AgentGoal, AgentIdea, AgentNote } from "@prisma/client";
+import type { BudgetLine } from "@/lib/budgets";
 import { normalizeAgentAvatar, type AgentAvatar } from "@/lib/agents/avatar";
 import {
   agentApprovalMode,
@@ -171,6 +172,8 @@ export interface ClientAgentDetail {
   tasks: ClientAgentTask[];
   computer?: ClientAgentComputer | null;
   computerConfigured?: boolean;
+  /** Its own weekly budget as a line (src/lib/budgets.ts): cap, spend this week, when it frees. */
+  budget?: BudgetLine | null;
 }
 
 const iso = (value: Date | null | undefined): string | null => (value ? value.toISOString() : null);

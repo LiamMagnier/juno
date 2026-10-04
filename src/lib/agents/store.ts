@@ -396,9 +396,12 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
   ]);
   const { loadAgentComputerStatusPayload } = await import("@/lib/computer/store");
   const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
-  const [computer, computerConfigured] = await Promise.all([
+  const { agentBudgetLineFor } = await import("@/lib/budgets-store");
+  const [computer, computerConfigured, budget] = await Promise.all([
     loadAgentComputerStatusPayload(userId, agentId),
     isAgentComputerConfigured(),
+    // A failed read leaves the line out rather than failing the profile.
+    agentBudgetLineFor(userId, { id: agent.id, name: agent.name, budgetMicroUsd: agent.budgetMicroUsd ?? null }).catch(() => null),
   ]);
   return {
     agent: serialized[0],
@@ -409,6 +412,7 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
     tasks: tasks.map(toTask),
     computer,
     computerConfigured,
+    budget,
   };
 }
 

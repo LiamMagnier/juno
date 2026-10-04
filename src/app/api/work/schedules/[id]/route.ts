@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { routineSpendThisPeriod } from "@/lib/budgets-store";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
@@ -164,7 +165,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
   if (!schedule) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({ schedule: serializeSchedule(schedule, schedule.triggers) });
+  const spent = await routineSpendThisPeriod(user.id, [schedule.id]);
+  return NextResponse.json({
+    schedule: { ...serializeSchedule(schedule, schedule.triggers), spentThisPeriodMicroUsd: spent.get(schedule.id) ?? 0 },
+  });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1242,6 +1242,12 @@ export interface ClientWorkSchedule {
   hasFireToken: boolean;
   fireTokenIssuedAt: string | null;
   budget: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
+  /**
+   * What this routine's runs have cost since the billing period began
+   * (src/lib/budgets-store.ts), so its ceiling is never shown without the
+   * spend it bounds. Absent from writers that did not read it.
+   */
+  spentThisPeriodMicroUsd?: number;
   unattendedPolicy: string;
   hostOfflinePolicy: string;
   maxConcurrentRuns: number;
