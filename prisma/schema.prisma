@@ -4550,3 +4550,72 @@ model ToolRun {
   @@index([conversationId])
   @@index([workRunId])
 }
+
+/// Alevr Search's page cache and index (BRIEF §16, src/lib/search/alevr/store.ts).
+/// Public pages a search or a research run discovered and read: no user, no
+/// conversation, no query text. `searchVector` is a stored generated tsvector
+/// (title weighted A, the first 100k characters of text B) under a GIN index;
+/// the store reads and writes this table with raw SQL only.
+model WebPageCache {
+  /// `canonicalUrl(url)`: no fragment, no tracking parameters, lowercased host.
+  canonicalKey String                   @id
+  url          String                   @db.Text
+  host         String
+  title        String                   @db.Text
+  text         String                   @db.Text
+  /// sha256 of the whitespace-normalised text; two URLs, one document.
+  contentHash  String
+  etag         String?
+  lastModified String?
+  publishedAt  DateTime?
+  fetchedAt    DateTime
+  /// The origin last confirmed this copy (a 200 or a 304).
+  validatedAt  DateTime
+  /// Served without a request until then; revalidated after.
+  freshUntil   DateTime
+  language     String?
+  contentType  String
+  /// discovered (a chat search result) | research (a research source).
+  admission    String
+  links        Json?
+  hits         Int                      @default(0)
+  searchVector Unsupported("tsvector")?    @default(dbgenerated("(setweight(to_tsvector('simple'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE(text, ''::text), 100000)), 'B'::\"char\"))"))
+
+  @@index([contentHash])
+  @@index([host])
+  @@index([validatedAt])
+  @@index([searchVector], type: Gin)
+}
+
+/// Alevr Search's exact-query cache: one normalised (query, vertical, recency,
+/// language, region) → its discovery hits, keyed by a sha256 (never the text).
+model WebQueryCache {
+  key       String   @id
+  hits      Json
+  backend   String
+  createdAt DateTime
+  expiresAt DateTime
+  served    Int      @default(0)
+
+  @@index([expiresAt])
+}
+
+/// One Alevr Search call: which path served it, which backend, latency and
+/// cost. No query, no user, no conversation (SearchCallRecord).
+model WebSearchCall {
+  id           String   @id
+  at           DateTime
+  surface      String
+  vertical     String
+  /// query_cache | index | discovery | none
+  servedBy     String
+  backend      String?
+  results      Int
+  latencyMs    Int
+  costMicroUsd Int
+  cachedPages  Int
+  backends     Json
+
+  @@index([at])
+  @@index([servedBy, at])
+}

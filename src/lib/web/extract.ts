@@ -67,6 +67,24 @@ export interface ExtractResult {
   pages?: number;
   /** Characters extracted before `text` was cut to `maxChars`. */
   totalChars?: number;
+  /**
+   * What the response said about caching, for Alevr's page cache (BRIEF §16):
+   * the validators a later conditional request revalidates with, the
+   * `Cache-Control` and `X-Robots-Tag` headers, and the page's own robots
+   * meta and declared language. Absent when the server sent none.
+   */
+  cache?: PageCacheHeaders;
+}
+
+export interface PageCacheHeaders {
+  etag?: string;
+  lastModified?: string;
+  cacheControl?: string;
+  xRobotsTag?: string;
+  /** `<meta name="robots" content="…">`, lowercased. */
+  robotsMeta?: string;
+  /** `<html lang="…">`, lowercased ISO tag. */
+  language?: string;
 }
 
 /**
@@ -122,6 +140,39 @@ export interface ExtractOptions {
   maxPdfBytes?: number;
   /** The per-hop transport; the pinned public fetch unless a test says otherwise. */
   transport?: ExtractTransport;
+  /**
+   * Validators of a cached copy. Sent as `If-None-Match` / `If-Modified-Since`;
+   * a 304 comes back as `{ reason: "http_error", httpStatus: 304 }`, which the
+   * page cache reads as "still current" (`src/lib/search/alevr/retrieve.ts`).
+   */
+  conditional?: { etag?: string | null; lastModified?: string | null };
+}
+
+/** Bounded scans of the document head, so a hostile page cannot make them backtrack. */
+const HEAD_SCAN_CHARS = 64 * 1024;
+const ROBOTS_META = /<meta\b[^>]{0,400}?\bname\s*=\s*["']?robots["']?[^>]{0,400}?>/i;
+const META_CONTENT = /\bcontent\s*=\s*["']([^"'>]{0,200})["']/i;
+const HTML_LANG = /<html\b[^>]{0,400}?\blang\s*=\s*["']?([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})?)/i;
+
+/** The robots meta and the declared language from the first 64 KB of a page. */
+export function headSignals(html: string): { robotsMeta?: string; language?: string } {
+  const head = html.slice(0, HEAD_SCAN_CHARS);
+  const meta = head.match(ROBOTS_META)?.[0];
+  const robots = meta ? meta.match(META_CONTENT)?.[1]?.trim().toLowerCase() : undefined;
+  const language = head.match(HTML_LANG)?.[1]?.toLowerCase();
+  return { ...(robots ? { robotsMeta: robots } : {}), ...(language ? { language } : {}) };
+}
+
+function cacheHeadersOf(res: Response, html?: string): PageCacheHeaders | undefined {
+  const pick = (name: string) => res.headers.get(name)?.trim() || undefined;
+  const out: PageCacheHeaders = {
+    ...(pick("etag") ? { etag: pick("etag") } : {}),
+    ...(pick("last-modified") ? { lastModified: pick("last-modified") } : {}),
+    ...(pick("cache-control") ? { cacheControl: pick("cache-control")!.toLowerCase() } : {}),
+    ...(pick("x-robots-tag") ? { xRobotsTag: pick("x-robots-tag")!.toLowerCase() } : {}),
+    ...(html ? headSignals(html) : {}),
+  };
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -255,6 +306,8 @@ export async function extractUrlDocument(
           "User-Agent": opts.userAgent ?? RESEARCH_USER_AGENT,
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
           "Accept-Language": "en-US,en;q=0.9",
+          ...(opts.conditional?.etag ? { "If-None-Match": opts.conditional.etag } : {}),
+          ...(opts.conditional?.lastModified ? { "If-Modified-Since": opts.conditional.lastModified } : {}),
         },
       },
       active,
@@ -277,11 +330,22 @@ export async function extractUrlDocument(
     const contentType = res.headers.get("content-type") ?? "";
     const baseType = contentType.split(";")[0].trim().toLowerCase();
 
+    // The transport asks for `identity` and never inflates a body, so a server
+    // that compresses anyway would hand the parsers raw gzip. Refused by name
+    // rather than parsed as garbage, and no decompressor ever sees a byte a
+    // stranger chose: a decompression bomb has nothing to expand in.
+    const encoding = res.headers.get("content-encoding")?.trim().toLowerCase();
+    if (encoding && encoding !== "identity") {
+      await res.body?.cancel().catch(() => undefined);
+      return { ok: false, failure: { reason: "unsupported_content_type", contentType: `encoded:${encoding.slice(0, 20)}` } };
+    }
+
     // The response URL, not the requested one — redirects are followed, and it is
     // the landing address whose extension means anything.
     if (responseIsPdf(baseType, finalUrl)) {
       const outcome = await extractPdfDocumentFrom(res, finalUrl, active, maxChars, maxPdfBytes);
-      return outcome.ok ? { ok: true, page: { ...outcome.page, ...located } } : outcome;
+      const cache = cacheHeadersOf(res);
+      return outcome.ok ? { ok: true, page: { ...outcome.page, ...located, ...(cache ? { cache } : {}) } } : outcome;
     }
 
     if (contentType && !contentType.includes("text/") && !contentType.includes("json") && !contentType.includes("xml")) {
@@ -300,10 +364,12 @@ export async function extractUrlDocument(
     const parsed = await htmlToCleanTextAsync(html, finalUrl, active);
     const shell = looksLikeShell(parsed.text.length, parsed.shellMarkup);
     if (!parsed.text || parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document", shell } };
+    const cache = cacheHeadersOf(res, html);
 
     return {
       ok: true,
       page: {
+        ...(cache ? { cache } : {}),
         title: parsed.title ?? url,
         text: parsed.text.slice(0, maxChars),
         author: parsed.author,
