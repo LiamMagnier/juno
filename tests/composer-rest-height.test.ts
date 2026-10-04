@@ -48,7 +48,7 @@ test("the field's rest height is the min-height in its metrics", () => {
 
 test("the constant is the field, the controls row and the hairline, added up", () => {
   // The row: `flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5`.
-  const row = /className="flex flex-nowrap items-center gap-0\.5 px-2\.5 pb-([\d.]+) pt-([\d.]+)"/.exec(SHELL);
+  const row = /className="flex flex-nowrap items-center gap-0\.5 px-2\.5 pb-([\d.]+) pt-([\d.]+)(?: shrink-0)?"/.exec(SHELL);
   assert.ok(row, "the controls row keeps its padding in one className");
   const rowPad = spacing(row![1]) + spacing(row![2]);
 
