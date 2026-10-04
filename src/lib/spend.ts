@@ -10,11 +10,14 @@ import { estimateGenerationCostUsd, estimateTokensFromChars, tokenRate } from "@
 import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
 import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
+import { drawCreditsForPeriod, readPeriodCredit } from "@/lib/billing/credit-ledger";
+import { periodCreditCeilingMicroUsd } from "@/lib/credits";
 import {
   DEFAULT_ESTIMATE_MICRO_USD,
   REFERENCE_MONTH_MS,
   unitCeilingMicroUsd,
   effectiveBudget,
+  windowBaseMicroUsd,
   usageWindowGrid,
   windowVerdict,
   type BudgetCapSource,
@@ -581,17 +584,54 @@ export const resolveEffectiveBudget = cache(async function resolveEffectiveBudge
   userId: string,
   plan: Plan
 ): Promise<EffectiveBudget> {
-  const settings = await prisma.settings.findUnique({
-    where: { userId },
-    select: { monthlySpendCapEur: true, spendCapDisabled: true },
-  });
+  const [settings, creditMicroUsd] = await Promise.all([
+    prisma.settings.findUnique({
+      where: { userId },
+      select: { monthlySpendCapEur: true, spendCapDisabled: true },
+    }),
+    resolveBillingPeriod(userId).then((period) => periodCreditMicroUsd(userId, plan, period)),
+  ]);
   return effectiveBudget({
     planBudgetMicroUsd: budgetForPlan(plan),
     userCapEur: settings?.monthlySpendCapEur ?? null,
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
+    creditMicroUsd,
   });
 });
+
+const periodCreditOnce = cache(async function periodCreditOnce(
+  userId: string,
+  periodKey: string
+): Promise<number> {
+  try {
+    const credit = await readPeriodCredit(userId, periodKey);
+    return periodCreditCeilingMicroUsd(credit);
+  } catch (err) {
+    // A missing table (code deployed before the migration) or a transient
+    // error must never refuse a turn: the plan budget alone still applies.
+    console.error("[spend] could not read usage credit", {
+      userId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
+  }
+});
+
+/**
+ * What usage credits add to this period's MONTHLY ceiling (top-ups, referral
+ * rewards): credit already drawn this period plus credit still available.
+ * Pass it to `effectiveBudget` as `creditMicroUsd`. 0 for a plan with no
+ * figure of its own (the owner), whose ceiling credits do not touch.
+ */
+export async function periodCreditMicroUsd(
+  userId: string,
+  plan: Plan,
+  period: BillingPeriod
+): Promise<number> {
+  if (budgetForPlan(plan) == null) return 0;
+  return periodCreditOnce(userId, spendPeriodKey(period));
+}
 
 export interface BudgetStatus {
   allowed: boolean;
@@ -1111,11 +1151,23 @@ async function commitToSpendPeriod(userId: string, costMicroUsd: number): Promis
   try {
     const period = await resolveBillingPeriod(userId);
     const periodId = await ensureSpendPeriod(userId, period);
-    await prisma.$executeRaw(Prisma.sql`
+    const rows = await prisma.$queryRaw<Array<{ committed: bigint }>>(Prisma.sql`
       UPDATE "SpendPeriod"
          SET "committedMicroUsd" = "committedMicroUsd" + ${BigInt(costMicroUsd)},
              "updatedAt" = now()
-       WHERE "id" = ${periodId} AND "userId" = ${userId}`);
+       WHERE "id" = ${periodId} AND "userId" = ${userId}
+      RETURNING "committedMicroUsd" AS committed`);
+    // Usage credits pay for what the plan budget does not. Only a period past
+    // its plan budget touches the credit tables at all, and every plan's figure
+    // is at least the Free allowance, so a period below that costs no plan
+    // lookup either.
+    const committed = Number(rows[0]?.committed ?? 0n);
+    if (committed > (budgetForPlan("FREE") ?? 0)) {
+      const planBudget = budgetForPlan(await getUserPlan(userId));
+      if (planBudget != null && committed > planBudget) {
+        await drawCreditsForPeriod({ userId, periodKey: spendPeriodKey(period), planBudgetMicroUsd: planBudget });
+      }
+    }
   } catch (err) {
     console.error("[spend] failed to advance the spend period", {
       userId,
@@ -1291,7 +1343,9 @@ export async function checkUsageWindows(
   // do with the ledger read beside it — and this runs on every chat turn, so a
   // round trip spent waiting for nothing is one worth not spending.
   const [windows] = await Promise.all([
-    getUsageWindows(userId, eff.budgetMicroUsd, p, now),
+    // Sized on the ceiling WITHOUT usage credits: a top-up buys more month,
+    // not a bigger five-hour or weekly burst.
+    getUsageWindows(userId, windowBaseMicroUsd(eff), p, now),
     expireStaleSpendReservations(userId, { now }),
   ]);
   // One sum per cell, not one for the period. A hold is charged to the window
@@ -1347,5 +1401,8 @@ export function budgetExceededMessage(plan: Plan, resetsAtMs?: number | null): s
   const when = resetsAtMs
     ? new Date(resetsAtMs).toLocaleDateString("en-US", { month: "long", day: "numeric" })
     : nextResetLabel();
-  return `You've used up your plan's usage budget — it renews on ${when}. Upgrade your plan for a bigger budget.`;
+  if (plan === "OWNER") {
+    return `You've reached this account's spending cap — it renews on ${when}.`;
+  }
+  return `You've used up your plan's usage budget — it renews on ${when}. Add a usage top-up to keep going now, or upgrade your plan for a bigger monthly budget.`;
 }

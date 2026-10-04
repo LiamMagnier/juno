@@ -239,6 +239,12 @@ export const authConfig: NextAuthConfig = {
     async createUser({ user }) {
       if (!user.id) return;
       await ensureUserDefaults(user.id);
+      // A referral link followed before an OAuth / magic-link sign-up.
+      // Imported lazily: auth.ts is loaded far more often than an account is
+      // created.
+      await import("@/lib/billing/referral-capture")
+        .then(({ captureReferralAtSignUp }) => captureReferralAtSignUp(user.id!))
+        .catch(() => {});
       // Every provider that reaches this event has already proved the address:
       // Google and Apple only return verified addresses, and a magic link is
       // itself the proof. Marking it here rather than trusting an adapter to

@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import type { Plan } from "@prisma/client";
 import { env } from "@/lib/env";
+import type { TopUpPackId } from "@/lib/credits";
 
 let stripe: Stripe | null = null;
 
@@ -52,6 +53,27 @@ export function priceIdForPlan(plan: Plan, interval: BillingInterval = "month"):
     ULTRA: { month: s.priceUltra, year: s.priceUltraYearly },
   };
   return ids[plan]?.[interval] || undefined;
+}
+
+/** Which interval a recognised plan price bills at, or null for an unknown price. */
+export function intervalFromPriceId(priceId?: string | null): BillingInterval | null {
+  if (!priceId) return null;
+  for (const plan of PAID_PLANS) {
+    for (const interval of BILLING_INTERVALS) {
+      if (priceId === priceIdForPlan(plan, interval)) return interval;
+    }
+  }
+  return null;
+}
+
+/** The one-off Stripe price for a usage top-up pack (STRIPE_PRICE_TOPUP_5/20). */
+export function priceIdForTopUp(pack: TopUpPackId): string | undefined {
+  return (pack === "5" ? env.stripe.priceTopUp5 : env.stripe.priceTopUp20) || undefined;
+}
+
+/** The top-up packs this deployment can sell (their price id is configured). */
+export function purchasableTopUps(): TopUpPackId[] {
+  return (["5", "20"] as const).filter((pack) => Boolean(priceIdForTopUp(pack)));
 }
 
 /**

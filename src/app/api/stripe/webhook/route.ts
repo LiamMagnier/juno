@@ -6,6 +6,16 @@ import { env } from "@/lib/env";
 import { getStripe, planFromPriceId, resolveSubscriptionPlan } from "@/lib/stripe";
 import { alertOperator } from "@/lib/alerts";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { eurPerUsd } from "@/lib/spend";
+import { grantCredit, rewardReferralForPayment } from "@/lib/billing/credit-ledger";
+import { renewalNoticeForSubscription } from "@/lib/billing/renewal-reminders";
+import {
+  checkoutIntent,
+  customerIdOf,
+  isPaidSubscriptionInvoice,
+  topUpCreditMicroUsd,
+  type CheckoutSessionLike,
+} from "@/lib/billing/stripe-events";
 
 export const runtime = "nodejs";
 
@@ -115,6 +125,50 @@ async function syncSubscription(sub: Stripe.Subscription, fallbackUserId?: strin
   });
 }
 
+/**
+ * Credit a paid top-up pack. Keyed on the Checkout Session id, so the
+ * `completed` and `async_payment_succeeded` events for one session, and any
+ * redelivery of either, grant it once.
+ */
+async function creditTopUp(session: CheckoutSessionLike) {
+  const intent = checkoutIntent(session);
+  if (intent.kind !== "topup" || !intent.paid) return;
+  const granted = await grantCredit({
+    userId: intent.userId,
+    source: "topup",
+    amountMicroUsd: topUpCreditMicroUsd(intent.pack, eurPerUsd()),
+    idempotencyKey: session.id,
+    note: `Top-up ${intent.pack} €`,
+  });
+  if (granted) console.info("[stripe] top-up credited", { userId: intent.userId, pack: intent.pack });
+}
+
+/** A paid subscription invoice: reward the referral it completes, if any. */
+async function rewardReferral(invoice: Stripe.Invoice) {
+  if (!isPaidSubscriptionInvoice(invoice) || !invoice.id) return;
+  const customerId = customerIdOf(invoice.customer);
+  if (!customerId) return;
+  const record = await prismaUnguarded.subscription.findFirst({
+    where: { stripeCustomerId: customerId },
+    select: { userId: true },
+  });
+  if (!record) return;
+  const outcome = await rewardReferralForPayment({
+    referredUserId: record.userId,
+    stripeInvoiceId: invoice.id,
+    amountPaidCents: invoice.amount_paid,
+    eurPerUsd: eurPerUsd(),
+  });
+  if (outcome !== "none") console.info("[stripe] referral", { outcome, userId: record.userId });
+}
+
+/** The subscription an invoice bills, across API versions. */
+function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  const fromParent = invoice.parent?.subscription_details?.subscription;
+  const legacy = (invoice as unknown as { subscription?: string | { id: string } | null }).subscription;
+  return customerIdOf(fromParent ?? legacy ?? null);
+}
+
 export async function POST(req: Request) {
   if (!env.stripe.secretKey || !env.stripe.webhookSecret) {
     return NextResponse.json({ error: "Billing not configured." }, { status: 503 });
@@ -135,10 +189,35 @@ export async function POST(req: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.subscription) {
-          const subId = typeof session.subscription === "string" ? session.subscription : session.subscription.id;
-          const sub = await getStripe().subscriptions.retrieve(subId);
+        const intent = checkoutIntent(session as unknown as CheckoutSessionLike);
+        if (intent.kind === "subscription") {
+          const sub = await getStripe().subscriptions.retrieve(intent.subscriptionId);
           await syncSubscription(sub, session.client_reference_id);
+        } else if (intent.kind === "topup") {
+          await creditTopUp(session as unknown as CheckoutSessionLike);
+        }
+        break;
+      }
+      case "checkout.session.async_payment_succeeded": {
+        // A delayed payment method (SEPA debit) for a top-up has cleared.
+        await creditTopUp(event.data.object as unknown as CheckoutSessionLike);
+        break;
+      }
+      case "invoice.paid": {
+        await rewardReferral(event.data.object as Stripe.Invoice);
+        break;
+      }
+      case "invoice.upcoming": {
+        // Stripe's renewal heads-up. Only an annual subscription inside the
+        // L215-1 window (one to three months out) gets the notice; the daily
+        // sweep covers a lead time set shorter than a month in the dashboard.
+        const invoice = event.data.object as Stripe.Invoice;
+        const subId = invoiceSubscriptionId(invoice);
+        if (subId) {
+          await renewalNoticeForSubscription({
+            stripeSubscriptionId: subId,
+            totalCents: typeof invoice.total === "number" ? invoice.total : null,
+          });
         }
         break;
       }

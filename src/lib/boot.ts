@@ -51,4 +51,32 @@ export async function bootNodeRuntime(): Promise<void> {
       message: error instanceof Error ? error.message : String(error),
     });
   }
+
+  scheduleRenewalReminders();
+}
+
+const RENEWAL_SWEEP_EVERY_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * The annual-renewal notice sweep (renewal-reminders.ts), twice a day per
+ * process. The RenewalReminder ledger makes it one mail per period however
+ * many processes run it; unref'd so it never holds a draining process open.
+ * Off without Stripe or mail, and with RENEWAL_REMINDERS=off.
+ */
+function scheduleRenewalReminders(): void {
+  if (!process.env.STRIPE_SECRET_KEY || !process.env.RESEND_API_KEY) return;
+  if (process.env.RENEWAL_REMINDERS === "off" || process.env.NODE_ENV !== "production") return;
+  const run = async () => {
+    try {
+      const { sweepRenewalReminders } = await import("@/lib/billing/renewal-reminders");
+      const sent = await sweepRenewalReminders();
+      if (sent > 0) console.info("[boot] renewal notices sent", { sent });
+    } catch (error) {
+      console.error("[boot] renewal sweep failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  setTimeout(run, 5 * 60 * 1000).unref();
+  setInterval(run, RENEWAL_SWEEP_EVERY_MS).unref();
 }

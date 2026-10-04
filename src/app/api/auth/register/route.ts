@@ -8,11 +8,14 @@ import { isOwnerEmail } from "@/lib/owner";
 import { isEmailEnabled, sendEmailVerification } from "@/lib/email";
 import { issueEmailToken, markEmailVerified } from "@/lib/account-security";
 import { env } from "@/lib/env";
+import { captureReferralAtSignUp } from "@/lib/billing/referral-capture";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   email: z.string().email().max(200),
   password: z.string().min(8, "Password must be at least 8 characters").max(200),
+  /** Referral code, when the form carries one; the /r/<code> cookie otherwise. */
+  ref: z.string().max(32).optional(),
 });
 
 export async function POST(req: Request) {
@@ -55,6 +58,7 @@ export async function POST(req: Request) {
     data: { email, name: parsed.data.name ?? null, hashedPassword },
   });
   await ensureUserDefaults(user.id);
+  await captureReferralAtSignUp(user.id, parsed.data.ref);
 
   if (isEmailEnabled()) {
     // The account cannot spend until this link is opened (src/lib/usage.ts), so

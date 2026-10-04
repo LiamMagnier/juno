@@ -41,6 +41,13 @@ export interface EffectiveBudget {
   source: BudgetCapSource;
   /** True when `Settings.spendCapDisabled` is on. Every surface must say so. */
   capDisabled: boolean;
+  /**
+   * The part of `budgetMicroUsd` that usage credits (top-ups, referrals) add
+   * on top of the plan. 0 or absent when no credit applies. The 5-hour and
+   * weekly windows are sized on `budgetMicroUsd - creditMicroUsd`
+   * (`windowBaseMicroUsd`): credits buy more month, never a bigger burst.
+   */
+  creditMicroUsd?: number;
 }
 
 export interface EffectiveBudgetInput {
@@ -52,6 +59,13 @@ export interface EffectiveBudgetInput {
   capDisabled: boolean;
   /** How many EUR one USD of model spend costs; defaults to 1 (EUR ≙ USD). */
   eurPerUsd?: number;
+  /**
+   * Usage credit for this period, micro-USD: drawn this period plus still
+   * available (`periodCreditCeilingMicroUsd` in credits.ts). Extends the
+   * plan's figure only; an account's own lower cap still binds, and a plan
+   * with no figure (the owner) ignores it.
+   */
+  creditMicroUsd?: number;
 }
 
 /** EUR → micro-USD at the billing rate, the same conversion `budgetForPlan` uses. */
@@ -97,10 +111,34 @@ export function effectiveBudget(input: EffectiveBudgetInput): EffectiveBudget {
     };
   }
 
-  if (userCapMicroUsd == null || userCapMicroUsd >= input.planBudgetMicroUsd) {
-    return { budgetMicroUsd: input.planBudgetMicroUsd, source: "plan", capDisabled: false };
+  const credit = Math.max(0, Math.round(input.creditMicroUsd ?? 0));
+  const planCeiling = input.planBudgetMicroUsd + credit;
+  if (userCapMicroUsd == null || userCapMicroUsd >= planCeiling) {
+    return {
+      budgetMicroUsd: planCeiling,
+      source: "plan",
+      capDisabled: false,
+      ...(credit > 0 ? { creditMicroUsd: credit } : {}),
+    };
   }
-  return { budgetMicroUsd: userCapMicroUsd, source: "user", capDisabled: false };
+  // Whatever of the user's own cap sits above the plan figure is credit.
+  const creditInCap = Math.max(0, userCapMicroUsd - input.planBudgetMicroUsd);
+  return {
+    budgetMicroUsd: userCapMicroUsd,
+    source: "user",
+    capDisabled: false,
+    ...(creditInCap > 0 ? { creditMicroUsd: creditInCap } : {}),
+  };
+}
+
+/**
+ * The monthly figure the 5-hour and weekly windows are sliced from: the
+ * effective ceiling WITHOUT usage credits, so a top-up never widens a window.
+ * null when the cap is disabled.
+ */
+export function windowBaseMicroUsd(budget: EffectiveBudget): number | null {
+  if (budget.budgetMicroUsd == null) return null;
+  return Math.max(0, budget.budgetMicroUsd - Math.max(0, budget.creditMicroUsd ?? 0));
 }
 
 // ---------------------------------------------------------------------------

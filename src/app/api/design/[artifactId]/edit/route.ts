@@ -6,7 +6,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import type { Plan } from "@prisma/client";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { consumeMessage, consumeRefusalBody, getUserPlan, refundMessage } from "@/lib/usage";
-import { budgetExceededMessage, checkBudget, recordSpend } from "@/lib/spend";
+import { checkBudget, recordSpend } from "@/lib/spend";
+import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { buildUsage } from "@/lib/chat-usage";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { providerErrorMessage, streamChat } from "@/lib/llm";
@@ -177,7 +178,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
   const budget = await checkBudget(user.id, plan);
   if (!budget.allowed) {
     return NextResponse.json(
-      { error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) },
+      budgetExceededBody(plan, budget.resetsAtMs),
       { status: 402 }
     );
   }

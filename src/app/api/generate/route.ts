@@ -6,7 +6,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import { resolveModel, imageEditSupport, type MediaModality } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
-import { checkBudget, recordSpend, budgetExceededMessage, mediaRequestCost } from "@/lib/spend";
+import { checkBudget, recordSpend, mediaRequestCost } from "@/lib/spend";
+import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { planRank } from "@/lib/plans";
 import { generateImage, editImage } from "@/lib/image-gen";
 import { generateVideo, isVideoGenSupported, videoGenUnsupportedMessage } from "@/lib/video-gen";
@@ -134,7 +135,7 @@ export async function POST(req: Request) {
 
   const budget = await checkBudget(user.id, plan);
   if (!budget.allowed) {
-    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
+    return NextResponse.json(budgetExceededBody(plan, budget.resetsAtMs), { status: 402 });
   }
 
   if (model.modality === "video" && !isVideoGenSupported(model)) {
@@ -154,7 +155,7 @@ export async function POST(req: Request) {
   // generation (four images, a 15s 1080p clip) must fit in what is left. A
   // default request keeps today's gate exactly.
   if (cost.estimateMicroUsd > baseCost && budget.remainingMicroUsd != null && cost.estimateMicroUsd > budget.remainingMicroUsd) {
-    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
+    return NextResponse.json(budgetExceededBody(plan, budget.resetsAtMs), { status: 402 });
   }
   const providerPrompt = promptWithSuffix(prompt, genPlan.wire);
 
