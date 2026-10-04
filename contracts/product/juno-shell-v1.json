@@ -13,9 +13,12 @@
   ],
   "plans": [
     "FREE",
+    "LITE",
     "PRO",
+    "PLUS",
     "MAX",
     "MAX20",
+    "ULTRA",
     "OWNER"
   ],
   "products": [
@@ -35,7 +38,7 @@
       "kind": "code",
       "icon": "AppIcons.code",
       "webChord": "\u2318\u21e72",
-      "minPlan": "FREE"
+      "minPlan": "PRO"
     }
   ],
   "destinations": [
