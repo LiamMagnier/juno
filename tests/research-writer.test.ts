@@ -76,7 +76,7 @@ test("the writer is timeboxed to a quarter of the clock, six minutes at most, an
   assert.equal(WRITER_TIMEBOX_MAX_MS, 6 * 60_000);
 });
 
-test("an empty report is retried once on a smaller corpus, then the run fails as writer_empty (B6)", async () => {
+test("an empty report is retried once on a smaller corpus, then the run delivers the evidence digest (B6, F6)", async () => {
   const { store, events } = memoryStore();
   const scales: number[] = [];
   const engine = createResearchEngine({
@@ -89,9 +89,11 @@ test("an empty report is retried once on a smaller corpus, then the run fails as
   const run = await engine.start({ userId: "u", goal: "How do heat pumps cope with Nordic winters?", confirmation: "auto" });
   const done = await engine.drive({ runId: run.id, userId: "u" });
   assert.deepEqual(scales, [1, WRITER_RETRY_CORPUS_SCALE]);
-  assert.equal(done?.state, "failed", "an empty report is not a completed run");
+  assert.equal(done?.state, "partially_completed", "an empty report is not a completed run, and not a lost one either");
+  assert.match(done?.report ?? "", /^# /, "the digest is a report the reader can open");
+  assert.equal(parsePlan(done?.plan).digest, true);
   const finished = events.find((event) => event.runId === run.id && event.kind === "run_finished");
-  assert.equal((finished?.payload as { reason?: string }).reason, "writer_empty");
+  assert.equal((finished?.payload as { reason?: string }).reason, "writer_digest");
 });
 
 test("a short report that the retry fixes carries on to the audit (B6)", async () => {

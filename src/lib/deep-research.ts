@@ -229,6 +229,9 @@ const ERROR_TITLE: Record<string, string> = {
   investigating: "A research step could not run",
   writer: "The report is being written again",
   planner: "The plan could not be revised",
+  planning: "Planning another way",
+  search: "Widening the searches",
+  stage: "A research step is being retried",
 };
 
 export async function runDeepResearch(opts: {

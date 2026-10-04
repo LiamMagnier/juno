@@ -23,6 +23,7 @@ import {
 import {
   type PlannerDraft,
   contentLanguage,
+  goalFloorPlan,
   isTinyScope,
   languageName,
   plannedResearch,
@@ -34,6 +35,12 @@ import type { ResearchEnvelope, ResearchEstimate, ResearchEstimateCaps } from "@
 import type { ResearchRunRow, StepOutcome } from "./types";
 import { estimateFor } from "@/lib/research/estimate";
 import type { EngineContext } from "./context";
+
+/** The live line for each step down the planner's ladder (F3, F4). */
+export const PLANNER_FALLBACK_MESSAGE = {
+  second_model: "The first plan did not hold together. Asking another model.",
+  lines: "Drafting a simpler plan.",
+} as const;
 
 export function createPlanningStage(ctx: EngineContext) {
   const { deps, store, beat, append, advance, finish, affordable, stopForBudget, bill } = ctx;
@@ -158,14 +165,17 @@ export function createPlanningStage(ctx: EngineContext) {
   const doStructuredPlanning = async (
     run: ResearchRunRow,
     signal?: AbortSignal,
-    heartbeat?: () => Promise<void>
+    heartbeat?: () => Promise<void>,
+    opts: { floor?: boolean } = {}
   ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
     const estimate = plannerEstimate();
-    if (!(await affordable(run, estimate))) return stopForBudget(run, estimate);
+    if (!opts.floor && !(await affordable(run, estimate))) return stopForBudget(run, estimate);
     const dateLine = plan.today ?? todayLine(run.createdAt, plan.timeZone);
     let drafted: PlannerDraft;
-    try {
+    // `floor`: the planning stage itself kept failing (F7), so no model is asked again.
+    if (opts.floor) drafted = { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
+    else try {
       drafted = await beat(
         () =>
           deps.draftPlan!({
@@ -178,6 +188,12 @@ export function createPlanningStage(ctx: EngineContext) {
             languageName: plan.language ? languageName(plan.language) : null,
             leadModel: plan.envelope?.leadModel ?? null,
             signal,
+            // Each step down the planner's ladder is narrated, so the line
+            // reads "trying another model" instead of sitting still (F3).
+            onFallback: (step) =>
+              append(run.id, run.userId, [
+                { kind: "error", payload: { scope: "planning", recoverable: true, step, message: PLANNER_FALLBACK_MESSAGE[step] } },
+              ]).then(() => undefined),
           }),
         heartbeat
       );
@@ -186,15 +202,22 @@ export function createPlanningStage(ctx: EngineContext) {
       drafted = { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
     }
     await bill(run, drafted.costMicroUsd, "plan");
+    if (signal?.aborted) return { kind: "raced" };
+    /*
+     * NO RUN ENDS AT "COULD NOT DRAFT A PLAN" (RESEARCH_V2 F4). When no model
+     * produced a plan, the question as asked is the plan: one question per
+     * question sentence, searched in its own words. It is not the old
+     * fourteen-suffix template — it adds nothing the person did not write —
+     * and it is marked, so the scope card tells the person before anything
+     * is spent, and they can add questions or start as it is.
+     */
+    const output = drafted.ok ? drafted.output : goalFloorPlan(run.goal);
+    const plannedBy = drafted.ok ? drafted.plannedBy : "goal";
     if (!drafted.ok) {
-      const ended = await finish(run, "failed", {
-        reason: "planner_invalid",
-        error: "The research planner could not draft a plan for this question. Try again, or rephrase the goal.",
-      });
-      return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+      console.warn("[research] planner unavailable; planning the question as asked", { runId: run.id });
     }
 
-    const planned = plannedResearch(drafted.output);
+    const planned = plannedResearch(output);
     const now = deps.now().toISOString();
     let next: ResearchPlan = {
       ...plan,
@@ -211,6 +234,7 @@ export function createPlanningStage(ctx: EngineContext) {
       language: contentLanguage({ explicit: plan.language, planner: planned.language, uiLocale: plan.locale }),
       today: dateLine,
       draftedAt: now,
+      plannedBy: plannedBy === "lines" || plannedBy === "goal" ? plannedBy : undefined,
       issuedQueries: [],
       followUpRound: 0,
       coverage: [],
@@ -226,7 +250,8 @@ export function createPlanningStage(ctx: EngineContext) {
       const caps = preview ? preview.caps : legacyEstimateCaps(next);
       const estimateLine: ResearchEstimate = preview ? preview.estimate : estimateFor(planned.scope, caps);
       next = { ...next, estimateCaps: caps };
-      tiny = isTinyScope(planned.scope, estimateLine, planned.clarifications.length);
+      // A plan nobody drafted always stops at the card: the person sees it before it runs.
+      tiny = plannedBy !== "goal" && isTinyScope(planned.scope, estimateLine, planned.clarifications.length);
       if (tiny) sized = preview;
     }
     if (auto || tiny) {
@@ -242,6 +267,7 @@ export function createPlanningStage(ctx: EngineContext) {
       ...(next.approach ? { approach: next.approach } : {}),
       ...(next.title ? { title: next.title } : {}),
       clarifications: next.clarifications?.length ?? 0,
+      ...(next.plannedBy ? { plannedBy: next.plannedBy } : {}),
     };
     await store.savePlan({ runId: run.id, userId: run.userId, plan: next });
     await store.recordQueries({ runId: run.id, userId: run.userId, queries: next.queries });

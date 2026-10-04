@@ -496,6 +496,8 @@ export interface ResearchDeps {
     /** The lead model the run was sized for, when it has been. */
     leadModel?: string | null;
     signal?: AbortSignal;
+    /** Each step down the planner's ladder (F3, F4), for the live narration. */
+    onFallback?: (step: "second_model" | "lines") => Promise<void> | void;
   }): Promise<PlannerDraft>;
   /**
    * Sizes the run from its scope (SPEC §9.2): the server gathers the plan,

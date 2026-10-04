@@ -27,10 +27,19 @@ import {
 } from "@/lib/research/domain";
 import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
 import { researchLeadModel } from "@/lib/research/agents/worker";
-import { draftResearchPlan, languageName, looksLikeJson, parsePlannerOutput, type PlannerCompletion } from "@/lib/research/planner";
+import {
+  draftResearchPlan,
+  languageName,
+  looksLikeJson,
+  parsePlannerOutput,
+  planFromLines,
+  plannerRequest,
+  type PlannerCompletion,
+} from "@/lib/research/planner";
 import { packCorpus, writerCorpusBudgetTokens } from "@/lib/research/corpus-pack";
-import { researchLanguageLine } from "@/lib/research/planner.prompt";
-import { getModelMetrics } from "@/lib/model-metrics";
+import { plannerLinesSystemPrompt, researchLanguageLine } from "@/lib/research/planner.prompt";
+import type { ReasoningEffort } from "@/types/chat";
+import { REASONING_TIERS, getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import { MODEL_LIST } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import type { AdapterRequest } from "@/lib/llm/types";
@@ -57,6 +66,9 @@ const CLARIFY_TIMEOUT_MS = 20_000;
  * is exactly the run that used to collapse to one literal search.
  */
 const PLAN_TIMEOUT_MS = 60_000;
+/** The plain-text planner is a short reply on a fast model (F4a). */
+const PLAN_LINES_TIMEOUT_MS = 30_000;
+const PLANNER_LINES_OUTPUT_TOKENS = 1_200;
 const SEARCH_TIMEOUT_MS = 30_000;
 const FETCH_TIMEOUT_MS = 25_000;
 /**
@@ -232,7 +244,9 @@ async function utilityCompletion(opts: {
   signal?: AbortSignal;
   label: string;
   /** Structured output where the provider can hold a reply to a schema (§5.0). */
-  responseSchema?: AdapterRequest["responseSchema"];
+  responseSchema?: AdapterRequest["responseSchema"] | null;
+  /** The thinking level; omitted means the provider's default for the model. */
+  reasoningEffort?: ReasoningEffort;
 }): Promise<{ text: string; costMicroUsd: number }> {
   const box = timeboxSignal(opts.signal, opts.timeoutMs);
   let out = "";
@@ -246,6 +260,7 @@ async function utilityCompletion(opts: {
       maxTokens: opts.maxTokens,
       signal: box.signal,
       ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
+      ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
     })) {
       if (ev.type === "text") out += ev.text;
       else if (ev.type === "usage") {
@@ -296,20 +311,39 @@ function configuredModel(id: string | null | undefined): ModelInfo | null {
 }
 
 /**
- * PLAN, merged (SPEC §9.5): one structured call on the lead model through
- * `streamChat`'s `responseSchema`, validated here whatever the provider did
- * with the schema, retried once, and otherwise `planner_invalid` (B5).
+ * The thinking level a planning call asks for (F2): the model's `low` tier,
+ * else its lowest. A plan is a short, structured reply; on a thinking model at
+ * its default level the reasoning and the JSON share one output budget, and a
+ * structured call is never continued, so the plan came back empty or cut off.
+ * `streamChat` adds the effort-scaled output allowance on top of the cap.
+ */
+export function plannerReasoningEffort(model: ModelInfo): ReasoningEffort | undefined {
+  if (!model.reasoning) return undefined;
+  const caps = reasoningCaps(model);
+  if (caps.onOff || caps.tiers.length === 0) return undefined;
+  if (caps.tiers.includes("low")) return "low";
+  return REASONING_TIERS.find((tier) => caps.tiers.includes(tier)) ?? undefined;
+}
+
+/**
+ * PLAN, merged (SPEC §9.5), and every way down from it (F1–F4):
+ *
+ *   1. the lead model, structured, thinking lightly;
+ *   2. the same model again, asked for a smaller plan in plain JSON;
+ *   3. 1 and 2 on the strongest other configured model;
+ *   4. the plain-text planner — two lists, no JSON — on the fastest model;
+ *   5. nothing: the engine's floor plans the question as asked.
+ *
+ * Every call is billed through `utilityCompletion`, used or not. Each step
+ * down is narrated (`onFallback`) so the person watching sees the planner
+ * work rather than a frozen line.
  */
 export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
-  // The chat's own model first, then the strongest other configured model.
-  // A lead that cannot hold the plan's schema (a provider's structured mode
-  // refusing it, a thinking budget eating the reply) used to fail the run
-  // outright: "The research planner could not draft a plan for this question".
-  // A second model is one more call; a failed run is the whole question lost.
   const candidates = plannerCandidates(input.leadModel);
-  if (!candidates.length) return { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
   let costMicroUsd = 0;
-  for (const model of candidates) {
+  for (const [index, model] of candidates.entries()) {
+    if (index > 0) await input.onFallback?.("second_model");
+    const effort = plannerReasoningEffort(model);
     const complete: PlannerCompletion = async (request) => {
       const reply = await utilityCompletion({
         userId: input.userId,
@@ -321,6 +355,7 @@ export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> 
         signal: input.signal,
         label: request.attempt === 1 ? "plan" : "plan (retry)",
         responseSchema: request.responseSchema,
+        reasoningEffort: effort,
       });
       if (!parsePlannerOutput(reply.text)) {
         // Why, never what: the reply carries the person's question.
@@ -347,10 +382,46 @@ export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> 
     );
     costMicroUsd += drafted.costMicroUsd;
     if (drafted.ok) return { ...drafted, costMicroUsd };
+    if (input.signal?.aborted) return { ok: false, reason: "planner_invalid", costMicroUsd };
+  }
+
+  // 4. Two lists, which every model can write.
+  const system = plannerLinesSystemPrompt({
+    dateLine: input.dateLine,
+    languageLine: input.languageName ? researchLanguageLine(input.languageName) : null,
+  });
+  const prompt = plannerRequest(input);
+  for (const model of linesPlannerCandidates(candidates)) {
     if (input.signal?.aborted) break;
+    await input.onFallback?.("lines");
+    const reply = await utilityCompletion({
+      userId: input.userId,
+      model,
+      system,
+      prompt,
+      maxTokens: PLANNER_LINES_OUTPUT_TOKENS,
+      timeoutMs: PLAN_LINES_TIMEOUT_MS,
+      signal: input.signal,
+      label: "plan (lines)",
+      reasoningEffort: plannerReasoningEffort(model),
+    });
+    costMicroUsd += reply.costMicroUsd;
+    const output = planFromLines(reply.text);
+    if (output) return { ok: true, output, costMicroUsd, plannedBy: "lines" };
+    console.warn("[research] lines planner reply unusable", { model: model.id, ...plannerReplyShape(reply.text) });
   }
   return { ok: false, reason: "planner_invalid", costMicroUsd };
 };
+
+/** The plain-text planner's models: the fastest configured one first, then the lead. */
+export function linesPlannerCandidates(tried: readonly ModelInfo[]): ModelInfo[] {
+  const out: ModelInfo[] = [];
+  for (const model of [utilityModelCandidates()[0], ...tried]) {
+    if (model && !out.some((m) => m.id === model.id)) out.push(model);
+    if (out.length === 2) break;
+  }
+  return out;
+}
 
 /** The lead model, then one fallback: the strongest other configured model. */
 export function plannerCandidates(leadId: string | null | undefined): ModelInfo[] {
@@ -843,7 +914,11 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   corpusScale = 1,
   timeoutMs,
 }) => {
-  const model = configuredModel(plan.envelope?.leadModel) ?? researchPlannerModel();
+  // The one retry after an unusable report (B6) runs on the second
+  // candidate as well as a smaller corpus (F6): an outage or a refusal on
+  // the lead fails the same way twice on the same model.
+  const pool = plannerCandidates(plan.envelope?.leadModel);
+  const model = (corpusScale < 1 ? pool[1] : undefined) ?? pool[0] ?? null;
   // The same function the citation audit numbers against — see `citableSources`.
   const readable = citableSources(sources);
   if (!model || readable.length === 0) return { report: "", costMicroUsd: 0 };
