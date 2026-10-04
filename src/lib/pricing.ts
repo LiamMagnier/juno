@@ -1,4 +1,5 @@
 import type { ModelInfo } from "@/lib/models";
+import { geminiFlashRate, isGeminiPromoFlash } from "@/lib/scheduled-prices";
 
 /**
  * Per-model token + tool pricing so message cost and ApiSpend match real
@@ -130,7 +131,7 @@ export function normalizeUsage(provider: string, u: RawUsage): NormalizedUsage {
 
 // Verified against provider pricing pages + Artificial Analysis, 2026-07-10
 // (sources in docs/models.md). Keep in sync with model-metrics.ts FAMILY_RULES.
-function baseRate(model: ModelInfo): { input: number; output: number } {
+function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: number; output: number } {
   const pm = model.providerModel.toLowerCase();
   switch (model.provider) {
     case "anthropic":
@@ -179,8 +180,9 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 2.5, output: 10 };
     case "google":
       if (pm.includes("3.1-flash-lite")) return { input: 0.25, output: 1.5 };
-      // Promotional standard rates through 2026-12-31; see docs/models-september-2026.md.
-      if (/3\.[678]-flash/.test(pm)) return { input: 0.75, output: 3.75 };
+      // $0.75/$3.75 through 2026-12-31, $1.50/$7.50 from 2027-01-01 UTC
+      // (scheduled-prices.ts), priced at the moment the tokens were used.
+      if (isGeminiPromoFlash(pm)) return { ...geminiFlashRate(at) };
       // Before the 3.5-flash test, which this id also matches — see the same
       // ordering note in model-metrics.ts.
       if (pm.includes("3.5-flash-lite")) return { input: 0.3, output: 2.5 };
@@ -372,8 +374,8 @@ export function supportsFastMode(model: ModelInfo): boolean {
  * `cacheWrite` for Anthropic is the **1h** rate (2×).
  * `fastMode` scales base input/output (and derived cache rates).
  */
-export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
-  const raw = baseRate(model);
+export function tokenRate(model: ModelInfo, fastMode = false, at: Date | number = Date.now()): TokenRate {
+  const raw = baseRate(model, at);
   const mult = fastMode ? fastModeMultiplier(model) ?? 1 : 1;
   const input = raw.input * mult;
   const output = raw.output * mult;
@@ -628,9 +630,9 @@ function longContextMultipliers(model: ModelInfo, totalInput: number): { input: 
 }
 
 /** Token-only cost (no tool fees). */
-function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
+function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false, at: Date | number = Date.now()): number {
   const n = normalizeUsage(model.provider, u);
-  const r = tokenRate(model, fastMode);
+  const r = tokenRate(model, fastMode, at);
 
   let writeCost = 0;
   if (n.cacheWrite5m > 0 || n.cacheWrite1h > 0) {
@@ -672,9 +674,10 @@ export function estimateCostUsd(
   model: ModelInfo,
   u: RawUsage,
   fastMode = false,
-  extras: ToolUsageExtras = {}
+  extras: ToolUsageExtras = {},
+  at: Date | number = Date.now()
 ): number {
-  const tokens = tokenCostUsd(model, u, fastMode);
+  const tokens = tokenCostUsd(model, u, fastMode, at);
   const tools = toolFeesUsd(model.provider, extras, model);
   const cost = tokens + tools;
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
@@ -821,18 +824,21 @@ export function estimateGenerationCostUsd(
   };
 }
 
-/** Recompute ledger cost in micro-USD from stored token counts (repair path). */
+/** Recompute ledger cost in micro-USD from stored token counts (repair path).
+ *  `at` is when the row was spent: a scheduled price change must not reprice
+ *  older rows, and the repair writes any higher figure back to the ledger. */
 export function recomputeCostMicroUsd(
   modelId: string,
   promptTokens: number,
   completionTokens: number,
-  resolve: (id: string) => ModelInfo | null
+  resolve: (id: string) => ModelInfo | null,
+  at: Date | number = Date.now()
 ): number {
   const model = resolve(modelId);
   if (!model) {
     // Mid-tier fallback $2/$10 per MTok when the model id is gone.
     return Math.max(0, Math.round(promptTokens * 2 + completionTokens * 10));
   }
-  const usd = estimateCostUsd(model, { input: promptTokens, output: completionTokens });
+  const usd = estimateCostUsd(model, { input: promptTokens, output: completionTokens }, false, {}, at);
   return Math.max(0, Math.round(usd * 1_000_000));
 }

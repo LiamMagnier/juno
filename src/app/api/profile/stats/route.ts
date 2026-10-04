@@ -71,6 +71,7 @@ export async function GET() {
         promptTokens: true,
         completionTokens: true,
         costMicroUsd: true,
+        createdAt: true,
       },
       // Hard cap for pathological accounts; recompute is O(n) in memory.
       take: 200_000,
@@ -117,7 +118,7 @@ export async function GET() {
     const tokensIn = Math.max(0, spend.promptTokens ?? 0);
     const tokensOut = Math.max(0, spend.completionTokens ?? 0);
     const stored = Math.max(0, spend.costMicroUsd ?? 0);
-    const recomputed = recomputeCostMicroUsd(spend.model, tokensIn, tokensOut, resolveModel);
+    const recomputed = recomputeCostMicroUsd(spend.model, tokensIn, tokensOut, resolveModel, spend.createdAt);
     // Prefer the higher of stored vs recomputed — never under-report to the user.
     const cost = Math.max(stored, recomputed);
 
@@ -173,7 +174,7 @@ export async function GET() {
     .map((spend) => {
       const tokensIn = Math.max(0, spend.promptTokens ?? 0);
       const tokensOut = Math.max(0, spend.completionTokens ?? 0);
-      const recomputed = recomputeCostMicroUsd(spend.model, tokensIn, tokensOut, resolveModel);
+      const recomputed = recomputeCostMicroUsd(spend.model, tokensIn, tokensOut, resolveModel, spend.createdAt);
       const stored = Math.max(0, spend.costMicroUsd ?? 0);
       if (recomputed <= stored) return null;
       return { id: spend.id, costMicroUsd: recomputed };
