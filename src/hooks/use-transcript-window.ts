@@ -157,23 +157,28 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     syncViewport();
   }, [layout, last?.content, messages.length, showAll, viewport.height, syncViewport, writeTop]);
 
+  /** Mounts a message and centres it; find, search links and the rail all come here. */
+  const focusMessage = React.useCallback((messageId: string) => {
+    const index = messages.findIndex((m) => m.id === messageId);
+    const el = scrollRef.current;
+    if (index < 0 || !el) return;
+    followsRef.current = false;
+    pendingAnchor.current = null;
+    targetRef.current = messageId;
+    const top = Math.max(0, layout.offsets[index] + 24 - el.clientHeight / 2);
+    writeTop(top);
+    setViewport({ top, height: el.clientHeight });
+    bump();
+  }, [messages, layout, writeTop]);
+
   React.useEffect(() => {
     const focus = (event: Event) => {
       const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
-      const index = messages.findIndex((m) => m.id === messageId);
-      const el = scrollRef.current;
-      if (index < 0 || !el || !messageId) return;
-      followsRef.current = false;
-      pendingAnchor.current = null;
-      targetRef.current = messageId;
-      const top = Math.max(0, layout.offsets[index] + 24 - el.clientHeight / 2);
-      writeTop(top);
-      setViewport({ top, height: el.clientHeight });
-      bump();
+      if (messageId) focusMessage(messageId);
     };
     window.addEventListener(TRANSCRIPT_FOCUS_EVENT, focus);
     return () => window.removeEventListener(TRANSCRIPT_FOCUS_EVENT, focus);
-  }, [messages, layout, writeTop]);
+  }, [focusMessage]);
 
   // Keep a focused action mounted even if a wheel gesture leaves its row.
   const onFocusCapture = React.useCallback((event: React.FocusEvent) => {
@@ -217,5 +222,5 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     syncViewport();
   }, [jumpToLatest, syncViewport, writeTop]);
 
-  return { scrollRef, contentRef, atBottom, onScroll, onKeyDown, onFocusCapture, onBlurCapture, layout, indices, observeRow, windowed, showAll, setShowAll, jumpToLatest };
+  return { scrollRef, contentRef, atBottom, onScroll, onKeyDown, onFocusCapture, onBlurCapture, layout, indices, observeRow, windowed, showAll, setShowAll, jumpToLatest, focusMessage, viewport };
 }

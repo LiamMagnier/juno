@@ -6,6 +6,7 @@ import * as React from "react";
 import { contextReceiptFromActivity } from "@/lib/chat/context-tokens";
 import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
+import { TranscriptRail } from "@/components/chat/transcript-rail";
 import { useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { countTranscriptRender, placeInlineRuns } from "@/lib/chat/transcript-window";
@@ -155,6 +156,9 @@ export function MessageList(props: MessageListProps) {
   }
   const transcript = useTranscriptWindow(messages);
   const { scrollRef, contentRef, atBottom, onScroll, jumpToLatest } = transcript;
+  // From two turns up the rail stands in for the scrollbar (sm and wider; a
+  // phone keeps its own scroll indicator and the full width for the text).
+  const hasRail = React.useMemo(() => messages.filter((m) => m.role === "USER").length > 1, [messages]);
   // Seeded true when no entrance was asked for, so the class never goes on and
   // nothing is left waiting for an animationend that will not fire.
   const [entered, setEntered] = React.useState(!props.entrance);
@@ -233,7 +237,10 @@ export function MessageList(props: MessageListProps) {
         // and slide the transcript column ~7px left of the composer, which
         // sits outside it. Reserving the gutter on both sides keeps the two
         // columns on one centre line whatever the platform's scrollbars do.
-        className="h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
+        className={cn(
+          "h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]",
+          hasRail && "sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden",
+        )}
         style={SCROLL_FADE_STYLE}
       >
         {/*
@@ -342,6 +349,18 @@ export function MessageList(props: MessageListProps) {
           <div />
         </div>
       </div>
+
+      {hasRail && (
+        <TranscriptRail
+          messages={messages}
+          layout={transcript.layout}
+          viewport={transcript.viewport}
+          atBottom={atBottom}
+          onFocusMessage={transcript.focusMessage}
+          onJumpToLatest={jumpToLatest}
+          className="z-10 hidden sm:block"
+        />
+      )}
 
       {/* `pointer-events-none` hides this from the mouse and from nobody else:
           the button stayed in the tab order at opacity 0, so a keyboard user
