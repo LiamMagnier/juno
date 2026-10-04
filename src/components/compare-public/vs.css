@@ -19,7 +19,7 @@
 .vs-face { padding: 32px 40px 40px 0; display: flex; flex-direction: column; gap: 14px; }
 .vs-face + .vs-face { padding-left: 40px; padding-right: 0; border-left: 1px solid var(--alv-hair); }
 .vs-face h2 { margin: 0; }
-.vs-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 12px; }
+.vs-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: auto; padding-top: 12px; }
 .vs-figure dt { font-size: 13px; line-height: 20px; color: var(--alv-sub); }
 .vs-figure dd { margin: 4px 0 0; font-family: var(--font-serif), Newsreader, serif; font-size: 28px; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 
@@ -85,4 +85,8 @@
   .vs-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vs-list a { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .vs-list a .alv-caption { text-align: left; }
+  .vs-table { min-width: 0; font-size: 14px; line-height: 22px; }
+  .vs-table th, .vs-table td { padding-right: 12px; }
+  .vs-table tbody th { width: 36%; }
+  .vs-table.vs-table-wide { min-width: 640px; }
 }

@@ -84,7 +84,7 @@ export default async function VsIndexPage() {
             <p className="alv-lede">List prices in US dollars per million tokens, and the plan that includes each model.</p>
           </header>
           <div className="vs-table-wrap">
-            <table className="vs-table">
+            <table className="vs-table vs-table-wide">
               <caption className="sr-only">Models compared on these pages</caption>
               <thead>
                 <tr>
