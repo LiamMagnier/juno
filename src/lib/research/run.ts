@@ -59,7 +59,7 @@ import { reviewResearchRound } from "@/lib/research/agents/lead";
 import { canonicalUrl } from "@/lib/search/url-safety";
 import { searchProviderStatus } from "@/lib/search/search-engine";
 import { getUserPlan } from "@/lib/usage";
-import { checkBudget, eurPerUsd } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, eurPerUsd } from "@/lib/spend";
 import { MODEL_LIST } from "@/lib/models";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import {
@@ -83,6 +83,7 @@ import {
   countsOf,
   dtoEffort,
   estimateOf,
+  emergingAnswersOf,
   latestFindingsOf,
   pagesReadOf,
   phaseDetailFor,
@@ -663,10 +664,15 @@ const REFERENCE_RATES: ResearchModelRates = { inputMicroUsdPerToken: 3, outputMi
 /** Results per query the roster is priced at: the middle of the breadth table. */
 const ROSTER_RESULTS_PER_QUERY = 20;
 
-/** The owner's clamp (§9.2): `RESEARCH_CHAT_BUDGET_USD`, now only an override. */
-function ownerOverrideMicroUsd(): number | null {
-  const raw = Number(process.env.RESEARCH_CHAT_BUDGET_USD?.trim());
-  return Number.isFinite(raw) && raw > 0 ? Math.round(Math.min(40, raw) * 1_000_000) : null;
+/**
+ * Whether the account's five-hour or weekly window is spent (RESEARCH_V2 §6):
+ * the engine asks at each round boundary, and a spent window ends the rounds.
+ * Unmetered accounts (enforcement off) have no window and are never spent.
+ */
+async function researchWindowSpent(input: { userId: string }): Promise<boolean> {
+  const plan = await getUserPlan(input.userId);
+  const status = await checkUsageWindows(input.userId, plan);
+  return !status.capDisabled && !status.allowed;
 }
 
 /** Start of the requester's local calendar day, else the UTC day (§9.2 starts per day). */
@@ -729,8 +735,9 @@ export async function sizeResearchRun(input: {
   if (!lead) return { refused: true, reason: "not_configured", params: {} };
   const stepDown = researchStepDownModel({ plan: userPlan, preferred: input.plan.preferredLead ?? null });
   const now = new Date();
-  const [budget, liveRuns, startsToday] = await Promise.all([
+  const [budget, windows, liveRuns, startsToday] = await Promise.all([
     checkBudget(input.run.userId, userPlan, undefined, undefined, { reap: false }),
+    checkUsageWindows(input.run.userId, userPlan),
     liveRunCount(input.run.userId, input.run.id),
     startsSince(input.run.userId, startOfLocalDay(now, input.plan.timeZone), input.run.id),
   ]);
@@ -743,13 +750,15 @@ export async function sizeResearchRun(input: {
       monthMicroUsd: budget.capDisabled ? null : budget.remainingMicroUsd,
       monthBudgetMicroUsd: budget.budgetMicroUsd,
       resetsAtMs: budget.resetsAtMs,
+      // The usage windows are the run's money limit (RESEARCH_V2 §6).
+      windowMicroUsd: windows.capDisabled ? null : windows.allowed ? windows.remainingMicroUsd : 0,
+      windowResetsAtMs: windows.resetsAtMs,
     },
     rates: { worker, lead: ratesOf(lead) ?? REFERENCE_RATES, judge: worker },
     roster: researchRoster(searchProviderStatus().keyed, ROSTER_RESULTS_PER_QUERY),
     liveRuns,
     startsToday,
     eurPerUsd: eurPerUsd(),
-    overrideCeilingMicroUsd: userPlan === "OWNER" ? ownerOverrideMicroUsd() : null,
     leadModel: lead.id,
     stepDown: stepDown && stepDownRates && stepDown.id !== lead.id ? { leadModel: stepDown.id, rates: stepDownRates } : null,
   });
@@ -815,10 +824,11 @@ export async function researchStartCheck(input: {
   const caps = RESEARCH_PLAN_CAPS[input.plan];
   if (!caps.entitled) return { refused: true, reason: "plan", params: {} };
   const now = input.now ?? new Date();
-  const [live, started, budget] = await Promise.all([
+  const [live, started, budget, windows] = await Promise.all([
     liveRunCount(input.userId),
     startsSince(input.userId, startOfLocalDay(now, input.timeZone)),
     checkBudget(input.userId, input.plan, undefined, undefined, { reap: false }),
+    checkUsageWindows(input.userId, input.plan),
   ]);
   if (live >= caps.liveRuns) return { refused: true, reason: "live_runs", params: { limit: caps.liveRuns } };
   if (caps.startsPerDay !== null && started >= caps.startsPerDay) {
@@ -826,6 +836,14 @@ export async function researchStartCheck(input: {
   }
   const lead = ratesOf(researchLeadModel({ plan: input.plan })) ?? REFERENCE_RATES;
   const plannerCall = modelCallEstimateMicroUsd(PLANNER_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, PLANNER_OUTPUT_TOKENS, lead);
+  // A spent five-hour or weekly window refuses a start, with when it frees up (§6).
+  if (!windows.capDisabled && (!windows.allowed || (windows.remainingMicroUsd !== null && windows.remainingMicroUsd < plannerCall))) {
+    return {
+      refused: true,
+      reason: "budget",
+      params: { limit: "window", ...(windows.resetsAtMs ? { resetsOn: new Date(windows.resetsAtMs).toISOString() } : {}) },
+    };
+  }
   if (!budget.capDisabled && budget.remainingMicroUsd !== null && budget.remainingMicroUsd < plannerCall) {
     return {
       refused: true,
@@ -898,6 +916,7 @@ export function researchEngine(): ResearchEngine {
     plan: planResearchQueries,
     draftPlan: draftPlanForRun,
     sizeRun: sizeResearchRun,
+    windowSpent: researchWindowSpent,
     complete: completeResearchRun,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
@@ -970,6 +989,7 @@ export function gatheringOnlyEngine(): ResearchEngine {
     // call, and an envelope from its scope with `confirmation: "auto"`.
     draftPlan: draftPlanForRun,
     sizeRun: sizeResearchRun,
+    windowSpent: researchWindowSpent,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
     expandQueries: expandResearchQueries,
@@ -1242,7 +1262,10 @@ export async function readResearchRun(input: {
   const store = createPrismaResearchStore();
   const run = await store.loadRun(input.runId, input.userId);
   if (!run) return null;
-  const [events, sources, auditEvent, latestEvent, phaseEvent, findings] = await Promise.all([
+  // The notes behind "What we know so far" (RESEARCH_V2 §3): live runs only —
+  // a finished run has its report — strongest first, claims only, bounded.
+  const live = !isTerminalResearchState(run.state);
+  const [events, sources, auditEvent, latestEvent, phaseEvent, findings, notes] = await Promise.all([
     store.readEvents({
       runId: run.id,
       userId: run.userId,
@@ -1276,6 +1299,14 @@ export async function readResearchRun(input: {
       take: 5,
       select: { id: true, workerId: true, round: true, objectiveId: true, sourceId: true, claim: true, quote: true, locator: true, confidence: true, createdAt: true, source: { select: { url: true } } },
     }),
+    live
+      ? prisma.researchFinding.findMany({
+          where: { runId: run.id, userId: run.userId, objectiveId: { not: null } },
+          orderBy: [{ confidence: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+          take: 80,
+          select: { objectiveId: true, sourceId: true, claim: true, confidence: true, createdAt: true, source: { select: { url: true } } },
+        })
+      : Promise.resolve([]),
   ]);
   const plan = parsePlan(run.plan);
   const state = isResearchState(run.state) ? run.state : "failed";
@@ -1311,6 +1342,17 @@ export async function readResearchRun(input: {
       findings.map((finding) => ({ ...finding, url: finding.source?.url ?? "" })),
       sources
     ),
+    ...(live
+      ? {
+          emergingAnswers: emergingAnswersOf(
+            notes.map((note) => ({ ...note, url: note.source?.url ?? "" })),
+            sources,
+            plan.objectives
+          ),
+        }
+      : {}),
+    plannedBy: plan.plannedBy ?? null,
+    ...(plan.digest ? { digest: true } : {}),
     spend: {
       microUsd: run.costMicroUsd.toString(),
       ceilingMicroUsd: run.budgetMicroUsd === null ? null : run.budgetMicroUsd.toString(),

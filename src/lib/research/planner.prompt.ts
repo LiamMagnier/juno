@@ -16,8 +16,33 @@ export function researchLanguageLine(languageName: string): string {
   return `Write in ${languageName}.`;
 }
 
-/** Sent with the one retry after a reply that did not parse (B5). */
-export const PLANNER_RETRY_NOTE = "Your previous output was not valid JSON for the schema.";
+/**
+ * Sent with the one retry after a reply that did not parse (B5, F3). It asks
+ * for less, because the usual reason a plan did not parse is that it did not
+ * fit: a reply cut off by its own output budget.
+ */
+export const PLANNER_RETRY_NOTE =
+  "Your previous output was not valid JSON for the schema. Reply again with ONE complete JSON object and nothing else, and keep it small: at most 5 questions, at most 10 queries, an approach under 300 characters, and no clarifications unless one is essential.";
+
+/**
+ * The plain-text planner (F4a): what a model is asked when no model could
+ * hold the JSON plan. Two headed lists and nothing else — the format every
+ * model can write — read by `planFromLines`.
+ */
+export function plannerLinesSystemPrompt(opts: { dateLine: string; languageLine: string | null }): string {
+  return `You scope a research request before any searching happens.
+
+${opts.dateLine}
+
+Reply with exactly two lists and nothing else, in this format:
+
+QUESTIONS:
+- A real sub-question a complete answer needs, as a full question.
+SEARCHES:
+- A self-contained web search that would find evidence for one of the questions.
+
+Write 2 to 5 questions, most important first, and 4 to 10 searches. Do not answer the request. No JSON, no Markdown headings, no other text.${opts.languageLine ? ` ${opts.languageLine} Keep the words QUESTIONS and SEARCHES in English.` : ""}`;
+}
 
 /** How the planner is told about the edits a reader made at the gate. */
 export function plannerRevisionNote(questions: string[], answers: Array<{ question: string; answer: string }>): string {

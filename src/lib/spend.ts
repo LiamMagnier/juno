@@ -453,10 +453,10 @@ export async function recordWorkRunSpend(input: {
 /**
  * Sum of a user's spend since a given instant, in micro-USD.
  *
- * `scope: "window"` leaves research out (SPEC §9.2): a research run is sized
- * against its own share of the MONTH, and summed into the five-hour window
- * one run would close chat for the rest of the sitting. The month (the
- * default) counts every kind.
+ * `scope: "window"` applies `spendKindFilter("window")`, which today leaves
+ * nothing out: research counts in the five-hour and weekly windows like every
+ * other kind, because the windows are now a research run's only money limit
+ * (RESEARCH_V2 §6). The month (the default) counts every kind.
  */
 async function spendSinceMicroUsd(userId: string, since: Date, scope: SpendScope = "month"): Promise<number> {
   const agg = await prisma.apiSpend.aggregate({
@@ -769,8 +769,8 @@ async function openReservedMicroUsd(
       state: "open",
       spendPeriod: { userId, period: spendPeriodKey(period) },
       ...(ignoreRef ? { ref: { not: ignoreRef } } : {}),
-      // A window's holds leave research out, as its sums do (SPEC §9.2); the
-      // period's (no `sinceMs`) keep every kind.
+      // A window's holds use the same filter as its sums (nothing left out
+      // today, RESEARCH_V2 §6); the period's (no `sinceMs`) keep every kind.
       ...(sinceMs != null ? { createdAt: { gte: new Date(sinceMs) }, ...spendKindFilter("window") } : {}),
     },
     _sum: { estimateMicroUsd: true },

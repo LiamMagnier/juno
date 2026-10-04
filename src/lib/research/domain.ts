@@ -1046,6 +1046,20 @@ export interface ResearchPlan {
   preferredLead?: string;
   /** Paused time so far, which the clocks do not count (B13). */
   pausedMs?: number;
+  /**
+   * Who drafted the plan when the planner model did not (RESEARCH_V2 F4):
+   * the plain-text planner (`lines`) or nobody, the question as asked
+   * (`goal`). Absent for a model-drafted plan. The scope card says so.
+   */
+  plannedBy?: "lines" | "goal";
+  /** The one wider search sweep after an empty first one has been scheduled (F5). */
+  broadenedAt?: string;
+  /** Consecutive failures of one state's stage; the third degrades instead of retrying (F7). */
+  stageFailures?: { state: string; count: number };
+  /** The report is the evidence digest, written without a model (F6). */
+  digest?: boolean;
+  /** A usage window ran out mid-run; the rounds stopped and the run wrote with what it had (§6). */
+  windowSpentAt?: string;
 }
 
 /** One piece of guidance from the reader, as the plan stores it. */
@@ -1620,7 +1634,20 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(typeof raw.pausedMs === "number" && Number.isFinite(raw.pausedMs) && raw.pausedMs > 0
       ? { pausedMs: Math.floor(raw.pausedMs) }
       : {}),
+    ...(raw.plannedBy === "lines" || raw.plannedBy === "goal" ? { plannedBy: raw.plannedBy } : {}),
+    ...(isoOrUndefined(raw.broadenedAt) ? { broadenedAt: isoOrUndefined(raw.broadenedAt) } : {}),
+    ...(stageFailuresOf(raw.stageFailures) ? { stageFailures: stageFailuresOf(raw.stageFailures) } : {}),
+    ...(raw.digest === true ? { digest: true } : {}),
+    ...(isoOrUndefined(raw.windowSpentAt) ? { windowSpentAt: isoOrUndefined(raw.windowSpentAt) } : {}),
   };
+}
+
+function stageFailuresOf(value: unknown): { state: string; count: number } | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.state !== "string" || !isResearchState(raw.state)) return undefined;
+  const count = typeof raw.count === "number" && Number.isFinite(raw.count) ? Math.max(0, Math.min(99, Math.floor(raw.count))) : 0;
+  return count > 0 ? { state: raw.state, count } : undefined;
 }
 
 /** True while a revision is genuinely in flight — set, and not abandoned by a dead process. */

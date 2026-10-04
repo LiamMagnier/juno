@@ -474,7 +474,7 @@ public enum NativeToolPresentation {
         case "lockdown": NativeRunPhrase("Research is off (Lockdown).")
         case "live_runs": NativeRunPhrase("Too many research runs are going. Wait for one to finish.")
         case "daily_starts": NativeRunPhrase("You've reached today's research limit.")
-        case "budget": NativeRunPhrase("Research needs more of your monthly allowance than is left.")
+        case "budget": NativeRunPhrase("Research needs more of your usage window or monthly allowance than is left.")
         case "not_configured": NativeRunPhrase("Research isn't set up on this server.")
         default: NativeRunPhrase("Research isn't available right now.")
         }

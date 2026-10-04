@@ -2,12 +2,13 @@
  * Research engine stage — writer: synthesise the report from the packed corpus, inside its timebox, with one smaller retry.
  * Moved verbatim out of createResearchEngine (engine.ts).
  */
-import type { ResearchRunRow, StepOutcome } from "./types";
+import type { ResearchRunRow, ResearchSourceRow, StepOutcome } from "./types";
 import { WRITER_RETRY_CORPUS_SCALE, WRITER_TIMEBOX_MAX_MS, writerParts } from "./writer-text";
 import { citableSources, synthesisEstimateMicroUsd } from "./limits";
 import { isUsableReport } from "@/lib/research/report-structure";
 import { parsePlan, planBudget } from "@/lib/research/domain";
 import type { EngineContext } from "./context";
+import { evidenceDigest } from "@/lib/research/digest";
 
 export function createSynthesisStage(ctx: EngineContext) {
   const { deps, store, beat, append, advance, finish, affordable, stopForBudget, bill } = ctx;
@@ -87,11 +88,8 @@ export function createSynthesisStage(ctx: EngineContext) {
       }
       if (!isUsableReport(parts.report)) {
         const latest = (await store.loadRun(run.id, run.userId)) ?? fresh;
-        const ended = await finish(latest, "failed", {
-          reason: "writer_empty",
-          error: "The report could not be written from the sources gathered.",
-        });
-        return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+        if (latest.state !== "synthesizing") return { kind: "raced" };
+        return deliverDigest(latest, sources);
       }
     }
     const fresh = (await store.loadRun(run.id, run.userId)) ?? run;
@@ -126,5 +124,39 @@ export function createSynthesisStage(ctx: EngineContext) {
    * replacement before the run becomes terminal.
    */
 
-  return { doSynthesis };
+  /**
+   * F6: no model could write the report, so the run delivers what it
+   * gathered — the evidence digest, cited, through the same audit — and
+   * finishes `partially_completed` instead of throwing the findings away.
+   * Only a run with nothing readable at all still ends `writer_empty`.
+   */
+  const deliverDigest = async (
+    run: ResearchRunRow,
+    sources: readonly ResearchSourceRow[]
+  ): Promise<StepOutcome> => {
+    const plan = parsePlan(run.plan);
+    // Read now, not reused from before the writer ran: the digest is the run's latest notes.
+    const findings = store.listFindings ? await store.listFindings(run.id, run.userId) : [];
+    const digest = evidenceDigest({ goal: run.goal, plan, sources, findings });
+    if (!digest) {
+      const ended = await finish(run, "failed", {
+        reason: "writer_empty",
+        error: "The report could not be written, and no source could be read to show instead.",
+      });
+      return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+    }
+    const parts = writerParts(digest);
+    const moved = await advance(
+      run,
+      "validating_citations",
+      { report: parts.report, plan: { ...plan, digest: true, ...(parts.title && !plan.title ? { title: parts.title } : {}) } },
+      [
+        { kind: "error", payload: { scope: "writer", recoverable: true, message: "The report could not be written. Delivering the evidence the researchers gathered instead." } },
+        { kind: "report_ready", payload: { chars: parts.report.length, digest: true } },
+      ]
+    );
+    return moved ? { kind: "advanced", state: "validating_citations" } : { kind: "raced" };
+  };
+
+  return { doSynthesis, deliverDigest };
 }

@@ -95,34 +95,125 @@ export function looksLikeJson(text: string): boolean {
 }
 
 /**
+ * A reply cut off before its last brace, closed back into JSON (F1).
+ *
+ * The usual way a plan fails is not a wrong answer but a short one: a
+ * thinking model spends the shared output budget and the object stops
+ * mid-string. Every value that FINISHED is still good, so the text is cut
+ * back to the last complete value (a comma outside a string, at whatever
+ * depth) and the open arrays and objects are closed. Null when nothing
+ * complete is left. Never invents a value: a cut only ever removes.
+ */
+export function repairTruncatedJson(text: string): string | null {
+  const start = text.search(/[{[]/);
+  if (start < 0) return null;
+  const body = text.slice(start);
+  const stack: string[] = [];
+  const cuts: Array<{ at: number; closers: string }> = [];
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") {
+      stack.pop();
+      if (stack.length === 0) return body.slice(0, i + 1);
+    } else if (ch === ",") cuts.push({ at: i, closers: [...stack].reverse().join("") });
+  }
+  const attempts = [
+    // The whole tail, when the cut fell between values. Never when it fell
+    // inside a string: "Where do f" is not a question anybody asked.
+    ...(stack.length && !inString ? [`${body}${[...stack].reverse().join("")}`] : []),
+    ...cuts.reverse().slice(0, 64).map((cut) => `${body.slice(0, cut.at)}${cut.closers}`),
+  ];
+  for (const candidate of attempts) {
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Cut further back.
+    }
+  }
+  return null;
+}
+
+const BREADTHS: Record<string, PlannerOutput["scope"]["breadth"]> = {
+  focused: "focused", narrow: "focused", small: "focused", quick: "focused",
+  broad: "broad", medium: "broad", moderate: "broad", standard: "broad", wide: "broad",
+  exhaustive: "exhaustive", deep: "exhaustive", comprehensive: "exhaustive", survey: "exhaustive",
+};
+const FRESHNESS: Record<string, PlannerOutput["scope"]["freshness"]> = {
+  any: "any", none: "any", timeless: "any",
+  recent: "recent", current: "recent", month: "recent",
+  live: "live", realtime: "live", "real-time": "live", daily: "live",
+};
+
+function questionText(item: unknown): string {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object" || Array.isArray(item)) return "";
+  const q = item as Record<string, unknown>;
+  for (const key of ["question", "text", "q", "title"]) if (typeof q[key] === "string") return q[key] as string;
+  return "";
+}
+
+/** The object that carries the plan: the reply itself, a bare question list, or one wrapper level down. */
+function planObject(raw: unknown): Record<string, unknown> | null {
+  if (Array.isArray(raw)) return { questions: raw };
+  if (!raw || typeof raw !== "object") return null;
+  const plan = raw as Record<string, unknown>;
+  if (Array.isArray(plan.questions)) return plan;
+  for (const value of Object.values(plan)) {
+    if (value && typeof value === "object" && !Array.isArray(value) && Array.isArray((value as Record<string, unknown>).questions)) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+/**
  * The reply, validated, or null.
  *
- * Strict about shape — a reply without questions, or with a scope this build
- * does not know, is not a plan — and forgiving about size: every string and
- * list is bounded on the way in, so a verbose model costs the plan detail,
- * never its validity.
+ * Strict about substance — a reply with no real question is not a plan, and
+ * nothing JSON-looking is ever read as lines (B5) — and forgiving about
+ * shape (F1): a reply cut off mid-object keeps its complete questions, a
+ * question written as a bare string is a question, and a scope this build
+ * does not know is read by its nearest meaning or derived from the question
+ * count. Every string and list is bounded on the way in, so a verbose model
+ * costs the plan detail, never its validity.
  */
 export function parsePlannerOutput(text: string): PlannerOutput | null {
-  const json = extractJsonObject(text);
-  if (!json) return null;
+  // A bare list of questions is the one reply that opens with a bracket.
+  const unfenced = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  const attempts = [extractJsonObject(text), /^\s*\[/.test(unfenced) ? unfenced : null, repairTruncatedJson(text)];
   let raw: unknown;
-  try {
-    raw = JSON.parse(json);
-  } catch {
-    return null;
+  for (const candidate of attempts) {
+    if (!candidate) continue;
+    try {
+      raw = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (planObject(raw)) break;
+    raw = undefined;
   }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const plan = raw as Record<string, unknown>;
-  if (!Array.isArray(plan.questions)) return null;
+  const plan = planObject(raw);
+  if (!plan) return null;
 
   const questions: PlannerOutput["questions"] = [];
   const seen = new Set<string>();
-  for (const item of plan.questions) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const q = item as Record<string, unknown>;
-    const question = oneLine(q.question, MAX_QUERY_CHARS);
+  for (const item of plan.questions as unknown[]) {
+    const question = oneLine(questionText(item), MAX_QUERY_CHARS);
     if (question.length < 8 || seen.has(question.toLowerCase())) continue;
     seen.add(question.toLowerCase());
+    const q = item && typeof item === "object" && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
     const evidence = q.evidence && typeof q.evidence === "object" && !Array.isArray(q.evidence) ? (q.evidence as Record<string, unknown>) : {};
     const minSources =
       typeof evidence.minSources === "number" && Number.isFinite(evidence.minSources)
@@ -138,12 +229,10 @@ export function parsePlannerOutput(text: string): PlannerOutput | null {
   }
   if (questions.length === 0) return null;
 
-  const scopeRaw = plan.scope && typeof plan.scope === "object" && !Array.isArray(plan.scope) ? (plan.scope as Record<string, unknown>) : null;
-  if (!scopeRaw) return null;
-  const breadth = scopeRaw.breadth;
-  const freshness = scopeRaw.freshness;
-  if (breadth !== "focused" && breadth !== "broad" && breadth !== "exhaustive") return null;
-  if (freshness !== "any" && freshness !== "recent" && freshness !== "live") return null;
+  const scopeRaw = plan.scope && typeof plan.scope === "object" && !Array.isArray(plan.scope) ? (plan.scope as Record<string, unknown>) : {};
+  const word = (value: unknown) => (typeof value === "string" ? value.trim().toLowerCase() : "");
+  const breadth = BREADTHS[word(scopeRaw.breadth)] ?? (questions.length <= 2 ? "focused" : "broad");
+  const freshness = FRESHNESS[word(scopeRaw.freshness)] ?? "any";
 
   const clarifications: PlannerOutput["clarifications"] = [];
   if (Array.isArray(plan.clarifications)) {
@@ -179,17 +268,45 @@ export type PlannerCompletion = (request: {
   system: string;
   prompt: string;
   maxTokens: number;
-  responseSchema: typeof RESEARCH_PLAN_SCHEMA;
+  /** The schema on the first attempt; null on the retry, which asks for plain JSON (F3). */
+  responseSchema: typeof RESEARCH_PLAN_SCHEMA | null;
   attempt: 1 | 2;
 }) => Promise<{ text: string; costMicroUsd: number }>;
 
+/**
+ * Who drafted the plan: the planner model (`model`), the plain-text planner
+ * that writes two lists instead of JSON (`lines`), or nobody — the question
+ * as asked (`goal`). The scope card says so for the last two (F4).
+ */
+export type PlannedBy = "model" | "lines" | "goal";
+
 export type PlannerDraft =
-  | { ok: true; output: PlannerOutput; costMicroUsd: number }
+  | { ok: true; output: PlannerOutput; costMicroUsd: number; plannedBy?: PlannedBy }
   | { ok: false; reason: "planner_invalid"; costMicroUsd: number };
 
+/** The planner's request text: the goal first, in the person's own words, then what bounds it. */
+export function plannerRequest(input: {
+  goal: string;
+  context?: string | null;
+  constraints: string[];
+  revision?: { questions: string[]; answers: Array<{ question: string; answer: string }> } | null;
+}): string {
+  return [
+    input.goal.trim(),
+    input.constraints.length ? `Constraints the research must respect:\n${input.constraints.map((c) => `- ${c}`).join("\n")}` : "",
+    input.context?.trim() ? input.context.trim() : "",
+    input.revision ? plannerRevisionNote(input.revision.questions, input.revision.answers) : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, PLANNER_PROMPT_CHARS);
+}
+
 /**
- * One call, and one retry that says what was wrong with the first (B5).
- * An aborted caller does not retry: nobody is waiting for the second answer.
+ * One structured call, and one retry that changes what it asks (B5, F3): a
+ * smaller plan, in plain JSON mode, because a provider whose structured mode
+ * could not hold the schema will not hold it on being asked the same way
+ * twice. An aborted caller does not retry: nobody is waiting for the answer.
  */
 export async function draftResearchPlan(
   input: {
@@ -210,32 +327,94 @@ export async function draftResearchPlan(
     pinnedSources: input.pinnedSources,
     maxQueries: PLANNED_QUERY_LIMIT,
   });
-  const request = [
-    input.goal.trim(),
-    input.constraints.length ? `Constraints the research must respect:\n${input.constraints.map((c) => `- ${c}`).join("\n")}` : "",
-    input.context?.trim() ? input.context.trim() : "",
-    input.revision ? plannerRevisionNote(input.revision.questions, input.revision.answers) : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n")
-    .slice(0, PLANNER_PROMPT_CHARS);
+  const request = plannerRequest(input);
 
   const first = await complete({ system, prompt: request, maxTokens: PLANNER_OUTPUT_TOKENS, responseSchema: RESEARCH_PLAN_SCHEMA, attempt: 1 });
   let costMicroUsd = first.costMicroUsd;
   const parsed = parsePlannerOutput(first.text);
-  if (parsed) return { ok: true, output: parsed, costMicroUsd };
+  if (parsed) return { ok: true, output: parsed, costMicroUsd, plannedBy: "model" };
   if (input.signal?.aborted) return { ok: false, reason: "planner_invalid", costMicroUsd };
 
   const second = await complete({
     system,
     prompt: `${request}\n\n${PLANNER_RETRY_NOTE}`,
     maxTokens: PLANNER_OUTPUT_TOKENS,
-    responseSchema: RESEARCH_PLAN_SCHEMA,
+    responseSchema: null,
     attempt: 2,
   });
   costMicroUsd += second.costMicroUsd;
   const retried = parsePlannerOutput(second.text);
-  return retried ? { ok: true, output: retried, costMicroUsd } : { ok: false, reason: "planner_invalid", costMicroUsd };
+  return retried ? { ok: true, output: retried, costMicroUsd, plannedBy: "model" } : { ok: false, reason: "planner_invalid", costMicroUsd };
+}
+
+/** Bulleted or numbered lines under a heading, bounded. */
+function listUnder(text: string, heading: RegExp, stop: RegExp): string[] {
+  const out: string[] = [];
+  let inside = false;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (heading.test(line)) {
+      inside = true;
+      continue;
+    }
+    if (inside && stop.test(line)) break;
+    if (!inside || !line) continue;
+    const item = line.replace(/^(?:[-*\u2022]|\d+[.)])\s*/, "").trim();
+    if (item) out.push(item);
+  }
+  return out;
+}
+
+/**
+ * The plain-text planner's reply (F4a): two headed lists, QUESTIONS and
+ * SEARCHES, and nothing else. Null when there is no question in it, and —
+ * B5 — when the reply is JSON-looking, which is never read as lines.
+ */
+export function planFromLines(text: string): PlannerOutput | null {
+  if (!text.trim() || looksLikeJson(text)) return null;
+  const questionsHeading = /^#{0,3}\s*\**\s*questions?\s*\**\s*:?\s*\**$/i;
+  const searchesHeading = /^#{0,3}\s*\**\s*(searches|queries|search queries)\s*\**\s*:?\s*\**$/i;
+  const questions = lines(listUnder(text, questionsHeading, searchesHeading), MAX_RESEARCH_OBJECTIVES, MAX_QUERY_CHARS, 8);
+  if (questions.length === 0) return null;
+  const queries = lines(listUnder(text, searchesHeading, questionsHeading), PLANNED_QUERY_LIMIT, MAX_QUERY_CHARS, 8);
+  return {
+    title: "",
+    approach: "",
+    questions: questions.map((question) => ({ question, rationale: "", evidence: { minSources: 2, primary: false } })),
+    clarifications: [],
+    sources: [],
+    queries,
+    scope: { breadth: questions.length <= 2 ? "focused" : "broad", freshness: "any", primarySources: false, quick: false },
+    language: "",
+  };
+}
+
+/**
+ * The floor under every planner (F4b): the question as asked. Each question
+ * sentence in the goal is one question (a goal of three questions is three
+ * questions), searched in its own words; a goal with none is one question.
+ * It names no evidence it has not been told about and asks nothing. The
+ * person sees it at the scope card, marked as such, before anything is spent.
+ */
+export function goalFloorPlan(goal: string): PlannerOutput {
+  const text = goal.replace(/\s+/g, " ").trim();
+  const sentences = (text.match(/[^?!.]+\?/g) ?? []).map((s) => s.trim()).filter((s) => s.length >= 8);
+  const asked = sentences.length >= 2 ? sentences.slice(0, 4) : [text.slice(0, MAX_QUERY_CHARS)];
+  const questions = asked
+    .map((question) => oneLine(question, MAX_QUERY_CHARS))
+    .filter((question, i, all) => question.length >= 3 && all.findIndex((q) => q.toLowerCase() === question.toLowerCase()) === i);
+  const safe = questions.length ? questions : [oneLine(text || "Research request", MAX_QUERY_CHARS)];
+  return {
+    title: oneLine(text.split(/(?<=[?!.])\s/)[0] ?? text, MAX_PLAN_TITLE_CHARS),
+    approach: "",
+    questions: safe.map((question) => ({ question, rationale: "", evidence: { minSources: 2, primary: false } })),
+    clarifications: [],
+    sources: [],
+    // A search engine reads the first dozen words; a pasted paragraph is not a search.
+    queries: safe.map((question) => question.replace(/\?$/, "").split(" ").slice(0, 16).join(" ")).filter((query) => query.length >= 3),
+    scope: { breadth: safe.length <= 2 ? "focused" : "broad", freshness: "any", primarySources: false, quick: false },
+    language: "",
+  };
 }
 
 /** What the planner's reply becomes on the stored plan. */

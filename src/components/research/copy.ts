@@ -108,6 +108,8 @@ export const RESEARCH_COPY = {
     planReady: "Plan ready",
     review: "Review",
     couldNotStart: "The research couldn't start. Try again.",
+    plannedByGoal: "Planned from your question as asked, because the planner was unavailable. Add or reword questions before you start.",
+    plannedByLines: "A simpler plan, because the planner's full plan was unavailable. Edit the questions before you start if you like.",
   },
 
   /** The composer's explicit steering mode (§9.7, DECISIONS R6). */
@@ -289,7 +291,7 @@ export const RESEARCH_COPY = {
     voice: "Research isn't available in voice chats.",
     liveRuns: "Too many research runs are going. Wait for one to finish.",
     dailyStarts: "You've reached today's research limit.",
-    budget: "Research needs more of your monthly allowance than is left.",
+    budget: "Research needs more of your usage window or monthly allowance than is left.",
     resetsOn: "Resets on",
   },
 

@@ -7,6 +7,7 @@ import { MAX_REVISION_ROUNDS, parsePlan } from "@/lib/research/domain";
 import type { ResearchRunRow, ResearchValidationResult, StepOutcome } from "./types";
 import { citationMarkersOutsideCode } from "./writer-text";
 import type { EngineContext } from "./context";
+import { DIGEST_NOTICE } from "@/lib/research/digest";
 
 export function createValidationStage(ctx: EngineContext) {
   const { deps, store, beat, append, advance, finish, announceFinish, affordable, stopForBudget, bill } = ctx;
@@ -136,7 +137,10 @@ export function createValidationStage(ctx: EngineContext) {
      */
     const plan = parsePlan(run.plan);
     const revisionRound = plan.revisionRound ?? 0;
+    // The evidence digest (F6) was written because the writer could not
+    // write; sending it back to that writer is the loop it escaped.
     const shouldRevise =
+      !plan.digest &&
       !!deps.synthesize &&
       !!validation &&
       report.trim().length > 0 &&
@@ -163,11 +167,17 @@ export function createValidationStage(ctx: EngineContext) {
       );
       return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
     }
-    const to = (dangling.length > 0 || auditDegraded ? "partially_completed" : "completed") as "completed" | "partially_completed";
-    const reason =
-      dangling.length > 0 ? "citations_unverified" : auditDegraded ? "citation_audit_degraded" : "completed";
-    const error =
-      dangling.length > 0
+    const to = (plan.digest || dangling.length > 0 || auditDegraded ? "partially_completed" : "completed") as "completed" | "partially_completed";
+    const reason = plan.digest
+      ? "writer_digest"
+      : dangling.length > 0
+        ? "citations_unverified"
+        : auditDegraded
+          ? "citation_audit_degraded"
+          : "completed";
+    const error = plan.digest
+      ? DIGEST_NOTICE
+      : dangling.length > 0
         ? "Some citations in the report do not match a gathered source."
         : auditDegraded
           ? "Citation validation was unavailable; the report is usable but not fully verified."

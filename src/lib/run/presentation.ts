@@ -157,7 +157,7 @@ export const RUN_COPY = {
   researchLockdown: "Research is off (Lockdown).",
   researchLiveRuns: "Too many research runs are going. Wait for one to finish.",
   researchDailyStarts: "You've reached today's research limit.",
-  researchBudget: "Research needs more of your monthly allowance than is left.",
+  researchBudget: "Research needs more of your usage window or monthly allowance than is left.",
   researchResetsOn: "Resets on",
 
   // ── The line: live phases ──────────────────────────────────────────────────

@@ -180,7 +180,7 @@ export const RESEARCH_CONTROL_MESSAGE: Record<ResearchControlReason, string> = {
   not_awaiting_plan: "This run is not waiting for a plan decision.",
   not_running: "This run is not working right now.",
   revise_limit: "This plan can't be revised again. Start it, or start a new research.",
-  refused: "Research needs more of your monthly allowance than is left.",
+  refused: "Research needs more of your usage window or monthly allowance than is left.",
 };
 
 /** The error code a refusal carries on the wire: `research.revise_limit` for a sixth revision (§9.4). */

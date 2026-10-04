@@ -62,7 +62,7 @@ export const RESEARCH_REFUSAL_COPY = {
     voice: "Research isn't available in voice mode.",
     live_runs: "Too many research runs are going. Wait for one to finish.",
     daily_starts: "You've reached today's research limit.",
-    budget: "Research needs more of your monthly allowance than is left.",
+    budget: "Research needs more of your usage window or monthly allowance than is left.",
   } satisfies Record<ResearchRefusal, string>,
 } as const;
 

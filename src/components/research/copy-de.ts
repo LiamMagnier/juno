@@ -13,6 +13,10 @@
  */
 
 export const RESEARCH_COPY_DE: Readonly<Record<string, string>> = {
+  "Planned from your question as asked, because the planner was unavailable. Add or reword questions before you start.":
+    "Aus Ihrer Frage geplant, wie sie gestellt wurde, weil der Planer nicht verfügbar war. Fügen Sie vor dem Start Fragen hinzu oder formulieren Sie sie um.",
+  "A simpler plan, because the planner's full plan was unavailable. Edit the questions before you start if you like.":
+    "Ein einfacherer Plan, weil der vollständige Plan nicht verfügbar war. Bearbeiten Sie die Fragen vor dem Start, wenn Sie möchten.",
   Research: "Recherche",
   "Close panel": "Bereich schließen",
   "Planning the research": "Plant die Recherche",
@@ -188,8 +192,8 @@ export const RESEARCH_COPY_DE: Readonly<Record<string, string>> = {
   "Too many research runs are going. Wait for one to finish.":
     "Es laufen zu viele Recherchen. Warte, bis eine abgeschlossen ist.",
   "You've reached today's research limit.": "Du hast das heutige Recherchelimit erreicht.",
-  "Research needs more of your monthly allowance than is left.":
-    "Die Recherche braucht mehr von deinem Monatskontingent, als übrig ist.",
+  "Research needs more of your usage window or monthly allowance than is left.":
+    "Die Recherche braucht mehr von deinem Nutzungsfenster oder Monatskontingent, als übrig ist.",
   "Resets on": "Wird zurückgesetzt am",
   "Researched for": "Recherchiert für",
 };

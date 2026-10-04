@@ -16,6 +16,7 @@ import { estimateFor } from "@/lib/research/estimate";
 import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
 import type {
   ResearchClarificationView,
+  ResearchEmergingAnswer,
   ResearchEstimate,
   ResearchFinding,
   ResearchPhase,
@@ -204,6 +205,42 @@ export function latestFindingsOf(
         title: source?.title ?? hostOf(finding.url),
       };
     });
+}
+
+/**
+ * What the evidence says so far, question by question (RESEARCH_V2 §3): for
+ * each question with a note, the strongest one — highest confidence, then
+ * newest — with the page it quotes, and how many distinct pages are behind
+ * the question's notes. In the plan's order; questions without a note are
+ * left out rather than padded.
+ */
+export function emergingAnswersOf(
+  findings: ReadonlyArray<Pick<ResearchFindingRow, "objectiveId" | "sourceId" | "claim" | "confidence" | "createdAt" | "url">>,
+  sources: ReadonlyArray<{ id: string; url: string; title: string }>,
+  objectives: ReadonlyArray<{ id: string }>
+): ResearchEmergingAnswer[] {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const rank = (f: (typeof findings)[number]) => [f.confidence ?? 0.5, f.createdAt.getTime()] as const;
+  const out: ResearchEmergingAnswer[] = [];
+  for (const objective of objectives) {
+    const notes = findings.filter((finding) => finding.objectiveId === objective.id && finding.claim.trim());
+    if (notes.length === 0) continue;
+    const best = notes.reduce((a, b) => {
+      const [ca, ta] = rank(a);
+      const [cb, tb] = rank(b);
+      return cb > ca || (cb === ca && tb > ta) ? b : a;
+    });
+    const source = best.sourceId ? byId.get(best.sourceId) : undefined;
+    const pages = new Set(notes.map((note) => note.sourceId ?? note.url).filter(Boolean));
+    out.push({
+      questionId: objective.id,
+      claim: best.claim.replace(/\s+/g, " ").trim(),
+      url: source?.url ?? best.url,
+      title: source?.title ?? hostOf(best.url),
+      sources: pages.size,
+    });
+  }
+  return out;
 }
 
 /**

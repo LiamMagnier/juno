@@ -13,11 +13,12 @@ import {
 } from "@/lib/research/domain";
 import type { ResearchRunRow, StepOutcome } from "./types";
 import { computeCoverage } from "./coverage";
+import { broadenedQueries } from "@/lib/research/broaden";
 import type { EngineContext } from "./context";
 import type { createCorpusStage } from "./corpus";
 
 export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createCorpusStage>, "doSearching" | "doBrowsing" | "doReading">) {
-  const { deps, store, beat, append, advance, finish, affordable, writerReserve, applySteering, bill } = ctx;
+  const { deps, store, beat, append, advance, finish, affordable, writerReserve, applySteering, bill, windowSpent } = ctx;
   const { doSearching, doBrowsing, doReading } = stages;
   const doCoverage = async (
     runAtStart: ResearchRunRow,
@@ -39,9 +40,38 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
       },
     ]);
     if (progress.sourceCount === 0) {
+      /*
+       * F5: one wider sweep before giving up. An empty first sweep is almost
+       * always over-specified searches, not an unknowable subject; the same
+       * questions with the quotes, operators and future years taken out
+       * usually find pages. Once only, and only while the run can pay for it.
+       */
+      const issued = [...(plan.issuedQueries ?? []), ...plan.queries, ...(plan.workerQueries ?? [])];
+      const wider = plan.broadenedAt || plan.finishRequestedAt || plan.windowSpentAt
+        ? []
+        : broadenedQueries({
+            goal: run.goal,
+            questions: plan.objectives.map((objective) => objective.question),
+            alreadyIssued: issued,
+            limit: Math.min(4, Math.max(0, MAX_PLAN_QUERIES - plan.queries.length)),
+            year: deps.now().getUTCFullYear(),
+          });
+      if (wider.length > 0 && (await affordable(run, wider.length * SEARCH_ESTIMATE_MICRO_USD + writerReserve(plan)))) {
+        const queries = [...plan.queries, ...wider];
+        await store.savePlan({ runId: run.id, userId: run.userId, plan: { ...plan, queries, broadenedAt: deps.now().toISOString() } });
+        await store.recordQueries({ runId: run.id, userId: run.userId, queries });
+        await append(run.id, run.userId, [
+          { kind: "error", payload: { scope: "search", recoverable: true, message: "Nothing came back. Widening the searches." } },
+          { kind: "follow_up_scheduled", payload: { round: (plan.followUpRound ?? 0) + 1, queries: wider, reason: "no_results" } },
+        ]);
+        const again = await advance((await store.loadRun(run.id, run.userId)) ?? run, "investigating");
+        return again ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
+      }
       const ended = await finish(run, "failed", {
         reason: "no_sources",
-        error: "No usable sources came back for this plan.",
+        error: plan.broadenedAt
+          ? "No usable sources came back, even after widening the searches. Try naming the subject the way its sources would."
+          : "No usable sources came back for this plan.",
       });
       return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
     }
@@ -87,6 +117,12 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
     // "Finish now" stops the rounds here (§9.7), and so does a follow-up sweep
     // that would eat the writer's and the audit's reservation (B8).
     if (plan.finishRequestedAt) followUps = [];
+    // The usage windows are the run's money limit (§6): a spent one ends the rounds here.
+    if (followUps.length > 0 && (await windowSpent(run))) {
+      followUps = [];
+      // Kept on the plan this stage is about to save over the one windowSpent wrote.
+      nextPlan.windowSpentAt = nextPlan.windowSpentAt ?? deps.now().toISOString();
+    }
     const reserve = writerReserve(plan);
     if (followUps.length > 0 && reserve > 0 && !(await affordable(run, reserve + followUps.length * SEARCH_ESTIMATE_MICRO_USD))) {
       followUps = [];

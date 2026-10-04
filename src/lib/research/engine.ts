@@ -34,7 +34,7 @@ import {
   resumeStateFor,
 } from "@/lib/research/domain";
 import { LIVE_PAUSABLE, REFETCH_FROM, RESEARCH_CANCELLABLE } from "@/lib/research/stages/states";
-import { MAX_GOAL_CHARS, MAX_STEPS } from "@/lib/research/stages/limits";
+import { MAX_GOAL_CHARS, MAX_STEPS, citableSources } from "@/lib/research/stages/limits";
 import {
   type PlannerDraft,
   languageName,
@@ -130,14 +130,27 @@ export {
   splitPassages,
 } from "@/lib/research/stages/writer-text";
 
+/** Consecutive failures of one state's stage before it degrades instead of retrying (F7). */
+export const STAGE_RETRY_LIMIT = 3;
+
+/** The live line when a stage degrades (F7). */
+const STAGE_DEGRADE_MESSAGE: Record<string, string> = {
+  planning: "Planning kept failing. Planning the question as asked instead.",
+  investigating: "Gathering kept failing. Writing with the sources already read.",
+  reviewing: "The review kept failing. Writing with the sources already read.",
+  synthesizing: "Writing kept failing. Delivering the evidence gathered instead.",
+  validating_citations: "The citation check kept failing. Delivering the report unverified.",
+  default: "A research step kept failing.",
+};
+
 export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
   const ctx = createEngineContext(deps);
   const { store, append, advance, finish, stopForBudget, bill } = ctx;
-  const { doClarifying, legacyEstimateCaps, frozenWith, sizeFor, isRefusal, doPlanning } = createPlanningStage(ctx);
+  const { doClarifying, legacyEstimateCaps, frozenWith, sizeFor, isRefusal, doPlanning, doStructuredPlanning } = createPlanningStage(ctx);
   const { doWorkerRounds } = createWorkerStage(ctx);
   const { doSearching, doBrowsing, doReading } = createCorpusStage(ctx, { doWorkerRounds });
   const { doCoverage, doInvestigating } = createCoverageStage(ctx, { doSearching, doBrowsing, doReading });
-  const { doSynthesis } = createSynthesisStage(ctx);
+  const { doSynthesis, deliverDigest } = createSynthesisStage(ctx);
   const { doValidation } = createValidationStage(ctx);
 
   const step = async (
@@ -181,6 +194,102 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       case "validating_citations":
         return doValidation(run, signal, heartbeat);
     }
+  };
+
+  /**
+   * A stage that THREW (F7) — a provider SDK error, a store hiccup — used to
+   * leave `drive` with the exception. The sweeper then re-adopted the run on
+   * every pass and hit the same throw forever: a run that read "working"
+   * indefinitely. Now the failure is recorded, counted per state on the plan,
+   * and retried at once; the third consecutive failure in the same state
+   * degrades instead of retrying.
+   */
+  const recoverStage = async (
+    run: ResearchRunRow,
+    error: unknown,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
+    console.error("[research] stage failed", { runId: run.id, state: run.state, error });
+    const fresh = await store.loadRun(run.id, run.userId).catch(() => null);
+    if (!fresh) throw error;
+    if (isTerminalResearchState(fresh.state) || fresh.state !== run.state) return { kind: "raced" };
+    const plan = parsePlan(fresh.plan);
+    const count = plan.stageFailures?.state === fresh.state ? plan.stageFailures.count + 1 : 1;
+    const degrade = count >= STAGE_RETRY_LIMIT;
+    await store.savePlan({ runId: fresh.id, userId: fresh.userId, plan: { ...plan, stageFailures: { state: fresh.state, count } } });
+    await append(fresh.id, fresh.userId, [
+      {
+        kind: "error",
+        payload: {
+          scope: "stage",
+          state: fresh.state,
+          recoverable: true,
+          attempt: count,
+          message: degrade ? STAGE_DEGRADE_MESSAGE[fresh.state] ?? STAGE_DEGRADE_MESSAGE.default : "A research step failed. Trying it again.",
+        },
+      },
+    ]);
+    const reloaded = (await store.loadRun(fresh.id, fresh.userId)) ?? fresh;
+    // Retried by the drive loop at once: "advanced" in place reloads and steps again.
+    if (!degrade) return { kind: "advanced", state: reloaded.state as ResearchState };
+    return degradeStage(reloaded, signal, heartbeat);
+  };
+
+  /** What the third failure in one state does instead of a fourth try (F7). */
+  const degradeStage = async (run: ResearchRunRow, signal?: AbortSignal, heartbeat?: () => Promise<void>): Promise<StepOutcome> => {
+    const fail = async (message: string): Promise<StepOutcome> => {
+      const ended = await finish(run, "failed", { reason: "stage_failed", error: message });
+      return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+    };
+    try {
+      switch (run.state) {
+        case "clarifying": {
+          const moved = await advance(run, "planning");
+          return moved ? { kind: "advanced", state: "planning" } : { kind: "raced" };
+        }
+        case "planning":
+          if (deps.draftPlan) return await doStructuredPlanning(run, signal, heartbeat, { floor: true });
+          return await fail("The research could not be planned. Try again in a few minutes.");
+        case "investigating":
+        case "reviewing": {
+          const progress = await store.progress(run.id, run.userId);
+          if (progress.readCount > 0) {
+            const moved = await advance(run, "synthesizing");
+            return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
+          }
+          return await fail("The research could not gather sources. Try again in a few minutes.");
+        }
+        case "synthesizing": {
+          return await deliverDigest(run, citableSources(await store.listSources(run.id, run.userId)));
+        }
+        case "validating_citations": {
+          const ended = await finish(run, "partially_completed", {
+            reason: "citation_audit_degraded",
+            report: run.report,
+            error: "Citation validation was unavailable; the report is usable but not fully verified.",
+          });
+          return ended ? { kind: "finished", state: "partially_completed" } : { kind: "raced" };
+        }
+        default:
+          return await fail("The research stopped on an internal error.");
+      }
+    } catch (error) {
+      // The degraded path failed too: end the run rather than loop.
+      console.error("[research] degraded stage failed", { runId: run.id, state: run.state, error });
+      return fail("The research stopped on an internal error.");
+    }
+  };
+
+  /** A step that advanced clears its state's failure count, so a later round starts from zero. */
+  const clearStageFailures = async (run: ResearchRunRow): Promise<void> => {
+    const plan = parsePlan(run.plan);
+    if (!plan.stageFailures) return;
+    const latest = await store.loadRun(run.id, run.userId);
+    if (!latest) return;
+    const current = parsePlan(latest.plan);
+    if (!current.stageFailures) return;
+    await store.savePlan({ runId: latest.id, userId: latest.userId, plan: { ...current, stageFailures: undefined } });
   };
 
   /**
@@ -421,7 +530,15 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         }
         if (signal?.aborted) return leave(run);
         if (until && run.state === until) return leave(run, "until");
-        const outcome = await step(run, signal, heartbeat);
+        let outcome: StepOutcome;
+        try {
+          outcome = await step(run, signal, heartbeat);
+          if (outcome.kind === "advanced") await clearStageFailures(run);
+        } catch (error) {
+          // An abort is the caller leaving, not the stage failing.
+          if (signal?.aborted) return leave((await store.loadRun(runId, userId)) ?? run);
+          outcome = await recoverStage(run, error, signal, heartbeat);
+        }
         if (outcome.kind === "finished" || outcome.kind === "blocked") {
           return leave((await store.loadRun(runId, userId)) ?? run);
         }

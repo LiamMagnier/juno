@@ -45,6 +45,9 @@ export const GALLERY_STATES = [
   "mobile-scope",
   "steer-mode",
   "field-motion",
+  "planner-fallback",
+  "recovering",
+  "digest",
 ] as const;
 
 export type GalleryState = (typeof GALLERY_STATES)[number];
@@ -273,6 +276,11 @@ function base(id: string, patch: Partial<ResearchRunView> = {}): ResearchRunView
         title: SOURCES[1].title,
       },
     ],
+    // What we know so far (RESEARCH_V2 §3): each question's strongest note.
+    emergingAnswers: [
+      { questionId: "q1", claim: "Seasonal COP stayed above 2 at -20 °C in monitored Norwegian homes.", url: SOURCES[0].url, title: SOURCES[0].title, sources: 3 },
+      { questionId: "q2", claim: "Measured seasonal COP ran about 10 % below the laboratory rating, mostly from defrost cycles.", url: SOURCES[3].url, title: SOURCES[3].title, sources: 2 },
+    ],
     spend: { microUsd: "420000", ceilingMicroUsd: "2500000" },
     steering: [],
     sizing: { workers: 4, rounds: 2, limitedBy: "scope" },
@@ -335,10 +343,44 @@ const done = (id: string, patch: Partial<ResearchRunView> = {}): FixtureRun => (
     // The writer's citation order, as a finished run carries it (§9.6.3).
     sources: SOURCES.map((s, i) => ({ ...s, citedIndex: i < 4 ? i + 1 : null })),
     auditSummary: AUDIT.summary,
+    emergingAnswers: undefined,
+    plan: {
+      ...BASE_PLAN,
+      conflicts: [
+        { id: "k1", kind: "contradictory_evidence", sourceIds: ["s2", "s3"], description: "The IEA and the US challenge put typical installed costs far apart", severity: "medium", resolved: false },
+      ],
+    },
     ...patch,
   }),
   events: DONE_EVENTS,
 });
+
+/** The digest a run delivers when no model could write the report (F6), as the engine lays it out. */
+const DIGEST_REPORT = [
+  "# Heat pumps in cold climates",
+  "",
+  "<!-- juno:section=bottom-line -->",
+  "## Bottom line",
+  "",
+  "The full report could not be written for this research, so this is what the sources established, in the researchers' notes, under the question each one answers. Nothing here is synthesised beyond those notes; every line names its source.",
+  "",
+  "<!-- juno:section=question:q1 -->",
+  "## What seasonal COP do air-source heat pumps reach at -20 °C?",
+  "",
+  "- Seasonal COP stayed above 2 at -20 °C in monitored Norwegian homes. [1]",
+  "- Units certified for cold climates stayed above a COP of 2.1 down to -20 °C. [3]",
+  "",
+  "<!-- juno:section=question:q2 -->",
+  "## How do Nordic field trials compare with laboratory ratings?",
+  "",
+  "- Measured seasonal COP ran about 10 % below the laboratory rating. [4]",
+  "",
+  "<!-- juno:section=gaps -->",
+  "## What remains open",
+  "",
+  "- What does a cold-climate installation cost, installed?",
+  "- Which backup heating is still needed, and when?",
+].join("\n");
 
 /** The runs each state shows, by run id (ids differ per state: the run store caches by id). */
 export function fixturesFor(state: GalleryState): Record<string, FixtureRun> {
@@ -425,9 +467,45 @@ export function fixturesFor(state: GalleryState): Record<string, FixtureRun> {
         },
       };
     case "failed":
-      return { [id]: { run: base(id, { state: "failed", phase: "failed", phaseDetail: null, live: false, error: "The writer returned an empty report." }), events: WORKING_EVENTS } };
+      return { [id]: { run: base(id, { state: "failed", phase: "failed", phaseDetail: null, live: false, emergingAnswers: undefined, error: "No usable sources came back, even after widening the searches. Try naming the subject the way its sources would." }), events: WORKING_EVENTS } };
     case "cancelled":
       return { [id]: { run: base(id, { state: "cancelled", phase: "stopped", phaseDetail: null, live: false }), events: [...WORKING_EVENTS, ev("cancelled", 7)] } };
+    case "planner-fallback":
+      // F4: no model drafted the plan; the question as asked waits at the card, marked.
+      return {
+        [id]: gate(id, {
+          plannedBy: "goal",
+          title: "How well do heat pumps work in cold climates?",
+          plan: { ...BASE_PLAN, approach: "", sourceKinds: [], objectives: [{ id: "objective-1", question: "How well do heat pumps work in cold climates?", status: "open" }] },
+          questions: [{ id: "objective-1", question: "How well do heat pumps work in cold climates?", status: "pending" }],
+          scope: { ...SCOPE, questions: 1, breadth: "focused" },
+          clarifications: [],
+        }),
+      };
+    case "recovering":
+      // F3: the first plan did not hold; the second model is drafting, and the line says so.
+      return {
+        [id]: {
+          run: base(id, { state: "planning", phase: "planning", phaseDetail: null, sources: [], workingMs: 41_000, questions: [], plan: { ...BASE_PLAN, objectives: [] }, emergingAnswers: [], latestFindings: [], counts: { found: 0, read: 0, cited: 0, searches: 0, pages: 0 }, costMicroUsd: "6000", budgetMicroUsd: null, spend: { microUsd: "6000", ceilingMicroUsd: null } }),
+          events: [
+            ev("run_started", 0),
+            ev("error", 0.6, { scope: "planning", recoverable: true, step: "second_model", message: "The first plan did not hold together. Asking another model." }),
+          ],
+        },
+      };
+    case "digest":
+      return {
+        [id]: {
+          ...done(id, {
+            state: "partially_completed",
+            digest: true,
+            report: DIGEST_REPORT,
+            error: "The report could not be written, so this is the evidence the researchers gathered, question by question, with its sources.",
+            auditSummary: { ...AUDIT.summary, claims: 3, supported: 3, partiallySupported: 0, unverified: 0 },
+          }),
+          events: [...WORKING_EVENTS, ev("error", 9, { scope: "writer", recoverable: true, message: "The report could not be written. Delivering the evidence the researchers gathered instead." }), ev("report_ready", 9, { digest: true })],
+        },
+      };
     case "field-motion": {
       // Deep Field's motion, scripted: a page is opened (the presence line
       // moves), a found source is read (it travels inward), a new source is

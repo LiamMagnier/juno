@@ -14,6 +14,8 @@ import { RunTimeline } from "./run-timeline";
 import { SourceDeck } from "./source-deck";
 import { ScopeCard } from "./scope-card";
 import { DeepField, Figure, QuestionRail } from "./deep-field";
+import { EmergingAnswers } from "./emerging-answers";
+import { recoveryLine } from "./next-steps";
 import { formatMicroUsd } from "./run-format";
 import { panelControls, researchClock, rowLine } from "./research-view";
 import { phaseOfRun } from "@/lib/research/phase";
@@ -21,6 +23,7 @@ import { readingHost, researchWorkspace } from "./workspace-model";
 import { isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
 import { cn } from "@/lib/utils";
+import { ThinkingMark } from "@/components/brand/thinking-mark";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 
 const WORKSPACE_COPY = {
@@ -39,7 +42,6 @@ const WORKSPACE_COPY = {
   retry: "Retry connection", reconnecting: "Connection lost. Showing the last saved research.",
   unavailable: "This research is unavailable. Sign in again or return to the conversation.",
   finish: "Write with what you have", finishing: "Finishing with the evidence gathered so far",
-  limit: "limit",
 };
 
 const TABS = [
@@ -89,6 +91,10 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
   const disabled = busy || disconnected || failed;
   const steering = run.steering?.at(-1) ?? null;
   const findings = (run.latestFindings ?? []).slice(0, 2);
+  const answers = run.emergingAnswers ?? [];
+  const writing = phase === "writing" || phase === "checking";
+  // The engine recovering (a second planner, wider searches, a retried step), in its own words.
+  const recovery = recoveryLine(events, isWorkingResearchState(state) && !disconnected && !failed);
   const subtitle = run.title && run.title.trim() !== run.goal.trim() ? run.goal : null;
 
   return (
@@ -104,16 +110,20 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
           </span>
           <span className="flex shrink-0 items-center gap-3 tabular-nums">
             <RunClock elapsedMs={clock.elapsedMs} since={disconnected || failed ? null : clock.since} showAfterMs={0} />
-            <span>
-              {formatMicroUsd(run.costMicroUsd)}
-              {run.budgetMicroUsd ? ` / ${formatMicroUsd(run.budgetMicroUsd)} ${WORKSPACE_COPY.limit}` : ""}
-            </span>
+            {/* Spend only: a run has no per-run limit any more; the usage windows bound it (RESEARCH_V2 §6). */}
+            <span>{formatMicroUsd(run.costMicroUsd)}</span>
           </span>
         </div>
         <h3 ref={titleRef} tabIndex={-1} lang={run.language ?? undefined} className="rf-title mt-3 outline-none">
           {run.title || run.goal}
         </h3>
         {subtitle && <p lang={run.language ?? undefined} className="mt-2 max-w-[38rem] text-pretty text-ui text-muted-foreground">{subtitle}</p>}
+        {recovery && (
+          <p key={recovery} role="status" className="rf-annot rf-recovery mt-3">
+            <ThinkingMark phase="working" size={12} />
+            {recovery}
+          </p>
+        )}
       </header>
 
       {(disconnected || failed) && (
@@ -151,7 +161,9 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
             <Figure label={WORKSPACE_COPY.researchers}><RollingNumber value={model.activeWorkers} /></Figure>
           </dl>
 
-          {findings.length > 0 && (
+          {answers.length > 0 ? (
+            <EmergingAnswers answers={answers} questions={model.questions} language={run.language} writing={writing} className="rf-rise" />
+          ) : findings.length > 0 && (
             <section className="rf-evidence rf-rise" style={{ ["--i" as string]: 3 }} aria-label={WORKSPACE_COPY.evidence}>
               <h4 className="rf-annot">{WORKSPACE_COPY.evidence}</h4>
               <ul>

@@ -117,6 +117,21 @@ export interface ResearchFinding {
   title: string;
 }
 
+/**
+ * What the evidence says so far about one question (RESEARCH_V2 §3): the
+ * strongest note a researcher has made for it, in the note's own words, with
+ * the page it quotes. Read from findings the workers already extracted, so it
+ * costs nothing and says nothing the evidence does not.
+ */
+export interface ResearchEmergingAnswer {
+  questionId: string;
+  claim: string;
+  url: string;
+  title: string;
+  /** Distinct pages behind this question's notes so far (of the notes the view read). */
+  sources: number;
+}
+
 export interface ResearchSteeringEntry {
   text: string;
   /** Null until the round boundary that applies it. */
@@ -149,6 +164,12 @@ export interface ResearchRunViewAdditions {
   leadModel?: { id: string; label: string } | null;
   /** ≤ 5, newest first. */
   latestFindings?: ResearchFinding[];
+  /** One per question with evidence, in the plan's order; live runs only. */
+  emergingAnswers?: ResearchEmergingAnswer[];
+  /** Who drafted the plan when the planner model did not (RESEARCH_V2 F4). */
+  plannedBy?: "lines" | "goal" | null;
+  /** The report is the evidence digest, written without a model (F6). */
+  digest?: boolean;
   /** Details only: the one place money shows. Serialised as strings (BigInt). */
   spend?: { microUsd: string; ceilingMicroUsd: string | null } | null;
   steering?: ResearchSteeringEntry[];
