@@ -412,7 +412,9 @@ export function decisionReasons(
   const reasons = profile.signals.slice(0, 3);
   const cheapestCall = ranked.reduce((min, c) => Math.min(min, c.callMicroUsd), Infinity);
   if (ranked.length > 1) {
-    if (winner.callMicroUsd > cheapestCall) {
+    // "Outweigh a cheaper model" only when the pick really costs more per call;
+    // a pick near the cheapest is simply the cheapest good answer.
+    if (winner.callMicroUsd > cheapestCall * 1.5 && winner.callMicroUsd - cheapestCall > 200) {
       reasons.push("better odds of a first-try answer outweigh a cheaper model");
     } else {
       reasons.push(`lowest expected cost of ${ranked.length} eligible models`);

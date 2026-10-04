@@ -1,4 +1,6 @@
 import type { Plan } from "@prisma/client";
+import type { AutoPreference } from "@/lib/router/decide";
+import type { AutoDataBoundary } from "@/lib/router/data-policy";
 import type { ClientConversation, ClientQuota } from "@/types/chat";
 import type { Provider } from "@/lib/providers";
 import type { BackgroundProviderMode } from "@/lib/background-provider-policy";
@@ -55,6 +57,13 @@ export interface ClientSettings {
    * spent a release reporting "same_provider denied it" as a provider outage.
    */
   backgroundProviderMode: BackgroundProviderMode;
+  /**
+   * What Auto optimises for, and which providers it may choose by their
+   * data-use terms (src/lib/router). Optional so fixtures written before Auto
+   * Router 2.0 still type; absent reads as the defaults.
+   */
+  autoPreference?: AutoPreference;
+  autoDataBoundary?: AutoDataBoundary;
   voiceId: string | null;
   favoriteModels: string[];
   /** Lifecycle email opt-ins — no-ops until email delivery is configured. */

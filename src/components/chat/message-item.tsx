@@ -31,6 +31,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Markdown } from "@/components/chat/markdown";
+import { AutoReceipt } from "@/components/chat/auto-receipt";
+import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -359,11 +361,14 @@ function IconAction({
  */
 function TurnMeta({
   modelName,
+  receipt,
   promptTokens,
   completionTokens,
   costUsd,
 }: {
   modelName: string | null;
+  /** Auto's receipt, when Auto routed this turn: the model reads "Auto · model · effort". */
+  receipt?: RoutingReceipt | null;
   promptTokens?: number | null;
   completionTokens?: number | null;
   costUsd?: number | null;
@@ -372,27 +377,40 @@ function TurnMeta({
   const total = (promptTokens ?? 0) + (completionTokens ?? 0);
   const hasCost = costUsd != null && costUsd > 0;
   if (!modelName && !hasUsage && !hasCost) return null;
-  const body = (
-    <span className="flex min-w-0 items-center gap-2.5 text-caption text-muted-foreground">
-      {modelName && <span className="min-w-0 truncate">{modelName}</span>}
+  const numbers = (hasUsage || hasCost) && (
+    <span className="flex shrink-0 items-center gap-2.5">
       {hasUsage && <span className="shrink-0 font-mono tabular-nums">{formatTokens(total)} tokens</span>}
       {hasCost && <span className="shrink-0 font-mono tabular-nums">{formatUsd(costUsd ?? 0)}</span>}
     </span>
   );
-  if (!hasUsage) return body;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {/* Focusable so the split is reachable without a pointer; it names
-            itself, so a screen reader hears the numbers rather than a button. */}
-        <span tabIndex={0} className="min-w-0 rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${modelName ?? "Model"}, ${formatTokens(promptTokens ?? 0)} tokens in, ${formatTokens(completionTokens ?? 0)} out${hasCost ? `, ${formatUsd(costUsd ?? 0)}` : ""}`}>
-          {body}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="font-mono tabular-nums">
-        {formatTokens(promptTokens ?? 0)} in, {formatTokens(completionTokens ?? 0)} out
-      </TooltipContent>
-    </Tooltip>
+    <span className="flex min-w-0 items-center gap-2.5 text-caption text-muted-foreground">
+      {modelName &&
+        (receipt ? (
+          // Its own control, beside (never inside) the numbers' tooltip: one
+          // focus stop for "why this model", one for the in/out split.
+          <AutoReceipt modelName={modelName} receipt={receipt} className="min-w-0" />
+        ) : (
+          <span className="min-w-0 truncate">{modelName}</span>
+        ))}
+      {numbers &&
+        (hasUsage ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              {/* Focusable so the split is reachable without a pointer; it names
+                  itself, so a screen reader hears the numbers rather than a button. */}
+              <span tabIndex={0} className="min-w-0 rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${modelName ?? "Model"}, ${formatTokens(promptTokens ?? 0)} tokens in, ${formatTokens(completionTokens ?? 0)} out${hasCost ? `, ${formatUsd(costUsd ?? 0)}` : ""}`}>
+                {numbers}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="font-mono tabular-nums">
+              {formatTokens(promptTokens ?? 0)} in, {formatTokens(completionTokens ?? 0)} out
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          numbers
+        ))}
+    </span>
   );
 }
 
@@ -802,8 +820,11 @@ export const MessageItem = React.memo(function MessageItem({
         promptTokens: viewingOld.promptTokens ?? null,
         completionTokens: viewingOld.completionTokens ?? null,
         costUsd: null,
-        // Activity timeline and finish state describe the CURRENT answer only.
+        // Activity timeline, finish state and Auto's receipt describe the
+        // CURRENT answer only: an old version was routed by a decision this
+        // row no longer records.
         activity: undefined,
+        routing: null,
         finishReason: null,
         errorMessage: null,
       }
@@ -1578,7 +1599,16 @@ export const MessageItem = React.memo(function MessageItem({
                         {/* Information, not an action: disabled so it takes no
                             focus and no hover fill, and never closes the menu. */}
                         <DropdownMenuItem disabled className="flex-col items-start gap-0.5 data-[disabled]:opacity-100 sm:hidden">
-                          {modelName && <span className="text-ui text-foreground">{modelName}</span>}
+                          {modelName && (
+                            <span className="text-ui text-foreground">
+                              {view.routing ? receiptLine(modelName, view.routing) : modelName}
+                            </span>
+                          )}
+                          {view.routing && view.routing.reasons.length > 0 && (
+                            <span className="text-caption text-muted-foreground">
+                              Selected for {view.routing.reasons.join(", ")}
+                            </span>
+                          )}
                           {(hasUsage || hasCost) && (
                             <span className="font-mono text-caption text-muted-foreground">
                               {hasUsage
@@ -1598,6 +1628,7 @@ export const MessageItem = React.memo(function MessageItem({
               <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none sm:flex">
                 <TurnMeta
                   modelName={modelName}
+                  receipt={view.routing}
                   promptTokens={view.promptTokens}
                   completionTokens={view.completionTokens}
                   costUsd={view.costUsd}
