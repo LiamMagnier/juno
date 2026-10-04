@@ -1087,6 +1087,12 @@ export const MessageItem = React.memo(function MessageItem({
   // Generated media: image attachments + video and audio files (kind FILE, video/* or audio/* mime).
   const isPlayable = (a: ClientAttachment) => a.mimeType.startsWith("video/") || a.mimeType.startsWith("audio/");
   const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || isPlayable(a));
+  // Media from an image, video or audio model is AI output and is labelled as
+  // such. A chart a chat model drew with code is not "generated" in that sense.
+  const generatedMedia = (() => {
+    const modality = view.model ? resolveModel(view.model)?.modality : undefined;
+    return modality === "image" || modality === "video" || modality === "audio";
+  })();
   // Anything else an answer carries is a document it produced — a tile that
   // opens in the viewer, the same object a sent file is.
   const fileAttachments = message.attachments.filter((a) => a.kind === "FILE" && !isPlayable(a));
@@ -1278,6 +1284,7 @@ export const MessageItem = React.memo(function MessageItem({
               const others = mediaAttachments.filter((a) => !images.includes(a));
               return (
                 // A track's lyrics read as their own block under the player, not as its caption.
+                <>
                 <div className={cn("flex flex-wrap gap-2", hasTextContent && mediaAttachments.some((a) => a.mimeType.startsWith("audio/")) ? "mb-4" : "mb-1")}>
                   {images.length > 1 ? (
                     // One request, several pictures: the grid the placeholder held.
@@ -1297,6 +1304,12 @@ export const MessageItem = React.memo(function MessageItem({
                     )
                   )}
                 </div>
+                {/* AI Act art. 50: what a generation model made says so, in
+                    plain small words under it (never a pill). The files
+                    themselves carry the machine-readable marking
+                    (src/lib/ai-content-marking.ts). */}
+                {generatedMedia && <p className="mb-2 text-caption text-muted-foreground">AI-generated</p>}
+                </>
               );
             })()}
             {/* The tail fade wraps the prose ONLY. On the whole answer body it

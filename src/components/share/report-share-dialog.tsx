@@ -208,6 +208,13 @@ export function ReportShareButton({ token }: { token: string }) {
               disabled={sending}
             />
 
+            {/* DSA art. 16(2)(d): a notice carries the sender's statement
+                that it is made in good faith and is accurate. Said once, as
+                plain text, rather than a checkbox that only adds a click. */}
+            <p className="text-caption text-muted-foreground">
+              By sending, you confirm in good faith that what you report is accurate and complete.
+            </p>
+
             {error && (
               // The share dialog's failure line: the destructive ink and the
               // failure circle, announced when it appears.
