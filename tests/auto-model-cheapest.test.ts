@@ -13,6 +13,7 @@ import { classifyPromptComplexity, pickAutoModel } from "../src/lib/auto-model";
 import { MODEL_LIST, trainsOnPrompts, type ModelInfo } from "../src/lib/models";
 import { averageRequestCostMicroUsd, getModelMetrics } from "../src/lib/model-metrics";
 import { canUseModel } from "../src/lib/plans";
+import { autoDataUseVerdict } from "../src/lib/router/data-policy";
 import { PROVIDERS, PROVIDER_LIST } from "../src/lib/providers";
 import type { Plan } from "@prisma/client";
 
@@ -41,6 +42,7 @@ function capablePool(plan: Plan, floor: number): ModelInfo[] {
       m.status !== "deprecated" &&
       (m.status === "current" || !m.status) &&
       !trainsOnPrompts(m) &&
+      autoDataUseVerdict(m, { paidTier: new Set() }).eligible &&
       canUseModel(plan, m.id) &&
       getModelMetrics(m).intelligence >= floor
   );
@@ -53,19 +55,21 @@ const PROMPTS = [
   "Refactor this TypeScript module into smaller functions, add tests, and explain the architecture trade-offs step by step:\n```ts\nexport function a() {}\n```",
 ];
 
-describe("Auto picks the cheapest capable model", () => {
+describe("Auto picks the lowest expected total cost, and stays cheap on easy questions", () => {
+  // Auto Router 2.0 (src/lib/router/decide.ts) ranks by EXPECTED total cost —
+  // the call, its tool rounds, retries and the cost of a wrong answer — not by
+  // list price alone, and only among models whose data-use terms are accepted.
+  // So the invariant is: the pick is the decision's best-ranked candidate, it
+  // never lands outside the data-use terms, and easy prompts still go cheap.
   for (const plan of ["FREE", "PRO"] as Plan[]) {
     for (const prompt of PROMPTS) {
-      it(`${plan}: nothing capable is cheaper — ${prompt.slice(0, 40)}`, () => {
+      it(`${plan}: the pick is the cheapest expected outcome — ${prompt.slice(0, 40)}`, () => {
         const picked = pickAutoModel({ message: prompt, plan });
-        const complexity = classifyPromptComplexity(prompt);
-        const pool = capablePool(plan, complexity.minIntelligence);
-        if (pool.length === 0) return; // nothing clears the floor: Auto falls back, not this invariant
-        const cheapest = Math.min(...pool.map((m) => averageRequestCostMicroUsd(m)));
-        assert.ok(
-          averageRequestCostMicroUsd(picked.model) <= cheapest,
-          `${picked.model.id} costs ${averageRequestCostMicroUsd(picked.model)} but a capable model costs ${cheapest}`
-        );
+        assert.equal(picked.model.id, picked.decision.ranked[0].modelId);
+        const totals = picked.decision.ranked.map((c) => c.expectedTotalMicroUsd);
+        assert.equal(Math.min(...totals), picked.decision.ranked[0].expectedTotalMicroUsd);
+        assert.equal(autoDataUseVerdict(picked.model, { paidTier: new Set() }).eligible, true, `${picked.model.id} is outside the data-use terms`);
+        assert.equal(canUseModel(plan, picked.model.id), true);
       });
     }
   }

@@ -3,7 +3,6 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,19 +20,26 @@ import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { formatLocalWhen, localStateSentence } from "@/components/agents/agent-bits";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import { useCostConfirmation } from "@/components/agents/confirm-cost-dialog";
+import { AgentGoalRow } from "@/components/agents/agent-goal-row";
 import {
+  advanceGoal,
   announceAgentsChanged,
   computerAction,
   decideIdea,
   deleteNote,
   retireAgent,
+  setAgentMemoryAccess,
   updateAgent,
   updateGoal,
   updateRoutine,
 } from "@/components/agents/agents-transport";
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
+import { Input } from "@/components/ui/input";
+import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
+import { describeBudgetLine, type BudgetLine } from "@/lib/budgets";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
+import { AGENT_MEMORY_ACCESS, AGENT_MEMORY_ACCESS_META, DEFAULT_AGENT_MEMORY_ACCESS } from "@/lib/memory-scope";
 import { AGENT_STATE_NAMES } from "@/lib/brand/names";
 
 /**
@@ -124,7 +130,9 @@ export function AgentProfile({
   const [confirm, setConfirm] = React.useState<null | "retire" | "computer-off" | "computer-on">(null);
   const [studio, setStudio] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
-  const activeGoals = detail.goals.filter((goal) => goal.status === "active");
+  // Active goals, and paused ones that stopped to ask (a run bound, a budget):
+  // those are waiting on the person, so they stay in view with their reason.
+  const activeGoals = detail.goals.filter((goal) => goal.status === "active" || (goal.status === "paused" && (goal.blockers?.length ?? 0) > 0));
   const needsYou = agent.state === "waiting" || agent.needsYou > 0;
   const task = agent.task;
   const computer = detail.computerConfigured ? detail.computer ?? null : null;
@@ -210,25 +218,15 @@ export function AgentProfile({
 
         {activeGoals.length > 0 ? (
           <Section title="Working toward">
-            <ul className="space-y-3">
+            <ul className="space-y-4">
               {activeGoals.map((goal) => (
-                <li key={goal.id} className="flex items-start gap-3">
-                  <Checkbox
-                    id={`goal-${goal.id}`}
-                    disabled={busy === goal.id}
-                    onCheckedChange={() =>
-                      void act(goal.id, () => updateGoal(agent.id, goal.id, { status: "achieved" }))
-                    }
-                    aria-label={`Mark “${goal.title}” achieved`}
-                    className="mt-1"
-                  />
-                  <label htmlFor={`goal-${goal.id}`} className="min-w-0 flex-1 cursor-pointer">
-                    <span className="block text-body text-foreground">{goal.title}</span>
-                    {goal.lastCheckInNote ? (
-                      <span className="mt-0.5 block text-ui text-muted-foreground">{goal.lastCheckInNote}</span>
-                    ) : null}
-                  </label>
-                </li>
+                <AgentGoalRow
+                  key={goal.id}
+                  goal={goal}
+                  busy={busy === goal.id}
+                  onAchieved={() => void act(goal.id, () => updateGoal(agent.id, goal.id, { status: "achieved" }))}
+                  onAdvance={() => void act(goal.id, () => advanceGoal(agent.id, goal.id))}
+                />
               ))}
             </ul>
           </Section>
@@ -354,6 +352,47 @@ export function AgentProfile({
           <p className="text-body text-foreground">{ASKS_COPY[agent.approvalMode]}</p>
           <p className="mt-1 text-ui text-muted-foreground">Ask {agent.name} to change this.</p>
         </Section>
+
+        <Section title="What it may remember about you">
+          {/* Set here and only here: the agent's own tools cannot widen this. */}
+          <div role="radiogroup" aria-label={`What ${agent.name} may read of your memory`} className="flex flex-col gap-1">
+            {AGENT_MEMORY_ACCESS.map((access) => {
+              const current = (agent.memoryAccess ?? DEFAULT_AGENT_MEMORY_ACCESS) === access;
+              return (
+                <button
+                  key={access}
+                  type="button"
+                  role="radio"
+                  aria-checked={current}
+                  disabled={busy === "memory"}
+                  data-memory-access={access}
+                  onClick={() => {
+                    if (!current) void act("memory", () => setAgentMemoryAccess(agent.id, access));
+                  }}
+                  className={cn(
+                    "-mx-2 rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                    current && "bg-secondary/60"
+                  )}
+                >
+                  <span className={cn("block text-body", current ? "font-medium text-foreground" : "text-foreground")}>
+                    {AGENT_MEMORY_ACCESS_META[access].label}
+                  </span>
+                  <span className="block text-ui text-muted-foreground">{AGENT_MEMORY_ACCESS_META[access].description}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-ui text-muted-foreground">Its own notes stay its own either way.</p>
+        </Section>
+
+        {detail.budget ? (
+          <BudgetSection
+            name={agent.name}
+            line={detail.budget}
+            busy={busy === "budget"}
+            onSave={(budgetMicroUsd) => act("budget", () => updateAgent(agent.id, { budgetMicroUsd }))}
+          />
+        ) : null}
       </div>
 
       <footer className="mt-12 flex items-center justify-center gap-2">
@@ -429,6 +468,70 @@ export function AgentProfile({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Its own weekly budget (src/lib/agents/budget.ts), in the sentence every
+ * budget surface uses (src/lib/budgets.ts), with the cap editable in place.
+ * A cap only narrows the account's windows; empty means none of its own.
+ */
+function BudgetSection({
+  name,
+  line,
+  busy,
+  onSave,
+}: {
+  name: string;
+  line: BudgetLine;
+  busy: boolean;
+  onSave: (budgetMicroUsd: number | null) => Promise<boolean>;
+}) {
+  const current = line.ceilingMicroUsd == null ? "" : (line.ceilingMicroUsd / 1_000_000).toFixed(2);
+  const [draft, setDraft] = React.useState(current);
+  React.useEffect(() => setDraft(current), [current]);
+  const parsed = draft.trim() === "" ? null : Number(draft);
+  const valid = parsed === null || (Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_MEMBER_BUDGET_MICRO_USD / 1_000_000);
+  const dirty = draft.trim() !== current;
+  const id = React.useId();
+  return (
+    <Section title="What it may spend">
+      <p className="font-mono text-caption tabular-nums text-muted-foreground">{describeBudgetLine(line)}</p>
+      <form
+        className="mt-3 flex items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!valid || !dirty) return;
+          void onSave(parsed === null ? null : Math.round(parsed * 1_000_000));
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <label htmlFor={id} className="text-ui text-muted-foreground">
+            Weekly cap, US dollars
+          </label>
+          <Input
+            id={id}
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.01"
+            value={draft}
+            placeholder="No cap of its own"
+            onChange={(event) => setDraft(event.target.value)}
+            className="mt-1"
+            aria-invalid={!valid || undefined}
+          />
+        </div>
+        <Button type="submit" size="sm" variant="outline" className="rounded-full" disabled={!valid || !dirty} loading={busy}>
+          Save
+        </Button>
+      </form>
+      <p className="mt-1.5 text-caption text-muted-foreground">
+        {valid
+          ? `${name} stops when this or your account’s own limit runs out, whichever comes first.`
+          : "Leave it empty, or enter an amount up to $2,000."}
+      </p>
+    </Section>
   );
 }
 

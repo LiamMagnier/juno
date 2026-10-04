@@ -347,3 +347,30 @@ export class PermissionEngine {
     return 'Denied by the permission rules.';
   }
 }
+
+// MARK: - Nobody attached
+
+/**
+ * The answer an UNATTENDED Code run gives its own approval requests
+ * (scripts/cloud-code-runner.mjs): no person is there, so the mode decides.
+ *
+ * Full Access allows what the ladder sent up — except a `sensitive` action,
+ * which the shared floor (BRIEF §6, contracts/permissions/permission-taxonomy.v1.json)
+ * says asks a person under every mode. With nobody to ask, the only honest
+ * answer is no: a force-push, `git reset --hard` or `curl | sh` never runs
+ * silently because the composer said "Full access". Every narrower mode denies,
+ * as before.
+ */
+export function unattendedApprovalAnswer(mode: PermissionMode, risk: RiskLevel): 'allow' | 'deny' {
+  if (risk === 'sensitive') return 'deny';
+  return mode === 'full' ? 'allow' : 'deny';
+}
+
+/**
+ * Whether an "allow_always" answer may become a session rule for this risk
+ * ("Allow for this task" in the shared vocabulary). Never for a sensitive
+ * action: that tier is pinned to "Allow once" (BRIEF §6).
+ */
+export function mayGrantAlways(risk: RiskLevel): boolean {
+  return risk !== 'sensitive';
+}

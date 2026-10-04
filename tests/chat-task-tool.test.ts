@@ -34,6 +34,7 @@ import {
   decideActionPolicy,
   mayCreateStandingApproval,
 } from "@/lib/action-approval";
+import { chatTurnSource, turnModule } from "./chat-turn-source";
 
 /*
  * `start_task`: the chat model deciding that a request is a job, not an answer.
@@ -62,10 +63,11 @@ test("the tool declares a title and a goal, and nothing a provider would reject"
     required: string[];
   };
   assert.equal(parameters.type, "object");
-  assert.deepEqual(Object.keys(parameters.properties).sort(), ["deliverable", "goal", "title"]);
+  assert.deepEqual(Object.keys(parameters.properties).sort(), ["deliverable", "goal", "team", "title"]);
   assert.deepEqual(parameters.required, ["title", "goal"]);
   for (const [name, property] of Object.entries(parameters.properties)) {
-    assert.equal(property.type, "string", name);
+    // `team` (src/lib/agents/team.ts) is the one list: the specialists of a temporary team.
+    assert.equal(property.type, name === "team" ? "array" : "string", name);
     assert.ok(property.description.length > 20, `${name} has no real description`);
   }
   // Gemini refuses the whole request over `additionalProperties`, and length
@@ -160,7 +162,12 @@ test("arguments are trimmed and bounded, and both required fields are required",
   assert.equal(parseStartTaskArgs({ title: 7, goal: "Build it" }), null);
 
   const parsed = parseStartTaskArgs({ title: "  Pricing\n sheet ", goal: "  Build it  ", deliverable: " " });
-  assert.deepEqual(parsed, { title: "Pricing sheet", goal: "Build it", deliverable: null });
+  assert.deepEqual(parsed, { title: "Pricing sheet", goal: "Build it", deliverable: null, team: null });
+
+  // A team names known specialists only, once each, at most three.
+  assert.deepEqual(parseStartTaskArgs({ title: "t", goal: "g", team: ["researcher", "hacker", "researcher", "designer", "engineer"] })?.team, ["researcher", "designer", "engineer"]);
+  assert.equal(parseStartTaskArgs({ title: "t", goal: "g", team: "researcher" })?.team, null);
+  assert.equal(parseStartTaskArgs({ title: "t", goal: "g", team: ["critic"] })?.team, null);
 
   // A title that runs long is cut at a word, never mid-word, and never over 80.
   const long = parseStartTaskArgs({
@@ -436,7 +443,7 @@ test("streamChat offers native tools beside the toolset, never through the regis
 });
 
 test("the chat route gates the tool and its prompt section on one flag", () => {
-  const route = read("../src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
@@ -451,9 +458,9 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const createRoomTool =\s*agentConfigToolsOn && userMessageId\s*\? createCreateRoomTool\(\{/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
   assert.match(route, /send\(\{ type: "work", session \}\);/);
-  // The private branch builds no task or handoff tool: it sits above the saved
-  // path's stream and must never reach either declaration.
-  const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
+  // The private turn builds no task or handoff tool: it is its own stage
+  // (src/lib/chat/turn/private-turn.ts) and must never reach either declaration.
+  const privateBranch = turnModule("private-turn");
   assert.doesNotMatch(privateBranch, /createStartTaskTool|createHandoffTool|nativeTools|taskHandoff|handoff/);
 });
 
@@ -461,7 +468,7 @@ test("a task started from a turn with any file in it asks first", () => {
   // The memory rule's flag misses pictures: an image reaches a vision model as
   // pixels with no envelope, and a screenshot of an email is as much outside
   // content as the email's text would be.
-  const route = read("../src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   const call = route.slice(route.indexOf("createStartTaskTool({"));
   assert.match(
     call.slice(0, call.indexOf("})")),

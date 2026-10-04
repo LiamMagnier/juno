@@ -1,0 +1,14 @@
+├ ƒ /agents                                                                    205 B         309 kB
+├ ƒ /agents/[id]                                                             1.04 kB         105 kB
+├ ƒ /agents/new                                                              29.2 kB         347 kB
+├ ƒ /chat                                                                    4.02 kB         736 kB
+├ ƒ /chat/[id]                                                               25.6 kB         771 kB
+├ ƒ /customize                                                               11.5 kB         335 kB
+├ ƒ /customize/instructions                                                  8.58 kB         283 kB
+├ ƒ /library                                                                 17.7 kB         367 kB
+├ ƒ /projects                                                                10.8 kB         281 kB
+├ ƒ /projects/[id]                                                           11.3 kB         490 kB
++ First Load JS shared by all                                                 104 kB
+  ├ chunks/31255-4be448334b8036d9.js                                         46.1 kB
+  ├ chunks/4bd1b696-bad92808725a934a.js                                      54.2 kB
+  └ other shared chunks (total)                                              3.85 kB

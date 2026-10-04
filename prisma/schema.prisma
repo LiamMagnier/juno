@@ -59,8 +59,8 @@ model User {
   // proved yet, and nothing is enforced); both set is enrolled; both null is
   // off. Re-starting enrolment overwrites the pending secret, so an abandoned
   // attempt can never be resumed by someone who photographed the old QR.
-  totpSecret     String?   @db.Text
-  totpEnabledAt  DateTime?
+  totpSecret    String?   @db.Text
+  totpEnabledAt DateTime?
 
   // Moderation: a set bannedAt means the account is suspended (sign-in blocked,
   // active sessions killed). strikes accumulates soft violations toward auto-ban.
@@ -141,6 +141,9 @@ model User {
   researchFindings            ResearchFinding[]
   researchReportRevisions     ResearchReportRevision[]
   actionApprovalGrants        ActionApprovalGrant[]
+  secretCredentials           SecretCredential[]
+  secretGrants                SecretGrant[]
+  secretAccessEvents          SecretAccessEvent[]
   workSessions                WorkSession[]
   workSessionConnectors       WorkSessionConnector[]
   workRuns                    WorkRun[]
@@ -177,12 +180,13 @@ model User {
   agentPayments               AgentPayment[]
   toolRuns                    ToolRun[]
 
+  messageRecallIndex MessageRecallIndex[]
+  skillCandidates    SkillCandidate[]
   @@index([image])
 }
 
 /**
  * One-time codes that stand in for the authenticator app.
- *
  * Ten are issued when two-step verification is turned on and shown exactly
  * once. Only the SHA-256 digest is kept — a dump of this table must not let
  * anyone sign in — and a used code is marked rather than deleted so the
@@ -230,7 +234,6 @@ model Connection {
  * A remote MCP server the user added themselves (URL + optional Authorization
  * header), as opposed to the closed native registry in src/lib/connectors.ts
  * and Composio's managed catalog.
- *
  * SEPARATE FROM `Connection` ON PURPOSE. Connection is the OAuth/credential
  * ledger for closed ConnectorIds: unique on [userId, provider] where provider
  * is a registry id, and every column exists to refresh a token Juno owns. A
@@ -240,10 +243,8 @@ model Connection {
  * never needed. Stuffing it into Connection would make `provider` mean "a
  * registry id OR a cuid of a row in another table" and every lookup that
  * assumes the first would silently skip these.
- *
  * The auth header is encrypted like Connection.accessToken: a database dump
  * must not yield a working bearer token for someone else's MCP endpoint.
- *
  * Once enabled, a row appears in getActiveConnectors as `user_mcp:<id>` so
  * chat, agents and Work can request it like any other connector id.
  */
@@ -560,6 +561,13 @@ model Settings {
   // that emptying the field cannot disable the ceiling by accident. Every
   // surface that reads the budget must say loudly when this is on.
   spendCapDisabled           Boolean  @default(false)
+  // What Auto optimises for: balanced | quality | economy (src/lib/router/decide.ts).
+  // TEXT so a new value is a rollback-safe change; unknown values read as balanced.
+  autoPreference             String   @default("balanced")
+  // Which providers Auto may choose by their data-use terms:
+  // verified_no_training | exclude_prc | eu_us_only (src/lib/router/data-policy.ts).
+  // Every value already excludes training and unverified terms; this only narrows.
+  autoDataBoundary           String   @default("verified_no_training")
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
@@ -878,6 +886,12 @@ model Message {
   costMicroUsd     Int?
   sources          Json? // web-search citations: [{ title, url, snippet }]
   activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
+  // Auto's receipt for this turn (src/lib/router/receipt.ts): { v, effort,
+  // taskClass, reasons[] } — the "Auto · model · effort" line and its
+  // "Selected for:" list, read from the decision that actually ran. NULL for
+  // every turn the reader routed by hand, and for every turn written before
+  // Auto Router 2.0. Cleared (not kept) when a regenerate supersedes the row.
+  routing          Json?
   createdAt        DateTime  @default(now())
 
   conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -887,6 +901,7 @@ model Message {
   versions                MessageVersion[]
   researchRuns            ResearchRun[]            @relation("ResearchRunAssistantMessage")
   researchReportRevisions ResearchReportRevision[]
+  recallIndex             MessageRecallIndex?
 
   @@unique([conversationId, clientId])
   @@index([conversationId, createdAt])
@@ -1215,19 +1230,19 @@ model MemoryEdit {
 // supports incremental updates after new messages, and makes old-chat
 // backfill resumable.
 model ConversationMemory {
-  id             String   @id @default(cuid())
-  userId         String
-  conversationId String   @unique
-  processedAt    DateTime // high-water mark: messages createdAt <= this are extracted
-  digest         String?  @db.Text // one-line memory digest of the chat
-  factCount      Int      @default(0) // facts extracted from this chat so far
+  id               String   @id @default(cuid())
+  userId           String
+  conversationId   String   @unique
+  processedAt      DateTime // high-water mark: messages createdAt <= this are extracted
+  digest           String?  @db.Text // one-line memory digest of the chat
+  factCount        Int      @default(0) // facts extracted from this chat so far
   // Which version of the reader distilled it (EXTRACTOR_VERSION in
   // src/lib/memory-extraction.ts). When the reader improves, history read by
   // an older one is worth reading again — the dreamer does, and this is how it
   // knows which. Existing rows were read by version 1.
   extractorVersion Int      @default(1)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -1237,6 +1252,65 @@ model ConversationMemory {
 
 // A periodically-regenerated, deduped summary of the user's memories (markdown,
 // organized into sections). Used in context instead of the raw entry list.
+/// Session recall: one row per indexed message — BLIND tokens only, never a
+/// word (src/lib/recall/index-core.ts). Each token is an HMAC of one word
+/// under a per-account key derived from the message key `keyId`, so the
+/// database can match a query's tokens without being able to read either.
+/// Deleting the message deletes its row; a changed body drops it for
+/// re-indexing (src/lib/recall/indexer.ts).
+model MessageRecallIndex {
+  messageId      String   @id
+  userId         String
+  conversationId String
+  role           Role
+  /// The message's own time, copied so ranking needs no join for recency.
+  createdAt      DateTime
+  /// The message-encryption key the blind-token key was derived from.
+  keyId          String
+  /// RECALL_INDEX_VERSION when indexed; older rows are re-indexed.
+  version        Int      @default(1)
+  tokens         String[]
+  tokenCount     Int      @default(0)
+  indexedAt      DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([conversationId])
+  @@index([tokens], type: Gin)
+}
+
+/// Procedural memory (Layer G): a method the person's own Work runs repeated
+/// successfully, proposed as a Skill. A PROPOSAL only — nothing is created or
+/// selected until the person accepts it, and a dismissed one is never proposed
+/// again (`key`). Kept apart from MemoryEntry on purpose: memory is what is
+/// known, a skill is how to do something (src/lib/procedural-memory.ts).
+model SkillCandidate {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String?
+  /// Stable identity of the repeated method, so a refresh updates rather than duplicates.
+  key       String
+  /// Taken from the runs' own titles — never written by a model.
+  title     String
+  /// { examples: string[], tools: string[], sessionIds: string[] }
+  method    Json
+  runCount  Int      @default(0)
+  lastSeenAt DateTime
+  /// pending | accepted | dismissed
+  status    String   @default("pending")
+  /// The skill it became, once accepted.
+  skillId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, status])
+}
+
 model MemorySummary {
   id         String   @id @default(cuid())
   userId     String   @unique
@@ -1499,24 +1573,24 @@ model AppStoreTransaction {
 }
 
 model DevicePushToken {
-  id          String    @id @default(cuid())
-  userId      String
-  token       String    @unique
-  platform    String // "ios" | "macos"
-  bundleId    String?
-  environment String    @default("production") // "production" | "sandbox"
-  active      Boolean   @default(true)
-  lastUsedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  token           String    @unique
+  platform        String // "ios" | "macos"
+  bundleId        String?
+  environment     String    @default("production") // "production" | "sandbox"
+  active          Boolean   @default(true)
+  lastUsedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   /// The native sign-in (NativeDeviceSession.id) that registered this token, so
   /// signing that device out or revoking it stops its pushes server-side — the
   /// app's own DELETE cannot, because its bearer is already revoked by then.
   deviceSessionId String?
   /// Per-device switches (docs/design/AGENTS.md §8): blocking work — an approval
   /// or a question — and everything else (finished, failed, an agent's ideas).
-  notifyNeedsYou  Boolean @default(true)
-  notifyUpdates   Boolean @default(true)
+  notifyNeedsYou  Boolean   @default(true)
+  notifyUpdates   Boolean   @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1687,6 +1761,14 @@ enum ArtifactType {
   // every other type so history, restore, sharing and the library work
   // unchanged. Added last so existing enum ordinals are untouched.
   DESIGN
+  // Semantic deliverables (BRIEF §29). The version body is the model JSON
+  // (src/lib/work/deliverables/semantic/*): a workbook with formulas and
+  // charts, a block document with comments and tracked revisions, a themed
+  // deck. Same Artifact/ArtifactVersion rows, so history, restore, proposals,
+  // the Library and publication work unchanged. Appended; no ordinal moves.
+  SPREADSHEET
+  DOCUMENT
+  PRESENTATION
 }
 
 // ----------------------------------------------------------------------------
@@ -2221,24 +2303,24 @@ model Share {
 /// report outlives the link it was about — deleting the account or the chat
 /// cascades the share away, and the report is the record of why it mattered.
 model ShareReport {
-  id           String    @id @default(cuid())
-  shareId      String?
+  id            String    @id @default(cuid())
+  shareId       String?
   /// Set instead of shareId when the report is about a published artifact
   /// (ArtifactPublication); the token, title and owner copies work the same.
   publicationId String?
-  shareToken   String
-  shareTitle   String    @default("")
-  shareOwnerId String
+  shareToken    String
+  shareTitle    String    @default("")
+  shareOwnerId  String
   /// phishing | malware | illegal | harassment | sexual | other
-  reason       String
-  detail       String    @default("") @db.Text
+  reason        String
+  detail        String    @default("") @db.Text
   /// Optional address the reporter left for a reply.
-  contact      String?
+  contact       String?
   /// open | actioned | dismissed
-  status       String    @default("open")
-  resolvedAt   DateTime?
-  resolvedBy   String?
-  createdAt    DateTime  @default(now())
+  status        String    @default("open")
+  resolvedAt    DateTime?
+  resolvedBy    String?
+  createdAt     DateTime  @default(now())
 
   share       Share?               @relation(fields: [shareId], references: [id], onDelete: SetNull)
   publication ArtifactPublication? @relation(fields: [publicationId], references: [id], onDelete: SetNull)
@@ -2368,19 +2450,19 @@ model CodeWorkspace {
 // got before this table existed; `isDefault` only marks which environment a
 // composer should preselect for the NEXT run.
 model CodeEnvironment {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
   name        String
   /// Egress for agent-authored commands: "none" (the default, and what every
   /// run had until now) | "full". See src/lib/code-environments.ts for why the
   /// proxy-allowlist levels are absent rather than stored-and-ignored.
-  network     String  @default("none")
+  network     String   @default("none")
   /// The variables, as ONE AES-256-GCM ciphertext over a JSON object, sealed
   /// with the same keyring as the connector OAuth tokens (src/lib/crypto.ts).
   /// One payload rather than a row per variable: it is read in exactly one
   /// place (runner-context, for the runner alone), so a per-key schema would
   /// buy queryability nobody wants over values nobody may query.
-  envVars     String? @db.Text
+  envVars     String?  @db.Text
   /// The names of those variables, in the clear, so a list can say what a run
   /// will carry without unsealing anything — and so nothing is ever tempted to
   /// decrypt on a path that renders a browser response.
@@ -2389,11 +2471,11 @@ model CodeEnvironment {
   /// on the runner host, not inside the agent's container: the container has no
   /// network by design, and fetching dependencies is precisely the thing the
   /// sandbox's own header says the driver should do outside it.
-  setupScript String? @db.Text
+  setupScript String?  @db.Text
   /// Which environment a composer preselects. Enforced as one per user by a
   /// partial unique index (see the migration) — Prisma cannot express a
   /// filtered index, and without one a failed edit can leave two.
-  isDefault   Boolean @default(false)
+  isDefault   Boolean  @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2427,15 +2509,15 @@ model CodeEnvironment {
 /// thing anyone should discover, so it is a decision taken once, by hand, on the
 /// session that owns the branch.
 model CodeAutoFixWatch {
-  id        String @id @default(cuid())
-  userId    String
-  repoOwner String
-  repoName  String
-  prNumber  Int
+  id             String  @id @default(cuid())
+  userId         String
+  repoOwner      String
+  repoName       String
+  prNumber       Int
   /// The head branch at the time the toggle was set. A check run that names no
   /// pull request (GitHub omits `pull_requests` for a fork's head) still names a
   /// branch, and this is what lets such a delivery find its session.
-  branch    String?
+  branch         String?
   /// The Code conversation the answering run is dispatched into. Plain pointer,
   /// not a relation, for the same reason CodeTask.conversationId is one: the
   /// authoritative Conversation may live only on a Mac.
@@ -2443,7 +2525,7 @@ model CodeAutoFixWatch {
   /// Turned on by hand, and turned off by hand or by the pull request closing.
   /// A merged pull request usually takes its branch with it, so a watch left on
   /// would answer a late check by pushing to a ref that no longer exists.
-  enabled   Boolean @default(false)
+  enabled        Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2473,7 +2555,7 @@ model CodeAutoFixWatch {
 /// be skipped is a fact about that delivery; none of them is a quota. See
 /// AutoFixSkipReason in src/lib/code-autofix.ts for the argument.
 model CodeAutoFixDelivery {
-  id      String @id @default(cuid())
+  id      String  @id @default(cuid())
   watchId String
   /// Identity of the evidence: "check_run:<id>:<conclusion>", "review:<id>",
   /// "review_comment:<id>".
@@ -2663,6 +2745,93 @@ model ActionApprovalGrant {
 }
 
 // ----------------------------------------------------------------------------
+// Alevr Secrets — the credential broker (BRIEF §7, src/lib/secrets/*).
+//
+// A credential is sealed to its owner (AES-GCM with the row's owner and id as
+// additional data, src/lib/crypto.ts encryptSecretBound), so a ciphertext
+// copied to another row or account does not open. A model never sees one: a
+// run holds an opaque reference to a GRANT — one credential, one task, a
+// subset of hosts and scopes, an expiry and a use budget — and the plaintext is
+// produced only at the trusted boundary. Every redemption, refused or not,
+// writes an access event. Revoking a credential or a grant is immediate;
+// rotating a credential bumps `version`, which invalidates every grant made
+// against the old value.
+// ----------------------------------------------------------------------------
+
+model SecretCredential {
+  id         String    @id @default(cuid())
+  userId     String
+  /// What the person calls it ("GitHub — work account").
+  label      String
+  /// Host patterns the value may ever be used on: example.com or *.example.com.
+  hosts      String[]
+  /// The username is not secret but is still never shown to a model.
+  username   String?
+  /// encryptSecretBound(value, "alevr.secret.v1:<userId>:<id>").
+  sealed     String    @db.Text
+  version    Int       @default(1)
+  rotatedAt  DateTime?
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grants SecretGrant[]
+
+  @@index([userId, revokedAt, createdAt])
+}
+
+model SecretGrant {
+  id                String    @id @default(cuid())
+  userId            String
+  credentialId      String
+  /// work:<sessionId>. A grant belongs to one task and nothing else.
+  taskKey           String
+  hosts             String[]
+  /// fill:username | fill:secret
+  scopes            String[]
+  credentialVersion Int
+  maxUses           Int       @default(10)
+  uses              Int       @default(0)
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  /// web | native — where the person granted it.
+  grantedVia        String    @default("web")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credential SecretCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taskKey, revokedAt])
+  @@index([userId, createdAt])
+}
+
+model SecretAccessEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  credentialId String?
+  grantId      String?
+  taskKey      String?
+  /// The host the value was (or would have been) used on. Never a URL path.
+  host         String?
+  scope        String?
+  /// granted | refused | created | rotated | revoked | grant_created | grant_revoked
+  outcome      String
+  /// A SECRET_REDEMPTION_REFUSALS value, or null.
+  reason       String?
+  /// The approval that let the fill happen (Work approval id), when there was one.
+  receiptRef   String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, credentialId, createdAt])
+}
+
+// ----------------------------------------------------------------------------
 // Juno Work — long-running knowledge work.
 //
 // Work is NOT a flag on a chat. A chat is a request/response the user is
@@ -2701,13 +2870,13 @@ model ActionApprovalGrant {
 /// The two are linked instead: `conversationId` is set when a user started this
 /// from a chat, so the thread they were reading stays reachable.
 model WorkSession {
-  id             String  @id @default(cuid())
-  userId         String
-  projectId      String?
+  id                   String    @id @default(cuid())
+  userId               String
+  projectId            String?
   /// The chat this was started from, when it was. Null for sessions created in
   /// Work itself. A plain pointer rather than a relation: the conversation may
   /// be private-mode and never mirrored server-side.
-  conversationId String?
+  conversationId       String?
   /// The crew member that OWNS this task: the one it runs as (brief, apps,
   /// approval mode, budget) and the one whose state it counts towards. Null is
   /// a task the person owns themselves. A plain pointer like `conversationId`:
@@ -2719,7 +2888,7 @@ model WorkSession {
   /// task to be at a safe point and records who moved it, when and why as an
   /// `owner_transferred` event. The executor's lease (`WorkRun.claimedBy`) is a
   /// different lock: it says which process runs an attempt, never who owns it.
-  agentId        String?
+  agentId              String?
   /// The task this one was delegated from, when one was: a hand-off started
   /// while the handing member had a task in the conversation it was asked in.
   /// With `delegatedByAgentId` and `originConversationId` this is the
@@ -2733,6 +2902,29 @@ model WorkSession {
   /// When ownership last changed through a transfer. Null for a task that is
   /// still with the member it was created for.
   ownerTransferredAt   DateTime?
+
+  // --- the work ledger's task fields (src/lib/work/board.ts) ----------------
+  /// The durable goal this task advances, when one does (`AgentGoal.id`).
+  goalId               String?
+  /// Which step of that goal: the milestone id, or "next" for a goal without milestones.
+  goalStepKey          String?
+  /// Tasks that must complete before this one may start. Same account, checked on write.
+  dependsOnSessionIds  String[] @default([])
+  /// When it should be done by. Past it the board says overdue; nothing is killed.
+  deadlineAt           DateTime?
+  /// What "done" means for this task, checked by the person or the goal's driver.
+  completionCriteria   String?  @db.Text
+  /// Attempts this task may get from automatic retries (a person may always retry).
+  maxAttempts          Int      @default(1)
+  /// completed: every dependency must have completed. settled: every dependency
+  /// must have ended, however it ended (a team's critic and lead work with
+  /// whatever the specialists produced; that is failure containment).
+  dependencyMode       String   @default("completed")
+  /// A temporary specialist team (src/lib/agents/team.ts): "lead" on the task
+  /// the person asked for, the node's role (researcher | engineer | designer |
+  /// critic | synthesis) on each member's task, whose `parentSessionId` is the
+  /// lead. Null for every ordinary task.
+  teamRole             String?
 
   title       String
   titleSource String @default("default")
@@ -2801,6 +2993,8 @@ model WorkSession {
   @@index([conversationId])
   @@index([userId, agentId, lastActivityAt])
   @@index([parentSessionId])
+  @@index([userId, goalId, createdAt])
+  @@index([teamRole, status])
 }
 
 /// One connected app a single task is allowed to reach.
@@ -3320,14 +3514,14 @@ model WorkSkill {
   /// table too, and without the column every imported skill listed as an
   /// assistant and every assistant as a slash-invocable skill. Readers on
   /// either side filter on it; nothing infers it from the contract any more.
-  kind       String  @default("skill")
+  kind           String    @default("skill")
   /// The source this skill was installed from, or null for one written here.
   /// SetNull rather than Cascade: removing a source soft-deletes its skills
   /// first, and a run that followed one of them still has to resolve it.
-  sourceId   String?
+  sourceId       String?
   /// Its `SKILL.md` path inside the source's repository: the identity an
   /// update check matches upstream files against, since the slug can differ.
-  sourcePath String?
+  sourcePath     String?
   /// Set when an assistant (`kind: "assistant"`) was moved to the crew (D-007):
   /// the crew member it became. The row stays readable by id for the apps
   /// that shipped with Assistants, and lists leave it out.
@@ -4218,11 +4412,15 @@ model Agent {
   status    String  @default("active")
   /// Whether it reflects on its own (ideas and goal check-ins).
   proactive Boolean @default(true)
+  /// none | profile | full. How much of the person's own memory its turns and
+  /// tasks may read (src/lib/memory-scope.ts). Its own notes are always its own.
+  /// Set by the person only — never by the agent's self-configuration tools.
+  memoryAccess String @default("profile")
   /// The starting point it was hired from. Copy and defaults only.
   template  String?
 
   /// needs_you | results | all. Which notifications this agent sends.
-  notify   String    @default("results")
+  notify            String    @default("results")
   /// Its own spending cap inside the account's weekly usage window, in
   /// micro-USD. Null means no cap of its own: it shares the account's windows
   /// like any chat. Checked when a task is admitted and while it runs
@@ -4231,7 +4429,7 @@ model Agent {
   /// The assistant this member was moved from (D-007), when it was.
   sourceAssistantId String?
   /// Set when the agent is pinned in the roster; pinned agents sort first.
-  pinnedAt DateTime?
+  pinnedAt          DateTime?
 
   lastReflectedAt DateTime?
   sortOrder       Int       @default(0)
@@ -4239,12 +4437,12 @@ model Agent {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goals    AgentGoal[]
-  ideas    AgentIdea[]
-  notes    AgentNote[]
-  events   AgentEvent[]
-  computer AgentComputer?
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goals        AgentGoal[]
+  ideas        AgentIdea[]
+  notes        AgentNote[]
+  events       AgentEvent[]
+  computer     AgentComputer?
   setupChanges AgentSetupChange[]
 
   @@index([userId, deletedAt, sortOrder])
@@ -4266,6 +4464,40 @@ model AgentGoal {
   lastCheckInAt   DateTime?
   lastCheckInNote String?   @db.Text
   dueAt           DateTime?
+
+  // --- durable goal (docs/rework/program/ORBIT.md §Goals) -------------------
+  // `title` + `detail` are the objective. Everything below is what lets an
+  // agent keep at it across sessions without being reminded, and what keeps
+  // that bounded: a goal never runs more than `maxRuns` tasks or spends past
+  // `budgetMicroUsd` before it stops and asks. The rules are pure, in
+  // src/lib/agents/goals.ts; the driver is src/lib/agents/goal-runner.ts and
+  // its tasks are ordinary Work sessions (`WorkSession.goalId`), never a
+  // second queue.
+
+  /// [{id, title, done, sessionId?, doneAt?}], in order. At most 12.
+  milestones      Json      @default("[]")
+  /// ["The report cites at least 5 primary sources", …]. At most 8.
+  successCriteria Json      @default("[]")
+  /// [{kind, text, at}] — what is stopping it now, in the person's words.
+  blockers        Json      @default("[]")
+  /// 0..100, derived from milestones and stored so lists need no join.
+  progress        Int       @default(0)
+  /// One sentence: what happens next, or what it is waiting for.
+  nextAction      String?   @db.Text
+  /// The goal's own spend cap across all its tasks, micro-USD. Null: the agent's cap applies.
+  budgetMicroUsd  Int?
+  spentMicroUsd   Int       @default(0)
+  /// Bounded execution: tasks this goal may start in total before it asks to
+  /// continue. 0 means the goal is not driven at all (a reflection topic, as
+  /// every goal was before durable goals): the sweep never starts its work.
+  maxRuns         Int       @default(0)
+  runsUsed        Int       @default(0)
+  /// Attempts one milestone gets (an interrupted run that did nothing is retried within this).
+  maxAttemptsPerStep Int    @default(2)
+  /// The driver's lease, so two sweeps (or a sweep and a press) never advance one goal twice.
+  advanceLeaseUntil DateTime?
+  lastAdvancedAt  DateTime?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -4273,6 +4505,7 @@ model AgentGoal {
   agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@index([agentId, status, createdAt])
+  @@index([status, lastAdvancedAt])
   @@index([userId, createdAt])
 }
 
@@ -4348,22 +4581,22 @@ model AgentEvent {
 /// agent, never shared. The container is created lazily; `containerRef` is null
 /// until first use.
 model AgentComputer {
-  id             String    @id @default(cuid())
-  userId         String
-  agentId        String    @unique
-  provider       String // "docker" | "fake"
-  containerRef   String?   @db.Text // encryptSecret(container id)
-  secrets        String?   @db.Text // encryptSecret(JSON {cdpToken, vncControl, vncView})
-  status         String    @default("asleep") // asleep | resting | waking | awake | error
-  streamOn       Boolean   @default(false)
-  leaseRunId     String?
-  leaseExpiresAt DateTime?
-  lastResumedAt  DateTime?
-  lastActiveAt   DateTime?
-  lastViewedAt   DateTime?
-  activeSeconds  Int       @default(0) // lifetime awake seconds, for the UI
-  diskMb         Int? // last measured /home/agent size
-  lastError      String?
+  id                String    @id @default(cuid())
+  userId            String
+  agentId           String    @unique
+  provider          String // "docker" | "fake"
+  containerRef      String?   @db.Text // encryptSecret(container id)
+  secrets           String?   @db.Text // encryptSecret(JSON {cdpToken, vncControl, vncView})
+  status            String    @default("asleep") // asleep | resting | waking | awake | error
+  streamOn          Boolean   @default(false)
+  leaseRunId        String?
+  leaseExpiresAt    DateTime?
+  lastResumedAt     DateTime?
+  lastActiveAt      DateTime?
+  lastViewedAt      DateTime?
+  activeSeconds     Int       @default(0) // lifetime awake seconds, for the UI
+  diskMb            Int? // last measured /home/agent size
+  lastError         String?
   /// Exclusive takeover. While `takeoverUntil` is in the future the person has
   /// control and the agent's computer tools (screenshots included) refuse; a
   /// control heartbeat extends it and Hand back clears it. A lapsed window
@@ -4372,10 +4605,14 @@ model AgentComputer {
   takeoverStartedAt DateTime?
   /// Which client holds it: "web" or "native:<device session id>".
   takeoverBy        String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  /// Counts takeovers ever started. A tool call that read one value before it
+  /// ran and another after was overlapped by a takeover, even one that began
+  /// and ended inside the call, and its result is discarded.
+  takeoverEpoch     Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent             Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
   @@index([status, lastActiveAt])
@@ -4426,35 +4663,35 @@ model AgentComputerHandoff {
 /// way `before` holds what Undo restores, and Undo is always available on an
 /// applied change.
 model AgentSetupChange {
-  id             String    @id @default(cuid())
-  userId         String
-  agentId        String
-  conversationId String?
+  id                String    @id @default(cuid())
+  userId            String
+  agentId           String
+  conversationId    String?
   /// The user turn that asked for it, when one did.
-  userMessageId  String?
+  userMessageId     String?
   /// Idempotency: one change per call in a turn, whatever retries.
-  callKey        String?
+  callKey           String?
   /// notify | approval_mode | apps_add | apps_remove | routine_add |
   /// routine_pause | routine_resume | budget | model | skill_draft
-  kind           String
+  kind              String
   /// narrowing | widening | neutral
-  direction      String
+  direction         String
   /// One sentence: what changes.
-  summary        String    @db.Text
+  summary           String    @db.Text
   /// One sentence: what it affects.
-  affects        String    @db.Text
-  before         Json      @default("{}")
-  after          Json      @default("{}")
+  affects           String    @db.Text
+  before            Json      @default("{}")
+  after             Json      @default("{}")
   /// proposed | awaiting_approval | applied | declined | undone | failed
-  status         String    @default("proposed")
+  status            String    @default("proposed")
   /// The approval receipt a widening change was applied under.
   approvalReceiptId String?
   /// Why it did not apply, in the person's words, when it did not.
-  detail         String?   @db.Text
-  appliedAt      DateTime?
-  undoneAt       DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  detail            String?   @db.Text
+  appliedAt         DateTime?
+  undoneAt          DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
@@ -4605,7 +4842,6 @@ model AgentPayment {
 
 /**
  * One execution of model-written code (run_code) in a hosted sandbox.
- *
  * The record is the fact: a receipt, a "Ran Python" row, a file card or the
  * model's own claim that something ran all come from this row, and there is
  * no claim without one. Keyed by (sessionId, callId, argsDigest) so a replayed
@@ -4613,7 +4849,6 @@ model AgentPayment {
  * the digest of the arguments is part of the key because some providers reuse
  * call ids across responses, and a reused id with different code is a
  * different call. The execution host's Idempotency-Key is a second guard.
- *
  * `code`, `stdoutTail` and `stderrTail` are field-encrypted like message text.
  * The full output, when it was longer than the tails, is in object storage
  * under `logKey`. Produced files are Attachment rows with origin
@@ -4675,4 +4910,113 @@ model ToolRun {
   @@index([status, leaseUntil])
   @@index([conversationId])
   @@index([workRunId])
+}
+
+/// Alevr Search's page cache and index (BRIEF §16, src/lib/search/alevr/store.ts).
+/// Public pages a search or a research run discovered and read: no user, no
+/// conversation, no query text. `searchVector` is a stored generated tsvector
+/// (title weighted A, the first 100k characters of text B) under a GIN index;
+/// the store reads and writes this table with raw SQL only.
+model WebPageCache {
+  /// `canonicalUrl(url)`: no fragment, no tracking parameters, lowercased host.
+  canonicalKey String                   @id
+  url          String                   @db.Text
+  host         String
+  title        String                   @db.Text
+  text         String                   @db.Text
+  /// sha256 of the whitespace-normalised text; two URLs, one document.
+  contentHash  String
+  etag         String?
+  lastModified String?
+  publishedAt  DateTime?
+  fetchedAt    DateTime
+  /// The origin last confirmed this copy (a 200 or a 304).
+  validatedAt  DateTime
+  /// Served without a request until then; revalidated after.
+  freshUntil   DateTime
+  language     String?
+  contentType  String
+  /// discovered (a chat search result) | research (a research source).
+  admission    String
+  links        Json?
+  hits         Int                      @default(0)
+  searchVector Unsupported("tsvector")?    @default(dbgenerated("(setweight(to_tsvector('simple'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE(text, ''::text), 100000)), 'B'::\"char\"))"))
+
+  @@index([contentHash])
+  @@index([host])
+  @@index([validatedAt])
+  @@index([searchVector], type: Gin)
+}
+
+/// Alevr Search's exact-query cache: one normalised (query, vertical, recency,
+/// language, region) → its discovery hits, keyed by a sha256 (never the text).
+model WebQueryCache {
+  key       String   @id
+  hits      Json
+  backend   String
+  createdAt DateTime
+  expiresAt DateTime
+  served    Int      @default(0)
+
+  @@index([expiresAt])
+}
+
+/// One Alevr Search call: which path served it, which backend, latency and
+/// cost. No query, no user, no conversation (SearchCallRecord).
+model WebSearchCall {
+  id           String   @id
+  at           DateTime
+  surface      String
+  vertical     String
+  /// query_cache | index | discovery | none
+  servedBy     String
+  backend      String?
+  results      Int
+  latencyMs    Int
+  costMicroUsd Int
+  cachedPages  Int
+  backends     Json
+
+  @@index([at])
+  @@index([servedBy, at])
+}
+
+/// One routed chat turn, for Auto's feedback loop (BRIEF §26,
+/// src/lib/router/telemetry-store.ts). Deliberately NOT linked to a user:
+/// no userId, no conversation id, no content, no prompt hash. `messageId` is
+/// the only link and exists so later signals (regenerate, model switch,
+/// prompt edit, thumbs) can mark the outcome; it is cleared after 30 days and
+/// the row deleted after 180 (ROUTING_LINK_TTL / ROUTING_ROW_TTL). Private
+/// chats write nothing.
+model RoutingOutcome {
+  id                String   @id @default(cuid())
+  messageId         String?  @unique
+  routerVersion     Int
+  /// Auto chose the model (true) or the reader did (false).
+  auto              Boolean
+  taskClass         String
+  complexity        String
+  modelId           String
+  provider          String
+  effort            String?
+  latencyMs         Int?
+  firstTokenMs      Int?
+  toolRounds        Int      @default(0)
+  retryCount        Int      @default(0)
+  /// completed | partial | failed | stopped
+  completionState   String
+  finishReason      String?
+  userRegenerated   Boolean  @default(false)
+  userSwitchedModel Boolean  @default(false)
+  /// The reader edited the prompt and re-sent, discarding this answer.
+  userEdited        Boolean  @default(false)
+  /// UP | DOWN, mirrored from Message.feedback.
+  feedback          String?
+  costMicroUsd      Int?
+  /// The router's expected total for the pick, to measure calibration.
+  expectedMicroUsd  Int?
+  createdAt         DateTime @default(now())
+
+  @@index([modelId, taskClass, createdAt])
+  @@index([createdAt])
 }

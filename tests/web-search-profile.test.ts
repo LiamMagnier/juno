@@ -9,6 +9,7 @@ import { createTurnWebLimits, UserWebCounters } from "@/lib/web/limits";
 import { createPrivateSpanSet, NO_PRIVATE_SPANS } from "@/lib/web/private-spans";
 import { UrlLedger } from "@/lib/web/provenance";
 import {
+  chatSearchAvailable,
   chatWebSearch,
   configuredChatEngines,
   keyedSearchEngineConfigured,
@@ -22,11 +23,12 @@ import { firstSearchDegradation, setWebAuditSink, type WebAuditEvent } from "@/l
 import type { EngineReport, TurnWebLimits } from "@/lib/web/types";
 
 /*
- * Chat's search profile (SPEC §6.3, DECISIONS §4c): the first configured of
- * Tavily, Serper, Brave and Exa is the only engine asked; the next configured
- * one is tried once, and only when the first FAILED (an empty answer is an
- * answer). No keyless engine ever runs in chat, and with no keyed engine the
- * tool is not offered at all. Every engine call here is a fake: no network.
+ * Chat's search profile on Alevr Search (BRIEF §15–16, SPEC §6.3): one
+ * backend at a time, the cheapest that clears the quality floor first, with
+ * one escalation when it FAILED (a paid engine's empty answer is an answer).
+ * Public SearXNG, scraped DuckDuckGo and Wikipedia never answer a chat search;
+ * a self-hosted SearXNG does once its operator rates it above the floor. Every
+ * engine call here is a fake: no network, and no cache (no store injected).
  */
 
 const ALL_KEYS = { TAVILY_API_KEY: "t", SERPER_API_KEY: "s", BRAVE_SEARCH_API_KEY: "b", EXA_API_KEY: "e" };
@@ -35,7 +37,7 @@ function hit(url: string, over: Partial<SearchResult> = {}): SearchResult {
   return { title: `Title of ${url}`, url, snippet: "A snippet.", engine: "fake", ...over };
 }
 
-function scripted(script: Partial<Record<ChatSearchEngine, EngineReport["status"]>>, results: SearchResult[] = [hit("https://a.example/")]) {
+function scripted(script: Partial<Record<ChatSearchEngine | "searxng", EngineReport["status"]>>, results: SearchResult[] = [hit("https://a.example/")]) {
   const calls: ChatSearchEngine[] = [];
   const runEngine: ChatEngineRunner = async (engine) => {
     calls.push(engine);
@@ -56,18 +58,19 @@ function turn(roundBudget = 10): { limits: TurnWebLimits; ctx: Parameters<typeof
 
 const PRICE = (engine: ChatSearchEngine, results: number) => ({ tavily: 8_000, serper: 1_000, brave: 5_000, exa: 7_000 + 1_000 * results })[engine];
 
-test("the primary is the first configured of Tavily, Serper, Brave, Exa", () => {
+test("keyed engines are still reported, and chat search is available with a keyed engine or a rated SearXNG", () => {
   assert.deepEqual(configuredChatEngines(ALL_KEYS), ["tavily", "serper", "brave", "exa"]);
   assert.deepEqual(configuredChatEngines({ EXA_API_KEY: "e", BRAVE_API_KEY: "b" }), ["brave", "exa"]);
   assert.deepEqual(configuredChatEngines({ SERPER_API_KEY: "  " }), [], "a blank key is no key");
-  // Keyless engines never count: SearXNG (even self-hosted), DuckDuckGo, Wikipedia.
-  assert.deepEqual(configuredChatEngines({ SEARXNG_URL: "http://searx.local" }), []);
+  assert.equal(keyedSearchEngineConfigured({ SEARXNG_URL: "http://searx.local" }), false);
+  assert.equal(chatSearchAvailable({}), false, "Wikipedia alone is below the chat floor");
+  assert.equal(chatSearchAvailable({ TAVILY_API_KEY: "t" }), true);
+  assert.equal(chatSearchAvailable({ SEARXNG_URL: "http://searx.local" }), true, "a self-hosted SearXNG at its default rating");
+  assert.equal(chatSearchAvailable({ SEARXNG_URL: "http://searx.local", ALEVR_SEARXNG_QUALITY: "0.3" }), false, "rated below the floor");
+  assert.equal(chatSearchAvailable({ SEARXNG_URL: "file:///etc/passwd" }), false);
 });
 
-test("with no keyed engine, web_search is not offered", async () => {
-  assert.equal(keyedSearchEngineConfigured({}), false);
-  assert.equal(keyedSearchEngineConfigured({ SEARXNG_URL: "http://searx.local" }), false);
-  assert.equal(keyedSearchEngineConfigured({ TAVILY_API_KEY: "t" }), true);
+test("with no backend above the floor, nothing is searched", async () => {
   const { calls, runEngine } = scripted({});
   const { ctx } = turn();
   const outcome = await chatWebSearch({ query: "anything" }, ctx, { env: {}, runEngine, price: PRICE });
@@ -75,38 +78,55 @@ test("with no keyed engine, web_search is not offered", async () => {
   assert.deepEqual(calls, []);
 });
 
-test("one engine when it answers — and an empty answer is still an answer", async () => {
+test("the cheapest engine above the floor answers — and an empty paid answer is still an answer", async () => {
   for (const status of ["ok", "empty"] as const) {
     const { calls, runEngine } = scripted({ serper: status });
     const { ctx } = turn();
-    const outcome = await chatWebSearch({ query: "latest release" }, ctx, {
-      env: { SERPER_API_KEY: "s", BRAVE_API_KEY: "b" },
-      runEngine,
-      price: PRICE,
-    });
+    const outcome = await chatWebSearch({ query: "latest release" }, ctx, { env: ALL_KEYS, runEngine, price: PRICE });
     assert.deepEqual(calls, ["serper"], status);
-    assert.equal(outcome.engine, "serper");
     assert.equal(outcome.degraded, false);
     assert.equal(outcome.feeMicroUsd, 1_000, "the engine that answered is billed");
+    if (status === "ok") assert.equal(outcome.engine, "serper");
   }
 });
 
+test("a self-hosted SearXNG answers before any paid engine; its empty answer escalates once", async () => {
+  const env = { ...ALL_KEYS, SEARXNG_URL: "http://searx.local" };
+  const first = scripted({});
+  const answered = await chatWebSearch({ query: "free first" }, turn().ctx, { env, runEngine: first.runEngine, price: PRICE });
+  assert.deepEqual(first.calls, ["searxng"]);
+  assert.equal(answered.engine, "searxng");
+  assert.equal(answered.feeMicroUsd, 0);
+
+  const emptyFree = scripted({ searxng: "empty" });
+  const escalated = await chatWebSearch({ query: "free was empty" }, turn().ctx, { env, runEngine: emptyFree.runEngine, price: PRICE });
+  assert.deepEqual(emptyFree.calls, ["searxng", "serper"]);
+  assert.equal(escalated.engine, "serper");
+  assert.equal(escalated.feeMicroUsd, 1_000);
+});
+
 test("one fallback, only when the primary fails; failed engines are not billed", async () => {
-  const { calls, runEngine } = scripted({ tavily: "rate_limited" });
+  const { calls, runEngine } = scripted({ serper: "rate_limited" });
   const { ctx } = turn();
   const outcome = await chatWebSearch({ query: "fallback please" }, ctx, { env: ALL_KEYS, runEngine, price: PRICE });
-  assert.deepEqual(calls, ["tavily", "serper"]);
-  assert.equal(outcome.engine, "serper");
+  assert.deepEqual(calls, ["serper", "brave"], "cheapest first: Serper, then Brave");
+  assert.equal(outcome.engine, "brave");
   assert.equal(outcome.degraded, true);
-  assert.equal(outcome.feeMicroUsd, 1_000);
+  assert.equal(outcome.feeMicroUsd, 5_000);
   assert.deepEqual(outcome.engines.map((report) => report.status), ["rate_limited", "ok"]);
 
-  const bothDown = scripted({ tavily: "timeout", serper: "bad_key" });
+  const bothDown = scripted({ serper: "timeout", brave: "bad_key" });
   const second = await chatWebSearch({ query: "all down" }, turn().ctx, { env: ALL_KEYS, runEngine: bothDown.runEngine, price: PRICE });
-  assert.deepEqual(bothDown.calls, ["tavily", "serper"], "never a third engine");
+  assert.deepEqual(bothDown.calls, ["serper", "brave"], "never a third engine");
   assert.equal(second.engine, null);
   assert.equal(second.degraded, true);
   assert.equal(second.feeMicroUsd, 0);
+});
+
+test("an operator order overrides the cost order", async () => {
+  const { calls, runEngine } = scripted({});
+  await chatWebSearch({ query: "ordered" }, turn().ctx, { env: { ...ALL_KEYS, ALEVR_SEARCH_ORDER: "tavily,serper" }, runEngine, price: PRICE });
+  assert.deepEqual(calls, ["tavily"]);
 });
 
 test("the degraded notice is once per turn", () => {
@@ -124,6 +144,7 @@ test("results are cleaned for the model, and Tavily's page text becomes the turn
   ]);
   const { ctx, limits } = turn();
   const outcome = await chatWebSearch({ query: "prefetch", count: 8 }, ctx, { env: { TAVILY_API_KEY: "t" }, runEngine, price: PRICE });
+  assert.equal(outcome.engine, "tavily");
   assert.equal(outcome.results.length, 1, "only absolute http(s) results survive");
   const [result] = outcome.results;
   assert.equal(result.title, "example.com", "an empty title falls back to the host (INV-3)");
@@ -172,7 +193,7 @@ test("query hygiene: credentials, private text and the account email never leave
     { signal: new AbortController().signal, private: false, privateSpans, limits: turn().limits },
     { env: ALL_KEYS, runEngine, price: PRICE },
   );
-  assert.equal(ok.engine, "tavily");
+  assert.equal(ok.engine, "serper");
 });
 
 test("the private-span guard is exact on long texts and ignores case and spacing", () => {
@@ -228,5 +249,9 @@ test("the search backend keeps server-only out of a test's graph", () => {
     .filter((line) => /^import (?!type )/.test(line))
     .join("\n");
   assert.doesNotMatch(staticImports, /search-engine|web-search"|@\/lib\/prisma/);
-  assert.match(source, /await import\("@\/lib\/search\/search-engine"\)/);
+  // The engines and the store load lazily, inside Alevr Search.
+  const backends = readFileSync(path.join(process.cwd(), "src/lib/search/alevr/backends.ts"), "utf8");
+  assert.match(backends, /await import\("@\/lib\/search\/search-engine"\)/);
+  const service = readFileSync(path.join(process.cwd(), "src/lib/search/alevr/service.ts"), "utf8");
+  assert.doesNotMatch(service.split("\n").filter((line) => /^import (?!type )/.test(line)).join("\n"), /@\/lib\/prisma|search-engine/);
 });

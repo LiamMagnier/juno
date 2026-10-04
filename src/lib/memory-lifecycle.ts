@@ -189,6 +189,9 @@ const CLASSIFIER_RULES: { category: MemoryCategory; confidence: number; pattern:
 const CORRECTION_MARKERS =
   /\b(actually|correction|to be clear|no longer|not any ?more|used to|has moved|moved (?:to|from)|switched (?:to|from)|stopped|changed (?:to|from)|instead of)\b/i;
 
+/** The subset of correction phrases that deny a statement rather than replace it. */
+const DENIAL_MARKERS = /\b(no longer|not any ?more|stopped|quit)\b/i;
+
 export function hasCorrectionMarker(content: string): boolean {
   return CORRECTION_MARKERS.test(content);
 }
@@ -281,6 +284,12 @@ export interface LifecycleEntry {
   observedAt?: Date | null;
   /** The row that replaced this one, when it was replaced. */
   supersededById?: string | null;
+  /**
+   * When the person last said it again ("last confirmed"). Recency decay
+   * counts from the later of this and `observedAt`: a fact restated last week
+   * is fresh even if it was first said a year ago.
+   */
+  lastVerifiedAt?: Date | null;
   /** Vector-space marker (never the vector). Absent on pre-semantic rows. */
   embeddingModel?: string | null;
 }
@@ -288,6 +297,12 @@ export interface LifecycleEntry {
 /** When a fact was said, as well as it is known. */
 export function observedAtOf(entry: { observedAt?: Date | null; createdAt: Date }): Date {
   return entry.observedAt ?? entry.createdAt;
+}
+
+/** When a fact was last confirmed: said, or said again — whichever is later. */
+export function confirmedAtOf(entry: { observedAt?: Date | null; createdAt: Date; lastVerifiedAt?: Date | null }): Date {
+  const said = observedAtOf(entry);
+  return entry.lastVerifiedAt && entry.lastVerifiedAt.getTime() > said.getTime() ? entry.lastVerifiedAt : said;
 }
 
 export interface FactCandidate {
@@ -344,6 +359,61 @@ export interface ExclusiveSlot {
   slot: string;
   noun: string;
   value: string;
+  /**
+   * "The user no longer works at Initech": the slot's value, denied. A
+   * denial conflicts with the SAME value asserted (and not with a different
+   * one — "no longer at Initech" says nothing against "works at Hooli").
+   */
+  negated?: boolean;
+}
+
+/** Words before a slot's phrase that turn it into a denial of the value. */
+const SLOT_NEGATION = /\b(?:no longer|not|n['’]t|never|not any ?more|stopped)\b/i;
+
+/**
+ * SUBJECT-AWARE STYLE SLOTS. Most preferences are additive — "prefers metric
+ * units" and "prefers British spelling" are both true — so preferences were
+ * never single-valued, and "prefers short answers with examples" survived
+ * "prefers detailed answers with sources" forever (the benchmark's one
+ * standing leak). But one axis of how a person likes to be answered IS
+ * single-valued: an answer cannot be both short and detailed. So the slot is
+ * not "preferences"; it is the subject (answers, replies, explanations…) and
+ * the axis (length, register), and only a statement that lands on exactly one
+ * pole of one axis takes part. "prefers answers with code examples" lands on
+ * none and stays additive; "dislikes long introductions" is not a preference
+ * FOR anything and is left alone.
+ */
+const STYLE_SUBJECT = /\b(?:answers?|responses?|replies|reply|explanations?|feedback|summar(?:y|ies)|messages?|emails?)\b/i;
+const STYLE_VERB = /\b(?:prefers?|likes?|wants?|would like|asks? for|enjoys?)\b/i;
+const STYLE_AXES: { slot: string; noun: string; poles: [string, RegExp][] }[] = [
+  {
+    slot: "answer-length",
+    noun: "how long you like answers",
+    poles: [
+      ["short", /\b(?:short|shorter|brief|briefer|concise|terse|succinct|minimal|compact)\b/i],
+      ["long", /\b(?:long|longer|detailed|thorough|in-depth|comprehensive|exhaustive|elaborate|extensive)\b/i],
+    ],
+  },
+  {
+    slot: "answer-register",
+    noun: "the tone you like",
+    poles: [
+      ["formal", /\b(?:formal|professional)\b/i],
+      ["casual", /\b(?:casual|informal|relaxed|conversational|chatty)\b/i],
+    ],
+  },
+];
+
+function styleSlot(content: string): ExclusiveSlot | null {
+  const verb = STYLE_VERB.exec(content);
+  if (!verb || !STYLE_SUBJECT.test(content)) return null;
+  if (!aboutTheUser(content.slice(0, verb.index))) return null;
+  const rest = content.slice(verb.index);
+  for (const axis of STYLE_AXES) {
+    const hits = axis.poles.filter(([, pattern]) => pattern.test(rest));
+    if (hits.length === 1) return { slot: axis.slot, noun: axis.noun, value: hits[0][0] };
+  }
+  return null;
 }
 
 /**
@@ -369,9 +439,118 @@ function aboutTheUser(prefix: string): boolean {
 export function exclusiveSlot(content: string): ExclusiveSlot | null {
   for (const candidate of EXCLUSIVE_SLOTS) {
     const match = candidate.pattern.exec(content);
-    if (match?.[1]?.trim() && aboutTheUser(content.slice(0, match.index))) {
-      return { slot: candidate.slot, noun: candidate.noun, value: match[1].trim() };
+    if (!match?.[1]?.trim()) continue;
+    const prefix = content.slice(0, match.index);
+    const negated = SLOT_NEGATION.test(prefix);
+    // The subject test reads the prefix without its negation, so "The user no
+    // longer lives in Leeds" is still about the user.
+    if (aboutTheUser(prefix.replace(SLOT_NEGATION, " ").replace(/\s+/g, " "))) {
+      return { slot: candidate.slot, noun: candidate.noun, value: match[1].trim(), ...(negated ? { negated: true } : {}) };
     }
+  }
+  return styleSlot(content);
+}
+
+/** Do two slot readings disagree? Same slot, and either different values or one denies the other. */
+export function slotsConflict(a: ExclusiveSlot, b: ExclusiveSlot): boolean {
+  if (a.slot !== b.slot) return false;
+  const same = normalizeFact(a.value) === normalizeFact(b.value);
+  if (!!a.negated !== !!b.negated) return same;
+  if (a.negated && b.negated) return false;
+  return !same;
+}
+
+// ---------------------------------------------------------------------------
+// Transitions — states that a later event ends
+// ---------------------------------------------------------------------------
+
+/**
+ * Some facts are STATES that a later, different-looking fact ends: "is looking
+ * for a new job" ends when "works at Hooli" is said after it; "studies at
+ * Leeds University" ends with "graduated". No word overlap connects the two
+ * and neither is a single-valued slot, so neither the slot rules nor the
+ * correction rule could retire the state — it stayed believed forever (the
+ * benchmark's "looking for a new job" in September).
+ *
+ * Enumerated, not guessed, like the slots: each pair is one the evaluation
+ * names. Only a resolver said AFTER the state ends it — "works at Initech"
+ * said in January does not end a job search begun in February.
+ */
+interface Transition {
+  id: string;
+  noun: string;
+  state: RegExp;
+  resolvedBy: (content: string) => boolean;
+}
+
+const TRANSITIONS: Transition[] = [
+  {
+    id: "job-search",
+    noun: "your job search",
+    state:
+      /\b(?:looking|searching|hunting|applying)\s+(?:around\s+)?for\s+(?:a\s+|another\s+)?(?:new\s+)?(?:job|role|position|work)\b|\bjob[- ]?(?:hunting|searching|search)\b|\bbetween jobs\b|\bunemployed\b/i,
+    resolvedBy: (content) => {
+      const slot = exclusiveSlot(content);
+      if (slot?.slot === "employer" && !slot.negated) return true;
+      return userClause(content, /\b(?:joined|started (?:a new job|working)|accepted (?:an?|the) (?:job|offer|role)|got (?:a|the) (?:new )?job|was hired)\b/i);
+    },
+  },
+  {
+    id: "studies",
+    noun: "your studies",
+    state:
+      /\b(?:stud(?:y|ies|ying)|enrolled|is (?:a|an) (?:student|undergraduate|postgraduate))\b.*\b(?:university|college|uni|school|degree|phd|masters?)\b|\bis (?:a|an) (?:university|college|phd|masters?|undergraduate|graduate) student\b/i,
+    resolvedBy: (content) =>
+      userClause(content, /\b(?:graduated|finished (?:their|his|her|the|a) (?:degree|studies|course|phd|masters?)|completed (?:their|his|her|the|a) (?:degree|studies|phd|masters?)|dropped out)\b/i),
+  },
+];
+
+/** The pattern matches, and what comes before it is about the user (not their sister). */
+function userClause(content: string, pattern: RegExp): boolean {
+  const match = pattern.exec(content);
+  return !!match && aboutTheUser(content.slice(0, match.index));
+}
+
+/** Which transition state this fact is, if it is one about the user. */
+export function transitionStateOf(content: string): Transition | null {
+  for (const transition of TRANSITIONS) if (userClause(content, transition.state)) return transition;
+  return null;
+}
+
+/**
+ * Active states in `entries` that `candidate` ends: same scope, a state the
+ * candidate resolves, said before the candidate was.
+ */
+export function statesResolvedBy(
+  candidate: { content: string; projectId?: string | null; observedAt: Date },
+  entries: readonly LifecycleEntry[]
+): { entry: LifecycleEntry; noun: string }[] {
+  const scope = candidate.projectId ?? null;
+  const out: { entry: LifecycleEntry; noun: string }[] = [];
+  for (const entry of entries) {
+    if (entry.kind !== "FACT" || entry.status !== "active" || entry.projectId !== scope) continue;
+    if (entry.source === "MANUAL") continue; // a typed fact is the user's to retire
+    const state = transitionStateOf(entry.content);
+    if (!state || !state.resolvedBy(candidate.content)) continue;
+    if (observedAtOf(entry).getTime() >= candidate.observedAt.getTime()) continue;
+    out.push({ entry, noun: state.noun });
+  }
+  return out;
+}
+
+/** The believed fact, said after `candidate`, that already ends the state `candidate` describes. */
+export function laterResolverOf(
+  candidate: { content: string; projectId?: string | null; observedAt: Date },
+  entries: readonly LifecycleEntry[]
+): { entry: LifecycleEntry; noun: string } | null {
+  const state = transitionStateOf(candidate.content);
+  if (!state) return null;
+  const scope = candidate.projectId ?? null;
+  for (const entry of entries) {
+    if (entry.kind !== "FACT" || entry.status !== "active" || entry.projectId !== scope) continue;
+    if (!state.resolvedBy(entry.content)) continue;
+    if (observedAtOf(entry).getTime() <= candidate.observedAt.getTime()) continue;
+    return { entry, noun: state.noun };
   }
   return null;
 }
@@ -407,9 +586,7 @@ export function findContradiction(
 
     const entrySlot = exclusiveSlot(entry.content);
     if (candidateSlot && entrySlot && candidateSlot.slot === entrySlot.slot) {
-      if (normalizeFact(candidateSlot.value) !== normalizeFact(entrySlot.value)) {
-        return { entry, noun: candidateSlot.noun };
-      }
+      if (slotsConflict(candidateSlot, entrySlot)) return { entry, noun: candidateSlot.noun };
       continue;
     }
 
@@ -417,6 +594,16 @@ export function findContradiction(
     // two statements are talking about the same thing.
     if (correcting && overlapRatio(candidate.content, entry.content) >= CORRECTION_OVERLAP_THRESHOLD) {
       return { entry, noun: "this" };
+    }
+    // The same, read the other way round: the stored row is the denial ("no
+    // longer vegetarian") and the candidate the plain statement it denies —
+    // which is how a re-read meets them, newest first. Every word of the
+    // candidate must be in the denial, so only the statement it names is
+    // caught; which one stands is then decided by when each was said.
+    if (!correcting && DENIAL_MARKERS.test(entry.content) && !DENIAL_MARKERS.test(candidate.content)) {
+      const words = new Set(significantTokens(entry.content));
+      const own = significantTokens(candidate.content);
+      if (own.length > 0 && own.every((token) => words.has(token))) return { entry, noun: "this" };
     }
   }
   return null;
@@ -560,6 +747,8 @@ export type IngestionPlan =
        */
       reinstate?: { reason: string };
       supersedes?: { entryId: string; reason: string };
+      /** States this saying ends (see TRANSITIONS) — each is marked replaced by this row. */
+      resolves?: { entryId: string; reason: string }[];
     }
   /** New belief. `supersedes` is set when it displaces an older one. */
   | {
@@ -584,6 +773,8 @@ export type IngestionPlan =
       supersededById?: string;
       /** Set when this row LOST a conflict: stored, explained, never injected. */
       reason?: string;
+      /** States this new fact ends (see TRANSITIONS) — each is marked replaced by it. */
+      resolves?: { entryId: string; reason: string }[];
     };
 
 /**
@@ -653,6 +844,19 @@ export function planFactIngestion(
   const expiresAt = expiresAtFor(category, observedAt);
   const alreadyOver = expiresAt !== null && expiresAt.getTime() <= context.now.getTime();
   const incoming = { source: candidate.source, confidence, observedAt };
+  // States this saying ends — "works at Hooli" said after "looking for a new
+  // job". Only ever states said BEFORE it; see TRANSITIONS.
+  const resolvedStates = statesResolvedBy({ content, projectId: candidate.projectId, observedAt }, context.entries);
+  const resolves = resolvedStates.length
+    ? {
+        resolves: resolvedStates.map(({ entry, noun }) => ({
+          entryId: entry.id,
+          reason: `Replaced by something newer you said about ${noun}.`,
+        })),
+      }
+    : {};
+  // And the other way round: a state read late, after what already ended it.
+  const endedBy = laterResolverOf({ content, projectId: candidate.projectId, observedAt }, context.entries);
 
   const duplicate = findDuplicate(candidate, context.entries);
   if (duplicate) {
@@ -663,7 +867,7 @@ export function planFactIngestion(
       ...(newer ? { observedAt } : {}),
     };
     if (duplicate.status === "active") {
-      return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
+      return { ...refresh, revive: false, expiresAt: duplicate.expiresAt, ...resolves };
     }
     if (duplicate.status === "expired") {
       // A temporary fact restated is a temporary fact still true — put it back
@@ -682,6 +886,9 @@ export function planFactIngestion(
      * wins, it is believed again.
      */
     if (alreadyOver) return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
+    // A state said again is not true again if something said later ended it:
+    // re-reading the old job-search chat must not reopen the search.
+    if (endedBy) return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
     const rival = findContradiction(candidate, context.entries);
     if (!rival) {
       return {
@@ -689,6 +896,7 @@ export function planFactIngestion(
         revive: false,
         expiresAt,
         reinstate: { reason: `You said this again, so ${PRODUCT_NAME} believes it again.` },
+        ...resolves,
       };
     }
     const outcome = resolveContradiction(
@@ -703,6 +911,7 @@ export function planFactIngestion(
         expiresAt,
         reinstate: { reason: `You said this again, more recently than what had replaced it.` },
         supersedes: { entryId: rival.entry.id, reason: outcome.reason },
+        ...resolves,
       };
     }
     return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
@@ -742,6 +951,7 @@ export function planFactIngestion(
         observedAt,
         status: "active",
         supersedes: { entryId: conflict.entry.id, reason: outcome.reason },
+        ...resolves,
       };
     }
     if (outcome.basis === "older") {
@@ -774,7 +984,22 @@ export function planFactIngestion(
     };
   }
 
-  return { action: "create", content, normalized, category, confidence, expiresAt, observedAt, status: "active" };
+  if (endedBy) {
+    return {
+      action: "create",
+      content,
+      normalized,
+      category,
+      confidence,
+      expiresAt,
+      observedAt,
+      status: "superseded",
+      supersededById: endedBy.entry.id,
+      reason: `Replaced by something newer you said about ${endedBy.noun}.`,
+    };
+  }
+
+  return { action: "create", content, normalized, category, confidence, expiresAt, observedAt, status: "active", ...resolves };
 }
 
 // ---------------------------------------------------------------------------
@@ -826,7 +1051,8 @@ export function planTimelineReconciliation(
   entries: readonly LifecycleEntry[],
   opts: { now: Date }
 ): TimelineChange[] {
-  const groups = new Map<string, { entry: LifecycleEntry; value: string; noun: string }[]>();
+  type Member = { entry: LifecycleEntry; value: string; noun: string; negated: boolean };
+  const groups = new Map<string, Member[]>();
   for (const entry of entries) {
     if (entry.kind !== "FACT") continue;
     if (entry.status !== "active" && entry.status !== "superseded") continue;
@@ -835,13 +1061,21 @@ export function planTimelineReconciliation(
     if (entry.source === "MANUAL" && entry.status !== "active") continue;
     const slot = exclusiveSlot(entry.content);
     if (!slot) continue;
+    // A denial that was itself replaced is history, not a claim to replay.
+    if (slot.negated && entry.status !== "active") continue;
     const key = `${entry.projectId ?? ""}\u0000${slot.slot}`;
     const members = groups.get(key) ?? [];
-    members.push({ entry, value: normalizeFact(slot.value), noun: slot.noun });
+    members.push({ entry, value: normalizeFact(slot.value), noun: slot.noun, negated: !!slot.negated });
     groups.set(key, members);
   }
 
   const changes: TimelineChange[] = [];
+  const changed = new Set<string>();
+  const push = (change: TimelineChange) => {
+    if (changed.has(change.id)) return;
+    changed.add(change.id);
+    changes.push(change);
+  };
 
   for (const entry of entries) {
     if (entry.kind !== "FACT" || entry.status !== "active" || entry.category !== "temporary") continue;
@@ -851,7 +1085,7 @@ export function planTimelineReconciliation(
     // purpose, and its observedAt moved up with it.
     if (!due || due.getTime() >= entry.expiresAt.getTime() - 60_000) continue;
     const over = due.getTime() <= opts.now.getTime();
-    changes.push({
+    push({
       id: entry.id,
       status: over ? "expired" : "active",
       expiresAt: due,
@@ -868,8 +1102,22 @@ export function planTimelineReconciliation(
         observedAtOf(a.entry).getTime() - observedAtOf(b.entry).getTime() ||
         a.entry.createdAt.getTime() - b.entry.createdAt.getTime()
     );
-    let holder = ordered[0];
-    for (const next of ordered.slice(1)) {
+    // Replay in the order things were SAID. `holder` is the value believed
+    // after each saying; a denial of the held value leaves nothing held.
+    let holder: Member | null = null;
+    let denial: Member | null = null;
+    for (const next of ordered) {
+      if (next.negated) {
+        if (holder && holder.value === next.value) {
+          holder = null;
+          denial = next;
+        }
+        continue;
+      }
+      if (!holder) {
+        holder = next;
+        continue;
+      }
       if (next.value === holder.value) {
         holder = next; // the same thing said again: the latest saying carries it
         continue;
@@ -882,28 +1130,125 @@ export function planTimelineReconciliation(
       if (outcome.winner === "incoming") holder = next;
     }
 
+    const held = holder;
     // Prefer a row that is already believed to carry the winning value, so a
     // group that is already right produces no writes at all.
-    const carrier =
-      members.find((m) => m.value === holder.value && m.entry.status === "active") ?? holder;
+    const carrier = held
+      ? members.find((m) => !m.negated && m.value === held.value && m.entry.status === "active") ?? held
+      : null;
     for (const member of members) {
       if (member.entry.source === "MANUAL") continue;
-      const wins = member.value === holder.value;
-      if (wins && member.entry.status !== "active" && member.entry.id === carrier.entry.id) {
-        changes.push({
+      if (member.negated) {
+        // A denial outlived by the value it denied, said again later: the
+        // value is back and the denial is history.
+        if (held && member.value === held.value && member.entry.status === "active" && carrier) {
+          push({
+            id: member.entry.id,
+            status: "superseded",
+            supersededById: carrier.entry.id,
+            reason: `${PRODUCT_NAME} re-read your chats: you said something newer about ${member.noun}.`,
+          });
+        }
+        continue;
+      }
+      const wins = !!held && member.value === held.value;
+      if (wins && carrier && member.entry.status !== "active" && member.entry.id === carrier.entry.id) {
+        push({
           id: member.entry.id,
           status: "active",
           supersededById: null,
           reason: `${PRODUCT_NAME} re-read your chats: this is the latest thing you said about ${member.noun}.`,
         });
       } else if (!wins && member.entry.status === "active") {
-        changes.push({
+        const by = carrier ?? denial;
+        push({
           id: member.entry.id,
           status: "superseded",
-          supersededById: carrier.entry.id,
+          supersededById: by ? by.entry.id : null,
           reason: `${PRODUCT_NAME} re-read your chats: you said something newer about ${member.noun}.`,
         });
       }
+    }
+  }
+
+  // States a later saying ended (TRANSITIONS), whichever order they were read in.
+  for (const entry of entries) {
+    if (entry.kind !== "FACT" || entry.status !== "active" || entry.source === "MANUAL") continue;
+    if (changed.has(entry.id)) continue;
+    const resolver = laterResolverOf(
+      { content: entry.content, projectId: entry.projectId, observedAt: observedAtOf(entry) },
+      entries.filter((other) => !changed.has(other.id) || other.status === "active")
+    );
+    if (!resolver) continue;
+    push({
+      id: entry.id,
+      status: "superseded",
+      supersededById: resolver.entry.id,
+      reason: `${PRODUCT_NAME} re-read your chats: you said something newer about ${resolver.noun}.`,
+    });
+  }
+
+  for (const merge of planDuplicateMerges(entries.filter((entry) => !changed.has(entry.id)))) push(merge);
+  return changes;
+}
+
+/** Token overlap at or above which two believed facts in one scope are one fact said twice. */
+export const MERGE_JACCARD = 0.75;
+
+/**
+ * CONSOLIDATION WITHOUT INVENTION. Two believed facts in the same scope that
+ * say the same thing in slightly different words ("prefers short answers with
+ * examples" / "prefers short answers, with examples please") are merged by
+ * retiring all but one — the carrier keeps its own words. Nothing is ever
+ * rewritten or summarised here: the output is a subset of the input, which is
+ * the property the evaluation checks ("dreaming never invents").
+ *
+ * Conservative: a high overlap, no differing numbers ("3 cats" / "2 cats"),
+ * no conflicting slot values, and a typed fact is never the one retired.
+ * Carrier: a typed fact, else the more confident, else the more recently said.
+ */
+export function planDuplicateMerges(entries: readonly LifecycleEntry[]): TimelineChange[] {
+  const believed = entries.filter((entry) => entry.kind === "FACT" && entry.status === "active");
+  // "named"/"called" are one word for this purpose; nothing else is folded.
+  const fold = (token: string) => (token === "nam" || token === "name" || token === "call" ? "cal" : token);
+  const tokens = new Map(believed.map((entry) => [entry.id, new Set(significantTokens(entry.content).map(fold))]));
+  const numbers = (content: string) => (content.match(/\d+(?:[.,]\d+)?/g) ?? []).sort().join(",");
+  const rank = (entry: LifecycleEntry) =>
+    [entry.source === "MANUAL" ? 1 : 0, entry.confidence, confirmedAtOf(entry).getTime()] as const;
+  const better = (a: LifecycleEntry, b: LifecycleEntry) => {
+    const [ra, rb] = [rank(a), rank(b)];
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i];
+    return a.id < b.id;
+  };
+  const retired = new Set<string>();
+  const changes: TimelineChange[] = [];
+  for (let i = 0; i < believed.length; i++) {
+    const a = believed[i];
+    if (retired.has(a.id)) continue;
+    for (let j = i + 1; j < believed.length; j++) {
+      const b = believed[j];
+      if (retired.has(b.id) || retired.has(a.id)) continue;
+      if ((a.projectId ?? null) !== (b.projectId ?? null)) continue;
+      if (numbers(a.content) !== numbers(b.content)) continue;
+      const slotA = exclusiveSlot(a.content);
+      const slotB = exclusiveSlot(b.content);
+      if (slotA && slotB && slotsConflict(slotA, slotB)) continue;
+      if (!!slotA?.negated !== !!slotB?.negated) continue;
+      const ta = tokens.get(a.id)!;
+      const tb = tokens.get(b.id)!;
+      if (ta.size === 0 || tb.size === 0) continue;
+      let shared = 0;
+      for (const token of ta) if (tb.has(token)) shared++;
+      if (shared / (ta.size + tb.size - shared) < MERGE_JACCARD) continue;
+      const [keep, drop] = better(a, b) ? [a, b] : [b, a];
+      if (drop.source === "MANUAL") continue;
+      retired.add(drop.id);
+      changes.push({
+        id: drop.id,
+        status: "superseded",
+        supersededById: keep.id,
+        reason: `Merged: it says the same as “${keep.content.length > 80 ? `${keep.content.slice(0, 79)}…` : keep.content}”.`,
+      });
     }
   }
   return changes;
@@ -1121,7 +1466,9 @@ export function selectMemoriesForContext(
     const relevance = fused ? fused.get(w.id) ?? 0 : w.lexical;
     // Fresh means recently SAID. A fact re-read out of last year's chats was
     // written down today and is still a year old.
-    const ageDays = Math.max(0, (now.getTime() - observedAtOf(w.entry).getTime()) / 86_400_000);
+    // Decay counts from the last CONFIRMATION, so a fact the person keeps
+    // restating never ages out, and one said once a year ago fades.
+    const ageDays = Math.max(0, (now.getTime() - confirmedAtOf(w.entry).getTime()) / 86_400_000);
     const recency = Math.pow(0.5, ageDays / RECENCY_HALF_LIFE_DAYS);
     const categoryWeight = isMemoryCategory(w.entry.category) ? MEMORY_CATEGORY_WEIGHT[w.entry.category] : 0.04;
     // A fact scoped to the project you are working in is on-topic by

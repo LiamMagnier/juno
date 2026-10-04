@@ -90,6 +90,8 @@ export interface MemoryState {
   moveMemory: (memory: Memory, project: { id: string; name: string } | null) => Promise<boolean>;
   /** Delete everything remembered, account-wide. Resolves true when the server did. */
   resetMemory: () => Promise<boolean>;
+  /** Delete one project's memory — its facts and summary — and nothing else. */
+  clearProjectMemory: (projectId: string) => Promise<boolean>;
   exportMemory: () => void;
 }
 
@@ -571,6 +573,23 @@ export function useMemory(): MemoryState {
     }
   }, []);
 
+  const clearProjectMemory = React.useCallback(async (projectId: string): Promise<boolean> => {
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/memory?projectId=${encodeURIComponent(projectId)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setMemories((current) => (current ?? []).filter((m) => !(m.kind === "FACT" && m.projectId === projectId)));
+      setProjectSummaries((current) => current.filter((s) => s.projectId !== projectId));
+      toast.success("This project’s memory is cleared.");
+      return true;
+    } catch {
+      toast.error("Couldn’t clear this project’s memory. Nothing was deleted.");
+      return false;
+    } finally {
+      setResetting(false);
+    }
+  }, []);
+
   const exportMemory = React.useCallback(() => {
     const payload = { exportedAt: new Date().toISOString(), summary, projectSummaries, memories };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -608,6 +627,7 @@ export function useMemory(): MemoryState {
     deleteMemory,
     moveMemory,
     resetMemory,
+    clearProjectMemory,
     exportMemory,
   };
 }

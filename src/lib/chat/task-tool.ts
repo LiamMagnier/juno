@@ -45,6 +45,7 @@ import {
 } from "@/lib/work/conversation-tasks";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { PLANS } from "@/lib/plans";
+import { TEAM_MAX_SPECIALISTS, TEAM_SPECIALIST_ROLES, type TeamSpecialistRole } from "@/lib/agents/team";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const START_TASK_TOOL_ID = "start_task";
@@ -111,6 +112,12 @@ export const START_TASK_TOOL: McpFunctionTool = {
           type: "string",
           description:
             "Optional. What exists when the task is done, in a few words. Example: \"a spreadsheet of 20 vendors with prices\" or \"draft replies in Gmail\".",
+        },
+        team: {
+          type: "array",
+          items: { type: "string", enum: ["researcher", "engineer", "designer"], description: "One specialist role." },
+          description:
+            "Optional. Only for a complicated request with clearly separate parts: the two or three specialists of a temporary team that works on it in parallel, followed by a critic and a final synthesis. Leave it out for an ordinary task.",
         },
       },
       required: ["title", "goal"],
@@ -223,6 +230,8 @@ export interface StartTaskArgs {
   title: string;
   goal: string;
   deliverable: string | null;
+  /** Specialists for a temporary team (src/lib/agents/team.ts), or null for an ordinary task. */
+  team: TeamSpecialistRole[] | null;
 }
 
 function oneLine(value: string): string {
@@ -247,7 +256,15 @@ export function parseStartTaskArgs(args: Record<string, unknown>): StartTaskArgs
   const goal = typeof args.goal === "string" ? args.goal.trim() : "";
   if (!title || !goal) return null;
   const deliverable = typeof args.deliverable === "string" ? oneLine(args.deliverable) : "";
-  return { title, goal, deliverable: deliverable ? clip(deliverable, MAX_DELIVERABLE_CHARS) : null };
+  const team = Array.isArray(args.team)
+    ? [...new Set(args.team.filter((role): role is TeamSpecialistRole => typeof role === "string" && (TEAM_SPECIALIST_ROLES as readonly string[]).includes(role)))]
+    : [];
+  return {
+    title,
+    goal,
+    deliverable: deliverable ? clip(deliverable, MAX_DELIVERABLE_CHARS) : null,
+    team: team.length > 0 ? team.slice(0, TEAM_MAX_SPECIALISTS) : null,
+  };
 }
 
 /**
@@ -686,6 +703,7 @@ async function startTask(
         data: { deletedAt: new Date() },
       })
       .catch(() => undefined);
+    if (args.team) await (await import("@/lib/agents/team-store")).discardTeamDrafts(user.id, ownSessionId);
   };
   const notStarted = async (outcome: Extract<TaskOutcome, { status: "not_started" }>) => {
     await discardDraft();
@@ -704,6 +722,19 @@ async function startTask(
     await prisma.workSession.updateMany({
       where: { id: session.id, userId: user.id, agentId: null },
       data: { agentId: ctx.agent.id },
+    });
+  }
+  // A temporary specialist team (src/lib/agents/team.ts): this task becomes
+  // the lead, and its members are drafted beside it before anything runs, so
+  // the Work runner never executes the lead as an ordinary task. The team is
+  // admitted below exactly like one task: one preflight, one approval.
+  if (args.team) {
+    const teams = await import("@/lib/agents/team-store");
+    await teams.createTeamForLead({
+      userId: user.id,
+      lead: session,
+      request: session.goal,
+      specialists: args.team,
     });
   }
 

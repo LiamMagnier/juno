@@ -27,6 +27,7 @@ import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { actionVerb } from "@/components/work/approvals/action-verbs";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { SavedCredentials } from "@/components/permissions/saved-credentials";
 
 /**
  * What Juno is allowed to do, and on which machine.
@@ -142,6 +143,7 @@ export default function PermissionsPage() {
       <div>
         <AlwaysAsks />
         <ApprovalModes />
+        <SavedCredentials />
 
         {/*
          * "Your Macs" is drawn as a section only for an account that has one, or

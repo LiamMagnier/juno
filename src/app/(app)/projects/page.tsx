@@ -18,6 +18,7 @@ import {
 import { RollingNumber } from "@/components/ui/micro";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { cn } from "@/lib/utils";
+import { cachedJson, peekJson } from "@/lib/client-cache";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage } from "@/components/app/app-page";
 import { PageHero } from "@/components/app/editorial";
@@ -52,6 +53,13 @@ const SORT_OPTIONS: { value: SortBy; label: string }[] = [
   { value: "conversations", label: "Most chats" },
 ];
 
+const PROJECTS_URL = "/api/projects";
+function projectItems(body: unknown): ProjectItem[] | null {
+  const projects = (body as { projects?: ProjectItem[] } | undefined)?.projects;
+  if (!Array.isArray(projects)) return null;
+  return projects.map((p) => ({ ...p, parentId: p.parentId ?? null }));
+}
+
 type NameDialog = { mode: "create" } | { mode: "folder"; parent: ProjectItem } | { mode: "rename"; project: ProjectItem };
 
 /**
@@ -64,6 +72,14 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<ProjectItem[] | null>(null);
   const [error, setError] = React.useState(false);
+  // The list the shell already holds paints before the first frame; the read
+  // below refreshes it. A layout effect rather than the state initialiser: on
+  // a full page load the sidebar's read can land before this page hydrates,
+  // and a first render that differs from the server's is a hydration error.
+  React.useLayoutEffect(() => {
+    const cached = projectItems(peekJson(PROJECTS_URL));
+    if (cached) setItems((cur) => cur ?? cached);
+  }, []);
 
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
@@ -79,13 +95,12 @@ export default function ProjectsPage() {
   const load = React.useCallback(async () => {
     setError(false);
     try {
-      const r = await fetch("/api/projects");
-      if (!r.ok) throw new Error();
-      const body = await r.json();
-      setItems((body.projects as ProjectItem[]).map((p) => ({ ...p, parentId: p.parentId ?? null })));
+      const next = projectItems(await cachedJson(PROJECTS_URL, { maxAgeMs: 0 }));
+      if (!next) throw new Error("malformed");
+      setItems(next);
     } catch {
       setError(true);
-      setItems([]);
+      setItems((cur) => cur ?? []);
     }
   }, []);
   React.useEffect(() => {

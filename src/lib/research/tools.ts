@@ -27,9 +27,8 @@ import {
 } from "@/lib/research/domain";
 import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
 import { researchLeadModel } from "@/lib/research/agents/worker";
-import { draftResearchPlan, languageName, looksLikeJson, type PlannerCompletion } from "@/lib/research/planner";
+import { draftResearchPlan, languageName, looksLikeJson, parsePlannerOutput, type PlannerCompletion } from "@/lib/research/planner";
 import { packCorpus, writerCorpusBudgetTokens } from "@/lib/research/corpus-pack";
-import { researchSearchFeeMicroUsd } from "@/lib/research/search-metering";
 import { researchLanguageLine } from "@/lib/research/planner.prompt";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { MODEL_LIST } from "@/lib/models";
@@ -302,34 +301,87 @@ function configuredModel(id: string | null | undefined): ModelInfo | null {
  * with the schema, retried once, and otherwise `planner_invalid` (B5).
  */
 export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
-  const model = configuredModel(input.leadModel) ?? researchPlannerModel();
-  if (!model) return { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
-  const complete: PlannerCompletion = (request) =>
-    utilityCompletion({
-      userId: input.userId,
-      model,
-      system: request.system,
-      prompt: request.prompt,
-      maxTokens: request.maxTokens,
-      timeoutMs: PLAN_TIMEOUT_MS,
-      signal: input.signal,
-      label: request.attempt === 1 ? "plan" : "plan (retry)",
-      responseSchema: request.responseSchema,
-    });
-  return draftResearchPlan(
-    {
-      goal: input.goal,
-      context: input.context,
-      constraints: input.constraints,
-      pinnedSources: input.pinnedSources,
-      dateLine: input.dateLine,
-      languageName: input.languageName,
-      revision: input.revision,
-      signal: input.signal,
-    },
-    complete
-  );
+  // The chat's own model first, then the strongest other configured model.
+  // A lead that cannot hold the plan's schema (a provider's structured mode
+  // refusing it, a thinking budget eating the reply) used to fail the run
+  // outright: "The research planner could not draft a plan for this question".
+  // A second model is one more call; a failed run is the whole question lost.
+  const candidates = plannerCandidates(input.leadModel);
+  if (!candidates.length) return { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
+  let costMicroUsd = 0;
+  for (const model of candidates) {
+    const complete: PlannerCompletion = async (request) => {
+      const reply = await utilityCompletion({
+        userId: input.userId,
+        model,
+        system: request.system,
+        prompt: request.prompt,
+        maxTokens: request.maxTokens,
+        timeoutMs: PLAN_TIMEOUT_MS,
+        signal: input.signal,
+        label: request.attempt === 1 ? "plan" : "plan (retry)",
+        responseSchema: request.responseSchema,
+      });
+      if (!parsePlannerOutput(reply.text)) {
+        // Why, never what: the reply carries the person's question.
+        console.warn("[research] planner reply unusable", {
+          model: model.id,
+          attempt: request.attempt,
+          ...plannerReplyShape(reply.text),
+        });
+      }
+      return reply;
+    };
+    const drafted = await draftResearchPlan(
+      {
+        goal: input.goal,
+        context: input.context,
+        constraints: input.constraints,
+        pinnedSources: input.pinnedSources,
+        dateLine: input.dateLine,
+        languageName: input.languageName,
+        revision: input.revision,
+        signal: input.signal,
+      },
+      complete
+    );
+    costMicroUsd += drafted.costMicroUsd;
+    if (drafted.ok) return { ...drafted, costMicroUsd };
+    if (input.signal?.aborted) break;
+  }
+  return { ok: false, reason: "planner_invalid", costMicroUsd };
 };
+
+/** The lead model, then one fallback: the strongest other configured model. */
+export function plannerCandidates(leadId: string | null | undefined): ModelInfo[] {
+  const out: ModelInfo[] = [];
+  for (const model of [configuredModel(leadId), researchPlannerModel(), ...utilityModelCandidates()]) {
+    if (model && !out.some((m) => m.id === model.id)) out.push(model);
+    if (out.length === 2) break;
+  }
+  return out;
+}
+
+/** A reply's shape for the log: how it failed, with none of its words. */
+export function plannerReplyShape(text: string): { chars: number; kind: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { chars: 0, kind: "empty" };
+  const start = trimmed.indexOf("{");
+  if (start < 0) return { chars: trimmed.length, kind: "no_json" };
+  const body = trimmed.slice(start);
+  let depth = 0;
+  for (const ch of body) {
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+  }
+  if (depth > 0) return { chars: trimmed.length, kind: "cut_off_json" };
+  try {
+    JSON.parse(body.slice(0, body.lastIndexOf("}") + 1));
+    return { chars: trimmed.length, kind: "wrong_shape" };
+  } catch {
+    return { chars: trimmed.length, kind: "malformed_json" };
+  }
+}
 
 /**
  * CLARIFY — what does the goal not say?
@@ -533,8 +585,12 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   };
 };
 
-import { isSearchEngineAvailable, searchWithEngineReport } from "@/lib/search/search-engine";
+import { isSearchEngineAvailable, searchProviderStatus } from "@/lib/search/search-engine";
 import { crawlResearchPage } from "@/lib/research/crawler";
+import { openPage } from "@/lib/search/alevr/retrieve";
+import { alevrSearch, defaultSearchStore } from "@/lib/search/alevr/service";
+import type { ExtractOutcome } from "@/lib/web/extract";
+import { MAX_EXTRACT_CHARS } from "@/lib/web/extract";
 
 /** True when a search engine is available. */
 export function researchSearchConfigured(): boolean {
@@ -542,41 +598,48 @@ export function researchSearchConfigured(): boolean {
 }
 
 /**
- * SEARCH — the multi-engine fan-out, with an account of which engines answered.
+ * SEARCH — Alevr Search in its fan-out profile (BRIEF §15–16): every available
+ * backend asked in parallel and fused, then ranked by the same ranker chat uses,
+ * with the query cache in front (a repeated query costs nothing) and Alevr's
+ * page index joining the candidates. One discovery interface for chat and
+ * Research, so a backend added or removed changes both.
  *
  * The `engines` roster is not decoration. Every provider used to fail silently,
  * so a revoked Brave key and a healthy-but-quiet Brave were indistinguishable
  * from inside a run, and the only symptom either produced was a thinner report.
  * Passing it up means `query_issued` can carry it and the timeline can show it.
+ * Cost is each backend that answered, at its own price (`backends.ts`).
  */
 export const searchTheWeb: ResearchDeps["search"] = async ({ query, count, signal }) => {
   if (!query.trim()) return { hits: [], costMicroUsd: 0 };
   const box = timeboxSignal(signal, SEARCH_TIMEOUT_MS);
   try {
-    const { results, engines, providers } = await searchWithEngineReport({
+    const found = await alevrSearch({
       query: query.slice(0, 400),
       count: Math.max(5, Math.min(50, count ?? RESULTS_PER_QUERY)),
+      vertical: "web",
+      surface: "research",
+      private: false,
+      mode: "fanout",
       signal: box.signal,
     });
-
-    const hits: ResearchHit[] = results.map((r) => ({
+    const providers = searchProviderStatus();
+    const hits: ResearchHit[] = found.results.map((r) => ({
       url: r.url,
       title: r.title,
       snippet: r.snippet.slice(0, 800),
       rawContent: r.rawContent ? r.rawContent.slice(0, PAGE_CONTENT_CHARS) : undefined,
-      publishedAt: r.publishedAt,
+      publishedAt: r.publishedAt ?? undefined,
     }));
-
-    // Each keyed engine that answered, at its own price (§9.3): the flat
-    // SEARCH_FEE_MICRO_USD this used to bill was a quarter of one Tavily call
-    // for a fan-out that had paid several engines. The per-engine request is
-    // the fan-out's own (search-engine.ts `perEngineCount`).
-    const requested = Math.max(5, Math.min(50, count ?? RESULTS_PER_QUERY));
-    const perEngine = Math.max(10, Math.min(50, Math.ceil(requested * 1.5)));
     return {
       hits,
-      costMicroUsd: researchSearchFeeMicroUsd(engines, perEngine),
-      engines,
+      costMicroUsd: found.costMicroUsd,
+      engines: found.reports.map((r) => ({
+        name: r.backend,
+        results: r.results,
+        status: r.status === "skipped" ? "failed" : r.status,
+        ...(r.httpStatus ? { httpStatus: r.httpStatus } : {}),
+      })),
       providers: {
         keyed: providers.keyed,
         keyless: providers.keyless,
@@ -585,12 +648,51 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, count, signa
       },
     };
   } catch (e) {
-    if (!box.signal.aborted) console.error("[research] multi-engine search error", e);
+    if (!box.signal.aborted) console.error("[research] search error", e);
     return { hits: [], costMicroUsd: 0 };
   } finally {
     box.release();
   }
 };
+
+type CrawlOutcome = Awaited<ReturnType<typeof crawlResearchPage>>;
+
+/**
+ * One page through Alevr's page cache (BRIEF §16): a fresh cached copy costs
+ * no request, a stale one is revalidated, a new one is stored for the next
+ * run. The crawler (fast path, then the opt-in headless render) is the
+ * extractor, and its own failure is what the run sees, unchanged.
+ */
+async function crawlThroughCache(url: string, signal: AbortSignal): Promise<CrawlOutcome> {
+  const store = await defaultSearchStore();
+  if (!store) return crawlResearchPage(url, { signal, maxChars: PAGE_CONTENT_CHARS });
+  let crawled: CrawlOutcome | null = null;
+  const extract = async (target: string, _signal: AbortSignal | undefined, opts: { maxChars?: number; conditional?: { etag?: string | null; lastModified?: string | null } }): Promise<ExtractOutcome> => {
+    crawled = await crawlResearchPage(target, {
+      signal,
+      ...(opts.maxChars ? { maxChars: opts.maxChars } : {}),
+      ...(opts.conditional ? { conditional: opts.conditional } : {}),
+    });
+    if (crawled.ok) return { ok: true, page: crawled.page };
+    const failure = crawled.failure;
+    if (failure.reason === "http_error" && failure.httpStatus) {
+      return { ok: false, failure: { reason: "http_error", httpStatus: failure.httpStatus } };
+    }
+    return { ok: false, failure: { reason: "fetch_failed", detail: failure.reason } };
+  };
+  // The whole text is read so the cache keeps the page; the run keeps its slice.
+  const opened = await openPage(
+    { url, signal, admit: "research", private: false, extractOptions: { maxChars: MAX_EXTRACT_CHARS } },
+    { store, extract },
+  );
+  if (opened.ok) {
+    return {
+      ok: true,
+      page: { ...opened.page, text: opened.page.text.slice(0, PAGE_CONTENT_CHARS), isSpa: false, crawler: "http_fast" },
+    };
+  }
+  return crawled ?? { ok: false, failure: { reason: "fetch_failed" } };
+}
 
 /**
  * FETCH — the universal extractor, including why a page produced no text.
@@ -606,7 +708,7 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
   const box = timeboxSignal(signal, FETCH_TIMEOUT_MS);
   const startedAt = Date.now();
   try {
-    let outcome = await crawlResearchPage(url, { signal: box.signal, maxChars: PAGE_CONTENT_CHARS });
+    let outcome = await crawlThroughCache(url, box.signal);
 
     if (!outcome.ok) {
       // One retry for the two answers that mean "not right now". The page

@@ -1,10 +1,15 @@
 "use client";
 
+import { AgentThreadContext } from "@/components/agents/agent-thread-context";
+import type { RoomSpeaker } from "@/lib/agents/room-client";
 import * as React from "react";
 import { contextReceiptFromActivity } from "@/lib/chat/context-tokens";
 import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
-import { useTranscriptWindow } from "@/hooks/use-transcript-window";
+import { TranscriptRail } from "@/components/chat/transcript-rail";
+import { useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
+import { useLatestHandler } from "@/hooks/use-latest-handler";
+import { countTranscriptRender, placeInlineRuns } from "@/lib/chat/transcript-window";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
@@ -82,6 +87,21 @@ interface MessageListProps {
    * request". Chat is the default.
    */
   surface?: "chat" | "code";
+  /**
+   * In a room (src/lib/agents/rooms.ts): who wrote this reply, drawn as that
+   * agent's byline, with the handoff line ("Mira asked Scout to check the
+   * pricing") above an asked member's reply. Null for every other message.
+   */
+  speakerFor?: (message: ChatMessage, isLast: boolean) => RoomSpeaker | null;
+}
+
+/** "Mira asked Scout to check the pricing": an annotation, not a card. */
+function RoomHandoffLine({ text }: { text: string }) {
+  return (
+    <p className="mb-2 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in">
+      {text}
+    </p>
+  );
 }
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
@@ -95,6 +115,7 @@ const SCROLL_FADE_STYLE: React.CSSProperties = {
 
 type ItemProps = React.ComponentProps<typeof MessageItem>;
 const TranscriptMessage = React.memo(function TranscriptMessage({ receiptActivity, ...props }: Omit<ItemProps, "contextReceipt"> & { receiptActivity?: ChatMessage["activity"] }) {
+  if (process.env.NODE_ENV !== "production") countTranscriptRender(props.message.renderKey ?? props.message.id);
   const receipt = React.useMemo(() => contextReceiptFromActivity(receiptActivity), [receiptActivity]);
   return <MessageItem {...props} contextReceipt={receipt} />;
 });
@@ -110,20 +131,34 @@ function MeasuredTurn({ message, observe, children }: {
   return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className="pb-6">{children}</div>;
 }
 
+// The chat's turn actions arrive as new functions on every streamed token
+// (use-chat's callbacks close over its options and messages). Stable wrappers
+// keep each settled row's memo intact, so a token re-renders the streaming row
+// alone — measured on /chat/[id] before this: every mounted settled row
+// rendered once per token. See hooks/use-latest-handler.ts.
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
+  const onOpenArtifact = useLatestHandler(props.onOpenArtifact);
+  const onArtifactChanged = useLatestHandler(props.onArtifactChanged);
+  const onRegenerate = useLatestHandler(props.onRegenerate);
+  const onContinue = useLatestHandler(props.onContinue);
+  const onEdit = useLatestHandler(props.onEdit);
+  const onResend = useLatestHandler(props.onResend);
+  const onFeedback = useLatestHandler(props.onFeedback);
+  const onFork = useLatestHandler(props.onFork);
+  const onSpeak = useLatestHandler(props.onSpeak);
+  const onImageEdit = useLatestHandler(props.onImageEdit);
+  const onOpenAttachment = useLatestHandler(props.onOpenAttachment);
   const runsByMessage = new Map<number, React.ReactNode[]>();
-  for (const item of props.inlineRuns ?? []) {
-    const time = Date.parse(item.createdAt);
-    let index = -1;
-    for (let i = 0; i < messages.length; i++) {
-      if (messages[i].role === "USER" && Date.parse(messages[i].createdAt) <= time) index = i;
-    }
-    if (index >= 0 && messages[index + 1]?.role === "ASSISTANT") index++;
-    runsByMessage.set(index, [...(runsByMessage.get(index) ?? []), <React.Fragment key={item.id}>{item.node}</React.Fragment>]);
+  const runNodes = new Map((props.inlineRuns ?? []).map((item) => [item.id, item.node]));
+  for (const [index, ids] of placeInlineRuns(messages, props.inlineRuns ?? [])) {
+    runsByMessage.set(index, ids.map((id) => <React.Fragment key={id}>{runNodes.get(id)}</React.Fragment>));
   }
   const transcript = useTranscriptWindow(messages);
   const { scrollRef, contentRef, atBottom, onScroll, jumpToLatest } = transcript;
+  // From two turns up the rail stands in for the scrollbar (sm and wider; a
+  // phone keeps its own scroll indicator and the full width for the text).
+  const hasRail = React.useMemo(() => messages.filter((m) => m.role === "USER").length > 1, [messages]);
   // Seeded true when no entrance was asked for, so the class never goes on and
   // nothing is left waiting for an animationend that will not fire.
   const [entered, setEntered] = React.useState(!props.entrance);
@@ -179,7 +214,7 @@ export function MessageList(props: MessageListProps) {
       <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
         {completionAnnouncement}
       </span>
-      {messages.length > 80 && (
+      {messages.length > VIRTUALIZE_AFTER && (
         <button type="button" onClick={() => transcript.setShowAll(!transcript.showAll)} className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:z-20 focus:rounded-field focus:bg-popover focus:p-2">
           {transcript.showAll ? "Use compact conversation view" : "Read full conversation"}
         </button>
@@ -202,7 +237,10 @@ export function MessageList(props: MessageListProps) {
         // and slide the transcript column ~7px left of the composer, which
         // sits outside it. Reserving the gutter on both sides keeps the two
         // columns on one centre line whatever the platform's scrollbars do.
-        className="h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
+        className={cn(
+          "h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]",
+          hasRail && "sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden",
+        )}
         style={SCROLL_FADE_STYLE}
       >
         {/*
@@ -263,7 +301,9 @@ export function MessageList(props: MessageListProps) {
             return <React.Fragment key={m.renderKey ?? m.id}>
             {gap > 0 && <div aria-hidden style={{ height: gap }} />}
             <MeasuredTurn message={m} observe={transcript.observeRow}>
-            <TranscriptMessage
+            {(() => {
+            const speaker = m.role === "ASSISTANT" && props.speakerFor ? props.speakerFor(m, i === messages.length - 1) : null;
+            const item = <TranscriptMessage
               message={m}
               receiptActivity={m.role === "USER" ? messages[i + 1]?.activity : undefined}
               isLast={i === messages.length - 1}
@@ -271,24 +311,33 @@ export function MessageList(props: MessageListProps) {
               status={i === messages.length - 1 ? props.status : undefined}
               animateIn={i >= animateFrom}
               artifactsByIdentifier={artifactsByIdentifier}
-              onOpenArtifact={props.onOpenArtifact}
-              onArtifactChanged={props.onArtifactChanged}
-              onRegenerate={props.onRegenerate}
-              onContinue={props.onContinue}
-              onEdit={props.onEdit}
-              onResend={props.onResend}
+              onOpenArtifact={onOpenArtifact}
+              onArtifactChanged={onArtifactChanged}
+              onRegenerate={onRegenerate}
+              onContinue={onContinue}
+              onEdit={onEdit}
+              onResend={onResend}
               surface={props.surface}
               editOnRequest={m.id === lastUserId}
-              onFeedback={props.onFeedback}
+              onFeedback={onFeedback}
               canFeedback={props.canFeedback ? props.canFeedback(m) : undefined}
-              onFork={props.onFork}
-              onSpeak={props.onSpeak}
+              onFork={onFork}
+              onSpeak={onSpeak}
               speaking={props.speakingId === m.id}
               privateMode={props.privateMode}
-              onImageEdit={props.onImageEdit}
-              onOpenAttachment={props.onOpenAttachment}
+              onImageEdit={onImageEdit}
+              onOpenAttachment={onOpenAttachment}
               currentModelId={props.currentModelId}
-            />
+            />;
+            return speaker ? (
+              <>
+                {speaker.handoff && <RoomHandoffLine text={speaker.handoff} />}
+                <AgentThreadContext.Provider value={{ name: speaker.name, avatar: speaker.avatar, state: speaker.state }}>
+                  {item}
+                </AgentThreadContext.Provider>
+              </>
+            ) : item;
+            })()}
             {runsByMessage.get(i)}
             </MeasuredTurn>
             </React.Fragment>;
@@ -300,6 +349,18 @@ export function MessageList(props: MessageListProps) {
           <div />
         </div>
       </div>
+
+      {hasRail && (
+        <TranscriptRail
+          messages={messages}
+          layout={transcript.layout}
+          viewport={transcript.viewport}
+          atBottom={atBottom}
+          onFocusMessage={transcript.focusMessage}
+          onJumpToLatest={jumpToLatest}
+          className="z-10 hidden sm:block"
+        />
+      )}
 
       {/* `pointer-events-none` hides this from the mouse and from nobody else:
           the button stayed in the tab order at opacity 0, so a keyboard user

@@ -1,4 +1,4 @@
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, Table2, Presentation } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
 import { QuotedSelection } from "@/components/chat/quoted-selection";
@@ -26,6 +26,9 @@ const TYPE_ICON: Record<ArtifactType, typeof Code2> = {
   MARKDOWN: FileText,
   MERMAID: GitBranch,
   DESIGN: AppIcons.design,
+  SPREADSHEET: Table2,
+  DOCUMENT: FileText,
+  PRESENTATION: Presentation,
 };
 
 /** Inert stand-in for an artifact tag inside the transcript. */

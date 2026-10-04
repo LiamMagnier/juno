@@ -1,3 +1,4 @@
+import { chatSearchAvailable } from "@/lib/web/search";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
@@ -18,6 +19,6 @@ export async function GET() {
   // shape while native clients use the explicit v1 representation.
   return NextResponse.json({
     models,
-    manifestVersion: nativeModelCatalog(models, undefined, nativeModelCapabilityVerdicts(models, capabilityProbes)).manifestVersion,
+    manifestVersion: nativeModelCatalog(models, undefined, nativeModelCapabilityVerdicts(models, capabilityProbes), { alevrSearch: chatSearchAvailable() }).manifestVersion,
   });
 }

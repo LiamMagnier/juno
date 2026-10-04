@@ -21,6 +21,7 @@ export interface StartTaskArgs extends Record<string, unknown> {
   title?: unknown;
   goal?: unknown;
   deliverable?: unknown;
+  team?: unknown;
 }
 
 export const startTaskSpec = defineTool<StartTaskArgs>({
@@ -44,6 +45,12 @@ export const startTaskSpec = defineTool<StartTaskArgs>({
         type: "string",
         description:
           "Optional. What exists when the task is done, in a few words. Example: \"a spreadsheet of 20 vendors with prices\" or \"draft replies in Gmail\".",
+      },
+      team: {
+        type: "array",
+        items: { type: "string", enum: ["researcher", "engineer", "designer"], description: "One specialist role." },
+        description:
+          "Optional. Only for a complicated request with clearly separate parts: the two or three specialists of a temporary team that works on it in parallel, followed by a critic and a final synthesis. Leave it out for an ordinary task.",
       },
     },
     required: ["title", "goal"],

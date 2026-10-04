@@ -22,11 +22,11 @@ public struct JunoProductCapability: Sendable {
 
 public enum JunoProductCapabilityRegistry {
     public static let version = 1
-    public static let digest = "4a02a4b3104f3f9d3e272ca75978e987053ea02463159ca884dfa57c4f873527"
+    public static let digest = "9895aa079edf89e169d0cc92390e25adefba578c718758d3ab4c67506071ea42"
     public static let entries: [JunoProductCapability] = [
         JunoProductCapability(
             id: "chat_streaming",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .implemented, "ios": .implemented, "ipados": .implemented],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .implemented, "ios": .implemented, "ipados": .implemented],
             supportedPlatforms: ["web", "macos", "ios", "ipados"],
             productionAccepted: false
         ),
@@ -50,7 +50,7 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "agent_swarm_orchestration",
-            maturity: ["backend": .implemented, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web", "macos"],
             productionAccepted: false
         ),
@@ -116,7 +116,7 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "memory_session_search",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),
@@ -128,13 +128,25 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "alevr_search",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: ["web"],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .implemented, "ios": .implemented, "ipados": .implemented],
+            supportedPlatforms: ["web", "macos", "ios", "ipados"],
             productionAccepted: false
         ),
         JunoProductCapability(
             id: "auto_routing",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "cost_budgets",
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "evaluation_harness",
+            maturity: ["backend": .verified, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),
@@ -146,13 +158,13 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "orbit_rooms",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .verified, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
             id: "orbit_goals",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),
@@ -170,20 +182,20 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "action_permissions",
-            maturity: ["backend": .verified, "web": .implemented, "macos": .implemented, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .verified, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web", "macos"],
             productionAccepted: false
         ),
         JunoProductCapability(
             id: "semantic_artifacts",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .implemented, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: ["web", "macos"],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
             id: "credential_broker",
-            maturity: ["backend": .planned, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: [],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
@@ -208,6 +220,18 @@ public enum JunoProductCapabilityRegistry {
             id: "organization_orbit",
             maturity: ["backend": .planned, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: [],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "web_navigation_performance",
+            maturity: ["backend": .implemented, "web": .verified, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "chat_transcript_virtualization",
+            maturity: ["backend": .planned, "web": .verified, "macos": .implemented, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web", "macos"],
             productionAccepted: false
         ),
     ]

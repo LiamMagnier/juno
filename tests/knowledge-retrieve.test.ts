@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   describeLocator,
   estimateTokens,
@@ -20,8 +19,10 @@ import {
 import { lexicalCandidateQuery } from "@/lib/knowledge/lexical-query";
 import { buildProjectContext, buildProjectReferenceFiles, contextActivityDetail } from "@/lib/chat/context-assembly";
 import { UNTRUSTED_OPEN } from "@/lib/untrusted-content";
+import { chatTurnSource } from "./chat-turn-source";
 
-const CHAT_ROUTE = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+// The chat turn: the route and its pipeline stages (tests/chat-turn-source.ts).
+const CHAT_ROUTE = chatTurnSource();
 
 /*
  * Knowledge: chunking, ranking, packing.

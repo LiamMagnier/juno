@@ -135,6 +135,10 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // `unknown`, which asks.
   "juno_runtime:web_fetch": "read_only",
   "juno_runtime:web_search": "read_only",
+  // Alevr Search (BRIEF §15): a news search and a search inside one page the
+  // provenance ledger already allows are reads, like the two above.
+  "juno_runtime:search_news": "read_only",
+  "juno_runtime:find_in_page": "read_only",
   "juno_runtime:search_chats": "read_only",
   // A remote sandbox with no network, on the user's own files (DECISIONS §4b).
   // That rests on the isolation being confirmed, which is a precondition of
@@ -356,6 +360,11 @@ export function decideActionPolicy(input: {
 
   return "ask";
 }
+
+// The unified permission model (BRIEF §6) lives in a dependency-free module so
+// Work's domain, client components and the native generators can import it
+// without node:crypto; this broker re-exports it as the one authority.
+export * from "@/lib/permissions/taxonomy";
 
 /** The connector id Juno's own chat tools reach the broker under. */
 export const JUNO_RUNTIME_CONNECTOR_ID = "juno_runtime";

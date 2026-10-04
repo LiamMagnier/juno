@@ -8,7 +8,15 @@ import {
 } from "@/lib/chat/transcript-window";
 
 const GAP = 24;
-const VIRTUALIZE_AFTER = 80;
+/**
+ * Windowing starts at 24 messages (twelve turns). It started at 80, which
+ * left every ordinary conversation rendering all of its rows on open: an agent
+ * thread of 30 messages mounted 30 Markdown renderers before the first paint
+ * (measured as a 50–107 ms task on Orbit → agent, PERFORMANCE.md). The window
+ * covers the viewport plus 700px either side, so a short chat still mounts
+ * whole; a longer one mounts what can be seen.
+ */
+export const VIRTUALIZE_AFTER = 24;
 const BOTTOM_SLOP = 24;
 
 /** Keep rich message renderers bounded; measurements include inline runs/media. */
@@ -149,23 +157,28 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     syncViewport();
   }, [layout, last?.content, messages.length, showAll, viewport.height, syncViewport, writeTop]);
 
+  /** Mounts a message and centres it; find, search links and the rail all come here. */
+  const focusMessage = React.useCallback((messageId: string) => {
+    const index = messages.findIndex((m) => m.id === messageId);
+    const el = scrollRef.current;
+    if (index < 0 || !el) return;
+    followsRef.current = false;
+    pendingAnchor.current = null;
+    targetRef.current = messageId;
+    const top = Math.max(0, layout.offsets[index] + 24 - el.clientHeight / 2);
+    writeTop(top);
+    setViewport({ top, height: el.clientHeight });
+    bump();
+  }, [messages, layout, writeTop]);
+
   React.useEffect(() => {
     const focus = (event: Event) => {
       const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
-      const index = messages.findIndex((m) => m.id === messageId);
-      const el = scrollRef.current;
-      if (index < 0 || !el || !messageId) return;
-      followsRef.current = false;
-      pendingAnchor.current = null;
-      targetRef.current = messageId;
-      const top = Math.max(0, layout.offsets[index] + 24 - el.clientHeight / 2);
-      writeTop(top);
-      setViewport({ top, height: el.clientHeight });
-      bump();
+      if (messageId) focusMessage(messageId);
     };
     window.addEventListener(TRANSCRIPT_FOCUS_EVENT, focus);
     return () => window.removeEventListener(TRANSCRIPT_FOCUS_EVENT, focus);
-  }, [messages, layout, writeTop]);
+  }, [focusMessage]);
 
   // Keep a focused action mounted even if a wheel gesture leaves its row.
   const onFocusCapture = React.useCallback((event: React.FocusEvent) => {
@@ -209,5 +222,5 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     syncViewport();
   }, [jumpToLatest, syncViewport, writeTop]);
 
-  return { scrollRef, contentRef, atBottom, onScroll, onKeyDown, onFocusCapture, onBlurCapture, layout, indices, observeRow, windowed, showAll, setShowAll, jumpToLatest };
+  return { scrollRef, contentRef, atBottom, onScroll, onKeyDown, onFocusCapture, onBlurCapture, layout, indices, observeRow, windowed, showAll, setShowAll, jumpToLatest, focusMessage, viewport };
 }

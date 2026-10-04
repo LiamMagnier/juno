@@ -1,0 +1,2016 @@
+{
+  "generatedAt": "2026-10-04T16:29:12.062Z",
+  "mode": "mock",
+  "summary": {
+    "total": 17,
+    "ran": 12,
+    "passed": 12,
+    "notRun": 5,
+    "costMicroUsd": 14883,
+    "modes": [
+      "mock",
+      "not_run"
+    ]
+  },
+  "records": [
+    {
+      "taskId": "chat-names",
+      "category": "everyday_chat",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 131,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "everyday",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · 3 numbered items"
+    },
+    {
+      "taskId": "reason-bat-ball",
+      "category": "reasoning",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 149,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "everyday",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · last line: Answer: $0.05"
+    },
+    {
+      "taskId": "code-palindrome",
+      "category": "coding",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 8200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 160,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "low",
+      "taskClass": "coding",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · 5/5 cases"
+    },
+    {
+      "taskId": "tool-multiply",
+      "category": "tool_use",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 4700,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 157,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 1,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "everyday",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · answer right, 1 tool call(s)"
+    },
+    {
+      "taskId": "search-cited",
+      "category": "search",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 7200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 310,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "research",
+      "errors": [],
+      "citationQuality": 1,
+      "notes": "mock response · 1 sources"
+    },
+    {
+      "taskId": "deep-research",
+      "category": "deep_research",
+      "mode": "not_run",
+      "success": null,
+      "latencyMs": null,
+      "latencySource": null,
+      "costMicroUsd": null,
+      "costSource": null,
+      "toolCount": null,
+      "model": null,
+      "provider": null,
+      "effort": null,
+      "taskClass": null,
+      "errors": [],
+      "citationQuality": null,
+      "notes": "Needs the research engine (plan, parallel evidence, audit) with a database and search providers. Covered elsewhere by: tests/research-*.test.ts (engine units); no provider-backed acceptance run exists yet."
+    },
+    {
+      "taskId": "memory-recall",
+      "category": "memory",
+      "mode": "not_run",
+      "success": null,
+      "latencyMs": null,
+      "latencySource": null,
+      "costMicroUsd": null,
+      "costSource": null,
+      "toolCount": null,
+      "model": null,
+      "provider": null,
+      "effort": null,
+      "taskClass": null,
+      "errors": [],
+      "citationQuality": null,
+      "notes": "Needs persistence across turns (memory lifecycle in Postgres). Covered elsewhere by: scripts/memory-bench.ts."
+    },
+    {
+      "taskId": "long-needle",
+      "category": "long_context",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2800,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 13104,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "long_context",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · HERON-4471"
+    },
+    {
+      "taskId": "agent-persistence",
+      "category": "agent_persistence",
+      "mode": "not_run",
+      "success": null,
+      "latencyMs": null,
+      "latencySource": null,
+      "costMicroUsd": null,
+      "costSource": null,
+      "toolCount": null,
+      "model": null,
+      "provider": null,
+      "effort": null,
+      "taskClass": null,
+      "errors": [],
+      "citationQuality": null,
+      "notes": "Needs the Work runner, scheduler and database. Covered elsewhere by: tests/crew-foundations.integration.test.ts (state, not quality)."
+    },
+    {
+      "taskId": "browser-task",
+      "category": "browser_tasks",
+      "mode": "not_run",
+      "success": null,
+      "latencyMs": null,
+      "latencySource": null,
+      "costMicroUsd": null,
+      "costSource": null,
+      "toolCount": null,
+      "model": null,
+      "provider": null,
+      "effort": null,
+      "taskClass": null,
+      "errors": [],
+      "citationQuality": null,
+      "notes": "Needs a browser runtime."
+    },
+    {
+      "taskId": "computer-use",
+      "category": "computer_use",
+      "mode": "not_run",
+      "success": null,
+      "latencyMs": null,
+      "latencySource": null,
+      "costMicroUsd": null,
+      "costSource": null,
+      "toolCount": null,
+      "model": null,
+      "provider": null,
+      "effort": null,
+      "taskClass": null,
+      "errors": [],
+      "citationQuality": null,
+      "notes": "Needs an agent computer (VM) and the computer-use runtime."
+    },
+    {
+      "taskId": "artifact-counter",
+      "category": "artifacts",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2800,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 166,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "coding",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · button, script and initial 0 present"
+    },
+    {
+      "taskId": "doc-memo",
+      "category": "documents",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 153,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "writing",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · 3/3 headings"
+    },
+    {
+      "taskId": "sheet-csv",
+      "category": "spreadsheets",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 3200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 143,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "coding",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · header ok, 3 valid rows"
+    },
+    {
+      "taskId": "slides-outline",
+      "category": "slides",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 149,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "everyday",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · 5 slides"
+    },
+    {
+      "taskId": "multilingual-fr",
+      "category": "multilingual",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 133,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "everyday",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · Canberra, French"
+    },
+    {
+      "taskId": "instruct-three-words",
+      "category": "instruction_following",
+      "mode": "mock",
+      "success": true,
+      "latencyMs": 2200,
+      "latencySource": "router_estimate",
+      "costMicroUsd": 128,
+      "costSource": "priced_mock_tokens",
+      "toolCount": 0,
+      "model": "openai:gpt-6-luna",
+      "provider": "openai",
+      "effort": "instant",
+      "taskClass": "writing",
+      "errors": [],
+      "citationQuality": null,
+      "notes": "mock response · 3 words"
+    }
+  ],
+  "router": [
+    {
+      "taskId": "repo-bugfix",
+      "category": "benchmark",
+      "label": "SWE-bench (repository-scale bug fix)",
+      "taskClass": "coding",
+      "complexity": "hard",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 54970,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 50517,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 72202,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "high",
+          "expectedTotalMicroUsd": 40608,
+          "pSuccess": 0.879,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 50517,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: meta down",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "high",
+          "expectedTotalMicroUsd": 56401,
+          "pSuccess": 0.879,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "high",
+          "expectedTotalMicroUsd": 56401,
+          "pSuccess": 0.879,
+          "degraded": null
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "high",
+          "expectedTotalMicroUsd": 56401,
+          "pSuccess": 0.879,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "expert-qa",
+      "category": "benchmark",
+      "label": "GPQA (graduate-level reasoning)",
+      "taskClass": "reasoning",
+      "complexity": "hard",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 36959,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 34466,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 56488,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 27057,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "google:gemini-3.8-flash",
+          "provider": "google",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 34466,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: meta down",
+          "model": "xai:grok-4.7",
+          "provider": "xai",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 43231,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "high",
+          "expectedTotalMicroUsd": 46956,
+          "pSuccess": 0.879,
+          "degraded": null
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "xai:grok-4.7",
+          "provider": "xai",
+          "tier": 2,
+          "effort": "high",
+          "expectedTotalMicroUsd": 43231,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "agentic-workflow",
+      "category": "benchmark",
+      "label": "τ-bench (tool-using agent)",
+      "taskClass": "agentic",
+      "complexity": "medium",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 5539,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 5539,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 9711,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4057,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 5539,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "minimal",
+          "expectedTotalMicroUsd": 10432,
+          "pSuccess": 0.969,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 5539,
+          "pSuccess": 0.943,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "minimal",
+          "expectedTotalMicroUsd": 10432,
+          "pSuccess": 0.969,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "needle",
+      "category": "benchmark",
+      "label": "needle-in-a-haystack (long context)",
+      "taskClass": "long_context",
+      "complexity": "medium",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 273836,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 273836,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 278284,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 272355,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 273836,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "minimal",
+          "expectedTotalMicroUsd": 642227,
+          "pSuccess": 0.969,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 273836,
+          "pSuccess": 0.943,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "minimal",
+          "expectedTotalMicroUsd": 642227,
+          "pSuccess": 0.969,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "chart-read",
+      "category": "benchmark",
+      "label": "MMMU / ChartQA (vision)",
+      "taskClass": "vision",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1719,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1719,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1691,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1640,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1719,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2950,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1719,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2950,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "fresh-fact",
+      "category": "benchmark",
+      "label": "SimpleQA with search (fresh facts, cited)",
+      "taskClass": "research",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3235,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3235,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2582,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3156,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3235,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4509,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3235,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4509,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "small-talk",
+      "category": "benchmark",
+      "label": "everyday chat",
+      "taskClass": "everyday",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2044,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2044,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1853,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1965,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2044,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3273,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2044,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3273,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "chat-names",
+      "category": "everyday_chat",
+      "label": "everyday_chat",
+      "taskClass": "everyday",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1856,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1969,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3280,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3280,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "reason-bat-ball",
+      "category": "reasoning",
+      "label": "reasoning",
+      "taskClass": "everyday",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2057,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2057,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1866,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1978,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2057,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3300,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2057,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3300,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "code-palindrome",
+      "category": "coding",
+      "label": "coding",
+      "taskClass": "coding",
+      "complexity": "medium",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "low",
+          "expectedTotalMicroUsd": 7308,
+          "pSuccess": 0.952,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "low",
+          "expectedTotalMicroUsd": 7308,
+          "pSuccess": 0.952,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "low",
+          "expectedTotalMicroUsd": 10854,
+          "pSuccess": 0.952,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "low",
+          "expectedTotalMicroUsd": 6049,
+          "pSuccess": 0.952,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "low",
+          "expectedTotalMicroUsd": 7308,
+          "pSuccess": 0.952,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "low",
+          "expectedTotalMicroUsd": 11918,
+          "pSuccess": 0.97,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "low",
+          "expectedTotalMicroUsd": 7308,
+          "pSuccess": 0.952,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "low",
+          "expectedTotalMicroUsd": 11918,
+          "pSuccess": 0.97,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "tool-multiply",
+      "category": "tool_use",
+      "label": "tool_use",
+      "taskClass": "everyday",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3182,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3182,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2491,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3103,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3182,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4438,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3182,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4438,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "search-cited",
+      "category": "search",
+      "label": "search",
+      "taskClass": "research",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3239,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3239,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2586,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3160,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3239,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4519,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3239,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4519,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "long-needle",
+      "category": "long_context",
+      "label": "long_context",
+      "taskClass": "long_context",
+      "complexity": "medium",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 93089,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 93089,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 97537,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 91608,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 93089,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "minimal",
+          "expectedTotalMicroUsd": 214757,
+          "pSuccess": 0.969,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 93089,
+          "pSuccess": 0.943,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "meta:muse-spark-1.3",
+          "provider": "meta",
+          "tier": 2,
+          "effort": "minimal",
+          "expectedTotalMicroUsd": 214757,
+          "pSuccess": 0.969,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "artifact-counter",
+      "category": "artifacts",
+      "label": "artifacts",
+      "taskClass": "coding",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2137,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2137,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2031,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2059,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2137,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3618,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2137,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3618,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "doc-memo",
+      "category": "documents",
+      "label": "documents",
+      "taskClass": "writing",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1727,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1727,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1699,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1648,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1727,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2966,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1727,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2966,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "sheet-csv",
+      "category": "spreadsheets",
+      "label": "spreadsheets",
+      "taskClass": "coding",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2424,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2424,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2263,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2345,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2424,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4071,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2424,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 4071,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "slides-outline",
+      "category": "slides",
+      "label": "slides",
+      "taskClass": "everyday",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2051,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2051,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1859,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1972,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2051,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3287,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2051,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3287,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "multilingual-fr",
+      "category": "multilingual",
+      "label": "multilingual",
+      "taskClass": "everyday",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1856,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1968,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3279,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2047,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 3279,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    },
+    {
+      "taskId": "instruct-three-words",
+      "category": "instruction_following",
+      "label": "instruction_following",
+      "taskClass": "writing",
+      "complexity": "simple",
+      "picks": [
+        {
+          "scenario": "default terms",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1721,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "paid tiers attested (google, mistral)",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1721,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: quality",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1693,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "preference: economy",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1642,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "boundary: EU and US only",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1721,
+          "pSuccess": 0.976,
+          "degraded": null
+        },
+        {
+          "scenario": "fallback: openai down",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2952,
+          "pSuccess": 0.943,
+          "degraded": null
+        },
+        {
+          "scenario": "budget: just below the default pick",
+          "model": "openai:gpt-6-luna",
+          "provider": "openai",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 1721,
+          "pSuccess": 0.976,
+          "degraded": "over_budget"
+        },
+        {
+          "scenario": "evidence: 200 measured failures on the default pick",
+          "model": "qwen:qwen3.8-flash",
+          "provider": "qwen",
+          "tier": 1,
+          "effort": "instant",
+          "expectedTotalMicroUsd": 2952,
+          "pSuccess": 0.943,
+          "degraded": null
+        }
+      ]
+    }
+  ]
+}

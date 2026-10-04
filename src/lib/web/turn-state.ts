@@ -38,6 +38,12 @@ export type WebAuditSink = (event: WebAuditEvent) => void;
 export interface WebTurnState {
   /** Canonical provenance key (`canonKey`) → the page text a search already returned. */
   prefetch: Map<string, PrefetchedPage>;
+  /**
+   * Canonical provenance key → the whole text of a page `web_fetch` opened this
+   * turn, so `find_in_page` searches the page the model already holds without
+   * a second request. Per turn and in memory only, like the prefetch.
+   */
+  opened: Map<string, PrefetchedPage>;
   /** Set once the enumeration guard trips: every later `web_fetch` this turn is refused. */
   fetchDisabled: boolean;
   /** Whether this turn already reported a degraded search. */
@@ -51,7 +57,7 @@ const STATES = new WeakMap<TurnWebLimits, WebTurnState>();
 export function webTurnState(limits: TurnWebLimits): WebTurnState {
   let state = STATES.get(limits);
   if (!state) {
-    state = { prefetch: new Map(), fetchDisabled: false, degradedReported: false, audit: null };
+    state = { prefetch: new Map(), opened: new Map(), fetchDisabled: false, degradedReported: false, audit: null };
     STATES.set(limits, state);
   }
   return state;

@@ -1,4 +1,6 @@
 import { normalizeDesignArtifact } from "@/lib/design/authoring";
+import { canonicalSemanticBody, isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
+import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
 import type { ParsedArtifact } from "@/lib/message-content";
 
 /** One bounded pass is intentional: an artifact check must never become a
@@ -14,7 +16,8 @@ export type ChatArtifactProblemCode =
   | "svg_root_missing"
   | "svg_close_missing"
   | "mermaid_diagram_missing"
-  | "design_invalid";
+  | "design_invalid"
+  | "semantic_invalid";
 
 export interface ChatArtifactProblem {
   identifier: string;
@@ -122,6 +125,34 @@ function validateArtifact(artifact: ParsedArtifact): ChatArtifactProblem[] {
           artifact,
           "design_invalid",
           error instanceof Error ? error.message : "The design could not be parsed.",
+          false
+        ),
+      ];
+    }
+  }
+
+  if (isSemanticArtifactType(artifact.type)) {
+    // A workbook, document or deck is stored as its validated model; a body
+    // the model cannot open (a bad formula, a ragged table, a missing sheet)
+    // is refused here rather than saved as an artifact nothing can render.
+    try {
+      const stored = canonicalSemanticBody(artifact.type, content);
+      if (stored.length > CHAT_ARTIFACT_MAX_CHARS) {
+        return [
+          problem(
+            artifact,
+            "too_large",
+            `The ${artifact.type.toLowerCase()} is ${stored.length.toLocaleString()} characters when stored, above the ${CHAT_ARTIFACT_MAX_CHARS.toLocaleString()}-character limit.`,
+            false
+          ),
+        ];
+      }
+    } catch (error) {
+      return [
+        problem(
+          artifact,
+          "semantic_invalid",
+          error instanceof SemanticError ? error.message : "The body could not be read.",
           false
         ),
       ];

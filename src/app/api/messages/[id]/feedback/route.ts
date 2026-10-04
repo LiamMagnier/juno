@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { markRoutingSignal } from "@/lib/router/telemetry-store";
 
 const schema = z.object({ feedback: z.enum(["UP", "DOWN"]).nullable() });
 
@@ -19,5 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
   await prisma.message.update({ where: { id }, data: { feedback: parsed.data.feedback } });
+  // Mirrored onto the turn's routing outcome (no content) for Auto's feedback loop.
+  await markRoutingSignal(id, { feedback: parsed.data.feedback });
   return NextResponse.json({ ok: true });
 }

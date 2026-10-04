@@ -37,6 +37,7 @@ import * as https from "node:https";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { deliverRunNotification } from "@/lib/work/notify/deliver";
+import { advanceTeams } from "@/lib/agents/team-store";
 import { isAttendedOrigin } from "@/lib/work/notifications";
 import {
   WORK_LEASED_STATUSES,
@@ -68,10 +69,14 @@ import { WORK_MAX_STEPS_PER_RUN } from "@/lib/work/budget";
 import { createWorkBrowser, sealedResponseHeaders, type WorkBrowser } from "@/lib/work/browser";
 import { connectAgentBrowser } from "@/lib/computer/remote-browser";
 import { guardBrowserForTakeover } from "@/lib/computer/takeover";
+import { createCredentialFill } from "@/lib/secrets/browser-fill";
+import { workTaskKey } from "@/lib/secrets/policy";
+import { redeemSecretGrant, secretRefsForTask } from "@/lib/secrets/store";
 import {
   BUSY_COMPUTER_FALLBACK_NOTE,
   YOUR_COMPUTER_PROMPT_SECTION,
   computerBlockedReason,
+  computerTakeoverFence,
   resolveRunComputerSession,
   setCachedPoster,
   type RunComputerAttachment,
@@ -142,6 +147,7 @@ import { consentReasonsOf } from "@/lib/skills/workflow";
 import { skillPermittedRunTools } from "@/lib/work/skills";
 import { RUN_CODE_TOOL_ID } from "@/lib/tools/types";
 import { getMemoryProfile } from "@/lib/memory";
+import { agentMemoryAccessOf } from "@/lib/memory-scope";
 import { workMemoryContext, workMemoryEnabled } from "@/lib/work/memory-context";
 import type { Prisma } from "@prisma/client";
 
@@ -859,17 +865,25 @@ async function memorySource(input: {
   projectId: string | null;
   goal: string;
   conversationProvider: string;
+  /** The Orbit agent this task runs as: its memory grant narrows what the run reads. */
+  agentId: string | null;
 }): Promise<UntrustedSource | null> {
   try {
-    const settings = await prisma.settings.findUnique({
-      where: { userId: input.userId },
-      select: { memoryEnabled: true },
-    });
+    const [settings, agent] = await Promise.all([
+      prisma.settings.findUnique({ where: { userId: input.userId }, select: { memoryEnabled: true } }),
+      input.agentId
+        ? prisma.agent.findFirst({
+            where: { id: input.agentId, userId: input.userId, deletedAt: null },
+            select: { id: true, memoryAccess: true },
+          })
+        : Promise.resolve(null),
+    ]);
     if (!workMemoryEnabled(settings)) return null;
     const profile = await getMemoryProfile(input.userId, {
       projectId: input.projectId,
       query: input.goal,
       conversationProvider: input.conversationProvider,
+      agent: agent ? { id: agent.id, access: agentMemoryAccessOf(agent.memoryAccess) } : null,
     });
     const body = workMemoryContext({ summary: profile.summary, recent: profile.recent });
     return body ? { label: "what Juno remembers about the user", body } : null;
@@ -990,6 +1004,7 @@ async function openingContext(input: {
     projectId: input.session.projectId,
     goal: input.session.goal,
     conversationProvider: input.provider,
+    agentId: input.session.agentId ?? null,
   });
   if (memory) sources.push(memory);
   sources.push(...(await attachedSources(input.runId, input.userId, input.skillResources)));
@@ -1896,26 +1911,54 @@ function buildTools(input: {
     input.disposers.push(() => browser.close());
   }
 
+  // Alevr Secrets (BRIEF §7): the model holds references to grants made to
+  // THIS task; the value is redeemed and filled here, and everything the
+  // browser returns afterwards is scrubbed of what was filled.
+  const secretTaskKey = workTaskKey(input.sessionId);
+  const credentialFill = createCredentialFill({
+    currentUrl: () => browser.currentUrl(),
+    fieldKind: async (target) => (browser.fieldKind ? browser.fieldKind(target) : null),
+    fillSecret: async (target, value, opts) =>
+      browser.fillSecret
+        ? browser.fillSecret(target, value, opts)
+        : { ok: false, message: "This browser cannot fill saved credentials." },
+    redeem: (request) =>
+      redeemSecretGrant({
+        ...request,
+        userId: input.userId,
+        taskKey: secretTaskKey,
+        receiptRef: `work-run:${input.runId}`,
+      }),
+  });
+  const scrubbed = credentialFill.scrub;
+
   const browserTool = runtime.browserTool({
     available: () => browser.available(),
     open: async (url) => {
-      const outcome = await browser.open(url);
+      const outcome = scrubbed(await browser.open(url));
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
-    read: () => browser.read(),
+    read: async () => scrubbed(await browser.read()),
     click: async (target) => {
-      const outcome = await browser.click(target);
+      const outcome = scrubbed(await browser.click(target));
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
     typeText: async (target, text) => {
-      const outcome = await browser.typeText(target, text);
+      const outcome = scrubbed(await browser.typeText(target, text));
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
     submit: async (target) => {
-      const outcome = await browser.submit(target);
+      const outcome = scrubbed(await browser.submit(target));
+      if (outcome.ok) bumpEpoch();
+      return outcome;
+    },
+    credentials: async () =>
+      (await secretRefsForTask(input.userId, secretTaskKey)).map(({ ref, label, hosts }) => ({ ref, label, hosts })),
+    fillCredential: async (target, request) => {
+      const outcome = await credentialFill.fill(target, request);
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
@@ -1945,6 +1988,8 @@ function buildTools(input: {
         // While the person has control, every computer tool (screenshots
         // included) refuses before and after acting (D-011, audit C3).
         blockedReason: () => computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId),
+        takeoverEpoch: async () =>
+          (await computerTakeoverFence(input.userId, input.remoteComputer!.attachment.agentId)).epoch,
         pageTakesPayment: () => browser.pageTakesPayment(),
         currentUrl: () => browser.currentUrl(),
         screenEpoch: getEpoch,
@@ -2777,6 +2822,9 @@ async function findQueuedRuns(limit: number) {
       status: "queued",
       effectiveTarget: "cloud",
       OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: new Date() } }],
+      // A team's lead task is coordinated, not executed: its members' tasks
+      // run here like any other, and `advanceTeams` below drives the lead.
+      session: { OR: [{ teamRole: null }, { teamRole: { not: "lead" } }] },
     },
     orderBy: { createdAt: "asc" },
     take: limit,
@@ -2804,12 +2852,26 @@ async function tick(): Promise<boolean> {
   }
   let busy = swept.reclaimed.length > 0;
 
+  // Temporary specialist teams (src/lib/agents/team-store.ts): start members
+  // whose dependencies ended, retry one interrupted before it acted, write the
+  // lead's final answer. Their member tasks are claimed below like any other.
+  const teams = await advanceTeams({ executorId: `${EXECUTOR_ID}:team` }).catch((error: unknown) => {
+    log("team coordination failed", { error: String(error) });
+    return { teams: 0, finished: 0 };
+  });
+  if (teams.teams > 0) busy = true;
+
   const slots = MAX_CONCURRENT_RUNS - active.size;
   // Full is the opposite of idle: keep the short cadence so a finishing run
   // frees its slot to the next candidate within seconds.
   if (slots <= 0) return true;
 
-  for (const candidate of await findQueuedRuns(slots)) {
+  // Three candidates per free slot: a run whose session still waits on another
+  // task (dependencies, src/lib/work/board.ts) is refused by `claimRun`, and
+  // must not take the slot from a run behind it that could start.
+  let claimedThisTick = 0;
+  for (const candidate of await findQueuedRuns(slots * 3)) {
+    if (claimedThisTick >= slots) break;
     busy = true;
     if (stopping) return true;
     const claim = await claimRun({
@@ -2818,6 +2880,7 @@ async function tick(): Promise<boolean> {
       executorId: EXECUTOR_ID,
     });
     if (!claim.claimed) continue;
+    claimedThisTick += 1;
 
     const renew = startLeaseRenewal(candidate.id, candidate.userId);
     active.set(candidate.id, { renew });
@@ -3442,8 +3505,18 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
       const remoteBrowser = guardBrowserForTakeover(
         connectAgentBrowser(computerAttachment.handle, computerAttachment.secrets, {
           provider: computerAttachment.provider,
+          // The same site policy the browser tool applies to `open`, now also
+          // to every navigation the agent's clicks and submits cause.
+          navigationRefusal: (url) => {
+            const blocked = runtime.blockedFetchTarget(url);
+            if (blocked) return `Juno will not open that: ${blocked}`;
+            const allowedDomains = egressDomains.current;
+            if (allowedDomains === null) return null;
+            const egress = runtime.evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
+            return egress.allowed ? null : `Juno will not open that for this skill: ${egress.reason}.`;
+          },
         }),
-        () => computerBlockedReason(input.userId, takeoverAgentId)
+        () => computerTakeoverFence(input.userId, takeoverAgentId)
       );
       remoteComputer = { attachment: computerAttachment, browser: remoteBrowser };
     } catch {

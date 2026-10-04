@@ -251,7 +251,11 @@ final class DesktopWorkLocalRuntime {
                 JunoWorkApprovalRules.allowsStandingGrant(
                     action: request.action,
                     risk: request.risk.rawValue
-                )
+                ),
+                // The shared hard floor (BRIEF §6): no standing answer for an
+                // action named for deleting, paying, credentials or account
+                // and security changes, whatever risk its tool graded it.
+                WorkRisk.mayHoldStandingAllowance(action: request.action, risk: request.risk)
             {
                 let level = request.risk
                 let existing = await approvals.standingAllowance

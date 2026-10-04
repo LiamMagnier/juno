@@ -202,6 +202,41 @@ const DONE = work({
   steering: null,
 });
 
+const CLARIFY_QUESTION = (id: string, question: string, options: string[]) => ({
+  id,
+  question,
+  type: "single-choice" as const,
+  options,
+  allowElse: true,
+  elseLabel: "Other use case",
+  elsePlaceholder: "e.g., Enterprise automation, video generation",
+  required: false,
+});
+
+/** A research turn's scoping questions, as the triage writes them. */
+const CLARIFY: NonNullable<React.ComponentProps<typeof Composer>["pendingClarification"]> = {
+  id: "clarify-dev",
+  originalUserMessage: "Compare the AI subscriptions worth paying for in 2026",
+  attachments: [],
+  deepResearch: true,
+  result: {
+    needsClarification: true,
+    reason: "dev",
+    title: "Scope AI Subscription Report",
+    description: "Help tailor the comparison matrix and evaluation criteria for your needs.",
+    questions: [
+      CLARIFY_QUESTION("q1", "What is your primary use case for the AI subscription?", [
+        "Software development and coding assistance",
+        "Deep research, data analysis, and long documents",
+        "Content creation, writing, and creative work",
+        "All-round everyday productivity and multi-modal tasks",
+      ]),
+      CLARIFY_QUESTION("q2", "What monthly budget should the comparison assume?", ["Under €25", "€25 to €60", "Over €60"]),
+      CLARIFY_QUESTION("q3", "Which region's pricing matters?", ["France", "European Union", "United States"]),
+    ],
+  },
+};
+
 /** The home as chat-view lays it out (`.chat-home`), filling the panel. */
 function HomeView(common: React.ComponentProps<typeof Composer>) {
   return (
@@ -293,10 +328,10 @@ function DockView(common: React.ComponentProps<typeof Composer>) {
 export function ComposerLandingFixture() {
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
-  const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks" | "private">("all");
+  const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks" | "private" | "clarify">("all");
   React.useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("view");
-    if (wanted === "home" || wanted === "dock" || wanted === "tasks" || wanted === "private") setView(wanted);
+    if (wanted === "home" || wanted === "dock" || wanted === "tasks" || wanted === "private" || wanted === "clarify") setView(wanted);
     // `?model=<id>` opens on a named model, so the effort dial can be checked.
     const wantedModel = new URLSearchParams(window.location.search).get("model");
     if (wantedModel) setModel(wantedModel as ModelId);
@@ -323,6 +358,11 @@ export function ComposerLandingFixture() {
       <main className="app-main-canvas min-h-dvh bg-background text-foreground">
         {view === "all" || view === "home" ? <HomeView {...common} /> : null}
         {view === "private" ? <PrivateView {...common} /> : null}
+        {/* `?view=clarify`: the home while a research turn's scoping questions
+            own the composer (composer-clarification-popover.tsx). */}
+        {view === "clarify" ? (
+          <HomeView {...common} pendingClarification={CLARIFY} onCancelClarification={() => {}} onSubmitClarification={() => ({ accepted: true })} onSkipClarification={() => {}} />
+        ) : null}
         {view === "all" || view === "dock" ? <DockView {...common} /> : null}
         {view === "all" || view === "tasks" ? (
           <section className="page-gutter mx-auto w-full max-w-3xl space-y-6 py-10">

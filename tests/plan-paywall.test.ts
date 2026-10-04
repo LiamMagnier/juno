@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PLANS, PLAN_LIST, canUseModel, effectiveMinPlan, modelRequiredPlan, planRank } from "@/lib/plans";
 import { MODEL_LIST } from "@/lib/models";
 import { pickAutoModel } from "@/lib/auto-model";
+import { NoAutoCandidateError } from "@/lib/router/decide";
 
 /*
  * The paywall, pinned from both sides: a Free account gets a small allowance
@@ -70,11 +71,15 @@ test("FREE can use exactly the cost-1 FREE-priced models", () => {
 test("Auto stays selectable on FREE, and routes only inside the plan when a provider is configured", () => {
   assert.equal(canUseModel("FREE", "juno:auto"), true);
   assert.equal(canUseModel("FREE", "auto"), true);
-  const pick = pickAutoModel({ message: "hi", plan: "FREE" });
-  // With no provider keys in the test env the router falls through to its
-  // plan-blind last resort, which the route's own gates refuse; with any key
-  // set, the pool is filtered by canUseModel and the pick must be inside it.
-  if (pick.candidatesConsidered > 0) assert.equal(canUseModel("FREE", pick.model.id), true);
+  // With every provider configured the router routes inside the plan or says
+  // why it cannot (NoAutoCandidateError) — it has no "last resort" that
+  // ignores the plan (Auto Router 2.0, src/lib/router/decide.ts).
+  try {
+    const pick = pickAutoModel({ message: "hi", plan: "FREE", context: { isConfigured: () => true } });
+    assert.equal(canUseModel("FREE", pick.model.id), true);
+  } catch (error) {
+    assert.ok(error instanceof NoAutoCandidateError);
+  }
 });
 
 test("PRO can use the Pro tier, and plan floors still order above it", () => {
@@ -85,7 +90,7 @@ test("PRO can use the Pro tier, and plan floors still order above it", () => {
   for (const m of proTier) {
     assert.ok(canUseModel("PRO", m.id), `${m.id} (${m.minPlan}) is locked for PRO`);
   }
-  const pick = pickAutoModel({ message: "hi", plan: "PRO" });
+  const pick = pickAutoModel({ message: "hi", plan: "PRO", context: { isConfigured: () => true } });
   assert.ok(canUseModel("PRO", pick.model.id), `Auto picked ${pick.model.id}, which PRO cannot call`);
 
   const maxOnly = MODEL_LIST.find((m) => m.minPlan === "MAX");

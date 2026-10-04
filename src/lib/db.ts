@@ -65,6 +65,13 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // read is a leak of instructions, not just rows. Every call site (routes +
   // src/app/api/memory/edits/ledger.ts) already filters on userId.
   ["MemoryEdit", "userId"],
+  // Session recall's blind-token index (src/lib/recall). Holds no words, but
+  // which of one person's messages share words with which is still theirs:
+  // read and written by raw SQL scoped on userId in src/lib/search/sql.ts,
+  // and guarded here for the one model call (dropping a row on edit).
+  ["MessageRecallIndex", "userId"],
+  // Procedural memory: methods proposed as skills from the person's own runs.
+  ["SkillCandidate", "userId"],
   ["Attachment", "userId"],
   ["Usage", "userId"],
   // Reservations gate a paid quota, so an unscoped read here is a cross-account
@@ -104,6 +111,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ToolInvocation", "userId"],
   ["ActionApprovalReceipt", "userId"],
   ["ActionApprovalGrant", "userId"],
+  // Alevr Secrets: a missing scope here would hand one account another's credential.
+  ["SecretCredential", "userId"],
+  ["SecretGrant", "userId"],
+  ["SecretAccessEvent", "userId"],
   // Knowledge, Research and the spend ceiling. Every one of these holds content
   // derived from a single person's files or a single person's money, so they are
   // exactly the tables where a missing scope would be a leak rather than a bug.

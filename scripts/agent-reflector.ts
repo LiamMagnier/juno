@@ -6,7 +6,8 @@
  * raise ideas — only for people who have been here in the last two weeks, only
  * within each account's usage windows. The rules are in
  * src/lib/agents/reflect-sweep.ts and one reflection is src/lib/agents/reflect.ts;
- * this file is the loop. Its own PM2 app (juno-agent-reflector) rather than a
+ * this file is the loop. The same tick advances driven durable goals
+ * (src/lib/agents/goal-runner.ts), one bounded step each. Its own PM2 app (juno-agent-reflector) rather than a
  * tick of the work scheduler, because a model call must never hold up a cron.
  *
  * The shape is the memory dreamer's (scripts/memory-dreamer.ts): one tick at a
@@ -25,6 +26,7 @@ import {
   AGENT_SWEEP_PER_TICK,
   sweepAgentReflections,
 } from "@/lib/agents/reflect-sweep";
+import { sweepGoals } from "@/lib/agents/goal-runner";
 
 /** How long a stop waits for the reflection in hand to write what it paid for. */
 const SHUTDOWN_GRACE_MS = 20_000;
@@ -43,6 +45,13 @@ async function sweep(): Promise<boolean> {
         `[agent-reflector] considered=${outcome.considered} reflected=${outcome.reflected} ` +
           `ideas=${outcome.ideas} deferred=${outcome.deferred} skipped=${outcome.skipped} failed=${outcome.failed}`
       );
+    }
+    // Durable goals ride the same tick: each driven goal takes at most one
+    // bounded step (src/lib/agents/goal-runner.ts). Their tasks run on the
+    // Work runner like any other; this only decides and starts them.
+    if (!stopping) {
+      const driven = await sweepGoals();
+      if (driven.advanced > 0) console.log(`[agent-reflector] driven=${driven.advanced}`);
     }
     return true;
   } catch (error) {

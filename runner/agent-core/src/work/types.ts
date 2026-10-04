@@ -135,6 +135,42 @@ export function requiresExplicitApproval(action: string, risk: WorkRiskLevel): b
 }
 
 /**
+ * Hard-floor word tokens (BRIEF §6), hand-copied from
+ * src/lib/permissions/taxonomy.ts `HARD_FLOOR_TOKENS` for the same reason as
+ * `ALWAYS_CONFIRM_ACTIONS`. Both copies are checked against
+ * contracts/permissions/permission-taxonomy.v1.json by their own tests.
+ */
+export const HARD_FLOOR_TOKENS: Readonly<Record<string, readonly string[]>> = {
+  destructive: ['delete', 'destroy', 'drop', 'erase', 'trash', 'remove', 'wipe', 'merge', 'deploy', 'empty', 'purge'],
+  sensitive: [],
+  financial: ['pay', 'payment', 'purchase', 'buy', 'checkout', 'refund', 'transfer', 'invoice', 'order', 'subscribe', 'charge'],
+  credential: ['credential', 'credentials', 'password', 'passphrase', 'token', 'secret', 'otp', '2fa', 'mfa', 'login'],
+  account_security: ['account', 'security', 'permission', 'permissions', 'role', 'roles', 'sharing', 'invite', 'lock', 'unlock', 'revoke', 'reset'],
+};
+
+const FLOOR_WORDS = new Set(Object.values(HARD_FLOOR_TOKENS).flat());
+
+function actionTokens(action: string): string[] {
+  return action
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * Whether an "Allow for this task" answer may stop the next ask for this
+ * action. Mirrors `mayBeCoveredByStandingAllowance` in src/lib/work/domain.ts:
+ * never the always-confirm list, never above `command`, never an action whose
+ * name is in a hard-floor category.
+ */
+export function mayHoldStandingAllowance(action: string, risk: WorkRiskLevel): boolean {
+  if (ALWAYS_CONFIRM.has(action)) return false;
+  if (risk !== 'safe' && risk !== 'edit' && risk !== 'command') return false;
+  return !actionTokens(action).some((token) => FLOOR_WORDS.has(token));
+}
+
+/**
  * The approval modes, mirrored from `src/lib/work/domain.ts`.
  *
  * Hand-copied because this package is vendored and built with the repository

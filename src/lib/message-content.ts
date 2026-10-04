@@ -10,7 +10,17 @@
 
 import { findLearningBlocks, type ParsedLearningBlock } from "@/lib/learning-blocks";
 
-export type ArtifactType = "HTML" | "REACT" | "CODE" | "MARKDOWN" | "SVG" | "MERMAID" | "DESIGN";
+export type ArtifactType =
+  | "HTML"
+  | "REACT"
+  | "CODE"
+  | "MARKDOWN"
+  | "SVG"
+  | "MERMAID"
+  | "DESIGN"
+  | "SPREADSHEET"
+  | "DOCUMENT"
+  | "PRESENTATION";
 
 export interface ParsedArtifact {
   identifier: string;
@@ -52,6 +62,9 @@ const FORGET_RE = /<juno:forget>([\s\S]*?)<\/juno:forget>/g;
 const OPEN_MEMORY_TAIL_RE =
   /<juno:(?:memory|forget)>[\s\S]*$|<juno:(?:m(?:e(?:m(?:o(?:r(?:y)?)?)?)?)?|f(?:o(?:r(?:g(?:e(?:t)?)?)?)?)?)$/;
 const CLARIFICATION_WIZARD_RE = /:::clarification-wizard[\s\S]*?:::/gi;
+/** A closed semantic-edit block, and one still arriving (src/lib/artifact-ops.ts owns the protocol). */
+const ARTIFACT_OPS_BLOCK_RE = /<juno:artifact-ops\s+([^>]*?)>[\s\S]*?<\/juno:artifact-ops>/g;
+const ARTIFACT_OPS_TAIL_RE = /<juno:artifact-ops(?:\s[^>]*)?>(?:(?!<\/juno:artifact-ops>)[\s\S])*$|<juno:artifact-o(?:p(?:s)?)?(?:\s[^>]*)?$/;
 
 function parseAttrs(raw: string): Record<string, string> {
   const attrs: Record<string, string> = {};
@@ -83,7 +96,10 @@ function normalizeType(t?: string): ArtifactType {
     up === "MARKDOWN" ||
     up === "SVG" ||
     up === "MERMAID" ||
-    up === "DESIGN"
+    up === "DESIGN" ||
+    up === "SPREADSHEET" ||
+    up === "DOCUMENT" ||
+    up === "PRESENTATION"
   ) {
     return up;
   }
@@ -338,7 +354,16 @@ function pushTextParts(parts: ContentPart[], text: string) {
 
 /** Split a message into ordered text + artifact-reference parts for rendering. */
 export function splitMessageContent(raw: string): ContentPart[] {
-  const text = stripMemoryTags(raw).replace(CLARIFICATION_WIZARD_RE, "");
+  const stripped = stripMemoryTags(raw).replace(CLARIFICATION_WIZARD_RE, "");
+  // An edit to a semantic artifact (src/lib/artifact-ops.ts) streams as an
+  // operations block; the server rewrites it into the artifact tag before the
+  // message is saved. While it streams it is shown as a reference to the
+  // artifact being edited, never as raw JSON.
+  const pendingEdit = ARTIFACT_OPS_TAIL_RE.exec(stripped);
+  const text = (pendingEdit ? stripped.slice(0, pendingEdit.index) : stripped).replace(
+    ARTIFACT_OPS_BLOCK_RE,
+    (_full, rawAttrs: string) => `<juno:artifact ${rawAttrs.trim()}></juno:artifact>`
+  );
   const parts: ContentPart[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -377,12 +402,17 @@ export function splitMessageContent(raw: string): ContentPart[] {
     }
   }
 
+  if (pendingEdit) {
+    const identifier = /identifier\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(pendingEdit[0]);
+    parts.push({ type: "artifact", identifier: identifier?.[1] ?? identifier?.[2] ?? "", streaming: true, title: "Editing", content: "" });
+  }
   return parts;
 }
 
 /** Strip tags and TTS-unfriendly characters so spoken replies sound natural. */
 export function cleanForSpeech(text: string): string {
   return stripMemoryTags(text)
+    .replace(ARTIFACT_OPS_BLOCK_RE, " I've updated that in the canvas. ")
     .replace(ARTIFACT_RE, " I've added that to the canvas. ")
     .replace(CLARIFICATION_WIZARD_RE, "")
     .replace(

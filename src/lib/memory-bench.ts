@@ -227,13 +227,20 @@ export function recordedReader(scenarios: readonly BenchScenario[]): BenchReader
 
 const MINUTE = 60_000;
 
-interface Store {
+export interface BenchStore {
   entries: LifecycleEntry[];
   suppressions: string[];
   seq: number;
   /** When each row's fact was really said — what its source message's time gives the database half. */
   saidAt: Map<string, Date>;
+  /**
+   * When each row last changed status — the `updatedAt` a retirement leaves
+   * in the database. The summary-injection evaluation reads it the way
+   * `readMemorySummaryChanges` reads the newest retirement.
+   */
+  changedAt: Map<string, Date>;
 }
+type Store = BenchStore;
 
 function turnTime(conversation: BenchConversation, index: number): Date {
   return new Date(new Date(conversation.at).getTime() + index * MINUTE);
@@ -276,54 +283,80 @@ async function readConversation(
   if (!parsed) return;
 
   for (const fact of parsed.facts) {
-    const plan = planFactIngestion(
-      { content: fact, source: "AUTO", projectId: scope, ...(config.timeAware ? { observedAt: saidAt } : {}) },
-      { entries: store.entries, suppressions: store.suppressions, now, allowedSensitiveTopics: [] }
-    );
-    if (plan.action === "skip") continue;
-    // Mirrors saveCandidates, write for write.
-    const supersede = (entryId: string, byId: string) => {
-      const older = store.entries.find((entry) => entry.id === entryId);
-      // `saveCandidates` supersedes only a row that is still active.
-      if (older && older.status === "active") {
-        older.status = "superseded";
-        older.supersededById = byId;
-      }
-    };
-    if (plan.action === "refresh") {
-      const known = store.entries.find((entry) => entry.id === plan.entryId);
-      if (!known) continue;
-      if (plan.revive) known.status = "active";
-      if (plan.expiresAt !== undefined) known.expiresAt = plan.expiresAt;
-      if (plan.observedAt) known.observedAt = plan.observedAt;
-      if (saidAt.getTime() > (store.saidAt.get(known.id)?.getTime() ?? 0)) store.saidAt.set(known.id, saidAt);
-      if (plan.reinstate) {
-        known.status = "active";
-        known.supersededById = null;
-      }
-      if (plan.supersedes) supersede(plan.supersedes.entryId, known.id);
-      continue;
-    }
-    store.seq += 1;
-    const id = `bench-${store.seq}`;
-    store.entries.push({
-      id,
-      content: plan.content,
-      normalized: plan.normalized,
-      category: plan.category,
-      projectId: scope,
-      source: "AUTO",
-      kind: "FACT",
-      confidence: plan.confidence,
-      status: plan.status,
-      expiresAt: plan.expiresAt,
-      createdAt: now,
-      observedAt: config.timeAware ? plan.observedAt : null,
-      supersededById: plan.supersededById ?? null,
-    });
-    store.saidAt.set(id, saidAt);
-    if (plan.supersedes) supersede(plan.supersedes.entryId, id);
+    ingestFact(store, { content: fact, source: "AUTO", projectId: scope, saidAt }, { now, timeAware: config.timeAware });
   }
+}
+
+/**
+ * One fact through `planFactIngestion` into the store, applied the way
+ * `saveCandidates` applies it, write for write. Exported for the evaluation
+ * suite's correction and sensitivity cases, which feed facts directly.
+ */
+export function ingestFact(
+  store: BenchStore,
+  fact: { content: string; source: "AUTO" | "MANUAL"; projectId: string | null; saidAt: Date },
+  opts: { now: Date; timeAware: boolean; allowedSensitiveTopics?: readonly string[] }
+): ReturnType<typeof planFactIngestion> {
+  const { now, timeAware } = opts;
+  const { saidAt } = fact;
+  const scope = fact.projectId;
+  const plan = planFactIngestion(
+    { content: fact.content, source: fact.source, projectId: scope, ...(timeAware ? { observedAt: saidAt } : {}) },
+    { entries: store.entries, suppressions: store.suppressions, now, allowedSensitiveTopics: opts.allowedSensitiveTopics ?? [] }
+  );
+  if (plan.action === "skip") return plan;
+  // Mirrors saveCandidates, write for write.
+  const supersede = (entryId: string, byId: string) => {
+    const older = store.entries.find((entry) => entry.id === entryId);
+    // `saveCandidates` supersedes only a row that is still active.
+    if (older && older.status === "active") {
+      older.status = "superseded";
+      older.supersededById = byId;
+      store.changedAt.set(older.id, now);
+    }
+  };
+  if (plan.action === "refresh") {
+    const known = store.entries.find((entry) => entry.id === plan.entryId);
+    if (!known) return plan;
+    if (plan.revive) known.status = "active";
+    if (plan.expiresAt !== undefined) known.expiresAt = plan.expiresAt;
+    if (plan.observedAt) known.observedAt = plan.observedAt;
+    if (saidAt.getTime() > (store.saidAt.get(known.id)?.getTime() ?? 0)) store.saidAt.set(known.id, saidAt);
+    if (plan.reinstate) {
+      known.status = "active";
+      known.supersededById = null;
+      store.changedAt.set(known.id, now);
+    }
+    if (plan.supersedes) supersede(plan.supersedes.entryId, known.id);
+    for (const resolved of plan.resolves ?? []) supersede(resolved.entryId, known.id);
+    return plan;
+  }
+  store.seq += 1;
+  const id = `bench-${store.seq}`;
+  store.entries.push({
+    id,
+    content: plan.content,
+    normalized: plan.normalized,
+    category: plan.category,
+    projectId: scope,
+    source: fact.source,
+    kind: "FACT",
+    confidence: plan.confidence,
+    status: plan.status,
+    expiresAt: plan.expiresAt,
+    createdAt: now,
+    observedAt: timeAware ? plan.observedAt : null,
+    supersededById: plan.supersededById ?? null,
+  });
+  store.saidAt.set(id, saidAt);
+  if (plan.supersedes) supersede(plan.supersedes.entryId, id);
+  for (const resolved of plan.resolves ?? []) supersede(resolved.entryId, id);
+  return plan;
+}
+
+/** An empty store, for callers that feed facts directly. */
+export function emptyBenchStore(): BenchStore {
+  return { entries: [], suppressions: [], seq: 0, saidAt: new Map(), changedAt: new Map() };
 }
 
 /** The re-judge pass, applied the way reconcileMemoryTimeline applies it. */
@@ -331,16 +364,20 @@ function rejudge(store: Store, now: Date): void {
   for (const change of planTimelineReconciliation(store.entries, { now })) {
     const entry = store.entries.find((row) => row.id === change.id);
     if (!entry) continue;
+    if (entry.status !== change.status) store.changedAt.set(entry.id, now);
     entry.status = change.status;
     if (change.supersededById !== undefined) entry.supersededById = change.supersededById;
     if (change.expiresAt) entry.expiresAt = change.expiresAt;
   }
 }
 
-function forget(store: Store, statement: string): void {
+function forget(store: Store, statement: string, at: Date): void {
   for (const id of factsCoveredByForget(statement, store.entries)) {
     const entry = store.entries.find((row) => row.id === id);
-    if (entry) entry.status = "suppressed";
+    if (entry) {
+      entry.status = "suppressed";
+      store.changedAt.set(entry.id, at);
+    }
   }
   if (!store.suppressions.some((existing) => normalizeFact(existing) === normalizeFact(statement))) {
     store.suppressions.push(statement);
@@ -375,11 +412,23 @@ export interface ScenarioScore {
   holding: string[];
 }
 
-export async function runScenario(
+/**
+ * Replays one scenario into a fresh store — the part of a run before scoring.
+ * Exported for the evaluation suite (memory-eval.ts), which scores the same
+ * replay along more axes. `checkpoint`, when given, is called once, in the
+ * live setting, after the event at the middle of the history: the moment the
+ * summary-injection evaluation "writes a summary".
+ */
+export async function replayScenario(
   scenario: BenchScenario,
-  opts: { setting: BenchSetting; config: BenchConfig; reader: BenchReader }
-): Promise<ScenarioScore> {
-  const store: Store = { entries: [], suppressions: [], seq: 0, saidAt: new Map() };
+  opts: {
+    setting: BenchSetting;
+    config: BenchConfig;
+    reader: BenchReader;
+    checkpoint?: (store: BenchStore, at: Date) => void;
+  }
+): Promise<{ store: BenchStore; now: Date }> {
+  const store: Store = { entries: [], suppressions: [], seq: 0, saidAt: new Map(), changedAt: new Map() };
   const now = new Date(scenario.now);
 
   if (opts.setting === "live") {
@@ -387,13 +436,15 @@ export async function runScenario(
       ...scenario.conversations.map((conversation) => ({ at: endOf(conversation), conversation, statement: null })),
       ...(scenario.forgets ?? []).map((f) => ({ at: new Date(f.at), conversation: null, statement: f.statement })),
     ].sort((a, b) => a.at.getTime() - b.at.getTime());
-    for (const event of events) {
+    const middle = Math.max(0, Math.floor((events.length - 1) / 2));
+    for (const [index, event] of events.entries()) {
       if (event.conversation) await readConversation(store, event.conversation, opts.config, opts.reader, event.at);
-      else if (event.statement) forget(store, event.statement);
+      else if (event.statement) forget(store, event.statement, event.at);
+      if (index === middle) opts.checkpoint?.(store, event.at);
     }
     if (opts.config.rejudge) rejudge(store, now);
   } else {
-    for (const f of scenario.forgets ?? []) forget(store, f.statement);
+    for (const f of scenario.forgets ?? []) forget(store, f.statement, now);
     const newestFirst = [...scenario.conversations].sort((a, b) => endOf(b).getTime() - endOf(a).getTime());
     // "repair" reads the way the old rules did: no times handed to
     // ingestion, so every judgement is made in reading order.
@@ -410,11 +461,19 @@ export async function runScenario(
       rejudge(store, now);
     }
   }
+  return { store, now };
+}
 
+export async function runScenario(
+  scenario: BenchScenario,
+  opts: { setting: BenchSetting; config: BenchConfig; reader: BenchReader }
+): Promise<ScenarioScore> {
+  const { store, now } = await replayScenario(scenario, opts);
   return score(scenario, store, now);
 }
 
-function believes(entry: LifecycleEntry, now: Date): boolean {
+/** Whether the store believes this row at `now`: an active, unexpired fact. */
+export function believes(entry: LifecycleEntry, now: Date): boolean {
   return (
     entry.kind === "FACT" &&
     entry.status === "active" &&

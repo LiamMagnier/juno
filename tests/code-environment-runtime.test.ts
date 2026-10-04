@@ -226,14 +226,17 @@ test("a narrower mode refuses what it cannot ask about", () => {
    */
   const callback = /requestApproval: async \(request\) => \{[\s\S]*?\n {6}\},/.exec(driver)?.[0] ?? "";
   assert.ok(callback, "the driver no longer answers approvals");
-  assert.match(callback, /const allowed = permissionMode === "full";/);
+  // Full access allows what it may; a sensitive action is floored to a person
+  // under every mode, and nobody is attached to a cloud run (BRIEF §6).
+  assert.match(callback, /const allowed = unattendedApprovalAnswer\(permissionMode, request\.risk\) === "allow";/);
+  assert.match(callback, /const floored = request\.risk === "sensitive";/);
   assert.match(callback, /return allowed \? "allow" : "deny";/);
   // And the answer is recorded as the MODE's, with the setting that refused
   // as its reason — typed (`approval.resolved` by "mode"), so every reader
   // renders the refusal from the decision rather than from how a sentence
   // starts (tests/cloud-runner-protocol.test.ts runs it end to end).
   assert.match(callback, /noteApprovalAnswer\(request\.callId, \{\s*by: "mode",/);
-  assert.match(callback, /feedback: `this run is set to \$\{PERMISSION_MODE_LABELS\[permissionMode\]\}`/);
+  assert.match(callback, /: `this run is set to \$\{PERMISSION_MODE_LABELS\[permissionMode\]\}`/);
   assert.doesNotMatch(read("src/components/code/code-activity.tsx"), /\/\^Denied \//);
 });
 

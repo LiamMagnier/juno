@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { anchoredTranscriptTop, transcriptAnchor, transcriptIndexAt, transcriptLayout, transcriptWindow } from "@/lib/chat/transcript-window";
+import { anchoredTranscriptTop, placeInlineRuns, transcriptAnchor, transcriptIndexAt, transcriptLayout, transcriptWindow } from "@/lib/chat/transcript-window";
 
 test("a thousand dynamic rows mount only a viewport and overscan", () => {
   const keys = Array.from({ length: 1000 }, (_, i) => `m${i}`);
@@ -49,4 +49,28 @@ test("empty and invalid measurements cannot produce broken spacer geometry", () 
   assert.equal(anchoredTranscriptTop(first, transcriptAnchor(first, -24)!, 0), -24);
   const layout = transcriptLayout(["a", "b", "c"], (_, i) => [NaN, -1, Infinity][i]);
   assert.deepEqual(layout.offsets, [0, 160, 161, 321]);
+});
+
+test("inline runs follow the reply to the last question asked before they started", () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 9, 4, 0, 0, s)).toISOString();
+  const turns = [
+    { role: "USER", createdAt: at(0) },
+    { role: "ASSISTANT", createdAt: at(1) },
+    { role: "USER", createdAt: at(10) },
+    { role: "ASSISTANT", createdAt: at(11) },
+    { role: "USER", createdAt: at(20) },
+  ];
+  const placed = placeInlineRuns(turns, [
+    { id: "before-everything", createdAt: at(-5) },
+    { id: "after-first", createdAt: at(5) },
+    { id: "after-second", createdAt: at(12) },
+    { id: "also-after-second", createdAt: at(15) },
+    { id: "unanswered-question", createdAt: at(25) },
+  ]);
+  assert.deepEqual(placed.get(-1), ["before-everything"]);
+  assert.deepEqual(placed.get(1), ["after-first"]);
+  assert.deepEqual(placed.get(3), ["after-second", "also-after-second"]);
+  // The last question has no reply yet: the run sits under the question.
+  assert.deepEqual(placed.get(4), ["unanswered-question"]);
+  assert.equal(placeInlineRuns(turns, []).size, 0);
 });

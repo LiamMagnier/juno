@@ -57,6 +57,7 @@ import {
   canonicalJson,
   approvalAsksUnder,
   requiresExplicitApproval,
+  mayHoldStandingAllowance,
   type WorkPermissionPolicy,
   type BudgetUsage,
   type WorkActionRecord,
@@ -930,7 +931,7 @@ export class WorkAgentSession {
         this.emit({ kind: 'tool_denied', callId: call.id, tool: call.name, reason });
         return this.toolResult(call.id, reason, true);
       }
-      if (answer === 'allowed_always' && risk !== 'irreversible' && risk !== 'sensitive') {
+      if (answer === 'allowed_always' && mayHoldStandingAllowance(action, risk)) {
         this.grantedAlways.add(action);
       }
     }

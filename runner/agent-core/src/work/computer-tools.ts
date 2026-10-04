@@ -45,6 +45,12 @@ export interface ComputerToolsDeps {
    * provider that has none) keeps working.
    */
   blockedReason?(): Promise<string | null> | string | null;
+  /**
+   * How many takeovers have ever started on this computer. Read before and
+   * after every call: a changed value means a takeover overlapped the call
+   * (even one that began and ended inside it) and the result is discarded.
+   */
+  takeoverEpoch?(): Promise<number | null> | number | null;
   pageTakesPayment(): boolean;
   currentUrl(): string;
   screenEpoch(): number;
@@ -106,11 +112,14 @@ function capShellStream(label: string, value: string): string {
  */
 const NAVIGATION_KEYS = new Set(
   [
-    'return', 'enter', 'kp_enter', 'tab', 'shift+tab', 'escape', 'esc',
+    // Return, Enter and Space are deliberately absent: they press the focused
+    // button or send the focused form, which is how a pixel agent would get
+    // past the browser tool's submit rule (security audit, computer gap 6).
+    'tab', 'shift+tab', 'escape', 'esc',
     'up', 'down', 'left', 'right',
     'page_up', 'page_down', 'prior', 'next', 'pageup', 'pagedown',
     'home', 'end', 'backspace', 'delete',
-    'space', 'f5', 'ctrl+l', 'ctrl+r', 'alt+left', 'alt+right',
+    'f5', 'ctrl+l', 'ctrl+r', 'alt+left', 'alt+right',
   ].map((key) => key.toLowerCase())
 );
 
@@ -155,6 +164,10 @@ export function isSafeComputerWritePath(raw: string): boolean {
  */
 export const ARBITRARY_CODE_RISK: WorkRiskLevel = 'sensitive';
 
+/** Mirrors TAKEOVER_OVERLAP_REFUSAL in src/lib/computer/takeover.ts. */
+export const TAKEOVER_OVERLAP_TEXT =
+  'The person took control of this computer while that was running, so its result was discarded. Look at the screen again before carrying on.';
+
 export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
   const blocked = async (): Promise<ToolResult | null> => {
     const reason = deps.blockedReason ? await deps.blockedReason() : null;
@@ -165,14 +178,21 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
   // person took over never reaches the model.
   // Part of each tool's own implementation, not a dispatch site: the session's
   // `executeToolCall` still gates every call before it reaches this execute.
+  const epoch = async (): Promise<number | null> => (deps.takeoverEpoch ? await deps.takeoverEpoch() : null);
   const guarded = (definition: WorkToolDefinition): WorkToolDefinition => ({
     ...definition,
     async execute(input, ctx) {
       const before = await blocked();
       if (before) return before;
+      const epochBefore = await epoch();
       const result = await definition.execute(input, ctx);
       const after = await blocked();
-      return after ?? result;
+      if (after) return after;
+      const epochAfter = await epoch();
+      if (epochBefore !== null && epochAfter !== null && epochBefore !== epochAfter) {
+        return { output: TAKEOVER_OVERLAP_TEXT, isError: true };
+      }
+      return result;
     },
   });
 

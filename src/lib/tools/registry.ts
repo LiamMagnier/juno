@@ -14,6 +14,7 @@
  */
 
 import { calculateSpec } from "@/lib/tools/specs/calculate";
+import { findInPageSpec } from "@/lib/tools/specs/find-in-page";
 import { currentTimeSpec } from "@/lib/tools/specs/current-time";
 import { inspectImageSpec } from "@/lib/tools/specs/inspect-image";
 import { readDocumentSpec } from "@/lib/tools/specs/read-document";
@@ -22,12 +23,15 @@ import { searchChatsSpec } from "@/lib/tools/specs/search-chats";
 import { startTaskSpec } from "@/lib/tools/specs/start-task";
 import { suggestResearchSpec } from "@/lib/tools/specs/suggest-research";
 import { webFetchSpec } from "@/lib/tools/specs/web-fetch";
+import { searchNewsSpec } from "@/lib/tools/specs/search-news";
 import { webSearchSpec } from "@/lib/tools/specs/web-search";
 import type { JunoToolId, ToolSpec } from "@/lib/tools/types";
 
 export const JUNO_TOOL_SPECS: readonly ToolSpec[] = Object.freeze([
   webSearchSpec,
+  searchNewsSpec,
   webFetchSpec,
+  findInPageSpec,
   readDocumentSpec,
   inspectImageSpec,
   runCodeSpec,

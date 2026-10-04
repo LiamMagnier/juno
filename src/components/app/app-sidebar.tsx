@@ -62,6 +62,7 @@ import { codeRunTone, newestPerConversation, workRunIsOpen, type StatusTone } fr
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
+import { cachedJson } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
 import type { ClientAgent } from "@/lib/agents/types";
@@ -376,9 +377,9 @@ export function AppSidebar({
   const loadProjects = React.useCallback(async () => {
     setProjectsError(false);
     try {
-      const res = await fetch("/api/projects");
-      if (!res.ok) throw new Error();
-      const data = await res.json();
+      // Shared with the Projects page and the composer (lib/client-cache.ts):
+      // one read serves all three instead of each asking again on open.
+      const data = await cachedJson<{ projects?: SidebarProject[] }>("/api/projects", { maxAgeMs: 0 });
       const nextProjects: SidebarProject[] = Array.isArray(data.projects) ? data.projects : [];
       if (!migratedLegacyStars.current) {
         migratedLegacyStars.current = true;

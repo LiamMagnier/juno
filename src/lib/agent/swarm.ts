@@ -7,8 +7,11 @@
  * error boundaries, and timeline progress tracking.
  */
 
-import crypto from "node:crypto";
 import type { AgentExecutionContext, AgentRuntimeEvent } from "@/lib/agent/types";
+
+// Web Crypto (Node 19+ and every browser), so the DAG rules are client-safe: the team
+// vocabulary in src/lib/agents/team.ts reaches the chat panel through this module.
+const crypto = globalThis.crypto;
 
 export type SwarmAgentRole =
   | "planner"
@@ -16,7 +19,47 @@ export type SwarmAgentRole =
   | "coder"
   | "tester"
   | "reviewer"
+  | "designer"
+  | "critic"
   | "synthesizer";
+
+/**
+ * Which nodes of a DAG may start now, shared by the in-memory coordinator
+ * below and the durable team coordinator (src/lib/agents/team-store.ts).
+ *
+ * `strict` (the in-memory default) starts a node only when every dependency
+ * completed and skips it when one failed. `contained` starts a node once every
+ * dependency has ended, however it ended, as long as at least one of them
+ * completed: a critic still reviews what two of three specialists produced.
+ * A node with no dependencies is always ready.
+ */
+export function swarmReadyNodes<T extends { id: string; dependencies: readonly string[]; status: string }>(
+  nodes: readonly T[],
+  mode: "strict" | "contained" = "strict"
+): { ready: T[]; skip: T[] } {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const ended = (status: string) => status === "completed" || status === "failed" || status === "skipped";
+  const ready: T[] = [];
+  const skip: T[] = [];
+  for (const node of nodes) {
+    if (node.status !== "pending") continue;
+    const deps = node.dependencies.map((id) => byId.get(id));
+    if (deps.some((dep) => !dep)) {
+      skip.push(node);
+      continue;
+    }
+    const statuses = deps.map((dep) => dep!.status);
+    if (mode === "strict") {
+      if (statuses.some((status) => status === "failed" || status === "skipped")) skip.push(node);
+      else if (statuses.every((status) => status === "completed")) ready.push(node);
+      continue;
+    }
+    if (!statuses.every(ended)) continue;
+    if (statuses.length === 0 || statuses.some((status) => status === "completed")) ready.push(node);
+    else skip.push(node);
+  }
+  return { ready, skip };
+}
 
 export interface SwarmTaskNode {
   id: string;
@@ -192,23 +235,12 @@ export class AgentSwarmCoordinator {
         break;
       }
 
-      // Find all ready tasks: status === 'pending' and all dependencies in completed set
-      const readyTasks: SwarmTaskNode[] = [];
-      for (const task of this.tasks.values()) {
-        if (task.status !== "pending") continue;
-
-        const anyDepFailed = task.dependencies.some((d) => failed.has(d) || skipped.has(d));
-        if (anyDepFailed) {
-          task.status = "skipped";
-          task.error = "Skipped due to upstream dependency failure.";
-          skipped.add(task.id);
-          continue;
-        }
-
-        const allDepsSatisfied = task.dependencies.every((d) => completed.has(d));
-        if (allDepsSatisfied) {
-          readyTasks.push(task);
-        }
+      // Ready and skipped nodes, by the same rule the durable team uses.
+      const { ready: readyTasks, skip: skippedNow } = swarmReadyNodes([...this.tasks.values()], "strict");
+      for (const task of skippedNow) {
+        task.status = "skipped";
+        task.error = "Skipped due to upstream dependency failure.";
+        skipped.add(task.id);
       }
 
       if (readyTasks.length === 0 && running.size === 0) {

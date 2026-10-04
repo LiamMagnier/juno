@@ -251,6 +251,16 @@ export const AGENT_GOAL_TOOL: ToolDefinition = {
         detail: { type: "string", description: "Optional goal details or success criteria." },
         cadence: { type: "string", enum: [...AGENT_GOAL_CADENCES], description: "Check-in cadence." },
         dueAt: { type: "string", description: "Optional ISO due date." },
+        milestones: {
+          type: "array",
+          items: { type: "string", description: "One milestone, a short verb phrase." },
+          description: "Optional. The goal's milestones in order, at most 12. Replaces the list; milestones already done keep their state.",
+        },
+        successCriteria: {
+          type: "array",
+          items: { type: "string", description: "One criterion." },
+          description: "Optional. How to tell the goal is met, at most 8 short sentences.",
+        },
       },
       required: ["action"],
     },
@@ -1385,6 +1395,15 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
             ? rawArgs.cadence
             : "weekly";
         const dueAt = typeof rawArgs.dueAt === "string" ? rawArgs.dueAt : null;
+        // Durable-goal shape only. Whether the agent keeps working on a goal
+        // by itself (and spends doing so) is the person's switch on its
+        // profile, never something a chat turn can turn on.
+        const milestones = Array.isArray(rawArgs.milestones)
+          ? rawArgs.milestones.filter((m): m is string => typeof m === "string" && m.trim().length > 0).slice(0, 12)
+          : undefined;
+        const successCriteria = Array.isArray(rawArgs.successCriteria)
+          ? rawArgs.successCriteria.filter((c): c is string => typeof c === "string" && c.trim().length > 0).slice(0, 8)
+          : undefined;
 
         if (action === "add") {
           if (!title) {
@@ -1399,6 +1418,8 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
             detail,
             cadence,
             dueAt,
+            ...(milestones ? { milestones } : {}),
+            ...(successCriteria ? { successCriteria } : {}),
           });
           if (created.status !== 201) {
             return jsonExecution({
@@ -1476,6 +1497,8 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           ...(rawArgs.cadence !== undefined ? { cadence } : {}),
           ...(nextStatus ? { status: nextStatus } : {}),
           ...(rawArgs.dueAt !== undefined ? { dueAt } : {}),
+          ...(milestones ? { milestones } : {}),
+          ...(successCriteria ? { successCriteria } : {}),
         });
         if (updated.status !== 200) {
           return jsonExecution({

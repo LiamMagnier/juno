@@ -9,7 +9,8 @@ import { openSettings } from "@/components/settings/settings-sections";
 import { cn } from "@/lib/utils";
 import { ActivitySheet, type ActivityTab } from "@/components/memory/activity-sheet";
 import { ImportDialog } from "@/components/memory/import-dialog";
-import { MemoryFooter, ResetDialog } from "@/components/memory/memory-footer";
+import { ClearProjectDialog, MemoryFooter, ResetDialog } from "@/components/memory/memory-footer";
+import { SkillCandidates, type SkillCandidateTransport } from "@/components/memory/skill-candidates";
 import { MemoryHeaderActions } from "@/components/memory/memory-header";
 import { MemoryList, topicSummary, type MemoryListHandle, type MemorySort } from "@/components/memory/memory-list";
 import { MemoryHero } from "@/components/memory/memory-hero";
@@ -91,6 +92,8 @@ interface MemoryManagerViewProps {
   onOpenSettings: () => void;
   /** For the dev gallery: the recap's server half, without the server. */
   loadRecapExtras?: (days: RecapPeriod) => Promise<RecapExtras>;
+  /** For the dev gallery: proposals without the server. */
+  skillCandidates?: SkillCandidateTransport;
 }
 
 const SORT_KEY = "juno.memory.sort";
@@ -111,6 +114,7 @@ export function MemoryManagerView({
   onWantProjects,
   onOpenSettings,
   loadRecapExtras,
+  skillCandidates,
 }: MemoryManagerViewProps) {
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState<MemorySort>("topic");
@@ -119,6 +123,8 @@ export function MemoryManagerView({
   const [scopeSwitched, setScopeSwitched] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [resetOpen, setResetOpen] = React.useState(false);
+  /** The project whose memory the clear dialog is asking about, when open. */
+  const [clearing, setClearing] = React.useState<{ id: string; name: string } | null>(null);
   const [activityOpen, setActivityOpen] = React.useState(false);
   const [activityTab, setActivityTab] = React.useState<ActivityTab>("edits");
   const [composing, setComposing] = React.useState(false);
@@ -452,6 +458,9 @@ export function MemoryManagerView({
         </div>
       )}
 
+      {/* Procedural memory: methods, not facts — proposed for the account as a whole. */}
+      {loaded && !activeScope && !memory.loadError && <SkillCandidates transport={skillCandidates} />}
+
       {loaded && (
         <MemoryFooter
           paused={memory.paused}
@@ -460,8 +469,22 @@ export function MemoryManagerView({
           onExport={memory.exportMemory}
           onReset={() => setResetOpen(true)}
           onSettings={onOpenSettings}
+          project={activeProject}
+          onClearProject={() => setClearing(activeProject)}
         />
       )}
+      <ClearProjectDialog
+        project={clearing}
+        onOpenChange={(open) => {
+          if (!open) setClearing(null);
+        }}
+        clearing={memory.resetting}
+        onClear={async (projectId) => {
+          const ok = await memory.clearProjectMemory(projectId);
+          if (ok) changeScope(null);
+          return ok;
+        }}
+      />
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={memory.reload} />
       <ResetDialog

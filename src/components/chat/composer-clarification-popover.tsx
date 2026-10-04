@@ -217,7 +217,10 @@ export function ComposerClarificationPopover({
       // `bg-card/40` was a no-op: the inline variant is rendered INSIDE the
       // composer shell, which is itself `bg-card`, so card at 40% over card
       // resolved to card. A step inside a card is --secondary, per the ladder.
-      ? "relative flex w-full flex-col overflow-hidden rounded-popover border border-border/55 bg-secondary text-foreground"
+      // No box of its own: the composer is already the card, and a second,
+      // lighter card inside it was a grey slab in a grey slab. A hairline
+      // hands over to the field, which is where "your own answer" is typed.
+      ? "relative flex w-full flex-col border-b border-border/50 text-foreground"
       : "relative mb-2 flex w-full flex-col overflow-hidden rounded-popover overlay-glass";
 
   return (
@@ -363,8 +366,8 @@ export function ComposerClarificationPopover({
                       // Hover is a tonal cross-fade on the fast rung; the press
                       // is a shallow dip (a full-width row, so 0.99, not the
                       // control's 0.97) on --dur-press.
-                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,color,transform] duration-fast ease-out-soft",
-                      "sm:min-h-12 sm:items-center sm:px-3.5 sm:py-3",
+                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-control border px-3 py-2.5 text-left transition-[background-color,border-color,color,transform] duration-fast ease-out-soft",
+                      "sm:min-h-10 sm:items-center sm:px-3 sm:py-2",
                       "active:scale-[0.99] active:duration-press motion-reduce:active:scale-100",
                       // No hand-rolled ring. `ring-offset-card` paints a solid
                       // CARD-coloured gap, and this component renders in two
@@ -380,7 +383,7 @@ export function ComposerClarificationPopover({
                         // scale and compiled to nothing, so the dark fill next to
                         // it landed without its paired border. Bracketed so the
                         // 18 the tuning wanted actually ships.
-                        ? "border-foreground/20 bg-foreground/[0.04] dark:border-foreground/[0.18] dark:bg-foreground/[0.06]"
+                        ? "border-transparent bg-foreground/[0.06] dark:bg-foreground/[0.08]"
                         // Was `bg-background/40`, which is the PAGE colour painted
                         // inside a floating panel: on dark that is black at 40%
                         // over the 13% popover, i.e. each unanswered option read
@@ -388,15 +391,17 @@ export function ComposerClarificationPopover({
                         // needs no fill at all — the border carries it, and the
                         // hover lands on a real rung (accent at full strength;
                         // accent/40 over accent-lightness popover was invisible).
-                        : "border-border/60 bg-transparent hover:border-border hover:bg-accent"
+                        // A row, not a tile: no border at rest, the house tonal
+                        // hover. Four bordered tiles stacked read as a form.
+                        : "border-transparent bg-transparent hover:bg-accent"
                     )}
                   >
                     <span
                       className={cn(
-                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-colors duration-fast ease-out-soft sm:mt-0 sm:size-7",
+                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-colors duration-fast ease-out-soft sm:mt-0",
                         selected
                           ? "border-foreground bg-foreground text-background"
-                          : "border-border/70 bg-card text-muted-foreground group-hover/opt:border-foreground/25"
+                          : "border-border/60 bg-transparent text-muted-foreground group-hover/opt:border-foreground/30 group-hover/opt:text-foreground"
                       )}
                       aria-hidden
                     >
@@ -421,7 +426,10 @@ export function ComposerClarificationPopover({
           </ul>
         ) : null}
 
-        {active.allowElse ? (
+        {/* Inline, the composer's own field below is where an answer of your
+            own is typed (it answers this question), so a second input here
+            was two boxes asking the same thing. Floating, it stays. */}
+        {active.allowElse && variant !== "inline" ? (
           <label
             className={cn(
               "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-fast ease-out-soft sm:px-3.5 sm:py-3",
@@ -461,7 +469,13 @@ export function ComposerClarificationPopover({
       </div>
 
       {/* Footer actions */}
-      <footer className="relative flex flex-col gap-2 border-t border-border/50 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <footer
+        className={cn(
+          "relative flex flex-col gap-2 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5",
+          // Inline, the card's own hairline below already closes it.
+          variant !== "inline" && "border-t border-border/50"
+        )}
+      >
         <button
           type="button"
           onClick={() => void skip()}

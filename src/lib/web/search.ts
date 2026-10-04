@@ -1,30 +1,40 @@
 /**
- * Chat's `web_search` backend: one primary keyed engine (the first configured
- * of Tavily, Serper, Brave, Exa) and one fallback only when it fails. No
- * keyless engines in chat (DECISIONS §4c, SPEC §6.3).
+ * Chat's `web_search` / `search_news` backend: Alevr Search in its
+ * single-backend profile (BRIEF §15–16, `src/lib/search/alevr/service.ts`).
+ *
+ * A chat search is answered by the cheapest path that is good enough: the
+ * exact query cache, then Alevr's own page index, then ONE discovery backend —
+ * the cheapest available one that clears the quality floor (a self-hosted
+ * SearXNG the operator rates high enough, then the paid APIs cheapest first) —
+ * with one escalation when it fails or a free backend comes back empty. A paid
+ * engine's empty answer is an answer. Public SearXNG instances and scraped
+ * DuckDuckGo are not used anywhere; Wikipedia's API sits below the chat floor.
+ * With no backend that clears the floor, Alevr Search is not offered and the
+ * turn falls back to the model's own search (`src/lib/search/alevr/policy.ts`).
  *
  * Why not Research's fan-out. Research asks every engine and fuses the lists,
  * because breadth is its product and a run pays for it once. A chat turn
  * searches several times, on every model, by default; asking four paid
  * engines each time multiplies the bill for a list the model reads five items
- * of. So chat asks one engine and asks a second only when the first failed —
- * never when it merely answered "nothing". Scraped DuckDuckGo, public SearXNG
- * and Wikipedia are not used at all: with no keyed engine, `web_search` is not
- * offered (`keyedSearchEngineConfigured`, §3.6).
+ * of.
  *
- * Before any engine sees a query, it passes the query hygiene: at most 400
- * characters, no credential-shaped string (a DLP critical rule), no verbatim
- * span of the user's private text and not the account email
- * (`private-spans.ts`). A refused query throws a `WebToolError` whose message
- * is written for the model; the tool spec turns it into the call's result.
+ * Before any engine sees a query — and before it becomes a cache key — it
+ * passes the query hygiene: at most 400 characters, no credential-shaped
+ * string (a DLP critical rule), no verbatim span of the user's private text
+ * and not the account email (`private-spans.ts`). A refused query throws a
+ * `WebToolError` whose message is written for the model; the tool spec turns
+ * it into the call's result. A private chat reads the caches and writes
+ * nothing (INV-32).
  *
- * The engine calls are injected, so this file stays free of `server-only`;
- * the default runner imports the search stack only when it is first used.
+ * The engine calls and the store are injected, so this file stays free of
+ * `server-only`; the defaults load lazily on first use.
  */
 
 import { DLP_RULES } from "@/lib/security/dlp";
 import type { SearchResult } from "@/lib/search/fusion";
-import { enginePriceMicroUsd } from "@/lib/tools/metering";
+import { alevrBackends, alevrSearchAvailable, type EngineRunner } from "@/lib/search/alevr/backends";
+import { alevrSearch, defaultSearchStore } from "@/lib/search/alevr/service";
+import type { DiscoveryBackend, SearchStore } from "@/lib/search/alevr/types";
 import { scanUntrusted } from "@/lib/web/injection";
 import { SEARCH_RATE_LIMITED_TEXT, SENSITIVE_QUERY_TEXT } from "@/lib/web/search.prompt";
 import { auditWeb, webTurnState } from "@/lib/web/turn-state";
@@ -83,28 +93,20 @@ export function keyedSearchEngineConfigured(env: Readonly<Record<string, string 
 /** One engine attempt: its results and its report. Never throws for an engine failure. */
 export type ChatEngineRunner = (
   engine: ChatSearchEngine,
-  input: { query: string; count: number; recency?: Recency; signal: AbortSignal },
+  input: { query: string; count: number; recency?: Recency; vertical?: "news"; signal: AbortSignal },
 ) => Promise<{ results: SearchResult[]; report: EngineReport }>;
 
-/** The real engines, through the search stack's fan-out filtered to one engine. */
-const defaultRunner: ChatEngineRunner = async (engine, { query, count, recency, signal }) => {
-  const { searchWithEngineReport } = await import("@/lib/search/search-engine");
-  const { results, engines } = await searchWithEngineReport({
-    query,
-    count,
-    signal,
-    engines: (name) => name === engine,
-    perEngineCount: count,
-    options: { exaContents: "highlights", ...(recency ? { recency } : {}) },
-  });
-  return { results, report: engines[0] ?? { name: engine, results: 0, status: "failed" } };
-};
-
 export interface ChatSearchDeps {
+  /** Test seam: the engine calls. With it and no `store`, nothing is cached. */
   runEngine?: ChatEngineRunner;
   env?: Readonly<Record<string, string | undefined>>;
   /** Juno's fee for one engine call (§3.9); WS1's price table when absent. */
   price?: (engine: ChatSearchEngine, results: number) => number;
+  /** Alevr Search's page/query cache; the deployment's when absent (and no `runEngine`). */
+  store?: SearchStore | null;
+  /** The backends themselves, for a test that drives Alevr Search directly. */
+  backends?: readonly DiscoveryBackend[];
+  now?: () => Date;
 }
 
 export interface ChatSearchOutcome {
@@ -115,10 +117,43 @@ export interface ChatSearchOutcome {
   degraded: boolean;
   /** The injection scan's verdict on the result block, when not clean (§6.4 item 5). */
   injection?: "suspicious" | "hostile";
+  /** Which Alevr Search path served it, for the call row (query cache, index, discovery). */
+  servedBy?: "query_cache" | "index" | "discovery" | "none";
 }
 
-function answered(report: EngineReport): boolean {
-  return report.status === "ok" || report.status === "empty";
+/** The chat runner as an Alevr Search engine runner. */
+function engineRunnerFrom(runEngine: ChatEngineRunner): EngineRunner {
+  return async (engine, query, signal) => {
+    const attempt = await runEngine(engine as ChatSearchEngine, {
+      query: query.query,
+      count: query.count,
+      ...(query.recency ? { recency: query.recency } : {}),
+      ...(query.vertical === "news" ? { vertical: "news" as const } : {}),
+      signal,
+    });
+    return {
+      results: attempt.results,
+      status: attempt.report.status,
+      ...(attempt.report.httpStatus ? { httpStatus: attempt.report.httpStatus } : {}),
+    };
+  };
+}
+
+function backendsFor(deps: ChatSearchDeps, env: Readonly<Record<string, string | undefined>>): readonly DiscoveryBackend[] {
+  if (deps.backends) return deps.backends;
+  const backends = alevrBackends({ env, ...(deps.runEngine ? { runner: engineRunnerFrom(deps.runEngine) } : {}) });
+  const price = deps.price;
+  if (!price) return backends;
+  return backends.map((backend) =>
+    (CHAT_SEARCH_ENGINES as readonly string[]).includes(backend.id)
+      ? { ...backend, costMicroUsd: (n: number) => price(backend.id as ChatSearchEngine, n) }
+      : backend,
+  );
+}
+
+/** Whether chat can search on this deployment: some Alevr Search backend clears the web floor. */
+export function chatSearchAvailable(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return alevrSearchAvailable(env);
 }
 
 /** A credential-shaped string in the query: a DLP critical rule. */
@@ -176,57 +211,68 @@ function toChatResults(hits: readonly SearchResult[], limits: TurnWebLimits): Ch
 }
 
 export async function chatWebSearch(
-  input: { query: string; count?: number; recency?: string },
+  input: { query: string; count?: number; recency?: string; vertical?: "web" | "news" },
   ctx: { signal: AbortSignal; private: boolean; privateSpans: PrivateSpanSet; limits: TurnWebLimits },
   deps: ChatSearchDeps = {},
 ): Promise<ChatSearchOutcome> {
   const query = input.query.replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
   const count = Math.min(SEARCH_MAX_COUNT, Math.max(1, Math.floor(input.count ?? SEARCH_DEFAULT_COUNT)));
   const recency = input.recency && RECENCIES.has(input.recency) ? (input.recency as Recency) : undefined;
+  const vertical = input.vertical === "news" ? "news" : "web";
 
   // The turn's (and the account's) search budget, spent even when the query is
   // then refused: a model retrying a refused query is still searching.
   if (!ctx.limits.take("web_search")) throw new WebToolError("rate_limited", SEARCH_RATE_LIMITED_TEXT);
 
-  // Query hygiene, before any engine sees a byte of it.
+  // Query hygiene, before any backend — or any cache key — sees a byte of it.
   if (queryLeaksSecret(query) || ctx.privateSpans.matches(query)) {
     throw new WebToolError("not_permitted", SENSITIVE_QUERY_TEXT);
   }
 
-  const engines = configuredChatEngines(deps.env);
-  if (engines.length === 0 || !query) {
+  const env = deps.env ?? process.env;
+  const backends = backendsFor(deps, env);
+  if (!query || !alevrSearchAvailable(env, backends)) {
     return { results: [], engine: null, engines: [], feeMicroUsd: 0, degraded: false };
   }
 
-  const runEngine = deps.runEngine ?? defaultRunner;
-  const price = deps.price ?? enginePriceMicroUsd;
+  const store = deps.store !== undefined ? deps.store : deps.runEngine || deps.backends ? null : await defaultSearchStore(env);
   const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(SEARCH_DEADLINE_MS)]);
-  const reports: EngineReport[] = [];
-  let fee = 0;
-  let hits: SearchResult[] = [];
-  let engine: ChatSearchEngine | null = null;
+  const found = await alevrSearch(
+    {
+      query,
+      count,
+      vertical,
+      ...(recency ? { recency } : {}),
+      surface: "chat",
+      private: ctx.private,
+      mode: "single",
+      signal,
+    },
+    { backends, store, env, ...(deps.now ? { now: deps.now } : {}) },
+  );
+  if (ctx.signal.aborted) throw abortError();
 
-  // The primary, then one fallback only if the primary did not answer.
-  for (const candidate of engines.slice(0, 2)) {
-    const attempt = await runEngine(candidate, { query, count, ...(recency ? { recency } : {}), signal });
-    if (ctx.signal.aborted) throw abortError();
-    reports.push(attempt.report);
-    if (!answered(attempt.report)) continue;
-    // Only an engine that answered is billed (§3.9).
-    fee += price(candidate, attempt.report.results);
-    hits = attempt.results.slice(0, count);
-    engine = candidate;
-    break;
-  }
-
+  const hits: SearchResult[] = found.results.map((r) => ({
+    title: r.title,
+    url: r.url,
+    snippet: r.snippet,
+    ...(r.rawContent ? { rawContent: r.rawContent } : {}),
+    ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+    engine: r.backend,
+  }));
   const results = toChatResults(hits, ctx.limits);
   const outcome: ChatSearchOutcome = {
     results,
-    engine,
-    engines: reports,
-    feeMicroUsd: fee,
-    // The primary failed: whether or not the fallback answered, this search degraded.
-    degraded: !answered(reports[0]),
+    engine: found.backend,
+    engines: found.reports.map((r) => ({
+      name: r.backend,
+      results: r.results,
+      status: r.status === "skipped" ? "failed" : r.status,
+      ...(r.httpStatus ? { httpStatus: r.httpStatus } : {}),
+    })),
+    feeMicroUsd: found.costMicroUsd,
+    degraded: found.degraded,
+    servedBy: found.servedBy,
   };
 
   if (results.length > 0) {
@@ -237,7 +283,7 @@ export async function chatWebSearch(
       auditWeb(ctx.limits, {
         kind: "injection_detected",
         severity: verdict.severity === "hostile" ? "violation" : "warning",
-        detail: { tool: "web_search", engine: engine ?? "", signals: verdict.signals.join(","), matchCount: verdict.matchCount },
+        detail: { tool: "web_search", engine: found.backend ?? "", signals: verdict.signals.join(","), matchCount: verdict.matchCount },
       });
     }
   }

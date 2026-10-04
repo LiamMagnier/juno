@@ -1,0 +1,2598 @@
+{
+  "label": "after",
+  "profile": "local",
+  "base": "http://localhost:3201",
+  "date": "2026-10-04T16:59:59.796Z",
+  "hoverDwellMs": 120,
+  "viewport": "1440x900@1x",
+  "browser": "chrome 154.0.8037.93",
+  "passes": [
+    {
+      "pass": 1,
+      "cold": true,
+      "steps": [
+        {
+          "name": "Chat → Projects",
+          "urlMs": 36,
+          "readyMs": 114,
+          "settledMs": 195,
+          "jsKb": 28.2,
+          "rscRequests": 1,
+          "apiRequests": 1,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 27.7,
+          "nodes": 1902,
+          "scriptS": 0.161421,
+          "layoutS": 0.006711,
+          "recalcS": 0.044587,
+          "requests": [
+            {
+              "path": "/projects?_rsc=dfLb1Ms5R_zsC8v4",
+              "type": "Fetch",
+              "start": -124,
+              "end": -122,
+              "kb": 4.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/error-31d13dad8d2c7833.js",
+              "type": "Script",
+              "start": -123,
+              "end": -122,
+              "kb": 2.7,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/12816-b782a59550b1a031.js",
+              "type": "Script",
+              "start": -123,
+              "end": -121,
+              "kb": 7.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/10341-a09f16f1cd05f3c0.js",
+              "type": "Script",
+              "start": -123,
+              "end": -121,
+              "kb": 6.6,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/page-acae2b40a8a64dee.js",
+              "type": "Script",
+              "start": -123,
+              "end": -121,
+              "kb": 11.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/css/dac2103589c12b4c.css",
+              "type": "Stylesheet",
+              "start": 55,
+              "end": 69,
+              "kb": 2.1,
+              "status": 200
+            },
+            {
+              "path": "/api/projects",
+              "type": "Fetch",
+              "start": 89,
+              "end": 96,
+              "kb": 1.1,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Projects → Project",
+          "urlMs": 36,
+          "readyMs": 95,
+          "settledMs": 195,
+          "jsKb": 33.8,
+          "rscRequests": 1,
+          "apiRequests": 4,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 33.6,
+          "nodes": 3213,
+          "scriptS": 0.221271,
+          "layoutS": 0.012595,
+          "recalcS": 0.066779,
+          "requests": [
+            {
+              "path": "/projects/cmuu05yo30001mscuasil8vr3?_rsc=mM3RqDWErZThD78z",
+              "type": "Fetch",
+              "start": -123,
+              "end": -118,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/%5Bid%5D/error-5a4561aa936d4d6b.js",
+              "type": "Script",
+              "start": -118,
+              "end": -117,
+              "kb": 2.7,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/26248-1038f1cc1b9ec118.js",
+              "type": "Script",
+              "start": -118,
+              "end": -116,
+              "kb": 19.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/%5Bid%5D/page-68d130337526f714.js",
+              "type": "Script",
+              "start": -118,
+              "end": -117,
+              "kb": 11.7,
+              "status": 200
+            },
+            {
+              "path": "/api/projects/cmuu05yo30001mscuasil8vr3",
+              "type": "Fetch",
+              "start": 62,
+              "end": 74,
+              "kb": 1,
+              "status": 200
+            },
+            {
+              "path": "/api/projects/cmuu05yo30001mscuasil8vr3/memory",
+              "type": "Fetch",
+              "start": 63,
+              "end": 112,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/work/sessions?projectId=cmuu05yo30001mscuasil8vr3&limit=50",
+              "type": "Fetch",
+              "start": 63,
+              "end": 73,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/artifacts?projectId=cmuu05yo30001mscuasil8vr3",
+              "type": "Fetch",
+              "start": 63,
+              "end": 75,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Project → Library",
+          "urlMs": 37,
+          "readyMs": 63,
+          "settledMs": 141,
+          "jsKb": 59.1,
+          "rscRequests": 2,
+          "apiRequests": 5,
+          "duplicateRequests": [],
+          "sequentialDepth": 3,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 32.8,
+          "nodes": 3517,
+          "scriptS": 0.24943,
+          "layoutS": 0.014913,
+          "recalcS": 0.086726,
+          "requests": [
+            {
+              "path": "/library?_rsc=JJ9dYpq0zZmfSDVP",
+              "type": "Fetch",
+              "start": -123,
+              "end": -120,
+              "kb": 4.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/error-b31b8210ab1d4c6e.js",
+              "type": "Script",
+              "start": -121,
+              "end": -120,
+              "kb": 2.7,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/40810-32302a0160625b5a.js",
+              "type": "Script",
+              "start": -121,
+              "end": -119,
+              "kb": 6.5,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/19562-e66a0aeca3564602.js",
+              "type": "Script",
+              "start": -121,
+              "end": -119,
+              "kb": 8.5,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/18479-3f093097b1607b38.js",
+              "type": "Script",
+              "start": -121,
+              "end": -119,
+              "kb": 17.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/page-81d0567953c40e63.js",
+              "type": "Script",
+              "start": -121,
+              "end": -119,
+              "kb": 12.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/loading-b06c7e3c7eef4c8f.js",
+              "type": "Script",
+              "start": -121,
+              "end": -118,
+              "kb": 11.5,
+              "status": 200
+            },
+            {
+              "path": "/api/library?limit=60&sort=newest",
+              "type": "Fetch",
+              "start": 62,
+              "end": 84,
+              "kb": 1.1,
+              "status": 200
+            },
+            {
+              "path": "/api/library/made?limit=48&q=",
+              "type": "Fetch",
+              "start": 62,
+              "end": 76,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/library?includeDeleted=true&limit=1",
+              "type": "Fetch",
+              "start": 63,
+              "end": 82,
+              "kb": 0.7,
+              "status": 200
+            },
+            {
+              "path": "/api/artifacts?deleted=1",
+              "type": "Fetch",
+              "start": 63,
+              "end": 76,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/attachments/e2e-showroom-notes/preview",
+              "type": "Fetch",
+              "start": 89,
+              "end": 97,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/chat/cmuu05y640006msbaygj49b26?_rsc=ScmvDm89XL05_CEV",
+              "type": "Fetch",
+              "start": 91,
+              "end": 94,
+              "kb": 0,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Library → Customize",
+          "urlMs": 32,
+          "readyMs": 66,
+          "settledMs": 132,
+          "jsKb": 167,
+          "rscRequests": 5,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 42.2,
+          "nodes": 3828,
+          "scriptS": 0.27423,
+          "layoutS": 0.017556,
+          "recalcS": 0.109461,
+          "requests": [
+            {
+              "path": "/customize?_rsc=ouy2SAvE9XH4RglE",
+              "type": "Fetch",
+              "start": -123,
+              "end": -116,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/81319-59dd30c73a4af036.js",
+              "type": "Script",
+              "start": -116,
+              "end": -112,
+              "kb": 18.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/customize/page-b855b7ed1facde8f.js",
+              "type": "Script",
+              "start": -116,
+              "end": -114,
+              "kb": 11.9,
+              "status": 200
+            },
+            {
+              "path": "/api/approvals/grants",
+              "type": "Fetch",
+              "start": 57,
+              "end": 70,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/connectors",
+              "type": "Fetch",
+              "start": 57,
+              "end": 77,
+              "kb": 2.4,
+              "status": 200
+            },
+            {
+              "path": "/api/settings",
+              "type": "Fetch",
+              "start": 57,
+              "end": 85,
+              "kb": 1,
+              "status": 200
+            },
+            {
+              "path": "/skills?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 60,
+              "end": 83,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/automations?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 60,
+              "end": 69,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/memory?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 60,
+              "end": 84,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/customize/instructions?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 60,
+              "end": 83,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/error-502741d9bd7f193a.js",
+              "type": "Script",
+              "start": 65,
+              "end": 84,
+              "kb": 2.7,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/error-d8e2d0de41f3dce2.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 2.7,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/54777-dae4b9a8b331d3c2.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 8.9,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/page-3acf229c9e0ab800.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 9.6,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/23244-c155b3490e8b9d01.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 8.5,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/loading-b61db55b8ea7944c.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 0.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/27748-55228ab48f5afe3c.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 7.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/48929-4d725663c698b26c.js",
+              "type": "Script",
+              "start": 66,
+              "end": 85,
+              "kb": 13.1,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/87560-37d5500481aeffa3.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 6.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/page-29bfaadf52dbf015.js",
+              "type": "Script",
+              "start": 66,
+              "end": 84,
+              "kb": 0.9,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/84426-9002c6b4425594b6.js",
+              "type": "Script",
+              "start": 67,
+              "end": 84,
+              "kb": 6.5,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/loading-a7895a6d1407a827.js",
+              "type": "Script",
+              "start": 67,
+              "end": 85,
+              "kb": 0.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/error-7b30ce63ab34522d.js",
+              "type": "Script",
+              "start": 77,
+              "end": 85,
+              "kb": 2.6,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/70192-1672c60b162d9bc3.js",
+              "type": "Script",
+              "start": 83,
+              "end": 88,
+              "kb": 4.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/customize/instructions/page-63c8596e6237077b.js",
+              "type": "Script",
+              "start": 83,
+              "end": 88,
+              "kb": 5.5,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/70890-8b93184df3f24896.js",
+              "type": "Script",
+              "start": 83,
+              "end": 88,
+              "kb": 8.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/75911-6661b27d257dcfff.js",
+              "type": "Script",
+              "start": 84,
+              "end": 89,
+              "kb": 27.3,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/page-6ba58dce5f8db8e4.js",
+              "type": "Script",
+              "start": 84,
+              "end": 89,
+              "kb": 13.7,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/loading-da21f03ecac33cac.js",
+              "type": "Script",
+              "start": 84,
+              "end": 89,
+              "kb": 6.3,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Customize → Orbit",
+          "urlMs": 36,
+          "readyMs": 129,
+          "settledMs": 170,
+          "jsKb": 19,
+          "rscRequests": 1,
+          "apiRequests": 1,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 21.4,
+          "nodes": 2490,
+          "scriptS": 0.303242,
+          "layoutS": 0.019281,
+          "recalcS": 0.134508,
+          "requests": [
+            {
+              "path": "/agents?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 28,
+              "end": 44,
+              "kb": 3.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/50421-2d6f3e7e8d934330.js",
+              "type": "Script",
+              "start": 43,
+              "end": 49,
+              "kb": 4.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/81279-b4a336d880f68208.js",
+              "type": "Script",
+              "start": 44,
+              "end": 49,
+              "kb": 9.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/69755-c3b8ea68620a0050.js",
+              "type": "Script",
+              "start": 44,
+              "end": 48,
+              "kb": 4.6,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/agents/page-b17a674fe4f02411.js",
+              "type": "Script",
+              "start": 44,
+              "end": 48,
+              "kb": 0.8,
+              "status": 200
+            },
+            {
+              "path": "/api/agents",
+              "type": "Fetch",
+              "start": 70,
+              "end": 75,
+              "kb": 1.9,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Orbit → agent",
+          "urlMs": 74,
+          "readyMs": 97,
+          "settledMs": 182,
+          "jsKb": 32.8,
+          "rscRequests": 1,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 38.8,
+          "nodes": 3528,
+          "scriptS": 0.366381,
+          "layoutS": 0.023373,
+          "recalcS": 0.160451,
+          "requests": [
+            {
+              "path": "/chat/cmuu05yzq00z1mscuncomu1fy?_rsc=bueRlWyBGTWao5mo",
+              "type": "Fetch",
+              "start": -124,
+              "end": -105,
+              "kb": 8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/error-94698601b4cbb349.js",
+              "type": "Script",
+              "start": -121,
+              "end": -118,
+              "kb": 5,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/not-found-ad5fa98c977107fb.js",
+              "type": "Script",
+              "start": -121,
+              "end": -119,
+              "kb": 2.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/page-0466c7b0895eb83f.js",
+              "type": "Script",
+              "start": -105,
+              "end": -100,
+              "kb": 25.7,
+              "status": 200
+            },
+            {
+              "path": "/api/chat/follow-ups",
+              "type": "Fetch",
+              "start": 108,
+              "end": 116,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/research?conversationId=cmuu05yzq00z1mscuncomu1fy",
+              "type": "Fetch",
+              "start": 108,
+              "end": 116,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/conversations/cmuu05yzq00z1mscuncomu1fy/tasks",
+              "type": "Fetch",
+              "start": 108,
+              "end": 116,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "agent → another agent",
+          "urlMs": 32,
+          "readyMs": 365,
+          "settledMs": 453,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 32.9,
+          "nodes": 4591,
+          "scriptS": 0.404959,
+          "layoutS": 0.025788,
+          "recalcS": 0.182228,
+          "requests": [
+            {
+              "path": "/chat/cmuu05z1200zzmscud5xmp5cw?_rsc=GIupAitJJdmJ06Rr",
+              "type": "Fetch",
+              "start": 26,
+              "end": 79,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/chat/follow-ups",
+              "type": "Fetch",
+              "start": 377,
+              "end": 409,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/research?conversationId=cmuu05z1200zzmscud5xmp5cw",
+              "type": "Fetch",
+              "start": 377,
+              "end": 398,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/conversations/cmuu05z1200zzmscud5xmp5cw/tasks",
+              "type": "Fetch",
+              "start": 377,
+              "end": 399,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "agent → Chat",
+          "urlMs": 38,
+          "readyMs": 38,
+          "settledMs": 130,
+          "jsKb": 0,
+          "rscRequests": 0,
+          "apiRequests": 0,
+          "duplicateRequests": [],
+          "sequentialDepth": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 41.7,
+          "nodes": 4882,
+          "scriptS": 0.424881,
+          "layoutS": 0.026715,
+          "recalcS": 0.195389,
+          "requests": []
+        }
+      ]
+    },
+    {
+      "pass": 2,
+      "cold": false,
+      "steps": [
+        {
+          "name": "Chat → Projects",
+          "urlMs": 43,
+          "readyMs": 96,
+          "settledMs": 195,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 1,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 69.3,
+          "nodes": 6847,
+          "scriptS": 0.139446,
+          "layoutS": 0.007044,
+          "recalcS": 0.043425,
+          "requests": [
+            {
+              "path": "/projects?_rsc=dfLb1Ms5R_zsC8v4",
+              "type": "Fetch",
+              "start": -122,
+              "end": -117,
+              "kb": 4.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/error-31d13dad8d2c7833.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/12816-b782a59550b1a031.js",
+              "type": "Script",
+              "start": -117,
+              "end": -117,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/10341-a09f16f1cd05f3c0.js",
+              "type": "Script",
+              "start": -117,
+              "end": -117,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/page-acae2b40a8a64dee.js",
+              "type": "Script",
+              "start": -117,
+              "end": -117,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/css/dac2103589c12b4c.css",
+              "type": "Stylesheet",
+              "start": 46,
+              "end": 46,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/projects",
+              "type": "Fetch",
+              "start": 67,
+              "end": 70,
+              "kb": 1.1,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Projects → Project",
+          "urlMs": 34,
+          "readyMs": 81,
+          "settledMs": 140,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 4,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 45.7,
+          "nodes": 3007,
+          "scriptS": 0.184433,
+          "layoutS": 0.0122,
+          "recalcS": 0.060859,
+          "requests": [
+            {
+              "path": "/projects/cmuu05yo30001mscuasil8vr3?_rsc=mM3RqDWErZThD78z",
+              "type": "Fetch",
+              "start": -122,
+              "end": -114,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/%5Bid%5D/error-5a4561aa936d4d6b.js",
+              "type": "Script",
+              "start": -115,
+              "end": -115,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/26248-1038f1cc1b9ec118.js",
+              "type": "Script",
+              "start": -115,
+              "end": -115,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/%5Bid%5D/page-68d130337526f714.js",
+              "type": "Script",
+              "start": -115,
+              "end": -115,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/projects/cmuu05yo30001mscuasil8vr3",
+              "type": "Fetch",
+              "start": 61,
+              "end": 70,
+              "kb": 1,
+              "status": 200
+            },
+            {
+              "path": "/api/projects/cmuu05yo30001mscuasil8vr3/memory",
+              "type": "Fetch",
+              "start": 61,
+              "end": 68,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/work/sessions?projectId=cmuu05yo30001mscuasil8vr3&limit=50",
+              "type": "Fetch",
+              "start": 61,
+              "end": 68,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/artifacts?projectId=cmuu05yo30001mscuasil8vr3",
+              "type": "Fetch",
+              "start": 61,
+              "end": 68,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Project → Library",
+          "urlMs": 40,
+          "readyMs": 62,
+          "settledMs": 144,
+          "jsKb": 0,
+          "rscRequests": 2,
+          "apiRequests": 5,
+          "duplicateRequests": [],
+          "sequentialDepth": 4,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 32.8,
+          "nodes": 3311,
+          "scriptS": 0.212324,
+          "layoutS": 0.014186,
+          "recalcS": 0.079988,
+          "requests": [
+            {
+              "path": "/library?_rsc=JJ9dYpq0zZmfSDVP",
+              "type": "Fetch",
+              "start": -124,
+              "end": -120,
+              "kb": 4.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/error-b31b8210ab1d4c6e.js",
+              "type": "Script",
+              "start": -122,
+              "end": -122,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/40810-32302a0160625b5a.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/19562-e66a0aeca3564602.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/18479-3f093097b1607b38.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/page-81d0567953c40e63.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/loading-b06c7e3c7eef4c8f.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/library?limit=60&sort=newest",
+              "type": "Fetch",
+              "start": 67,
+              "end": 80,
+              "kb": 1.1,
+              "status": 200
+            },
+            {
+              "path": "/api/library/made?limit=48&q=",
+              "type": "Fetch",
+              "start": 67,
+              "end": 76,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/library?includeDeleted=true&limit=1",
+              "type": "Fetch",
+              "start": 68,
+              "end": 78,
+              "kb": 0.7,
+              "status": 200
+            },
+            {
+              "path": "/api/artifacts?deleted=1",
+              "type": "Fetch",
+              "start": 68,
+              "end": 77,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/attachments/e2e-showroom-notes/preview",
+              "type": "Fetch",
+              "start": 84,
+              "end": 89,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/chat/cmuu05y640006msbaygj49b26?_rsc=ScmvDm89XL05_CEV",
+              "type": "Fetch",
+              "start": 91,
+              "end": 95,
+              "kb": 0,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Library → Customize",
+          "urlMs": 33,
+          "readyMs": 66,
+          "settledMs": 133,
+          "jsKb": 0,
+          "rscRequests": 5,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 41.2,
+          "nodes": 3622,
+          "scriptS": 0.232354,
+          "layoutS": 0.016545,
+          "recalcS": 0.098777,
+          "requests": [
+            {
+              "path": "/customize?_rsc=ouy2SAvE9XH4RglE",
+              "type": "Fetch",
+              "start": -123,
+              "end": -118,
+              "kb": 3.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/81319-59dd30c73a4af036.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/customize/page-b855b7ed1facde8f.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/approvals/grants",
+              "type": "Fetch",
+              "start": 59,
+              "end": 75,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/connectors",
+              "type": "Fetch",
+              "start": 59,
+              "end": 77,
+              "kb": 2.4,
+              "status": 200
+            },
+            {
+              "path": "/api/settings",
+              "type": "Fetch",
+              "start": 59,
+              "end": 76,
+              "kb": 1,
+              "status": 200
+            },
+            {
+              "path": "/skills?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 61,
+              "end": 70,
+              "kb": 4.3,
+              "status": 200
+            },
+            {
+              "path": "/automations?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 61,
+              "end": 70,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/memory?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 61,
+              "end": 76,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/customize/instructions?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 61,
+              "end": 76,
+              "kb": 4.4,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/error-502741d9bd7f193a.js",
+              "type": "Script",
+              "start": 66,
+              "end": 66,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/error-d8e2d0de41f3dce2.js",
+              "type": "Script",
+              "start": 67,
+              "end": 67,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/54777-dae4b9a8b331d3c2.js",
+              "type": "Script",
+              "start": 67,
+              "end": 67,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/page-3acf229c9e0ab800.js",
+              "type": "Script",
+              "start": 67,
+              "end": 67,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/27748-55228ab48f5afe3c.js",
+              "type": "Script",
+              "start": 68,
+              "end": 68,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/48929-4d725663c698b26c.js",
+              "type": "Script",
+              "start": 68,
+              "end": 68,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/87560-37d5500481aeffa3.js",
+              "type": "Script",
+              "start": 68,
+              "end": 68,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/page-29bfaadf52dbf015.js",
+              "type": "Script",
+              "start": 68,
+              "end": 68,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/84426-9002c6b4425594b6.js",
+              "type": "Script",
+              "start": 68,
+              "end": 68,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/loading-a7895a6d1407a827.js",
+              "type": "Script",
+              "start": 68,
+              "end": 68,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/23244-c155b3490e8b9d01.js",
+              "type": "Script",
+              "start": 70,
+              "end": 70,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/loading-b61db55b8ea7944c.js",
+              "type": "Script",
+              "start": 70,
+              "end": 70,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/error-7b30ce63ab34522d.js",
+              "type": "Script",
+              "start": 74,
+              "end": 74,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/70890-8b93184df3f24896.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/75911-6661b27d257dcfff.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/page-6ba58dce5f8db8e4.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/70192-1672c60b162d9bc3.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/customize/instructions/page-63c8596e6237077b.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/loading-da21f03ecac33cac.js",
+              "type": "Script",
+              "start": 76,
+              "end": 76,
+              "kb": 0,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Customize → Orbit",
+          "urlMs": 38,
+          "readyMs": 113,
+          "settledMs": 192,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 1,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 45.8,
+          "nodes": 3863,
+          "scriptS": 0.25286,
+          "layoutS": 0.017937,
+          "recalcS": 0.116698,
+          "requests": [
+            {
+              "path": "/agents?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 30,
+              "end": 46,
+              "kb": 3.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/50421-2d6f3e7e8d934330.js",
+              "type": "Script",
+              "start": 46,
+              "end": 46,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/81279-b4a336d880f68208.js",
+              "type": "Script",
+              "start": 46,
+              "end": 46,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/69755-c3b8ea68620a0050.js",
+              "type": "Script",
+              "start": 46,
+              "end": 46,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/agents/page-b17a674fe4f02411.js",
+              "type": "Script",
+              "start": 46,
+              "end": 46,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/agents",
+              "type": "Fetch",
+              "start": 67,
+              "end": 69,
+              "kb": 1.9,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Orbit → agent",
+          "urlMs": 67,
+          "readyMs": 81,
+          "settledMs": 169,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 39.3,
+          "nodes": 4901,
+          "scriptS": 0.304773,
+          "layoutS": 0.020986,
+          "recalcS": 0.136076,
+          "requests": [
+            {
+              "path": "/chat/cmuu05yzq00z1mscuncomu1fy?_rsc=bueRlWyBGTWao5mo",
+              "type": "Fetch",
+              "start": -123,
+              "end": -113,
+              "kb": 8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/error-94698601b4cbb349.js",
+              "type": "Script",
+              "start": -120,
+              "end": -120,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/not-found-ad5fa98c977107fb.js",
+              "type": "Script",
+              "start": -120,
+              "end": -120,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/page-0466c7b0895eb83f.js",
+              "type": "Script",
+              "start": -113,
+              "end": -113,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/chat/follow-ups",
+              "type": "Fetch",
+              "start": 94,
+              "end": 101,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/research?conversationId=cmuu05yzq00z1mscuncomu1fy",
+              "type": "Fetch",
+              "start": 95,
+              "end": 101,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/conversations/cmuu05yzq00z1mscuncomu1fy/tasks",
+              "type": "Fetch",
+              "start": 95,
+              "end": 101,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "agent → another agent",
+          "urlMs": 32,
+          "readyMs": 78,
+          "settledMs": 142,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 55.1,
+          "nodes": 5964,
+          "scriptS": 0.350277,
+          "layoutS": 0.024257,
+          "recalcS": 0.161675,
+          "requests": [
+            {
+              "path": "/chat/cmuu05z1200zzmscud5xmp5cw?_rsc=GIupAitJJdmJ06Rr",
+              "type": "Fetch",
+              "start": 39,
+              "end": 69,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/chat/follow-ups",
+              "type": "Fetch",
+              "start": 101,
+              "end": 106,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/research?conversationId=cmuu05z1200zzmscud5xmp5cw",
+              "type": "Fetch",
+              "start": 101,
+              "end": 106,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/conversations/cmuu05z1200zzmscud5xmp5cw/tasks",
+              "type": "Fetch",
+              "start": 101,
+              "end": 105,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "agent → Chat",
+          "urlMs": 39,
+          "readyMs": 39,
+          "settledMs": 149,
+          "jsKb": 0,
+          "rscRequests": 0,
+          "apiRequests": 0,
+          "duplicateRequests": [],
+          "sequentialDepth": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 31.8,
+          "nodes": 2396,
+          "scriptS": 0.374754,
+          "layoutS": 0.025267,
+          "recalcS": 0.177871,
+          "requests": []
+        }
+      ]
+    },
+    {
+      "pass": 3,
+      "cold": false,
+      "steps": [
+        {
+          "name": "Chat → Projects",
+          "urlMs": 44,
+          "readyMs": 97,
+          "settledMs": 199,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 1,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 63.6,
+          "nodes": 4361,
+          "scriptS": 0.133443,
+          "layoutS": 0.00639,
+          "recalcS": 0.038142,
+          "requests": [
+            {
+              "path": "/projects?_rsc=dfLb1Ms5R_zsC8v4",
+              "type": "Fetch",
+              "start": -123,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/error-31d13dad8d2c7833.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/12816-b782a59550b1a031.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/10341-a09f16f1cd05f3c0.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/page-acae2b40a8a64dee.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/css/dac2103589c12b4c.css",
+              "type": "Stylesheet",
+              "start": 49,
+              "end": 49,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/projects",
+              "type": "Fetch",
+              "start": 71,
+              "end": 74,
+              "kb": 1.1,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Projects → Project",
+          "urlMs": 37,
+          "readyMs": 97,
+          "settledMs": 192,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 4,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 66.1,
+          "nodes": 5657,
+          "scriptS": 0.183463,
+          "layoutS": 0.012433,
+          "recalcS": 0.056643,
+          "requests": [
+            {
+              "path": "/projects/cmuu05yo30001mscuasil8vr3?_rsc=mM3RqDWErZThD78z",
+              "type": "Fetch",
+              "start": -124,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/%5Bid%5D/error-5a4561aa936d4d6b.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/26248-1038f1cc1b9ec118.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/projects/%5Bid%5D/page-68d130337526f714.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/projects/cmuu05yo30001mscuasil8vr3",
+              "type": "Fetch",
+              "start": 62,
+              "end": 73,
+              "kb": 1,
+              "status": 200
+            },
+            {
+              "path": "/api/projects/cmuu05yo30001mscuasil8vr3/memory",
+              "type": "Fetch",
+              "start": 62,
+              "end": 72,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/work/sessions?projectId=cmuu05yo30001mscuasil8vr3&limit=50",
+              "type": "Fetch",
+              "start": 62,
+              "end": 71,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/artifacts?projectId=cmuu05yo30001mscuasil8vr3",
+              "type": "Fetch",
+              "start": 63,
+              "end": 71,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Project → Library",
+          "urlMs": 41,
+          "readyMs": 65,
+          "settledMs": 139,
+          "jsKb": 0,
+          "rscRequests": 2,
+          "apiRequests": 5,
+          "duplicateRequests": [],
+          "sequentialDepth": 4,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 75.5,
+          "nodes": 5961,
+          "scriptS": 0.215394,
+          "layoutS": 0.014748,
+          "recalcS": 0.081031,
+          "requests": [
+            {
+              "path": "/library?_rsc=JJ9dYpq0zZmfSDVP",
+              "type": "Fetch",
+              "start": -123,
+              "end": -119,
+              "kb": 4.8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/error-b31b8210ab1d4c6e.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/40810-32302a0160625b5a.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/19562-e66a0aeca3564602.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/18479-3f093097b1607b38.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/page-81d0567953c40e63.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/library/loading-b06c7e3c7eef4c8f.js",
+              "type": "Script",
+              "start": -119,
+              "end": -119,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/library?limit=60&sort=newest",
+              "type": "Fetch",
+              "start": 65,
+              "end": 75,
+              "kb": 1.1,
+              "status": 200
+            },
+            {
+              "path": "/api/library/made?limit=48&q=",
+              "type": "Fetch",
+              "start": 65,
+              "end": 72,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/library?includeDeleted=true&limit=1",
+              "type": "Fetch",
+              "start": 65,
+              "end": 74,
+              "kb": 0.7,
+              "status": 200
+            },
+            {
+              "path": "/api/artifacts?deleted=1",
+              "type": "Fetch",
+              "start": 66,
+              "end": 74,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/attachments/e2e-showroom-notes/preview",
+              "type": "Fetch",
+              "start": 79,
+              "end": 83,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/chat/cmuu05y640006msbaygj49b26?_rsc=ScmvDm89XL05_CEV",
+              "type": "Fetch",
+              "start": 91,
+              "end": 94,
+              "kb": 0,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Library → Customize",
+          "urlMs": 36,
+          "readyMs": 63,
+          "settledMs": 132,
+          "jsKb": 0,
+          "rscRequests": 5,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 62.5,
+          "nodes": 6272,
+          "scriptS": 0.244691,
+          "layoutS": 0.0177,
+          "recalcS": 0.108152,
+          "requests": [
+            {
+              "path": "/customize?_rsc=ouy2SAvE9XH4RglE",
+              "type": "Fetch",
+              "start": -122,
+              "end": -118,
+              "kb": 3.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/81319-59dd30c73a4af036.js",
+              "type": "Script",
+              "start": -118,
+              "end": -118,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/customize/page-b855b7ed1facde8f.js",
+              "type": "Script",
+              "start": -118,
+              "end": -118,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/approvals/grants",
+              "type": "Fetch",
+              "start": 61,
+              "end": 78,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/connectors",
+              "type": "Fetch",
+              "start": 62,
+              "end": 80,
+              "kb": 2.4,
+              "status": 200
+            },
+            {
+              "path": "/api/settings",
+              "type": "Fetch",
+              "start": 62,
+              "end": 87,
+              "kb": 1,
+              "status": 200
+            },
+            {
+              "path": "/skills?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 64,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/automations?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 64,
+              "end": 77,
+              "kb": 4,
+              "status": 200
+            },
+            {
+              "path": "/memory?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 64,
+              "end": 87,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/customize/instructions?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 64,
+              "end": 86,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/error-502741d9bd7f193a.js",
+              "type": "Script",
+              "start": 72,
+              "end": 72,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/error-d8e2d0de41f3dce2.js",
+              "type": "Script",
+              "start": 72,
+              "end": 72,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/27748-55228ab48f5afe3c.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/48929-4d725663c698b26c.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/87560-37d5500481aeffa3.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/page-29bfaadf52dbf015.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/54777-dae4b9a8b331d3c2.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/page-3acf229c9e0ab800.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/23244-c155b3490e8b9d01.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/automations/loading-b61db55b8ea7944c.js",
+              "type": "Script",
+              "start": 73,
+              "end": 73,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/84426-9002c6b4425594b6.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/skills/loading-a7895a6d1407a827.js",
+              "type": "Script",
+              "start": 75,
+              "end": 75,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/error-7b30ce63ab34522d.js",
+              "type": "Script",
+              "start": 79,
+              "end": 80,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/70192-1672c60b162d9bc3.js",
+              "type": "Script",
+              "start": 86,
+              "end": 86,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/customize/instructions/page-63c8596e6237077b.js",
+              "type": "Script",
+              "start": 86,
+              "end": 86,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/70890-8b93184df3f24896.js",
+              "type": "Script",
+              "start": 86,
+              "end": 86,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/75911-6661b27d257dcfff.js",
+              "type": "Script",
+              "start": 86,
+              "end": 86,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/page-6ba58dce5f8db8e4.js",
+              "type": "Script",
+              "start": 86,
+              "end": 87,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/memory/loading-da21f03ecac33cac.js",
+              "type": "Script",
+              "start": 87,
+              "end": 87,
+              "kb": 0,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Customize → Orbit",
+          "urlMs": 39,
+          "readyMs": 114,
+          "settledMs": 193,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 1,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 67.7,
+          "nodes": 6513,
+          "scriptS": 0.270223,
+          "layoutS": 0.019362,
+          "recalcS": 0.130312,
+          "requests": [
+            {
+              "path": "/agents?_rsc=rFKJutB5GaUjC30w",
+              "type": "Fetch",
+              "start": 27,
+              "end": 42,
+              "kb": 3.2,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/50421-2d6f3e7e8d934330.js",
+              "type": "Script",
+              "start": 42,
+              "end": 42,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/81279-b4a336d880f68208.js",
+              "type": "Script",
+              "start": 42,
+              "end": 42,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/69755-c3b8ea68620a0050.js",
+              "type": "Script",
+              "start": 42,
+              "end": 42,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/agents/page-b17a674fe4f02411.js",
+              "type": "Script",
+              "start": 42,
+              "end": 42,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/agents",
+              "type": "Fetch",
+              "start": 65,
+              "end": 69,
+              "kb": 1.9,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "Orbit → agent",
+          "urlMs": 68,
+          "readyMs": 81,
+          "settledMs": 178,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 60.1,
+          "nodes": 7551,
+          "scriptS": 0.321946,
+          "layoutS": 0.023064,
+          "recalcS": 0.15205,
+          "requests": [
+            {
+              "path": "/chat/cmuu05yzq00z1mscuncomu1fy?_rsc=bueRlWyBGTWao5mo",
+              "type": "Fetch",
+              "start": -123,
+              "end": -111,
+              "kb": 8,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/error-94698601b4cbb349.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/not-found-ad5fa98c977107fb.js",
+              "type": "Script",
+              "start": -121,
+              "end": -121,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/_next/static/chunks/app/(app)/chat/%5Bid%5D/page-0466c7b0895eb83f.js",
+              "type": "Script",
+              "start": -112,
+              "end": -112,
+              "kb": 0,
+              "status": 200
+            },
+            {
+              "path": "/api/chat/follow-ups",
+              "type": "Fetch",
+              "start": 103,
+              "end": 109,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/research?conversationId=cmuu05yzq00z1mscuncomu1fy",
+              "type": "Fetch",
+              "start": 103,
+              "end": 109,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/conversations/cmuu05yzq00z1mscuncomu1fy/tasks",
+              "type": "Fetch",
+              "start": 103,
+              "end": 109,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "agent → another agent",
+          "urlMs": 53,
+          "readyMs": 64,
+          "settledMs": 154,
+          "jsKb": 0,
+          "rscRequests": 1,
+          "apiRequests": 3,
+          "duplicateRequests": [],
+          "sequentialDepth": 2,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 75.6,
+          "nodes": 8585,
+          "scriptS": 0.356266,
+          "layoutS": 0.025349,
+          "recalcS": 0.171103,
+          "requests": [
+            {
+              "path": "/chat/cmuu05z1200zzmscud5xmp5cw?_rsc=GIupAitJJdmJ06Rr",
+              "type": "Fetch",
+              "start": 29,
+              "end": 44,
+              "kb": 7.1,
+              "status": 200
+            },
+            {
+              "path": "/api/chat/follow-ups",
+              "type": "Fetch",
+              "start": 81,
+              "end": 87,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/research?conversationId=cmuu05z1200zzmscud5xmp5cw",
+              "type": "Fetch",
+              "start": 81,
+              "end": 87,
+              "kb": 0.6,
+              "status": 200
+            },
+            {
+              "path": "/api/conversations/cmuu05z1200zzmscud5xmp5cw/tasks",
+              "type": "Fetch",
+              "start": 81,
+              "end": 87,
+              "kb": 0.6,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "agent → Chat",
+          "urlMs": 38,
+          "readyMs": 38,
+          "settledMs": 141,
+          "jsKb": 0,
+          "rscRequests": 0,
+          "apiRequests": 0,
+          "duplicateRequests": [],
+          "sequentialDepth": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "cls": 0,
+          "shellKept": true,
+          "mainKept": true,
+          "heapMb": 40.5,
+          "nodes": 2396,
+          "scriptS": 0.378505,
+          "layoutS": 0.026158,
+          "recalcS": 0.184263,
+          "requests": []
+        }
+      ]
+    }
+  ],
+  "hardLoads": [
+    {
+      "url": "/chat",
+      "readyMs": 215,
+      "settledMs": 292,
+      "ttfb": 26.7,
+      "domContentLoaded": 60.9,
+      "load": 147.5,
+      "jsKb": 1038.1,
+      "totalKb": 1433.3,
+      "requests": 113,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 28.7,
+      "nodes": 1385,
+      "scriptS": 0.121037,
+      "layoutS": 0.00407,
+      "recalcS": 0.028013
+    }
+  ],
+  "longConversation": {
+    "hardLoad": {
+      "url": "/chat/cmuu05yu10075mscua0knb7y7",
+      "readyMs": 372,
+      "settledMs": 395,
+      "ttfb": 14.4,
+      "domContentLoaded": 115.7,
+      "load": 185.7,
+      "jsKb": 1070.9,
+      "totalKb": 1447.5,
+      "requests": 118,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 64.3,
+      "nodes": 5540,
+      "scriptS": 0.145387,
+      "layoutS": 0.004817,
+      "recalcS": 0.0382
+    },
+    "dom": {
+      "mountedRows": 7,
+      "domElements": 1815
+    },
+    "scrollUp": {
+      "frames": 376,
+      "p50FrameMs": 16.7,
+      "p95FrameMs": 16.7,
+      "maxFrameMs": 16.8,
+      "framesOver50ms": 0,
+      "droppedFrameRatio": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "mountedRowsAfter": 11,
+      "scrollTop": 153143
+    },
+    "homeEnd": {
+      "frames": 50,
+      "p50FrameMs": 16.7,
+      "p95FrameMs": 16.7,
+      "maxFrameMs": 16.7,
+      "framesOver50ms": 0,
+      "droppedFrameRatio": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0
+    },
+    "heapAfterScroll": {
+      "before": {
+        "heapMb": 64.4,
+        "nodes": 5545,
+        "scriptS": 0.145811,
+        "layoutS": 0.004817,
+        "recalcS": 0.038723
+      },
+      "after": {
+        "heapMb": 74.3,
+        "nodes": 5310,
+        "scriptS": 0.93413,
+        "layoutS": 0.071737,
+        "recalcS": 0.87919
+      }
+    },
+    "stream": {
+      "deltas": 300,
+      "intervalMs": 25,
+      "streamMs": 8053,
+      "frames": 505,
+      "p50FrameMs": 16.7,
+      "p95FrameMs": 16.8,
+      "maxFrameMs": 16.8,
+      "framesOver50ms": 0,
+      "droppedFrameRatio": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "scriptSeconds": 0.7,
+      "layoutSeconds": 0.1,
+      "styleSeconds": 0,
+      "domMutationsInStreamingRow": 621,
+      "domMutationsInSettledRows": 8,
+      "mountedRowsAfter": 3
+    }
+  },
+  "summary": {
+    "Chat → Projects": {
+      "coldReadyMs": 114,
+      "coldSettledMs": 195,
+      "coldJsKb": 28.2,
+      "warmReadyMsMedian": 96.5,
+      "warmSettledMsMedian": 197,
+      "rscRequests": 1,
+      "apiRequests": 1,
+      "sequentialDepth": 2,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "Projects → Project": {
+      "coldReadyMs": 95,
+      "coldSettledMs": 195,
+      "coldJsKb": 33.8,
+      "warmReadyMsMedian": 89,
+      "warmSettledMsMedian": 166,
+      "rscRequests": 1,
+      "apiRequests": 4,
+      "sequentialDepth": 2,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "Project → Library": {
+      "coldReadyMs": 63,
+      "coldSettledMs": 141,
+      "coldJsKb": 59.1,
+      "warmReadyMsMedian": 63.5,
+      "warmSettledMsMedian": 141.5,
+      "rscRequests": 2,
+      "apiRequests": 5,
+      "sequentialDepth": 3,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "Library → Customize": {
+      "coldReadyMs": 66,
+      "coldSettledMs": 132,
+      "coldJsKb": 167,
+      "warmReadyMsMedian": 64.5,
+      "warmSettledMsMedian": 132.5,
+      "rscRequests": 5,
+      "apiRequests": 3,
+      "sequentialDepth": 2,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "Customize → Orbit": {
+      "coldReadyMs": 129,
+      "coldSettledMs": 170,
+      "coldJsKb": 19,
+      "warmReadyMsMedian": 113.5,
+      "warmSettledMsMedian": 192.5,
+      "rscRequests": 1,
+      "apiRequests": 1,
+      "sequentialDepth": 2,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "Orbit → agent": {
+      "coldReadyMs": 97,
+      "coldSettledMs": 182,
+      "coldJsKb": 32.8,
+      "warmReadyMsMedian": 81,
+      "warmSettledMsMedian": 173.5,
+      "rscRequests": 1,
+      "apiRequests": 3,
+      "sequentialDepth": 2,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "agent → another agent": {
+      "coldReadyMs": 365,
+      "coldSettledMs": 453,
+      "coldJsKb": 0,
+      "warmReadyMsMedian": 71,
+      "warmSettledMsMedian": 148,
+      "rscRequests": 1,
+      "apiRequests": 3,
+      "sequentialDepth": 2,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    },
+    "agent → Chat": {
+      "coldReadyMs": 38,
+      "coldSettledMs": 130,
+      "coldJsKb": 0,
+      "warmReadyMsMedian": 38.5,
+      "warmSettledMsMedian": 145,
+      "rscRequests": 0,
+      "apiRequests": 0,
+      "sequentialDepth": 0,
+      "duplicates": 0,
+      "shellKept": true,
+      "longTaskMs": 0,
+      "cls": 0
+    }
+  }
+}

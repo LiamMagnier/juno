@@ -15,6 +15,8 @@ import {
   type OfficeFormat,
 } from "@/lib/office-export";
 import { exportVerificationMessage, verifyOfficeExport } from "@/lib/office-export-verify";
+import { isSemanticArtifactType, SEMANTIC_EXTENSION } from "@/lib/work/deliverables/semantic";
+import { exportSemanticArtifact } from "@/lib/work/deliverables/semantic/export";
 
 // docx/exceljs/pptxgenjs are Node libraries — they do not run on Edge.
 export const runtime = "nodejs";
@@ -93,7 +95,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const content = artifact.versions[0]?.content ?? "";
   // Office export is a markdown->document conversion; other types have their own shapes.
-  const available = artifact.type === "MARKDOWN" ? detectFormats(content) : [];
+  // A workbook, document or deck exports to its own format from its model.
+  const semanticType = isSemanticArtifactType(artifact.type) ? artifact.type : null;
+  const available = semanticType
+    ? [SEMANTIC_EXTENSION[semanticType]]
+    : artifact.type === "MARKDOWN"
+      ? detectFormats(content)
+      : [];
 
   if (raw === null) {
     return NextResponse.json({ formats: available }, { headers: { "Cache-Control": "no-store" } });
@@ -112,7 +120,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   let buffer: Buffer;
   try {
-    buffer = await BUILDERS[format](content, artifact.title);
+    buffer = semanticType
+      ? (await exportSemanticArtifact(semanticType, content)).bytes
+      : await BUILDERS[format](content, artifact.title);
   } catch (err) {
     console.error("[artifacts/export] conversion failed", { id, format, err });
     return NextResponse.json({ error: "Could not build the file." }, { status: 500 });

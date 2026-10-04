@@ -22,6 +22,8 @@
  * changes under it.
  */
 
+import { SemanticArtifactView } from "@/components/semantic/semantic-artifact-view";
+import type { SemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import * as React from "react";
 import Link from "next/link";
@@ -76,7 +78,8 @@ export function ArtifactReadView({
   // diagram draws in the sandbox, a doc reads as prose, and code that would
   // have to be RUN (JavaScript, Python) is shown rather than executed — running
   // it is the canvas's job, with its console beside it.
-  const hasPreview = !isDesign && (isMarkdown || rt.mode === "web");
+  const isSemantic = rt.mode === "semantic";
+  const hasPreview = !isDesign && (isMarkdown || isSemantic || rt.mode === "web");
   const [view, setView] = React.useState<View>(hasPreview ? "preview" : "source");
 
   const noun = ARTIFACT_NOUN[type] ?? "Artifact";
@@ -169,7 +172,9 @@ export function ArtifactReadView({
         {isDesign ? (
           <DesignPicture id={id} version={version} title={title} />
         ) : view === "preview" && hasPreview ? (
-          isMarkdown ? (
+          isSemantic ? (
+            <SemanticArtifactView type={type as SemanticArtifactType} content={content} readOnly />
+          ) : isMarkdown ? (
             <div className="h-full overflow-auto px-6 py-8">
               {/* The product's reading measure (ui/app-page.tsx): a doc is
                   the one type a reader opens to read, and full-bleed across a

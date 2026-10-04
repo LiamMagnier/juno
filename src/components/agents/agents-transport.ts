@@ -34,6 +34,7 @@ import type {
 } from "@/lib/agents/types";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { AgentMemoryAccess } from "@/lib/memory-scope";
 
 export type AgentOutcome<T> =
   | { kind: "ok"; value: T }
@@ -160,10 +161,17 @@ export interface AgentPatch {
   proactive?: boolean;
   model?: string | null;
   reasoningEffort?: string | null;
+  /** Its own weekly cap in micro-USD, or null for none (src/lib/agents/budget.ts). */
+  budgetMicroUsd?: number | null;
 }
 
 export function updateAgent(id: string, patch: AgentPatch): Promise<AgentOutcome<ClientAgent>> {
   return call(base(id), { method: "PATCH", body: patch }, (d) => d.agent as ClientAgent);
+}
+
+/** What the agent may read of the person's memory. Person-only: the agent's own tools cannot reach this route. */
+export function setAgentMemoryAccess(id: string, access: AgentMemoryAccess): Promise<AgentOutcome<AgentMemoryAccess>> {
+  return call(`${base(id)}/memory-access`, { method: "PATCH", body: { access } }, (d) => d.memoryAccess as AgentMemoryAccess);
 }
 
 export function duplicateAgent(id: string): Promise<AgentOutcome<ClientAgent>> {
@@ -225,6 +233,15 @@ export function updateGoal(
   patch: { title?: string; detail?: string; cadence?: AgentGoalCadence; status?: AgentGoalStatus }
 ): Promise<AgentOutcome<ClientAgentGoal>> {
   return call(`${base(id)}/goals/${encodeURIComponent(goalId)}`, { method: "PATCH", body: patch }, (d) => d.goal as ClientAgentGoal);
+}
+
+/** "Keep working on it" / "Continue": the agent drives this goal one bounded step now. */
+export function advanceGoal(id: string, goalId: string): Promise<AgentOutcome<{ goal: ClientAgentGoal | null; busy: boolean }>> {
+  return call(
+    `${base(id)}/goals/${encodeURIComponent(goalId)}/advance`,
+    { method: "POST" },
+    (d) => ({ goal: (d.goal as ClientAgentGoal | null) ?? null, busy: d.busy === true })
+  );
 }
 
 export function deleteGoal(id: string, goalId: string): Promise<AgentOutcome<true>> {

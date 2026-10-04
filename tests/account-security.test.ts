@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 const join = path.join;
 import test from "node:test";
+import { chatTurnSource } from "./chat-turn-source";
 import {
   EMAIL_VERIFICATION_TTL_MS,
   RECOVERY_CODE_COUNT,
@@ -333,7 +334,8 @@ test("a refused turn says which refusal it was", () => {
     "src/app/api/generate/route.ts",
     "src/app/api/design/[artifactId]/edit/route.ts",
   ]) {
-    const source = readFileSync(join(process.cwd(), route), "utf8");
+    // The chat turn is the route plus its pipeline (tests/chat-turn-source.ts).
+    const source = route === "src/app/api/chat/route.ts" ? chatTurnSource() : readFileSync(join(process.cwd(), route), "utf8");
     assert.match(source, /consumeRefusalBody/, `${route} must use the shared refusal body`);
     assert.doesNotMatch(
       source,

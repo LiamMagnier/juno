@@ -1,4 +1,5 @@
 import type { ClientActionApproval } from "@/lib/action-approval";
+import type { RoutingReceipt } from "@/lib/router/receipt";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
@@ -135,6 +136,12 @@ export interface ClientMessage {
    */
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  /**
+   * Auto's receipt for this turn — "Auto · model · effort" and the reasons it
+   * was selected (src/lib/router/receipt.ts). Absent for a turn the reader
+   * routed by hand and for turns written before Auto Router 2.0.
+   */
+  routing?: RoutingReceipt | null;
 }
 
 export interface ClientSource {

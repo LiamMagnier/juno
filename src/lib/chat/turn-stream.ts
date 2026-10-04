@@ -133,6 +133,8 @@ const FALLBACK_TOOL_TITLES: Readonly<Record<CanonicalToolId, string>> = {
   calculate: "Calculator",
   start_task: "Task handoff",
   suggest_research: "Research suggestion",
+  search_news: "News search",
+  find_in_page: "Find in page",
   provider_web_search: "Web search",
   provider_x_search: "X search",
   mcp: "Connector tool",

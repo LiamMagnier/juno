@@ -34,6 +34,7 @@ import {
   type RetrievalResult,
   type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
+import { readerMayUse, readerMayUseSummary, type AgentMemoryAccess, type MemoryReader } from "@/lib/memory-scope";
 import { readMemorySummaryChanges } from "@/lib/memory-summary-changes";
 import {
   SENSITIVE_TOPICS,
@@ -694,6 +695,9 @@ const LIFECYCLE_SELECT = {
   // against the timeline needs (planFactIngestion, planTimelineReconciliation).
   observedAt: true,
   supersededById: true,
+  // When it was last said again (restated or typed) — "last confirmed". Fresh
+  // confirmation keeps an old fact from decaying out of context.
+  lastVerifiedAt: true,
   // The vector space marker only — never the vector itself, which is thousands
   // of floats a duplicate check has no use for. Rows lacking one are the
   // organic backfill queue: refreshing such a row re-embeds it below.
@@ -958,6 +962,7 @@ export async function saveCandidates(
         if (known) createdContents.push(known.content);
       }
       if (plan.supersedes) await supersede(plan.supersedes.entryId, plan.entryId, plan.supersedes.reason);
+      for (const resolved of plan.resolves ?? []) await supersede(resolved.entryId, plan.entryId, resolved.reason);
       result.refreshed++;
       continue;
     }
@@ -995,6 +1000,7 @@ export async function saveCandidates(
     toEmbed.push({ id: created.id, content: plan.content });
 
     if (plan.supersedes) await supersede(plan.supersedes.entryId, created.id, plan.supersedes.reason);
+    for (const resolved of plan.resolves ?? []) await supersede(resolved.entryId, created.id, resolved.reason);
   }
 
   await embedMemoryEntries({
@@ -1607,11 +1613,24 @@ export async function getMemoryProfile(
     isolateProjectMemory?: boolean;
     /** Test seam: the query-embedding call. */
     embed?: typeof embedQuery;
+    /**
+     * The Orbit agent this turn or task speaks as, when it does. An agent is
+     * not the person: it reads only what its `memoryAccess` grants
+     * (src/lib/memory-scope.ts) — by default the durable profile, never the
+     * whole account. Omitted for an ordinary chat.
+     */
+    agent?: { id: string; access: AgentMemoryAccess } | null;
   } = {}
 ): Promise<MemoryProfile> {
   const projectId = opts.projectId ?? null;
   const isolate = opts.isolateProjectMemory ?? (projectId !== null);
   const now = new Date();
+  const reader: MemoryReader | null = opts.agent
+    ? { kind: "agent", agentId: opts.agent.id, access: opts.agent.access, projectId }
+    : null;
+  if (reader?.kind === "agent" && reader.access === "none") {
+    return { summary: null, summaryScope: "account", recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
+  }
   // The scope the injected summary speaks for: this project's when the chat
   // reads in isolation, the account's otherwise. Never the account's inside a
   // project — that is the isolation.
@@ -1633,6 +1652,7 @@ export async function getMemoryProfile(
   // may remain in prose while the active facts say something different.
   const summary =
     storedSummary &&
+    (!reader || readerMayUseSummary(reader)) &&
     !summaryPredatesForget(storedSummary.updatedAt, forgottenAt) &&
     !summaryPredatesMemoryChange(storedSummary.updatedAt, changes) ? storedSummary : null;
 
@@ -1661,7 +1681,11 @@ export async function getMemoryProfile(
   // Facts already represented in the summary would otherwise be said twice.
   // Only facts of the summary's own scope can be in it — a project fact is
   // never in the account's summary — so everything else always stays.
-  const candidates = rows.filter((row) => !coveredBySummary(row, summary, summaryScope));
+  // An agent reads only what its grant covers — the same rule the evaluation
+  // suite scores (memory-eval.ts, scope section).
+  const candidates = rows
+    .filter((row) => !reader || readerMayUse(row, reader))
+    .filter((row) => !coveredBySummary(row, summary, summaryScope));
 
   const query = opts.query?.trim();
   const semantic =

@@ -94,14 +94,20 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
           1440px window with the sidebar out, and 350 on a phone — the window
           number describes neither. The armed marks read this to decide whether
           their labels fit beside the sentence (see `ComposerArmedMark`). */}
-      <div ref={fieldTierRef} className="@container relative flex w-full min-w-0 flex-col">
-        {above}
-        {field}
+      <div ref={fieldTierRef} className="@container relative flex min-h-0 w-full min-w-0 flex-1 flex-col">
+        {/* What sits above the field scrolls inside the composer's height cap
+            instead of pushing past it: the surface does not clip (chips and
+            menus hang out of it), so a tall `above` — a clarification's
+            questions — used to shove the controls row out of the bottom of
+            the box and over the tray beneath it. The field and the controls
+            never give up height; this region does. */}
+        <div className="min-h-0 shrink overflow-y-auto overscroll-contain [scrollbar-width:thin]">{above}</div>
+        <div className="shrink-0">{field}</div>
         {/* The V3 row: 6px over the controls, 10px under and at the sides,
             so the 34px `+` hangs just outside the 20px text column and the
             36px disc closes the right edge. Used a hundred times a day, so
             its glyphs stay still under the pointer (I-7). */}
-        <div className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5">
+        <div className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5 shrink-0">
           <div className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
             {leading}
           </div>

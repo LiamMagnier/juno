@@ -18,8 +18,13 @@ import { junoToolSpec } from "@/lib/tools/registry";
 
 const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
 
-test("the alias map: two renames, both to registry tools", () => {
-  assert.deepEqual({ ...TOOL_ID_ALIASES }, { code_interpreter: "run_code", browser_agent: "web_fetch" });
+test("the alias map: two renames and Alevr Search's two names, all to registry tools", () => {
+  assert.deepEqual(
+    { ...TOOL_ID_ALIASES },
+    { code_interpreter: "run_code", browser_agent: "web_fetch", search_web: "web_search", open_page: "web_fetch" },
+  );
+  assert.equal(canonicalToolId("search_web"), "web_search");
+  assert.equal(canonicalToolId("open_page"), "web_fetch");
   for (const target of Object.values(TOOL_ID_ALIASES)) assert.ok(junoToolSpec(target), target);
   assert.equal(canonicalToolId("code_interpreter"), "run_code");
   assert.equal(canonicalToolId("browser_agent"), "web_fetch");
@@ -46,7 +51,7 @@ test("skills: a stored old name narrows and resolves as the new one", () => {
 
 test("standing grants: a grant under the old name still covers the new one", () => {
   assert.deepEqual(toolIdAliasesOf("run_code"), ["run_code", "code_interpreter"]);
-  assert.deepEqual(toolIdAliasesOf("web_fetch"), ["web_fetch", "browser_agent"]);
+  assert.deepEqual(toolIdAliasesOf("web_fetch"), ["web_fetch", "browser_agent", "open_page"]);
   assert.deepEqual(toolIdAliasesOf("calculate"), ["calculate"]);
   const store = read("src/lib/action-approval-store.ts");
   assert.match(store, /connectorId === "juno_runtime" \? toolIdAliasesOf\(canonicalToolId\(toolName\)\) : \[toolName\]/);

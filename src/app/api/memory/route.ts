@@ -58,11 +58,38 @@ export async function GET(req: Request) {
 // Reset memory: remove every saved fact and every consolidated summary, and mark
 // all conversations as processed — "permanently erased" must mean the backfill
 // won't quietly re-learn everything from old chats.
-export async function DELETE() {
+export async function DELETE(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const now = new Date();
+  // Clear ONE project's memory: its facts, its summary, and — as reset does —
+  // its chats marked read, so background learning does not quietly re-learn
+  // what was just cleared. Only this person's rows: in a shared project every
+  // member's project memory is their own, and clearing yours touches no one
+  // else's. Account-wide facts and "never remember" notes are left alone.
+  const projectId = new URL(req.url).searchParams.get("projectId")?.trim();
+  if (projectId) {
+    await prisma.$transaction([
+      prisma.memoryEntry.deleteMany({ where: { userId: user.id, projectId, kind: "FACT" } }),
+      prisma.projectMemorySummary.deleteMany({ where: { userId: user.id, projectId } }),
+      prisma.conversationMemory.updateMany({
+        where: { userId: user.id, conversation: { projectId, userId: user.id } },
+        data: { processedAt: now, factCount: 0, digest: null },
+      }),
+    ]);
+    const uncoveredInProject = await prisma.conversation.findMany({
+      where: { userId: user.id, projectId, memory: null },
+      select: { id: true },
+    });
+    if (uncoveredInProject.length) {
+      await prisma.conversationMemory.createMany({
+        data: uncoveredInProject.map((c) => ({ userId: user.id, conversationId: c.id, processedAt: now })),
+        skipDuplicates: true,
+      });
+    }
+    return NextResponse.json({ ok: true, projectId });
+  }
   await prisma.$transaction([
     prisma.memoryEntry.deleteMany({ where: { userId: user.id } }),
     prisma.memorySummary.deleteMany({ where: { userId: user.id } }),

@@ -69,20 +69,59 @@ export interface AgentsRoster {
   refresh: () => void;
 }
 
+/**
+ * The last roster any `useAgents` read successfully, for this page load.
+ *
+ * Orbit used to open on a skeleton every time, even when the sidebar had read
+ * the same roster a moment earlier: the page's own read had to come back
+ * first. Seeding from the last good read paints the cards at once; the mount
+ * read below still runs and replaces it (stale-while-revalidate), and the
+ * 10-second poll is unchanged, so a face is never stale for longer than it
+ * already could be.
+ */
+let lastRoster: ClientAgent[] | null = null;
+/** One roster read at a time: the sidebar and Orbit poll the same list. */
+let rosterInflight: ReturnType<typeof fetchAgents> | null = null;
+// A write must not be answered by a read that started before it. Registered at
+// import, so it runs before any hook's own listener for the same event rereads.
+if (typeof window !== "undefined") {
+  for (const event of [AGENTS_CHANGED_EVENT, "juno:agent-updated"]) {
+    window.addEventListener(event, () => {
+      rosterInflight = null;
+    });
+  }
+}
+function readRoster() {
+  rosterInflight ??= fetchAgents().finally(() => {
+    rosterInflight = null;
+  });
+  return rosterInflight;
+}
+
 export function useAgents(options: { enabled?: boolean } = {}): AgentsRoster {
   const enabled = options.enabled ?? true;
   const [agents, setAgents] = React.useState<ClientAgent[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [settled, setSettled] = React.useState(false);
+  // Seeded before the first frame, not in the state initialiser: on a full
+  // page load another reader's roster can arrive before this one hydrates,
+  // and a first render unlike the server's is a hydration error.
+  React.useLayoutEffect(() => {
+    if (!enabled || !lastRoster) return;
+    const seed = lastRoster;
+    setAgents((cur) => cur ?? seed);
+    setSettled(true);
+  }, [enabled]);
   const seq = React.useRef(0);
 
   const refresh = React.useCallback(() => {
     if (!enabled) return;
     const mine = ++seq.current;
-    void fetchAgents().then((outcome) => {
+    void readRoster().then((outcome) => {
       // Only the newest read may land, or a slow poll overwrites a fresh edit.
       if (mine !== seq.current) return;
       if (outcome.kind === "ok") {
+        lastRoster = outcome.value;
         setAgents(outcome.value);
         setError(null);
         setSettled(true);

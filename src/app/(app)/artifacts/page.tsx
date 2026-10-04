@@ -4,28 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import {
-  ChevronDown,
-  Code2,
-  FileCode2,
-  FileText,
-  GitBranch,
-  LayoutGrid,
-  List as ListIcon,
-  Globe,
-  Image as ImageIcon,
-  Loader2,
-  Maximize2,
-  MessagesSquare,
-  Monitor,
-  PanelRightOpen,
-  Plus,
-  Search,
-  Smartphone,
-  Square,
-  Tablet,
-  WifiOff,
-} from "@/components/ui/icons";
+import { ChevronDown, Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, Globe, Image as ImageIcon, Loader2, Maximize2, MessagesSquare, Monitor, PanelRightOpen, Plus, Search, Smartphone, Square, Tablet, WifiOff, Table2, Presentation } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { LoadError } from "@/components/ui/load-error";
 import { cardVariants } from "@/components/ui/card";
@@ -83,6 +62,9 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   MARKDOWN: FileText,
   MERMAID: GitBranch,
   DESIGN: AppIcons.design,
+  SPREADSHEET: Table2,
+  DOCUMENT: FileText,
+  PRESENTATION: Presentation,
 };
 
 /** Filter-chip labels — what the artifact IS, not its file format. */
@@ -94,6 +76,9 @@ const TYPE_LABELS: Record<ArtifactType, string> = {
   SVG: "Graphics",
   MERMAID: "Diagrams",
   DESIGN: "Designs",
+  SPREADSHEET: "Spreadsheets",
+  DOCUMENT: "Documents",
+  PRESENTATION: "Decks",
 };
 
 /**
@@ -114,6 +99,9 @@ const DOWNLOAD_EXTENSIONS: Record<string, string> = {
   MARKDOWN: "md",
   MERMAID: "mmd",
   DESIGN: "juno.design.json",
+  SPREADSHEET: "xlsx",
+  DOCUMENT: "docx",
+  PRESENTATION: "pptx",
   CODE: "txt",
 };
 

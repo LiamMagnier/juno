@@ -14,6 +14,7 @@ import {
   summaryPredatesForget,
   summaryRebuildDecision,
 } from "@/lib/memory-lifecycle";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * Forgetting, end to end — and the leak it closes.
@@ -166,7 +167,7 @@ test("an account that never forgot anything always has a fresh summary", () => {
 test("chat context benches a stale summary instead of injecting it", () => {
   const body = src("src/lib/memory.ts");
   const profile = body.slice(body.indexOf("export async function getMemoryProfile"));
-  assert.match(profile.slice(0, 2500), /summaryPredatesForget\(storedSummary\.updatedAt, forgottenAt\)/);
+  assert.match(profile.slice(0, 4000), /summaryPredatesForget\(storedSummary\.updatedAt, forgottenAt\)/);
 });
 
 test("consolidation treats a forget as a change, not only a new fact count", () => {
@@ -223,7 +224,7 @@ test("nothing recorded, no receipt", () => {
 });
 
 test("the chat route forgets only on a turn with no untrusted content", () => {
-  const body = src("src/app/api/chat/route.ts");
+  const body = chatTurnSource();
   const guard = body.indexOf("if (memoryEnabled && !untrustedContentInTurn) {");
   const call = body.indexOf("forgetStatements(user.id, parseForgets(acc.text)");
   assert.ok(guard > -1 && call > guard, "forgetStatements must sit inside the untrusted-content guard");

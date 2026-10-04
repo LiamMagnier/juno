@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-301 routes: 183 native, 53 planned, 52 web only, 13 internal. 47 pages: on the Mac 33 native, 4 partial, 3 planned, 7 web only; on iOS 17 native, 8 partial, 15 planned, 7 web only.
+317 routes: 183 native, 66 planned, 55 web only, 13 internal. 48 pages: on the Mac 33 native, 4 partial, 3 planned, 8 web only; on iOS 17 native, 8 partial, 15 planned, 8 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -33,22 +33,22 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 0/2 (+2 partial) | 0/2 (+2 partial) | 1 | 1 | 1 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 3 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 4 | 0 |
+| [Memory](#memory) | 1/1 | 1/1 | 12 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
 | [Skills](#skills) | 4/4 | 0/4 | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 4/4 | 4/4 | 18 | 3 | 1 | 0 |
+| [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
-| [Settings, notifications and announcements](#settings) | 2/3 | 2/3 | 11 | 2 | 2 | 0 |
-| [Plans and billing](#billing) | 1/1 | 0/1 | 3 | 0 | 0 | 1 |
+| [Settings, notifications and announcements](#settings) | 2/3 | 2/3 | 11 | 6 | 2 | 0 |
+| [Plans and billing](#billing) | 1/1 | 0/1 | 3 | 2 | 2 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
-| [Owner tools](#admin) | 0/5 | 0/5 | 0 | 0 | 15 | 0 |
+| [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
 | [Platform endpoints](#platform) | – | – | 1 | 0 | 0 | 10 |
 
 <a id="auth"></a>
@@ -245,6 +245,7 @@ Design is a type of artifact (register #73).
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |
 | `/api/design/[artifactId]/export` | GET | Native | JunoChatKit |  |
 | `/api/design/[artifactId]/transactions` | GET, POST | Planned |  | The web's editor commits each edit here as it goes; the Mac's host saves edits its own way and does not call it. |
+| `/api/artifacts/[id]/ops` | POST | Web only |  | Targeted edits to a semantic spreadsheet, document or deck. Native clients are given the Markdown artifact contract instead, so no semantic artifact reaches them to edit. |
 
 <a id="memory"></a>
 
@@ -268,6 +269,8 @@ Design is a type of artifact (register #73).
 | `/api/memory/import/preview` | POST | Native | JunoChatKit |  |
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
+| `/api/memory/skill-candidates` | GET | Planned |  | Methods Alevr noticed the person repeat, offered as draft skills on the web's Memory page. The apps do not list them yet. |
+| `/api/memory/skill-candidates/[id]` | POST | Planned |  | Accepting or dismissing a proposed skill; web first, like the list. |
 
 <a id="connections"></a>
 
@@ -446,6 +449,11 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/tasks` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/thread` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/undo` | POST | Planned |  | Agent event undo; wired into AgentClient.swift in Phase 7. |
+| `/api/agents/[id]/board` | GET | Planned |  | An Orbit member's work board (goals, dependencies, retries). Web first; the apps show the member's tasks without the board yet. |
+| `/api/agents/[id]/goals/[goalId]/advance` | POST | Planned |  | Advancing a durable goal by one step from the board. The apps have no board to press it from yet. |
+| `/api/agents/[id]/memory-access` | PATCH | Planned |  | What an Orbit member may read of the account's memory, set from its page on the web. The apps keep the default grant until they show the setting. |
+| `/api/agents/rooms` | GET, POST | Planned |  | Orbit rooms: two to six members answering in one conversation. Web first; the apps open a room's conversation as an ordinary chat. |
+| `/api/agents/rooms/[conversationId]` | GET | Planned |  | A room's members, turn plan and handoffs. The apps draw the replies without the room's bylines yet. |
 
 <a id="research"></a>
 
@@ -556,6 +564,10 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/settings` | GET, PATCH | Native | JunoChatKit |  |
 | `/api/v1/devices/apns` | POST, DELETE | Native | JunoSync |  |
 | `/api/profile/activity` | GET | Planned |  | The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet. |
+| `/api/secrets` | GET, POST | Planned |  | The credential vault the agent computer fills sign-ins from, managed in the web's Settings. The apps do not manage it yet. |
+| `/api/secrets/[id]` | PATCH, DELETE | Planned |  | Editing or deleting one stored credential; web first, like the list. |
+| `/api/secrets/grants` | POST | Planned |  | Which sites and tasks may use a stored credential; web first. |
+| `/api/secrets/grants/[id]` | DELETE | Planned |  | Revoking one credential grant; web first. |
 
 <a id="billing"></a>
 
@@ -570,7 +582,11 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/billing/app-store` | GET, POST | Internal |  | The unversioned alias of /api/v1/billing/app-store; the apps call the v1 path. |
 | `/api/stripe/checkout` | POST | Native | JunoChatKit |  |
 | `/api/stripe/portal` | POST | Native | JunoChatKit |  |
-| `/api/v1/billing/app-store` | GET, POST | Native | JunoAPI |  |
+| `/api/v1/billing/app-store` | GET, POST | Native | JunoAPI, JunoMobile |  |
+| `/api/billing/credits` | GET | Planned |  | Top-up credit balance and expiry, shown in the web's Billing section. The apps buy plans through the App Store and do not sell top-ups yet. |
+| `/api/stripe/topup` | POST | Web only |  | Buying a top-up pack through Stripe Checkout; App Store rules keep this purchase on the web. |
+| `/api/stripe/cancel` | GET, POST | Web only |  | Cancelling a Stripe subscription with the legal confirmation; an App Store subscription is cancelled in the App Store. |
+| `/api/referrals` | GET | Planned |  | The referral code and its rewards in the web's Billing section; the apps do not show it yet. |
 
 <a id="community"></a>
 
@@ -602,6 +618,7 @@ The owner's moderation and account tools stay on the web.
 | `/admin/links` | Web only | Web only |  | Owner tools. |
 | `/admin/moderation` | Web only | Web only |  | Owner tools. |
 | `/admin/users` | Web only | Web only |  | Owner tools. |
+| `/admin/turns` | Web only | Web only |  | The owner's turn trace viewer (route timing, routing receipts); an operator tool. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|

@@ -61,6 +61,10 @@ const nextConfig = {
   reactStrictMode: true,
   pageExtensions: devOnlyPages ? ["dev.tsx", "tsx", "ts", "jsx", "js"] : ["tsx", "ts", "jsx", "js"],
   poweredByHeader: false,
+  // Off by default. `ALEVR_BUNDLE_SOURCEMAPS=1 next build` emits client source
+  // maps so scripts/perf/bundle-attribution.mjs can say which modules make up
+  // each route's first-load JavaScript (docs/rework/program/PERFORMANCE.md).
+  productionBrowserSourceMaps: process.env.ALEVR_BUNDLE_SOURCEMAPS === "1",
   /*
    * THE CLIENT ROUTER CACHE, turned back on.
    *

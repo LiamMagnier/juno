@@ -11,6 +11,7 @@ import {
   chatRuntimeToolAllowlist,
 } from "../src/lib/chat/tool-policy";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "../src/lib/untrusted-content";
+import { chatTurnSource } from "./chat-turn-source";
 
 test("UnifiedAgentRegistry exposes only hosted-safe tools and emits valid provider schemas", () => {
   const registry = new UnifiedAgentRegistry();
@@ -164,7 +165,7 @@ test("streamChat never forwards an absent allowlist to the registry", () => {
   // this file pins it), so the opt-in default has to live in streamChat.
   const llm = readFileSync(new URL("../src/lib/llm.ts", import.meta.url), "utf8");
   assert.match(llm, /allowedToolIds: opts\.allowedTools \?\? \[\.\.\.NO_RUNTIME_TOOLS\]/);
-  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const route = chatTurnSource();
   // The allowlist is still built from the turn's own toggles and is still
   // always an array. It is now wrapped by the skill narrowing, which filters
   // this list and can only ever return a subset of it — so the property this
@@ -271,7 +272,7 @@ test("a chat attachment is not read when it is uploaded", () => {
   const upload = readFileSync(new URL("../src/app/api/upload/route.ts", import.meta.url), "utf8");
   assert.match(upload, /scheduleIngest\(/, "project files still index, through the same gate");
 
-  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const route = chatTurnSource();
   assert.match(route, /await ensureAttachmentText\(/, "reading happens when the turn does");
 });
 

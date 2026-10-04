@@ -24,6 +24,9 @@ export type HomeTypeFilter = ArtifactType | "ALL";
  */
 export const HOME_TYPE_ORDER: readonly ArtifactType[] = [
   "DESIGN",
+  "DOCUMENT",
+  "SPREADSHEET",
+  "PRESENTATION",
   "HTML",
   "REACT",
   "CODE",

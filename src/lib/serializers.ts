@@ -1,4 +1,5 @@
 import "server-only";
+import { parseRoutingReceipt } from "@/lib/router/receipt";
 import type {
   Attachment,
   Artifact,
@@ -261,6 +262,8 @@ export async function serializeMessage(
     cacheReadTokens: msg.cacheReadTokens ?? undefined,
     cacheWriteTokens: msg.cacheWriteTokens ?? undefined,
     costUsd,
+    // Auto's receipt, when Auto routed this turn. Malformed or absent → none.
+    routing: parseRoutingReceipt((msg as { routing?: unknown }).routing) ?? undefined,
     conversationId: msg.conversationId,
     // Prior contents preserved across regenerate/edit-and-resend (oldest first).
     // Metadata only — the client pages content in via GET /api/messages/[id]/versions.
