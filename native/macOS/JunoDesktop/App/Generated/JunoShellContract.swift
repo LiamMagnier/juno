@@ -13,16 +13,19 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "5f1f47baf500c3ec540f6f45a13d116c01d62b7e3d605f2c5dff399bcb0696b8"
+    static let digest = "bab5e6c3032021059a8e1385e8c1b87cc0271582efefaebadf01d2eb39d66dc5"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
 /// ranked by `planRank` in src/lib/plans.ts).
 enum JunoShellPlan: String, CaseIterable, Comparable, Sendable {
     case free = "FREE"
+    case lite = "LITE"
     case pro = "PRO"
+    case plus = "PLUS"
     case max = "MAX"
     case max20 = "MAX20"
+    case ultra = "ULTRA"
     case owner = "OWNER"
 
     static func < (lhs: Self, rhs: Self) -> Bool {
@@ -60,7 +63,7 @@ enum JunoShellProduct: String, CaseIterable, Sendable {
     var minPlan: JunoShellPlan {
         switch self {
         case .chat: .free
-        case .code: .free
+        case .code: .pro
         }
     }
 

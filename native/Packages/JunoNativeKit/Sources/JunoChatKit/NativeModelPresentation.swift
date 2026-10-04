@@ -1,4 +1,5 @@
 import Foundation
+import JunoCore
 import JunoDesignSystem
 
 /// Formatting shared by every surface that lists models. Kept free of SwiftUI
@@ -36,10 +37,11 @@ public enum NativeModelPresentation {
             : String(format: "$%.2f", value)
     }
 
-    /// "pro" → "Pro". Plan names arrive lowercased from the manifest.
+    /// "pro" → "Pro", "max20" → "Max ×10". Plan ids arrive lowercased from
+    /// the manifest; one this build does not know is title-cased.
     public static func planName(_ raw: String) -> String {
-        guard let first = raw.first else { return raw }
-        return first.uppercased() + raw.dropFirst()
+        guard !raw.isEmpty else { return raw }
+        return JunoAccountPlan(serverID: raw).displayName
     }
 
     /// The one-line reason a model cannot be picked, or nil when it can.

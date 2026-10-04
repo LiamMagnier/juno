@@ -148,7 +148,17 @@ final class NativeModelManifestTests: XCTestCase {
         XCTAssertFalse(model.isAvailable)
         XCTAssertTrue(model.isChatCapable)
         XCTAssertEqual(model.unavailability, .requiresPlan("max"))
-        XCTAssertEqual(NativeModelPresentation.unavailabilityReason(model), "Requires Max")
+        XCTAssertEqual(NativeModelPresentation.unavailabilityReason(model), "Requires Max ×5")
+    }
+
+    func testAMidModelLockedToLiteNamesLite() async throws {
+        let lite = gatedModel.replacingOccurrences(of: #""requiredPlan": "max""#, with: #""requiredPlan": "lite""#)
+        let catalog = try await client(body: manifest(models: [lite])).modelCatalog(for: accountID)
+        let model = try XCTUnwrap(catalog.models.first)
+        XCTAssertEqual(model.unavailability, .requiresPlan("lite"))
+        XCTAssertEqual(NativeModelPresentation.unavailabilityReason(model), "Requires Lite")
+        XCTAssertEqual(NativeModelPresentation.planName("max20"), "Max ×10")
+        XCTAssertEqual(NativeModelPresentation.planName("ultra"), "Ultra")
     }
 
     func testAnOutOfRangeGradeIsRejectedRatherThanClamped() async throws {

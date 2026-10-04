@@ -3,30 +3,76 @@ import StoreKit
 import JunoCore
 
 /// Standard App Store product identifiers for Juno subscriptions across iOS and macOS.
+///
+/// One monthly and one yearly auto-renewable subscription per plan for sale,
+/// all in one subscription group so moving between them is an upgrade or a
+/// downgrade rather than a second subscription. The server maps the same ids
+/// to plans (`APP_STORE_PRODUCT_IDS` in src/lib/billing/app-store.ts) and
+/// docs/pricing/APP_STORE_PRODUCTS.md lists them for App Store Connect.
 public enum JunoStoreKitProductIDs {
+    public static let liteMonthly = "com.liammagnier.juno.lite.monthly"
+    public static let liteYearly = "com.liammagnier.juno.lite.yearly"
     public static let proMonthly = "com.liammagnier.juno.pro.monthly"
     public static let proYearly = "com.liammagnier.juno.pro.yearly"
+    public static let plusMonthly = "com.liammagnier.juno.plus.monthly"
+    public static let plusYearly = "com.liammagnier.juno.plus.yearly"
     public static let maxMonthly = "com.liammagnier.juno.max.monthly"
     public static let maxYearly = "com.liammagnier.juno.max.yearly"
     public static let max20Monthly = "com.liammagnier.juno.max20.monthly"
     public static let max20Yearly = "com.liammagnier.juno.max20.yearly"
+    public static let ultraMonthly = "com.liammagnier.juno.ultra.monthly"
+    public static let ultraYearly = "com.liammagnier.juno.ultra.yearly"
 
-    public static let all: Set<String> = [
-        proMonthly, proYearly,
-        maxMonthly, maxYearly,
-        max20Monthly, max20Yearly,
+    /// Every product, by the plan and interval it sells.
+    public static let catalog: [String: (tier: JunoSubscriptionTier, interval: JunoBillingInterval)] = [
+        liteMonthly: (.lite, .month), liteYearly: (.lite, .year),
+        proMonthly: (.pro, .month), proYearly: (.pro, .year),
+        plusMonthly: (.plus, .month), plusYearly: (.plus, .year),
+        maxMonthly: (.max, .month), maxYearly: (.max, .year),
+        max20Monthly: (.max20, .month), max20Yearly: (.max20, .year),
+        ultraMonthly: (.ultra, .month), ultraYearly: (.ultra, .year),
     ]
+
+    public static let all: Set<String> = Set(catalog.keys)
+
+    /// The product that sells `tier` billed every `interval`, or nil for Free.
+    public static func productID(for tier: JunoSubscriptionTier, interval: JunoBillingInterval) -> String? {
+        catalog.first { $0.value.tier == tier && $0.value.interval == interval }?.key
+    }
+
+    /// The plan a product sells; Free for an id this build does not sell.
+    public static func tier(for productID: String) -> JunoSubscriptionTier {
+        catalog[productID]?.tier ?? .free
+    }
 }
 
-public enum JunoSubscriptionTier: String, Codable, Sendable {
+/// A plan the App Store sells, plus Free. The cases are `JunoPlanTier`'s
+/// for-sale ones; Owner is never bought.
+public enum JunoSubscriptionTier: String, Codable, CaseIterable, Sendable {
     case free = "FREE"
+    case lite = "LITE"
     case pro = "PRO"
+    case plus = "PLUS"
     case max = "MAX"
     case max20 = "MAX20"
+    case ultra = "ULTRA"
+
+    public var planTier: JunoPlanTier { JunoPlanTier(rawValue: rawValue) ?? .free }
+
+    public init?(planTier: JunoPlanTier) {
+        self.init(rawValue: planTier.rawValue)
+    }
+
+    /// `planRank`.
+    public var rank: Int { planTier.rank }
 }
 
 public struct JunoSubscriptionState: Equatable, Sendable {
     public var tier: JunoSubscriptionTier
+    /// The plan the server says the account is on — the one to show. It can
+    /// name a plan this build does not know, which `tier` cannot, and such a
+    /// plan is never shown as Free.
+    public var plan: JunoAccountPlan
     public var isActive: Bool
     public var productID: String?
     public var expirationDate: Date?
@@ -37,9 +83,11 @@ public struct JunoSubscriptionState: Equatable, Sendable {
         isActive: Bool = false,
         productID: String? = nil,
         expirationDate: Date? = nil,
-        willAutoRenew: Bool = false
+        willAutoRenew: Bool = false,
+        plan: JunoAccountPlan? = nil
     ) {
         self.tier = tier
+        self.plan = plan ?? JunoAccountPlan(tier: tier.planTier)
         self.isActive = isActive
         self.productID = productID
         self.expirationDate = expirationDate
@@ -245,20 +293,17 @@ public actor JunoStoreKitManager: JunoStoreKitManaging {
         }
 
         let decoded = try JSONDecoder().decode(SyncResponse.self, from: data)
-        let tier: JunoSubscriptionTier
-        switch decoded.subscription.plan.uppercased() {
-        case "PRO": tier = .pro
-        case "MAX": tier = .max
-        case "MAX20": tier = .max20
-        default: tier = .free
-        }
-
+        let plan = JunoAccountPlan(serverID: decoded.subscription.plan)
+        let tier = plan.tier.flatMap(JunoSubscriptionTier.init(planTier:))
+            ?? decoded.subscription.productId.map(JunoStoreKitProductIDs.tier(for:))
+            ?? .free
         let state = JunoSubscriptionState(
             tier: tier,
-            isActive: decoded.subscription.status.uppercased() == "ACTIVE" && tier != .free,
+            isActive: decoded.subscription.status.uppercased() == "ACTIVE" && plan.isPaid,
             productID: decoded.subscription.productId,
             expirationDate: nil,
-            willAutoRenew: tier != .free
+            willAutoRenew: plan.isPaid,
+            plan: plan
         )
         return state
     }
@@ -325,19 +370,10 @@ public actor JunoStoreKitManager: JunoStoreKitManaging {
     }
 
     private func tierForProductID(_ productID: String) -> JunoSubscriptionTier {
-        let lower = productID.lowercased()
-        if lower.contains("max20") { return .max20 }
-        if lower.contains("max") { return .max }
-        if lower.contains("pro") { return .pro }
-        return .free
+        JunoStoreKitProductIDs.tier(for: productID)
     }
 
     private func tierRank(_ tier: JunoSubscriptionTier) -> Int {
-        switch tier {
-        case .free: return 0
-        case .pro: return 1
-        case .max: return 2
-        case .max20: return 3
-        }
+        tier.rank
     }
 }
