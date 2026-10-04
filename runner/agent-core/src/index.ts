@@ -22,6 +22,11 @@ export {
   classifySensitiveCommand,
   loadProjectRules,
   ruleSubjectFor,
+  unattendedApprovalAnswer,
+  mayGrantAlways,
+  ladderRuling,
+  permissionRuling,
+  actionRiskOf,
   type PermissionEngineOptions,
 } from './permissions.js';
 export {

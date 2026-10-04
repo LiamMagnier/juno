@@ -16,7 +16,7 @@ import {
   actionPreviewDetail,
   actionReceiptDigest,
   decideAuthorization,
-  mayCreateStandingApproval,
+  mayAllowScope,
   normalizedActionArgs,
   type ActionApprovalDecision,
   type ActionPermissionPolicy,
@@ -91,7 +91,7 @@ export function serializeActionApproval(row: ReceiptRow, connectorLabel = row.co
     receiptDigest: row.receiptDigest,
     status: statusValue(row.status),
     decision: row.decision,
-    canAllowScope: mayCreateStandingApproval(riskClass),
+    canAllowScope: mayAllowScope({ riskClass, toolName: row.toolName }),
     derivedFromUntrusted: row.derivedFromUntrusted,
     expiresAt: row.expiresAt.toISOString(),
     decidedAt: row.decidedAt?.toISOString() ?? null,
@@ -217,7 +217,7 @@ async function findStandingGrant(input: {
   toolName: string;
   riskClass: ActionRiskClass;
 }): Promise<boolean> {
-  if (!mayCreateStandingApproval(input.riskClass)) return false;
+  if (!mayAllowScope({ riskClass: input.riskClass, toolName: input.toolName })) return false;
   const toolName = input.toolName;
   const names = input.connectorId === "juno_runtime" ? toolIdAliasesOf(canonicalToolId(toolName)) : [toolName];
   return !!(await prisma.actionApprovalGrant.findFirst({
@@ -599,7 +599,7 @@ export async function decideActionApproval(input: {
   }
 
   const riskClass = riskValue(receipt.riskClass);
-  if (input.decision === "allow_scope" && !mayCreateStandingApproval(riskClass)) {
+  if (input.decision === "allow_scope" && !mayAllowScope({ riskClass, toolName: receipt.toolName })) {
     return refusal("not_scope_allowable");
   }
 

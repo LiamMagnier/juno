@@ -14,7 +14,7 @@ import type { ProviderAdapter } from './providers/types.js';
 import { assertContainedPath } from './tools/fs.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
 import type { ContainerSandboxConfig } from './tools/container-sandbox.js';
-import { PermissionEngine, classifyRisk, ruleSubjectFor } from './permissions.js';
+import { PermissionEngine, classifyRisk, mayGrantAlways, ruleSubjectFor } from './permissions.js';
 import { CheckpointStore, type FileRollback } from './checkpoints.js';
 import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
@@ -528,7 +528,7 @@ export class AgentSession {
         this.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason: msg });
         return { type: 'tool_result', toolCallId: call.id, content: msg, isError: true };
       }
-      if (decision === 'allow_always' && risk !== 'sensitive') {
+      if (decision === 'allow_always' && mayGrantAlways(risk)) {
         this.permissions.grantAlways(call.name, subject);
       }
     }

@@ -16,6 +16,7 @@ import type {
 } from "@/lib/action-approval";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { TIMING } from "@/lib/interaction";
+import { PERMISSION_GRANT_LABEL } from "@/lib/permissions/taxonomy";
 
 /*
  * The one card in the transcript that is not prose.
@@ -779,7 +780,7 @@ export function ApprovalCard({
                   ? [
                       { label: `${verbLabel} once`, line: `${PRODUCT_NAME} asks again next time.`, onSelect: () => decide("allow_once") },
                       {
-                        label: "Always allow this action",
+                        label: PERMISSION_GRANT_LABEL.always_allow,
                         line: `${PRODUCT_NAME} stops asking before this action in ${current.connectorLabel}. Change it in Customize.`,
                         onSelect: () => decide("allow_scope"),
                       },

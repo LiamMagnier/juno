@@ -33,6 +33,8 @@ export {
   approvalAsksUnder,
   isWorkPermissionPolicy,
   requiresExplicitApproval,
+  mayHoldStandingAllowance,
+  HARD_FLOOR_TOKENS,
   WORK_PERMISSION_POLICIES,
   toolTier,
   canonicalJson,

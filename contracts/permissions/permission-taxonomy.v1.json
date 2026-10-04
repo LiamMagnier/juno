@@ -1,0 +1,497 @@
+{
+  "$comment": [
+    "The unified permission model (BRIEF \u00a76): one risk taxonomy and one grant vocabulary across every dispatch boundary.",
+    "Authority: src/lib/permissions/taxonomy.ts, re-exported by src/lib/action-approval.ts. This file pins it; every runtime reads it in its own tests:",
+    "  web/server: tests/permission-conformance.test.ts (action broker, Work domain, Alevr Secrets, tool registry, and the agent-core runner build);",
+    "  agent-core: runner/agent-core/src/test/permission-conformance.test.ts (Work runner gate, Code ladder, unattended answer);",
+    "  Swift: native/Packages/JunoWork/Tests/JunoWorkCoreTests/PermissionConformanceTests.swift (WorkRisk).",
+    "Runtimes keep their native risk names (stored rows, Mac advertisements); runtimeRiskTiers projects them onto the four tiers. Unlisted names are external_action.",
+    "Floors: (1) destructive_sensitive never proceeds without a person under any mode of any runtime (unattended: refused). (2) No standing grant wider than grantCeiling[tier]. (3) A hard-floor category pins an action to allow_once whatever its tier. (4) unknown is at least external_action.",
+    "Owner-authored rule files (Code settings.json allow rules) are policy the owner wrote, not answers to a prompt; they still cannot silence destructive (see the Code ladder fixture contracts/agent/permission-rules.fixtures.json)."
+  ],
+  "version": 1,
+  "tiers": [
+    "safe_read",
+    "reversible_write",
+    "external_action",
+    "destructive_sensitive"
+  ],
+  "grants": [
+    "block",
+    "ask_every_time",
+    "allow_once",
+    "allow_for_task",
+    "allow_for_site",
+    "always_allow"
+  ],
+  "grantLabels": {
+    "block": "Block",
+    "ask_every_time": "Ask every time",
+    "allow_once": "Allow once",
+    "allow_for_task": "Allow for this task",
+    "allow_for_site": "Allow for this site or app",
+    "always_allow": "Always allow"
+  },
+  "grantCeiling": {
+    "safe_read": "always_allow",
+    "reversible_write": "always_allow",
+    "external_action": "allow_for_task",
+    "destructive_sensitive": "allow_once"
+  },
+  "hardFloorCategories": [
+    "destructive",
+    "sensitive",
+    "financial",
+    "credential",
+    "account_security"
+  ],
+  "hardFloorTokens": {
+    "destructive": [
+      "delete",
+      "destroy",
+      "drop",
+      "erase",
+      "trash",
+      "remove",
+      "wipe",
+      "merge",
+      "deploy",
+      "empty",
+      "purge"
+    ],
+    "sensitive": [],
+    "financial": [
+      "pay",
+      "payment",
+      "purchase",
+      "buy",
+      "checkout",
+      "refund",
+      "transfer",
+      "invoice",
+      "order",
+      "subscribe",
+      "charge"
+    ],
+    "credential": [
+      "credential",
+      "credentials",
+      "password",
+      "passphrase",
+      "token",
+      "secret",
+      "otp",
+      "2fa",
+      "mfa",
+      "login"
+    ],
+    "account_security": [
+      "account",
+      "security",
+      "permission",
+      "permissions",
+      "role",
+      "roles",
+      "sharing",
+      "invite",
+      "lock",
+      "unlock",
+      "revoke",
+      "reset"
+    ]
+  },
+  "runtimeRiskTiers": {
+    "action_broker": {
+      "read_only": "safe_read",
+      "reversible_write": "reversible_write",
+      "external_write": "external_action",
+      "destructive_or_sensitive": "destructive_sensitive",
+      "unknown": "external_action"
+    },
+    "tool_registry": {
+      "read": "safe_read",
+      "write": "reversible_write",
+      "external": "external_action",
+      "destructive": "destructive_sensitive"
+    },
+    "work": {
+      "safe": "safe_read",
+      "edit": "reversible_write",
+      "command": "external_action",
+      "sensitive": "destructive_sensitive",
+      "irreversible": "destructive_sensitive"
+    },
+    "code_runner": {
+      "safe": "safe_read",
+      "edit": "reversible_write",
+      "command": "external_action",
+      "sensitive": "destructive_sensitive"
+    },
+    "code_native": {
+      "read": "safe_read",
+      "write": "reversible_write",
+      "execute": "external_action",
+      "critical": "external_action",
+      "destructive": "destructive_sensitive"
+    }
+  },
+  "decisionGrants": {
+    "action_broker": {
+      "allow_once": "allow_once",
+      "allow_scope": "always_allow",
+      "deny": "block"
+    },
+    "work": {
+      "allowed": "allow_once",
+      "allowed_always": "allow_for_task",
+      "denied": "block"
+    },
+    "code_runner": {
+      "allow": "allow_once",
+      "allow_always": "allow_for_task",
+      "deny": "block"
+    },
+    "secrets": {
+      "grant": "allow_for_task"
+    }
+  },
+  "modes": {
+    "action_broker": [
+      "always_ask",
+      "ask_for_any_change",
+      "ask_for_important_actions",
+      "allow_selected_low_risk",
+      "block"
+    ],
+    "work": [
+      "conservative",
+      "balanced",
+      "permissive"
+    ],
+    "code_runner": [
+      "plan",
+      "ask",
+      "auto-edit",
+      "full"
+    ],
+    "code_native": [
+      "plan",
+      "ask",
+      "auto_edit",
+      "full"
+    ]
+  },
+  "cases": [
+    {
+      "runtime": "work",
+      "action": "work.file.read",
+      "risk": "safe",
+      "expect": {
+        "tier": "safe_read",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.file.write",
+      "risk": "edit",
+      "expect": {
+        "tier": "reversible_write",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.shell.run",
+      "risk": "command",
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.computer.key",
+      "risk": "command",
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.computer.shell",
+      "risk": "sensitive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.computer.type",
+      "risk": "sensitive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.browser.submit",
+      "risk": "irreversible",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.browser.purchase",
+      "risk": "irreversible",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.browser.fill_credential",
+      "risk": "sensitive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.connector.write",
+      "risk": "sensitive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.connector.delete",
+      "risk": "edit",
+      "note": "misgraded by a tool: the always-confirm list still holds",
+      "expect": {
+        "tier": "reversible_write",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.connector.payment",
+      "risk": "command",
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.app.reset_password",
+      "risk": "command",
+      "note": "not on the always-confirm list; the hard floor still forbids a standing answer",
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": false,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.app.checkout_cart",
+      "risk": "edit",
+      "expect": {
+        "tier": "reversible_write",
+        "asksUnderEveryMode": false,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
+      "action": "work.system.change_security_setting",
+      "risk": "irreversible",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "list_issues",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "expect": {
+        "tier": "safe_read",
+        "asksUnderEveryMode": false,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "star_issue",
+      "annotations": {},
+      "expect": {
+        "tier": "reversible_write",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "archive_order",
+      "annotations": {},
+      "note": "reversible by verb, financial by noun: no standing grant",
+      "expect": {
+        "tier": "reversible_write",
+        "asksUnderEveryMode": false,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "send_email",
+      "annotations": {},
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "send_draft",
+      "annotations": {},
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "frobnicate",
+      "annotations": {},
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "delete_event",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "note": "a server claiming read-only cannot downgrade a delete",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "reset_password",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "action_broker",
+      "tool": "get_items",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "args": {
+        "permission": "always_allow",
+        "approved": true
+      },
+      "note": "arguments cannot grant: a permission-shaped key raises the class",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "code_runner",
+      "risk": "safe",
+      "expect": {
+        "tier": "safe_read",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "code_runner",
+      "risk": "edit",
+      "expect": {
+        "tier": "reversible_write",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "code_runner",
+      "risk": "command",
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "code_runner",
+      "risk": "sensitive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "code_native",
+      "risk": "critical",
+      "expect": {
+        "tier": "external_action",
+        "asksUnderEveryMode": false,
+        "standing": true
+      }
+    },
+    {
+      "runtime": "code_native",
+      "risk": "destructive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    }
+  ]
+}

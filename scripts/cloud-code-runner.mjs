@@ -63,6 +63,7 @@ import {
   LegacyTaskDowncast,
   createProxyProvider,
   protocolMode,
+  unattendedApprovalAnswer,
 } from "../runner/agent-core/dist/index.js";
 import { containerSandboxFromEnv } from "../runner/agent-core/dist/tools/container-sandbox.js";
 import {
@@ -1161,10 +1162,20 @@ async function main() {
        * untrue of a run nobody is watching, as the refused call's summary.
        */
       requestApproval: async (request) => {
-        const allowed = permissionMode === "full";
+        // A sensitive action (force-push, hard reset, curl | sh, keychain …)
+        // asks a person under every mode (BRIEF §6). Nobody is attached here,
+        // so even Full access refuses it rather than allowing it silently.
+        const allowed = unattendedApprovalAnswer(permissionMode, request.risk) === "allow";
+        const floored = request.risk === "sensitive";
         protocol.projector.noteApprovalAnswer(request.callId, {
           by: "mode",
-          ...(allowed ? {} : { feedback: `this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}` }),
+          ...(allowed
+            ? {}
+            : {
+                feedback: floored
+                  ? "it needs a person to approve it, and nobody is attached to this run"
+                  : `this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}`,
+              }),
         });
         return allowed ? "allow" : "deny";
       },
