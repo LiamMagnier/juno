@@ -6,6 +6,7 @@ const TABS = [
   { id: "users", href: "/admin/users", label: "Users" },
   { id: "moderation", href: "/admin/moderation", label: "Moderation" },
   { id: "links", href: "/admin/links", label: "Links" },
+  { id: "turns", href: "/admin/turns", label: "Turns" },
 ] as const;
 
 export type AdminSection = (typeof TABS)[number]["id"];

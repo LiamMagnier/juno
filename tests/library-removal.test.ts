@@ -14,6 +14,7 @@ import {
   type SentAttachmentRow,
 } from "@/lib/library-removal-policy";
 import { removalNotice } from "@/components/library/library-types";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * DELETING A FILE FROM THE LIBRARY MUST NOT DELETE IT FROM A CHAT.
@@ -363,4 +364,6 @@ test("no chat path reads the Library's column", () => {
   ]) {
     assert.doesNotMatch(read(path), /libraryRemovedAt/, path);
   }
+  // …and every stage of the chat turn the route now orchestrates.
+  assert.doesNotMatch(chatTurnSource(), /libraryRemovedAt/, "src/lib/chat/turn/");
 });

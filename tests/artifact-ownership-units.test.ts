@@ -28,6 +28,7 @@ import { copyIdentifier, copyTitle } from "../src/lib/artifact-copy-names";
 import { allocatesCheckpoint, CHECKPOINT_WINDOW_MS } from "../src/lib/design/operations";
 import { serializeDesignDocument } from "../src/lib/design/migrations";
 import { signInDocument, transaction } from "./design-fixtures";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * The artifact lifecycle's pure rules and its source-level promises
@@ -212,7 +213,7 @@ test("an installed app is never handed a trashed artifact or a web draft", () =>
 test("the chat read and a turn's done frame give the installed apps their projection", () => {
   const thread = read("src/app/api/conversations/[id]/route.ts");
   assert.match(thread, /isInstalledAppRequest\(req\)[\s\S]*artifactsForInstalledApps\(thread\.artifacts\)/);
-  const chat = read("src/app/api/chat/route.ts");
+  const chat = chatTurnSource();
   const frames = [...chat.matchAll(/type: "done",[\s\S]*?\n\s*\}\);/g)].map((m) => m[0]).filter((f) => /\bartifacts\b/.test(f) && !/artifacts: \[\]/.test(f));
   assert.ok(frames.length >= 2, "both saved-turn done frames found");
   for (const frame of frames) assert.match(frame, /artifacts: doneArtifacts\(artifacts\)/);

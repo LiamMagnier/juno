@@ -5,6 +5,7 @@ import { decideModelCapability, MODEL_CAPABILITY_TTL_MS } from "../src/lib/model
 import { classifyProviderError } from "../src/lib/provider-error";
 import { nativeModelCatalog } from "../src/lib/native-model-manifest";
 import type { ModelInfo } from "../src/lib/models";
+import { chatTurnSource } from "./chat-turn-source";
 
 const model = { id: "openai:gpt-5.6" };
 const now = new Date("2026-08-08T12:00:00.000Z");
@@ -64,7 +65,7 @@ test("native clients receive a visible health state instead of a misleading plan
 });
 
 test("the chat and cloud-code routes both enforce the same capability gate", () => {
-  const chat = readFileSync("src/app/api/chat/route.ts", "utf8");
+  const chat = chatTurnSource();
   const runner = readFileSync("src/app/api/code/tasks/[id]/runner-context/route.ts", "utf8");
   assert.match(chat, /modelCanRoute\(m, capabilityProbes\)/);
   assert.match(runner, /backendAgentCatalog\(availableModels, capabilityProbes\)/);

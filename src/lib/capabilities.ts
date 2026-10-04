@@ -70,7 +70,10 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   chat_streaming: {
     id: "chat_streaming",
     maturity: surfaces(
-      implemented("src/app/api/chat/route.ts"),
+      verified(
+        "CHAT_TURN_TEST_DATABASE_URL=<loopback db> NODE_OPTIONS=--conditions=react-server npx tsx --test --experimental-test-module-mocks tests/chat-turn-pipeline.integration.test.ts && npx tsx --test tests/chat-turn-trace.test.ts tests/chat-turn-reliability.test.ts",
+        "src/app/api/chat/route.ts", "src/lib/chat/turn/run-turn.ts", "src/lib/chat/turn/trace.ts", "docs/rework/program/ORCHESTRATION.md",
+      ),
       implemented("src/components/chat/chat-view.tsx"),
       implemented("native/Packages/JunoNativeKit/Sources/JunoChatKit/ChatStreamReducer.swift"),
       implemented("native/iOS/JunoMobile/App/JunoMobileConversationsView.swift"),

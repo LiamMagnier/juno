@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   parseArtifacts,
   parseStreamingArtifact,
@@ -13,6 +12,7 @@ import {
   artifactVerificationTitle,
   verifyAndRepairChatArtifacts,
 } from "@/lib/chat-artifact-verification";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * A STOPPED OR CUT-OFF REVISION NEVER BECOMES THE CURRENT VERSION (X-07).
@@ -31,7 +31,6 @@ import {
  * (the finished turn and the stopped one) write only finished artifacts.
  */
 
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 const REVISION_START =
   'Here is the updated page.\n\n<juno:artifact identifier="landing" type="html" title="Landing Page" language="html">' +
@@ -196,7 +195,7 @@ test("the route's pipeline, run on a Stop mid-revision, saves the text and no ve
 });
 
 test("both of the route's persistence spots write only finished artifacts", () => {
-  const route = read("src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   const writes = [...route.matchAll(/persistArtifacts\(\s*conversationId,\s*assistant\.id,\s*([^;]*?)\)\s*;/g)];
   assert.equal(writes.length, 2, "the finished turn and the stopped one");
   for (const [, argument] of writes) {

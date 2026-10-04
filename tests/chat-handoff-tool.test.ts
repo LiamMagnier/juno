@@ -27,6 +27,7 @@ import {
   decideActionPolicy,
   mayCreateStandingApproval,
 } from "@/lib/action-approval";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * `hand_off_to_teammate`: one agent giving work to another (the narrow handoff
@@ -328,7 +329,7 @@ test("startAgentTask can be asked to stop at the estimate, and hands back the dr
 });
 
 test("the chat route offers the handoff only in an agent's thread, on the task gate, and never announces its task", () => {
-  const route = read("../src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   assert.match(route, /const handoffGateOpen = chatTaskToolEnabled\(\{\s*\.\.\.taskGate,\s*skillPermits: narrowRuntimeToolsForSkill\(\[HAND_OFF_TOOL_ID\], appliedSkill\)/);
   // The agent answering is the thread's own, or in a room the member picked
   // for this turn; a private turn never has one.

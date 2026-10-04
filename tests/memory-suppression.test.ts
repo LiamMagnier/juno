@@ -12,6 +12,7 @@ import {
   resolveBackgroundCandidates,
   type UtilityCandidate,
 } from "@/lib/background-provider-policy";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * Three defects, one file, because they share a victim: the user who told Juno
@@ -336,7 +337,7 @@ test("consolidation never matches the policy against the background model's own 
   assert.equal(/opts\.model/.test(body), false, "consolidateMemories reads a caller-supplied model again");
   assert.match(body, /accountBackgroundProvider\(/);
 
-  const chat = src("src/app/api/chat/route.ts");
+  const chat = chatTurnSource();
   assert.match(chat, /maybeConsolidate\(user\.id, modelInfo\.provider\)/);
   assert.equal(/maybeConsolidate\([^)]*cheapModel/.test(chat), false, "the chat route feeds back the worker's own model");
 });

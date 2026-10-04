@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   createStreamLog,
   shouldLogStream,
@@ -9,6 +8,7 @@ import {
 } from "@/lib/chat/stream-log";
 import { createSseSender } from "@/lib/chat-stream";
 import type { StreamChunk } from "@/types/chat";
+import { chatTurnSource, turnModule } from "./chat-turn-source";
 
 /*
  * The write side of a resumable stream.
@@ -373,20 +373,19 @@ test("the chat route opens exactly one log, guarded, and never on the private pa
    * branch of the route has no log to hand its sender in the first place. That
    * is a property of the wiring, and only the wiring can be asked about it.
    */
-  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const route = chatTurnSource();
 
   assert.equal(route.split("createStreamLog(").length - 1, 1, "exactly one log is ever created");
   assert.match(route, /shouldLogStream\(input\)\s*\n\s*\? createStreamLog\(/, "and it is behind the source guard");
 
-  // The private branch runs first and returns its own Response; the log is
-  // created in the saved path below it.
-  const privateSender = route.indexOf("const { send, sendActivity, activityLog } = createSseSender(controller);");
-  const firstLogMention = route.indexOf("const streamLog");
-  assert.ok(privateSender > 0, "the private path still builds a sender with no options");
+  // The private turn is its own stage and returns its own Response; the log
+  // is created only in the saved turn (src/lib/chat/turn/run-turn.ts).
+  const privateTurn = turnModule("private-turn");
   assert.ok(
-    privateSender < firstLogMention,
-    "no log exists anywhere in the private branch — it cannot be passed one by accident"
+    privateTurn.includes("const { send, sendActivity, activityLog } = createSseSender(controller);"),
+    "the private path still builds a sender with no options"
   );
+  assert.doesNotMatch(privateTurn, /streamLog|createStreamLog|shouldLogStream/, "no log exists anywhere in the private turn — it cannot be passed one by accident");
   assert.equal(
     route.split("createSseSender(controller, { log: streamLog })").length - 1,
     1,
