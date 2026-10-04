@@ -7,8 +7,11 @@
  * error boundaries, and timeline progress tracking.
  */
 
-import crypto from "node:crypto";
 import type { AgentExecutionContext, AgentRuntimeEvent } from "@/lib/agent/types";
+
+// Web Crypto (Node 19+ and every browser), so the DAG rules are client-safe: the team
+// vocabulary in src/lib/agents/team.ts reaches the chat panel through this module.
+const crypto = globalThis.crypto;
 
 export type SwarmAgentRole =
   | "planner"

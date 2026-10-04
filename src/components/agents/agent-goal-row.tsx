@@ -32,7 +32,7 @@ export function AgentGoalRow({
   const driven = (goal.maxRuns ?? 0) > 0;
   const action = blocker ? "Continue" : !driven && goal.status === "active" ? "Keep working on it" : null;
   const meta = [
-    milestones.length ? `${done} of ${milestones.length}` : null,
+    milestones.length ? `${done} of ${milestones.length} done` : null,
     driven && goal.status === "active" && goal.runsUsed ? `${goal.runsUsed} of ${goal.maxRuns} runs` : null,
   ].filter(Boolean);
 

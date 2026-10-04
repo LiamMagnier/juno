@@ -221,7 +221,7 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
     await prisma.workRun.updateMany({ where: { id: resumed.run.id, userId, claimedBy: executorId }, data: { status: "running" } });
     await prisma.workSession.updateMany({ where: { id: leadId, userId }, data: { status: "running" } });
     leadRun = claim.run;
-    await appendEvents({ runId: leadRun.id, userId, events: [{ kind: "subagent_update", key: `team:resumed:${leadRun.attempt}`, payload: { phase: "resumed", sentence: "The team picked up where it left off" } }] });
+    await appendEvents({ runId: leadRun.id, userId, events: [{ kind: "subagent_update", key: `team:resumed:${leadRun.attempt}`, payload: { phase: "resumed", title: "The team picked up where it left off", sentence: "The team picked up where it left off" } }] });
   } else if ((WORK_LEASED_STATUSES as readonly string[]).includes(leadRun.status)) {
     if (leadRun.claimedBy !== executorId && leadRun.leaseExpiresAt && leadRun.leaseExpiresAt > now) {
       return { kind: "skipped", reason: "lead_claimed_elsewhere" };
@@ -275,7 +275,7 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
         kind: "subagent_update",
         key: `team:${state.role}:${phase}:${run.attempt}`,
         agentId: state.role,
-        payload: { role: state.role, name: TEAM_ROLE_INFO[state.role].name, phase, sentence: teamMemberSentence(state.role, phase), sessionId: run.sessionId },
+        payload: { role: state.role, name: TEAM_ROLE_INFO[state.role].name, phase, title: teamMemberSentence(state.role, phase), sentence: teamMemberSentence(state.role, phase), sessionId: run.sessionId },
       });
     }
   }
@@ -287,7 +287,7 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
     const member = byRole.get(role);
     if (!member || member.status !== "draft") continue;
     await prisma.workSession.updateMany({ where: { id: member.id, userId, status: "draft" }, data: { status: "cancelled" } });
-    events.push({ kind: "subagent_update", key: `team:${role}:skipped`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: "skipped", sentence: teamMemberSentence(role, "skipped") } });
+    events.push({ kind: "subagent_update", key: `team:${role}:skipped`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: "skipped", title: teamMemberSentence(role, "skipped"), sentence: teamMemberSentence(role, "skipped") } });
   }
 
   const started: TeamRole[] = [];
@@ -334,12 +334,12 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
         idempotencyKey: `team:${member.id}:${attempt}`,
       });
       (retry ? retried : started).push(role);
-      events.push({ kind: "subagent_update", key: `team:${role}:${retry ? "retrying" : "started"}:${attempt}`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: retry ? "retrying" : "started", sentence: teamMemberSentence(role, retry ? "retrying" : "started"), sessionId: member.id } });
+      events.push({ kind: "subagent_update", key: `team:${role}:${retry ? "retrying" : "started"}:${attempt}`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: retry ? "retrying" : "started", title: teamMemberSentence(role, retry ? "retrying" : "started"), sentence: teamMemberSentence(role, retry ? "retrying" : "started"), sessionId: member.id } });
     } catch (error) {
       if (!(error instanceof WorkSpendAdmissionError)) throw error;
       // Out of room in the usage window: contained like any other failure.
       await prisma.workSession.updateMany({ where: { id: member.id, userId, status: "draft" }, data: { status: "failed" } });
-      events.push({ kind: "subagent_update", key: `team:${role}:failed:admission`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: "failed", sentence: `${TEAM_ROLE_INFO[role].name} couldn't start: the usage window is full` } });
+      events.push({ kind: "subagent_update", key: `team:${role}:failed:admission`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: "failed", title: `${TEAM_ROLE_INFO[role].name} couldn't start: the usage window is full`, sentence: `${TEAM_ROLE_INFO[role].name} couldn't start: the usage window is full` } });
     }
   };
   for (const role of tick.retry) await startMember(role, true);
