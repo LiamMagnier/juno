@@ -133,8 +133,11 @@ test("cost follows resolution, quality and length, relative to the model's defau
   assert.equal(mediaCostFactor("google:veo-3.1-generate-preview", "video", defaultParams("google:veo-3.1-generate-preview")), 1);
   assert.equal(mediaCostFactor("google:veo-3.1-generate-preview", "video", { resolution: "4K", durationSec: 8 }), 3);
   assert.equal(mediaCostFactor("google:veo-3.1-generate-preview", "video", { resolution: "720p", durationSec: 4 }), 0.5);
-  // Grok 1.5: 15s at 1080p against 8s at 480p.
-  assert.equal(mediaCostFactor("xai:grok-imagine-video-1.5", "video", { resolution: "1080p", durationSec: 15 }), 4.688);
+  // Grok 1.5: 15s at 1080p against 8s at 480p, on xAI's own per-resolution
+  // rates ($0.25/s against $0.08/s).
+  assert.equal(mediaCostFactor("xai:grok-imagine-video-1.5", "video", { resolution: "1080p", durationSec: 15 }), 5.859);
+  // Grok 1.5 Lite: 1080p is 7x its 480p rate ($0.14 against $0.02).
+  assert.equal(mediaCostFactor("xai:grok-imagine-video-1.5-lite", "video", { resolution: "1080p", durationSec: 8 }), 7);
   // Seedance 2.5's "auto" length bills as the 8s reference.
   assert.equal(mediaCostFactor("seedance:dreamina-seedance-2-5-260628", "video", { resolution: "720p", durationSec: "auto" }), 1);
   // Never below a quarter.

@@ -4,15 +4,22 @@ import * as React from "react";
 import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, MonitorUp, MonitorX } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
 import {
+  VOICE_GEMINI_DELEGATE_MODEL,
+  VOICE_OPENAI_DELEGATE_MODEL,
   VOICE_PROVIDER_LABELS,
+  VOICE_PROVIDER_MODELS,
   VOICE_PROVIDERS,
+  VOICE_REASONING_EFFORT_LABELS,
+  parseVoiceReasoningEffort,
+  voiceEffortPlan,
+  voiceModelLabel,
   type VoiceProviderId,
 } from "@/lib/voice-relay-protocol";
+import { EffortPanelContext, ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { cn } from "@/lib/utils";
 import { readVoiceLevel } from "@/lib/voice-level";
 import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
@@ -29,8 +36,8 @@ type VoiceController = ReturnType<typeof useRealtimeVoice>;
  * call, so a wrong word here costs someone a conversation.
  */
 const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
-  openai: "Full duplex · reasoning runs on a backend model",
-  gemini: "Lowest latency · screen sharing · reasoning mode",
+  openai: `OpenAI · full duplex · thinks with ${voiceModelLabel(VOICE_OPENAI_DELEGATE_MODEL)}`,
+  gemini: `Screen sharing · thinks with ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)}`,
   qwen: "Long calls · sees images and your screen",
   minimax: "Speech pipeline · no vision, no screen",
   mock: "Developer stand-in · no provider is called",
@@ -185,7 +192,14 @@ export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController
 
   const live = voice.status === "live";
   const detail = live
-    ? [VOICE_PROVIDER_LABELS[voice.provider], voice.model, voice.memory ? "remembers you" : null]
+    ? [
+        VOICE_PROVIDER_LABELS[voice.provider],
+        voiceModelLabel(voice.model),
+        voice.delegate
+          ? `thinking with ${voiceModelLabel(voice.delegate.model)} at ${VOICE_REASONING_EFFORT_LABELS[voice.delegate.effort].toLowerCase()} effort`
+          : null,
+        voice.memory ? "remembers you" : null,
+      ]
         .filter(Boolean)
         .join(", ")
     : null;
@@ -355,6 +369,18 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
   const live = voice.status === "live";
   const reconnecting = voice.status === "reconnecting";
   const switchable = live || voice.status === "connecting" || reconnecting;
+  const listRef = React.useRef<HTMLElement>(null);
+  // The panel's model name opens "the models" in the composer; here they are
+  // the list just above, so it takes focus to the chosen one.
+  const focusVoiceList = React.useCallback(() => {
+    listRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+  }, []);
+  const rungs = voice.capabilities?.reasoningEfforts;
+  const dialValue = voice.effort ?? voice.capabilities?.defaultReasoningEffort ?? rungs?.[0];
+  const dial =
+    rungs && rungs.length > 1 && dialValue && (!live || voice.delegate)
+      ? { rungs, value: dialValue, plan: voiceEffortPlan(voice.provider, dialValue) }
+      : null;
 
   return (
     <Popover>
@@ -384,7 +410,12 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               them — a `role="radio"` with no radiogroup is announced as a
               choice between nothing. */}
           {/* `p-1`: the 8px rows sit 4px inside the 12px popover, 12 − 4 = 8. */}
-          <section role="radiogroup" aria-labelledby={voiceHeadingId} className="flex flex-col gap-0.5 p-1">
+          <section
+            ref={listRef}
+            role="radiogroup"
+            aria-labelledby={voiceHeadingId}
+            className="flex flex-col gap-0.5 p-1"
+          >
             <h3 id={voiceHeadingId} className="px-2.5 pb-1 pt-1 text-caption font-medium text-muted-foreground">Voice</h3>
             {VOICE_PROVIDERS.map((id) => {
               const unavailable = voice.availability?.[id] === false;
@@ -405,8 +436,17 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
                   )}
                 >
                   <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                    {/* The model is the name, as in ChatGPT's own picker: it
+                        is what answers. The active row names what the relay
+                        reports serving the call, the others their default. */}
                     <span className="truncate text-ui font-medium text-foreground">
-                      {VOICE_PROVIDER_LABELS[id]}
+                      {voiceModelLabel(
+                        active && voice.model
+                          ? voice.model
+                          : active && voice.effort
+                            ? (voiceEffortPlan(id, voice.effort)?.voiceModel ?? VOICE_PROVIDER_MODELS[id])
+                            : VOICE_PROVIDER_MODELS[id]
+                      )}
                     </span>
                     <span className="truncate text-micro text-muted-foreground">
                       {unavailable ? "Not configured on this relay" : PROVIDER_BLURB[id]}
@@ -418,32 +458,37 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
             })}
           </section>
 
-          {/* Only where there is a choice to make. A row that cannot change
-              anything is furniture, and this one carries a cost warning that
-              would be a lie on a provider with no reasoning mode. */}
-          {voice.capabilities?.thinkingChoice && (
-            <section className="border-t border-border p-1">
-              <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
-                  <span className="text-ui font-medium text-foreground">Reasoning</span>
-                  <span className="text-micro text-muted-foreground">
-                    {voice.thinking
-                      ? "Thinks before answering, and narrates while it does. Slower, and more per minute."
-                      : "Answers at conversational speed."}
-                  </span>
-                  {voice.model && (
-                    <span className="truncate pt-0.5 font-mono text-micro text-muted-foreground/70">
-                      {voice.model}
-                    </span>
-                  )}
-                </span>
-                <Switch
-                  checked={voice.thinking}
-                  onCheckedChange={(next) => voice.setThinking(next)}
-                  aria-label="Reasoning"
-                  className="mt-0.5 shrink-0"
+          {/* The thinking dial, where the provider has one: the composer's own
+              effort panel (ReasoningSlider `panel`), not a look-alike. On
+              OpenAI a rung is GPT-6.1 Sol's effort; on Gemini it picks the
+              Live model and Gemini 3.8 Flash's level together. A live call
+              with no delegate fell back to a protocol without one, and a dial
+              there would set nothing. */}
+          {dial && (
+            <section className="border-t border-border p-3">
+              <EffortPanelContext.Provider
+                value={{ modelName: voiceModelLabel(dial.plan?.delegateModel) ?? "", onOpenModels: focusVoiceList }}
+              >
+                <ReasoningSlider
+                  variant="panel"
+                  options={dial.rungs.map((value) => ({ value, label: VOICE_REASONING_EFFORT_LABELS[value] }))}
+                  value={dial.value}
+                  defaultValue={voice.capabilities?.defaultReasoningEffort}
+                  onChange={(next) => {
+                    const effort = parseVoiceReasoningEffort(next);
+                    if (effort) voice.setEffort(effort);
+                  }}
+                  disabled={voice.status === "connecting" || reconnecting}
                 />
-              </label>
+              </EffortPanelContext.Provider>
+              {dial.plan && (
+                <p className="pt-3 text-center text-micro leading-snug text-muted-foreground">
+                  {voiceModelLabel(dial.plan.voiceModel)} answers.{" "}
+                  {voiceModelLabel(dial.plan.delegateModel)} takes the harder questions at{" "}
+                  {VOICE_REASONING_EFFORT_LABELS[dial.plan.delegateEffort].toLowerCase()} effort
+                  {(voice.delegate?.webSearch ?? true) ? " and can search the web" : ""}.
+                </p>
+              )}
             </section>
           )}
         </div>

@@ -24,7 +24,9 @@ export type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type AnthropicThinkingParam =
   | { type: "adaptive"; display?: "summarized" | "omitted" }
   | { type: "enabled"; budget_tokens: number; display?: "summarized" | "omitted" }
-  | { type: "disabled" };
+  | { type: "disabled" }
+  /** Claude Sonnet 5.5 only: no up-front thinking, at effort high or below. */
+  | { type: "between_tools" };
 
 export interface AnthropicThinkingBits {
   maxTokens: number;
@@ -38,7 +40,8 @@ export function anthropicThinkingKind(providerModel: string): AnthropicThinkingK
   if (id.includes("haiku")) return "manual";
   if (id.includes("opus-4-5") || id.includes("sonnet-4-5")) return "manual";
   if (id.includes("opus-4-1") || /claude-3/.test(id)) return "manual";
-  // Adaptive-required: fable, mythos, opus-4-8, opus-4-7, sonnet-5.
+  // Adaptive-required: fable, mythos, opus-5/5.5, opus-4-8, opus-4-7,
+  // sonnet-5/5.5 (unknown future ids fall through to adaptive below).
   // Adaptive-preferred (enabled deprecated): opus-4-6, sonnet-4-6.
   if (
     id.includes("fable") ||
@@ -46,7 +49,7 @@ export function anthropicThinkingKind(providerModel: string): AnthropicThinkingK
     id.includes("opus-4-8") ||
     id.includes("opus-4-7") ||
     id.includes("opus-4-6") ||
-    id.includes("sonnet-5") || // claude-sonnet-5 only (not sonnet-4-5)
+    id.includes("sonnet-5") || // claude-sonnet-5 and -5-5 (not sonnet-4-5)
     id.includes("sonnet-4-6")
   ) {
     return "adaptive";
@@ -77,11 +80,28 @@ function alwaysOnDefaultEffort(providerModel: string): ReasoningEffort {
 }
 
 /**
- * Adaptive is the default when `thinking` is omitted (Sonnet 5). Instant
- * therefore requires an explicit `{ type: "disabled" }`.
+ * Adaptive is the default when `thinking` is omitted, so Instant has to say
+ * so explicitly. Anthropic's per-model table (thinking-troubleshooting,
+ * 2026-10-04) marks Claude Opus 5, Sonnet 5 and Sonnet 5.5 "On"; Opus 4.8,
+ * 4.7, 4.6 and Sonnet 4.6 "Off". Opus 5 used to be missing here, so its
+ * Instant turns omitted `thinking` and thought anyway.
+ *
+ * Matched exactly (`opus-5`, not `opus-5-5`): Opus 5.5 is always-on and never
+ * reaches the Instant branch.
  */
 export function adaptiveDefaultOn(providerModel: string): boolean {
-  return providerModel.toLowerCase().includes("sonnet-5");
+  return /(opus|sonnet)-5(?![-.]\d)|sonnet-5-5/.test(providerModel.toLowerCase());
+}
+
+/**
+ * The `thinking` object that turns thinking off on a default-on model.
+ * Sonnet 5.5 rejects `{type: "disabled"}` at every effort and takes
+ * `{type: "between_tools"}` in its place (valid at effort high or below; an
+ * Instant turn sends no effort, so the API default `high` applies). Opus 5
+ * and Sonnet 5 take `disabled` (Opus 5 only at effort high or below).
+ */
+export function instantThinkingParam(providerModel: string): AnthropicThinkingParam {
+  return providerModel.toLowerCase().includes("sonnet-5-5") ? { type: "between_tools" } : { type: "disabled" };
 }
 
 /**
@@ -147,10 +167,11 @@ export function buildAnthropicThinkingBits(
   if (kind === "adaptive") {
     const wantThinking = !!reasoningEffort || adaptiveAlwaysOn(providerModel);
     if (!wantThinking) {
-      // Sonnet 5 defaults adaptive ON when thinking is omitted — Instant must
-      // disable explicitly. Opus 4.7/4.8 default OFF when omitted.
+      // Opus 5 / Sonnet 5 / Sonnet 5.5 default adaptive ON when thinking is
+      // omitted — Instant must turn it off explicitly. Opus 4.6-4.8 and
+      // Sonnet 4.6 default OFF when omitted.
       if (adaptiveDefaultOn(providerModel)) {
-        return { maxTokens: Math.min(maxTokens, outputCap), thinking: { type: "disabled" } };
+        return { maxTokens: Math.min(maxTokens, outputCap), thinking: instantThinkingParam(providerModel) };
       }
       return { maxTokens: Math.min(maxTokens, outputCap) };
     }

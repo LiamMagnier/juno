@@ -4,6 +4,16 @@ import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
+import { hostedSearchAllowedAt, toolCapabilitiesFor } from "@/lib/model-tools";
+import {
+  actionSourceList,
+  hostedSearchCallBillable,
+  hostedWebSearchTool,
+  OPENAI_WEB_SEARCH_INCLUDE,
+  xaiResponseCitations,
+  xaiServerToolCounts,
+  type HostedSearchDialect,
+} from "@/lib/hosted-web-search";
 import {
   openAIPromptCacheRequestFields,
   openAIResponsesSystemInput,
@@ -23,24 +33,54 @@ import {
   withheldImagesNote,
 } from "@/lib/tool-result-images";
 import { providerRequestModel } from "@/lib/model-request";
+import { mapResponsesEffort } from "@/lib/llm/responses-loop";
+import {
+  META_WEB_SEARCH_INCLUDE,
+  META_WEB_SEARCH_TOOL,
+  metaBillableQueries,
+  metaReplayReasoning,
+  metaSearchQueries,
+  metaSearchResultSources,
+  urlCitationSources,
+} from "@/lib/meta-web-search";
+import type { ClientSource } from "@/types/chat";
 
 /**
- * OpenAI Responses API adapter — for models that are not served on
- * /chat/completions at all (the gpt-*-pro line and Responses-only Codex
- * snapshots). Mirrors streamOpenAICompat's contract exactly: same LlmEvent
+ * Responses API adapter — every OpenAI model, every Grok model (at xAI's host,
+ * in xAI's dialect) and Meta's search turns (at Meta's host). Mirrors streamOpenAICompat's contract exactly: same LlmEvent
  * stream, same MCP tool loop, same usage/finish semantics, so routes and the
  * UI can't tell which wire protocol served the request.
  */
 
-let cached: OpenAI | null = null;
+/** The labs whose Responses API this adapter speaks to. */
+export type ResponsesHost = "openai" | "xai" | "meta";
 
-function client(): OpenAI {
-  const apiKey = providerApiKey("openai");
-  if (!apiKey) throw new Error(`${PROVIDERS.openai.label} API key is not configured.`);
+const cached = new Map<ResponsesHost, OpenAI>();
+
+/**
+ * The host serving a model's Responses turn, from the model's own provider.
+ * Grok ("xai-responses") goes to `api.x.ai/v1` with XAI_API_KEY; Meta's search
+ * turns ("meta-responses") to Meta's `/v1/responses` with META_API_KEY; every
+ * other model here is OpenAI's.
+ */
+export function responsesHostFor(model: Pick<ModelInfo, "provider">): ResponsesHost {
+  if (model.provider === "xai") return "xai";
+  if (model.provider === "meta") return "meta";
+  return "openai";
+}
+
+/** The SDK client for the host serving this request (key and base URL from that lab's env). */
+function client(host: ResponsesHost = "openai"): OpenAI {
+  const apiKey = providerApiKey(host);
+  if (!apiKey) throw new Error(`${PROVIDERS[host].label} API key is not configured.`);
   // SDK retries are disabled so a partially consumed paid response cannot be
   // replayed without a new, explicitly metered attempt.
-  if (!cached) cached = new OpenAI({ apiKey, baseURL: providerBaseUrl("openai"), maxRetries: 0 });
-  return cached;
+  let c = cached.get(host);
+  if (!c) {
+    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(host), maxRetries: 0 });
+    cached.set(host, c);
+  }
+  return c;
 }
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -53,7 +93,9 @@ async function toResponsesInput(
   history: MessageForModel[],
   vision: boolean,
   /** Per-file text ceiling, from the model's own context window. */
-  attachmentTextMaxChars?: number
+  attachmentTextMaxChars?: number,
+  /** False where the route was told the model gets no PDF bytes (Meta: `providerReceivesDocumentBytes`). */
+  documentBytes = true
 ): Promise<InputItem[]> {
   const out: InputItem[] = [];
   // Block-anchored (see openai-compat.ts): keeps the cacheable prefix stable
@@ -94,7 +136,7 @@ async function toResponsesInput(
           });
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "input_text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
-        } else if (isPdfAttachment(att) && vision && embedBinary) {
+        } else if (isPdfAttachment(att) && vision && embedBinary && documentBytes) {
           /*
            * `input_file` — THE PATH THAT WAS NEVER TAKEN.
            *
@@ -151,45 +193,6 @@ async function toResponsesInput(
 }
 
 /**
- * Map Juno's tier to the Responses API's reasoning.effort.
- *
- * The gpt-5.x-pro models accept medium|high|xhigh and cannot be run
- * non-thinking, so a missing/too-shallow tier is raised to their "high" default
- * rather than dropped. Everything else relays the tier as-is — including
- * "xhigh" and "max", which this used to flatten to "high" and thereby silently
- * cap the deepest settings the user picked.
- */
-function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefined {
-  const id = model.providerModel.toLowerCase();
-  if (/-pro$/.test(id)) {
-    if (effort === "medium" || effort === "high" || effort === "xhigh") return effort;
-    return "high"; // pro's own default; it has no none/low
-  }
-  if (!effort) return canDisableViaNoneEffort(model) ? "none" : undefined;
-  // "max" exists on GPT-5.6 and GPT-6 Astra/Sol/Luna; older Responses models
-  // top out at xhigh.
-  if (effort === "max" && !/gpt-5\.6|gpt-6-(astra|sol|luna)/.test(id)) return "xhigh";
-  return effort;
-}
-
-/**
- * GPT-5.1+ express "don't think" as an explicit effort of "none".
- *
- * The old blanket `codex -> false` rule was WRONG for gpt-5.3-codex, which
- * verifiably accepts "none" (-> 200, reasoning_tokens=0) while 5.1/5.2-codex
- * reject it ("Supported values are: 'low', 'medium', 'high'..."). Defer to the
- * per-model caps, which encode each snapshot's live-probed enum, rather than
- * re-deriving support from a substring here.
- */
-function canDisableViaNoneEffort(model: ModelInfo): boolean {
-  const id = model.providerModel.toLowerCase();
-  // GPT-6 is here for Sol and Luna, which list "none"; Astra does not, and
-  // its caps say so (canDisable false), so it is still never sent "none".
-  if (!/gpt-5\.\d|gpt-6/.test(id)) return false;
-  return model.reasoning && reasoningCaps(model).canDisable;
-}
-
-/**
  * The seam the scripted-transport tests replace: `responses.create` returning
  * the streamed events. Production leaves it absent.
  */
@@ -200,6 +203,17 @@ export interface ResponsesTransport {
   ): Promise<AsyncIterable<OpenAI.Responses.ResponseStreamEvent>>;
 }
 
+/**
+ * Production's transport: the SDK client for `host`. Exported so a test can
+ * drive it with a stubbed `fetch` and see the URL and key a turn really uses.
+ */
+export function sdkResponsesTransport(host: ResponsesHost): ResponsesTransport {
+  return {
+    create: (body, options) =>
+      client(host).responses.create(body, options) as unknown as Promise<AsyncIterable<OpenAI.Responses.ResponseStreamEvent>>,
+  };
+}
+
 export async function* streamOpenAIResponses(
   model: ModelInfo,
   system: string,
@@ -207,7 +221,7 @@ export async function* streamOpenAIResponses(
   maxTokens: number,
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
-  _webSearch?: boolean,
+  webSearch?: boolean,
   tools?: ToolLoop,
   dynamicContext?: string,
   cacheKey?: string,
@@ -216,15 +230,52 @@ export async function* streamOpenAIResponses(
   transport?: ResponsesTransport
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
+  /*
+   * META'S DIALECT. Only a Muse Spark turn with web search on is routed here
+   * ("meta-responses"), and Meta's Responses API differs from OpenAI's in
+   * four ways that matter: `tool_choice` is "auto" only, so the final round
+   * drops the function tools instead of sending "none"; reasoning is private,
+   * so no summary is asked for; every replayed reasoning item needs a
+   * `summary`; and the route was told Meta reads no PDF bytes, so none are sent.
+   */
+  const host = responsesHostFor(model);
+  const meta = host === "meta";
+  /*
+   * XAI'S DIALECT ("xai-responses": every Grok model the catalog serves). The
+   * same protocol at `api.x.ai/v1` with XAI_API_KEY. What differs: the system
+   * prompt travels as a system input message (the form every xAI example
+   * uses); `reasoning.effort` goes only to a model with an effort ladder
+   * (low|medium|high, xhigh on grok-4.6+; docs.x.ai reasoning guide) and no
+   * summary is asked for; no OpenAI prompt-cache fields; no PDF bytes (the
+   * route was told `providerReceivesDocumentBytes` is false for Grok); and a
+   * model that takes no function tools (grok-4.20-multi-agent) is sent none.
+   */
+  const xai = host === "xai";
+  const caps = toolCapabilitiesFor(model);
+  /*
+   * HOSTED SEARCH. The composer's Web toggle reaches here as `webSearch`, and
+   * for OpenAI, xAI and Meta models the chat route attaches no search tool of
+   * its own: the model's provider search IS the turn's web search. Meta's is
+   * its own `web_search` (meta-web-search.ts); OpenAI's and xAI's are the
+   * hosted `web_search` tool (hosted-web-search.ts), at an effort the model
+   * accepts it at (gpt-5 rejects it at "minimal").
+   */
+  const rcSearch = reasoningCaps(model);
+  const searchEffort = reasoningEffort ?? (rcSearch.canDisable ? undefined : rcSearch.defaultLevel ?? undefined);
+  const hostedSearch = meta ? !!webSearch : !!webSearch && hostedSearchAllowedAt(caps, searchEffort);
+  const searchDialect: HostedSearchDialect = xai ? "xai" : "openai";
   const input = await toResponsesInput(
     history,
     model.vision,
-    attachmentTextBudget(getModelMetrics(model).contextTokens)
+    attachmentTextBudget(getModelMetrics(model).contextTokens),
+    !meta && !xai
   );
   // GPT-5.6+: put system into input with an explicit cache breakpoint so the
   // static prefix is a first-class cached segment (see openai-prompt-cache.ts).
-  // Older models keep `instructions` below.
-  const systemAsInput = openAIResponsesSystemInput(model, system);
+  // Older models keep `instructions` below. xAI: a plain system message.
+  const systemAsInput = xai
+    ? [{ role: "system", content: system }]
+    : openAIResponsesSystemInput(model, system);
   if (systemAsInput) {
     input.unshift(...(systemAsInput as unknown as InputItem[]));
   }
@@ -245,7 +296,8 @@ export async function* streamOpenAIResponses(
     } as InputItem);
   }
 
-  const hasTools = !!toolset && toolset.tools.length > 0;
+  // A model that takes no function tools (grok-4.20-multi-agent) is sent none.
+  const hasTools = !!toolset && toolset.tools.length > 0 && caps.supported;
   // Responses uses a flat function-tool shape (no nested `function` wrapper).
   const wireTools: OpenAI.Responses.Tool[] | undefined = hasTools
     ? toolset!.tools.map((t) => {
@@ -265,8 +317,14 @@ export async function* streamOpenAIResponses(
   // inside it, and the two are set independently. Gated on supportsProMode rather
   // than relayed blind — every other Responses model 400s on an unknown
   // reasoning key, and this adapter also serves the 5.x-pro and Codex lines.
-  const usePro = !!proMode && supportsProMode(model);
-  const requestedEffort = mapEffort(model, reasoningEffort);
+  const usePro = !xai && !!proMode && supportsProMode(model);
+  // xAI: an effort only for a model that lists one, moved onto its own ladder
+  // (grok-4.5 tops out at "high"); a model without a ladder is left to xAI.
+  const requestedEffort = xai
+    ? model.reasoning && reasoningEffort && rcSearch.tiers.length > 0
+      ? mapResponsesEffort(model, reasoningEffort)
+      : undefined
+    : mapResponsesEffort(model, reasoningEffort);
   // "none" and pro contradict each other — pro mode's whole content is that the
   // model deliberates more. Rather than send a self-cancelling pair, drop the
   // effort and let the API apply its own default (medium in both modes).
@@ -289,14 +347,16 @@ export async function* streamOpenAIResponses(
   // Pro mode reasons even when the effort is left to the API's default, so the
   // summary is worth asking for on `usePro` alone — keying it off `effort` would
   // hide the steps on exactly the runs that produce the most of them.
-  const wantsSummary = usePro || (!!effort && effort !== "none");
+  const wantsSummary = !meta && !xai && (usePro || (!!effort && effort !== "none"));
 
   console.info("[llm:openai-responses] stream start", {
     model: model.providerModel,
+    host,
     maxTokens,
     reasoningEffort: effort ?? null,
     proMode: usePro,
     tools: hasTools ? toolset!.tools.length : 0,
+    webSearch: hostedSearch,
   });
 
   let cumInput = 0;
@@ -312,8 +372,21 @@ export async function* streamOpenAIResponses(
   // continuous run. Keeping the ordinal monotonic across rounds is what stops
   // round 2's first part from overwriting round 1's.
   let summaryPart = -1;
+  // Meta search: billable queries over the turn, and the source URLs already
+  // shown (results and citations overlap; each URL is listed once).
+  let webSearchQueries = 0;
+  const seenSources = new Set<string>();
+  const freshSources = (list: ClientSource[]) =>
+    list.filter((source) => {
+      if (seenSources.has(source.url)) return false;
+      seenSources.add(source.url);
+      return true;
+    });
 
-  const c: ResponsesTransport = transport ?? { create: (body, options) => client().responses.create(body, options) };
+  // xAI reports its own search counts; when it does they win over counting items.
+  let xaiReportedSearches: number | null = null;
+  let xaiReportedXSearches = 0;
+  const c: ResponsesTransport = transport ?? sdkResponsesTransport(host);
   const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
@@ -340,7 +413,13 @@ export async function* streamOpenAIResponses(
     // error on some snapshots). `include: ["reasoning.encrypted_content"]` is
     // what makes those items returnable at all — without it the output carries
     // no encrypted payload to echo.
-    if (model.reasoning) params.include = ["reasoning.encrypted_content"];
+    const include: string[] = [];
+    if (model.reasoning) include.push("reasoning.encrypted_content");
+    // Meta: each `web_search_call` then lists what it retrieved (title, url, snippet).
+    // OpenAI: each `web_search_call` lists the URLs it consulted.
+    if (hostedSearch && meta) include.push(META_WEB_SEARCH_INCLUDE);
+    if (hostedSearch && host === "openai") include.push(OPENAI_WEB_SEARCH_INCLUDE);
+    if (include.length) params.include = include as OpenAI.Responses.ResponseIncludable[];
     // Cast: the installed openai types predate the "none"/"xhigh"/"max" values
     // that the Responses API now accepts.
     if (effort || usePro) {
@@ -350,9 +429,23 @@ export async function* streamOpenAIResponses(
         ...(wantsSummary ? { summary: "detailed" } : {}),
       } as OpenAI.Responses.ResponseCreateParams["reasoning"];
     }
-    if (wireTools) {
-      params.tools = wireTools;
-      params.tool_choice = isFinalRound ? "none" : "auto";
+    if (meta) {
+      // No tool_choice at all (Meta takes "auto" only, the default): the
+      // final round forbids calls by leaving the function tools out.
+      const metaTools: unknown[] = [
+        ...(wireTools && !isFinalRound ? wireTools : []),
+        ...(hostedSearch ? [{ ...META_WEB_SEARCH_TOOL }] : []),
+      ];
+      if (metaTools.length) params.tools = metaTools as unknown as OpenAI.Responses.Tool[];
+    } else {
+      const roundTools: unknown[] = [
+        ...(wireTools ?? []),
+        ...(hostedSearch ? [hostedWebSearchTool(searchDialect)] : []),
+      ];
+      if (roundTools.length) params.tools = roundTools as OpenAI.Responses.Tool[];
+      // Only function tools need steering; the forced-answer round's "none"
+      // also stops the search, which is what a final answer means.
+      if (wireTools) params.tool_choice = isFinalRound ? "none" : "auto";
     }
     // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
     Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
@@ -392,7 +485,42 @@ export async function* streamOpenAIResponses(
         case "response.output_item.done": {
           const item = event.item as { type: string; call_id?: string; name?: string; arguments?: string };
           // Carries `encrypted_content` thanks to the `include` above.
-          if (item.type === "reasoning") replayItems.push(event.item as unknown as InputItem);
+          if (item.type === "reasoning") {
+            replayItems.push((meta ? metaReplayReasoning(event.item as unknown as Record<string, unknown>) : event.item) as unknown as InputItem);
+          }
+          if (hostedSearch && item.type === "web_search_call") {
+            // Reported, never dispatched: the provider ran it inside this response.
+            const call = event.item as unknown as Record<string, unknown>;
+            const callId = typeof call.id === "string" && call.id ? call.id : `ps_${round}_${webSearchQueries}`;
+            const queries = metaSearchQueries(call);
+            // Meta lists results (with snippets); OpenAI lists `action.sources`.
+            const results = meta ? metaSearchResultSources(call) : actionSourceList(call);
+            // Meta bills per query; OpenAI and xAI per search call.
+            webSearchQueries += meta ? metaBillableQueries(call) : hostedSearchCallBillable(call) ? 1 : 0;
+            yield {
+              type: "server_tool",
+              phase: "call",
+              tool: "provider_web_search",
+              callId,
+              round,
+              ...(queries.length ? { query: queries.join(" · ") } : {}),
+            };
+            yield {
+              type: "server_tool",
+              phase: "result",
+              tool: "provider_web_search",
+              callId,
+              round,
+              results: results.length,
+              ok: call.status !== "failed",
+            };
+            const fresh = freshSources(results);
+            if (fresh.length) yield { type: "sources", sources: fresh, origin: "provider_search" };
+          }
+          if (hostedSearch && item.type === "message") {
+            const fresh = freshSources(urlCitationSources(event.item as unknown as Record<string, unknown>));
+            if (fresh.length) yield { type: "sources", sources: fresh, origin: "provider_search" };
+          }
           if (item.type === "function_call" && item.call_id && item.name) {
             calls.push({ callId: item.call_id, name: item.name, args: item.arguments ?? "{}" });
             replayItems.push(event.item as unknown as InputItem);
@@ -402,6 +530,14 @@ export async function* streamOpenAIResponses(
         case "response.completed":
         case "response.incomplete": {
           const resp = event.response;
+          if (xai && hostedSearch) {
+            const raw = resp as unknown as Record<string, unknown>;
+            const counts = xaiServerToolCounts(raw);
+            if (counts.web != null) xaiReportedSearches = (xaiReportedSearches ?? 0) + counts.web;
+            if (counts.x != null) xaiReportedXSearches += counts.x;
+            const fresh = freshSources(xaiResponseCitations(raw));
+            if (fresh.length) yield { type: "sources", sources: fresh, origin: "provider_search" };
+          }
           if (resp.usage) {
             sawUsage = true;
             cumInput += resp.usage.input_tokens ?? 0;
@@ -515,7 +651,9 @@ export async function* streamOpenAIResponses(
     break;
   }
 
-  if (sawUsage) {
+  // xAI's own count, when it gives one, is what it bills.
+  if (xaiReportedSearches != null) webSearchQueries = xaiReportedSearches;
+  if (sawUsage || webSearchQueries > 0 || xaiReportedXSearches > 0) {
     yield {
       type: "usage",
       input: cumInput,
@@ -524,6 +662,10 @@ export async function* streamOpenAIResponses(
       total: cumTotal || undefined,
       cacheRead: cumCached || undefined,
       cacheWrite: cumCacheWrite || undefined,
+      // Hosted searches, priced per lab in `toolFeesUsd` (Meta per query,
+      // OpenAI and xAI per call). Meta and OpenAI report no counter of their own.
+      webSearchRequests: webSearchQueries || undefined,
+      xSearchRequests: xaiReportedXSearches || undefined,
     };
   }
   // A trailing tool_calls means even the forced-answer round wanted more tools —

@@ -1,4 +1,4 @@
-name: Sync provider models
+name: Sync model benchmarks and radar
 
 on:
   schedule:
@@ -21,19 +21,6 @@ jobs:
     env:
       SYNC_BRANCH: model-sync/${{ github.run_id }}
       GH_TOKEN: ${{ github.token }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-      MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-      MIMO_API_KEY: ${{ secrets.MIMO_API_KEY }}
-      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-      LONGCAT_API_KEY: ${{ secrets.LONGCAT_API_KEY }}
-      META_API_KEY: ${{ secrets.META_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -47,29 +34,16 @@ jobs:
 
       - run: npm ci
 
-      - name: Reconcile configured provider catalogs
-        id: provider-sync
-        shell: bash
-        run: |
-          set +e
-          npm run sync:models:write
-          status=$?
-          set -e
-          if [ "$status" -eq 2 ]; then
-            echo "::error::Every provider failed to respond; refusing to change the catalog."
-            exit 2
-          fi
-          if [ "$status" -ne 0 ]; then
-            echo "::warning::Some providers failed; successful providers were still reconciled safely."
-          fi
-
+      # No provider catalog sync: the model catalog is curated by hand from each
+      # model's documentation (src/lib/models.ts). Auto-adding provider-listed
+      # ids put wrong routes and thinking-effort ladders in front of users.
       - name: Refresh public benchmark metadata
         run: npm run sync:benchmarks
 
       - name: Scan the wider industry catalog
         run: npm run radar:models -- --out /tmp/model-radar-report.md
 
-      - name: Validate generated catalog
+      - name: Validate catalog
         run: npm run validate:models
 
       - name: Stop when nothing changed
@@ -89,8 +63,8 @@ jobs:
           git switch -c "$SYNC_BRANCH"
           git config user.name "juno-model-bot"
           git config user.email "juno-model-bot@users.noreply.github.com"
-          git add src/lib/models.generated.ts src/lib/benchmarks.generated.ts scripts/model-radar-seen.json
-          git commit -m "chore(models): sync provider catalogs"
+          git add src/lib/benchmarks.generated.ts scripts/model-radar-seen.json
+          git commit -m "chore(models): refresh benchmarks and model radar"
           git push origin "$SYNC_BRANCH"
 
       - name: Open reviewable model update
@@ -100,8 +74,8 @@ jobs:
           gh pr create \
             --base main \
             --head "$SYNC_BRANCH" \
-            --title "chore(models): automated provider sync" \
-            --body "Automated provider catalog, pricing benchmark, and industry-radar update. Validation passed; review inferred capabilities before merging."
+            --title "chore(models): benchmark and radar refresh" \
+            --body "Automated pricing benchmark and industry-radar update. No model is added to the catalog by this job; new models are curated by hand from their docs."
 
       - name: Open model-watch issue for newly announced models
         if: steps.changes.outputs.changed == 'true'

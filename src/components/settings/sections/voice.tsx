@@ -18,6 +18,23 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import { Switch } from "@/components/ui/switch";
 import { useUiPref } from "@/lib/ui-prefs";
 import { playVoiceCue } from "@/components/voice/voice-cue-player";
+import {
+  VOICE_GEMINI_DELEGATE_MODEL,
+  VOICE_OPENAI_DELEGATE_MODEL,
+  VOICE_PROVIDER_MODELS,
+  VOICE_REASONING_EFFORTS,
+  VOICE_REASONING_EFFORT_LABELS,
+  parseVoiceReasoningEffort,
+  voiceModelLabel,
+  type VoiceReasoningEffort,
+} from "@/lib/voice-relay-protocol";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+
+/** The rungs as the composer's thinking panel takes them. */
+const rungOptions = (rungs: readonly VoiceReasoningEffort[]) =>
+  rungs.map((value) => ({ value, label: VOICE_REASONING_EFFORT_LABELS[value] }));
+const OPENAI_RUNGS = rungOptions(VOICE_REASONING_EFFORTS);
+const GEMINI_RUNGS = rungOptions(["low", "medium", "high"]);
 
 // Short on purpose: a preview is billed per character and the reader may
 // audition a dozen voices in a row. Long enough to hear timbre.
@@ -40,6 +57,8 @@ export function VoiceSection() {
   const saves = useSaveStates();
   const plan = PLANS[quota.plan];
   const [voiceSounds, setVoiceSounds] = useUiPref("voiceSounds");
+  const [voiceEffort, setVoiceEffort] = useUiPref("voiceEffort");
+  const [geminiEffort, setGeminiEffort] = useUiPref("voiceGeminiEffort");
   // The live provider's voices: Gemini's under Google, OpenAI's under OpenAI.
   // A saved id from the other provider is not sent to this one (the route
   // vets it), so the picker shows what will actually be heard: the default.
@@ -194,6 +213,44 @@ export function VoiceSection() {
               </Button>
               <Switch id="voice-sounds" checked={voiceSounds} onCheckedChange={setVoiceSounds} />
             </div>
+          }
+        />
+        <SettingRow
+          label={`${voiceModelLabel(VOICE_PROVIDER_MODELS.openai)} thinking`}
+          description={`Hands harder questions to ${voiceModelLabel(
+            VOICE_OPENAI_DELEGATE_MODEL
+          )}, which can search the web. Higher thinks longer before it answers. On this device.`}
+          control={
+            <ReasoningSlider
+              variant="panel"
+              className="w-72"
+              options={OPENAI_RUNGS}
+              value={voiceEffort}
+              defaultValue="high"
+              onChange={(next) => {
+                const effort = parseVoiceReasoningEffort(next);
+                if (effort) setVoiceEffort(effort);
+              }}
+            />
+          }
+        />
+        <SettingRow
+          label={`${voiceModelLabel(VOICE_PROVIDER_MODELS.gemini)} thinking`}
+          description={`Low answers on ${voiceModelLabel("gemini-3.8-live")}; Medium and High on ${voiceModelLabel(
+            "gemini-3.8-live-extended-thinking"
+          )}. ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)} takes the harder questions, at low on Low and high above. On this device.`}
+          control={
+            <ReasoningSlider
+              variant="panel"
+              className="w-72"
+              options={GEMINI_RUNGS}
+              value={geminiEffort}
+              defaultValue="low"
+              onChange={(next) => {
+                const effort = parseVoiceReasoningEffort(next);
+                if (effort) setGeminiEffort(effort);
+              }}
+            />
           }
         />
       </SettingsGroup>

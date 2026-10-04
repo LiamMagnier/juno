@@ -3,6 +3,8 @@ import test from "node:test";
 import { WebSocketServer, type WebSocket as WsSocket } from "ws";
 import { GptLiveSession } from "../src/providers/gpt-live.js";
 import { OpenAiVoiceSession } from "../src/providers/openai-voice.js";
+import { PROVIDERS } from "../src/providers/registry.js";
+import { effectiveVoiceEffort, VOICE_REASONING_EFFORTS } from "../src/protocol.js";
 import type { RealtimeDialect } from "../src/providers/openai-realtime.js";
 import type { ProviderEvents, VoiceSessionSeed } from "../src/providers/types.js";
 
@@ -68,11 +70,13 @@ async function withFakeLive(
     key: process.env.OPENAI_API_KEY,
     model: process.env.RELAY_OPENAI_MODEL,
     backend: process.env.RELAY_OPENAI_BACKEND_MODEL,
+    webSearch: process.env.RELAY_OPENAI_BACKEND_WEB_SEARCH,
   };
   process.env.RELAY_OPENAI_LIVE_URL = `ws://127.0.0.1:${port}`;
   process.env.OPENAI_API_KEY = "sk-test";
   delete process.env.RELAY_OPENAI_MODEL;
   delete process.env.RELAY_OPENAI_BACKEND_MODEL;
+  delete process.env.RELAY_OPENAI_BACKEND_WEB_SEARCH;
   try {
     await run({ sent, socket: () => live as WsSocket });
   } finally {
@@ -81,6 +85,7 @@ async function withFakeLive(
       ["OPENAI_API_KEY", previous.key],
       ["RELAY_OPENAI_MODEL", previous.model],
       ["RELAY_OPENAI_BACKEND_MODEL", previous.backend],
+      ["RELAY_OPENAI_BACKEND_WEB_SEARCH", previous.webSearch],
     ] as const) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -89,7 +94,7 @@ async function withFakeLive(
   }
 }
 
-test("the handshake is session.start on gpt-live-1, with reasoning off by default", async () => {
+test("the handshake is session.start on gpt-live-1, delegating to GPT-6.1 Sol at high with web search", async () => {
   await withFakeLive(async ({ sent }) => {
     const session = new GptLiveSession();
     await session.connect(seed, recorder().events);
@@ -104,12 +109,73 @@ test("the handshake is session.start on gpt-live-1, with reasoning off by defaul
     });
     const delegation = config.delegation as { type: string; responses: Record<string, unknown> };
     assert.equal(delegation.type, "responses");
-    assert.equal(delegation.responses.model, "gpt-5.6-luna");
-    // GPT-5.6 reasons at medium when the field is absent, so "off" has to be
-    // said explicitly or the switch does nothing on exactly these models.
-    assert.deepEqual(delegation.responses.reasoning, { effort: "none" });
+    assert.equal(delegation.responses.model, "gpt-6.1-sol");
+    // GPT-6.1 Sol rejects `none`; the default rung is `high`.
+    assert.deepEqual(delegation.responses.reasoning, { effort: "high" });
+    assert.deepEqual(delegation.responses.tools, [{ type: "web_search" }]);
+    // The voice must know its delegate can search, or it refuses to ask.
+    assert.match(String(config.instructions), /can search the web/);
+    assert.deepEqual(session.established(), {
+      thinking: true,
+      model: "gpt-live-1",
+      effort: "high",
+      delegate: { model: "gpt-6.1-sol", effort: "high", webSearch: true },
+    });
     await session.close();
   });
+});
+
+for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+  test(`effort ${effort} reaches the delegate as reasoning.effort`, async () => {
+    await withFakeLive(async ({ sent }) => {
+      const session = new GptLiveSession({ effort });
+      await session.connect(seed, recorder().events);
+      const start = sent.find((m) => m.type === "session.start") as { session: Record<string, unknown> };
+      const delegation = start.session.delegation as { responses: Record<string, unknown> };
+      assert.deepEqual(delegation.responses.reasoning, { effort });
+      assert.equal(session.established().delegate?.effort, effort);
+      await session.close();
+    });
+  });
+}
+
+test("RELAY_OPENAI_BACKEND_WEB_SEARCH=0 leaves the delegate without tools", async () => {
+  await withFakeLive(async ({ sent }) => {
+    process.env.RELAY_OPENAI_BACKEND_WEB_SEARCH = "0";
+    const session = new GptLiveSession();
+    await session.connect(seed, recorder().events);
+    const start = sent.find((m) => m.type === "session.start") as { session: Record<string, unknown> };
+    const delegation = start.session.delegation as { responses: Record<string, unknown> };
+    assert.equal("tools" in delegation.responses, false, "the session config rejects unknown or empty fields");
+    assert.equal(session.established().delegate?.webSearch, false);
+    await session.close();
+  });
+});
+
+test("OpenAI offers the four effort rungs instead of an on/off switch", () => {
+  const caps = PROVIDERS.openai.capabilities;
+  assert.equal(caps.thinkingChoice, false);
+  assert.deepEqual(caps.reasoningEfforts, ["low", "medium", "high", "xhigh"]);
+  assert.deepEqual(VOICE_REASONING_EFFORTS, ["low", "medium", "high", "xhigh"]);
+  assert.equal(PROVIDERS.qwen.capabilities.reasoningEfforts, undefined);
+});
+
+test("the relay gives an effort only where the provider lists it, defaulting to high", () => {
+  const rungs = PROVIDERS.openai.capabilities.reasoningEfforts;
+  assert.equal(effectiveVoiceEffort(rungs, "xhigh"), "xhigh");
+  assert.equal(effectiveVoiceEffort(rungs, "low"), "low");
+  assert.equal(effectiveVoiceEffort(rungs, undefined), "high");
+  // Rungs Sol does not accept, and junk, fall back to the default.
+  assert.equal(effectiveVoiceEffort(rungs, "none"), "high");
+  assert.equal(effectiveVoiceEffort(rungs, "max"), "high");
+  assert.equal(effectiveVoiceEffort(rungs, 3), "high");
+  assert.equal(effectiveVoiceEffort(undefined, "xhigh"), undefined);
+  // A provider names its own default: Gemini's dial opens at Low.
+  const gemini = PROVIDERS.gemini.capabilities;
+  assert.deepEqual(gemini.reasoningEfforts, ["low", "medium", "high"]);
+  assert.equal(gemini.thinkingChoice, false);
+  assert.equal(effectiveVoiceEffort(gemini.reasoningEfforts, undefined, gemini.defaultReasoningEffort), "low");
+  assert.equal(effectiveVoiceEffort(gemini.reasoningEfforts, "xhigh", gemini.defaultReasoningEffort), "low");
 });
 
 test("an agent's voice is not sent to GPT-Live, which keeps its own default", async () => {
@@ -120,18 +186,6 @@ test("an agent's voice is not sent to GPT-Live, which keeps its own default", as
     await session.connect({ ...seed, voice: "coral" }, recorder().events);
     const start = sent.find((m) => m.type === "session.start") as { session: { audio: unknown } };
     assert.deepEqual(start.session.audio, { format: { type: "audio/pcm", rate: 24000 }, output: { voice: "marin" } });
-    await session.close();
-  });
-});
-
-test("thinking on asks the backend model to reason", async () => {
-  await withFakeLive(async ({ sent }) => {
-    const session = new GptLiveSession({ thinking: true });
-    await session.connect(seed, recorder().events);
-
-    const start = sent.find((m) => m.type === "session.start") as { session: Record<string, unknown> };
-    const delegation = start.session.delegation as { responses: Record<string, unknown> };
-    assert.deepEqual(delegation.responses.reasoning, { effort: "medium" });
     await session.close();
   });
 });
@@ -292,15 +346,16 @@ test("OpenAI voice falls back to Realtime, and says so instead of claiming think
   try {
     await withFakeLive(
       async () => {
-        const session = new OpenAiVoiceSession(fakeDialect, { thinking: true });
+        const session = new OpenAiVoiceSession(fakeDialect, { effort: "xhigh" });
         await session.connect(seed, recorder().events);
         assert.equal(realtimeConnections, 1, "a GPT-Live failure must fall back to Realtime");
 
         const established = session.established();
-        // Asking for thinking and landing on a protocol that has none must
+        // Asking for an effort and landing on a protocol with no delegate must
         // report what is actually running, or the menu shows a mode nothing
         // serves and the caller believes the model is reasoning.
         assert.equal(established.thinking, false);
+        assert.equal(established.delegate, undefined);
         assert.match(established.notice ?? "", /not available on this account/);
         assert.match(established.notice ?? "", /no thinking mode/);
         await session.close();
@@ -312,7 +367,7 @@ test("OpenAI voice falls back to Realtime, and says so instead of claiming think
   }
 });
 
-test("a GPT-Live session that comes up needs no notice and keeps the thinking it was given", async () => {
+test("a GPT-Live session that comes up needs no notice and keeps the effort it was given", async () => {
   const unusedDialect: RealtimeDialect = {
     provider: "openai",
     url: () => {
@@ -326,10 +381,12 @@ test("a GPT-Live session that comes up needs no notice and keeps the thinking it
   };
 
   await withFakeLive(async () => {
-    const session = new OpenAiVoiceSession(unusedDialect, { thinking: true });
+    const session = new OpenAiVoiceSession(unusedDialect, { effort: "low" });
     await session.connect(seed, recorder().events);
     const established = session.established();
     assert.equal(established.thinking, true);
+    assert.equal(established.model, "gpt-live-1");
+    assert.deepEqual(established.delegate, { model: "gpt-6.1-sol", effort: "low", webSearch: true });
     assert.equal(established.notice, undefined, "a working session must not be annotated");
     await session.close();
   });

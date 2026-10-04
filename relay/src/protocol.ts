@@ -12,6 +12,10 @@
  * exhaustive switch in the iOS app matches on; that belongs in a change that
  * can build and test Swift.
  *
+ * `effort` on session.start/switch IS mirrored (JunoVoiceReasoningEffort); the
+ * `delegate` and `model` on session.ready are read by the web only, for the
+ * same reason as `thinking`.
+ *
  * Transport: one WebSocket per voice session, authenticated with a short-lived
  * HMAC token minted by the Juno backend (?token= query param).
  *
@@ -23,6 +27,53 @@
 
 export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "mock";
 // "mock" is dev-only (relay env RELAY_ENABLE_MOCK=1) — no external calls.
+
+/**
+ * How hard a provider's DELEGATED model reasons — the effort ladder of the
+ * Responses API, cut to the rungs the delegate accepts. GPT-Live-1 reasons
+ * nowhere itself; it hands anything past conversation to a backend Responses
+ * model (GPT-6.1 Sol), and this is that model's `reasoning.effort`. GPT-6.1
+ * Sol has no `none` or `minimal`, so the ladder starts at `low`.
+ */
+export type VoiceReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export const VOICE_REASONING_EFFORTS: readonly VoiceReasoningEffort[] = ["low", "medium", "high", "xhigh"];
+/**
+ * `high`, not the API's `medium`: a delegated turn is by definition one the
+ * voice model judged too hard to answer itself, and it runs while the voice
+ * keeps the caller company — the wait is already paid for in conversation.
+ */
+export const DEFAULT_VOICE_REASONING_EFFORT: VoiceReasoningEffort = "high";
+
+/** An untrusted wire value, read as an effort a provider can be given. */
+export function parseVoiceReasoningEffort(value: unknown): VoiceReasoningEffort | null {
+  return typeof value === "string" && (VOICE_REASONING_EFFORTS as readonly string[]).includes(value)
+    ? (value as VoiceReasoningEffort)
+    : null;
+}
+
+/**
+ * The effort a provider is actually given: none for a provider without rungs,
+ * the request where the provider lists it, and the default otherwise.
+ */
+export function effectiveVoiceEffort(
+  rungs: readonly VoiceReasoningEffort[] | undefined,
+  requested: unknown,
+  fallback: VoiceReasoningEffort = DEFAULT_VOICE_REASONING_EFFORT
+): VoiceReasoningEffort | undefined {
+  if (!rungs?.length) return undefined;
+  const asked = parseVoiceReasoningEffort(requested);
+  if (asked && rungs.includes(asked)) return asked;
+  return rungs.includes(fallback) ? fallback : rungs[0];
+}
+
+/** The backend model a delegating voice session hands its harder turns to. */
+export interface VoiceDelegate {
+  /** Responses model id, e.g. "gpt-6.1-sol". */
+  model: string;
+  effort: VoiceReasoningEffort;
+  /** The delegate may search the web (`web_search` hosted tool). */
+  webSearch: boolean;
+}
 
 export interface ProviderCapabilities {
   /** Accepts JPEG video/screen frames (video.frame messages). */
@@ -39,6 +90,11 @@ export interface ProviderCapabilities {
   /** The caller may choose whether this provider reasons before answering.
    *  Where false, `thinking` on session.start/switch is ignored. */
   thinkingChoice: boolean;
+  /** Where present, the caller may choose how hard this provider's delegated
+   *  model reasons, among these rungs (`effort` on session.start/switch). */
+  reasoningEfforts?: readonly VoiceReasoningEffort[];
+  /** The rung a call gets when the client asks for none (or one not listed). */
+  defaultReasoningEffort?: VoiceReasoningEffort;
   /** Hard provider session ceiling, seconds. Relay closes with
    *  reason "session-limit" when reached. */
   maxSessionSec: number;
@@ -62,8 +118,15 @@ export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
 export type ClientMessage =
   /** `thinking` asks for the reasoning variant of a provider that has one. It
    *  is a request, not a fact: the relay answers with what it actually got. */
-  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[]; thinking?: boolean }
-  | { type: "session.switch"; provider: VoiceProviderId; thinking?: boolean }
+  | {
+      type: "session.start";
+      provider: VoiceProviderId;
+      history?: VoiceHistoryEntry[];
+      thinking?: boolean;
+      /** Delegate effort, for a provider with `reasoningEfforts`. */
+      effort?: VoiceReasoningEffort;
+    }
+  | { type: "session.switch"; provider: VoiceProviderId; thinking?: boolean; effort?: VoiceReasoningEffort }
   /** Final user utterance from on-device speech recognition (MiniMax mode). */
   | {
       type: "input.text";
@@ -97,6 +160,11 @@ export type ServerMessage =
       persona?: boolean;
       /** The model actually serving the call, as the provider reports it. */
       model?: string;
+      /** Present when the call hands harder turns to a backend model: which
+       *  one, at what effort, and whether it may search the web. */
+      delegate?: VoiceDelegate;
+      /** The rung of the provider's thinking dial the call runs at (EFFECTIVE). */
+      effort?: VoiceReasoningEffort;
       /** A non-fatal note about how the session came up — a fallback protocol,
        *  say. Unlike `error` this does not end the call. */
       notice?: string;

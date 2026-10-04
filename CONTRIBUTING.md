@@ -93,11 +93,11 @@ Do not hand-edit:
 
 - `src/lib/i18n-catalog.generated.ts` — written by `npm run i18n:extract`, not
   tracked.
-- `src/lib/models.generated.ts`, `src/lib/benchmarks.generated.ts` — written by
-  the nightly `sync-models` workflow. These **are** tracked, because they hold
-  curated registry state that cannot be reproduced without provider API keys.
-  Promote worthwhile `DISCOVERED` entries into `CURATED` in `src/lib/models.ts`
-  by hand, then run `npm run validate:models`.
+- `src/lib/benchmarks.generated.ts` — written by the nightly `sync-models`
+  workflow (benchmarks + model radar only). Tracked. The model catalog itself
+  is curated by hand: a new model is added to `CURATED` in `src/lib/models.ts`
+  from its documentation page (id, route, effort ladder, context, price), then
+  `npm run validate:models`. Nothing adds models automatically.
 
 ## Commits and pull requests
 

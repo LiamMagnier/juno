@@ -107,17 +107,22 @@ test("the September 2026 models carry the ids their providers actually serve", (
   }
   assert.equal(byId.get("openai:gpt-image-2")?.status, "legacy");
 
-  // xAI's volume tier: the widest context window in the catalog.
-  const fast = byId.get("xai:grok-4.1-fast");
-  assert.ok(fast, "Grok 4.1 Fast is in the catalog");
-  assert.equal(fast.contextWindow, 2_000_000);
-  assert.equal(fast.reasoning, true, "reasoning is a switch on this model, not absent");
+  // xAI's volume tier. Every Grok 4.1 Fast slug retired on 2026-05-15 and
+  // xAI serves them from grok-4.3, which now holds the `grok-fast` family.
+  assert.equal(byId.get("xai:grok-4.1-fast"), undefined, "retired: migrates to grok-4.3");
+  const fast = byId.get("xai:grok-4.3");
+  assert.ok(fast, "Grok 4.3 is in the catalog");
+  assert.equal(fast.family, "grok-fast");
+  assert.equal(fast.status, "current");
+  assert.equal(fast.contextWindow, 1_000_000);
+  assert.equal(fast.reasoning, true, "effort none…xhigh: a switch and a ladder");
 
   // Google's Lite line moved on a generation.
   const lite = byId.get("google:gemini-3.5-flash-lite");
   assert.ok(lite, "Gemini 3.5 Flash-Lite is in the catalog");
   assert.equal(lite.contextWindow, 1_048_576);
-  assert.equal(byId.get("google:gemini-3.1-flash-lite")?.status, "legacy");
+  // Google's deprecations page: 3.1 Flash-Lite shuts down 2027-05-07.
+  assert.equal(byId.get("google:gemini-3.1-flash-lite")?.status, "deprecated");
 
   // Gemini Omni Flash went GA as gemini-omni-1.1-flash on 27 Aug 2026: a
   // video model on the Interactions API.
@@ -188,16 +193,17 @@ test("the remaining seven labs carry their current ids", () => {
     assert.ok(model.reasoning, `${id} is a reasoning model`);
     assert.ok(model.vision, `${id} takes the full modality set`);
   }
-  // The generation it replaces is hidden but still answers.
-  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.status, "legacy", "V2.5 Pro stepped down");
-  assert.equal(byId.get("mimo:mimo-v2-flash")?.status, "legacy", "V2 Flash stepped down");
+  // The generation it replaces still answers until Xiaomi switches it off on
+  // 2026-10-21 (mimo.mi.com "Model Deprecation"); V2 Flash is already gone.
+  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.status, "deprecated", "V2.5 Pro is retiring");
+  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.replacedBy, "mimo:mimo-v2.6-pro");
+  assert.equal(byId.get("mimo:mimo-v2-flash"), undefined, "V2 Flash retired 2026-06-30");
 
-  // Delisted in the September 2026 price card.
+  // Delisted, and absent from Z.ai's international API (now the default host),
+  // so hidden from the catalog; a stored id still resolves to a live GLM.
   for (const id of ["zhipu:glm-5-turbo", "zhipu:glm-5v-turbo"]) {
-    const model = byId.get(id);
-    assert.ok(model, `${id} is in the catalog`);
-    assert.equal(model.status, "deprecated", `${id} was delisted`);
-    assert.ok(model.replacedBy, `${id} needs somewhere for stored ids to go`);
+    assert.equal(byId.get(id), undefined, `${id} is not offered`);
+    assert.equal(byId.get(resolveModel(id)!.id)?.provider, "zhipu", `${id} still resolves to a live GLM`);
   }
 
   // Xiaomi's omnimodal pair, and the window the Pro row had four times too small.
@@ -274,7 +280,6 @@ test("Meta's Muse line carries its real ids, and each tier stays in its own tier
   // The tiers never cross, in either direction.
   for (const alias of [
     "meta:muse-spark-contributor",
-    "meta:muse-spark-1.2-contributor",
     "meta:muse-spark-1.1-contributor",
   ]) {
     assert.equal(
@@ -283,7 +288,7 @@ test("Meta's Muse line carries its real ids, and each tier stays in its own tier
       `${alias} must stay on the contributor ladder — crossing to standard is a 12.5x/21x price rise`
     );
   }
-  for (const alias of ["meta:muse-spark", "meta:muse-spark-1.1", "meta:muse-max", "meta:muse-flash"]) {
+  for (const alias of ["meta:muse-spark", "meta:muse-max", "meta:muse-flash"]) {
     assert.equal(resolveModel(alias)?.id, "meta:muse-spark-1.3", `${alias} must route to the standard tier`);
   }
   for (const [dead, target] of Object.entries(RETIRED_MODELS)) {
@@ -317,4 +322,43 @@ test("Muse Image is metered at Meta's per-image rate, not the catalog default", 
     museImage < body.indexOf("return 30_000;"),
     "the Muse Image branch must come before the default, or it never runs"
   );
+});
+
+test("Meta's whole public Muse Spark list is selectable: 1.2 Contributor and 1.1 included", async () => {
+  const { tokenRate } = await import("../src/lib/pricing");
+  const { getModelMetrics, reasoningCaps } = await import("../src/lib/model-metrics");
+  // dev.meta.ai/docs/models (read 2026-10-04): five ids, none invitation-only.
+  for (const id of ["muse-spark-1.3", "muse-spark-1.3-contributor", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.1"]) {
+    const model = resolveModel(`meta:${id}`);
+    assert.equal(model?.id, `meta:${id}`, `${id} resolves to itself, not a migration`);
+    assert.equal(model?.providerModel, id);
+    assert.equal(model?.contextWindow, 1_048_576);
+    assert.equal(model?.vision, true);
+    assert.equal(model?.reasoning, true);
+    assert.equal(model?.webSearch, true, `${id} has Meta's web_search tool`);
+  }
+
+  const c12 = resolveModel("meta:muse-spark-1.2-contributor")!;
+  assert.equal(c12.trainsOnPrompts, true);
+  assert.equal(c12.family, "muse-spark-contributor", "it stays on the contributor ladder");
+  assert.equal(c12.status, "legacy");
+  const c12Rate = tokenRate(c12);
+  assert.equal(c12Rate.input, 0.1);
+  assert.equal(c12Rate.output, 0.2);
+  assert.ok(Math.abs((c12Rate.cacheRead ?? 0) - 0.002) < 1e-9, "contributor cached input is $0.002");
+  assert.equal(getModelMetrics(c12).inputUsdPerMTok, 0.1);
+  assert.equal(getModelMetrics(c12).outputUsdPerMTok, 0.2);
+  assert.ok(!reasoningCaps(c12).tiers.includes("max"), "max is Standard-tier 1.3 only");
+  assert.equal(reasoningCaps(c12).canDisable, false, "Muse Spark rejects reasoning_effort none");
+
+  const s11 = resolveModel("meta:muse-spark-1.1")!;
+  assert.notEqual(s11.trainsOnPrompts, true);
+  assert.equal(s11.family, "muse-spark");
+  assert.equal(s11.status, "legacy");
+  const s11Rate = tokenRate(s11);
+  assert.equal(s11Rate.input, 1.25);
+  assert.equal(s11Rate.output, 4.25);
+  assert.ok(Math.abs((s11Rate.cacheRead ?? 0) - 0.15) < 1e-9, "standard cached input is $0.15");
+  assert.equal(getModelMetrics(s11).inputUsdPerMTok, 1.25);
+  assert.deepEqual(reasoningCaps(s11).tiers, ["minimal", "low", "medium", "high", "xhigh"]);
 });

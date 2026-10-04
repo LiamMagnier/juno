@@ -34,6 +34,7 @@ export function searchToolLabel(provider: ModelInfo["provider"]) {
   if (provider === "google") return "Google Search grounding";
   if (provider === "xai") return "Grok web search";
   if (provider === "openai") return "OpenAI web search";
+  if (provider === "meta") return "Meta web search";
   return "native web search";
 }
 

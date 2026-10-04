@@ -415,6 +415,17 @@ public final class JunoRealtimeVoiceController {
     /// from the request, so a relay that substituted a provider is not
     /// misreported in the UI.
     public private(set) var provider: JunoVoiceProvider
+    /// The rung of each dial provider's thinking dial (OpenAI: GPT-6.1 Sol's
+    /// effort; Gemini: the Live model and Gemini 3.8 Flash's level). Read from
+    /// ``JunoVoiceReasoningEffort/stored(for:in:)`` at init and written back by
+    /// ``setReasoningEffort(_:)``, so the Mac's call settings and iOS Settings
+    /// share one per-device choice per provider.
+    private var reasoningEfforts: [JunoVoiceProvider: JunoVoiceReasoningEffort]
+
+    /// The current provider's rung.
+    public var reasoningEffort: JunoVoiceReasoningEffort {
+        reasoningEfforts[provider] ?? provider.defaultReasoningEffort
+    }
     public private(set) var capabilities: JunoVoiceCapabilities?
     public private(set) var usage: JunoVoiceUsage?
     /// 0–1, smoothed: the greater of the microphone level while the user talks
@@ -576,7 +587,33 @@ public final class JunoRealtimeVoiceController {
         self.authorization = authorization
         self.fallbackRelayURL = relayURL
         self.provider = provider
+        self.reasoningEfforts = Dictionary(
+            uniqueKeysWithValues: JunoVoiceProvider.allCases
+                .filter(\.offersReasoningEffort)
+                .map { ($0, JunoVoiceReasoningEffort.stored(for: $0)) }
+        )
         self.session = RealtimeSessionMachine(provider: provider)
+    }
+
+    /// The effort to put on a start or switch frame: only for a provider that
+    /// delegates, so every other provider's frames stay exactly as they were.
+    private func effort(for provider: JunoVoiceProvider) -> JunoVoiceReasoningEffort? {
+        provider.offersReasoningEffort ? (reasoningEfforts[provider] ?? provider.defaultReasoningEffort) : nil
+    }
+
+    /// Chooses how hard the delegate reasons, remembers it on this device, and
+    /// re-opens a live call on a delegating provider at the new effort — the
+    /// effort is part of the session the relay opens, as on the web.
+    public func setReasoningEffort(_ newEffort: JunoVoiceReasoningEffort) {
+        guard provider.reasoningEfforts.contains(newEffort), newEffort != reasoningEffort else { return }
+        reasoningEfforts[provider] = newEffort
+        UserDefaults.standard.set(newEffort.rawValue, forKey: JunoVoiceReasoningEffort.storageKey(for: provider))
+        guard phase == .live else { return }
+        flushPlayback()
+        assistantSpeaking = false
+        resetVoiceActivity()
+        advance(.assistantTurnEnded)
+        send(.sessionSwitch(provider: provider, effort: newEffort))
     }
 
     // MARK: Session mirror
@@ -793,7 +830,7 @@ public final class JunoRealtimeVoiceController {
         resetVoiceActivity()
         advance(.assistantTurnEnded)
         if phase == .live {
-            send(.sessionSwitch(provider: newProvider))
+            send(.sessionSwitch(provider: newProvider, effort: effort(for: newProvider)))
         } else {
             Task {
                 end()
@@ -867,7 +904,7 @@ public final class JunoRealtimeVoiceController {
         socket = task
         box.socket = task
         task.resume()
-        send(.sessionStart(provider: provider, history: startHistory()))
+        send(.sessionStart(provider: provider, history: startHistory(), effort: effort(for: provider)))
         startReceiving(on: task)
         startPinging()
         startMetering()

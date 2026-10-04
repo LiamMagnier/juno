@@ -5,6 +5,7 @@ import type {
   SessionEstablished,
 } from "./types.js";
 import { GptLiveSession } from "./gpt-live.js";
+import type { VoiceReasoningEffort } from "../protocol.js";
 import { OpenAiShapedRealtimeSession, type RealtimeDialect } from "./openai-realtime.js";
 
 /**
@@ -21,27 +22,28 @@ import { OpenAiShapedRealtimeSession, type RealtimeDialect } from "./openai-real
  * working voice mode is switched off by a capability check nobody ran.
  *
  * What is not acceptable is doing this quietly. A fallback session reasons
- * nowhere near where the caller asked it to, so `established()` reports the
- * thinking state the caller actually got — false — and a note saying which
- * protocol answered. The relay puts both on session.ready, where they reach
- * the UI without ending the call the way an error would.
+ * nowhere near where the caller asked it to — there is no delegate behind the
+ * Realtime model — so `established()` reports the state the caller actually
+ * got (thinking false, no delegate) and a note saying which protocol
+ * answered. The relay puts both on session.ready, where they reach the UI
+ * without ending the call the way an error would.
  */
 export class OpenAiVoiceSession implements VoiceProviderSession {
   readonly provider = "openai" as const;
   private active: VoiceProviderSession | null = null;
-  private readonly thinking: boolean;
+  private readonly effort: VoiceReasoningEffort | undefined;
   private notice: string | undefined;
   private fellBack = false;
 
   constructor(
     private readonly dialect: RealtimeDialect,
-    options: { thinking?: boolean } = {}
+    options: { effort?: VoiceReasoningEffort } = {}
   ) {
-    this.thinking = options.thinking === true;
+    this.effort = options.effort;
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
-    const live = new GptLiveSession({ thinking: this.thinking });
+    const live = new GptLiveSession({ effort: this.effort });
     try {
       await live.connect(seed, events);
       this.active = live;
@@ -59,21 +61,24 @@ export class OpenAiVoiceSession implements VoiceProviderSession {
       await realtime.connect(seed, events);
       this.active = realtime;
       this.fellBack = true;
-      this.notice = this.thinking
-        ? "GPT-Live is not available on this account, so this call is running on the previous Realtime model — which has no thinking mode. Everything else works."
-        : "GPT-Live is not available on this account, so this call is running on the previous Realtime model.";
+      this.notice =
+        "GPT-Live is not available on this account, so this call is running on the previous Realtime model, " +
+        "which has no thinking mode and no delegate to search the web. Everything else works.";
     }
   }
 
   established(): SessionEstablished {
     // A fallback session reasons nowhere the caller asked it to. Reporting the
     // request back would make the menu show a mode nothing is running.
+    const answered = this.active?.established?.();
     return {
-      thinking: this.fellBack ? false : this.thinking,
+      thinking: this.fellBack ? false : (answered?.thinking ?? false),
       notice: this.notice,
       // Whichever leg answered names itself; the two run different models on
       // different protocols, so this is the only place that knows.
-      model: this.active?.established?.().model,
+      model: answered?.model,
+      delegate: this.fellBack ? undefined : answered?.delegate,
+      effort: this.fellBack ? undefined : answered?.effort,
     };
   }
 

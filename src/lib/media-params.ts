@@ -457,7 +457,6 @@ const GLM_IMAGE: MediaCapabilities = {
   sources: ["https://docs.z.ai/api-reference/image/generate-image", "https://docs.z.ai/guides/image/glm-image"],
   unverified: [
     "count: 'Currently, the array only contains one image', so no count control.",
-    "Docs are Z.AI's international API (api.z.ai); image-gen.ts may point at open.bigmodel.cn, assumed to share the schema.",
   ],
 };
 
@@ -618,7 +617,13 @@ function geminiOmni(modelId: string): MediaCapabilities {
 // POST https://api.x.ai/v1/videos/generations → GET /v1/videos/{request_id}
 // ---------------------------------------------------------------------------
 
-function grokVideo(modelId: string, is15: boolean): MediaCapabilities {
+// Per-model resolutions come from each model page's "pricing per second based
+// on resolution" table (docs.x.ai/developers/models/<id>, 2026-10-04): classic
+// 480p/720p, 1.5 and 1.5 Lite 480p/720p/1080p.
+type GrokVideoVariant = "classic" | "1.5" | "1.5-lite";
+
+function grokVideo(modelId: string, variant: GrokVideoVariant): MediaCapabilities {
+  const is15 = variant === "1.5";
   const options: Partial<Record<MediaParamKey, MediaOption>> = {
     aspect: {
       kind: "select",
@@ -632,8 +637,9 @@ function grokVideo(modelId: string, is15: boolean): MediaCapabilities {
       label: "Resolution",
       field: "resolution",
       default: "480p",
-      // "1080p is supported on grok-imagine-video-1.5 for text-to-video and image-to-video."
-      choices: resolutions(is15 ? ["480p", "720p", "1080p"] : ["480p", "720p"], {}),
+      // "1080p is supported on grok-imagine-video-1.5 for text-to-video and
+      // image-to-video"; 1.5 Lite prices 1080p too, so it takes the same three.
+      choices: resolutions(variant === "classic" ? ["480p", "720p"] : ["480p", "720p", "1080p"], {}),
     },
     durationSec: { kind: "range", label: "Length", field: "duration", min: 1, max: 15, step: 1, unit: "s", default: 8 },
   };
@@ -643,12 +649,21 @@ function grokVideo(modelId: string, is15: boolean): MediaCapabilities {
   return {
     modelId,
     kind: "video",
-    endpoint: "POST https://api.x.ai/v1/videos/generations (no adapter in video-gen.ts yet)",
+    endpoint: "POST https://api.x.ai/v1/videos/generations → GET /v1/videos/{request_id} (video-gen.ts xaiAdapter)",
     options,
-    sources: ["https://docs.x.ai/developers/model-capabilities/video/generation", "https://docs.x.ai/developers/rest-api-reference/inference/videos"],
+    sources: [
+      "https://docs.x.ai/developers/model-capabilities/video/generation",
+      "https://docs.x.ai/developers/rest-api-reference/inference/videos",
+      `https://docs.x.ai/developers/models/${modelId.slice("xai:".length)}`,
+    ],
     unverified: is15
       ? undefined
-      : ["audio: generate_audio is only documented with grok-imagine-video-1.5, so classic grok-imagine-video gets no sound toggle."],
+      : [
+          `audio: generate_audio is only documented with grok-imagine-video-1.5, so ${modelId.slice("xai:".length)} gets no sound toggle.`,
+          ...(variant === "1.5-lite"
+            ? ["inputs: the 1.5 Lite page lists text and image in only (no video editing/extension, no reference voices)."]
+            : []),
+        ],
   };
 }
 
@@ -790,7 +805,6 @@ const COGVIDEOX: MediaCapabilities = {
   sources: ["https://docs.z.ai/api-reference/video/generate-video", "https://docs.z.ai/guides/video/cogvideox-3"],
   unverified: [
     "size 2048x1080: in the enum but neither a standard ratio nor explained, so not offered.",
-    "Docs are Z.AI's international API (api.z.ai); video-gen.ts defaults to open.bigmodel.cn, assumed to share the schema.",
   ],
 };
 
@@ -822,6 +836,52 @@ function hailuo(modelId: string, imageOnly: boolean): MediaCapabilities {
       ...(imageOnly
         ? ["MiniMax-Hailuo-2.3-Fast is listed only for image-to-video (first_frame_image required); a text-only request is not documented to work. Options are from the image-to-video schema."]
         : []),
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// MiniMax H3 / H3 Max — the V2 video API
+// POST https://api.minimax.io/v2/video_generation  { model, content[], resolution, duration, ratio }
+// ---------------------------------------------------------------------------
+
+function minimaxH3(modelId: string, fast: boolean): MediaCapabilities {
+  // Text-to-video (all Juno sends) requires a concrete ratio: "adaptive" is
+  // only for image- and reference-to-video, so it is not offered.
+  const ratios = ["16:9", "21:9", "4:3", "1:1", "3:4", "9:16"];
+  return {
+    modelId,
+    kind: "video",
+    endpoint: "POST https://api.minimax.io/v2/video_generation (resolution, duration, ratio as body fields)",
+    options: {
+      aspect: { kind: "select", label: "Aspect ratio", field: "ratio", default: "16:9", choices: aspects(ratios) },
+      resolution: {
+        kind: "select",
+        label: "Resolution",
+        field: "resolution",
+        default: "768p",
+        choices: fast
+          ? resolutions(["480p", "768p"], { "480p": "480P", "768p": "768P" })
+          : resolutions(["768p", "2K"], { "768p": "768P", "2K": "2K" }),
+      },
+      durationSec: {
+        kind: "range",
+        label: "Length",
+        field: "duration",
+        min: fast ? 5 : 4,
+        max: 15,
+        step: 1,
+        unit: "s",
+        default: 5,
+      },
+    },
+    sources: [
+      "https://platform.minimax.io/docs/api-reference/video-generation-v2-create",
+      "https://platform.minimax.io/docs/api-reference/video-generation-v2-query",
+    ],
+    unverified: [
+      "image / reference input: the V2 API takes first/last frames and reference image, video and audio in `content`; Juno sends the text prompt only.",
+      ...(fast ? ["extra.prompt_expansion_mode (disabled | balanced | quality): documented for H3 Max, left at its `balanced` default."] : []),
     ],
   };
 }
@@ -900,8 +960,9 @@ const ENTRIES: MediaCapabilities[] = [
   veo("google:veo-3.1-fast-generate-preview", false),
   veo("google:veo-3.1-lite-generate-preview", true),
   geminiOmni("google:gemini-omni-1.1-flash"),
-  grokVideo("xai:grok-imagine-video", false),
-  grokVideo("xai:grok-imagine-video-1.5", true),
+  grokVideo("xai:grok-imagine-video", "classic"),
+  grokVideo("xai:grok-imagine-video-1.5", "1.5"),
+  grokVideo("xai:grok-imagine-video-1.5-lite", "1.5-lite"),
   seedance("seedance:dreamina-seedance-2-5-260628", {
     resolutions: ["480p", "720p", "1080p"],
     defaultResolution: "720p",
@@ -978,6 +1039,8 @@ const ENTRIES: MediaCapabilities[] = [
   hailuo("minimax:MiniMax-Hailuo-2.3", false),
   hailuo("minimax:MiniMax-Hailuo-2.3-Fast", true),
   hailuo("minimax:MiniMax-Hailuo-02", false),
+  minimaxH3("minimax:MiniMax-H3", false),
+  minimaxH3("minimax:MiniMax-H3-Max", true),
 
   lyria("google:lyria-3.5", "3.5"),
   lyria("google:lyria-3-pro-preview", "pro"),

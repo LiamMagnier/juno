@@ -180,6 +180,52 @@ final class JunoVoiceRelayProtocolTests: XCTestCase {
         XCTAssertEqual(Set(try XCTUnwrap(history.first).keys), ["role", "text"])
     }
 
+    // MARK: Delegate effort
+
+    /// The effort rides start and switch only when given, as the relay's
+    /// `effort` field; a frame without one is the frame it always was.
+    func testEffortRidesStartAndSwitchOnlyWhenGiven() throws {
+        let start = try object(.sessionStart(provider: .openai, effort: .xhigh))
+        XCTAssertEqual(Set(start.keys), ["type", "provider", "effort"])
+        XCTAssertEqual(start["effort"] as? String, "xhigh")
+
+        let switched = try object(.sessionSwitch(provider: .openai, effort: .low))
+        XCTAssertEqual(switched["type"] as? String, "session.switch")
+        XCTAssertEqual(switched["effort"] as? String, "low")
+
+        let bare = try object(.sessionSwitch(provider: .gemini))
+        XCTAssertEqual(Set(bare.keys), ["type", "provider"])
+    }
+
+    /// The relay's ladder and default, and the names the pickers show.
+    func testEffortLadderMatchesTheRelay() {
+        XCTAssertEqual(JunoVoiceReasoningEffort.allCases.map(\.rawValue), ["low", "medium", "high", "xhigh"])
+        XCTAssertEqual(JunoVoiceReasoningEffort.productionDefault, .high)
+        XCTAssertEqual(JunoVoiceReasoningEffort.xhigh.displayName, "Extra high")
+    }
+
+    func testModelNamesAndDelegates() {
+        XCTAssertEqual(JunoVoiceProvider.openai.modelName, "GPT-Live 1")
+        XCTAssertEqual(JunoVoiceProvider.gemini.modelName, "Gemini 3.8 Live")
+        XCTAssertEqual(JunoVoiceProvider.openai.delegateModelName, "GPT-6.1 Sol")
+        XCTAssertEqual(JunoVoiceProvider.gemini.delegateModelName, "Gemini 3.8 Flash")
+        XCTAssertTrue(JunoVoiceProvider.openai.offersReasoningEffort)
+        XCTAssertTrue(JunoVoiceProvider.gemini.offersReasoningEffort)
+        XCTAssertEqual(JunoVoiceProvider.gemini.reasoningEfforts, [.low, .medium, .high])
+        XCTAssertEqual(JunoVoiceProvider.gemini.defaultReasoningEffort, .low)
+        XCTAssertEqual(JunoVoiceProvider.gemini.modelName(at: .low), "Gemini 3.8 Live")
+        XCTAssertEqual(JunoVoiceProvider.gemini.modelName(at: .medium), "Gemini 3.8 Live Thinking")
+        XCTAssertEqual(JunoVoiceProvider.gemini.delegateEffort(at: .low), .low)
+        XCTAssertEqual(JunoVoiceProvider.gemini.delegateEffort(at: .medium), .high)
+        XCTAssertEqual(JunoVoiceProvider.openai.delegateEffort(at: .xhigh), .xhigh)
+        XCTAssertFalse(JunoVoiceProvider.qwen.offersReasoningEffort)
+        XCTAssertNotEqual(
+            JunoVoiceReasoningEffort.storageKey(for: .gemini),
+            JunoVoiceReasoningEffort.storageKey(for: .openai)
+        )
+        XCTAssertNil(JunoVoiceProvider.qwen.delegateModelName)
+    }
+
     func testHistoryCarriesBoundedDocumentContextForReconnects() throws {
         let seeded = try object(
             .sessionStart(

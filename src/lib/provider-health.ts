@@ -23,7 +23,7 @@ import {
  * `isProviderConfigured` only asks whether an env var is non-empty, and that is
  * what the model catalog was gated on. So a revoked or unfunded key kept every
  * one of its models in the picker, and users picked models that could not
- * answer. Worse, `fetchProviderModels` (model-discovery.ts) already made an
+ * answer. Worse, `fetchProviderModels` (the since-removed model discovery) made an
  * authenticated call every 10 minutes and *discarded* the 401 — falling back to
  * the curated list, so a dead provider produced a MORE complete catalog than a
  * working one, with the only log suppressed in production.
@@ -45,7 +45,7 @@ import {
  *    ordinary overload. Only auth/billing — the classes an operator must fix —
  *    mark a provider down.
  *
- * State is per-process and in memory, like the model-discovery cache beside it.
+ * State is per-process and in memory.
  *
  * Known limitation: the probe is a chat completion, so a provider with no
  * curated chat model — an image/video-only one such as seedance — cannot be

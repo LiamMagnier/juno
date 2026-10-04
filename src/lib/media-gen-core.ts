@@ -80,6 +80,17 @@ const VIDEO_RES_WEIGHT: Record<string, number> = {
   "1080p": 1.5,
   "4K": 3,
 };
+/**
+ * xAI's per-second price at each resolution over its 480p rate, from each
+ * model page's "pricing per second based on resolution" table (docs.x.ai,
+ * 2026-10-04). The generic table above understates the 1080p jump on these
+ * models (1.5: $0.08 → $0.25; 1.5 Lite: $0.02 → $0.14).
+ */
+const XAI_VIDEO_RES_WEIGHT: Record<string, Record<string, number>> = {
+  "xai:grok-imagine-video": { "480p": 1, "720p": 1.4 },
+  "xai:grok-imagine-video-1.5": { "480p": 1, "720p": 1.75, "1080p": 3.125 },
+  "xai:grok-imagine-video-1.5-lite": { "480p": 1, "720p": 1.5, "1080p": 7 },
+};
 const OPENAI_QUALITY_WEIGHT: Record<string, number> = { auto: 1, low: 0.3, medium: 1, high: 4, xhigh: 5, max: 6 };
 /** What "auto" length is billed as when the provider picks it. */
 const AUTO_SECONDS = 8;
@@ -106,7 +117,7 @@ export function mediaCostFactor(modelId: string, kind: MediaKind, params: MediaP
     factor *= ratio(IMAGE_RES_WEIGHT, params.resolution, defaults.resolution);
     if (modelId.startsWith("openai:")) factor *= ratio(OPENAI_QUALITY_WEIGHT, params.quality, defaults.quality);
   } else if (kind === "video") {
-    factor *= ratio(VIDEO_RES_WEIGHT, params.resolution, defaults.resolution);
+    factor *= ratio(XAI_VIDEO_RES_WEIGHT[modelId] ?? VIDEO_RES_WEIGHT, params.resolution, defaults.resolution);
     if (params.durationSec !== undefined) {
       const reference = seconds(defaults.durationSec, AUTO_SECONDS);
       factor *= seconds(params.durationSec, reference) / reference;
@@ -327,6 +338,50 @@ export function seedanceStartBody(providerModel: string, prompt: string, wire: M
 /** MiniMax Hailuo /video_generation: resolution and duration beside the prompt. */
 export function minimaxVideoBody(providerModel: string, prompt: string, wire: MediaWire | null): UnknownRecord {
   return { model: providerModel, prompt: prompt.slice(0, 2000), ...(wire?.body ?? {}) };
+}
+
+/**
+ * MiniMax H3 / H3 Max, V2 video API (platform.minimax.io
+ * video-generation-v2-create, read 2026-10-04):
+ *
+ *   POST {host}/v2/video_generation
+ *     { model, content: [{ type: "text", text }], resolution, duration, ratio }
+ *     → { task_id }
+ *   GET  {host}/v2/query/video_generation/{task_id}
+ *     → { task: { status: queued|running|succeeded|failed|cancelled,
+ *                 content: { url }, error?: { code, message } } }
+ *
+ * `resolution` and `duration` are required, and text-to-video needs a concrete
+ * `ratio`, so the body always carries all three (the model's defaults when no
+ * choices came in). The prompt goes in a `text` content item (≤ 7000 chars).
+ */
+export function minimaxH3Body(providerModel: string, prompt: string, wire: MediaWire | null): UnknownRecord {
+  return {
+    model: providerModel,
+    content: [{ type: "text", text: prompt.slice(0, 7000) }],
+    resolution: "768P",
+    duration: 5,
+    ratio: "16:9",
+    ...(wire?.body ?? {}),
+  };
+}
+
+/** The V2 host: the configured MiniMax base without its `/v1`. */
+export function minimaxV2Host(base: string): string {
+  return base.replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+
+export function parseMinimaxH3Poll(data: unknown, modelName = "MiniMax H3"): VideoPollResult {
+  const task = isRecord(data) && isRecord(data.task) ? data.task : {};
+  const status = typeof task.status === "string" ? task.status.toLowerCase() : "";
+  if (status === "failed" || status === "cancelled") {
+    const err = isRecord(task.error) && typeof task.error.message === "string" ? task.error.message : status;
+    throw new Error(`${modelName} failed: ${err.slice(0, 160)}`);
+  }
+  if (status !== "succeeded") return { status: "running", note: status || undefined };
+  const url = isRecord(task.content) && typeof task.content.url === "string" ? task.content.url : "";
+  if (!url) throw new Error(`${modelName} returned no video — try rephrasing your prompt.`);
+  return { status: "done", url, mimeType: "video/mp4" };
 }
 
 /** Z.ai CogVideoX /videos/generations: size, quality, duration, with_audio, fps. */

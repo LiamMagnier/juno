@@ -36,9 +36,11 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     label: "Zhipu · GLM",
     apiKeyEnv: "ZHIPU_API_KEY",
     baseUrlEnv: "ZHIPU_BASE_URL",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    // Z.ai international (docs.z.ai, read 2026-10-04). It was the China host
+    // open.bigmodel.cn; ZHIPU_BASE_URL still overrides it for a China-region key.
+    defaultBaseUrl: "https://api.z.ai/api/paas/v4",
     kind: "openai",
-    docsUrl: "https://open.bigmodel.cn/usercenter/apikeys",
+    docsUrl: "https://z.ai/manage-apikey/apikey-list",
   },
   moonshot: {
     label: "Moonshot · Kimi",
@@ -106,9 +108,14 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     label: "ByteDance · Seedance",
     apiKeyEnv: "SEEDANCE_API_KEY",
     baseUrlEnv: "SEEDANCE_BASE_URL",
-    defaultBaseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    // BytePlus ModelArk (international). The catalog's `dreamina-seedance-*`
+    // ids are BytePlus model ids; Volcengine's Beijing Ark host serves the
+    // `doubao-seedance-*` names instead, so it was the wrong default for every
+    // Seedance row. docs.byteplus.com/en/docs/ModelArk/1520757 (2026-10-04):
+    // POST https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks
+    defaultBaseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
     kind: "openai",
-    docsUrl: "https://www.volcengine.com/docs/82379",
+    docsUrl: "https://docs.byteplus.com/en/docs/ModelArk/1520757",
   },
   minimax: {
     label: "MiniMax",

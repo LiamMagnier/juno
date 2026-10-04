@@ -138,10 +138,10 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
  *
  *   reasoning_effort  → openai, google (compat shim), deepseek (V4), xai,
  *                       mistral (high|none), zhipu (GLM-5.2, GLM-5.3), meta,
- *                       moonshot (K3)
+ *                       moonshot (K3), qwen (3.8 line, with enable_thinking)
  *   thinking:{type}   → zhipu (the on/off GLMs), minimax, moonshot (K2.x),
  *                       mimo, longcat
- *   enable_thinking   → qwen
+ *   enable_thinking   → qwen (+ thinking_budget before 3.8)
  */
 export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -159,7 +159,9 @@ export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort 
     model.provider === "meta" ||
     (model.provider === "zhipu" && (id.includes("glm-5.2") || glmEffortOnly)) ||
     // Kimi K3 introduced a top-level enum; the K2.x line keeps `thinking`.
-    (model.provider === "moonshot" && id.includes("k3"));
+    (model.provider === "moonshot" && id.includes("k3")) ||
+    // MiniMax M3.1 Flash Preview: the one MiniMax with reasoning_effort.
+    (model.provider === "minimax" && id.includes("m3.1"));
 
   if (usesReasoningEffort) {
     // Mistral's enum is only high|none, so any depth collapses to "high".
@@ -168,12 +170,15 @@ export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort 
   }
 
   if (model.provider === "qwen" && model.reasoning) {
-    // Instant turns thinking off on the hybrid models; Qwen3.8 Max thinks
-    // always, so it always gets thinking on and a budget.
-    const alwaysThinks = id.includes("qwen3.8-max") || !caps.canDisable;
+    // Instant turns thinking off on the hybrid models (Qwen3.8 Max included —
+    // it is hybrid, on by default); a thinking-only model always gets it on.
+    const alwaysThinks = !caps.canDisable;
     const qwenEffort = effort ?? (alwaysThinks ? "high" : null);
     out.enable_thinking = alwaysThinks ? true : !!qwenEffort;
-    if (qwenEffort) {
+    // The 3.8 line takes reasoning_effort low|medium|xhigh, and a
+    // thinking_budget alongside it is an error; older lines take the budget.
+    if (qwenEffort && id.includes("qwen3.8")) out.reasoning_effort = qwenEffort;
+    else if (qwenEffort) {
       out.thinking_budget = { minimal: 1024, low: 2048, medium: 8192, high: 24000, xhigh: 32000, max: 38000 }[qwenEffort];
     }
   }

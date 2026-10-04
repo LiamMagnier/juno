@@ -47,7 +47,6 @@ npm run lint           # eslint
 npm test               # unit tests (auth, crypto, moderation, memory, …)
 npm run db:studio      # Prisma Studio
 npm run validate:models
-npm run sync:models    # discover new provider models (sync:models:write to apply)
 npm run i18n:extract   # regenerate the static UI translation catalog
 ```
 

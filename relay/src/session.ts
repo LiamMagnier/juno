@@ -3,6 +3,7 @@ import type WebSocket from "ws";
 import { resamplePcm16 } from "./audio.js";
 import type { ClientMessage, ServerMessage, VoiceHistoryEntry, VoiceProviderId } from "./protocol.js";
 import {
+  effectiveVoiceEffort,
   PLAYBACK_SAMPLE_RATE,
   VOICE_HISTORY_MAX_TOTAL_CHARS,
   VOICE_HISTORY_MAX_TURN_CHARS,
@@ -12,22 +13,12 @@ import { mintRelayCallbackToken } from "./auth.js";
 import { PROVIDERS, agentVoice } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
 import { effectiveRelaySessionLimitSec } from "./session-limit.js";
-import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
+import { providerText, VOICE_CONTEXT_MAX_CHARS, VOICE_TOOL_LIMIT } from "./voice-context.js";
 
-/**
- * What this call cannot do, said plainly (TOOL_RUNTIME_DESIGN.md §6.12, G18).
- * The relay has no tool calls: no code, no produced files, no browsing. A
- * caller who asks for any of that hears that it happens in the chat, rather
- * than a voice that describes code as if it had run it.
- *
- * It is NOT a limit on reading. A voice turn carries the text of the files the
- * person attached (`providerText`) and camera frames, so the sentence says the
- * model can read those: "you cannot open files" would have it refuse the
- * document it was just handed. Recorded in
- * contracts/capabilities/tool-runtime-coverage.json as the realtime voice row.
- */
-export const VOICE_TOOL_LIMIT =
-  "In this call you cannot run code or scripts, create files, browse the web, or use any tool, though you can read whatever the user attaches or shows you. If asked to run something, say plainly that you can't do that in a voice call and that it can be done in the chat. Never describe code or results as if you had run them.";
+// What this call cannot do lives beside the provider text helpers
+// (voice-context.ts), so a provider that CAN do more — GPT-Live with a
+// web-searching delegate — can say so without importing this module.
+export { VOICE_TOOL_LIMIT };
 
 /*
  * Who is speaking, and how. Split so an agent's persona can replace the first
@@ -253,10 +244,10 @@ export class RelaySession {
         // Side by side: a call in an agent's thread waits for the slower of
         // the two, not for both in turn.
         await Promise.all([this.loadMemory(), this.loadPersona()]);
-        await this.startProvider(msg.provider, msg.thinking === true);
+        await this.startProvider(msg.provider, msg.thinking === true, msg.effort);
         return;
       case "session.switch":
-        await this.startProvider(msg.provider, msg.thinking === true);
+        await this.startProvider(msg.provider, msg.thinking === true, msg.effort);
         return;
       case "input.text": {
         const text = String(msg.text ?? "").trim().slice(0, VOICE_INPUT_MAX_CHARS);
@@ -314,7 +305,7 @@ export class RelaySession {
     this.provider?.sendAudio(pcm16k);
   }
 
-  private async startProvider(id: VoiceProviderId, thinking: boolean): Promise<void> {
+  private async startProvider(id: VoiceProviderId, thinking: boolean, requestedEffort?: unknown): Promise<void> {
     if (this.sessionLimitReached) {
       this.send({ type: "error", message: "This voice session reached its time limit. Start a new session to continue." });
       return;
@@ -343,7 +334,17 @@ export class RelaySession {
       // A provider with no reasoning variant is not given one to ignore:
       // the effective state is what gets reported back, never the request.
       const effectiveThinking = thinking && factory.capabilities.thinkingChoice;
-      const session = factory.create({ thinking: effectiveThinking });
+      // The same for effort: only a provider that lists rungs gets one, only a
+      // rung it lists, and the product default when the client sent none (an
+      // older client, or the native apps before they ask).
+      // An older client sends only `thinking`; on a dial provider that is a
+      // request for its first thinking rung, not for nothing.
+      const effort = effectiveVoiceEffort(
+        factory.capabilities.reasoningEfforts,
+        requestedEffort ?? (thinking && id === "gemini" ? "medium" : undefined),
+        factory.capabilities.defaultReasoningEffort
+      );
+      const session = factory.create({ thinking: effectiveThinking, ...(effort ? { effort } : {}) });
       const events = this.makeEvents(id, session);
       // The voice is chosen per connect, not per call: its names belong to a
       // provider, and a switch lands on a provider with different ones.
@@ -382,6 +383,8 @@ export class RelaySession {
         // Juno — so the client names who is speaking only once that is true.
         ...(this.opts.agentId ? { persona: !!this.persona } : {}),
         ...(established.model ? { model: established.model } : {}),
+        ...(established.delegate ? { delegate: established.delegate } : {}),
+        ...(established.effort ? { effort: established.effort } : {}),
         ...(established.notice ? { notice: established.notice } : {}),
       });
     } catch (err) {

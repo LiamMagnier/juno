@@ -172,7 +172,8 @@ export async function* streamChat(opts: {
   const tools: ToolLoop | undefined =
     opts.toolLoop ?? (toolset && toolset.tools.length > 0 ? createToolLoop(toolset) : undefined);
   try {
-    const adapter = providerAdapterFor(model, proMode);
+    // `webSearch` picks Meta's transport: its search exists only on Responses.
+    const adapter = providerAdapterFor(model, proMode, { webSearch: !!webSearch });
     // Every provider call in the product funnels through the switch below, so
     // this is the one place that learns what a live request discovered. The
     // only verdict taken is `not_found`, and taking it is what stops a retired
@@ -208,6 +209,14 @@ export async function* streamChat(opts: {
         case "xai-responses":
           // Grok models with Responses-API capability route through the same
           // adapter as openai-responses, pointed at xAI's base URL.
+          yield* streamOpenAIResponses(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            tools, dynamicContext, cacheKey, fastMode, proMode
+          );
+          return;
+        case "meta-responses":
+          // A Muse Spark turn with web search on: Meta's own `web_search`
+          // tool on its Responses API (the only surface that has it).
           yield* streamOpenAIResponses(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
             tools, dynamicContext, cacheKey, fastMode, proMode

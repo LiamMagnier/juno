@@ -45,28 +45,28 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-49 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+50 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `anthropic:claude-fable-5-1` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-opus-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
-| `anthropic:claude-sonnet-5` | anthropic-native | untested | untested | untested | untested | untested | no |
+| `anthropic:claude-sonnet-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-haiku-4-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6-astra` | openai-responses | untested | untested | untested | untested | untested | no |
-| `openai:gpt-6-sol` | openai-responses | untested | untested | untested | untested | untested | no |
+| `openai:gpt-6.1-sol` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6-luna` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.6-terra` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.5-pro` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.4-mini` | openai-responses | untested | untested | untested | untested | untested | no |
-| `openai:gpt-5.4-nano` | openai-responses | untested | untested | untested | untested | untested | no |
-| `openai:gpt-5.3-codex` | openai-responses | untested | untested | untested | untested | untested | no |
 | `google:gemini-3.8-flash` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-3.1-pro-preview` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-3.5-flash-lite` | gemini-native | untested | untested | untested | untested | untested | no |
 | `meta:muse-spark-1.3` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `meta:muse-spark-1.3-contributor` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `zhipu:glm-5.3` | openai-compatible | untested | untested | n/a | untested | untested | no |
+| `zhipu:glm-5.3-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `zhipu:glm-5.3-flashx` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `zhipu:glm-4.7-flash` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-4.7-flashx` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-4.6v-flashx` | openai-compatible | untested | untested | untested | untested | untested | no |
@@ -84,20 +84,21 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `mistral:ministral-8b-latest` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `mistral:ministral-3b-latest` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `xai:grok-4.7` | xai-responses | untested | untested | untested | untested | untested | no |
-| `xai:grok-4.1-fast` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `xai:grok-4.3` | xai-responses | untested | untested | untested | untested | untested | no |
 | `xai:grok-build-0.1` | xai-responses | untested | untested | untested | untested | untested | no |
 | `xai:grok-4.20-multi-agent-0309` | xai-responses | untested | untested | untested | untested | untested | no |
 | `minimax:MiniMax-M3` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `minimax:MiniMax-M3.1-Flash-Preview` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `minimax:MiniMax-M2.7-highspeed` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `mimo:mimo-v2.6-pro` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-pro-ultraspeed` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
-| `mimo:mimo-v2.5` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-max` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.7-plus` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen-long` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `longcat:LongCat-2.0` | openai-compatible | untested | untested | n/a | untested | untested | no |
+| `longcat:LongCat-2.5-Preview` | openai-compatible | untested | untested | untested | untested | untested | no |
 <!-- coverage:models:end -->
 
 ## Surfaces and runtimes

@@ -14,7 +14,6 @@ import {
   resolveModel,
   type ModelInfo,
 } from "../src/lib/models";
-import { DISCOVERED, UNAVAILABLE } from "../src/lib/models.generated";
 import { PROVIDER_LIST } from "../src/lib/providers";
 
 const all: ModelInfo[] = [...MODEL_LIST, ...GEN_MODELS];
@@ -117,22 +116,15 @@ for (const m of GEN_MODELS) {
   if (m.agenticTools) errors.push(`${m.id}: generative model marked agenticTools`);
 }
 
-// 8. Generated sync file (src/lib/models.generated.ts) invariants.
+// 8. Curated-only: every model the catalog serves is a hand-written entry.
 const curatedIds = new Set([...CURATED_CHAT_MODELS, ...CURATED_GEN_MODELS].map((m) => m.id));
-const curatedGenIds = new Set(CURATED_GEN_MODELS.map((m) => m.id));
-const migrationTargets = new Set(Object.values(RETIRED_MODELS));
-for (const d of DISCOVERED) {
-  if (curatedIds.has(`${d.provider}:${d.id}`)) errors.push(`generated DISCOVERED id ${d.provider}:${d.id} collides with a curated model`);
-}
-for (const id of UNAVAILABLE) {
-  if (!curatedIds.has(id)) errors.push(`generated UNAVAILABLE id ${id} does not exist in the curated lists`);
-  else if (curatedGenIds.has(id)) errors.push(`generated UNAVAILABLE id ${id} is an image/video/audio model — sync must never prune generative models`);
-  if (migrationTargets.has(id)) errors.push(`generated UNAVAILABLE id ${id} is the migration target of a retired model`);
+for (const m of all) {
+  if (!curatedIds.has(m.id)) errors.push(`${m.id}: served by the catalog but not a curated entry — models are never added automatically`);
 }
 
 // Report.
 const counts = all.reduce<Record<string, number>>((acc, m) => ((acc[m.status ?? "?"] = (acc[m.status ?? "?"] ?? 0) + 1), acc), {});
-console.log(`models: ${all.length} registered (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")}), ${Object.keys(RETIRED_MODELS).length} retired migrations, ${DISCOVERED.length} auto-discovered, ${UNAVAILABLE.length} unavailable`);
+console.log(`models: ${all.length} registered (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")}), ${Object.keys(RETIRED_MODELS).length} retired migrations`);
 for (const w of warnings) console.warn(`  warn: ${w}`);
 if (errors.length) {
   for (const e of errors) console.error(`  FAIL: ${e}`);

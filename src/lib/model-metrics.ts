@@ -61,7 +61,14 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // (Opus 5's) until a benchmark covers it.
     { hints: ["opus-5-5"], metric: official(4, 20, 1_000_000, 4, 9) },
     { hints: ["opus"], metric: official(5, 25, 1_000_000, 4, 9) }, // II 55.7 · 56 tok/s
-    { hints: ["sonnet-5"], metric: official(2, 10, 1_000_000, 5, 9) }, // II 53.4 · 79 tok/s · intro pricing, $3/$15 from Sep 1 2026
+    // Sonnet 5.5 (2026-09-28): $2/$10, 1M, 128K out. Same price as Sonnet 5;
+    // the grade stays Sonnet 5's until a benchmark covers it.
+    { hints: ["sonnet-5-5"], metric: official(2, 10, 1_000_000, 5, 9) },
+    // $2/$10 is now Sonnet 5's standard price: Anthropic cancelled the
+    // scheduled Sep 1 2026 rise to $3/$15 (pricing page, footnote 3).
+    { hints: ["sonnet-5"], metric: official(2, 10, 1_000_000, 5, 9) }, // II 53.4 · 79 tok/s
+    // Sonnet 4.5 is a 200K model; the catch-all row below is Sonnet 4.6's 1M.
+    { hints: ["sonnet-4-5"], metric: official(3, 15, 200_000, 5, 7) },
     { hints: ["sonnet"], metric: metric(3, 15, 1_000_000, 5, 7) },
     { hints: ["haiku"], metric: official(1, 5, 200_000, 6, 5) }, // II 29.6 (reasoning) · 94 tok/s
   ],
@@ -71,24 +78,24 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // intelligence carry over from the 5.6 tier each replaces until a
     // benchmark grades them — deliberately not higher, since Auto and Work
     // rank on these numbers and Luna is the cheapest model OpenAI sells.
+    // GPT-6.1 Sol (2026-09-29): official $2/$10 and 1.05M context; scored like
+    // GPT-6 Sol until a benchmark grades it.
+    { hints: ["gpt-6.1-sol"], metric: official(2, 10, 1_050_000, 5, 9) },
     { hints: ["gpt-6-sol"], metric: official(2, 10, 1_050_000, 5, 9) },
     { hints: ["gpt-6-luna"], metric: official(0.1, 0.5, 1_050_000, 9, 8) },
-    { hints: ["gpt-5.6-sol"], metric: official(5, 30, 1_050_000, 5, 9) }, // II 58.9 #2 · 73 tok/s
+    { hints: ["gpt-5.6-sol"], metric: official(4, 20, 1_050_000, 5, 9) }, // II 58.9 #2 · 73 tok/s — $4/$20 on the model page
     { hints: ["gpt-5.6-terra"], metric: official(2, 12, 1_050_000, 8, 9) }, // II 55.0 · 141 tok/s — repriced 2026-07-30 (was $2.50/$15)
     { hints: ["gpt-5.6-luna"], metric: official(0.2, 1.2, 1_050_000, 9, 8) }, // II 51.2 · 204 tok/s — repriced 2026-07-30, −80% (was $1/$6); best value in the OpenAI lineup
-    { hints: ["gpt-5.6"], metric: official(5, 30, 1_050_000, 5, 9) }, // bare alias routes to Sol
+    { hints: ["gpt-5.6"], metric: official(4, 20, 1_050_000, 5, 9) }, // bare alias routes to Sol
     { hints: ["gpt-5.5-pro"], metric: official(30, 180, 1_050_000, 1, 9) }, // no AA/arena data — positioning estimate
     { hints: ["gpt-5.5"], metric: official(5, 30, 1_050_000, 4, 9) }, // II 54.8 · 64 tok/s
-    { hints: ["gpt-5.4-pro"], metric: official(30, 180, 400_000, 2, 8) },
+    { hints: ["gpt-5.4-pro"], metric: official(30, 180, 1_050_000, 2, 8) },
     { hints: ["gpt-5.4-mini"], metric: official(0.75, 4.5, 400_000, 8, 6) }, // II 40.0 · 160 tok/s
     { hints: ["gpt-5.4-nano"], metric: official(0.2, 1.25, 400_000, 8, 6) }, // II 38.2 · 170 tok/s
     { hints: ["gpt-5.4"], metric: official(2.5, 15, 1_050_000, 7, 8) },
     { hints: ["gpt-5.3-codex"], metric: official(1.75, 14, 400_000, 5, 7) }, // II 44.3 (coding-tuned) · 76 tok/s
     { hints: ["gpt-5.2-pro"], metric: official(21, 168, 400_000, 2, 8) },
-    { hints: ["gpt-5.2-codex"], metric: official(1.75, 14, 400_000, 4, 7) },
     { hints: ["gpt-5.2"], metric: official(1.75, 14, 400_000, 5, 7) },
-    { hints: ["gpt-5.1-codex-mini"], metric: official(0.25, 2, 400_000, 7, 4) },
-    { hints: ["gpt-5.1-codex"], metric: official(1.25, 10, 400_000, 5, 7) },
     { hints: ["gpt-5.1"], metric: official(1.25, 10, 400_000, 5, 7) },
     { hints: ["gpt-5-pro"], metric: metric(15, 120, 400_000, 2, 7) },
     { hints: ["gpt-5-mini"], metric: metric(0.25, 2, 400_000, 8, 4) },
@@ -107,8 +114,14 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["gpt-5"], metric: metric(1.25, 10, 400_000, 5, 6) },
   ],
   google: [
-    { hints: ["3.8-flash", "3.7-flash", "3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
-    { hints: ["3.6-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) },
+    // Hints are AND'd (every() in familyMetric), so the old single row with all
+    // three ids could never match anything: 3.8 and 3.7 fell to the generic
+    // `flash` row ($0.30/$2.50) and 3.6 hit a $1.50/$9 row. Google's pricing
+    // page lists all three at $0.75/$3.75 through 2026-12-31 ($1.50/$7.50 from
+    // 2027-01-01).
+    { hints: ["3.8-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
+    { hints: ["3.7-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
+    { hints: ["3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 8) },
     // BEFORE "3.5-flash", which `gemini-3.5-flash-lite` also contains: the
     // Lite is a sixth of the price and the fastest model Google ships, and
     // matching it against the full Flash row would have priced it 5x over.
@@ -116,8 +129,8 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["3.5-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) }, // II 50.2 · 152 tok/s — 3x the 2.5 Flash price
     { hints: ["3.1-flash-lite"], metric: official(0.25, 1.5, 1_048_576, 10, 4) }, // II 25.0 · 251 tok/s — fastest in the lineup
     { hints: ["3.1-pro"], metric: official(2, 12, 1_048_576, 7, 7) }, // II 46.5 · 117 tok/s
-    { hints: ["3-flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 5) },
-    { hints: ["2.5-pro"], metric: metric(1.25, 10, 1_048_576, 4, 4) },
+    { hints: ["3-flash"], metric: official(0.5, 3, 1_048_576, 9, 5) }, // gemini-3-flash-preview: $0.50/$3
+    { hints: ["2.5-pro"], metric: official(1.25, 10, 1_048_576, 4, 4) }, // ≤200K prompt rate
     { hints: ["2.5-flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 3) },
     { hints: ["flash-lite"], metric: metric(0.1, 0.4, 1_048_576, 10, 3) },
     { hints: ["flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 4) },
@@ -134,10 +147,14 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // rank on exactly these numbers, the lie would not merely be displayed,
     // it would change which model the routers choose.
     { hints: ["muse-spark-1.3-contributor"], metric: metric(0.1, 0.2, 1_048_576, 6, 8) },
+    // 1.2 Contributor: the same contributor rate, one generation back.
+    { hints: ["muse-spark-1.2-contributor"], metric: metric(0.1, 0.2, 1_048_576, 6, 8) },
     // 1.3 finishes the same task in ~20% fewer tool calls and ~25% fewer
     // tokens than 1.2 and reports 98.5% on million-token retrieval, so it
     // grades a notch above the row below at the same published price.
     { hints: ["muse-spark-1.3"], metric: metric(1.25, 4.25, 1_048_576, 6, 9) },
+    // 1.1, the original release, a notch below 1.2 at the same standard price.
+    { hints: ["muse-spark-1.1"], metric: metric(1.25, 4.25, 1_048_576, 6, 7) },
     { hints: ["muse-spark"], metric: metric(1.25, 4.25, 1_048_576, 6, 8) },
     // No row for muse-image on purpose. It bills per returned image, not per
     // token (`mediaRequestCost` in spend.ts is the authority), and there is no
@@ -154,27 +171,38 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["llama"], metric: metric(0.35, 0.85, 1_000_000, 7, 2) },
   ],
   zhipu: [
-    // 5.3 reuses the 5.2 base unchanged and Z.ai has published no separate
-    // rate, so it prices with 5.2 until one appears. Grades a notch up on the
-    // post-training gains it reports.
-    { hints: ["glm-5.3"], metric: metric(1.4, 4.4, 1_000_000, 9, 9) },
+    // Rates: docs.z.ai/guides/overview/pricing (2026-10-04), which now lists
+    // 5.3 at the same $1.40/$4.40 as 5.2 and 5.1.
+    { hints: ["glm-5.3-flashx"], metric: official(0.37, 1.25, 1_000_000, 10, 8) },
+    { hints: ["glm-5.3-flash"], metric: official(0.15, 0.5, 1_000_000, 8, 8) },
+    { hints: ["glm-5.3"], metric: official(1.4, 4.4, 1_000_000, 9, 9) },
     { hints: ["glm-5.2"], metric: official(1.4, 4.4, 1_000_000, 9, 8) }, // II 51.1 — AA's #1 open-weights · 181 tok/s
     { hints: ["glm-5v-turbo"], metric: metric(1.2, 4.0, 128_000, 7, 5) }, // kept in sync with pricing.ts turbo rate
     { hints: ["glm-5v"], metric: metric(0.6, 1.8, 128_000, 7, 5) },
     { hints: ["glm-5-turbo"], metric: metric(1.2, 4.0, 200_000, 8, 6) }, // kept in sync with pricing.ts turbo rate
-    { hints: ["glm-5.1"], metric: metric(0.6, 2.2, 200_000, 5, 6) },
-    { hints: ["glm-4.7-flash"], metric: metric(0, 0, 200_000, 9, 4) }, // free tier
-    { hints: ["glm-4.7"], metric: metric(0.3, 1.2, 200_000, 6, 5) },
-    { hints: ["glm-4.6v"], metric: metric(0.3, 1.2, 128_000, 6, 4) },
-    { hints: ["glm-4.6"], metric: metric(0.25, 1, 128_000, 6, 4) },
-    { hints: ["air"], metric: metric(0.2, 1.1, 128_000, 7, 4) },
+    { hints: ["glm-5.1"], metric: official(1.4, 4.4, 200_000, 5, 6) },
+    // FlashX before Flash, and the V-FlashX/V-Flash before GLM-4.6V: each id
+    // contains the shorter hint.
+    { hints: ["glm-4.7-flashx"], metric: official(0.07, 0.4, 200_000, 9, 4) },
+    { hints: ["glm-4.7-flash"], metric: official(0, 0, 200_000, 9, 4) }, // free tier
+    { hints: ["glm-4.7"], metric: official(0.6, 2.2, 200_000, 6, 5) },
+    { hints: ["glm-4.6v-flashx"], metric: official(0.04, 0.4, 128_000, 9, 3) },
+    { hints: ["glm-4.6v-flash"], metric: official(0, 0, 128_000, 9, 3) }, // free tier
+    { hints: ["glm-4.6v"], metric: official(0.3, 0.9, 128_000, 6, 4) },
+    { hints: ["glm-4.6"], metric: official(0.6, 2.2, 200_000, 6, 4) },
+    { hints: ["glm-4.5v"], metric: official(0.6, 1.8, 64_000, 6, 3) },
+    { hints: ["glm-4.5-x"], metric: official(2.2, 8.9, 128_000, 9, 4) },
+    { hints: ["glm-4-32b"], metric: official(0.1, 0.1, 128_000, 8, 2) },
+    { hints: ["airx"], metric: official(1.1, 4.5, 128_000, 9, 4) },
+    { hints: ["air"], metric: official(0.2, 1.1, 128_000, 7, 4) },
     { hints: ["flash"], metric: metric(0, 0, 128_000, 10, 3) },
-    { hints: ["glm-5"], metric: metric(0.6, 2.2, 200_000, 5, 6) },
+    { hints: ["glm-5"], metric: official(1, 3.2, 200_000, 5, 6) },
     { hints: ["glm"], metric: metric(0.6, 2.2, 200_000, 6, 5) },
   ],
   moonshot: [
-    { hints: ["k3"], metric: metric(3, 15, 1_000_000, 4, 8) }, // flagship 2.5T reasoner, 1M ctx — tops the lineup (no AA/arena index yet)
-    { hints: ["highspeed"], metric: metric(2.4, 10, 262_144, 9, 7) }, // premium ~180-260 tok/s serving of K2.7 Code
+    // platform.kimi.ai/docs/pricing/chat (2026-10-04).
+    { hints: ["k3"], metric: official(3, 15, 1_048_576, 4, 8) }, // flagship 2.8T reasoner, 1M ctx — tops the lineup (no AA/arena index yet)
+    { hints: ["highspeed"], metric: official(1.9, 8, 262_144, 9, 7) }, // premium ~180-260 tok/s serving of K2.7 Code
     { hints: ["k2.7"], metric: official(0.95, 4, 262_144, 2, 7) }, // II 41.9 (coding) · 45 tok/s
     { hints: ["k2.6"], metric: official(0.95, 4, 262_144, 2, 7) }, // II 44.2 · 41.5 tok/s — slowest in the lineup
     { hints: ["k2.5"], metric: metric(0.6, 2.5, 262_144, 4, 6) },
@@ -186,7 +214,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // and 06:00-10:00 UTC on weekdays); the catalog quotes the rate a request
     // outside those hours actually pays, as it does for the rest of the line.
     { hints: ["deepseek-flash"], metric: official(0.15, 0.6, 1_048_576, 8, 7) },
-    { hints: ["v4-pro"], metric: official(0.435, 0.87, 1_000_000, 3, 7) }, // II 44.3 · 51 tok/s
+    { hints: ["v4-pro"], metric: official(0.66, 1.98, 1_000_000, 3, 7) }, // II 44.3 · 51 tok/s
     { hints: ["v4-flash"], metric: official(0.14, 0.28, 1_000_000, 6, 6) }, // II 40.3 · 98 tok/s — cheapest credible model on the board
     { hints: ["v4"], metric: official(0.14, 0.28, 1_000_000, 6, 6) },
     { hints: ["reason"], metric: metric(0.14, 0.28, 1_000_000, 4, 6) }, // alias → V4 Flash (retires Jul 24 2026)
@@ -195,8 +223,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   mistral: [
     { hints: ["magistral"], metric: metric(2, 5, 131_072, 3, 4) },
     { hints: ["devstral"], metric: metric(0.4, 2, 262_144, 6, 4) },
-    { hints: ["codestral"], metric: metric(0.3, 0.9, 262_144, 9, 3) },
-    { hints: ["ministral"], metric: metric(0.15, 0.15, 131_072, 9, 2) },
+    { hints: ["codestral"], metric: official(0.3, 0.9, 128_000, 9, 3) },
+    { hints: ["ministral-14b"], metric: official(0.2, 0.2, 262_144, 9, 2) },
+    { hints: ["ministral-3b"], metric: official(0.1, 0.1, 262_144, 9, 2) },
+    { hints: ["ministral"], metric: official(0.15, 0.15, 262_144, 9, 2) },
     { hints: ["medium"], metric: official(1.5, 7.5, 262_144, 4, 5) }, // II 29.9 · 67 tok/s — flagship, but far off frontier
     { hints: ["large"], metric: official(0.5, 1.5, 262_144, 2, 2) }, // II 15.9 · 43 tok/s — scores BELOW Medium despite the name
     { hints: ["small"], metric: official(0.15, 0.6, 262_144, 8, 3) }, // II 19.6 · 165 tok/s
@@ -214,61 +244,65 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // two models really do share EU mid-July pricing and the same benchmark.
     { hints: ["grok-4.6"], metric: official(2, 6, 500_000, 6, 9) }, // II 53.8 · 93 tok/s — cheapest frontier-class model (EU mid-July)
     { hints: ["grok-4.5"], metric: official(2, 6, 500_000, 6, 9) }, // same EU mid-July price/benchmark as 4.6
-    { hints: ["multi-agent"], metric: metric(3, 15, 1_000_000, 2, 7) },
-    { hints: ["grok-build"], metric: metric(0.5, 2, 256_000, 8, 6) },
+    // docs.x.ai/developers/models (2026-10-04): multi-agent and both 4.20
+    // ids are $1.25/$2.50, Build $1/$2 (were $3/$15, $1.50/$8, $0.50/$2).
+    { hints: ["multi-agent"], metric: official(1.25, 2.5, 1_000_000, 2, 7) },
+    { hints: ["grok-build"], metric: official(1, 2, 256_000, 8, 6) },
     { hints: ["grok-4.3"], metric: official(1.25, 2.5, 1_000_000, 7, 6) }, // II 37.6 · 105 tok/s
-    { hints: ["4.20", "non-reasoning"], metric: metric(1.5, 8, 1_000_000, 7, 5) },
-    { hints: ["4.20"], metric: metric(1.5, 8, 1_000_000, 5, 6) },
-    { hints: ["fast"], metric: metric(0.2, 0.5, 2_000_000, 9, 5) },
+    { hints: ["4.20", "non-reasoning"], metric: official(1.25, 2.5, 1_000_000, 7, 5) },
+    { hints: ["4.20"], metric: official(1.25, 2.5, 1_000_000, 5, 6) },
     { hints: ["grok"], metric: metric(2, 6, 1_000_000, 6, 6) },
   ],
   minimax: [
+    // M3.1 Flash Preview: M Plan only, no pay-as-you-go rate; priced as M3.
+    { hints: ["m3.1"], metric: metric(0.3, 1.2, 1_000_000, 7, 7) },
     { hints: ["m3"], metric: official(0.3, 1.2, 1_000_000, 6, 7) }, // II 44.4 — AA's #2 open-weights · 96 tok/s
-    { hints: ["highspeed"], metric: metric(0.6, 2.4, 204_800, 9, 6) }, // low-latency serving premium
-    { hints: ["m2.7"], metric: metric(0.3, 1.2, 204_800, 5, 6) },
-    { hints: ["m2.5"], metric: metric(0.2, 0.8, 204_800, 5, 5) },
+    // platform.minimax.io/docs/guides/pricing-paygo (2026-10-04).
+    { hints: ["highspeed"], metric: official(0.6, 2.4, 204_800, 9, 6) }, // low-latency serving premium
+    { hints: ["m2.7"], metric: official(0.3, 1.2, 204_800, 5, 6) },
+    { hints: ["m2.5"], metric: official(0.3, 1.2, 204_800, 5, 5) },
     { hints: ["m2"], metric: metric(0.3, 1.2, 204_800, 5, 5) },
   ],
   mimo: [
-    { hints: ["flash"], metric: metric(0.2, 0.8, 256_000, 8, 5) },
-    // Both V2.5 rows carry a 1,050,000 window — the Pro's was recorded as
-    // 256,000, which is the V2 line's figure and four times too small.
-    { hints: ["v2.5-pro"], metric: official(0.3045, 0.609, 1_050_000, 3, 7) }, // II 42.2 · 46 tok/s — arena-overperforms (#31)
+    // mimo.mi.com pay-as-you-go, overseas (2026-10-04): every V2.6/V2.5 row
+    // has a 1M window. UltraSpeed first — its id contains "pro".
+    { hints: ["ultraspeed"], metric: official(4.35, 8.7, 1_050_000, 9, 7) },
+    { hints: ["flash"], metric: official(0.14, 0.28, 1_050_000, 8, 5) },
+    { hints: ["v2.5-pro"], metric: official(0.435, 0.87, 1_050_000, 3, 7) }, // II 42.2 · 46 tok/s — arena-overperforms (#31)
     { hints: ["v2.5"], metric: official(0.14, 0.28, 1_050_000, 6, 6) }, // Pro-level agentics at roughly half the cost
-    { hints: ["pro"], metric: official(0.435, 0.87, 256_000, 3, 7) },
+    { hints: ["pro"], metric: official(0.435, 0.87, 1_050_000, 3, 7) },
   ],
   qwen: [
-    // 3.8 Max has no official $/MTok list yet. Estimate a notch above 3.7 Max
-    // until Alibaba publishes pay-as-you-go rates for it.
-    { hints: ["qwen3.8-max"], metric: metric(3.0, 9.0, 983_616, 8, 8) },
-    // 983,616 not 1,000,000: that is the input ceiling IN THINKING MODE, which
-    // is the mode this row is rated in, and the same figure 3.8 Max carries.
-    { hints: ["qwen3.8-flash"], metric: official(0.14, 0.42, 983_616, 9, 6) },
+    // Singapore (international) list prices from each Model Studio model
+    // page (2026-10-04); tiered models quote their lowest input tier.
+    { hints: ["qwen3.8-max"], metric: official(2, 6, 1_000_000, 8, 8) },
+    { hints: ["qwen3.8-flash"], metric: official(0.15, 0.47, 1_000_000, 9, 6) },
     { hints: ["qwen3.7-max"], metric: official(2.5, 7.5, 1_000_000, 9, 7) }, // II 46.0 · 192 tok/s · arena #17
+    { hints: ["qwen3.7-flash"], metric: official(0.03, 0.13, 1_000_000, 9, 5) },
     { hints: ["qwen3.7-plus"], metric: official(0.4, 1.6, 1_000_000, 3, 6) }, // II 39.0 · 52 tok/s
-    { hints: ["qwen3.6-plus"], metric: metric(0.4, 1.2, 1_000_000, 5, 5) },
-    { hints: ["qwen3.6-flash"], metric: metric(0.19, 1.13, 1_000_000, 9, 4) },
-    { hints: ["qwen3.5-plus"], metric: metric(0.4, 1.2, 1_000_000, 6, 4) },
-    { hints: ["qwen3.5-flash"], metric: metric(0.19, 1.13, 1_000_000, 9, 3) },
-    { hints: ["qwen-long"], metric: metric(0.4, 1.2, 10_000_000, 5, 3) },
+    { hints: ["qwen3.6-plus"], metric: official(0.5, 3, 1_000_000, 5, 5) },
+    { hints: ["qwen3.6-flash"], metric: official(0.25, 1.5, 1_000_000, 9, 4) },
+    { hints: ["qwen3.5-plus"], metric: official(0.4, 2.4, 1_000_000, 6, 4) },
+    { hints: ["qwen3.5-flash"], metric: official(0.1, 0.4, 1_000_000, 9, 3) },
+    { hints: ["qwen-long"], metric: official(0.072, 0.287, 10_000_000, 5, 3) }, // China (Beijing) only
     { hints: ["qwen3-max"], metric: metric(1.2, 6, 262_144, 4, 5) },
-    { hints: ["qwen3-coder"], metric: metric(1, 5, 1_000_000, 6, 5) },
-    { hints: ["qwen3-vl"], metric: metric(0.8, 3.2, 262_144, 6, 5) },
-    { hints: ["qwen-vl"], metric: metric(0.8, 3.2, 32_768, 6, 3) },
-    { hints: ["qwen3-235"], metric: metric(0.7, 2.8, 262_144, 5, 5) },
-    { hints: ["qwen3-30"], metric: metric(0.2, 0.8, 262_144, 8, 4) },
-    { hints: ["qwq"], metric: metric(0.8, 2.4, 131_072, 4, 3) },
+    { hints: ["qwen3-coder"], metric: official(1, 5, 1_000_000, 6, 5) },
+    { hints: ["qwen3-vl-plus"], metric: official(0.2, 1.6, 262_144, 6, 5) },
+    { hints: ["qwen3-vl-flash"], metric: official(0.05, 0.4, 262_144, 8, 4) },
+    { hints: ["qwen-vl"], metric: official(0.8, 3.2, 131_072, 6, 3) },
+    { hints: ["qwen3-235"], metric: official(0.7, 2.8, 131_072, 5, 5) },
+    { hints: ["qwen3-30"], metric: official(0.2, 0.8, 131_072, 8, 4) },
+    { hints: ["qwq"], metric: official(0.8, 2.4, 131_072, 4, 3) },
     { hints: ["plus"], metric: metric(0.4, 1.2, 1_000_000, 6, 5) },
     { hints: ["flash"], metric: metric(0.05, 0.4, 1_000_000, 9, 4) },
-    { hints: ["turbo"], metric: metric(0.05, 0.2, 1_000_000, 9, 3) },
-    { hints: ["max"], metric: metric(1.2, 6, 32_768, 4, 5) },
+    { hints: ["turbo"], metric: official(0.05, 0.2, 131_072, 9, 3) },
+    { hints: ["max"], metric: official(1.6, 6.4, 32_768, 4, 5) },
     { hints: ["qwen"], metric: metric(0.4, 1.2, 262_144, 6, 4) },
   ],
   longcat: [
-    // No AA/arena coverage yet (released 2026-07-06) — positioning estimate
-    // from launch benchmarks (near-GPT-5.5 on SWE-bench Pro). Standard pricing
-    // $0.75/$2.95 (launch promo $0.30/$1.20 not baked in).
-    { hints: ["longcat"], metric: metric(0.75, 2.95, 1_000_000, 6, 7) },
+    // longcat.chat/platform/docs/pricing (2026-10-04) lists only the
+    // limited-time $0.30/$1.20 for both 2.0 and 2.5 Preview; no standard rate.
+    { hints: ["longcat"], metric: official(0.3, 1.2, 1_000_000, 6, 7) },
   ],
 };
 
@@ -458,12 +492,9 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
  * Two things decide the marking, and neither alone is enough:
  *  - **The registry's own verdict.** A curated `legacy`/`deprecated` status is
  *    a statement that something newer replaced it, and it survives untouched.
- *  - **The family collapse.** Discovery keeps finding models the registry has
- *    not been curated for yet — a live Gemini Flash generation can arrive as
- *    `current` beside an older curated row, so only comparing entries within
- *    their line can demote the older one. Discovered
- *    entries carry the family slug their `FAMILIES` rule assigns
- *    (model-discovery-core.ts), which is what puts them in the same bucket.
+ *  - **The family collapse.** Two entries of one line can both say
+ *    `current` (a newer generation curated before the older row is demoted),
+ *    so only comparing entries within their `family` can demote the older one.
  *
  * What IS removed is a model whose `retiresOn` has passed: the provider stopped
  * answering, so it is not an option, past or otherwise.
@@ -591,7 +622,8 @@ export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, s
 //    Only gemini-3.1-flash-lite has a PROVEN off-switch; the pro line is
 //    unverified (this key's free tier is quota 0 there).
 //  - Mistral Medium 3.5 / Small are on/off only (reasoning_effort: high|none).
-//  - GLM-5.2 is the only GLM with reasoning_effort; the rest are on/off.
+//  - GLM-5.3 (low|high|max, always on) and GLM-5.2 (high|max + off) take
+//    reasoning_effort; the older GLMs are on/off.
 // ---------------------------------------------------------------------------
 /**
  * Every tier Juno knows, ORDERED shallowest → deepest (TIER_ORDER depends on
@@ -672,8 +704,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Haiku 4.5 is absent from the effort-supported list entirely — on/off only.
       if (id.includes("haiku")) return caps([], true, true);
       // Fable/Mythos: adaptive always on; disabled rejected.
-      if (/(fable|mythos)-5-1/.test(id)) return caps(LMHXM, false, false, "high");
-      if (id.includes("fable") || id.includes("mythos")) return caps(LMHXM, false);
+      // Fable 5 / Mythos 5 too: the API default effort is `high` on every
+      // Fable and Mythos (effort docs, 2026-10-04) — the 5.0 row used to fall
+      // to caps()'s `medium` and show a default the API never runs at.
+      if (id.includes("fable") || id.includes("mythos")) return caps(LMHXM, false, false, "high");
       // Opus 5.5: adaptive and always on like Fable 5.1 (disabled → 400), on
       // the same ladder, but the API's own default is medium rather than high.
       if (id.includes("opus-5-5")) return caps(LMHXM, false, false, "medium");
@@ -684,43 +718,44 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("opus-4-6")) return caps(["low", "medium", "high", "max"], true);
       // Sonnet 4.5: manual budget_tokens only.
       if (id.includes("sonnet-4-5")) return caps(LMH, true);
-      // Opus 4.7/4.8, Sonnet 4.6/5: adaptive + full effort ladder.
+      // Sonnet 4.6: like Opus 4.6, `max` but no `xhigh` — the effort docs list
+      // xhigh only from Opus 4.7 / Sonnet 5 on (2026-10-04). It used to fall
+      // through to the full ladder below and offer an Extra high it rejects.
+      if (id.includes("sonnet-4-6")) return caps(["low", "medium", "high", "max"], true);
+      // Opus 4.7/4.8/5, Sonnet 5/5.5: adaptive + full effort ladder. Instant is
+      // real on each (thinking-troubleshooting table): omitted thinking on
+      // Opus 4.7/4.8, `disabled` on Opus 5 / Sonnet 5, `between_tools` on
+      // Sonnet 5.5 — anthropic-thinking.ts sends the right one.
       return caps(LMHXM, true);
     case "openai":
-      // Astra: low|medium|high|xhigh|max. The official model page does not
-      // list `none`, so do not offer an Instant option that the API rejects.
-      if (id.includes("gpt-6-astra")) return caps(LMHXM, false);
-      // GPT-6 Sol/Luna DO list `none` (model pages, 2026-09-22), so unlike
-      // Astra they get a real Instant — the same contract as the 5.6 tiers.
-      if (id.includes("gpt-6-sol") || id.includes("gpt-6-luna")) return caps(LMHXM, true);
-      // The gpt-5.x-pro MODELS (5-pro/5.2-pro/5.4-pro/5.5-pro) restrict effort to
-      // medium|high|xhigh and always reason. Note GPT-5.6 has no -pro model id.
-      // Verified on /v1/responses: none|minimal|low all 400 with "Supported
-      // values are: 'medium', 'high', and 'xhigh'" on 5.5/5.4/5.2-pro.
-      if (/gpt-5(\.\d)?-pro/.test(id)) return caps(["medium", "high", "xhigh"], false);
-      // GPT-5.6 Sol/Terra/Luna — OpenAI model docs + deployment checklist:
-      // none | low | medium | high | xhigh | max. Instant = none (canDisable).
-      // "max" is deeper than xhigh (Using GPT-5.6 guide, Jul 2026).
-      if (id.includes("gpt-5.6")) return caps(LMHXM, true);
-      // Codex is NOT uniformly always-on — each snapshot verified separately on
-      // /v1/responses (they 404 on chat/completions, so the oracle lives there).
-      // 5.3-codex: "minimal" -> 400 "Supported values are: 'none', 'low',
-      // 'medium', 'high', and 'xhigh'"; "none" -> 200 reasoning_tokens=0.
-      if (id.includes("gpt-5.3-codex")) return caps(LMHX, true);
-      // 5.2-codex: "none" -> 400 "Supported values are: 'low', 'medium',
-      // 'high', and 'xhigh'" — genuinely always-on.
-      if (id.includes("gpt-5.2-codex")) return caps(LMHX, false);
-      // 5.1-codex / -codex-mini: "none" -> 400 "Supported values are: 'low',
-      // 'medium', and 'high'" — no xhigh, no off-switch.
+      // Every ladder below is the `reasoning.effort` list on the model's own
+      // page (developers.openai.com/api/docs/models/<id>, re-read 2026-10-04),
+      // with that page's default. Instant (canDisable) only where `none` is
+      // listed.
+      // GPT-6 Astra and GPT-6.1 Sol: low|medium(default)|high|xhigh|max — no
+      // `none` and no `minimal`, so no Instant option the API would reject.
+      if (id.includes("gpt-6-astra")) return caps(LMHXM, false, false, "medium");
+      if (id.includes("gpt-6.1-sol")) return caps(LMHXM, false, false, "medium");
+      // GPT-6 Sol/Luna and GPT-5.6 Sol/Terra/Luna list none|low|medium|high|
+      // xhigh|max, default medium.
+      if (id.includes("gpt-6-sol") || id.includes("gpt-6-luna")) return caps(LMHXM, true, false, "medium");
+      if (id.includes("gpt-5.6")) return caps(LMHXM, true, false, "medium");
+      // The gpt-5.x-pro models: medium|high|xhigh, always reasoning. GPT-5.5
+      // Pro defaults to high; 5.4 Pro to medium (5.2 Pro states no default).
+      if (id.includes("gpt-5.5-pro")) return caps(["medium", "high", "xhigh"], false, false, "high");
+      if (/gpt-5(\.\d)?-pro/.test(id)) return caps(["medium", "high", "xhigh"], false, false, "medium");
+      // GPT-5.3 Codex: low|medium|high|xhigh. Its page lists no `none`.
+      if (id.includes("gpt-5.3-codex")) return caps(LMHX, false);
+      // Any other Codex id (the 5.1/5.2 snapshots shut down 2026-07-23) is
+      // treated as always-on with the common ladder.
       if (id.includes("codex")) return caps(LMH, false);
-      // gpt-5.1 has NO xhigh. Oracle: "does not support 'xhigh' with this
-      // model. Supported values are: 'none', 'low', 'medium', and 'high'."
-      // Must precede the 5.2/5.4/5.5 branch, which does grant xhigh.
+      // GPT-5.1: none(default)|low|medium|high — no xhigh.
       if (id.includes("gpt-5.1")) return caps(LMH, true);
-      // 5.2/5.4/5.5 (+ -mini/-nano): oracle enumerates
-      // none|low|medium|high|xhigh on each; xhigh -> 200 verified on all.
-      if (/gpt-5\.[245]/.test(id)) return caps(LMHX, true);
-      // Original GPT-5: `minimal` is the floor and `none` did not exist yet.
+      // GPT-5.5: none|low|medium(default)|high|xhigh.
+      if (id.includes("gpt-5.5")) return caps(LMHX, true, false, "medium");
+      // GPT-5.2 and 5.4 (+ -mini/-nano): none(default)|low|medium|high|xhigh.
+      if (/gpt-5\.[24]/.test(id)) return caps(LMHX, true);
+      // Original GPT-5 / GPT-5 Mini: minimal|low|medium|high; `none` did not exist yet.
       if (id.includes("gpt-5")) return caps(["minimal", "low", "medium", "high"], false);
       if (/(^|[^a-z0-9])o[134](-|$)/.test(id) || id.includes("o4-mini")) return caps(LMH, false); // o-series always reason
       return caps(LMH, true);
@@ -754,7 +789,13 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
        * Default high: Gemini 3 defaults to high when no level is sent, and
        * unlike the Flash line Pro never moved to medium.
        */
-      if (/3\.\d+-pro|3-pro/.test(id)) return caps(["low", "high"], false, false, "high");
+      //
+      // 2026-10-04: Google's thinking table now separates the two. Gemini 3
+      // Pro (`gemini-3-pro-preview`) takes low|high only — that is the model
+      // the 400 above was observed on. Gemini 3.1 Pro takes low|medium|high,
+      // default high, so 3.1 gets the medium the old shared regex took away.
+      if (/3\.[1-9]\d*-pro/.test(id)) return caps(LMH, false, false, "high");
+      if (/3-pro/.test(id)) return caps(["low", "high"], false, false, "high");
       // 3.5 Flash-Lite defaults to MINIMAL for speed, and Google documents
       // raising it to medium or high for subagents that write code or call
       // APIs — so the whole ladder is offered, with minimal as the default.
@@ -778,29 +819,34 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // live key; see docs/models-september-22-2026.md.
       if (id.includes("grok-4.7")) return caps(LMHX, false, false, "high");
       if (id.includes("grok-4.6")) return caps(LMHX, false, false, "high");
-      if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
-      if (id.includes("grok-4.3")) return caps(LMH, true); // none|low|medium|high
-      // 4.1 Fast exposes reasoning as an on/off switch (`reasoning.enabled`)
-      // rather than an effort ladder — one Thinking state and a real Instant.
-      if (id.includes("grok-4.1-fast")) return caps([], true, true);
+      // Always reasons; xAI's reasoning guide gives the default as high, which
+      // caps() would otherwise have reported as medium.
+      if (id.includes("grok-4.5")) return caps(LMH, false, false, "high");
+      // none|low|medium|high|xhigh, API default low (xAI's grok-4.3 page,
+      // 2026-10-04) — was LMH with no xhigh and an Instant default.
+      if (id.includes("grok-4.3")) return caps(LMHX, true, false, "low");
       return caps([], false); // grok-build: reasons, no documented control
     case "deepseek":
       // V4 Pro and the unversioned `deepseek-flash` (V4.1 Flash) both think by
-      // default at "high" and take `reasoning_effort: "none"` as the off
-      // switch. Flash was catalogued `reasoning: false` and fell through to
-      // the always-on branch below, so its turns thought with no control and
-      // no Instant (gap-provider §1).
-      if (id.includes("v4") || id.includes("deepseek-flash")) return caps(["high", "max"], true); // thinking on/off + effort
+      // default at "high". api-docs.deepseek.com (create-chat-completion, read
+      // 2026-10-04): reasoning_effort none|low|high|max — "none disables
+      // thinking mode; low / high / max enable" it — and thinking.type
+      // enabled|disabled is the same switch. minimal→low, medium/xhigh→high,
+      // so low|high|max are the three real depths.
+      if (id.includes("v4") || id.includes("deepseek-flash")) return caps(["low", "high", "max"], true); // thinking on/off + effort
       return caps([], false); // deepseek-reasoner: always on, no control
     case "zhipu":
       // GLM-5.3: reasoning is ALWAYS on — `thinking: {type: "disabled"}` makes
       // the request fail — and its depth is the top-level `reasoning_effort`
-      // enum low|high|max (Z.ai, 2026-09). So a ladder and no Instant. It used
-      // to expose neither, which clamped every turn to "no effort" and sent
-      // exactly the `disabled` object that fails.
-      if (id.includes("glm-5.3")) return caps(["low", "high", "max"], false);
-      // GLM-5.2 is the ONLY GLM exposing reasoning_effort; the rest are on/off.
-      if (id.includes("glm-5.2")) return caps(["minimal", ...LMHXM], true);
+      // enum low|high|max, default max (docs.z.ai/guides/llm/glm-5.3, read
+      // 2026-10-04: "Any other input will result in an error"). So a ladder,
+      // no Instant, and the API's own default.
+      if (id.includes("glm-5.3")) return caps(["low", "high", "max"], false, false, "max");
+      // GLM-5.2 takes reasoning_effort too, but only two depths are real
+      // (docs.z.ai/guides/capabilities/thinking): low/medium→high, xhigh→max,
+      // and none/minimal STOP thinking — the old minimal…max ladder offered a
+      // "Minimal" that silently meant Instant. Off is thinking.type disabled.
+      if (id.includes("glm-5.2")) return caps(["high", "max"], true);
       return caps([], true, true); // glm-5 / 4.6 / 4.7: thinking on/off toggle
     case "mistral":
       // SUBSTRING COLLISION FIX: "magistral-medium-2509".includes("medium") is
@@ -826,7 +872,8 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // K2.x `thinking` object. No off switch (thinking can't be disabled), and
       // medium/xhigh are not offered by K3. openai-compat.ts routes K3 (and only
       // K3) on Moonshot through the reasoning_effort send path.
-      if (id.includes("k3")) return caps(["low", "high", "max"], false);
+      // Default max (platform.kimi.ai/docs/guide/use-reasoning-effort).
+      if (id.includes("k3")) return caps(["low", "high", "max"], false, false, "max");
       if (id.includes("k2.7")) return caps([], false); // "disabled" is rejected — always on
       return caps([], true, true); // k2.6: thinking enabled/disabled
     case "meta":
@@ -843,10 +890,17 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // 1.3 documents two reasoning variants ABOVE the shared ladder — `max`
       // (top) and `xhigh` (faster) — on the same endpoints, SDKs and pricing
       // as 1.2, so it is 1.2's ladder plus a max rung.
-      if (id.includes("muse-spark-1.3")) return caps(["minimal", ...LMHXM], false);
+      // …but NOT on the Contributor tier: dev.meta.ai/docs/reasoning says
+      // `max` is "Standard-tier muse-spark-1.3 only; not available on
+      // Contributor-tier models", so the contributor id keeps 1.2's ladder.
+      if (id.includes("muse-spark-1.3") && !id.includes("contributor")) return caps(["minimal", ...LMHXM], false);
       if (id.includes("muse-spark")) return caps(["minimal", ...LMHX], false);
       return caps([], false); // retired Llama ids resolving through migration
     case "minimax":
+      // M3.1 Flash Preview always thinks ("disabled" is a 400) and is the one
+      // MiniMax that tunes depth: reasoning_effort low…max, default max
+      // (platform.minimax.io text-chat-openai, read 2026-10-04).
+      if (id.includes("m3.1")) return caps(LMHXM, false, false, "max");
       if (id.includes("m3")) return caps([], true, true); // adaptive/disabled toggle
       return caps([], false); // M2.x: thinking param ignored, always on
     case "mimo":
@@ -854,8 +908,12 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
     case "qwen":
       if (id.includes("qwq")) return caps([], false); // QwQ always reasons, no control
       if (id.includes("coder")) return caps([], true); // Qwen3-Coder: non-thinking
-      // Qwen3.8 Max: thinking always on (docs — no Instant). Budget tiers still apply.
-      if (id.includes("qwen3.8-max")) return caps(LMH, false);
+      // Qwen3.8 (Max and Flash) is HYBRID — thinking on by default, off with
+      // enable_thinking:false — and its depth is reasoning_effort
+      // low|medium|xhigh (default xhigh; high/max map to xhigh). It must not
+      // also get a thinking_budget: "Setting both will cause an error"
+      // (Model Studio, OpenAI Chat Completions reference, read 2026-10-04).
+      if (id.includes("qwen3.8")) return caps(["low", "medium", "xhigh"], true);
       // enable_thinking + thinking_budget: depth tiers are mapped to budgets.
       return caps(LMH, true);
     case "longcat":

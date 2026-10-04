@@ -134,6 +134,8 @@ export type CompatUsagePayload = CompatPromptCacheFields & {
   reasoning_tokens?: number | null;
   total_tokens?: number | null;
   server_side_tool_usage?: { web_search_requests?: number; x_search_requests?: number } | null;
+  /** Xiaomi MiMo: `tool_usage` is the billed web-search calls (mimo.mi.com web-search guide). */
+  web_search_usage?: { tool_usage?: number; page_usage?: number } | null;
 };
 
 /**
@@ -162,7 +164,11 @@ export function foldCompatUsage(into: CompatRoundUsage, usage: CompatUsagePayloa
     usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens ?? 0,
   );
   into.total = Math.max(into.total, usage.total_tokens ?? 0);
-  into.webSearchRequests = Math.max(into.webSearchRequests, usage.server_side_tool_usage?.web_search_requests ?? 0);
+  into.webSearchRequests = Math.max(
+    into.webSearchRequests,
+    usage.server_side_tool_usage?.web_search_requests ?? 0,
+    usage.web_search_usage?.tool_usage ?? 0,
+  );
   into.xSearchRequests = Math.max(into.xSearchRequests, usage.server_side_tool_usage?.x_search_requests ?? 0);
 }
 

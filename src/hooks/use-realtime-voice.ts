@@ -7,7 +7,9 @@ import {
   MIC_SAMPLE_RATE,
   type ProviderCapabilities,
   type VoiceClientMessage,
+  type VoiceDelegate,
   type VoiceHistoryEntry,
+  type VoiceReasoningEffort,
   type VoiceProviderId,
   type VoiceServerMessage,
   DEFAULT_VOICE_PROVIDER,
@@ -50,7 +52,7 @@ import {
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { createVoiceCueScheduler, CUE_MIC_GATE_PAD_S, type VoiceCueScheduler } from "@/lib/voice-cues";
 import { playVoiceCue } from "@/components/voice/voice-cue-player";
-import { uiPref } from "@/lib/ui-prefs";
+import { uiPref, useUiPref } from "@/lib/ui-prefs";
 
 export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
 
@@ -237,6 +239,23 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [notice, setNotice] = React.useState<string | null>(null);
   /** The model the relay says is serving the call — never a guess from the id. */
   const [model, setModel] = React.useState<string | null>(null);
+  /** The backend model the call hands harder turns to, as the relay reports it. */
+  const [delegate, setDelegate] = React.useState<VoiceDelegate | null>(null);
+  /**
+   * How hard the delegate should reason: a per-device preference (Settings ›
+   * Voice and the call's own settings write the same one), sent on every
+   * session.start and switch. What the call actually got is `delegate.effort`.
+   */
+  const [openaiEffort, writeOpenaiEffort] = useUiPref("voiceEffort");
+  const [geminiEffort, writeGeminiEffort] = useUiPref("voiceGeminiEffort");
+  /** Each dial provider's own remembered rung: OpenAI's opens at High, Gemini's at Low. */
+  const effortsRef = React.useRef<Partial<Record<VoiceProviderId, VoiceReasoningEffort>>>({});
+  effortsRef.current = { openai: openaiEffort, gemini: geminiEffort };
+  const effortFor = (id: VoiceProviderId): VoiceReasoningEffort | undefined => effortsRef.current[id];
+  /** The rung asked of the session now open (or opening). */
+  const sentEffortRef = React.useRef<VoiceReasoningEffort | undefined>(undefined);
+  /** The rung the relay says the call runs at (`session.ready.effort`). */
+  const [callEffort, setCallEffort] = React.useState<VoiceReasoningEffort | null>(null);
   const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);
@@ -892,6 +911,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           // caller has to be told without the call being torn down for it.
           setNotice(msg.notice ?? null);
           setModel(msg.model ?? null);
+          setDelegate(msg.delegate ?? null);
+          setCallEffort(msg.effort ?? null);
           setMemoryOn(msg.memory === true);
           setPersonaOn(msg.persona === true);
           setCapabilities(msg.capabilities);
@@ -1025,8 +1046,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       capsRef.current = null;
       liveProviderRef.current = null;
       setNotice(null);
-    setModel(null);
       setModel(null);
+      setDelegate(null);
       setUsage(null);
       try {
         const memory = memoryRef.current;
@@ -1104,6 +1125,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
               type: "session.start",
               provider: target,
               thinking: thinkingRef.current,
+              effort: (sentEffortRef.current = effortsRef.current[target]),
               history: boundVoiceHistory([...historyRef.current, ...voiceHistory]),
             } satisfies VoiceClientMessage)
           );
@@ -1173,8 +1195,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
    * and goes through the same one here rather than a second copy of it.
    */
   const switchTo = React.useCallback(
-    (next: VoiceProviderId, nextThinking: boolean) => {
-      if (next === provider && nextThinking === thinkingRef.current) return;
+    (next: VoiceProviderId, nextThinking: boolean, nextEffort: VoiceReasoningEffort | undefined = effortsRef.current[next]) => {
+      if (next === provider && nextThinking === thinkingRef.current && nextEffort === sentEffortRef.current) return;
       providerEpochRef.current += 1;
       // A stream belongs to the provider that accepted it. Stop it before a
       // switch so a provider without screen support never leaves an invisible
@@ -1196,16 +1218,18 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       // path requires status "live", which a switch has already left.
       liveProviderRef.current = null;
       setNotice(null);
-    setModel(null);
       setModel(null);
+      setDelegate(null);
+      setCallEffort(null);
       // Optimistic only until session.ready lands: the relay reports the state
       // it could actually give, and that is what finally sticks.
       thinkingRef.current = nextThinking;
       setThinkingState(nextThinking);
+      sentEffortRef.current = nextEffort;
       if (statusRef.current === "live") {
         statusRef.current = "connecting";
         setStatus("connecting");
-        send({ type: "session.switch", provider: next, thinking: nextThinking });
+        send({ type: "session.switch", provider: next, thinking: nextThinking, effort: nextEffort });
       } else {
         void start(next);
       }
@@ -1222,6 +1246,25 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const setThinking = React.useCallback(
     (next: boolean) => switchTo(provider, next),
     [provider, switchTo]
+  );
+
+  /**
+   * Choose how hard the delegated model reasons. Remembered on this device
+   * either way; a live call on a provider that delegates is re-opened at the
+   * new effort, the same way a thinking switch is — the effort is part of
+   * the session the relay opens, not a per-turn knob.
+   */
+  const setEffort = React.useCallback(
+    (next: VoiceReasoningEffort) => {
+      if (provider === "openai") writeOpenaiEffort(next);
+      else if (provider === "gemini") writeGeminiEffort(next);
+      else return;
+      effortsRef.current = { ...effortsRef.current, [provider]: next };
+      const offersEffort = !!capsRef.current?.reasoningEfforts?.includes(next);
+      const active = statusRef.current === "live" || statusRef.current === "connecting";
+      if (offersEffort && active) switchTo(provider, thinkingRef.current, next);
+    },
+    [provider, switchTo, writeGeminiEffort, writeOpenaiEffort]
   );
 
   const interrupt = React.useCallback(() => {
@@ -1455,6 +1498,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     liveProviderRef.current = null;
     setNotice(null);
     setModel(null);
+    setDelegate(null);
+    setCallEffort(null);
     setMuted(false);
     mutedRef.current = false;
   }, [clearReconnectTimer, cues, releaseResources, sealTranscript]);
@@ -1479,6 +1524,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     error,
     notice,
     model,
+    /** The delegate the relay confirmed for this call (model, effort, web search). */
+    delegate,
+    /**
+     * The rung of this provider's thinking dial: what the relay says the call
+     * runs at once it is up, and this device's remembered choice before then.
+     */
+    effort: callEffort ?? effortFor(provider) ?? null,
     /** True once the relay confirms this call knows what Juno remembers. */
     memory: memoryOn,
     /** True once the relay confirms this call is the agent whose thread it is in. */
@@ -1496,6 +1548,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     end,
     switchProvider,
     setThinking,
+    setEffort,
     interrupt,
     sendText,
     sendTurn,

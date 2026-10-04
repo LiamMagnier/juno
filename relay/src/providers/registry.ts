@@ -1,5 +1,6 @@
-import type { VoiceProviderId } from "../protocol.js";
+import { DEFAULT_VOICE_REASONING_EFFORT, VOICE_REASONING_EFFORTS, type VoiceProviderId } from "../protocol.js";
 import { GeminiLiveSession } from "./gemini-live.js";
+import { GEMINI_DEFAULT_REASONING_EFFORT, GEMINI_REASONING_EFFORTS } from "./gemini-delegate.js";
 import { OpenAiVoiceSession } from "./openai-voice.js";
 import { MinimaxComposedSession } from "./minimax-composed.js";
 import { MockVoiceSession } from "./mock.js";
@@ -104,7 +105,12 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
       screenInput: false,
       trueS2S: true,
       needsClientTranscript: false,
-      thinkingChoice: true,
+      // GPT-Live-1 has no reasoning switch of its own: it always delegates to
+      // GPT-6.1 Sol, which has no `none`. The choice the caller gets is how
+      // hard that delegate reasons, as in ChatGPT and the API.
+      thinkingChoice: false,
+      reasoningEfforts: VOICE_REASONING_EFFORTS,
+      defaultReasoningEffort: DEFAULT_VOICE_REASONING_EFFORT,
       maxSessionSec: 60 * 60,
     },
     // GPT-Live-1 publishes $0.05 per minute for the VOICE LAYER, with the
@@ -119,10 +125,10 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
       audioOutPerSec: 0,
     },
     available: () => !!process.env.OPENAI_API_KEY,
-    create: ({ thinking }) =>
+    create: ({ effort }) =>
       openaiUsesLegacyRealtime()
         ? new OpenAiShapedRealtimeSession(openaiDialect)
-        : new OpenAiVoiceSession(openaiDialect, { thinking }),
+        : new OpenAiVoiceSession(openaiDialect, { effort }),
   },
   gemini: {
     id: "gemini",
@@ -133,7 +139,12 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
       screenInput: true,
       trueS2S: true,
       needsClientTranscript: false,
-      thinkingChoice: true,
+      // The same dial as OpenAI's, since a rung picks both the Live model and
+      // its Gemini 3.8 Flash delegate's level (gemini-delegate.ts). An older
+      // client's `thinking: true` still lands on Medium.
+      thinkingChoice: false,
+      reasoningEfforts: GEMINI_REASONING_EFFORTS,
+      defaultReasoningEffort: GEMINI_DEFAULT_REASONING_EFFORT,
       maxSessionSec: 15 * 60,
     },
     // Both 3.8 Live and 3.8 Live Extended Thinking publish these per-minute
@@ -142,7 +153,7 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
     // a duration estimate can show.
     pricing: { audioInPerSec: 0.005 / 60, audioOutPerSec: 0.018 / 60 },
     available: () => !!(process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY),
-    create: ({ thinking }) => new GeminiLiveSession({ thinking }),
+    create: ({ effort, thinking }) => new GeminiLiveSession(effort ? { effort } : { thinking }),
   },
   qwen: {
     id: "qwen",

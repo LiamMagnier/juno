@@ -16,6 +16,8 @@ import { PLAYS, STATES, type GlowPlay, type GlowState } from "./scenes";
  *   play    flow | interrupt | mute | dictation: the scripted clip, looping
  *   rm      1 renders the reduced-motion form; solid=1 the reduced-transparency form
  *   rows    lab only: a comma list of direction keys to draw (A,B,C,D,Today)
+ *   provider  gemini | openai: the call's provider and capabilities, for its settings panel
+ *             (absent: Gemini with no capabilities, as the stills were drawn)
  *
  * The voices are deterministic synthetic speech (signal.ts) and a frozen
  * moment is simulated from silence, so every render of a state is the same
@@ -33,7 +35,8 @@ export default async function VoiceGlowPage({ searchParams }: { searchParams: Pr
   const t = str("t") !== undefined && Number.isFinite(Number(str("t"))) ? Number(str("t")) : undefined;
   return (
     <VoiceGlowGallery
-      key={`${state}-${play}-${t}-${str("still")}-${str("rm")}-${str("solid")}`}
+      key={`${state}-${play}-${t}-${str("still")}-${str("rm")}-${str("solid")}-${str("provider")}`}
+      provider={str("provider") === "openai" ? "openai" : str("provider") === "gemini" ? "gemini" : "default"}
       state={state}
       play={play}
       theme={theme}

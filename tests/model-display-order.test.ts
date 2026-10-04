@@ -2,7 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { modelGeneration, sortModelsForDisplay } from "../src/lib/model-metrics";
 import { isSupersededModel, type ModelInfo } from "../src/lib/models";
-import { toModelInfo } from "../src/lib/model-discovery-core";
 
 /** Synthetic ids on purpose: they miss the BENCHMARKS table, so `intelligence`
  *  falls out of `cost` alone and the power tiebreak stays deterministic. */
@@ -114,15 +113,6 @@ describe("sortModelsForDisplay", () => {
     assert.equal(isSupersededModel({ status: "deprecated", legacy: undefined }), true);
     assert.equal(isSupersededModel({ status: "legacy", legacy: undefined }), true);
     assert.equal(isSupersededModel({ status: "current", legacy: undefined }), false);
-  });
-
-  it("marks a freshly discovered id as current at construction", () => {
-    // toModelInfo is the discovery path; an id no curated entry knows about
-    // must come out current, not status-less.
-    const built = toModelInfo("google", "gemini-4.0-flash");
-    assert.equal(built.status, "current");
-    assert.equal(built.legacy, false);
-    assert.equal(isSupersededModel(built), false);
   });
 
   it("groups by lab before anything else, and does not mutate the input", () => {

@@ -2,7 +2,8 @@
  * Industry model radar — spots NEW model releases across every lab, including
  * ones Juno's own provider keys can't list (no key, gen-only labs, regional
  * gating), by diffing OpenRouter's keyless catalog against a committed
- * seen-set. Complements sync-models.ts, which only sees configured providers.
+ * seen-set. It only REPORTS: the catalog is curated by hand from each
+ * model's documentation, so nothing here adds a model.
  *
  *   npm run radar:models              print a markdown report of new arrivals
  *   npm run radar:models -- --out F   also write the report to file F
@@ -13,7 +14,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CURATED_CHAT_MODELS, CURATED_GEN_MODELS, RETIRED_MODELS } from "../src/lib/models";
-import { DISCOVERED } from "../src/lib/models.generated";
 
 const ROOT = process.cwd();
 const SEEN_PATH = join(ROOT, "scripts/model-radar-seen.json");
@@ -42,7 +42,6 @@ function registrySkeletons(): Set<string> {
     keys.add(skeleton(m.name));
     keys.add(skeleton(m.providerModel.replace(/-latest$/, "")));
   }
-  for (const d of DISCOVERED) keys.add(skeleton(d.id));
   for (const dead of Object.keys(RETIRED_MODELS)) keys.add(skeleton(dead.split(":")[1] ?? dead));
   return keys;
 }

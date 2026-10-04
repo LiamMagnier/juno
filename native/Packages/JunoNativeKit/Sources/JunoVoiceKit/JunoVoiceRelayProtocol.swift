@@ -14,7 +14,7 @@ import Foundation
 /// The provider is chosen per session rather than per account because they are
 /// not interchangeable: some do true speech-to-speech, some need this client to
 /// supply the user's transcript (see ``JunoVoiceCapabilities``). The relay
-/// answers every ``JunoVoiceClientMessage/sessionStart(provider:)`` with the
+/// answers every ``JunoVoiceClientMessage/sessionStart(provider:history:effort:)`` with the
 /// capabilities that actually apply, so nothing here is assumed locally.
 public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case openai
@@ -39,6 +39,62 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
         }
     }
 
+    /// The model a call on this provider runs by default, by its published
+    /// name — the web's `VOICE_PROVIDER_MODELS` through `voiceModelLabel`. The
+    /// relay may pin another id; this is the name shown before a call is up.
+    public var modelName: String {
+        switch self {
+        case .openai: "GPT-Live 1"
+        case .gemini: "Gemini 3.8 Live"
+        case .qwen: "Qwen3.5 Omni Flash"
+        case .minimax: "MiniMax M2.7"
+        }
+    }
+
+    /// The backend model this provider hands harder turns to, where it has
+    /// one: GPT-Live-1 delegates to GPT-6.1 Sol, both Gemini Live models to
+    /// Gemini 3.8 Flash (low under Live; medium or high under Extended
+    /// Thinking, following the rung), each with web search.
+    public var delegateModelName: String? {
+        switch self {
+        case .openai: "GPT-6.1 Sol"
+        case .gemini: "Gemini 3.8 Flash"
+        case .qwen, .minimax: nil
+        }
+    }
+
+    /// The rungs of this provider's thinking dial — the relay's
+    /// `capabilities.reasoningEfforts`, stated here too for the settings
+    /// screens, which are shown before any call. OpenAI's rung is GPT-6.1
+    /// Sol's effort; Gemini's picks the Live model and Gemini 3.8 Flash's
+    /// level together (``modelName(at:)``). Empty where there is no dial.
+    public var reasoningEfforts: [JunoVoiceReasoningEffort] {
+        switch self {
+        case .openai: [.low, .medium, .high, .xhigh]
+        case .gemini: [.low, .medium, .high]
+        case .qwen, .minimax: []
+        }
+    }
+
+    /// Where the dial opens: High on OpenAI, Low (plain 3.8 Live) on Gemini.
+    public var defaultReasoningEffort: JunoVoiceReasoningEffort {
+        self == .gemini ? .low : .high
+    }
+
+    public var offersReasoningEffort: Bool { reasoningEfforts.count >= 2 }
+
+    /// The voice model a rung runs: Gemini's Medium and High run 3.8 Live
+    /// Thinking (Extended Thinking); every other rung runs ``modelName``.
+    public func modelName(at effort: JunoVoiceReasoningEffort) -> String {
+        self == .gemini && effort != .low ? "Gemini 3.8 Live Thinking" : modelName
+    }
+
+    /// The level the delegate thinks at on a rung: OpenAI's is the rung
+    /// itself; Gemini's Flash runs low under 3.8 Live and high under Thinking.
+    public func delegateEffort(at effort: JunoVoiceReasoningEffort) -> JunoVoiceReasoningEffort {
+        self == .gemini ? (effort == .low ? .low : .high) : effort
+    }
+
     /// Resolves the corresponding voice provider from any model identifier.
     public static func from(modelID: String) -> JunoVoiceProvider {
         let lower = modelID.lowercased()
@@ -51,6 +107,50 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
         } else {
             return .gemini
         }
+    }
+}
+
+/// How hard a provider's delegated model reasons — GPT-6.1 Sol behind
+/// GPT-Live-1. The relay's `VoiceReasoningEffort` (`relay/src/protocol.ts`):
+/// the Responses API ladder cut to what Sol accepts, which has no `none`.
+public enum JunoVoiceReasoningEffort: String, Codable, CaseIterable, Identifiable, Sendable {
+    case low
+    case medium
+    case high
+    case xhigh
+
+    public var id: String { rawValue }
+
+    /// `high`, the web's `DEFAULT_VOICE_REASONING_EFFORT` and the relay's.
+    public static let productionDefault: Self = .high
+
+    /// Spelled as the composer's thinking dial spells its rungs.
+    public var displayName: String {
+        switch self {
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        case .xhigh: "Extra high"
+        }
+    }
+
+    /// The `UserDefaults` key both apps keep OpenAI's choice under, per
+    /// device as on the web (`voiceEffort` in `src/lib/ui-prefs.ts`).
+    public static let storageKey = "juno.voice.reasoningEffort"
+
+    /// Each dial provider remembers its own rung (`voiceGeminiEffort` on the web).
+    public static func storageKey(for provider: JunoVoiceProvider) -> String {
+        provider == .openai ? storageKey : "\(storageKey).\(provider.rawValue)"
+    }
+
+    /// The stored choice for `provider`, or its default; never a rung it lacks.
+    public static func stored(
+        for provider: JunoVoiceProvider = .openai,
+        in defaults: UserDefaults = .standard
+    ) -> Self {
+        let stored = defaults.string(forKey: storageKey(for: provider)).flatMap(Self.init(rawValue:))
+        guard let stored, provider.reasoningEfforts.contains(stored) else { return provider.defaultReasoningEffort }
+        return stored
     }
 }
 
@@ -164,7 +264,7 @@ public enum JunoVoiceTurnPhase: String, Codable, Sendable {
 /// option" and is answered by something that has never heard of the first. The
 /// relay seeds it into the provider's item history exactly once, on
 /// `session.start`; a provider switch mid-call reuses the relay's own running
-/// transcript instead, which is why ``JunoVoiceClientMessage/sessionSwitch(provider:)``
+/// transcript instead, which is why ``JunoVoiceClientMessage/sessionSwitch(provider:effort:)``
 /// carries nothing.
 public struct JunoVoiceHistoryEntry: Codable, Equatable, Sendable {
     public var role: JunoVoiceTranscriptRole
@@ -323,8 +423,15 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
     /// truncates whatever it is given without saying so, and a frame built from
     /// an unbounded chat can be large enough for the transport to refuse before
     /// the relay ever parses it.
-    case sessionStart(provider: JunoVoiceProvider, history: [JunoVoiceHistoryEntry] = [])
-    case sessionSwitch(provider: JunoVoiceProvider)
+    ///
+    /// `effort` is how hard a delegating provider's backend model reasons;
+    /// nil sends the frame without it and the relay applies its default.
+    case sessionStart(
+        provider: JunoVoiceProvider,
+        history: [JunoVoiceHistoryEntry] = [],
+        effort: JunoVoiceReasoningEffort? = nil
+    )
+    case sessionSwitch(provider: JunoVoiceProvider, effort: JunoVoiceReasoningEffort? = nil)
     /// The user's words as text — from the on-device recognizer for providers
     /// that cannot hear the audio themselves, or from a composed turn.
     ///
@@ -353,22 +460,24 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
     case ping
 
     private enum CodingKeys: String, CodingKey {
-        case type, provider, history, text, turnId, displayText, context, attachmentIds, jpegBase64
+        case type, provider, history, effort, text, turnId, displayText, context, attachmentIds, jpegBase64
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .sessionStart(let provider, let history):
+        case .sessionStart(let provider, let history, let effort):
             try container.encode("session.start", forKey: .type)
             try container.encode(provider, forKey: .provider)
             // Optional on the wire, so a call with no chat behind it sends the
             // same two-key frame it always has — which is also the frame every
             // existing relay smoke test was written against.
             try container.encodeIfPresent(history.isEmpty ? nil : history, forKey: .history)
-        case .sessionSwitch(let provider):
+            try container.encodeIfPresent(effort, forKey: .effort)
+        case .sessionSwitch(let provider, let effort):
             try container.encode("session.switch", forKey: .type)
             try container.encode(provider, forKey: .provider)
+            try container.encodeIfPresent(effort, forKey: .effort)
         case .inputText(let text, let turnId, let displayText, let context, let attachmentIDs):
             try container.encode("input.text", forKey: .type)
             try container.encode(text, forKey: .text)

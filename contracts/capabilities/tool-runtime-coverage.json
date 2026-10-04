@@ -84,7 +84,7 @@
       }
     },
     {
-      "id": "anthropic:claude-sonnet-5",
+      "id": "anthropic:claude-sonnet-5-5",
       "provider": "anthropic",
       "adapter": "anthropic-native",
       "vision": true,
@@ -159,7 +159,7 @@
       }
     },
     {
-      "id": "openai:gpt-6-sol",
+      "id": "openai:gpt-6.1-sol",
       "provider": "openai",
       "adapter": "openai-responses",
       "vision": true,
@@ -260,56 +260,6 @@
     },
     {
       "id": "openai:gpt-5.4-mini",
-      "provider": "openai",
-      "adapter": "openai-responses",
-      "vision": true,
-      "catalogAgenticTools": true,
-      "compatible": false,
-      "verdicts": {
-        "roundTrip": {
-          "verdict": "untested"
-        },
-        "parallel": {
-          "verdict": "untested"
-        },
-        "toolImages": {
-          "verdict": "untested"
-        },
-        "runCodeE2E": {
-          "verdict": "untested"
-        },
-        "skillE2E": {
-          "verdict": "untested"
-        }
-      }
-    },
-    {
-      "id": "openai:gpt-5.4-nano",
-      "provider": "openai",
-      "adapter": "openai-responses",
-      "vision": true,
-      "catalogAgenticTools": true,
-      "compatible": false,
-      "verdicts": {
-        "roundTrip": {
-          "verdict": "untested"
-        },
-        "parallel": {
-          "verdict": "untested"
-        },
-        "toolImages": {
-          "verdict": "untested"
-        },
-        "runCodeE2E": {
-          "verdict": "untested"
-        },
-        "skillE2E": {
-          "verdict": "untested"
-        }
-      }
-    },
-    {
-      "id": "openai:gpt-5.3-codex",
       "provider": "openai",
       "adapter": "openai-responses",
       "vision": true,
@@ -485,6 +435,56 @@
       }
     },
     {
+      "id": "zhipu:glm-5.3-flash",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-5.3-flashx",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
       "id": "zhipu:glm-4.7-flash",
       "provider": "zhipu",
       "adapter": "openai-compatible",
@@ -615,7 +615,7 @@
       "id": "moonshot:kimi-k2.7-code",
       "provider": "moonshot",
       "adapter": "openai-compatible",
-      "vision": false,
+      "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
       "verdicts": {
@@ -641,7 +641,7 @@
       "id": "moonshot:kimi-k2.7-code-highspeed",
       "provider": "moonshot",
       "adapter": "openai-compatible",
-      "vision": false,
+      "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
       "verdicts": {
@@ -667,7 +667,7 @@
       "id": "deepseek:deepseek-flash",
       "provider": "deepseek",
       "adapter": "openai-compatible",
-      "vision": false,
+      "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
       "verdicts": {
@@ -820,7 +820,7 @@
       "id": "mistral:ministral-14b-latest",
       "provider": "mistral",
       "adapter": "openai-compatible",
-      "vision": false,
+      "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
       "verdicts": {
@@ -846,7 +846,7 @@
       "id": "mistral:ministral-8b-latest",
       "provider": "mistral",
       "adapter": "openai-compatible",
-      "vision": false,
+      "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
       "verdicts": {
@@ -872,7 +872,7 @@
       "id": "mistral:ministral-3b-latest",
       "provider": "mistral",
       "adapter": "openai-compatible",
-      "vision": false,
+      "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
       "verdicts": {
@@ -920,9 +920,9 @@
       }
     },
     {
-      "id": "xai:grok-4.1-fast",
+      "id": "xai:grok-4.3",
       "provider": "xai",
-      "adapter": "openai-compatible",
+      "adapter": "xai-responses",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -996,6 +996,31 @@
     },
     {
       "id": "minimax:MiniMax-M3",
+      "provider": "minimax",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "minimax:MiniMax-M3.1-Flash-Preview",
       "provider": "minimax",
       "adapter": "openai-compatible",
       "vision": true,
@@ -1121,31 +1146,6 @@
       }
     },
     {
-      "id": "mimo:mimo-v2.5",
-      "provider": "mimo",
-      "adapter": "openai-compatible",
-      "vision": true,
-      "catalogAgenticTools": true,
-      "compatible": false,
-      "verdicts": {
-        "roundTrip": {
-          "verdict": "untested"
-        },
-        "parallel": {
-          "verdict": "untested"
-        },
-        "toolImages": {
-          "verdict": "untested"
-        },
-        "runCodeE2E": {
-          "verdict": "untested"
-        },
-        "skillE2E": {
-          "verdict": "untested"
-        }
-      }
-    },
-    {
       "id": "qwen:qwen3.8-max",
       "provider": "qwen",
       "adapter": "openai-compatible",
@@ -1225,7 +1225,7 @@
       "provider": "qwen",
       "adapter": "openai-compatible",
       "vision": false,
-      "catalogAgenticTools": true,
+      "catalogAgenticTools": false,
       "compatible": false,
       "verdicts": {
         "roundTrip": {
@@ -1263,6 +1263,31 @@
         "toolImages": {
           "verdict": "not_applicable",
           "note": "No vision."
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "longcat:LongCat-2.5-Preview",
+      "provider": "longcat",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
         },
         "runCodeE2E": {
           "verdict": "untested"

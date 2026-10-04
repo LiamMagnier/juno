@@ -141,18 +141,26 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("opus-5-5")) return { input: 4, output: 20 };
       if (pm.includes("opus")) return { input: 5, output: 25 };
       if (pm.includes("haiku")) return { input: 1, output: 5 };
-      if (pm.includes("sonnet-5")) return { input: 2, output: 10 }; // intro pricing — $3/$15 from Sep 1 2026
+      // Sonnet 5 and 5.5. $2/$10 became Sonnet 5's standard price; the
+      // scheduled Sep 1 2026 rise to $3/$15 was cancelled (pricing page).
+      if (pm.includes("sonnet-5")) return { input: 2, output: 10 };
       return { input: 3, output: 15 }; // sonnet-class
     case "openai":
+      // o3 $2/$8 and o3-mini $1.10/$4.40 (model pages, 2026-10-04); o1 $15/$60.
+      if (pm.includes("o3-mini")) return { input: 1.1, output: 4.4 };
+      if (/^o3(?:$|-)/.test(pm)) return { input: 2, output: 8 };
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
       if (pm.includes("gpt-6-astra")) return { input: 10, output: 50 };
+      if (pm.includes("gpt-6.1-sol")) return { input: 2, output: 10 };
       if (pm.includes("gpt-6-sol")) return { input: 2, output: 10 };
       if (pm.includes("gpt-6-luna")) return { input: 0.1, output: 0.5 };
       // Terra/Luna were cut on 2026-07-30 (Terra −20%, Luna −80%) from their
       // 2026-07-09 launch rates of $2.50/$15 and $1/$6. Sol was not repriced.
       if (pm.includes("gpt-5.6-terra")) return { input: 2, output: 12 };
       if (pm.includes("gpt-5.6-luna")) return { input: 0.2, output: 1.2 };
-      if (pm.includes("gpt-5.6")) return { input: 5, output: 30 }; // sol + bare alias
+      // Sol is $4/$20 on its model page ("promotional pricing ... at least
+      // through November 21, 2026").
+      if (pm.includes("gpt-5.6")) return { input: 4, output: 20 }; // sol + bare alias
       if (pm.includes("gpt-5.5-pro") || pm.includes("gpt-5.4-pro")) return { input: 30, output: 180 };
       if (pm.includes("gpt-5.5")) return { input: 5, output: 30 };
       if (pm.includes("gpt-5.4-nano")) return { input: 0.2, output: 1.25 };
@@ -161,7 +169,6 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("gpt-5.3-codex")) return { input: 1.75, output: 14 };
       if (pm.includes("gpt-5.2-pro")) return { input: 21, output: 168 };
       if (pm.includes("gpt-5.2")) return { input: 1.75, output: 14 };
-      if (pm.includes("gpt-5.1-codex-mini")) return { input: 0.25, output: 2 };
       if (pm.includes("gpt-5.1")) return { input: 1.25, output: 10 };
       if (pm.includes("realtime")) return { input: 32, output: 64 }; // audio tokens, per 1M
       if (pm.includes("nano")) return { input: 0.1, output: 0.4 };
@@ -178,7 +185,11 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       // ordering note in model-metrics.ts.
       if (pm.includes("3.5-flash-lite")) return { input: 0.3, output: 2.5 };
       if (pm.includes("3.5-flash")) return { input: 1.5, output: 9 };
+      // Gemini 2.5 Pro is $1.25/$10 (≤200K prompts), not 3.1 Pro's $2/$12.
+      if (pm.includes("2.5-pro")) return { input: 1.25, output: 10 };
       if (pm.includes("pro")) return { input: 2, output: 12 };
+      // gemini-3-flash-preview: $0.50/$3 on Google's pricing page.
+      if (pm.includes("3-flash")) return { input: 0.5, output: 3 };
       return { input: 0.3, output: 2.5 }; // older flash-class
     case "meta":
       // BEFORE the muse-spark test, which `muse-spark-1.3-contributor` also
@@ -203,31 +214,59 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       // (09:00-12:00 / 14:00-18:00 Beijing) — revisit when announced.
       // V4.1 Flash, off-peak. DeepSeek doubles these in its peak windows.
       if (pm === "deepseek-flash") return { input: 0.15, output: 0.6 };
-      if (pm.includes("v4-pro")) return { input: 0.435, output: 0.87 };
+      // api-docs.deepseek.com/quick_start/pricing (2026-10-04), off-peak.
+      if (pm.includes("v4-pro")) return { input: 0.66, output: 1.98 };
       return { input: 0.14, output: 0.28 }; // v4-flash + retiring aliases
     case "zhipu":
-      if (pm.includes("flash") || pm.includes("air")) return { input: 0.1, output: 0.1 };
-      // One rate for both: 5.3 reuses the 5.2 base unchanged, and Z.ai's own
-      // price card lists the two at the same $1.40 / $4.40 per MTok.
-      if (pm.includes("glm-5.3") || pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
-      if (pm.includes("turbo")) return { input: 1.2, output: 4.0 };
-      return { input: 0.6, output: 2.2 };
+      // docs.z.ai/guides/overview/pricing (2026-10-04). FlashX before Flash
+      // and AirX before Air: each id contains the shorter one.
+      if (pm.includes("glm-5.3-flashx")) return { input: 0.37, output: 1.25 };
+      if (pm.includes("glm-5.3-flash")) return { input: 0.15, output: 0.5 };
+      if (pm.includes("glm-4.7-flashx")) return { input: 0.07, output: 0.4 };
+      if (pm.includes("glm-4.6v-flashx")) return { input: 0.04, output: 0.4 };
+      // GLM-4.7 / 4.5 / 4.6V Flash are free on Z.ai. Billing keeps the old
+      // nominal floor so a run on them still meters (work-pricing tests).
+      if (pm.includes("flash")) return { input: 0.1, output: 0.1 };
+      if (pm.includes("airx")) return { input: 1.1, output: 4.5 };
+      if (pm.includes("air")) return { input: 0.2, output: 1.1 };
+      if (pm.includes("glm-4.5-x")) return { input: 2.2, output: 8.9 };
+      if (pm.includes("glm-4.5v")) return { input: 0.6, output: 1.8 };
+      if (pm.includes("glm-4.6v")) return { input: 0.3, output: 0.9 };
+      if (pm.includes("glm-4-32b")) return { input: 0.1, output: 0.1 };
+      // 5.3, 5.2 and 5.1 share one rate on Z.ai's price card.
+      if (pm.includes("glm-5.3") || pm.includes("glm-5.2") || pm.includes("glm-5.1")) return { input: 1.4, output: 4.4 };
+      if (pm.includes("turbo")) return { input: 1.2, output: 4.0 }; // delisted; last known rate
+      if (/^glm-5(?:$|-)/.test(pm)) return { input: 1, output: 3.2 };
+      return { input: 0.6, output: 2.2 }; // GLM-4.7 / 4.6 / 4.5
     case "moonshot":
+      // platform.kimi.ai/docs/pricing/chat (2026-10-04). K3 used to fall
+      // through to $0.60/$2.50 — a fifth of its real rate.
+      if (pm.includes("kimi-k3")) return { input: 3, output: 15 };
+      if (pm.includes("highspeed")) return { input: 1.9, output: 8 };
       if (pm.includes("k2.")) return { input: 0.95, output: 4 };
       return { input: 0.6, output: 2.5 };
     case "mistral":
       if (pm.includes("medium")) return { input: 1.5, output: 7.5 };
       if (pm.includes("large")) return { input: 0.5, output: 1.5 };
       if (pm.includes("small")) return { input: 0.15, output: 0.6 };
+      // Ministral 3: 14B $0.20, 8B $0.15, 3B $0.10 (in = out; Mistral model pages).
+      if (pm.includes("ministral-14b")) return { input: 0.2, output: 0.2 };
+      if (pm.includes("ministral-3b")) return { input: 0.1, output: 0.1 };
       if (pm.includes("ministral")) return { input: 0.15, output: 0.15 };
       if (pm.includes("codestral")) return { input: 0.3, output: 0.9 };
       return { input: 0.5, output: 2.2 };
     case "xai":
+      // docs.x.ai/developers/models (2026-10-04), below the 200K tier.
       if (pm.includes("grok-4.5")) return { input: 2, output: 6 };
       if (pm.includes("grok-4.3")) return { input: 1.25, output: 2.5 };
       if (pm.includes("grok-build")) return { input: 1, output: 2 };
-      return { input: 2, output: 6 };
+      // All three 4.20 ids, multi-agent included: $1.25 / $2.50.
+      if (pm.includes("grok-4.20")) return { input: 1.25, output: 2.5 };
+      return { input: 2, output: 6 }; // 4.6 / 4.7
     case "minimax":
+      // platform.minimax.io/docs/guides/pricing-paygo (2026-10-04): M3 ≤512K
+      // input, M2.7 and M2.5 are $0.30/$1.20; the highspeed tiers double it.
+      if (pm.includes("highspeed")) return { input: 0.6, output: 2.4 };
       return { input: 0.3, output: 1.2 };
     case "mimo":
       // Xiaomi's published V2.6 card. These were estimates for one commit and
@@ -252,15 +291,33 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       // V2.6 Flash, and the V2/V2.5 rows that fall through to it.
       return { input: 0.14, output: 0.28 };
     case "qwen":
-      // 3.8 Max has no published pay-as-you-go rate yet; estimate above 3.7 Max.
-      if (pm.includes("qwen3.8-max")) return { input: 3.0, output: 9.0 };
-      if (pm.includes("qwen3.8-flash")) return { input: 0.14, output: 0.42 };
+      // Singapore (international) list prices from each model's Model Studio
+      // page, read 2026-10-04; tiered models quote their lowest input tier.
+      if (pm.includes("qwen3.8-max")) return { input: 2, output: 6 };
+      if (pm.includes("qwen3.8-flash")) return { input: 0.15, output: 0.47 };
       if (pm.includes("qwen3.7-max")) return { input: 2.5, output: 7.5 };
       if (pm.includes("qwen3.7-plus")) return { input: 0.4, output: 1.6 };
+      if (pm.includes("qwen3.7-flash")) return { input: 0.03, output: 0.13 };
+      if (pm.includes("qwen3.6-plus")) return { input: 0.5, output: 3 };
+      if (pm.includes("qwen3.6-flash")) return { input: 0.25, output: 1.5 };
+      if (pm.includes("qwen3.5-plus")) return { input: 0.4, output: 2.4 };
+      if (pm.includes("qwen3.5-flash")) return { input: 0.1, output: 0.4 };
+      if (pm.includes("qwen3-vl-plus")) return { input: 0.2, output: 1.6 };
+      if (pm.includes("qwen3-vl-flash")) return { input: 0.05, output: 0.4 };
+      if (pm.includes("qwen3-coder-plus")) return { input: 1, output: 5 };
+      if (pm.includes("qwen3-235b")) return { input: 0.7, output: 2.8 };
+      if (pm.includes("qwen3-30b")) return { input: 0.2, output: 0.8 };
+      if (pm.includes("qwen-vl-max")) return { input: 0.8, output: 3.2 };
+      if (pm.includes("qwen-max")) return { input: 1.6, output: 6.4 };
+      if (pm.includes("qwen-turbo")) return { input: 0.05, output: 0.2 };
+      if (pm.includes("qwq")) return { input: 0.8, output: 2.4 };
+      if (pm.includes("qwen-long")) return { input: 0.072, output: 0.287 }; // Beijing only
       if (pm.includes("flash")) return { input: 0.19, output: 1.13 };
       return { input: 0.4, output: 1.2 };
     case "longcat":
-      return { input: 0.75, output: 2.95 }; // standard rate (launch promo $0.30/$1.20)
+      // longcat.chat/platform/docs/pricing (2026-10-04): $0.30 / $1.20 for
+      // LongCat-2.0 and 2.5 Preview — the only rate the docs publish.
+      return { input: 0.3, output: 1.2 };
     default: {
       // Unknown provider → fall back by relative cost tier.
       if (model.cost === 3) return { input: 10, output: 40 };
@@ -293,7 +350,7 @@ export function fastModeMultiplier(model: ModelInfo): number | null {
   if (model.provider === "anthropic") return pm.includes("opus-4-8") || pm.includes("opus-5-5") ? 2 : null;
   if (model.provider === "openai") {
     if (pm.includes("-pro")) return null; // pro tiers aren't priority-eligible
-    if (/gpt-6-(astra|sol|luna)/.test(pm)) return 2;
+    if (/gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm)) return 2;
     if (pm.includes("gpt-5.6")) return 2; // sol / terra / luna
     if (pm.includes("gpt-5.5")) return 2.5;
     if (pm.includes("gpt-5.4")) return 2;
@@ -348,17 +405,26 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
   if (
     model.provider === "openai" &&
     (model.providerModel.toLowerCase().includes("gpt-5.6") ||
-      /gpt-6-(astra|sol|luna)/.test(model.providerModel.toLowerCase()))
+      /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(model.providerModel.toLowerCase()))
   ) {
-    // GPT-5.6+ family: 90% cached-input discount; cache writes 1.25× uncached.
+    // GPT-5.6+ family: 90% cached-input discount (95% on GPT-6.1 Sol: $0.10
+    // against $2); cache writes 1.25× uncached.
     return {
       input,
       output,
-      cacheRead: input * 0.1,
+      cacheRead: input * (model.providerModel.toLowerCase().includes("gpt-6.1-sol") ? 0.05 : 0.1),
       cacheWrite: input * 1.25,
       cacheWrite5m: input * 1.25,
       cacheWrite1h: input * 1.25,
     };
+  }
+  if (model.provider === "xai") {
+    // xAI's cached-input column per model (docs.x.ai/developers/models):
+    // 4.6/4.7 $0.50 on $2 (0.25x), 4.5 $0.30 on $2 (0.15x), 4.3 and the 4.20
+    // ids $0.20 on $1.25 (0.16x), Build $0.20 on $1 (0.2x). No write premium.
+    const pm = model.providerModel.toLowerCase();
+    const ratio = pm.includes("grok-4.5") ? 0.15 : pm.includes("grok-build") ? 0.2 : /grok-4\.(3|20)/.test(pm) ? 0.16 : 0.25;
+    return { input, output, cacheRead: input * ratio, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
   }
   if (model.provider === "meta") {
     /*
@@ -432,8 +498,10 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
 
 /**
  * Flat server-tool fees (USD), on top of token usage.
- * Sources (2026-07): Anthropic $10/1k web searches; OpenAI $10/1k web search;
- * xAI $5/1k web_search and $5/1k x_search. Google grounding is $14/1k queries
+ * Sources (2026-07): Anthropic $10/1k web searches; OpenAI $10/1k web search
+ * calls ($25/1k on non-reasoning models);
+ * xAI $5/1k web_search and $5/1k x_search; Meta $2.50/1k web_search queries
+ * (2026-10). Google grounding is $14/1k queries
  * beyond the deployment's monthly free quota (SPEC §3.9): the chat route splits
  * a turn's grounded queries against that quota and passes only the BILLABLE
  * count here as `webSearchRequests` (`splitGroundingQueries`, tools/metering.ts),
@@ -445,7 +513,9 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
  */
 export function toolFeesUsd(
   provider: ModelInfo["provider"] | string,
-  extras: ToolUsageExtras = {}
+  extras: ToolUsageExtras = {},
+  /** OpenAI prices hosted search by model class; absent reads as a reasoning model. */
+  model?: Pick<ModelInfo, "reasoning">
 ): number {
   if (extras.toolFeesUsd != null && extras.toolFeesUsd > 0) {
     return extras.toolFeesUsd;
@@ -459,14 +529,31 @@ export function toolFeesUsd(
       // $10 / 1,000 searches
       return web * 0.01;
     case "openai":
-      // Built-in web search on Responses: $10 / 1k calls
-      return web * 0.01;
+      // Hosted web search on Responses (developers.openai.com/api/docs/pricing,
+      // read 2026-10-04): $10 / 1k calls on reasoning models (search content
+      // tokens billed as input, already in usage); $25 / 1k on the
+      // non-reasoning gpt-4o / gpt-4.1 line (search content tokens free).
+      return web * (model && !model.reasoning ? 0.025 : 0.01);
     case "xai":
       // Web Search + X Search: $5 / 1k each
       return web * 0.005 + x * 0.005;
     case "google":
       // Grounding with Google Search: $14 / 1k billable queries.
       return web * 0.014;
+    case "meta":
+      // Muse Spark `web_search` grounding: $2.50 / 1k search queries, on top
+      // of tokens (dev.meta.ai/docs/pricing-rate-limits, read 2026-10-04).
+      return web * 0.0025;
+    case "zhipu":
+      // Z.ai built-in Web Search: $0.01 per use (docs.z.ai pricing, 2026-10-04).
+      return web * 0.01;
+    case "mimo":
+      // MiMo Web Search plugin: $5 / 1k calls overseas (mimo.mi.com web-search guide).
+      return web * 0.005;
+    case "qwen":
+      // Model Studio web search, Singapore: $10 / 1k calls. Chat Completions
+      // reports no count, so this only bills if one is ever reported.
+      return web * 0.01;
     default:
       return 0;
   }
@@ -492,16 +579,18 @@ function anthropicCacheReadRatio(providerModel: string): number {
  *
  *  - OpenAI GPT-6 Astra, Sol and Luna: more than 272K input tokens bills the
  *    full request at 2x input and cache rates and 1.5x output.
- *  - xAI Grok 4.6 and 4.7: a prompt that REACHES 200K tokens bills every
+ *  - xAI, every Grok chat model: a prompt that REACHES 200K tokens bills every
  *    token in the request at the higher tier — 2x input, cached input and
- *    output alike ($4 / $1 / $12 against $2 / $0.50 / $6).
+ *    output alike ($4 / $1 / $12 against $2 / $0.50 / $6 on 4.7). xAI's
+ *    model page lists the same doubled tier for 4.5, 4.3, the 4.20 ids and
+ *    Build, not just 4.6/4.7.
  */
 function longContextMultipliers(model: ModelInfo, totalInput: number): { input: number; output: number } {
   const pm = model.providerModel.toLowerCase();
-  if (model.provider === "openai" && /gpt-6-(astra|sol|luna)/.test(pm) && totalInput > 272_000) {
+  if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm) && totalInput > 272_000) {
     return { input: 2, output: 1.5 };
   }
-  if (model.provider === "xai" && /grok-4\.[67]/.test(pm) && totalInput >= 200_000) {
+  if (model.provider === "xai" && pm.startsWith("grok-") && model.modality === "chat" && totalInput >= 200_000) {
     return { input: 2, output: 2 };
   }
   return { input: 1, output: 1 };
@@ -537,7 +626,7 @@ export function estimateCostUsd(
   extras: ToolUsageExtras = {}
 ): number {
   const tokens = tokenCostUsd(model, u, fastMode);
-  const tools = toolFeesUsd(model.provider, extras);
+  const tools = toolFeesUsd(model.provider, extras, model);
   const cost = tokens + tools;
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
 }
@@ -651,7 +740,7 @@ export function estimateGenerationCostUsd(
     xSearchRequests: opts.xSearchRequests ?? undefined,
     toolFeesUsd: opts.toolFeesUsd ?? undefined,
   };
-  const fees = toolFeesUsd(model.provider, extras);
+  const fees = toolFeesUsd(model.provider, extras, model);
   const costUsd = estimateCostUsd(
     model,
     {

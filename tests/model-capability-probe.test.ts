@@ -103,7 +103,7 @@ test("Anthropic keeps its native messages endpoint, Grok xAI's Responses, the co
   assert.equal(grok.body.store, false);
 
   // A Grok slug its record keeps on compat is probed there.
-  const fast = probeRequestFor(fake({ id: "xai:grok-4.1-fast", provider: "xai", providerModel: "grok-4.1-fast" }), "xai-key");
+  const fast = probeRequestFor(fake({ id: "xai:grok-4.7", provider: "xai", providerModel: "grok-4.7", tools: { responses: false } }), "xai-key");
   assert.ok(fast);
   assert.equal(fast.url, "https://api.x.ai/v1/chat/completions");
 

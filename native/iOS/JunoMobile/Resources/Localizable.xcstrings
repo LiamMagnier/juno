@@ -7062,6 +7062,23 @@
         }
       }
     },
+    "voice.thinking": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réflexion"
+          }
+        }
+      }
+    },
     "voice.save.discard": {
       "extractionState": "manual",
       "localizations": {

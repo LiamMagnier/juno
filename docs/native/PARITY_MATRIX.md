@@ -470,6 +470,8 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 
 ## Voice
 
+Relay wire (not a route): the apps send each dial provider's thinking rung (`effort`) on session.start/switch — OpenAI low/medium/high/xhigh (GPT-6.1 Sol's effort, default high), Gemini low/medium/high (3.8 Live + Flash low, or 3.8 Live Thinking + Flash high; default low) — set on the Mac with the shared JunoThinkingPanel and in iOS Settings with JunoThinkingTrack (the iOS call menu uses a picker). Planned: reading `session.ready.effort`/`delegate`/`model`; the apps show the rung's expected model names rather than the relay's report.
+
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/voice/context` | POST | Native | JunoChatKit |  |

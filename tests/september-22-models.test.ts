@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
-import { curate } from "@/lib/model-discovery-core";
 import { defaultReasoning, getModelMetrics, reasoningCaps, reasoningOptions } from "@/lib/model-metrics";
 import { probeRequestFor } from "@/lib/model-capability-probe";
 import { providerRequestModel } from "@/lib/model-request";
@@ -41,10 +40,12 @@ const NEW_MODELS: Expected[] = [
     url: "https://api.anthropic.com/v1/messages",
   },
   // Every OpenAI model is served through Responses (SPEC §5.2): GPT-6 Sol and
-  // Luna call tools on /chat/completions only at effort "none".
+  // Luna call tools on /chat/completions only at effort "none". GPT-6 Sol was
+  // itself superseded on 2026-09-29 by GPT-6.1 Sol, which leads the Sol line
+  // now (its own contract is pinned in gpt-6-1-sol.test.ts).
   {
-    id: "openai:gpt-6-sol",
-    providerModel: "gpt-6-sol",
+    id: "openai:gpt-6.1-sol",
+    providerModel: "gpt-6.1-sol",
     family: "gpt",
     adapter: "openai-responses",
     url: "https://api.openai.com/v1/responses",
@@ -120,7 +121,8 @@ test("each new model searches natively on the transport that serves it", () => {
 test("the models each one replaced stay routable under their own ids", () => {
   for (const [id, successor] of [
     ["anthropic:claude-opus-5", "anthropic:claude-opus-5-5"],
-    ["openai:gpt-5.6-sol", "openai:gpt-6-sol"],
+    ["openai:gpt-5.6-sol", "openai:gpt-6.1-sol"],
+    ["openai:gpt-6-sol", "openai:gpt-6.1-sol"],
     ["openai:gpt-5.6-luna", "openai:gpt-6-luna"],
     ["xai:grok-4.6", "xai:grok-4.7"],
   ] as const) {
@@ -133,22 +135,14 @@ test("the models each one replaced stay routable under their own ids", () => {
   assert.equal(model("openai:gpt-5.6-terra").status, "current");
 });
 
-test("stored ids that pointed at GPT-5.6 Sol now land on GPT-6 Sol", () => {
+test("stored ids that pointed at a Sol tier land on the current Sol, GPT-6.1 Sol", () => {
   for (const alias of ["openai:gpt-5.6", "openai:gpt-5.5-thinking", "openai:o1-preview"]) {
-    assert.equal(RETIRED_MODELS[alias], "openai:gpt-6-sol", alias);
-    assert.equal(model(alias).id, "openai:gpt-6-sol", `${alias} routes to GPT-6 Sol`);
+    assert.equal(RETIRED_MODELS[alias], "openai:gpt-6.1-sol", alias);
+    assert.equal(model(alias).id, "openai:gpt-6.1-sol", `${alias} routes to GPT-6.1 Sol`);
   }
-  for (const retiring of ["openai:gpt-5", "openai:o3", "openai:gpt-4o", "openai:gpt-4-turbo"]) {
-    assert.equal(model(retiring).replacedBy, "openai:gpt-6-sol", `${retiring} retires into GPT-6 Sol`);
+  for (const retiring of ["openai:gpt-5", "openai:o3", "openai:o1", "openai:gpt-4-turbo"]) {
+    assert.equal(model(retiring).replacedBy, "openai:gpt-6.1-sol", `${retiring} retires into GPT-6.1 Sol`);
   }
-});
-
-test("live discovery claims the new ids for the curated families", () => {
-  const openai = curate("openai", ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-astra"]);
-  assert.equal(openai.find((entry) => entry.providerModel === "gpt-6-sol")?.family, "gpt");
-  assert.equal(openai.find((entry) => entry.providerModel === "gpt-6-luna")?.family, "gpt-luna");
-  const xai = curate("xai", ["grok-4.7", "grok-4.6"]);
-  assert.equal(xai.find((entry) => entry.providerModel === "grok-4.7")?.family, "grok");
 });
 
 test("Claude Opus 5.5 always thinks: no Instant, medium by default, never `disabled`", () => {
@@ -174,7 +168,9 @@ test("Claude Opus 5.5 always thinks: no Instant, medium by default, never `disab
 
   // Opus 5 keeps its old contract: it still accepts a thinking-off request.
   assert.equal(reasoningCaps(model("anthropic:claude-opus-5")).canDisable, true);
-  assert.equal(buildAnthropicThinkingBits("claude-opus-5", 8192, undefined).thinking, undefined);
+  // Opus 5 thinks when `thinking` is omitted (Anthropic's per-model table:
+  // default "On"), so its Instant has to send `disabled` explicitly.
+  assert.deepEqual(buildAnthropicThinkingBits("claude-opus-5", 8192, undefined).thinking, { type: "disabled" });
 });
 
 test("GPT-6 Sol and Luna take the full none…max ladder; Astra still has no Instant", () => {

@@ -61,11 +61,13 @@ export function probeRequestFor(model: ModelInfo, apiKey: string): ProbeRequest 
         },
       };
     case "openai-responses":
-    case "xai-responses": {
+    case "xai-responses":
+    case "meta-responses": {
       // Grok is served on xAI's own Responses surface, at its own base URL —
       // the same host the chat adapter uses, so a proxied deployment probes
-      // its proxy. `store: false` on both: nothing of a probe is kept.
-      const base = providerBaseUrl(adapter === "xai-responses" ? "xai" : "openai");
+      // its proxy. `store: false` on both: nothing of a probe is kept. (The
+      // probe asks without web search, so Meta never actually lands here.)
+      const base = providerBaseUrl(adapter === "xai-responses" ? "xai" : adapter === "meta-responses" ? "meta" : "openai");
       if (!base) return null;
       return {
         adapter,

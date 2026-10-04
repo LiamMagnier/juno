@@ -76,16 +76,56 @@ type VoiceController = Parameters<typeof voiceCallParts>[0]["voice"];
 
 const STATIC_LEVEL = { current: 0 };
 
-function fakeVoice(s: CallSnapshot): VoiceController {
+/**
+ * Which provider the stage's call is on (`?provider=openai`): Gemini by
+ * default, as in the product; OpenAI shows GPT-Live 1 with its GPT-6.1 Sol
+ * delegate and the thinking dial in the call settings.
+ */
+type FakeProvider = "default" | "gemini" | "openai";
+const FakeProviderContext = React.createContext<FakeProvider>("default");
+
+function fakeVoice(s: CallSnapshot, choice: FakeProvider = "default"): VoiceController {
+  const live = s.status === "live";
+  const openai = choice === "openai";
+  const provider = openai ? "openai" : "gemini";
   return {
     status: s.status,
-    provider: "gemini",
-    model: s.status === "live" ? "gemini-3.8-live" : null,
-    thinking: false,
+    provider,
+    model: live ? (openai ? "gpt-live-1" : choice === "gemini" ? "gemini-3.8-live-extended-thinking" : "gemini-3.8-live") : null,
+    delegate: live
+      ? openai
+        ? { model: "gpt-6.1-sol", effort: "high", webSearch: true }
+        : { model: "gemini-3.8-flash", effort: choice === "gemini" ? "high" : "low", webSearch: true }
+      : null,
+    effort: choice === "default" ? null : openai ? "high" : "medium",
+    setEffort: noop,
+    thinking: live && choice !== "default",
     notice: null,
     error: s.error,
     availability: null,
-    capabilities: null,
+    capabilities: openai
+      ? {
+          videoInput: true,
+          screenInput: false,
+          trueS2S: true,
+          needsClientTranscript: false,
+          thinkingChoice: false,
+          reasoningEfforts: ["low", "medium", "high", "xhigh"],
+          defaultReasoningEffort: "high",
+          maxSessionSec: 3600,
+        }
+      : choice === "gemini"
+        ? {
+            videoInput: true,
+            screenInput: true,
+            trueS2S: true,
+            needsClientTranscript: false,
+            thinkingChoice: false,
+            reasoningEfforts: ["low", "medium", "high"],
+            defaultReasoningEffort: "low",
+            maxSessionSec: 900,
+          }
+        : null,
     assistantSpeaking: s.assistantSpeaking,
     userSpeaking: s.userSpeaking,
     awaitingResponse: s.awaitingResponse,
@@ -257,7 +297,8 @@ const APPROVAL: ClientActionApproval = {
 function CallComposer({ scene, clock }: { scene: Scene; clock: GlowClock }) {
   const common = useComposerCommon();
   const snapshot = useSceneValue(clock, scene.call, sameSnapshot);
-  const voice = React.useMemo(() => (snapshot ? fakeVoice(snapshot) : null), [snapshot]);
+  const provider = React.useContext(FakeProviderContext);
+  const voice = React.useMemo(() => (snapshot ? fakeVoice(snapshot, provider) : null), [snapshot, provider]);
   return (
     <div className="relative w-full">
       {voice && <VoiceCallNotices voice={voice} />}
@@ -511,8 +552,10 @@ export function VoiceGlowGallery({
   reduced,
   solid,
   rows,
+  provider = "default",
 }: {
   rows?: string[];
+  provider?: FakeProvider;
   state: GlowState;
   play?: GlowPlay;
   theme?: "light" | "dark";
@@ -532,7 +575,9 @@ export function VoiceGlowGallery({
       {/* Stills and clips: no Next.js dev badge over the composer. */}
       <style>{"nextjs-portal{display:none!important}"}</style>
       <VoiceGlowStageContext.Provider value={extra}>
-        {scene ? <StateView scene={scene} clock={clock} extra={extra} /> : <Lab clock={clock} base={extra} stills={!!still && t === undefined} rows={rows} />}
+        <FakeProviderContext.Provider value={provider}>
+          {scene ? <StateView scene={scene} clock={clock} extra={extra} /> : <Lab clock={clock} base={extra} stills={!!still && t === undefined} rows={rows} />}
+        </FakeProviderContext.Provider>
       </VoiceGlowStageContext.Provider>
     </AppProvider>
   );

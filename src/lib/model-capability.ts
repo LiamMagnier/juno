@@ -2,7 +2,7 @@ import "server-only";
 
 import type { ModelCapabilityProbe, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isDiscoveredModel, type ModelInfo } from "@/lib/models";
+import type { ModelInfo } from "@/lib/models";
 import { providerApiKey } from "@/lib/providers";
 import {
   decideModelCapability,
@@ -59,7 +59,9 @@ export function modelCapabilityVerdict(
   now = new Date(),
 ): { allowed: boolean; reason: string } {
   const row = probes.get(model.id);
-  return decideModelCapability(model, isDiscoveredModel(model.id), row ? evidenceOf(row) : null, now);
+  // `discovered: false` — the catalog is curated-only, so every model is a
+  // hand-reviewed one and fails open until a probe says otherwise.
+  return decideModelCapability(model, false, row ? evidenceOf(row) : null, now);
 }
 
 export function modelCanRoute(

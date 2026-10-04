@@ -68,6 +68,11 @@ struct JunoMobileVoiceSettingsView: View {
   @AppStorage(JunoMobilePreferences.voiceBackground) private var background = true
   @AppStorage(JunoMobilePreferences.voicePushToTalk) private var pushToTalk = false
   @AppStorage(JunoMobilePreferences.voiceProvider) private var providerRaw = ""
+  /// Shared with the call's own menu through ``JunoVoiceReasoningEffort/storageKey(for:)``.
+  @AppStorage(JunoVoiceReasoningEffort.storageKey(for: .openai))
+  private var openaiEffortRaw = JunoVoiceProvider.openai.defaultReasoningEffort.rawValue
+  @AppStorage(JunoVoiceReasoningEffort.storageKey(for: .gemini))
+  private var geminiEffortRaw = JunoVoiceProvider.gemini.defaultReasoningEffort.rawValue
   @AppStorage(JunoMobilePreferences.voiceSpeakerDefault) private var speakerDefault = true
   @AppStorage(JunoMobilePreferences.voiceSounds) private var voiceSounds = true
   @State private var readAloud: JunoMobileReadAloud?
@@ -135,8 +140,39 @@ struct JunoMobileVoiceSettingsView: View {
       Section {
         Picker("Provider", selection: provider) {
           ForEach(JunoVoiceProvider.allCases) { provider in
-            Text(provider.displayName).tag(provider)
+            Text("\(provider.displayName) · \(provider.modelName)").tag(provider)
           }
+        }
+        if provider.wrappedValue.offersReasoningEffort, let delegate = provider.wrappedValue.delegateModelName {
+          // The composer's own Thinking track (JunoThinkingTrack), one dial
+          // per provider, remembered on this phone.
+          let chosen = provider.wrappedValue
+          let raw = chosen == .gemini ? $geminiEffortRaw : $openaiEffortRaw
+          let effort = JunoVoiceReasoningEffort(rawValue: raw.wrappedValue) ?? chosen.defaultReasoningEffort
+          VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack {
+              Text("voice.thinking")
+              Spacer(minLength: JunoSpace.tight)
+              Text(verbatim: effort.displayName)
+                .foregroundStyle(Color.junoAccentInk)
+            }
+            JunoThinkingTrack(
+              ladder: JunoThinkingLadder(
+                stops: chosen.reasoningEfforts.map {
+                  JunoThinkingStop(id: $0.rawValue, label: $0.displayName, accessibilityLabel: "Thinking \($0.displayName)")
+                },
+                modelName: delegate
+              ),
+              stopID: Binding(get: { raw.wrappedValue }, set: { if let id = $0 { raw.wrappedValue = id } })
+            )
+            .frame(height: 44)
+            Text(
+              verbatim: "\(chosen.modelName(at: effort)) answers. \(delegate) takes the harder questions at "
+                + "\(chosen.delegateEffort(at: effort).displayName.lowercased()) and can search the web."
+            )
+            .junoCaption()
+          }
+          .accessibilityIdentifier("juno.mobile.voice-effort-setting")
         }
         Toggle(isOn: $background) {
           VStack(alignment: .leading, spacing: 2) {

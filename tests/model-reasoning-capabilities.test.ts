@@ -5,7 +5,6 @@ import { reasoningCapabilityForModel } from "@/lib/model-reasoning-capabilities"
 import { nativeModelCatalog } from "@/lib/native-model-manifest";
 import { defaultReasoning, reasoningCaps, reasoningOptions } from "@/lib/model-metrics";
 import { getModel } from "@/lib/models";
-import { toModelInfo } from "@/lib/model-discovery-core";
 
 const gemini = getModel("google:gemini-3.7-flash")!;
 const astra = getModel("openai:gpt-6-astra")!;
@@ -40,12 +39,12 @@ test("native manifest publishes the same Gemini 3.7 contract", () => {
   assert.equal(entry.reasoning.defaultEffort, "medium");
 });
 
-test("live-discovered Gemini 3.8 exposes its thinking levels", () => {
-  const discovered = toModelInfo("google", "models/gemini-3.8-flash");
-  assert.equal(discovered.reasoning, true);
-  assert.deepEqual(reasoningOptions(discovered).map((option) => option.label), ["Low", "Medium", "High"]);
-  assert.equal(defaultReasoning(discovered), "medium");
-  const manifestEntry = nativeModelCatalog([discovered]).models.find((model) => model.id === discovered.id);
+test("curated Gemini 3.8 exposes its thinking levels", () => {
+  const flash = getModel("google:gemini-3.8-flash")!;
+  assert.equal(flash.reasoning, true);
+  assert.deepEqual(reasoningOptions(flash).map((option) => option.label), ["Low", "Medium", "High"]);
+  assert.equal(defaultReasoning(flash), "medium");
+  const manifestEntry = nativeModelCatalog([flash]).models.find((model) => model.id === flash.id);
   assert.deepEqual(manifestEntry?.supportedReasoningEfforts, ["low", "medium", "high"]);
 });
 
@@ -64,17 +63,18 @@ test("GLM-5.3 always thinks and takes the effort enum: a ladder, no Instant, nev
   assert.equal(reasoningCapabilityForModel(getModel("zhipu:glm-4.7")!).parameter, "thinking.type");
 });
 
-test("DeepSeek V4.1 Flash reasons, with high/max and a real Instant", () => {
+test("DeepSeek V4.1 Flash reasons, with low/high/max and a real Instant", () => {
   const flash = getModel("deepseek:deepseek-flash")!;
   assert.equal(flash.reasoning, true);
   // The same contract as V4 Pro.
   assert.deepEqual(reasoningCaps(flash), reasoningCaps(getModel("deepseek:deepseek-v4-pro")!));
-  assert.deepEqual(reasoningCaps(flash).tiers, ["high", "max"]);
+  // api-docs.deepseek.com: reasoning_effort none|low|high|max.
+  assert.deepEqual(reasoningCaps(flash).tiers, ["low", "high", "max"]);
   assert.equal(reasoningCaps(flash).canDisable, true);
   assert.equal(reasoningOptions(flash)[0]?.label, "Instant");
   const entry = nativeModelCatalog([flash]).models.find((model) => model.id === flash.id)!;
   assert.equal(entry.reasoning.supported, true);
-  assert.deepEqual(entry.supportedReasoningEfforts, ["high", "max"]);
+  assert.deepEqual(entry.supportedReasoningEfforts, ["low", "high", "max"]);
 });
 
 test("OpenAI and Grok declare the Responses wire they are now served on", () => {
@@ -83,7 +83,5 @@ test("OpenAI and Grok declare the Responses wire they are now served on", () => 
     assert.equal(evidence.apiSurface, "OpenAI Responses-compatible", id);
     assert.equal(evidence.parameter, "reasoning.effort", id);
   }
-  // Grok 4.1 Fast stays on Chat Completions until its slug is probed.
-  assert.equal(reasoningCapabilityForModel(getModel("xai:grok-4.1-fast")!).apiSurface, "OpenAI chat-compatible");
   assert.equal(reasoningCapabilityForModel(getModel("deepseek:deepseek-v4-pro")!).apiSurface, "OpenAI chat-compatible");
 });

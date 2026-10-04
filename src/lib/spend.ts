@@ -117,12 +117,14 @@ export function modelRatesMicroUsdPerToken(modelId: string): { input: number; ou
  * approximation of public list prices:
  *
  *   image — GPT Image $0.04 · Nano Banana Pro $0.06 · Gemini flash image /
- *           Imagen $0.03 · lite tiers $0.01 · Grok Imagine $0.03 (quality) /
- *           $0.01 (fast) · GLM Image / CogView / MiniMax Image $0.02 ·
+ *           Imagen $0.03 · lite tiers $0.01 · Grok Imagine $0.05 (quality) /
+ *           $0.02 (fast) / $0.04 (2.0) · GLM Image / CogView / MiniMax Image $0.02 ·
  *           Muse Image $0.01
  *   video — $0.50 per clip, $0.25 for fast/mini tiers, $0.75 for
  *           cost-tier-3 flagships (Veo 3.1, Seedance 2.0, Hailuo 2.3…),
  *           Gemini Omni Flash $1.00 (~$0.10/s, metered at its 10s ceiling)
+ *           · Grok Imagine Video per second at 8s/480p: $0.40 classic,
+ *           $0.64 1.5, $0.16 1.5 Lite
  *   audio — Google's per-song list price: Lyria 3.5 and Lyria 3 Pro $0.08 a
  *           song, Lyria 3 Clip $0.04 a 30-second clip (audio-gen-core.ts)
  */
@@ -136,6 +138,16 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
     // 3-10s length, so a clip is metered at its longest: $1.00. Checked
     // before the "fast" tier below, which its id would otherwise match.
     if (id.includes("gemini-omni")) return 1_000_000;
+    // Grok Imagine Video bills by the second (docs.x.ai model pages): at the
+    // 8s / 480p default, classic $0.05/s = $0.40, 1.5 $0.08/s = $0.64, 1.5
+    // Lite $0.02/s = $0.16. mediaCostFactor scales from there.
+    if (id.includes("grok-imagine-video-1.5-lite")) return 160_000;
+    if (id.includes("grok-imagine-video-1.5")) return 640_000;
+    if (id.includes("grok-imagine-video")) return 400_000;
+    // MiniMax H3 / H3 Max bill by the second (pricing-paygo, 2026-10-04): at
+    // the 5s / 768P default both are $0.08/s = $0.40 (2K is $0.13/s, H3 Max
+    // 480P $0.05/s).
+    if (id.includes("minimax-h3")) return 400_000;
     if (/fast|mini|lite/.test(id)) return 250_000;
     return (model?.cost ?? 3) >= 3 ? 750_000 : 500_000;
   }
@@ -143,7 +155,8 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
   if (id.includes("pro-image")) return 60_000;
   if (id.includes("lite")) return 10_000;
   if (id.includes("grok-imagine-image-2.0")) return 40_000;
-  if (id.includes("grok-imagine-image")) return id.includes("quality") ? 30_000 : 10_000;
+  // docs.x.ai/developers/models: quality $0.05, fast $0.02 an image.
+  if (id.includes("grok-imagine-image")) return id.includes("quality") ? 50_000 : 20_000;
   if (id.includes("glm-image") || id.includes("cogview") || id.includes("image-01")) return 20_000;
   // Meta bills Muse Image a flat $0.01 per returned image — the same whatever
   // reasoning_strength it ran at and whether or not it used its built-in web

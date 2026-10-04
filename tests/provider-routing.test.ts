@@ -46,8 +46,6 @@ test("Grok is served on xAI's Responses surface, except a slug its record keeps 
   assert.equal(providerAdapterFor({ provider: "xai", id: "xai:grok-4.20-multi-agent-0309" }), "xai-responses");
   // An unknown Grok gets its lab's row.
   assert.equal(providerAdapterFor({ provider: "xai" }), "xai-responses");
-  // Slug unconfirmed (probe P14): left where it was.
-  assert.equal(providerAdapterFor({ provider: "xai", id: "xai:grok-4.1-fast" }), "openai-compatible");
   // The catalog entry's own override is honoured.
   assert.equal(providerAdapterFor({ provider: "xai", id: "xai:grok-4.7", tools: { responses: false } }), "openai-compatible");
 });
@@ -82,9 +80,12 @@ test("every transport a catalog model is routed to is a listed adapter", () => {
  * with no case streams nothing at all: no text, no finish, no error. Every
  * Grok model but grok-4.1-fast is such a value here ("xai-responses"), so a
  * Grok turn is empty on this branch alone. The fix is lane 3a's file: a
- * `case "xai-responses"` that calls `streamOpenAIResponses` (it picks the xAI
- * dialect from the model's provider), and a `never` default so the next
- * adapter value fails typecheck instead of streaming nothing.
+ * `case "xai-responses"` that calls `streamOpenAIResponses`, and a `never`
+ * default so the next adapter value fails typecheck instead of streaming
+ * nothing. That adapter picks the host (key, base URL) and the dialect from
+ * the model's provider via `responsesHostFor`; until 2026-10-04 it did not,
+ * and sent every Grok turn to OpenAI's host with the OpenAI key. The
+ * xai-openai-responses tests drive the real SDK path and assert the host.
  *
  * That makes it a precondition of the WS3a → WS3b merge (SPEC §12.1), and this
  * test enforces it there. It turns on as soon as lane 3a's adapter loops are

@@ -101,9 +101,8 @@ DerivedData/
 # Generated at predev/prebuild by scripts/generate-i18n-catalog.mjs from the
 # source tree itself, byte-reproducibly. Tracking it meant every `npm run dev`
 # dirtied the working tree with a 195 KB diff.
-# NOTE: src/lib/models.generated.ts and src/lib/benchmarks.generated.ts are
-# deliberately NOT ignored — those are curated registry state committed by the
-# nightly sync-models workflow and are not reproducible without provider keys.
+# NOTE: src/lib/benchmarks.generated.ts is deliberately NOT ignored — it is
+# committed by the nightly sync-models workflow (benchmarks + radar).
 /src/lib/i18n-catalog.generated.ts
 
 # Local SQLite dev database — contains real conversation data, never commit it.

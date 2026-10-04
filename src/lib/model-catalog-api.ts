@@ -1,6 +1,5 @@
-import { discoverModels } from "@/lib/model-discovery";
 import { getModelMetrics, withSupersededMarked } from "@/lib/model-metrics";
-import { GEN_MODELS, type ModelInfo } from "@/lib/models";
+import { GEN_MODELS, MODELS, type ModelInfo } from "@/lib/models";
 import type { ModelCapabilityProbe } from "@prisma/client";
 import { modelCanRoute } from "@/lib/model-capability";
 import { isWorkCapableModel } from "@/lib/work/models";
@@ -9,9 +8,8 @@ import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-healt
 import { isVideoGenSupported } from "@/lib/video-gen";
 import { isAudioGenSupported } from "@/lib/audio-gen-core";
 
-// The native manifest builder lives in its own module because this one reaches
-// for `model-discovery`, which is server-only — the manifest shape itself is
-// pure and must stay directly testable.
+// The native manifest builder lives in its own module so the manifest shape
+// stays pure and directly testable.
 export { nativeModelCatalog } from "@/lib/native-model-manifest";
 
 export async function loadAvailableModels(): Promise<ModelInfo[]> {
@@ -21,7 +19,10 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
   ensureProviderHealthFresh();
 
   const configured = new Set(configuredProviders());
-  const chat = await discoverModels();
+  // Curated chat models only. Providers' live /models lists used to be merged
+  // in here with guessed metadata; that is gone — a model reaches the pickers
+  // only once it has a hand-written entry in models.ts, read from its docs.
+  const chat = Object.values(MODELS).filter((model) => model.modality === "chat" && configured.has(model.provider));
   const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)) && (model.modality !== "audio" || isAudioGenSupported(model)));
   const byId = new Map<string, ModelInfo>();
   for (const model of [...chat, ...generated]) byId.set(model.id, model);

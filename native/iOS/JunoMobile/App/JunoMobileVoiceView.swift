@@ -466,13 +466,26 @@ struct JunoMobileVoiceCallControls: View {
                         controller.switchProvider(provider)
                     } label: {
                         if provider == controller.provider {
-                            JunoIconLabel(verbatim: provider.displayName, icon: .check)
+                            JunoIconLabel(verbatim: provider.modelName, icon: .check)
                         } else {
-                            Text(provider.displayName)
+                            Text(provider.modelName)
                         }
                     }
                     .disabled(provider == controller.provider)
                 }
+            }
+            if controller.provider.offersReasoningEffort {
+                // The provider's thinking dial (a slider cannot live in a menu; Settings › Voice has the track).
+                Picker("voice.thinking", selection: Binding(
+                    get: { controller.reasoningEffort },
+                    set: { controller.setReasoningEffort($0) }
+                )) {
+                    ForEach(controller.provider.reasoningEfforts) { effort in
+                        Text(effort.displayName).tag(effort)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("juno.mobile.voice-effort")
             }
             Section {
                 Button {

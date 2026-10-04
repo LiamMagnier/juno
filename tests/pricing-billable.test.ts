@@ -242,10 +242,11 @@ test("fast mode multiplies token rates but not tool fees", () => {
 });
 
 test("GPT-5.6 cache read is 0.1× input", () => {
+  // GPT-5.6 Sol is $4/$20 on its model page (promotional through 2026-11-21).
   const r = tokenRate(gpt56);
-  assert.equal(r.input, 5);
-  assert.equal(r.cacheRead, 0.5);
-  assert.equal(r.cacheWrite, 6.25); // 1.25×
+  assert.equal(r.input, 4);
+  assert.equal(r.cacheRead, 0.4);
+  assert.equal(r.cacheWrite, 5); // 1.25×
 });
 
 test("GPT-6 Astra uses official standard, cache, fast and long-context rates", () => {

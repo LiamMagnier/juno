@@ -1008,8 +1008,9 @@ turn. Arming it again and sending is the way to re-run it under the same skill.
 `src/lib/models.ts` is the single source of truth. `CURATED` holds chat models,
 `GENERATIVE` holds image/video models (run through `/api/generate`, not the chat
 stream), `RETIRED_MODELS` maps dead ids to replacements (`migrateModelId` silently
-remaps stored ids so they never dangle), and `models.generated.ts` (machine-written by
-`sync-models.ts`) merges `DISCOVERED`/`UNAVAILABLE` entries. Model ids are
+remaps stored ids so they never dangle). The catalog is curated-only: nothing is
+discovered or added from a provider's live `/models` list; a new model gets a
+hand-written entry from its documentation page. Model ids are
 `provider:providerModel`. The default chat model is **`anthropic:claude-sonnet-5`**.
 `npm run validate:models` enforces the invariants (unique ids, exactly one *current*
 per provider/family/modality, defaults, migrations resolve).
@@ -1130,9 +1131,8 @@ from Artificial Analysis) and speed, with a live benchmark overlay
 `GET /api/v1/models` returns the richer native `nativeModelCatalog` (lifecycle,
 availability, minimum plan, modalities, pricing, reasoning capabilities). Neither
 applies server-side plan gating (that's client + enforced at chat/generate). Tooling:
-`npm run sync:models` (dry) / `sync:models:write` (regenerate `models.generated.ts`
-from live provider `/models`), `radar:models` (diff OpenRouter's catalog for new
-industry models), `sync:benchmarks` (Artificial Analysis, needs `AA_API_KEY`),
+`radar:models` (diff OpenRouter's catalog for new industry models — a report,
+never a catalog change), `sync:benchmarks` (Artificial Analysis, needs `AA_API_KEY`),
 `validate:models`.
 
 ---
@@ -2930,13 +2930,12 @@ The job independently checks the public origin and UI after the VM-local check,
 and a failed post-deploy check restores the prior application snapshot while
 leaving the database forward-only.
 
-**`sync-models.yml` — Sync models** (nightly cron `04:17 UTC` + manual): runs
-`sync:models:write` (provider discovery → `models.generated.ts`), `sync:benchmarks`
+**`sync-models.yml` — Sync model benchmarks and radar** (nightly cron `04:17 UTC` + manual): runs
+`sync:benchmarks`
 (Artificial Analysis grades → `benchmarks.generated.ts`, needs `AA_API_KEY`), and
 `radar:models` (OpenRouter industry diff), then `validate:models`. When anything
 changed it commits the regenerated files and opens a GitHub issue labeled
-`model-watch` for hand-curation. Provider keys are repo secrets; a provider with no
-key is skipped, and a failed fetch never prunes.
+`model-watch` for hand-curation. It never adds a model to the catalog.
 
 > This used to say the nightly commit "auto-deploys via `deploy.yml`". It does
 > not. The job pushes with `actions/checkout`'s default `GITHUB_TOKEN`, and GitHub
@@ -3021,8 +3020,8 @@ The voice relay can alternatively run on Render (`render.yaml`, free tier, sleep
 - **Sync-log pruning** (`AccountChange`/`MutationReceipt` grow forever): weekly
   `npm run sync:prune` (advances the compaction floor). A client cursor below the floor
   gets a 410 and resyncs from bootstrap — that's the protocol working, not an error.
-- **Model registry**: the nightly workflow syncs it from live provider APIs; promote
-  worthwhile `DISCOVERED` entries into `CURATED` and run `npm run validate:models`.
+- **Model registry**: curated by hand. Add a new model to `CURATED` from its doc page
+  (id, route, effort ladder, context, price) and run `npm run validate:models`.
 - **Encryption key rotation**: `npm run crypto:rotate`.
 - **Log rotation**: PM2 writes `logs/*.log` unbounded. Run `pm2 install
   pm2-logrotate` once on the VM (idempotent) or the disk fills eventually.
@@ -3120,7 +3119,6 @@ npm run db:migrate     # prisma migrate dev
 npm run db:studio      # Prisma Studio
 npm run i18n:extract   # regenerate the static UI translation catalog
 npm run validate:models
-npm run sync:models    # dry-run provider discovery (sync:models:write to apply)
 npm run sync:benchmarks
 npm run sync:prune     # prune the sync change log
 npm run work:scheduler # the routine dispatcher (juno-work-scheduler)

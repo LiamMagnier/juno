@@ -164,6 +164,16 @@ final class CodeThinkingWireTests: XCTestCase {
         XCTAssertEqual(bits.maxTokens, 8_192)
     }
 
+    /// Opus 5 also defaults thinking ON (Anthropic's per-model table), and
+    /// Sonnet 5.5 rejects `disabled` outright: its off switch is
+    /// `between_tools`.
+    func testDefaultOnModelsGetTheOffValueTheyAccept() {
+        let opus5 = CodeThinkingWire.anthropicBits(providerModelID: "claude-opus-5", maxTokens: 8_192, effort: nil)
+        XCTAssertEqual(opus5.thinking, .object(["type": .string("disabled")]))
+        let sonnet55 = CodeThinkingWire.anthropicBits(providerModelID: "claude-sonnet-5-5", maxTokens: 8_192, effort: nil)
+        XCTAssertEqual(sonnet55.thinking, .object(["type": .string("between_tools")]))
+    }
+
     /// Only the models that reason by default get an explicit disable. Opus
     /// 4.7/4.8 default OFF when omitted, and Fable/Mythos/Opus 5.5 are
     /// always-on and REJECT `disabled` — sending it would 400 them.
@@ -200,7 +210,7 @@ final class CodeThinkingWireTests: XCTestCase {
         // gpt-5-pro always reasons and the original gpt-5 predates "none";
         // sending it to either is a 400, not a faster answer.
         // GPT-6 Astra publishes no "none" at all.
-        for model in ["gpt-5-pro", "gpt-5", "gpt-4o", "gpt-6-astra"] {
+        for model in ["gpt-5-pro", "gpt-5", "gpt-4o", "gpt-6-astra", "gpt-6.1-sol", "gpt-5.3-codex"] {
             XCTAssertTrue(
                 CodeThinkingWire.chatParameters(
                     providerID: "openai", providerModelID: model, effort: nil
@@ -438,6 +448,10 @@ final class CodeThinkingWireTests: XCTestCase {
                 effort: .minimal
             ),
             "low"
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.responsesEffort(providerModelID: "gpt-5.3-codex", effort: .max),
+            "xhigh"
         )
     }
 

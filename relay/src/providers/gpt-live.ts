@@ -6,10 +6,26 @@ import type {
   VoiceSessionSeed,
 } from "./types.js";
 import { requiredEnv } from "./types.js";
-import { providerText } from "../voice-context.js";
+import { providerText, withWebSearchLimit } from "../voice-context.js";
 import { resamplePcm16 } from "../audio.js";
+import { DEFAULT_VOICE_REASONING_EFFORT, type VoiceDelegate, type VoiceReasoningEffort } from "../protocol.js";
 
 const DEFAULT_LIVE_URL = "wss://api.openai.com/v1/live/sessions";
+
+/** The voice model: https://developers.openai.com/api/docs/models/gpt-live-1 */
+export const GPT_LIVE_MODEL = "gpt-live-1";
+/**
+ * The backend Responses model GPT-Live delegates to. GPT-6.1 Sol accepts
+ * low / medium / high / xhigh / max and NOT none or minimal
+ * (https://developers.openai.com/api/docs/models/gpt-6.1-sol), which is why
+ * the voice effort ladder starts at low.
+ */
+export const GPT_LIVE_DELEGATE_MODEL = "gpt-6.1-sol";
+
+/** Web search for the delegate unless the relay is told otherwise. */
+function delegateWebSearch(): boolean {
+  return process.env.RELAY_OPENAI_BACKEND_WEB_SEARCH !== "0";
+}
 
 /** Read per call, not at import: tests point this at a local server. */
 function liveUrl(): string {
@@ -26,8 +42,11 @@ function liveUrl(): string {
  *
  * The deeper difference is architectural. GPT-Live is full duplex — it listens
  * and speaks at once — and it does its own reasoning nowhere: anything past
- * conversation is DELEGATED to a backend Responses model, which is where the
- * thinking switch lands (`delegation.responses.reasoning.effort`). The voice
+ * conversation is DELEGATED to a backend Responses model (GPT-6.1 Sol), which
+ * is where the caller's effort choice lands
+ * (`delegation.responses.reasoning.effort`), with the hosted `web_search`
+ * tool registered so a delegated turn can look things up
+ * (https://developers.openai.com/api/docs/guides/live-delegation). The voice
  * layer is billed per minute and the backend separately, so the estimate this
  * session reports covers the voice layer alone.
  *
@@ -47,9 +66,10 @@ export class GptLiveSession implements VoiceProviderSession {
   private startedResolve: (() => void) | null = null;
   /** The last error frame seen, so an abrupt close can quote it. */
   private lastErrorDetail = "";
-  private readonly thinking: boolean;
+  private readonly effort: VoiceReasoningEffort;
   private readonly model: string;
   private readonly backendModel: string;
+  private readonly webSearch: boolean;
 
   /**
    * Full duplex has no turn boundaries to report, and OpenAI's own migration
@@ -63,14 +83,22 @@ export class GptLiveSession implements VoiceProviderSession {
    */
   private static readonly SPEECH_GAP_MS = 700;
 
-  constructor(options: { thinking?: boolean } = {}) {
-    this.thinking = options.thinking === true;
-    this.model = process.env.RELAY_OPENAI_MODEL || "gpt-live-1";
-    this.backendModel = process.env.RELAY_OPENAI_BACKEND_MODEL || "gpt-5.6-luna";
+  constructor(options: { effort?: VoiceReasoningEffort } = {}) {
+    this.effort = options.effort ?? DEFAULT_VOICE_REASONING_EFFORT;
+    this.model = process.env.RELAY_OPENAI_MODEL || GPT_LIVE_MODEL;
+    this.backendModel = process.env.RELAY_OPENAI_BACKEND_MODEL || GPT_LIVE_DELEGATE_MODEL;
+    this.webSearch = delegateWebSearch();
+  }
+
+  /** What the delegate is configured as — the caller sees exactly this. */
+  delegate(): VoiceDelegate {
+    return { model: this.backendModel, effort: this.effort, webSearch: this.webSearch };
   }
 
   established(): SessionEstablished {
-    return { thinking: this.thinking, model: this.model };
+    // The delegate always reasons (GPT-6.1 Sol has no `none`), so a GPT-Live
+    // call is a thinking call; how hard is `delegate.effort`.
+    return { thinking: true, model: this.model, effort: this.effort, delegate: this.delegate() };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
@@ -151,7 +179,9 @@ export class GptLiveSession implements VoiceProviderSession {
       event_id: "juno_session_start",
       session: {
         model: this.model,
-        instructions: seed.instructions,
+        // The shared instructions say the call cannot browse; with a
+        // web-searching delegate it can, and must be told so or it refuses.
+        instructions: this.webSearch ? withWebSearchLimit(seed.instructions) : seed.instructions,
         audio: {
           format: { type: "audio/pcm", rate: 24000 },
           // Always its own default. The only voice a seed carries is an
@@ -165,11 +195,12 @@ export class GptLiveSession implements VoiceProviderSession {
           type: "responses",
           responses: {
             model: this.backendModel,
-            // GPT-5.6 reasons at `medium` when the field is absent, and stops
-            // only for an explicit "none" — so "don't think" has to be said
-            // out loud or the switch is a no-op on exactly the models this
-            // runs on.
-            reasoning: { effort: this.thinking ? "medium" : "none" },
+            // Always said out loud: the API's default is `medium`, and the
+            // caller's choice is the point of the control.
+            reasoning: { effort: this.effort },
+            // Hosted web search, so a delegated "what's the latest on…" is
+            // answered from the web rather than from the training cutoff.
+            ...(this.webSearch ? { tools: [{ type: "web_search" }] } : {}),
           },
         },
       },

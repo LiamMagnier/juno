@@ -184,9 +184,11 @@ test("an agent's model is a chat model stored by its canonical id, and its effor
   assert.equal(patchAgentSchema.parse({ model: "juno:auto" }).model, "juno:auto");
   assert.equal(patchAgentSchema.parse({ model: null, reasoningEffort: null }).model, null);
   assert.equal(patchAgentSchema.parse({ reasoningEffort: "low" }).reasoningEffort, "low");
-  // Not a model at all, a model announced but not out, and an effort no model has.
+  // Not a model at all, and an effort no model has. (LongCat 2.0 used to be
+  // the announced-but-not-out case; it shipped on 2026-06-30 and is a real
+  // model now, so the catalog has no coming-soon row left to test with.)
   assert.equal(patchAgentSchema.safeParse({ model: "nonsense" }).success, false);
-  assert.equal(patchAgentSchema.safeParse({ model: "longcat:LongCat-2.0" }).success, false);
+  assert.equal(patchAgentSchema.safeParse({ model: "longcat:LongCat-2.0" }).success, true);
   assert.equal(patchAgentSchema.safeParse({ reasoningEffort: "turbo" }).success, false);
   assert.equal(createAgentSchema.safeParse({ name: "x", model: "nonsense" }).success, false);
   assert.equal(agentModelChoice("  anthropic:claude-haiku-4-5  "), "anthropic:claude-haiku-4-5");

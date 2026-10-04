@@ -296,7 +296,11 @@ enum DesktopVoiceCallText {
     static func statusHelp(_ controller: JunoRealtimeVoiceController) -> String {
         let title = label(phase(controller))
         guard controller.phase == .live else { return title }
-        var parts = [controller.provider.displayName]
+        var parts = [controller.provider.displayName, controller.provider.modelName(at: controller.reasoningEffort)]
+        if let delegate = controller.provider.delegateModelName {
+            let level = controller.provider.delegateEffort(at: controller.reasoningEffort)
+            parts.append("thinking with \(delegate) at \(level.displayName.lowercased())")
+        }
         switch controller.bargeIn {
         case .automatic: parts.append("talk over Juno to interrupt")
         case .manualOnly: parts.append("press Stop to interrupt")
@@ -359,8 +363,8 @@ enum DesktopVoiceCallText {
     /// `PROVIDER_BLURB`, kept to what the relay's registry says each can do.
     static func providerBlurb(_ provider: JunoVoiceProvider) -> String {
         switch provider {
-        case .openai: "Full duplex, reasoning runs on a backend model"
-        case .gemini: "Lowest latency, screen sharing, reasoning mode"
+        case .openai: "Full duplex, thinks with GPT-6.1 Sol"
+        case .gemini: "Screen sharing, thinks with Gemini 3.8 Flash"
         case .qwen: "Long calls, sees images and your screen"
         case .minimax: "Speech pipeline, no vision, no screen"
         }
@@ -650,9 +654,10 @@ struct DesktopVoiceCallButtonStyle: ButtonStyle {
 }
 
 /// Everything you set, as opposed to everything you press: the web's call
-/// settings popover. Which provider carries the call, each with the trade it
-/// makes. (The web's reasoning switch has no counterpart on the native
-/// controller yet, so it is not offered here.)
+/// settings popover. Which model carries the call, each with its provider and
+/// the trade it makes, and — on a provider with a thinking dial (GPT-Live 1
+/// with GPT-6.1 Sol; Gemini 3.8 Live with Gemini 3.8 Flash) — the composer's
+/// own Thinking panel.
 struct DesktopVoiceCallSettings: View {
     let controller: JunoRealtimeVoiceController
 
@@ -677,6 +682,27 @@ struct DesktopVoiceCallSettings: View {
                 ForEach(JunoVoiceProvider.allCases) { provider in
                     providerRow(provider)
                 }
+                if controller.provider.offersReasoningEffort, let delegate = controller.provider.delegateModelName {
+                    Divider()
+                        .padding(.vertical, JunoSpace.hairline)
+                    // The composer's own Thinking panel (JunoThinkingPanel),
+                    // at a fixed size: it measures itself, and a self-sizing
+                    // popover around it is the 3.0.5 crash.
+                    JunoThinkingPanel(
+                        ladder: thinkingLadder(delegate: delegate),
+                        stopID: Binding(
+                            get: { controller.reasoningEffort.rawValue },
+                            set: { id in
+                                if let effort = id.flatMap(JunoVoiceReasoningEffort.init(rawValue:)) {
+                                    controller.setReasoningEffort(effort)
+                                }
+                            }
+                        ),
+                        width: 256
+                    )
+                    .frame(width: 256, height: JunoThinkingMetrics.height(caption: true, modeToggles: false))
+                    .padding(.horizontal, JunoSpace.hairline)
+                }
             }
             .padding(JunoSpace.snug)
             .frame(width: 280)
@@ -692,10 +718,11 @@ struct DesktopVoiceCallSettings: View {
         } label: {
             HStack(spacing: JunoSpace.snug) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(provider.displayName)
+                    // The model is the name, as on the web: it is what answers.
+                    Text(provider == controller.provider ? provider.modelName(at: controller.reasoningEffort) : provider.modelName)
                         .junoType(JunoType.ui.weight(.medium))
                         .foregroundStyle(Color.junoForeground)
-                    Text(DesktopVoiceCallText.providerBlurb(provider))
+                    Text("\(provider.displayName) · \(DesktopVoiceCallText.providerBlurb(provider))")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .lineLimit(1)
@@ -718,6 +745,22 @@ struct DesktopVoiceCallSettings: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("juno.desktop.voice-provider.\(provider.rawValue)")
+    }
+
+    /// The provider's dial as the shared control reads it. The caption says
+    /// what the current rung runs, since on Gemini a rung picks the Live model
+    /// and Gemini 3.8 Flash's level together.
+    private func thinkingLadder(delegate: String) -> JunoThinkingLadder {
+        let provider = controller.provider
+        let effort = controller.reasoningEffort
+        return JunoThinkingLadder(
+            stops: provider.reasoningEfforts.map {
+                JunoThinkingStop(id: $0.rawValue, label: $0.displayName, accessibilityLabel: "Thinking \($0.displayName)")
+            },
+            modelName: delegate,
+            caption: "\(provider.modelName(at: effort)) answers. \(delegate) takes the harder questions at "
+                + "\(provider.delegateEffort(at: effort).displayName.lowercased()) and can search the web."
+        )
     }
 }
 

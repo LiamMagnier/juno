@@ -459,3 +459,96 @@ test("Gemini: Stop mid-batch answers every outstanding call 'cancelled'", async 
     ["jc_0_1", "cancelled"],
   ]);
 });
+
+test("OpenAI-compatible: each lab's thinking control goes out in its documented spelling", async () => {
+  // One plain answer per request; only the request body matters here.
+  const send = async (id: string, effort: string | undefined) => {
+    const { requests, transport } = compatTransport([COMPAT_ANSWER]);
+    const { error } = await collect(
+      streamOpenAICompat(model(id), "sys", HISTORY, 4_000, undefined, effort as never, false, undefined, undefined, undefined, false, transport),
+    );
+    assert.equal(error, null, id);
+    return requests[0] as unknown as Record<string, unknown>;
+  };
+
+  // Qwen3.8 is hybrid and takes reasoning_effort, never with a thinking_budget
+  // ("Setting both will cause an error"); Instant is enable_thinking:false.
+  const qwen = await send("qwen:qwen3.8-max", "xhigh");
+  assert.equal(qwen.enable_thinking, true);
+  assert.equal(qwen.reasoning_effort, "xhigh");
+  assert.equal(qwen.thinking_budget, undefined);
+  const qwenInstant = await send("qwen:qwen3.8-flash", undefined);
+  assert.equal(qwenInstant.enable_thinking, false);
+  assert.equal(qwenInstant.reasoning_effort, undefined);
+  // Older Qwen3 lines keep the numeric budget.
+  const qwen37 = await send("qwen:qwen3.7-plus", "medium");
+  assert.equal(qwen37.thinking_budget, 8192);
+  assert.equal(qwen37.reasoning_effort, undefined);
+
+  // GLM-5.3 always thinks: the effort enum, and never thinking "disabled".
+  const glm = await send("zhipu:glm-5.3", "low");
+  assert.equal(glm.reasoning_effort, "low");
+  assert.deepEqual(glm.thinking, { type: "enabled" });
+  const glmBare = await send("zhipu:glm-5.3", undefined);
+  assert.deepEqual(glmBare.thinking, { type: "enabled" });
+
+  // DeepSeek thinks at high by default, so Instant has to be sent.
+  const ds = await send("deepseek:deepseek-flash", undefined);
+  assert.deepEqual(ds.thinking, { type: "disabled" });
+  assert.equal(ds.reasoning_effort, undefined);
+  const dsLow = await send("deepseek:deepseek-v4-pro", "low");
+  assert.equal(dsLow.reasoning_effort, "low");
+  assert.equal(dsLow.thinking, undefined);
+});
+
+test("OpenAI-compatible: the labs' own web search goes out as documented and its sources come back", async () => {
+  const run = async (id: string, rounds: Chunk[][], webSearch: boolean) => {
+    const { requests, transport } = compatTransport(rounds);
+    const { events, error } = await collect(
+      streamOpenAICompat(model(id), "sys", HISTORY, 4_000, undefined, undefined, webSearch, undefined, undefined, undefined, false, transport),
+    );
+    assert.equal(error, null, id);
+    return { body: requests[0] as unknown as Record<string, unknown>, events };
+  };
+  const sourcesOf = (events: LlmEvent[]) =>
+    events.flatMap((e) => (e.type === "sources" ? e.sources.map((s) => s.url) : []));
+  const usageOf = (events: LlmEvent[]) => events.find((e) => e.type === "usage") as { webSearchRequests?: number } | undefined;
+
+  // Z.ai: a web_search tool; results arrive top-level on a chunk; one use billed.
+  const glm = await run(
+    "zhipu:glm-5.3",
+    [[
+      { web_search: [{ title: "A", link: "https://a.example/1", content: "alpha" }], choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] } as unknown as Chunk,
+      cDelta({}, "stop"),
+    ]],
+    true,
+  );
+  assert.deepEqual(glm.body.tools, [{ type: "web_search", web_search: { enable: true, search_engine: "search_pro_jina", search_result: true } }]);
+  assert.deepEqual(sourcesOf(glm.events), ["https://a.example/1"]);
+  assert.equal(usageOf(glm.events)?.webSearchRequests, 1);
+
+  // MiMo: a web_search tool; url_citation annotations on the first packet; tool_usage billed.
+  const mimo = await run(
+    "mimo:mimo-v2.6-flash",
+    [[
+      cDelta({ annotations: [{ type: "url_citation", url: "https://b.example/2", title: "B", summary: "beta" }] }),
+      cDelta({ content: "Answer." }, "stop"),
+      { choices: [], usage: { prompt_tokens: 5, completion_tokens: 2, web_search_usage: { tool_usage: 2, page_usage: 2 } } } as unknown as Chunk,
+    ]],
+    true,
+  );
+  assert.deepEqual(mimo.body.tools, [{ type: "web_search", max_keyword: 3, force_search: false }]);
+  assert.deepEqual(sourcesOf(mimo.events), ["https://b.example/2"]);
+  assert.equal(usageOf(mimo.events)?.webSearchRequests, 2);
+
+  // Qwen: enable_search on the request, nothing else.
+  const qwen = await run("qwen:qwen3.8-flash", [COMPAT_ANSWER], true);
+  assert.equal(qwen.body.enable_search, true);
+  assert.equal(qwen.body.tools, undefined);
+
+  // Toggle off: none of it is sent.
+  const off = await run("zhipu:glm-5.3", [COMPAT_ANSWER], false);
+  assert.equal(off.body.tools, undefined);
+  const qwenOff = await run("qwen:qwen3.8-flash", [COMPAT_ANSWER], false);
+  assert.equal(qwenOff.body.enable_search, undefined);
+});

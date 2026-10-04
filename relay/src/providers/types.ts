@@ -1,4 +1,4 @@
-import type { ProviderCapabilities, VoiceProviderId } from "../protocol.js";
+import type { ProviderCapabilities, VoiceDelegate, VoiceProviderId, VoiceReasoningEffort } from "../protocol.js";
 
 export interface TranscriptEntry {
   role: "user" | "assistant";
@@ -86,6 +86,14 @@ export interface SessionEstablished {
    * what was asked for.
    */
   model?: string;
+  /**
+   * The backend model this session hands harder turns to, as configured on
+   * the session that actually connected. Absent where nothing is delegated —
+   * including an OpenAI call that fell back to the Realtime protocol.
+   */
+  delegate?: VoiceDelegate;
+  /** The rung of the provider's thinking dial this session runs at. */
+  effort?: VoiceReasoningEffort;
 }
 
 export interface VoiceProviderSession {
@@ -108,6 +116,9 @@ export interface VoiceProviderSession {
 export interface VoiceProviderOptions {
   /** Prefer the reasoning variant. Ignored where `thinkingChoice` is false. */
   thinking: boolean;
+  /** How hard the delegated model reasons. Already validated against the
+   *  provider's `reasoningEfforts`; absent for a provider without them. */
+  effort?: VoiceReasoningEffort;
 }
 
 export interface VoiceProviderFactory {

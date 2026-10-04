@@ -231,7 +231,6 @@ test("only the Gemini modules know Google's native host", () => {
     "src/lib/model-capability.ts",
     "src/lib/model-capability-probe.ts",
     "src/lib/provider-health.ts",
-    "src/lib/model-discovery-core.ts",
     "src/lib/openai-compat.ts",
   ].filter((file) => readFileSync(file, "utf8").includes("generativelanguage.googleapis.com"));
   assert.deepEqual(offenders, []);

@@ -147,8 +147,33 @@ test("voice runs the current live models, with thinking as the model choice it i
   assert.match(gptLive, /"session\.start"/);
   assert.match(gptLive, /"session\.input_audio\.append"/);
   assert.match(gptLive, /"session\.output_audio\.delta"/);
-  assert.match(relayRegistry, /new OpenAiVoiceSession\(openaiDialect, \{ thinking \}\)/);
-  assert.match(openaiVoice, /new GptLiveSession\(\{ thinking: this\.thinking \}\)/);
+  // GPT-Live reasons nowhere itself: the caller's effort goes to its
+  // delegate, GPT-6.1 Sol, which has web search.
+  assert.match(relayRegistry, /new OpenAiVoiceSession\(openaiDialect, \{ effort \}\)/);
+  assert.match(openaiVoice, /new GptLiveSession\(\{ effort: this\.effort \}\)/);
+  assert.match(gptLive, /export const GPT_LIVE_MODEL = "gpt-live-1"/);
+  assert.match(gptLive, /export const GPT_LIVE_DELEGATE_MODEL = "gpt-6\.1-sol"/);
+  assert.match(gptLive, /reasoning: \{ effort: this\.effort \}/);
+  assert.match(gptLive, /tools: \[\{ type: "web_search" \}\]/);
+  assert.match(relayRegistry, /reasoningEfforts: VOICE_REASONING_EFFORTS/);
+  assert.match(relaySession, /effectiveVoiceEffort\(\s*factory\.capabilities\.reasoningEfforts,/);
+  assert.match(relaySession, /factory\.capabilities\.defaultReasoningEffort/);
+  assert.match(relaySession, /established\.delegate \? \{ delegate: established\.delegate \}/);
+  // Both Gemini Live models delegate to Gemini 3.8 Flash: low, and high under
+  // Extended Thinking.
+  assert.match(geminiLive, /geminiVoicePlan\(this\.effort\)/);
+  assert.match(geminiLive, /functionDeclarations: \[GEMINI_DELEGATE_DECLARATION\]/);
+});
+
+test("the voice settings name each model and offer the delegate's effort on the composer's dial", () => {
+  assert.match(voiceBar, /voiceEffortPlan\(id, voice\.effort\)/);
+  // The composer's own effort panel, not a look-alike, for OpenAI and Gemini alike.
+  assert.match(voiceBar, /<ReasoningSlider\s+variant="panel"/);
+  assert.match(voiceBar, /EffortPanelContext\.Provider/);
+  assert.doesNotMatch(voiceBar, /<Switch/);
+  assert.match(voiceBar, /voice\.setEffort\(effort\)/);
+  assert.match(voiceHook, /effort: \(sentEffortRef\.current = effortsRef\.current\[target\]\)/);
+  assert.match(voiceHook, /send\(\{ type: "session\.switch", provider: next, thinking: nextThinking, effort: nextEffort \}\)/);
 });
 
 test("a provider with no reasoning variant is never told it has one", () => {
@@ -157,8 +182,8 @@ test("a provider with no reasoning variant is never told it has one", () => {
   assert.match(relaySession, /const effectiveThinking = thinking && factory\.capabilities\.thinkingChoice/);
   assert.match(relaySession, /thinking: effectiveThinking/);
   assert.match(relayRegistry, /thinkingChoice: false/);
-  // And the row only exists where the choice does.
-  assert.match(voiceBar, /voice\.capabilities\?\.thinkingChoice && \(/);
+  // And the dial only exists where the choice does.
+  assert.match(voiceBar, /rungs && rungs\.length > 1/);
 });
 
 test("a voice session that could not honour the request says so without ending the call", () => {
@@ -168,7 +193,8 @@ test("a voice session that could not honour the request says so without ending t
   assert.match(openaiVoice, /new OpenAiShapedRealtimeSession\(this\.dialect\)/);
   // A fallback reasons nowhere the caller asked it to; reporting the request
   // back would leave the menu showing a mode nothing runs.
-  assert.match(openaiVoice, /thinking: this\.fellBack \? false : this\.thinking/);
+  assert.match(openaiVoice, /thinking: this\.fellBack \? false : \(answered\?\.thinking \?\? false\)/);
+  assert.match(openaiVoice, /delegate: this\.fellBack \? undefined : answered\?\.delegate/);
   // The note rides on session.ready, NOT on error — an error ends the call.
   assert.match(relaySession, /established\.notice \? \{ notice: established\.notice \}/);
   // A notice shows only when there is no error, and never ends the call.
@@ -197,7 +223,6 @@ test("the call bar separates what you press from what you set", () => {
   // Settings are a panel with headings, not a flat verb list — a provider and
   // "Stop sharing screen" are not the same kind of row.
   assert.match(voiceBar, /PopoverContent/);
-  assert.match(voiceBar, /<Switch/);
   assert.doesNotMatch(voiceBar, /DropdownMenuItem/);
   // No status cluster competes for the row any more (the glow is the state):
   // the controls never shrink and End sits in the composer's own primary slot,

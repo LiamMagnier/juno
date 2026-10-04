@@ -6,7 +6,14 @@ import type {
   VoiceSessionSeed,
 } from "./types.js";
 import { requiredEnv } from "./types.js";
-import { providerText } from "../voice-context.js";
+import { providerText, withWebSearchLimit } from "../voice-context.js";
+import type { VoiceDelegate, VoiceReasoningEffort } from "../protocol.js";
+import {
+  askGeminiDelegate,
+  geminiVoicePlan,
+  GEMINI_DELEGATE_DECLARATION,
+  GEMINI_DELEGATE_FUNCTION,
+} from "./gemini-delegate.js";
 
 const DEFAULT_LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
@@ -14,17 +21,6 @@ const DEFAULT_LIVE_URL =
 /** The REST host the token exchange talks to; tests point it elsewhere. */
 function restBase(): string {
   return process.env.RELAY_GEMINI_REST_URL || "https://generativelanguage.googleapis.com";
-}
-
-/**
- * How hard Extended Thinking may think per turn.
- *
- * `low`, `medium` and `high` are the accepted values — `minimal` is rejected,
- * as is any level at all on the non-thinking model.
- */
-function thinkingLevel(): string {
-  const requested = (process.env.RELAY_GEMINI_THINKING_LEVEL || "").toLowerCase();
-  return ["low", "medium", "high"].includes(requested) ? requested : "low";
 }
 
 /** Read per call, not at import: tests point this at a local server. */
@@ -94,6 +90,14 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private ephemeralToken: string | null = null;
   private readonly thinking: boolean;
   private readonly model: string;
+  /** The rung of the call's thinking dial (gemini-delegate.ts `geminiVoicePlan`). */
+  private readonly effort: VoiceReasoningEffort;
+  /** Extended Thinking's own level; absent on plain 3.8 Live, which refuses one. */
+  private readonly liveThinkingLevel: "low" | "high" | undefined;
+  /** Gemini 3.8 Flash behind the voice: low for Live, high for Extended Thinking. */
+  private readonly delegate: VoiceDelegate;
+  /** Delegated calls in flight, by function call id, so a cancellation can stop one. */
+  private readonly pendingDelegations = new Map<string, AbortController>();
 
   /**
    * Thinking is a MODEL here, not a parameter. Gemini 3.8 Live answers at
@@ -103,15 +107,20 @@ export class GeminiLiveSession implements VoiceProviderSession {
    * as output tokens, so a minute of it costs several times more than the
    * duration-based estimate below suggests.
    */
-  constructor(options: { thinking?: boolean } = {}) {
-    this.thinking = options.thinking === true;
+  constructor(options: { effort?: VoiceReasoningEffort; thinking?: boolean } = {}) {
+    // `thinking` is the older on/off request: on is what the Medium rung runs.
+    this.effort = options.effort ?? (options.thinking === true ? "medium" : "low");
+    const plan = geminiVoicePlan(this.effort);
+    this.thinking = plan.thinking;
+    this.liveThinkingLevel = plan.liveThinkingLevel;
+    this.delegate = plan.delegate;
     this.model = this.thinking
       ? process.env.RELAY_GEMINI_THINKING_MODEL || "gemini-3.8-live-extended-thinking"
       : process.env.RELAY_GEMINI_MODEL || "gemini-3.8-live";
   }
 
   established(): SessionEstablished {
-    return { thinking: this.thinking, model: this.model };
+    return { thinking: this.thinking, model: this.model, effort: this.effort, delegate: this.delegate };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
@@ -284,15 +293,21 @@ export class GeminiLiveSession implements VoiceProviderSession {
           // ("Thinking level must be specified for this model"), and plain
           // 3.8 Live fails setup WITH it — so this cannot be a constant, and
           // sending it to both is as broken as sending it to neither.
-          // "low" keeps a live call conversational: the model narrates while
-          // it reasons either way, and a level above this buys depth with the
-          // one thing a spoken turn cannot spend, which is time.
-          ...(this.thinking ? { thinkingConfig: { thinkingLevel: thinkingLevel() } } : {}),
+          // The level is the caller's rung: Medium runs "low", which keeps a
+          // live call conversational, and High runs "high" — depth bought
+          // with the one thing a spoken turn cannot spend, which is time.
+          ...(this.liveThinkingLevel ? { thinkingConfig: { thinkingLevel: this.liveThinkingLevel } } : {}),
           ...(seed.voice
             ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: seed.voice } } } }
             : {}),
         },
-        systemInstruction: { parts: [{ text: seed.instructions }] },
+        // The shared instructions say the call cannot browse; with a
+        // web-searching delegate it can, and must be told so or it refuses.
+        systemInstruction: {
+          parts: [{ text: this.delegate.webSearch ? withWebSearchLimit(seed.instructions) : seed.instructions }],
+        },
+        // One function: hand the question to Gemini 3.8 Flash (gemini-delegate.ts).
+        tools: [{ functionDeclarations: [GEMINI_DELEGATE_DECLARATION] }],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         // Longer sessions: sliding-window compression + resumption handles.
@@ -356,6 +371,8 @@ export class GeminiLiveSession implements VoiceProviderSession {
 
   async close(): Promise<void> {
     this.closedByUs = true;
+    for (const controller of this.pendingDelegations.values()) controller.abort();
+    this.pendingDelegations.clear();
     this.ws?.close();
     this.ws = null;
   }
@@ -369,6 +386,8 @@ export class GeminiLiveSession implements VoiceProviderSession {
       setupComplete?: unknown;
       goAway?: { timeLeft?: string };
       sessionResumptionUpdate?: { newHandle?: string; resumable?: boolean };
+      toolCall?: { functionCalls?: Array<{ id?: string; name?: string; args?: Record<string, unknown> }> };
+      toolCallCancellation?: { ids?: string[] };
       serverContent?: {
         interrupted?: boolean;
         turnComplete?: boolean;
@@ -392,6 +411,17 @@ export class GeminiLiveSession implements VoiceProviderSession {
     }
     if (msg.sessionResumptionUpdate?.resumable && msg.sessionResumptionUpdate.newHandle) {
       this.resumeHandle = msg.sessionResumptionUpdate.newHandle;
+    }
+    if (msg.toolCall?.functionCalls?.length) {
+      for (const call of msg.toolCall.functionCalls) void this.runDelegation(call);
+      return;
+    }
+    if (msg.toolCallCancellation?.ids?.length) {
+      for (const id of msg.toolCallCancellation.ids) {
+        this.pendingDelegations.get(id)?.abort();
+        this.pendingDelegations.delete(id);
+      }
+      return;
     }
     if (msg.goAway) {
       // Connection is about to die — roll to a fresh one with the handle.
@@ -455,6 +485,27 @@ export class GeminiLiveSession implements VoiceProviderSession {
       }
       this.suppressAssistantOutput = false;
     }
+  }
+
+  /**
+   * Answer one function call from the voice model. Only the delegate is
+   * declared; anything else is answered with an error rather than left
+   * hanging, because the Live model waits on every call it makes.
+   */
+  private async runDelegation(call: { id?: string; name?: string; args?: Record<string, unknown> }): Promise<void> {
+    const id = call.id ?? "";
+    const name = call.name ?? "";
+    if (name !== GEMINI_DELEGATE_FUNCTION) {
+      this.send({ toolResponse: { functionResponses: [{ id, name, response: { error: `Unknown function "${name}".` } }] } });
+      return;
+    }
+    const controller = new AbortController();
+    this.pendingDelegations.set(id, controller);
+    const result = await askGeminiDelegate(this.delegate, call.args ?? {}, controller.signal);
+    // Cancelled (the caller moved on) or the call has ended: nothing to answer.
+    if (!this.pendingDelegations.has(id) || controller.signal.aborted || this.closedByUs) return;
+    this.pendingDelegations.delete(id);
+    this.send({ toolResponse: { functionResponses: [{ id, name, response: result }] } });
   }
 
   private finalizeUserTranscript(): void {

@@ -21,6 +21,7 @@ import {
   withheldImagesNote,
 } from "@/lib/tool-result-images";
 import { providerRequestModel } from "@/lib/model-request";
+import { compatCarriesLabSearch, labSearchRequest, labSearchSources } from "@/lib/lab-web-search";
 import {
   accumulateToolCallDeltas,
   addCompatUsage,
@@ -335,10 +336,11 @@ export async function* streamOpenAICompat(
    * ignored and at worst a 400 — so the parameter is gated to the providers whose
    * docs actually define it (verified 2026-07):
    *   reasoning_effort  → openai, google (Gemini compat shim), deepseek (v4),
-   *                       xai, mistral (high|none), zhipu (GLM-5.2 only),
-   *                       meta (Muse Spark)
-   *   thinking:{type}   → zhipu (all), minimax, moonshot, mimo, longcat
-   *   enable_thinking   → qwen
+   *                       xai, mistral (high|none), zhipu (GLM-5.2, GLM-5.3),
+   *                       meta (Muse Spark), moonshot (K3), qwen (3.8 line)
+   *   thinking:{type}   → zhipu (all but 5.3's off), deepseek (off),
+   *                       minimax, moonshot (K2.x), mimo, longcat
+   *   enable_thinking   → qwen (+ thinking_budget before 3.8)
    */
   const usesThinkingObject =
     model.provider === "minimax" || model.provider === "moonshot" || model.provider === "mimo" || model.provider === "longcat";
@@ -362,12 +364,16 @@ export async function* streamOpenAICompat(
     // provider default. Meta has no "none", so the Instant branch below can
     // never fire for it — canDisable is false in reasoningCaps to match.
     model.provider === "meta" ||
-    (model.provider === "zhipu" && modelId.includes("glm-5.2")) ||
+    // GLM-5.2 (high|max) and GLM-5.3 (low|high|max, always on): docs.z.ai
+    // guides/capabilities/thinking, read 2026-10-04.
+    (model.provider === "zhipu" && (modelId.includes("glm-5.2") || modelId.includes("glm-5.3"))) ||
     // Kimi K3 introduced a top-level reasoning_effort enum (low|high|max),
     // replacing the K2.x `thinking` object. Only K3 speaks it on Moonshot; the
     // K2.x line stays on the usesThinkingObject path below (and is canDisable:
     // false, so it never actually emits `thinking` either).
-    (model.provider === "moonshot" && modelId.includes("k3"));
+    (model.provider === "moonshot" && modelId.includes("k3")) ||
+    // MiniMax M3.1 Flash Preview: the one MiniMax with reasoning_effort.
+    (model.provider === "minimax" && modelId.includes("m3.1"));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: providerRequestModel(model),
@@ -405,13 +411,16 @@ export async function* streamOpenAICompat(
     }
   }
   if (isQwenThinking) {
-    // Instant (no effort) turns Qwen thinking off for hybrid models. Qwen3.8 Max
-    // is thinking-only (canDisable:false) so always send enable_thinking true
-    // and a budget (default high when the UI sent nothing).
-    const qwenAlwaysThinks = modelId.includes("qwen3.8-max") || !reasoningCaps(model).canDisable;
+    // Instant (no effort) turns Qwen thinking off on the hybrid models; a
+    // thinking-only model (canDisable:false — QwQ) always gets it on.
+    const qwenAlwaysThinks = !reasoningCaps(model).canDisable;
     const qwenEffort = effectiveReasoningEffort ?? (qwenAlwaysThinks ? "high" : null);
     params.enable_thinking = qwenAlwaysThinks ? true : !!qwenEffort;
-    if (qwenEffort) {
+    if (qwenEffort && modelId.includes("qwen3.8")) {
+      // The 3.8 line takes reasoning_effort low|medium|xhigh and REJECTS a
+      // thinking_budget sent alongside it ("Setting both will cause an error").
+      (params as Record<string, unknown>).reasoning_effort = qwenEffort;
+    } else if (qwenEffort) {
       params.thinking_budget = { minimal: 1024, low: 2048, medium: 8192, high: 24000, xhigh: 32000, max: 38000 }[
         qwenEffort
       ];
@@ -419,8 +428,16 @@ export async function* streamOpenAICompat(
   }
   if (isZhipuThinking) {
     // Instant (no effort) turns GLM thinking off; any effort turns it on.
-    // GLM-5.2 additionally takes reasoning_effort (handled above).
-    params.thinking = { type: effectiveReasoningEffort ? "enabled" : "disabled" };
+    // GLM-5.2/5.3 additionally take reasoning_effort (handled above). GLM-5.3
+    // cannot think "disabled" — that request fails — so it is always enabled.
+    const glmAlwaysThinks = modelId.includes("glm-5.3");
+    params.thinking = { type: effectiveReasoningEffort || glmAlwaysThinks ? "enabled" : "disabled" };
+  }
+  if (model.provider === "deepseek" && model.reasoning && !effectiveReasoningEffort && reasoningCaps(model).canDisable) {
+    // DeepSeek V4/V4.1 think by DEFAULT (effort high), so Instant has to be
+    // sent: thinking.type "disabled" (api-docs.deepseek.com/guides/thinking_mode).
+    // Leaving it out made Instant think at high on every turn.
+    params.thinking = { type: "disabled" };
   }
   if (usesThinkingObject && model.reasoning && reasoningCaps(model).canDisable) {
     // Only send `thinking` to models that can actually switch it — Kimi k2.7
@@ -468,6 +485,17 @@ export async function* streamOpenAICompat(
     params.search_parameters = { mode: "auto", return_citations: true };
   }
   if (hasTools) params.tools = toWireTools(toolset!.tools);
+  // The lab's own search (Z.ai and MiMo `web_search` tools, Qwen
+  // `enable_search`) — src/lib/lab-web-search.ts has each documented shape.
+  const labSearch = webSearch && compatCarriesLabSearch(model.provider) ? labSearchRequest(model.provider) : null;
+  if (labSearch) {
+    if (labSearch.tools.length) {
+      params.tools = [...(params.tools ?? []), ...labSearch.tools] as unknown as typeof params.tools;
+    }
+    Object.assign(params, labSearch.fields);
+  }
+  // Z.ai reports no search count: each response that returned results is one use.
+  let zhipuSearchUses = 0;
 
   const seen = new Set<string>();
   const c: CompatTransport = transport ?? {
@@ -506,6 +534,7 @@ export async function* streamOpenAICompat(
     let assistantText = "";
     let finishReason: string | undefined;
     let roundSawUsage = false;
+    let roundSearched = false;
     let minimaxReasoningBuffer = "";
     // Accumulate streamed tool-call fragments. Keyed by the call's own id where
     // the host sends one — see openai-compat-round.ts for why the index alone
@@ -547,6 +576,13 @@ export async function* streamOpenAICompat(
         citationCount += fresh.length;
         if (fresh.length) yield { type: "sources", sources: fresh.map((url) => ({ title: url, url, snippet: "" })) };
       }
+      if (labSearch) {
+        const found = labSearchSources(model.provider, chunk);
+        if (found.length && model.provider === "zhipu") roundSearched = true;
+        const fresh = found.filter((source) => !seen.has(source.url));
+        for (const source of fresh) seen.add(source.url);
+        if (fresh.length) yield { type: "sources", sources: fresh };
+      }
       if (chunk.usage) {
         roundSawUsage = true;
         // One merge rule for every counter, in one place: reads and writes from
@@ -561,6 +597,7 @@ export async function* streamOpenAICompat(
       sawUsage = true;
       addCompatUsage(turnUsage, roundUsage);
     }
+    if (roundSearched) zhipuSearchUses += 1;
     lastFinish = finishReason;
 
     // Model asked to call tools — execute them and loop with the results. Never
@@ -637,6 +674,8 @@ export async function* streamOpenAICompat(
   if (webSearch && model.provider === "xai" && turnUsage.webSearchRequests === 0 && citationCount > 0) {
     turnUsage.webSearchRequests = Math.max(1, Math.ceil(citationCount / 10));
   }
+
+  if (zhipuSearchUses > 0) turnUsage.webSearchRequests += zhipuSearchUses;
 
   if (sawUsage || turnUsage.webSearchRequests > 0 || turnUsage.xSearchRequests > 0) {
     yield {

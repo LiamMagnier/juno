@@ -31,13 +31,13 @@ export const OFFICIAL_REASONING_DOCS: Partial<Record<ModelInfo["provider"], stri
   xai: "https://docs.x.ai/docs/guides/reasoning",
   mistral: "https://docs.mistral.ai/capabilities/reasoning/",
   deepseek: "https://api-docs.deepseek.com/guides/thinking_mode",
-  zhipu: "https://docs.z.ai/guides/capabilities/thinking-mode",
-  moonshot: "https://platform.moonshot.ai/docs/guide/use-kimi-k2-thinking-model",
-  minimax: "https://platform.minimax.io/docs/api-reference/text-openai-api",
+  zhipu: "https://docs.z.ai/guides/capabilities/thinking",
+  moonshot: "https://platform.kimi.ai/docs/guide/use-reasoning-effort",
+  minimax: "https://platform.minimax.io/docs/api-reference/text-chat-openai",
   meta: "https://ai.meta.com/resources/models-and-libraries/",
   qwen: "https://www.alibabacloud.com/help/en/model-studio/deep-thinking",
-  mimo: "https://platform.xiaomimimo.com/#/docs/api/text-generation",
-  longcat: "https://longcat.chat/platform/docs",
+  mimo: "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md",
+  longcat: "https://longcat.chat/platform/docs/api/chat",
 };
 
 const LIVE_PROBED = new Set<ModelInfo["provider"]>([
@@ -63,16 +63,20 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
     };
   }
   if (model.provider === "qwen") {
+    // The 3.8 line takes reasoning_effort (low|medium|xhigh); older Qwen3
+    // models take a numeric thinking_budget. Never both on one request.
+    const effortEnum = id.includes("qwen3.8");
     return {
-      controlType: caps.tiers.length ? "numeric_budget" as const : caps.canDisable ? "on_off" as const : "automatic" as const,
-      parameter: "enable_thinking + thinking_budget",
+      controlType: caps.tiers.length ? (effortEnum ? "enum" as const : "numeric_budget" as const) : caps.canDisable ? "on_off" as const : "automatic" as const,
+      parameter: effortEnum ? "enable_thinking + reasoning_effort" : "enable_thinking + thinking_budget",
       apiSurface: "DashScope OpenAI-compatible chat",
     };
   }
   // GLM-5.3 always thinks and takes only the effort enum; the `thinking`
   // object's off state is exactly what makes its requests fail.
   const zhipuEffortOnly = model.provider === "zhipu" && caps.tiers.length > 0 && !caps.canDisable;
-  const objectToggle = (["zhipu", "minimax", "mimo", "longcat"].includes(model.provider) && !zhipuEffortOnly)
+  const minimaxEffort = model.provider === "minimax" && id.includes("m3.1");
+  const objectToggle = (["zhipu", "minimax", "mimo", "longcat"].includes(model.provider) && !zhipuEffortOnly && !minimaxEffort)
     || (model.provider === "moonshot" && !id.includes("k3"));
   // The surface the request actually goes out on: every OpenAI model and
   // Grok are served through Responses now, whatever `api` says.

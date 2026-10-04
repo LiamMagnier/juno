@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { latestPerFamily, withSupersededMarked } from "../src/lib/model-metrics";
 import { hasRetired, isSupersededModel, migrateModelId, MODEL_LIST, MODELS, resolveModel, type ModelInfo } from "../src/lib/models";
-import { curate, FAMILIES, toModelInfo, versionScore } from "../src/lib/model-discovery-core";
-import { type Provider } from "../src/lib/providers";
 
 /**
  * What a model picker shows: every configured lab, every model still being
@@ -50,15 +48,13 @@ describe("latestPerFamily", () => {
     assert.deepEqual(names(kept), ["Claude Opus 5", "Claude Sonnet 5", "Claude Haiku 4.5"]);
   });
 
-  it("lets a freshly discovered model replace the curated one it supersedes", () => {
-    // Both are `current` — only the family collapse can tell that the live
-    // 3.6 Flash is the same product line as the curated 3.5.
-    const discovered = toModelInfo("google", "models/gemini-3.8-flash", {
-      label: "Gemini Flash", family: "flash", match: /flash/i, minPlan: "FREE", vision: true,
-    });
+  it("lets a newer model replace an older one of its family that still says current", () => {
+    // Both are `current` — only the family collapse can tell that 3.8 Flash
+    // is the same product line as 3.5.
+    const newer = model({ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", provider: "google", family: "flash", released: "2026-09" });
     const kept = latestPerFamily([
       model({ id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "google", family: "flash", released: "2026-06" }),
-      discovered,
+      newer,
     ]);
     assert.deepEqual(names(kept), ["Gemini 3.8 Flash"]);
   });
@@ -72,13 +68,10 @@ describe("latestPerFamily", () => {
     ]), []);
   });
 
-  it("keeps the curated entry when discovery only found another id for it", () => {
+  it("keeps the curated entry over an uncurated id for the same model", () => {
     // `mistral-medium-2604` IS `mistral-medium-latest`. The curated row is the
-    // one with a verified name, release date and price, so it has to win — the
-    // discovered name is just prettifyModelName over an id.
-    const snapshot = toModelInfo("mistral", "mistral-medium-2604", {
-      label: "Mistral Medium", family: "medium", match: /^mistral-medium/i, minPlan: "PRO", vision: true,
-    });
+    // one with a verified name, release date and price, so it has to win.
+    const snapshot = model({ id: "mistral-medium-2604", name: "Mistral Medium", provider: "mistral", family: "medium", minPlan: "PRO", vision: true });
     const curated = MODELS["mistral:mistral-medium-latest"];
     assert.ok(curated, "fixture requires the curated Mistral Medium entry");
     assert.deepEqual(names(latestPerFamily([snapshot, curated])), [curated.name]);
@@ -133,116 +126,14 @@ describe("latestPerFamily", () => {
   });
 });
 
-describe("versionScore", () => {
-  it("reads a release stamp as a date, not as a version number", () => {
-    // The bug: "2604" parsed as version 2604, so a dated snapshot outranked
-    // every real version of the same model.
-    assert.ok(versionScore("mistral-medium-3.5") > versionScore("mistral-medium-2604"));
-    assert.ok(versionScore("claude-haiku-4-5") > versionScore("claude-haiku-4-5-20251001"));
-    assert.ok(versionScore("gpt-5.6-sol") > versionScore("gpt-5.4-2026-03-05"));
-  });
-
-  it("strips a whole ISO date, not just its year", () => {
-    // Leaving `-MM-DD` behind made the MONTH the version: qwen-plus-2025-04-28
-    // scored 4.0 and outranked every real Qwen Plus, which is the bug the stamp
-    // handling exists to prevent, reintroduced one alternation apart.
-    assert.ok(versionScore("qwen3.9-plus") > versionScore("qwen-plus-2025-04-28"));
-    assert.ok(versionScore("codestral-latest") > versionScore("codestral-2026-01-15"));
-    assert.ok(versionScore("qwen-max") > versionScore("qwen-max-2025-01-25"));
-  });
-
-  it("prefers a canonical alias to a dated snapshot of the same version", () => {
-    assert.ok(versionScore("ministral-14b-latest") > versionScore("ministral-14b-2512"));
-  });
-
-  it("still ranks a higher version first", () => {
-    assert.ok(versionScore("glm-5.2") > versionScore("glm-4.7"));
-    assert.ok(versionScore("qwen3.8-max-preview") > versionScore("qwen3.7-max"));
-    // A version that PRECEDES the stamp must survive the strip untouched.
-    assert.ok(versionScore("gpt-5.6-sol") > versionScore("gpt-5.4-2026-03-05"));
-    assert.equal(versionScore("glm-4-32b-0414-128k"), versionScore("glm-4-32b-2512"));
-  });
-});
-
-describe("discovery families", () => {
-  it("lands next year's model in this year's family", () => {
-    // The whole mechanism in one assertion: a version nobody has curated yet
-    // shows up on a provider's live API, and it has to be recognised as the
-    // same product line as the model it replaces. If the rule's slug drifts
-    // from the registry's, the collapse cannot see they are the same line and
-    // the picker shows both — which is the duplicate this exists to prevent.
-    const cases: [Provider, string, string][] = [
-      ["anthropic", "claude-opus-6", "anthropic:claude-opus-5"],
-      ["anthropic", "claude-haiku-5", "anthropic:claude-haiku-4-5"],
-      ["openai", "gpt-5.7-sol", "openai:gpt-5.6-sol"],
-      ["openai", "gpt-5.7-luna", "openai:gpt-5.6-luna"],
-      ["openai", "gpt-7-nebula", "openai:gpt-6-astra"],
-      ["openai", "gpt-6-codex", "openai:gpt-5.3-codex"],
-      ["google", "models/gemini-3.8-flash", "google:gemini-3.7-flash"],
-      ["zhipu", "glm-6", "zhipu:glm-5.2"],
-      ["moonshot", "kimi-k4", "moonshot:kimi-k3"],
-      ["mistral", "mistral-medium-4", "mistral:mistral-medium-latest"],
-      ["xai", "grok-5", "xai:grok-4.5"],
-      ["deepseek", "deepseek-v5-pro", "deepseek:deepseek-v4-pro"],
-      ["minimax", "MiniMax-M4", "minimax:MiniMax-M3"],
-      ["qwen", "qwen3.9-plus", "qwen:qwen3.7-plus"],
-      ["longcat", "LongCat-3.0", "longcat:LongCat-2.0"],
-    ];
-    for (const [provider, futureId, supersededId] of cases) {
-      const superseded = MODELS[supersededId];
-      assert.ok(superseded?.family, `fixture requires ${supersededId}`);
-      const [discovered] = curate(provider, [futureId]);
-      assert.ok(discovered, `${provider}: no discovery rule matched ${futureId}`);
-      assert.equal(discovered.family, superseded.family, `${futureId} must join ${supersededId}'s family`);
-      // …and then win it, which is the point of recognising the line at all.
-      assert.deepEqual(names(latestPerFamily([superseded, discovered])), [discovered.name]);
-    }
-  });
-
-  it("gives every discovered model its rule's family", () => {
-    const [rule] = FAMILIES.zhipu ?? [];
-    assert.ok(rule, "fixture requires zhipu discovery rules");
-    assert.equal(toModelInfo("zhipu", "glm-6v-flashx", rule).family, rule.family);
-  });
-
-  it("marks a discovered OpenAI Codex or Pro model as Responses-only", () => {
-    // These lines are a hard 400 on /chat/completions. A discovered successor
-    // WINS its family, so getting this wrong replaces a working GPT-5.3 Codex
-    // with one that cannot answer at all.
-    const codexRule = { label: "GPT Codex", family: "gpt-codex", match: /codex/i, minPlan: "PRO" as const, vision: true };
-    assert.equal(toModelInfo("openai", "gpt-6-codex", codexRule).api, "responses");
-    assert.equal(toModelInfo("openai", "gpt-6-pro", codexRule).api, "responses");
-    assert.equal(toModelInfo("openai", "gpt-6-sol", codexRule).api, undefined);
-    // Only OpenAI: every other lab's "pro" tier speaks Chat Completions.
-    assert.equal(toModelInfo("deepseek", "deepseek-v5-pro", codexRule).api, undefined);
-  });
-
-  it("does not strand a next-generation model without reasoning", () => {
-    // The guess regexes used to key on the literal `gpt-5`, so the first GPT-6
-    // would have shipped into every picker with the thinking control missing.
-    const rule = { label: "GPT Sol", family: "gpt", match: /sol/i, minPlan: "PRO" as const, vision: true };
-    assert.equal(toModelInfo("openai", "gpt-6-sol", rule).reasoning, true);
-    assert.equal(toModelInfo("openai", "gpt-7-nebula", rule).reasoning, true);
-    assert.equal(toModelInfo("xai", "grok-5", rule).reasoning, true);
-    assert.equal(toModelInfo("moonshot", "kimi-k4", rule).reasoning, true);
-  });
-
-  it("prefers the curated family when the registry already knows the id", () => {
-    const curated = MODELS["zhipu:glm-5.2"];
-    assert.ok(curated?.family, "fixture requires the curated GLM-5.2 entry");
-    const wrongRule = { label: "GLM Flash", family: "glm-flash", match: /glm/i, minPlan: "FREE" as const, vision: false };
-    assert.equal(toModelInfo("zhipu", "glm-5.2", wrongRule).family, curated.family);
-  });
-});
-
 describe("provider health", () => {
   it("never filters the catalog", () => {
     // The original bug, guarded at the only place it can come back.
     //
     // This reads source text rather than calling the function, which is not how
     // a test should normally work — but src/lib/model-catalog-api.ts pulls in
-    // `server-only` through model-discovery and cannot be imported by the test
-    // runner at all, and the alternative is what the repo had before: nothing.
+    // `server-only` and cannot be imported by the test runner directly, and
+    // the alternative is what the repo had before: nothing.
     // A single `.filter(providerHealthy)` in this function deletes every model
     // of every lab whose API account is out of credit, from the website, iOS
     // and macOS simultaneously, and no other test in the suite notices.
@@ -294,16 +185,13 @@ describe("withSupersededMarked", () => {
     assert.deepEqual(past.sort(), ["Claude Opus 4.5", "Claude Opus 4.8"]);
   });
 
-  it("demotes a curated model a discovered one has overtaken", () => {
-    // Both say `current`; only the family comparison can tell that the live
-    // 3.6 Flash replaced the curated 3.5. The loser must come back marked, not
-    // missing — it is still callable.
-    const discovered = toModelInfo("google", "models/gemini-3.8-flash", {
-      label: "Gemini Flash", family: "flash", match: /flash/i, minPlan: "FREE", vision: true,
-    });
+  it("demotes a model a newer one of its family has overtaken", () => {
+    // Both say `current`; only the family comparison can tell that 3.8 Flash
+    // replaced 3.5. The loser must come back marked, not missing — it is
+    // still callable.
     const marked = withSupersededMarked([
       model({ id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "google", family: "flash", released: "2026-06" }),
-      discovered,
+      model({ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", provider: "google", family: "flash", released: "2026-09" }),
     ]);
     assert.equal(marked.length, 2);
     assert.deepEqual(names(marked.filter((m) => !isSupersededModel(m))), ["Gemini 3.8 Flash"]);

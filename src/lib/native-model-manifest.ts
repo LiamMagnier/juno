@@ -3,7 +3,7 @@ import type { Plan } from "@prisma/client";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { toolCapabilitiesFor } from "@/lib/model-tools";
-import { imageEditSupport, isDiscoveredModel, isSupersededModel, type ModelInfo } from "@/lib/models";
+import { imageEditSupport, isSupersededModel, type ModelInfo } from "@/lib/models";
 import { effectiveMinPlan, planRank } from "@/lib/plans";
 import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
 import { providerSearchServed } from "@/lib/provider-routing";
@@ -77,7 +77,8 @@ function capabilityDecision(model: ModelInfo, capability: NativeModelCapability 
     expiresAt: capability.expiresAt,
     probeVersion: capability.probeVersion,
   };
-  return decideModelCapability(model, isDiscoveredModel(model.id), evidence);
+  // Curated-only catalog: no model is an unreviewed discovery.
+  return decideModelCapability(model, false, evidence);
 }
 
 /** Server facts the manifest cannot read from a `ModelInfo`. */

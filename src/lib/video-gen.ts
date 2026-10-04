@@ -6,6 +6,9 @@ import type { MediaWire } from "@/lib/media-params";
 import {
   googleOmniStartBody,
   minimaxVideoBody,
+  minimaxH3Body,
+  minimaxV2Host,
+  parseMinimaxH3Poll,
   pollXaiVideo,
   seedanceStartBody,
   startXaiVideo,
@@ -248,6 +251,33 @@ const minimaxAdapter: VideoAdapter = {
   },
 };
 
+// ---- MiniMax H3 / H3 Max — the V2 API: /v2/video_generation → /v2/query/video_generation/{id} ----
+// Request and parsing live in media-gen-core.ts (minimaxH3Body / parseMinimaxH3Poll).
+
+const minimaxH3Adapter: VideoAdapter = {
+  async start(model, prompt, wire) {
+    const { base, headers } = minimaxAuth();
+    const { ok, status, data, text } = await fetchJson<{ task_id?: string; error?: { message?: string } }>(
+      `${minimaxV2Host(base)}/v2/video_generation`,
+      { method: "POST", headers, body: JSON.stringify(minimaxH3Body(model.providerModel, prompt, wire)) }
+    );
+    if (!ok || !data.task_id) {
+      throw new Error(`${model.name} rejected the request (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
+    }
+    return data.task_id;
+  },
+
+  async poll(model, id) {
+    const { base, headers } = minimaxAuth();
+    const { ok, status, data, text } = await fetchJson<{ error?: { message?: string } }>(
+      `${minimaxV2Host(base)}/v2/query/video_generation/${encodeURIComponent(id)}`,
+      { headers }
+    );
+    if (!ok) throw new Error(`Polling ${model.name} failed (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
+    return parseMinimaxH3Poll(data, model.name);
+  },
+};
+
 // ---- Zhipu (CogVideoX) — /videos/generations → /async-result/{id} ----
 
 interface ZhipuVideoTask {
@@ -260,7 +290,7 @@ interface ZhipuVideoTask {
 function zhipuAuth(): { base: string; headers: Record<string, string> } {
   const key = providerApiKey("zhipu");
   if (!key) throw new Error("Zhipu API key is not configured.");
-  const base = (providerBaseUrl("zhipu") ?? "https://open.bigmodel.cn/api/paas/v4").replace(/\/$/, "");
+  const base = (providerBaseUrl("zhipu") ?? "https://api.z.ai/api/paas/v4").replace(/\/$/, "");
   return { base, headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" } };
 }
 
@@ -365,6 +395,7 @@ const xaiAdapter: VideoAdapter = {
 function adapterFor(model: ModelInfo): VideoAdapter | null {
   if (isGoogleOmniModel(model)) return googleOmniAdapter;
   if (model.provider === "google" && model.providerModel.startsWith("veo-")) return googleVeoAdapter;
+  if (model.provider === "minimax" && model.providerModel.startsWith("MiniMax-H3")) return minimaxH3Adapter;
   if (model.provider === "minimax") return minimaxAdapter;
   if (model.provider === "zhipu") return zhipuAdapter;
   if (model.provider === "seedance") return seedanceAdapter;

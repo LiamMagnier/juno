@@ -11,6 +11,11 @@
  */
 
 import * as React from "react";
+import {
+  DEFAULT_VOICE_REASONING_EFFORT,
+  VOICE_REASONING_EFFORTS,
+  type VoiceReasoningEffort,
+} from "@/lib/voice-relay-protocol";
 
 export type ChatFont = "default" | "system" | "serif" | "mono";
 export type TranscriptWidth = "narrow" | "medium" | "wide";
@@ -28,6 +33,15 @@ export interface UiPrefs {
   replySound: boolean;
   /** The ready and ended chimes of a voice call (src/lib/voice-cues.ts). */
   voiceSounds: boolean;
+  /**
+   * How hard a voice call's delegated model reasons — GPT-6.1 Sol behind
+   * GPT-Live-1. Sent on every session.start and switch; the relay answers
+   * with the effort it actually gave (`delegate.effort`).
+   */
+  voiceEffort: VoiceReasoningEffort;
+  /** The same dial for Gemini Live (Low / Medium / High), which picks the
+   *  Live model and its Gemini 3.8 Flash delegate's level together. */
+  voiceGeminiEffort: VoiceReasoningEffort;
 }
 
 export const UI_PREF_DEFAULTS: UiPrefs = {
@@ -40,6 +54,8 @@ export const UI_PREF_DEFAULTS: UiPrefs = {
   notifyOnReply: false,
   replySound: false,
   voiceSounds: true,
+  voiceEffort: DEFAULT_VOICE_REASONING_EFFORT,
+  voiceGeminiEffort: "low",
 };
 
 /** Preferences mirrored onto <html> (attribute name → pref key). */
@@ -64,6 +80,8 @@ function sanitize(raw: unknown): UiPrefs {
   pick("transcriptWidth", ["narrow", "medium", "wide"]);
   pick("motion", ["system", "reduced"]);
   pick("sendKey", ["enter", "mod-enter"]);
+  pick("voiceEffort", VOICE_REASONING_EFFORTS);
+  pick("voiceGeminiEffort", ["low", "medium", "high"]);
   for (const key of ["codeWrap", "followUps", "notifyOnReply", "replySound", "voiceSounds"] as const) {
     if (typeof r[key] === "boolean") out[key] = r[key] as boolean;
   }

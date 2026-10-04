@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { VOICE_TOOL_LIMIT, voiceInstructions } from "../src/session.js";
+import { VOICE_TOOL_LIMIT_WITH_WEB_SEARCH, withWebSearchLimit } from "../src/voice-context.js";
 
 /*
  * The realtime relay carries audio and nothing else (TOOL_RUNTIME_DESIGN.md
@@ -37,4 +38,14 @@ test("the limit sits inside the speech rules, so their shape is unchanged", () =
   const text = voiceInstructions(null, "You are Ada.");
   assert.ok(text.endsWith("pick up naturally."));
   assert.match(text, /\n\nYou are having a spoken conversation: keep replies short/);
+});
+
+test("a call with a web-searching delegate is told it may look things up, and nothing more", () => {
+  const text = withWebSearchLimit(voiceInstructions("The user likes tea.", "You are Ada."));
+  assert.ok(!text.includes(VOICE_TOOL_LIMIT), "the no-browsing sentence must not survive beside the search one");
+  assert.ok(text.includes(VOICE_TOOL_LIMIT_WITH_WEB_SEARCH));
+  assert.match(VOICE_TOOL_LIMIT_WITH_WEB_SEARCH, /cannot run code or scripts/);
+  assert.match(VOICE_TOOL_LIMIT_WITH_WEB_SEARCH, /can search the web/);
+  assert.match(VOICE_TOOL_LIMIT_WITH_WEB_SEARCH, /can read whatever the user attaches or shows you/);
+  assert.match(text, /pick up naturally\./, "the speech rules keep their shape");
 });

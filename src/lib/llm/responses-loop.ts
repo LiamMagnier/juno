@@ -36,7 +36,7 @@ import {
 } from "@/lib/llm/openai-shared";
 import type { AdapterRequest, ProviderTransport } from "@/lib/llm/types";
 import type { McpToolset } from "@/lib/mcp";
-import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
+import { REASONING_TIERS, reasoningCaps, supportsProMode, type ReasoningTier } from "@/lib/model-metrics";
 import { providerRequestModel } from "@/lib/model-request";
 import { hostedSearchAllowedAt, toolCapabilitiesFor } from "@/lib/model-tools";
 import type { ModelInfo } from "@/lib/models";
@@ -68,23 +68,31 @@ export interface ResponsesLoopInput {
 /**
  * Map Juno's tier to the Responses API's reasoning.effort (OpenAI).
  *
- * The gpt-5.x-pro models accept medium|high|xhigh and cannot be run
- * non-thinking, so a missing/too-shallow tier is raised to their "high" default
- * rather than dropped. Everything else relays the tier as-is — including
- * "xhigh" and "max", which this used to flatten to "high" and thereby silently
- * cap the deepest settings the user picked.
+ * Read from the model's own ladder (`reasoningCaps`, which carries each
+ * model page's `reasoning.effort` list) rather than from id regexes, which is
+ * how a new id such as `gpt-6.1-sol` used to have "max" flattened to "xhigh".
+ * A tier the model lists is relayed as-is. One it does not list is moved to
+ * the nearest tier it does — "max" on a model topping out at xhigh becomes
+ * "xhigh", "low" on a gpt-5.x-pro (medium|high|xhigh) becomes "medium" — so a
+ * stale client selection never turns into a 400.
+ *
+ * No tier: "none" where the model lists it (Instant must be SENT; GPT-5.5+
+ * default to medium when the parameter is absent). The always-reasoning
+ * gpt-5.x-pro models get their documented default; everything else is left
+ * to the API's own default.
  */
 export function mapResponsesEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefined {
   const id = model.providerModel.toLowerCase();
-  if (/-pro$/.test(id)) {
-    if (effort === "medium" || effort === "high" || effort === "xhigh") return effort;
-    return "high"; // pro's own default; it has no none/low
+  const rc = reasoningCaps(model);
+  if (!effort) {
+    if (canDisableViaNoneEffort(model)) return "none";
+    return /-pro$/.test(id) ? rc.defaultLevel ?? "high" : undefined;
   }
-  if (!effort) return canDisableViaNoneEffort(model) ? "none" : undefined;
-  // "max" exists on GPT-5.6 and GPT-6 Astra/Sol/Luna; older Responses models
-  // top out at xhigh.
-  if (effort === "max" && !/gpt-5\.6|gpt-6-(astra|sol|luna)/.test(id)) return "xhigh";
-  return effort;
+  if (rc.tiers.length === 0 || rc.tiers.includes(effort as ReasoningTier)) return effort;
+  const at = REASONING_TIERS.indexOf(effort as ReasoningTier);
+  if (at < 0) return effort;
+  const atOrAbove = rc.tiers.find((tier) => REASONING_TIERS.indexOf(tier) >= at);
+  return atOrAbove ?? rc.tiers[rc.tiers.length - 1];
 }
 
 /**
@@ -92,8 +100,8 @@ export function mapResponsesEffort(model: ModelInfo, effort?: ReasoningEffort): 
  *
  * It must be SENT, not left out: GPT-5.5 and later default to `medium` when
  * the parameter is absent, so omitting it made Instant a no-op. The per-model
- * caps carry each snapshot's live-probed enum (5.3-codex accepts "none",
- * 5.1/5.2-codex reject it; GPT-6 Sol/Luna list it, Astra does not), and
+ * caps carry each model page's enum (GPT-6 Sol/Luna and 5.6 list "none";
+ * GPT-6 Astra, GPT-6.1 Sol and 5.3 Codex do not), and
  * `model.reasoning &&` keeps a non-reasoning model — whose caps report
  * canDisable — from ever being sent it.
  */

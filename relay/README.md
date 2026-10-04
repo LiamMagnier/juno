@@ -38,10 +38,13 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 | `ALLOWED_ORIGINS` | prod | comma-separated browser origins; an empty value rejects browser origins (native apps send no Origin and pass) |
 | `RELAY_MAX_SESSION_SEC` | no | relay-wide hard cap for one voice call, default 3600 seconds; never exceeds a provider's own cap and survives provider switches |
 | `RELAY_OPENAI_MODEL` | no | default `gpt-live-1`. GPT-Live is per-account: an account without it accepts the upgrade and then drops the socket with no close frame (close 1006), so the relay tries GPT-Live, falls back to the Realtime protocol on failure, and says so on `session.ready`. A `gpt-realtime*` id here skips the attempt entirely. |
-| `RELAY_OPENAI_BACKEND_MODEL` | no | default `gpt-5.6-luna` — the Responses model GPT-Live delegates reasoning and tools to. Billed separately from the voice layer. |
+| `RELAY_OPENAI_BACKEND_MODEL` | no | default `gpt-6.1-sol` — the Responses model GPT-Live delegates reasoning and tools to, at the caller's effort (`low`/`medium`/`high`/`xhigh`, default `high`; Sol has no `none`). Billed separately from the voice layer. |
+| `RELAY_OPENAI_BACKEND_WEB_SEARCH` | no | default on — registers the hosted `web_search` tool on the delegate. `0` turns it off. |
 | `RELAY_OPENAI_LIVE_URL` | no | override the GPT-Live WebSocket endpoint (tests) |
-| `RELAY_GEMINI_MODEL` | no | default `gemini-3.8-live` — used when thinking is OFF. Live model ids get retired; if `gemini` fails to start, the error names the model and quotes the server's close reason, so set a current id here. |
-| `RELAY_GEMINI_THINKING_MODEL` | no | default `gemini-3.8-live-extended-thinking` — used when thinking is ON. |
+| `RELAY_GEMINI_MODEL` | no | default `gemini-3.8-live` — the Low rung of the Gemini thinking dial. Live model ids get retired; if `gemini` fails to start, the error names the model and quotes the server's close reason, so set a current id here. |
+| `RELAY_GEMINI_THINKING_MODEL` | no | default `gemini-3.8-live-extended-thinking` — the Medium (thinkingLevel low) and High (thinkingLevel high) rungs. |
+| `RELAY_GEMINI_DELEGATE_MODEL` | no | default `gemini-3.8-flash` — the model Gemini Live hands harder turns to through one function (`ask_backend_model`), at `thinkingLevel` `low` under 3.8 Live (Low rung) and `high` under Extended Thinking (Medium and High). Uses the same Gemini key over REST `generateContent`. |
+| `RELAY_GEMINI_DELEGATE_WEB_SEARCH` | no | default on — Google Search grounding on the Gemini delegate. `0` turns it off. |
 | `RELAY_GEMINI_LIVE_URL` | no | override the Live API WebSocket endpoint (regional endpoints, tests) |
 | `RELAY_GEMINI_REST_URL` | no | override the host the ephemeral-token exchange calls (tests) |
 | `RELAY_QWEN_MODEL` | no | default `qwen3.5-omni-flash-realtime` |

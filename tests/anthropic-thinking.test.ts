@@ -114,3 +114,23 @@ test("Haiku Instant omits thinking", () => {
   const bits = buildAnthropicThinkingBits("claude-haiku-4-5", 8192, undefined);
   assert.equal(bits.thinking, undefined);
 });
+
+/*
+ * Anthropic's per-model thinking table (thinking-troubleshooting, 2026-10-04):
+ * Opus 5, Sonnet 5 and Sonnet 5.5 think when `thinking` is omitted, so an
+ * Instant turn has to switch it off — and Sonnet 5.5 rejects `disabled` at
+ * every effort, taking `between_tools` in its place.
+ */
+test("Instant switches thinking off with the value each default-on model accepts", () => {
+  assert.deepEqual(buildAnthropicThinkingBits("claude-sonnet-5-5", 8192, undefined).thinking, { type: "between_tools" });
+  assert.deepEqual(buildAnthropicThinkingBits("claude-opus-5", 8192, undefined).thinking, { type: "disabled" });
+  assert.deepEqual(buildAnthropicThinkingBits("claude-sonnet-5", 8192, undefined).thinking, { type: "disabled" });
+  // Opus 5.5 is always-on: never an off switch, its own default effort.
+  const opus55 = buildAnthropicThinkingBits("claude-opus-5-5", 8192, undefined);
+  assert.equal(opus55.thinking?.type, "adaptive");
+  assert.equal(opus55.outputConfig?.effort, "medium");
+  // Sonnet 5.5 with a tier is plain adaptive + effort.
+  const tiered = buildAnthropicThinkingBits("claude-sonnet-5-5", 8192, "xhigh");
+  assert.equal(tiered.thinking?.type, "adaptive");
+  assert.equal(tiered.outputConfig?.effort, "xhigh");
+});

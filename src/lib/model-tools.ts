@@ -98,6 +98,8 @@ const LAB_TOOLS: Record<Provider, ModelToolCapabilities> = {
   },
   zhipu: {
     ...COMPAT,
+    // Z.ai's `web_search` tool on Chat Completions (src/lib/lab-web-search.ts).
+    nativeSearch: true,
     // "tool_choice only supports auto" (probe P6 before switching).
     finalRound: "omit_tools",
     replay: "should",
@@ -120,10 +122,18 @@ const LAB_TOOLS: Record<Provider, ModelToolCapabilities> = {
     ...COMPAT,
     parallel: "default",
     // tool_choice "none" is an HTTP 400; Chat Completions redacts reasoning, so nothing to replay.
+    // The Responses schema's ToolChoiceParam is "auto" only, so the same holds there.
     finalRound: "omit_tools",
+    // The `web_search` tool, Responses API only (dev.meta.ai/docs/search-grounding,
+    // read 2026-10-04). A turn with web on goes to Meta's /responses
+    // ("meta-responses" in provider-routing.ts); every other turn stays on
+    // Chat Completions, so `responses` stays false.
+    nativeSearch: true,
   },
   mimo: {
     ...COMPAT,
+    // MiMo's `web_search` tool, url_citation sources (src/lib/lab-web-search.ts).
+    nativeSearch: true,
     // Undocumented tool_choice (probe P19).
     finalRound: "omit_tools",
     replay: "must",
@@ -131,6 +141,9 @@ const LAB_TOOLS: Record<Provider, ModelToolCapabilities> = {
   },
   qwen: {
     ...COMPAT,
+    // `enable_search` on Chat Completions (src/lib/lab-web-search.ts): the
+    // Qwen3.5+ lines and qwen3-max search in Singapore; the rest are excepted below.
+    nativeSearch: true,
     // All calls arrive only with parallel_tool_calls: true.
     parallel: "opt_in",
     replay: "should",
@@ -150,10 +163,13 @@ const MODEL_TOOLS: Readonly<Record<string, Partial<ModelToolCapabilities>>> = {
   "anthropic:claude-fable-5-1": { anthropicSearchVersion: "20260318" },
   "anthropic:claude-opus-5-5": { anthropicSearchVersion: "20260318" },
   "anthropic:claude-sonnet-5": { anthropicSearchVersion: "20260318" },
+  "anthropic:claude-sonnet-5-5": { anthropicSearchVersion: "20260318" },
 
   // Tool calling needs Responses: on /chat/completions it fails outright
   // (Astra) or whenever the effort is above "none".
   "openai:gpt-6-astra": { chatCompletions: false },
+  // "Chat Completions is supported without tool calling" (model page).
+  "openai:gpt-6.1-sol": { chatCompletions: false },
   "openai:gpt-6-sol": { chatCompletions: false },
   "openai:gpt-6-luna": { chatCompletions: false },
   "openai:gpt-5.6-sol": { chatCompletions: false },
@@ -172,12 +188,30 @@ const MODEL_TOOLS: Readonly<Record<string, Partial<ModelToolCapabilities>>> = {
   "xai:grok-4.20-multi-agent-0309": { supported: false, chatCompletions: false, responses: true },
   // Server search support unconfirmed (probe P13b): Juno web_search instead.
   "xai:grok-build-0.1": { nativeSearch: false },
-  // Slug unconfirmed (probe P14): left on today's compat route, where Live Search is gone.
-  "xai:grok-4.1-fast": { responses: false, nativeSearch: false },
+
+  // Muse Image searches on its own while it renders and has no `web_search`
+  // tool to add (search-grounding page, "Muse Image searches differently").
+  "meta:muse-image-1.0": { nativeSearch: false },
 
   // Thinking chunks, replayed as typed chunks on the models that think.
   "mistral:mistral-small-latest": { replay: "should", replayField: "thinkchunk" },
   "mistral:mistral-medium-latest": { replay: "should", replayField: "thinkchunk" },
+
+  // Qwen models whose Model Studio page lists Function Calling as
+  // "Unsupported" in the Singapore (international) region Juno calls by
+  // default (pages read 2026-10-04). qwen-long has no function calling in any
+  // region. Sending them a tools array is a request they do not document.
+  // None of them is on the Singapore web-search list either (web-search page).
+  "qwen:qwen-long": { supported: false, nativeSearch: false },
+  "qwen:qwen3-vl-plus": { supported: false, nativeSearch: false },
+  "qwen:qwen3-vl-flash": { supported: false, nativeSearch: false },
+  "qwen:qwen3-coder-plus": { supported: false, nativeSearch: false },
+  "qwen:qwen3-235b-a22b": { supported: false, nativeSearch: false },
+  "qwen:qwen3-30b-a3b": { supported: false, nativeSearch: false },
+  "qwen:qwen-max": { supported: false, nativeSearch: false },
+  "qwen:qwen-turbo": { supported: false, nativeSearch: false },
+  "qwen:qwen-vl-max": { supported: false, nativeSearch: false },
+  "qwen:qwq-plus": { supported: false, nativeSearch: false },
 };
 
 /** Gemini 1.x and 2.x: search and function tools cannot share a request, so chat keeps the functions. */
