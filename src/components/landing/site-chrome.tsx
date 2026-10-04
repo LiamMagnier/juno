@@ -38,6 +38,8 @@ const PRODUCT_LINKS = [
   { href: "/sign-up", label: "Create account" },
   // A page, not a file: /download reports what is actually published.
   { href: "/download", label: "Download" },
+  // The public model comparisons (app/vs), linked so crawlers and readers find them.
+  { href: "/vs", label: "Compare models" },
 ];
 
 /**
