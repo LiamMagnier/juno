@@ -25,6 +25,9 @@ import type { ResearchEventInput, ResearchPageResult, ResearchRunRow, StepOutcom
 import { detectSyndication, hostOfUrl } from "@/lib/research/claim-analysis";
 import type { ResearchDeps } from "./types";
 
+/** The live line when a usage window runs out mid-run (RESEARCH_V2 §6). */
+export const WINDOW_SPENT_MESSAGE = "Your usage window is used up. Writing the report with what the research has.";
+
 export function createEngineContext(deps: ResearchDeps) {
   const { store } = deps;
   const heartbeatMs = deps.heartbeatMs ?? RESEARCH_LEASE_RENEW_MS;
@@ -411,10 +414,37 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * of anonymous constraints, and so a resumed run knows it has already asked.
    */
 
+  /**
+   * The account's usage windows are the run's money limit (RESEARCH_V2 §6):
+   * at a round boundary, a spent five-hour or weekly window stops the rounds
+   * and the run writes with what it has. Recorded once on the plan, with one
+   * event, so the console says why and later boundaries do not ask again.
+   */
+  const windowSpent = async (run: ResearchRunRow): Promise<boolean> => {
+    const plan = parsePlan(run.plan);
+    if (plan.windowSpentAt) return true;
+    if (!deps.windowSpent) return false;
+    let spent = false;
+    try {
+      spent = await deps.windowSpent({ userId: run.userId, runId: run.id });
+    } catch (error) {
+      // A window read that fails must not stop a run that may have room.
+      console.error("[research] window check failed", { runId: run.id, error });
+      return false;
+    }
+    if (!spent) return false;
+    await store.savePlan({ runId: run.id, userId: run.userId, plan: { ...plan, windowSpentAt: deps.now().toISOString() } });
+    await append(run.id, run.userId, [
+      { kind: "error", payload: { scope: "window", recoverable: true, message: WINDOW_SPENT_MESSAGE } },
+    ]);
+    return true;
+  };
+
   return {
     deps,
     store,
     heartbeatMs,
+    windowSpent,
     beat,
     append,
     hosts,

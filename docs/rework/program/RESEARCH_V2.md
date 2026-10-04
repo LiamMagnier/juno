@@ -65,3 +65,19 @@ Live provider runs and a cost/quality comparison; native (Mac/iOS) parity for th
 - Gallery states added: `planner-fallback`, `recovering`, `digest`; `completed` and `failed` show the new rows.
 - Verification: `npx tsc --noEmit -p .` clean; `npm run lint` 0 errors (8 pre-existing warnings in untouched files); research suite 396 tests, 393 pass, 3 skipped (database-gated); new `tests/research-resilience.test.ts` (12) and `tests/research-v2-surface.test.ts` (5); chat-wire and capability checks pass.
 - Known limits: the digest's fixed headings are English whatever the content language; follow-ups are deterministic, not model-written.
+
+## 6. No per-run limit: the usage windows are the limit (owner, 2026-10-04)
+
+Owner, verbatim: "also on deep research remove the 2.50 dollar limit, the only limit should be your 5h window & weekly limit".
+
+Before: every run had a money ceiling of min(plan cap — €2.50 Pro, €5 Plus, €8 Max, €16 Max×20, €30 Ultra, €8 or `RESEARCH_CHAT_BUDGET_USD` for the owner — a share of the month, the month left), and research spend was deliberately left out of the five-hour and weekly windows.
+
+Now:
+
+- **Sizing** (`envelope.ts`): `ceiling = min(room left in the binding usage window, month left − chat floor)`. `ceilingEur` and `shareOfMonth` are gone from every plan, and so is the owner override. `limitedBy` says `window` or `month` when either shrank the run. An account nothing meters (enforcement off) gets a $40 runaway backstop, set high enough that the run's clock, rounds and page cap end it first.
+- **The windows count research** (`spend-windows.ts`): the exclusion list is empty, so the five-hour and weekly sums and their holds include `kind: "research"`. The month counts everything, as before.
+- **Start** (`researchStartCheck`): a spent window (or one with less room than a planner call) refuses with `reason: "budget"`, `params.limit = "window"` and the window's reset. The refusal copy now reads "Research needs more of your usage window or monthly allowance than is left." (web, German, the chat panel's notices and the native presentation string).
+- **During the run**: at every round boundary (the worker loop and the coverage review) the engine asks `windowSpent` (`checkUsageWindows`). A spent window ends the rounds once, records `plan.windowSpentAt` and a recoverable event ("Your usage window is used up. Writing the report with what the research has."), and the run goes straight to the writer. A failed window read never stops a run. The writer and audit run after the stop, so a run can go past the window by about the cost of writing its report — the same reservation the old ceiling held back.
+- **Unchanged guards** (quality and runaway, not money): the plan's clock minutes, live runs and starts per day, rounds, pages, worker tokens, the 40-step drive cap, and the monthly budget gate.
+- **UI**: the live header shows what the run has spent, with no "/ $2.50 limit".
+- **Tests**: `research-envelope.test.ts` (no per-run caps; window and month bounds; window refusal with its reset; unmetered backstop), `research-spend-windows.test.ts` (windows count research; run sized to the windows; both engines wired), `research-resilience.test.ts` (a mid-run window stop writes with what it has, said once; a failed window read does not stop the run), `run-presentation.test.ts` (new refusal copy).

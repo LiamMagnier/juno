@@ -42,7 +42,6 @@ const WORKSPACE_COPY = {
   retry: "Retry connection", reconnecting: "Connection lost. Showing the last saved research.",
   unavailable: "This research is unavailable. Sign in again or return to the conversation.",
   finish: "Write with what you have", finishing: "Finishing with the evidence gathered so far",
-  limit: "limit",
 };
 
 const TABS = [
@@ -111,10 +110,8 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
           </span>
           <span className="flex shrink-0 items-center gap-3 tabular-nums">
             <RunClock elapsedMs={clock.elapsedMs} since={disconnected || failed ? null : clock.since} showAfterMs={0} />
-            <span>
-              {formatMicroUsd(run.costMicroUsd)}
-              {run.budgetMicroUsd ? ` / ${formatMicroUsd(run.budgetMicroUsd)} ${WORKSPACE_COPY.limit}` : ""}
-            </span>
+            {/* Spend only: a run has no per-run limit any more; the usage windows bound it (RESEARCH_V2 §6). */}
+            <span>{formatMicroUsd(run.costMicroUsd)}</span>
           </span>
         </div>
         <h3 ref={titleRef} tabIndex={-1} lang={run.language ?? undefined} className="rf-title mt-3 outline-none">

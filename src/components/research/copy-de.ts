@@ -192,8 +192,8 @@ export const RESEARCH_COPY_DE: Readonly<Record<string, string>> = {
   "Too many research runs are going. Wait for one to finish.":
     "Es laufen zu viele Recherchen. Warte, bis eine abgeschlossen ist.",
   "You've reached today's research limit.": "Du hast das heutige Recherchelimit erreicht.",
-  "Research needs more of your monthly allowance than is left.":
-    "Die Recherche braucht mehr von deinem Monatskontingent, als übrig ist.",
+  "Research needs more of your usage window or monthly allowance than is left.":
+    "Die Recherche braucht mehr von deinem Nutzungsfenster oder Monatskontingent, als übrig ist.",
   "Resets on": "Wird zurückgesetzt am",
   "Researched for": "Recherchiert für",
 };

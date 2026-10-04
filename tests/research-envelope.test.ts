@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CHAT_FLOOR_EUR,
   MAX_RUN_PAGES,
+  UNMETERED_RESEARCH_BACKSTOP_MICRO_USD,
   RESEARCH_PLAN_CAPS,
   isBudgetRefusal,
   researchBudgetFor,
@@ -90,16 +91,20 @@ test("the plan caps are the §9.2 table", () => {
     Object.fromEntries(
       (["PRO", "MAX", "MAX20", "OWNER"] as const).map((plan) => {
         const caps = RESEARCH_PLAN_CAPS[plan];
-        return [plan, [caps.ceilingEur, caps.shareOfMonth, caps.liveRuns, caps.startsPerDay, caps.clockMinutes, caps.leadInputUsdPerMTokMax]];
+        return [plan, [caps.liveRuns, caps.startsPerDay, caps.clockMinutes, caps.leadInputUsdPerMTokMax]];
       })
     ),
     {
-      PRO: [2.5, 0.25, 1, 5, 15, 3],
-      MAX: [8, 0.15, 2, 15, 30, 5],
-      MAX20: [16, 0.15, 3, 30, 60, null],
-      OWNER: [8, 0.5, 3, null, 60, null],
+      PRO: [1, 5, 15, 3],
+      MAX: [2, 15, 30, 5],
+      MAX20: [3, 30, 60, null],
+      OWNER: [3, null, 60, null],
     }
   );
+  // RESEARCH_V2 §6: no plan carries a per-run money ceiling or a share of the month any more.
+  for (const caps of Object.values(RESEARCH_PLAN_CAPS)) {
+    assert.ok(!("ceilingEur" in caps) && !("shareOfMonth" in caps));
+  }
   assert.equal(CHAT_FLOOR_EUR, 0.25);
 });
 
@@ -115,46 +120,50 @@ test("live runs and daily starts refuse at the plan's cap", () => {
   assert.equal(envelope(size({ plan: "OWNER", startsToday: 500 })).v, 1);
 });
 
-test("ceiling = min(plan cap, share × month, month left − chat floor, override)", () => {
-  // The plan cap binds when the month is roomy.
-  assert.equal(envelope(size({ plan: "MAX20" })).ceilingMicroUsd, eur(16));
-  assert.equal(envelope(size({ plan: "PRO" })).ceilingMicroUsd, eur(2.5));
+test("ceiling = min(usage window left, month left − chat floor): no per-run cap (RESEARCH_V2 §6)", () => {
+  // A roomy month and no window: nothing bounds a run by money but the runaway backstop.
+  const roomy = envelope(size({ plan: "PRO" }));
+  assert.ok(roomy.ceilingMicroUsd > eur(2.5), "the old €2.50 Pro ceiling is gone");
+  assert.equal(roomy.ceilingMicroUsd, envelope(size({ plan: "MAX20" })).ceilingMicroUsd, "the plan does not size the money");
 
-  // The share binds: 15% of a €40 month is €6, under MAX20's €16.
-  const share = envelope(size({ remaining: { monthMicroUsd: eur(40), monthBudgetMicroUsd: eur(40) } }));
-  assert.equal(share.ceilingMicroUsd, Math.floor(0.15 * eur(40)));
+  // The binding usage window is the ceiling.
+  const windowed = envelope(size({ plan: "PRO", remaining: { ...PLENTY, windowMicroUsd: 6_000_000 } }));
+  assert.equal(windowed.ceilingMicroUsd, 6_000_000);
 
-  // What is left of the month, less the chat floor, binds below both.
-  const left = envelope(size({ remaining: { monthMicroUsd: eur(4), monthBudgetMicroUsd: eur(200) } }));
+  // What is left of the month, less the chat floor, binds below the window.
+  const left = envelope(size({ remaining: { monthMicroUsd: eur(4), monthBudgetMicroUsd: eur(200), windowMicroUsd: eur(10) } }));
   assert.equal(left.ceilingMicroUsd, eur(4) - eur(CHAT_FLOOR_EUR));
-
-  // The override clamps any plan, and replaces the cap for the owner.
-  assert.equal(envelope(size({ overrideCeilingMicroUsd: 3_000_000 })).ceilingMicroUsd, 3_000_000);
-  assert.equal(envelope(size({ plan: "OWNER", overrideCeilingMicroUsd: 12_000_000 })).ceilingMicroUsd, 12_000_000);
 });
 
-test("a disabled monthly cap leaves the plan cap as the ceiling", () => {
-  const unmetered = envelope(size({ plan: "OWNER", remaining: { monthMicroUsd: null, monthBudgetMicroUsd: null } }));
-  assert.equal(unmetered.ceilingMicroUsd, eur(8));
+test("an unmetered account keeps only the runaway backstop", () => {
+  const unmetered = envelope(size({ plan: "OWNER", remaining: { monthMicroUsd: null, monthBudgetMicroUsd: null, windowMicroUsd: null } }));
+  assert.equal(unmetered.ceilingMicroUsd, UNMETERED_RESEARCH_BACKSTOP_MICRO_USD);
+  assert.equal(unmetered.limitedBy, "scope", "the clock and the caps bind first");
 });
 
-test("an unreduced scope is limitedBy scope; a reduced one names what bound it", () => {
+test("an unreduced scope is limitedBy scope; a reduced one names the window or the month", () => {
   const tiny = envelope(size({ plan: "MAX20", scope: scope({ questions: 1, breadth: "focused" }) }));
   assert.equal(tiny.limitedBy, "scope");
   assert.equal(tiny.workers, 1);
   assert.equal(tiny.rounds, 1);
 
-  const planBound = envelope(size({ plan: "PRO", scope: scope({ questions: 6, breadth: "exhaustive" }) }));
-  assert.equal(planBound.limitedBy, "plan");
+  const wide = scope({ questions: 6, breadth: "exhaustive" });
+  const windowBound = envelope(size({ plan: "PRO", scope: wide, remaining: { ...PLENTY, windowMicroUsd: eur(2.5) } }));
+  assert.equal(windowBound.limitedBy, "window");
 
-  const monthBound = envelope(
-    size({ plan: "MAX20", scope: scope({ questions: 6, breadth: "exhaustive" }), remaining: { monthMicroUsd: eur(40), monthBudgetMicroUsd: eur(40) } })
-  );
+  const monthBound = envelope(size({ plan: "MAX20", scope: wide, remaining: { monthMicroUsd: eur(2.5), monthBudgetMicroUsd: eur(40), windowMicroUsd: eur(30) } }));
   assert.equal(monthBound.limitedBy, "month");
 });
 
+test("a spent window refuses with the window's own reset", () => {
+  const refused = refusal(size({ remaining: { ...PLENTY, windowMicroUsd: 0, windowResetsAtMs: Date.UTC(2026, 9, 4, 17) } }));
+  assert.equal(refused.reason, "budget");
+  assert.equal(refused.params.limit, "window");
+  assert.equal(refused.params.resetsOn, "2026-10-04T17:00:00.000Z");
+});
+
 test("the fit reduces results, rounds and calls before workers, and never below half the questions", () => {
-  const wide = envelope(size({ plan: "PRO", scope: scope({ questions: 8, breadth: "exhaustive" }) }));
+  const wide = envelope(size({ plan: "PRO", scope: scope({ questions: 8, breadth: "exhaustive" }), remaining: { ...PLENTY, windowMicroUsd: eur(2.5) } }));
   assert.ok(wide.workers >= 4, `workers ${wide.workers} fell below ⌈8 / 2⌉`);
   assert.equal(wide.resultsPerQuery, 8, "results per query are the first thing a thin ceiling trims");
   assert.equal(wide.rounds, 1, "rounds go before workers");
@@ -199,7 +208,7 @@ test("below the minimum viable run the lead steps down a class, else the run is 
   const expensive: ResearchRates = { worker: HAIKU, lead: { inputMicroUsdPerToken: 40, outputMicroUsdPerToken: 200 }, judge: HAIKU };
   const refused = refusal(size({ plan: "MAX20", rates: expensive, remaining: { ...thin, resetsAtMs: Date.UTC(2026, 9, 1) } }));
   assert.equal(refused.reason, "budget");
-  assert.equal(refused.params.resetsOn, "2026-10-01");
+  assert.equal(refused.params.resetsOn, "2026-10-01T00:00:00.000Z");
   assert.equal(refused.params.shareLeft, 1);
 
   const stepped = envelope(

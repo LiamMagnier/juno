@@ -232,7 +232,7 @@ test("every notice code and connector failure has a builder", () => {
   assert.equal(phraseText(noticeLine({ code: "tool_budget", params: { reason: "searches" } })!, "en"), "Reached this turn's search limit");
   assert.equal(
     phraseText(noticeLine({ code: "research_skipped", params: { reason: "budget", resetsOn: "2026-10-01T00:00:00Z" } })!, "en"),
-    "Research was skipped. Research needs more of your monthly allowance than is left. Resets on Oct 1, 2026",
+    "Research was skipped. Research needs more of your usage window or monthly allowance than is left. Resets on Oct 1, 2026",
   );
   assert.equal(noticeLine({ code: "from_the_future" as never }), null, "an unknown code falls back to the legacy title");
   assert.deepEqual([...MUST_ACT_NOTICES].sort(), ["connector_unavailable", "finish_length", "hostile_content", "research_skipped", "usage_limit"]);

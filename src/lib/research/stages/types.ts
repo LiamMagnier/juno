@@ -480,6 +480,12 @@ export interface ResearchDeps {
    * the source kinds and the scope. When wired it replaces `clarify` and
    * `plan`, and a run never parks at `awaiting_clarification`.
    */
+  /**
+   * Whether the account's five-hour or weekly usage window is spent
+   * (RESEARCH_V2 §6). Asked at round boundaries; true stops the rounds and
+   * the run writes with what it has. Optional: without it nothing is asked.
+   */
+  windowSpent?(input: { userId: string; runId: string }): Promise<boolean>;
   draftPlan?(input: {
     userId: string;
     goal: string;

@@ -1058,6 +1058,8 @@ export interface ResearchPlan {
   stageFailures?: { state: string; count: number };
   /** The report is the evidence digest, written without a model (F6). */
   digest?: boolean;
+  /** A usage window ran out mid-run; the rounds stopped and the run wrote with what it had (§6). */
+  windowSpentAt?: string;
 }
 
 /** One piece of guidance from the reader, as the plan stores it. */
@@ -1636,6 +1638,7 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(isoOrUndefined(raw.broadenedAt) ? { broadenedAt: isoOrUndefined(raw.broadenedAt) } : {}),
     ...(stageFailuresOf(raw.stageFailures) ? { stageFailures: stageFailuresOf(raw.stageFailures) } : {}),
     ...(raw.digest === true ? { digest: true } : {}),
+    ...(isoOrUndefined(raw.windowSpentAt) ? { windowSpentAt: isoOrUndefined(raw.windowSpentAt) } : {}),
   };
 }
 

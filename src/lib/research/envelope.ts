@@ -61,10 +61,6 @@ export interface SearchRoster {
 
 export interface ResearchPlanCaps {
   entitled: boolean;
-  /** Ceiling per run in EUR, converted at call time. */
-  ceilingEur: number;
-  /** The most of the month's budget one run may take. */
-  shareOfMonth: number;
   /** Runs going at once, not counting plans parked at the gate. */
   liveRuns: number;
   /** Starts per local calendar day. Null: no daily limit. */
@@ -78,8 +74,6 @@ export interface ResearchPlanCaps {
 export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   FREE: {
     entitled: false,
-    ceilingEur: 0,
-    shareOfMonth: 0,
     liveRuns: 0,
     startsPerDay: 0,
     clockMinutes: 0,
@@ -88,8 +82,6 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   // Lite is chat-first: research is a Pro feature (PLANS.LITE.research).
   LITE: {
     entitled: false,
-    ceilingEur: 0,
-    shareOfMonth: 0,
     liveRuns: 0,
     startsPerDay: 0,
     clockMinutes: 0,
@@ -97,8 +89,6 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   },
   PRO: {
     entitled: true,
-    ceilingEur: 2.5,
-    shareOfMonth: 0.25,
     liveRuns: 1,
     startsPerDay: 5,
     clockMinutes: 15,
@@ -107,8 +97,6 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   },
   PLUS: {
     entitled: true,
-    ceilingEur: 5,
-    shareOfMonth: 0.2,
     liveRuns: 1,
     startsPerDay: 10,
     clockMinutes: 20,
@@ -117,8 +105,6 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   },
   MAX: {
     entitled: true,
-    ceilingEur: 8,
-    shareOfMonth: 0.15,
     liveRuns: 2,
     startsPerDay: 15,
     clockMinutes: 30,
@@ -127,8 +113,6 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   },
   MAX20: {
     entitled: true,
-    ceilingEur: 16,
-    shareOfMonth: 0.15,
     liveRuns: 3,
     startsPerDay: 30,
     clockMinutes: 60,
@@ -136,8 +120,6 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   },
   ULTRA: {
     entitled: true,
-    ceilingEur: 30,
-    shareOfMonth: 0.1,
     liveRuns: 5,
     startsPerDay: null,
     clockMinutes: 60,
@@ -145,15 +127,19 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
   },
   OWNER: {
     entitled: true,
-    // Or `RESEARCH_CHAT_BUDGET_USD`, which replaces it for the owner.
-    ceilingEur: 8,
-    shareOfMonth: 0.5,
     liveRuns: 3,
     startsPerDay: null,
     clockMinutes: 60,
     leadInputUsdPerMTokMax: null,
   },
 };
+
+/**
+ * The runaway guard for an account nothing meters (RESEARCH_V2 §6): not a
+ * price list — the clock, rounds and page caps end a run long before it —
+ * only the bound on a loop that never ends. $40, the old owner clamp's cap.
+ */
+export const UNMETERED_RESEARCH_BACKSTOP_MICRO_USD = 40_000_000;
 
 /** What a run always leaves in the month so the person can still chat after it. */
 export const CHAT_FLOOR_EUR = 0.25;
@@ -341,6 +327,10 @@ export function researchBudgetFor(input: {
     monthBudgetMicroUsd: number | null;
     /** When the month resets, for the refusal line. Additive. */
     resetsAtMs?: number | null;
+    /** Room left in the binding usage window (five-hour or weekly); null when unmetered (§6). */
+    windowMicroUsd?: number | null;
+    /** When that window frees up, for the refusal line. */
+    windowResetsAtMs?: number | null;
   };
   rates: ResearchRates;
   roster: SearchRoster;
@@ -348,7 +338,6 @@ export function researchBudgetFor(input: {
   startsToday: number;
   /** EUR→USD rate, passed in by the caller (`eurPerUsd()` lives in the server-only spend.ts). */
   eurPerUsd: number;
-  overrideCeilingMicroUsd?: number | null;
   /** The lead's model id, recorded on the envelope. Additive. */
   leadModel?: string;
   /** One class down, for a month too thin for the lead (§9.2). Additive. */
@@ -361,24 +350,27 @@ export function researchBudgetFor(input: {
     return { refused: true, reason: "daily_starts", params: { limit: caps.startsPerDay } };
   }
 
-  // ceiling = min(planCap, share × monthBudget, month.remaining − chatFloor, override?)
-  const override =
-    typeof input.overrideCeilingMicroUsd === "number" && input.overrideCeilingMicroUsd > 0
-      ? Math.floor(input.overrideCeilingMicroUsd)
-      : null;
-  const planCap =
-    input.plan === "OWNER" && override !== null
-      ? override
-      : Math.min(microUsdOfEur(caps.ceilingEur, input.eurPerUsd), override ?? Infinity);
-  const { monthMicroUsd, monthBudgetMicroUsd } = input.remaining;
-  const shareCap = monthBudgetMicroUsd !== null ? Math.floor(caps.shareOfMonth * monthBudgetMicroUsd) : Infinity;
+  /*
+   * ceiling = min(window left, month left − chat floor) (RESEARCH_V2 §6).
+   *
+   * No per-run ceiling and no share of the month any more: the owner's rule
+   * is that the account's five-hour and weekly windows are the limit. The
+   * window figure is the binding window's room after settled spend and open
+   * holds (`checkUsageWindows`); the month keeps its chat floor so a run
+   * never leaves the person unable to chat for the rest of the month.
+   */
+  const { monthMicroUsd } = input.remaining;
+  const windowMicroUsd = input.remaining.windowMicroUsd ?? null;
+  const windowCap = windowMicroUsd !== null ? windowMicroUsd : Infinity;
   const monthCap = monthMicroUsd !== null ? monthMicroUsd - microUsdOfEur(CHAT_FLOOR_EUR, input.eurPerUsd) : Infinity;
-  let ceiling = Math.min(planCap, shareCap, monthCap);
-  // A disabled cap leaves the month unbounded; the plan cap still binds, and
-  // the unattended-run default is only the backstop for a ceiling nothing set.
-  if (!Number.isFinite(ceiling)) ceiling = UNATTENDED_RUN_DEFAULT_MICRO_USD;
+  let ceiling = Math.min(windowCap, monthCap);
+  // Nothing metered (enforcement off): a runaway backstop, set high enough
+  // that the run's own clock, rounds and page cap bind first. Never below
+  // the app-wide unattended default.
+  if (!Number.isFinite(ceiling)) ceiling = Math.max(UNMETERED_RESEARCH_BACKSTOP_MICRO_USD, UNATTENDED_RUN_DEFAULT_MICRO_USD);
   ceiling = Math.max(0, Math.floor(ceiling));
-  const bound: ResearchEnvelope["limitedBy"] = planCap <= Math.min(shareCap, monthCap) ? "plan" : "month";
+  const bound: ResearchEnvelope["limitedBy"] =
+    Number.isFinite(windowCap) && windowCap <= monthCap ? "window" : Number.isFinite(monthCap) ? "month" : "scope";
 
   const questions = clamp(Math.floor(input.scope.questions) || 1, 1, MAX_RESEARCH_OBJECTIVES);
   const scope = { ...input.scope, questions };
@@ -408,12 +400,17 @@ export function researchBudgetFor(input: {
   }
   if (!fitted) {
     const params: Record<string, string | number> = {};
+    const { monthBudgetMicroUsd } = input.remaining;
     if (monthMicroUsd !== null && monthBudgetMicroUsd) {
       params.shareLeft = Math.max(0, Math.round((monthMicroUsd / monthBudgetMicroUsd) * 100));
     }
-    if (typeof input.remaining.resetsAtMs === "number" && Number.isFinite(input.remaining.resetsAtMs)) {
-      params.resetsOn = new Date(input.remaining.resetsAtMs).toISOString().slice(0, 10);
+    // The reset that frees the binding limit: the window's when the window binds.
+    const resetsAt = bound === "window" ? input.remaining.windowResetsAtMs : input.remaining.resetsAtMs;
+    if (typeof resetsAt === "number" && Number.isFinite(resetsAt)) {
+      params.resetsOn = new Date(resetsAt).toISOString();
     }
+    if (bound === "window") params.limit = "window";
+    else if (bound === "month") params.limit = "month";
     return { refused: true, reason: "budget", params };
   }
 

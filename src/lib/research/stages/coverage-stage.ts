@@ -18,7 +18,7 @@ import type { EngineContext } from "./context";
 import type { createCorpusStage } from "./corpus";
 
 export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createCorpusStage>, "doSearching" | "doBrowsing" | "doReading">) {
-  const { deps, store, beat, append, advance, finish, affordable, writerReserve, applySteering, bill } = ctx;
+  const { deps, store, beat, append, advance, finish, affordable, writerReserve, applySteering, bill, windowSpent } = ctx;
   const { doSearching, doBrowsing, doReading } = stages;
   const doCoverage = async (
     runAtStart: ResearchRunRow,
@@ -47,7 +47,7 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
        * usually find pages. Once only, and only while the run can pay for it.
        */
       const issued = [...(plan.issuedQueries ?? []), ...plan.queries, ...(plan.workerQueries ?? [])];
-      const wider = plan.broadenedAt || plan.finishRequestedAt
+      const wider = plan.broadenedAt || plan.finishRequestedAt || plan.windowSpentAt
         ? []
         : broadenedQueries({
             goal: run.goal,
@@ -117,6 +117,12 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
     // "Finish now" stops the rounds here (§9.7), and so does a follow-up sweep
     // that would eat the writer's and the audit's reservation (B8).
     if (plan.finishRequestedAt) followUps = [];
+    // The usage windows are the run's money limit (§6): a spent one ends the rounds here.
+    if (followUps.length > 0 && (await windowSpent(run))) {
+      followUps = [];
+      // Kept on the plan this stage is about to save over the one windowSpent wrote.
+      nextPlan.windowSpentAt = nextPlan.windowSpentAt ?? deps.now().toISOString();
+    }
     const reserve = writerReserve(plan);
     if (followUps.length > 0 && reserve > 0 && !(await affordable(run, reserve + followUps.length * SEARCH_ESTIMATE_MICRO_USD))) {
       followUps = [];

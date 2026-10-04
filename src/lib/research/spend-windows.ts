@@ -1,28 +1,29 @@
 /**
- * Research spend and the usage windows (SPEC §9.2, DECISIONS §4c).
+ * Research spend and the usage windows (RESEARCH_V2 §6, owner 2026-10-04).
  *
- * The five-hour and weekly windows exist to pace chat. Research is sized
- * against the MONTH — its own capped share of it — and a run can spend
- * several euros in one go: summed into the windows like any other row, one
- * €16 run would fill the five-hour window and every chat turn after it would
- * be refused. So the window sums and the window reservations leave
- * `kind: "research"` out, and the monthly total keeps it: research still
- * spends the month, it just does not close the window a person chats in.
+ * Research used to be left out of the five-hour and weekly windows and sized
+ * against its own capped share of the month, with a per-run ceiling per plan
+ * (€2.50 on Pro). The owner's rule replaced that: "the only limit should be
+ * your 5h window & weekly limit". So research spend now counts in the windows
+ * like every other kind, a run is sized to what is left of them (and of the
+ * month), and a run whose window runs out stops its rounds and writes with
+ * what it has. The month still counts everything.
  *
- * `spend.ts` is `server-only`; the rule lives here, pure, so the test reads
- * the same filter the queries use.
+ * The exclusion list stays, empty, so the one place a kind could be left out
+ * of a window again is this file, and the test reads the same filter the
+ * queries use. `spend.ts` is `server-only`; the rule lives here, pure.
  */
 
 export const RESEARCH_SPEND_KIND = "research";
 
 /** Ledger kinds the usage windows do not count. The month counts everything. */
-export const WINDOW_EXCLUDED_SPEND_KINDS: readonly string[] = [RESEARCH_SPEND_KIND];
+export const WINDOW_EXCLUDED_SPEND_KINDS: readonly string[] = [];
 
 export type SpendScope = "window" | "month";
 
-/** The Prisma `where` fragment a sum over `scope` adds: nothing for the month, research out for a window. */
+/** The Prisma `where` fragment a sum over `scope` adds: nothing for the month, the excluded kinds (none today) for a window. */
 export function spendKindFilter(scope: SpendScope): { kind?: { notIn: string[] } } {
-  return scope === "window" ? { kind: { notIn: [...WINDOW_EXCLUDED_SPEND_KINDS] } } : {};
+  return scope === "window" && WINDOW_EXCLUDED_SPEND_KINDS.length > 0 ? { kind: { notIn: [...WINDOW_EXCLUDED_SPEND_KINDS] } } : {};
 }
 
 /** The same sum over in-memory rows, so the rule is testable without Postgres. */

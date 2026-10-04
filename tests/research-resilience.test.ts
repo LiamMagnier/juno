@@ -249,3 +249,56 @@ test("F7: an aborted drive is the caller leaving, not a stage failure", async ()
   assert.equal(left?.state, "synthesizing");
   assert.equal(kinds(events, run.id, "error").filter((p) => p.scope === "stage").length, 0);
 });
+
+// ── §6: the usage windows are the run's money limit ─────────────────────────
+
+test("§6: a usage window spent mid-run stops the rounds and the run writes with what it has", async () => {
+  const { store, events } = memoryStore();
+  let asked = 0;
+  let followUpsWithoutWindow = 0;
+  const demanding = plannerOutput({
+    questions: plannerOutput().questions.map((q) => ({ ...q, evidence: { minSources: 4, primary: true } })),
+  });
+  // Control: the same run with room in the window schedules follow-up rounds.
+  {
+    const control = memoryStore();
+    const engine = createResearchEngine({ ...reworkDeps(control.store), async draftPlan() { return { ok: true, output: demanding, costMicroUsd: 0 }; } });
+    const r = await engine.start({ userId: "u", goal: GOAL, confirmation: "auto" });
+    await engine.drive({ runId: r.id, userId: "u" });
+    followUpsWithoutWindow = kinds(control.events, r.id, "follow_up_scheduled").length;
+  }
+  assert.ok(followUpsWithoutWindow > 0, "the control run goes another round");
+  const engine = createResearchEngine({
+    ...reworkDeps(store),
+    async draftPlan() {
+      return { ok: true, output: demanding, costMicroUsd: 0 };
+    },
+    async windowSpent() {
+      asked += 1;
+      return true;
+    },
+  });
+  const run = await engine.start({ userId: "u", goal: GOAL, confirmation: "auto" });
+  const done = await engine.drive({ runId: run.id, userId: "u" });
+  assert.ok(done?.report, "a report was written");
+  assert.ok(done && ["completed", "partially_completed"].includes(done.state));
+  assert.ok(parsePlan(done?.plan).windowSpentAt);
+  const window = kinds(events, run.id, "error").filter((p) => p.scope === "window");
+  assert.equal(window.length, 1, "said once");
+  assert.equal(kinds(events, run.id, "follow_up_scheduled").length, 0, "no further rounds");
+  assert.ok(asked >= 1);
+});
+
+test("§6: a window read that fails never stops a run that may have room", async () => {
+  const { store } = memoryStore();
+  const engine = createResearchEngine({
+    ...reworkDeps(store),
+    async windowSpent() {
+      throw new Error("db down");
+    },
+  });
+  const run = await engine.start({ userId: "u", goal: GOAL, confirmation: "auto" });
+  const done = await engine.drive({ runId: run.id, userId: "u" });
+  assert.equal(done?.state, "completed");
+  assert.equal(parsePlan(done?.plan).windowSpentAt, undefined);
+});

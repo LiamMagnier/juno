@@ -291,7 +291,7 @@ export const RESEARCH_COPY = {
     voice: "Research isn't available in voice chats.",
     liveRuns: "Too many research runs are going. Wait for one to finish.",
     dailyStarts: "You've reached today's research limit.",
-    budget: "Research needs more of your monthly allowance than is left.",
+    budget: "Research needs more of your usage window or monthly allowance than is left.",
     resetsOn: "Resets on",
   },
 

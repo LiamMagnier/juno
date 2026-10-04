@@ -56,7 +56,7 @@ import { splitPassages } from "./writer-text";
 import type { EngineContext } from "./context";
 
 export function createWorkerStage(ctx: EngineContext) {
-  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill } = ctx;
+  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent } = ctx;
   const initialDelegations = (plan: ResearchPlan, workers: number): ResearchDelegation[] => {
     const objectives = plan.objectives.length ? plan.objectives : buildResearchObjectives("", plan.queries);
     const ranked = [...objectives].sort((a, b) => b.importance - a.importance);
@@ -453,6 +453,13 @@ export function createWorkerStage(ctx: EngineContext) {
       // queued since the last boundary becomes constraints before the briefs
       // are written (§9.4).
       if (plan.finishRequestedAt) break;
+      // A spent usage window is the run's money limit (§6): write with what it has.
+      if (await windowSpent(current)) {
+        // Reloaded so nothing after the loop saves the plan from before the stop.
+        current = (await store.loadRun(current.id, current.userId)) ?? current;
+        plan = parsePlan(current.plan);
+        break;
+      }
       if ((plan.steering ?? []).some((entry) => entry.appliedAtRound === null)) {
         current = await applySteering(current, round);
         plan = parsePlan(current.plan);
