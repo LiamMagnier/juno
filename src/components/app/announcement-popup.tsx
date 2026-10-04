@@ -294,6 +294,7 @@ export function AnnouncementDialog({
 }
 
 const DISMISSED_KEY = "juno:dismissed_announcements";
+const ANNOUNCEMENT_REREAD_MS = 5 * 60_000;
 
 export function AnnouncementPopup() {
   const router = useRouter();
@@ -318,12 +319,23 @@ export function AnnouncementPopup() {
     };
   }, []);
 
+  // Re-read on navigation, at most every few minutes. It used to re-read on
+  // EVERY pathname change, so each click in the sidebar carried one more
+  // request (measured on every transition in PERFORMANCE.md); an announcement
+  // published a minute ago can wait for the next window.
+  const lastReadAt = React.useRef(0);
   React.useEffect(() => {
     if (pathname?.startsWith("/admin")) return;
+    if (Date.now() - lastReadAt.current < ANNOUNCEMENT_REREAD_MS) return;
+    lastReadAt.current = Date.now();
     const controller = new AbortController();
+    let finished = false;
 
     fetch("/api/announcements", { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        finished = true;
+        return res.ok ? res.json() : null;
+      })
       .then((data) => {
         if (data?.announcement) {
           try {
@@ -335,7 +347,12 @@ export function AnnouncementPopup() {
       })
       .catch(() => {});
 
-    return () => controller.abort();
+    return () => {
+      // A read cut short by the next navigation (or StrictMode's rehearsal)
+      // does not count; the next pathname reads again.
+      if (!finished) lastReadAt.current = 0;
+      controller.abort();
+    };
   }, [pathname]);
 
   // Open only once onboarding has stood down (or was never showing).

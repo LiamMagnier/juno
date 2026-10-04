@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { intentPrefetch } from "@/lib/intent-prefetch";
 import { ChevronRight, CornerDownRight, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -631,6 +633,7 @@ export function ProjectTile({
   onDelete?: () => void;
   onDropInto?: (drag: ProjectDrag) => void;
 }) {
+  const router = useRouter();
   const drop = useDropTarget(
     (drag) => !!onDropInto && canDropInto(allProjects, drag, p.id),
     (drag) => onDropInto?.(drag)
@@ -667,6 +670,10 @@ export function ProjectTile({
         {pathLabel && <p className="pj-annot mb-1 truncate pr-6">{pathLabel}</p>}
         <Link
           href={`/projects/${p.id}`}
+          // On aim, not on sight: every tile in view used to fire its own
+          // partial prefetch on page load (lib/intent-prefetch.ts).
+          prefetch={false}
+          {...intentPrefetch(router, `/projects/${p.id}`)}
           draggable={false}
           className={cn(
             "block truncate text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",

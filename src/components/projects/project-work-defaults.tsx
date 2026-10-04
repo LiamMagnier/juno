@@ -28,6 +28,7 @@ import {
 import { isWorkCapableModel } from "@/lib/work/models";
 import type { WorkProjectDefaults } from "@/lib/work/projects";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { cachedJson } from "@/lib/client-cache";
 
 /**
  * The value the picker uses for "this project has no opinion".
@@ -90,9 +91,9 @@ export function ProjectWorkDefaults({
       // The chat surface's own endpoint, not a second one written for projects:
       // a parallel connector list is a parallel answer to "is Gmail linked",
       // and the two disagree the first time somebody unlinks it elsewhere.
-      const response = await fetch("/api/connectors");
-      if (!response.ok) throw new Error("connectors");
-      const data = (await response.json()) as { connectors?: ConnectorStatus[] };
+      // Through the shared cache (lib/client-cache.ts): the composer reads the
+      // same list when a conversation opens, and a connection change clears it.
+      const data = await cachedJson<{ connectors?: ConnectorStatus[] }>("/api/connectors");
       setConnectors((data.connectors ?? []).filter((connector) => connector.connected));
     } catch {
       setConnectorsFailed(true);

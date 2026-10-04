@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { intentPrefetch } from "@/lib/intent-prefetch";
 import { MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -161,6 +162,8 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
   const waiting = agent.state === "waiting" || (agent.needsYou > 0 && agent.state !== "blocked");
   const words = stateWords(agent);
   const paused = agent.status === "paused";
+  const router = useRouter();
+  const href = agentHref(agent);
   const act = async (patch: Parameters<typeof updateAgent>[1]) => {
     const outcome = await updateAgent(agent.id, patch);
     if (outcome.kind === "ok") {
@@ -170,8 +173,15 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
   };
   return (
     <div className="group/portrait relative" data-state={agent.state}>
+      {/* Full prefetch on aim, not a partial one on sight: a viewport prefetch
+          of a force-dynamic route stops at its loading boundary, so the click
+          committed the skeleton and React then held the thread back for its
+          300 ms Suspense reveal throttle (measured ~400 ms Orbit → agent).
+          See lib/intent-prefetch.ts. */}
       <Link
-        href={agentHref(agent)}
+        href={href}
+        prefetch={false}
+        {...intentPrefetch(router, href)}
         data-face-trigger
         aria-label={`${agent.name}${agent.role ? `, ${agent.role}` : ""}. ${words}`}
         className="flex flex-col items-center rounded-card border border-transparent px-3 pb-4 pt-3 text-center transition-[background-color,border-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.08] hover:bg-foreground/[0.025] active:scale-[.99] motion-reduce:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
