@@ -225,7 +225,7 @@ export function ProductSwitch({
      */
     <nav
       aria-label={`${PRODUCT_NAME} products`}
-      className="flex h-8 w-full shrink-0 items-center gap-0.5 coarse:h-12"
+      className="flex h-8 w-full shrink-0 items-center gap-0.5 pl-[5px] coarse:h-12"
     >
       <OrbitEnd product={PRODUCTS[0]} active={active === PRODUCTS[0].id} locked={isLocked(PRODUCTS[0], plan)} onNavigate={onNavigate} />
       <OrbitTrack active={active} />
