@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   CHAT_SKILL_REFUSAL_MESSAGES,
   CHAT_SKILL_TOOLS,

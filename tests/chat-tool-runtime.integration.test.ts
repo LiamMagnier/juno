@@ -1,7 +1,6 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { chatTurnSource, turnModule } from "./chat-turn-source";
 
@@ -31,7 +30,6 @@ import { chatTurnSource, turnModule } from "./chat-turn-source";
  *     npx tsx --test --experimental-test-module-mocks tests/chat-tool-runtime.integration.test.ts
  */
 
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("the route decides execution tools from the entitlement rows and the verified verdict", () => {
   const route = chatTurnSource();

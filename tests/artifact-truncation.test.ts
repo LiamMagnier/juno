@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   parseArtifacts,
   parseStreamingArtifact,
@@ -32,7 +31,6 @@ import { chatTurnSource } from "./chat-turn-source";
  * (the finished turn and the stopped one) write only finished artifacts.
  */
 
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 const REVISION_START =
   'Here is the updated page.\n\n<juno:artifact identifier="landing" type="html" title="Landing Page" language="html">' +

@@ -24,6 +24,7 @@ import { runTurn } from "@/lib/chat/turn/run-turn";
 import { finalizeOutputs } from "@/lib/chat/turn/finalize";
 import { failDurableReceiptAtStart } from "@/lib/chat/turn/durable-receipt";
 import { createTurnTrace } from "@/lib/chat/turn/trace";
+import { emitTurnTrace } from "@/lib/chat/turn/trace-sink";
 import { isRefusal } from "@/lib/chat/turn/types";
 
 export const runtime = "nodejs";
@@ -270,7 +271,7 @@ async function handleChat(req: Request) {
         artifactEdit: !!artifactEditTarget,
         regenerate: !!input.regenerate,
       },
-    });
+    }, emitTurnTrace);
 
     const run = await runTurn({
       req,

@@ -1,6 +1,3 @@
-import "server-only";
-import { logSync } from "@/lib/logger";
-import { observability } from "@/lib/observability";
 import { normalizeProviderError } from "@/lib/provider-error";
 import type { StreamEffect } from "@/lib/chat/stream-accumulator";
 import type { ChatFinishReason } from "@/types/chat";
@@ -8,18 +5,11 @@ import type { ChatFinishReason } from "@/types/chat";
 /*
  * THE PER-TURN TRACE (BRIEF §47).
  *
- * One record per chat turn, emitted once when the turn reaches its terminal
- * state, through the facilities the repo already has:
- *
- *  - `logSync("info", "chat.turn", …)` — the structured JSON line PM2 captures
- *    (src/lib/logger.ts), grep-then-jq-able and shipper-ready;
- *  - `observability.recordLatency` — the in-process model performance
- *    collector (src/lib/observability.ts), so per-model success rate and
- *    p95 latency/TTFT are computed from real turns;
- *  - a bounded in-process ring buffer read by the owner-only diagnostics page
- *    (/admin/turns). Per process, lost on restart: it is a live window for an
- *    operator, not a ledger. The spend ledger and the durable receipt remain
- *    the records of truth.
+ * One record per chat turn, built here (pure, no I/O) and handed once, when
+ * the turn reaches its terminal state, to a sink. The production sink
+ * (trace-sink.ts) emits it through the facilities the repo already has: the
+ * structured `chat.turn` log line, the in-process model performance collector
+ * and the owner-only diagnostics page's ring buffer.
  *
  * REDACTION IS STRUCTURAL, NOT A FILTER. The trace type has no field that can
  * hold message text, reasoning, tool arguments, tool results, a prompt, a URL,
@@ -134,25 +124,16 @@ export interface TurnTraceRecorder {
   readonly finished: boolean;
 }
 
-const RING_SIZE = 200;
-const ring: TurnTrace[] = [];
-
-/** The most recent turns this process finished, newest first. */
-export function recentTurnTraces(limit = RING_SIZE): TurnTrace[] {
-  return ring.slice(-limit).reverse();
-}
-
-/** Test seam: forget what this process recorded. */
-export function clearTurnTraces(): void {
-  ring.length = 0;
-}
-
 /** Tool names come from Juno's registry or a connector's tool list: keep them short and plain. */
 function safeToolName(name: string): string {
   return name.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 80);
 }
 
-export function createTurnTrace(start: TurnTraceStart, now: () => number = Date.now): TurnTraceRecorder {
+export function createTurnTrace(
+  start: TurnTraceStart,
+  sink: (trace: TurnTrace) => void,
+  now: () => number = Date.now
+): TurnTraceRecorder {
   const startedAt = now();
   let firstTokenAt: number | null = null;
   const calls = new Map<string, TurnTraceToolCall>();
@@ -232,22 +213,8 @@ export function createTurnTrace(start: TurnTraceStart, now: () => number = Date.
         },
         startedAt: new Date(startedAt).toISOString(),
       };
-      ring.push(trace);
-      if (ring.length > RING_SIZE) ring.splice(0, ring.length - RING_SIZE);
       try {
-        logSync(trace.outcome === "failed" ? "warn" : "info", "chat.turn", { ...trace });
-        observability.recordLatency({
-          requestId: trace.requestId ?? undefined,
-          operation: `chat.${trace.surface}`,
-          durationMs: trace.latency.totalMs,
-          ttftMs: trace.latency.ttftMs ?? undefined,
-          modelId: trace.model,
-          provider: trace.provider,
-          success: trace.outcome !== "failed",
-          errorCode: trace.failureCode ?? undefined,
-          tokensIn: trace.usage.promptTokens ?? undefined,
-          tokensOut: trace.usage.completionTokens ?? undefined,
-        });
+        sink(trace);
       } catch {
         // Observability must never be the reason a turn fails.
       }

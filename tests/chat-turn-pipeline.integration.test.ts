@@ -51,6 +51,8 @@ if (!DB_URL) {
   const outbound: string[] = [];
   /** Shortens the stall watchdog for the one test that needs it. */
   let stallMs: number | null = null;
+  /** Makes the deep-research leg throw, for the one test that needs it. */
+  let researchThrows = false;
   const logLines: string[] = [];
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,6 +91,18 @@ if (!DB_URL) {
         ...stall,
         createStallWatchdog: (onStall: () => void, idle?: number, startup?: number) =>
           stall.createStallWatchdog(onStall, stallMs ?? idle, stallMs ?? startup),
+      },
+    });
+    const webSearch = await import("@/lib/web-search");
+    mock.module("@/lib/web-search", { namedExports: { ...webSearch, isWebSearchConfigured: () => true } });
+    const deepResearch = await import("@/lib/deep-research");
+    mock.module("@/lib/deep-research", {
+      namedExports: {
+        ...deepResearch,
+        runDeepResearch: async (...args: Parameters<typeof deepResearch.runDeepResearch>) => {
+          if (researchThrows) throw new Error("research backend unavailable");
+          return deepResearch.runDeepResearch(...args);
+        },
       },
     });
     const llm = await import("@/lib/llm");
@@ -359,6 +373,95 @@ if (!DB_URL) {
     assert.equal(done.message.content, "Half an");
     const usage = await prisma.usage.findFirst({ where: { userId: user.id } });
     assert.equal(usage?.messageCount, 1, "a stop is not refunded");
+  });
+
+  // ── The per-turn trace (BRIEF §47) ───────────────────────────────────────
+
+  test("every turn leaves one redacted trace: run id, model, latency, outcome, spend", async () => {
+    const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+    const user = await seedUser();
+    const secret = "my bank PIN is 9921";
+    script = () => answer("Noted, never repeated.");
+    const before = logLines.length;
+    const { frames } = await chat({ message: secret });
+    const generationId = frames[0].generationId as string;
+    const trace = recentTurnTraces().find((t) => t.runId === generationId);
+    assert.ok(trace, "the turn's trace was recorded");
+    assert.equal(trace.accountId, user.id);
+    assert.equal(trace.surface, "saved");
+    assert.equal(trace.outcome, "completed");
+    assert.equal(trace.finishReason, "stop");
+    assert.equal(trace.attempts, 1);
+    assert.equal(trace.usage.completionTokens, 12);
+    assert.ok(trace.latency.ttftMs !== null && trace.latency.totalMs >= trace.latency.ttftMs);
+    assert.ok(trace.requestId?.startsWith("req-"));
+
+    const lines = logLines.slice(before).filter((line) => line.includes('"event":"chat.turn"'));
+    assert.equal(lines.length, 1, "one structured log line per turn");
+    assert.doesNotMatch(lines[0], /9921|bank PIN|never repeated/, "no message or answer text in the log");
+    assert.match(lines[0], new RegExp(generationId));
+  });
+
+  test("failures, stops and private turns are traced with their cause", async () => {
+    const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+    const user = await seedUser();
+    script = async function* () {
+      throw Object.assign(new Error("429 Too Many Requests"), { status: 429 });
+    };
+    const limited = await chat({ message: "Hello?" });
+    const limitedTrace = recentTurnTraces().find((t) => t.runId === limited.frames[0].generationId);
+    assert.equal(limitedTrace?.outcome, "failed");
+    assert.equal(limitedTrace?.error?.class, "rate_limit");
+    assert.equal(limitedTrace?.error?.retryable, true);
+
+    let generationId = `gen-${randomUUID()}`;
+    script = async function* (opts) {
+      yield { type: "text", text: "Half" };
+      const { cancelGeneration } = await import("@/lib/generation-cancel");
+      cancelGeneration(generationId, user.id);
+      if (opts.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
+    };
+    await chat({ message: "Go.", generationId });
+    const stopped = recentTurnTraces().find((t) => t.runId === generationId);
+    assert.equal(stopped?.outcome, "partial");
+    assert.equal(stopped?.cancellation.userStopped, true);
+
+    generationId = `gen-${randomUUID()}`;
+    script = () => answer("Private.");
+    await chat({ privateMode: true, message: "psst", privateHistory: [{ role: "USER", content: "psst" }], generationId });
+    const privateTrace = recentTurnTraces().find((t) => t.runId === generationId);
+    assert.equal(privateTrace?.surface, "private");
+    assert.equal(privateTrace?.conversationId, null);
+    assert.equal(privateTrace?.outcome, "completed");
+  });
+
+  test("a research leg that throws releases the spend hold, refunds, and fails the receipt (was: hold leaked to the sweep)", async () => {
+    const user = await seedUser();
+    researchThrows = true;
+    try {
+      script = () => answer("unreachable");
+      const calls = streamCalls;
+      const { frames } = await chat({
+        message: "Research the history of tea.",
+        deepResearch: true,
+        clientRequestId: `req-${randomUUID()}`,
+        clientMessageId: `msg-${randomUUID()}`,
+      });
+      assert.equal(streamCalls, calls, "synthesis never ran");
+      const last = frames.at(-1) as Frame & { receiptState?: string };
+      assert.equal(last.type, "error");
+      assert.equal(last.receiptState, "failed");
+      assert.equal(
+        await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }),
+        0,
+        "no hold is left open against the account"
+      );
+      assert.equal((await prisma.usage.findFirst({ where: { userId: user.id } }))?.messageCount, 0);
+      const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+      assert.equal(recentTurnTraces().find((t) => t.runId === frames[0].generationId)?.outcome, "failed");
+    } finally {
+      researchThrows = false;
+    }
   });
 
   test("nothing left the process", () => {

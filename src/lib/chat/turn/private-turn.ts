@@ -42,6 +42,7 @@ import { withRegenerateInstruction } from "./prompt";
 import { pumpTurnStream, sendReasoningAndSearch, sendSelectedModel } from "./run-stream";
 import { recordTurnSpend } from "./spend";
 import { createTurnTrace, traceUsage } from "./trace";
+import { emitTurnTrace } from "./trace-sink";
 import type { TurnUser } from "./types";
 
 /*
@@ -175,7 +176,7 @@ export async function runPrivateTurn({
       artifactEdit: false,
       regenerate: !!input.regenerate,
     },
-  });
+  }, emitTurnTrace);
 /*
    * Hold this turn's estimated cost against the ceiling for as long as it runs.
    *
