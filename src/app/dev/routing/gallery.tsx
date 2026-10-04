@@ -199,7 +199,7 @@ export function RoutingGallery({ cases, only }: { cases: RoutingCase[]; only?: s
               <div className="space-y-10">
                 {cases.map((c) => (
                   <div key={c.id} data-decision={c.id}>
-                    <p className="font-mono text-[11px] tracking-[0.02em] text-muted-foreground">
+                    <p className="font-mono text-caption text-muted-foreground">
                       {c.taskClass} · {c.complexity} · excluded{" "}
                       {Object.entries(c.excluded)
                         .filter(([, n]) => n)
@@ -207,7 +207,7 @@ export function RoutingGallery({ cases, only }: { cases: RoutingCase[]; only?: s
                         .join(", ")}
                     </p>
                     <div className="mt-2 overflow-x-auto">
-                      <table className="w-full min-w-[36rem] border-collapse text-left font-mono text-[11px] tabular-nums">
+                      <table className="w-full min-w-[36rem] border-collapse text-left font-mono text-caption tabular-nums">
                         <thead className="text-muted-foreground">
                           <tr className="border-b border-border">
                             <th className="py-1.5 pr-3 font-normal">model</th>

@@ -60,7 +60,7 @@ export function AutoReceipt({
 export function AutoReceiptReasons({ modelName, receipt }: { modelName: string; receipt: RoutingReceipt }) {
   return (
     <div className="px-4 py-3">
-      <p className="font-mono text-[11px] tracking-[0.02em] text-muted-foreground">Selected for</p>
+      <p className="font-mono text-caption text-muted-foreground">Selected for</p>
       <ul className="mt-2 space-y-1.5">
         {receipt.reasons.map((reason) => (
           <li key={reason} className="flex gap-2 text-ui leading-snug text-foreground">
