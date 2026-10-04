@@ -365,6 +365,10 @@
         "/api/design/[artifactId]/transactions": {
           "status": "planned",
           "note": "The web's editor commits each edit here as it goes; the Mac's host saves edits its own way and does not call it."
+        },
+        "/api/artifacts/[id]/ops": {
+          "status": "web-only",
+          "note": "Targeted edits to a semantic spreadsheet, document or deck. Native clients are given the Markdown artifact contract instead, so no semantic artifact reaches them to edit."
         }
       }
     },
@@ -390,7 +394,15 @@
         "/api/memory/import": "native",
         "/api/memory/import/preview": "native",
         "/api/memory/recap": "native",
-        "/api/projects/[id]/memory": "native"
+        "/api/projects/[id]/memory": "native",
+        "/api/memory/skill-candidates": {
+          "status": "planned",
+          "note": "Methods Alevr noticed the person repeat, offered as draft skills on the web's Memory page. The apps do not list them yet."
+        },
+        "/api/memory/skill-candidates/[id]": {
+          "status": "planned",
+          "note": "Accepting or dismissing a proposed skill; web first, like the list."
+        }
       }
     },
     {
@@ -414,7 +426,7 @@
         "/api/connectors/[id]": "native",
         "/api/connectors/usage": {
           "status": "planned",
-          "note": "When each app was last used (tool, chat), for the app's details under Customize \u203a Apps on the web. The apps do not show a last-used line yet."
+          "note": "When each app was last used (tool, chat), for the app's details under Customize › Apps on the web. The apps do not show a last-used line yet."
         },
         "/api/connectors/[id]/callback": {
           "status": "web-only",
@@ -732,6 +744,26 @@
         "/api/agents/[id]/undo": {
           "status": "planned",
           "note": "Agent event undo; wired into AgentClient.swift in Phase 7."
+        },
+        "/api/agents/[id]/board": {
+          "status": "planned",
+          "note": "An Orbit member's work board (goals, dependencies, retries). Web first; the apps show the member's tasks without the board yet."
+        },
+        "/api/agents/[id]/goals/[goalId]/advance": {
+          "status": "planned",
+          "note": "Advancing a durable goal by one step from the board. The apps have no board to press it from yet."
+        },
+        "/api/agents/[id]/memory-access": {
+          "status": "planned",
+          "note": "What an Orbit member may read of the account's memory, set from its page on the web. The apps keep the default grant until they show the setting."
+        },
+        "/api/agents/rooms": {
+          "status": "planned",
+          "note": "Orbit rooms: two to six members answering in one conversation. Web first; the apps open a room's conversation as an ordinary chat."
+        },
+        "/api/agents/rooms/[conversationId]": {
+          "status": "planned",
+          "note": "A room's members, turn plan and handoffs. The apps draw the replies without the room's bylines yet."
         }
       }
     },
@@ -945,6 +977,22 @@
         "/api/profile/activity": {
           "status": "planned",
           "note": "The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet."
+        },
+        "/api/secrets": {
+          "status": "planned",
+          "note": "The credential vault the agent computer fills sign-ins from, managed in the web's Settings. The apps do not manage it yet."
+        },
+        "/api/secrets/[id]": {
+          "status": "planned",
+          "note": "Editing or deleting one stored credential; web first, like the list."
+        },
+        "/api/secrets/grants": {
+          "status": "planned",
+          "note": "Which sites and tasks may use a stored credential; web first."
+        },
+        "/api/secrets/grants/[id]": {
+          "status": "planned",
+          "note": "Revoking one credential grant; web first."
         }
       }
     },
@@ -966,7 +1014,23 @@
         },
         "/api/stripe/checkout": "native",
         "/api/stripe/portal": "native",
-        "/api/v1/billing/app-store": "native"
+        "/api/v1/billing/app-store": "native",
+        "/api/billing/credits": {
+          "status": "planned",
+          "note": "Top-up credit balance and expiry, shown in the web's Billing section. The apps buy plans through the App Store and do not sell top-ups yet."
+        },
+        "/api/stripe/topup": {
+          "status": "web-only",
+          "note": "Buying a top-up pack through Stripe Checkout; App Store rules keep this purchase on the web."
+        },
+        "/api/stripe/cancel": {
+          "status": "web-only",
+          "note": "Cancelling a Stripe subscription with the legal confirmation; an App Store subscription is cancelled in the App Store."
+        },
+        "/api/referrals": {
+          "status": "planned",
+          "note": "The referral code and its rewards in the web's Billing section; the apps do not show it yet."
+        }
       }
     },
     {
@@ -1037,6 +1101,11 @@
           "mac": "web-only",
           "ios": "web-only",
           "note": "Owner tools."
+        },
+        "/admin/turns": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "The owner's turn trace viewer (route timing, routing receipts); an operator tool."
         }
       },
       "routes": {
