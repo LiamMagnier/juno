@@ -200,9 +200,10 @@ export function ArtifactPreview({
   const svg = type === "SVG" && preview ? svgDataUrl(preview) : null;
 
   const lines = React.useMemo(() => {
-    if (!preview || svg || design) return [];
+    // A workbook, document or deck body is model JSON: the glyph, never the source.
+    if (!preview || svg || design || type === "SPREADSHEET" || type === "DOCUMENT" || type === "PRESENTATION") return [];
     return preview.split("\n").slice(0, PREVIEW_LINES);
-  }, [preview, svg, design]);
+  }, [preview, svg, design, type]);
 
   return (
     <div className={cn("surface-inset relative isolate overflow-hidden rounded-field", className)}>

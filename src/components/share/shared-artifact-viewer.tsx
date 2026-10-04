@@ -1,5 +1,7 @@
 "use client";
 
+import { SemanticArtifactView } from "@/components/semantic/semantic-artifact-view";
+import type { SemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -62,6 +64,14 @@ export function SharedArtifactViewer({
   const hasPreview = isMarkdown || (rt.mode === "web" && !previewOff);
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");
 
+  if (rt.mode === "semantic") {
+    // A shared workbook, document or deck reads as itself, never as its JSON.
+    return (
+      <div className="h-full min-h-0">
+        <SemanticArtifactView type={type as SemanticArtifactType} content={content} readOnly />
+      </div>
+    );
+  }
   if (type === "DESIGN") {
     const token = typeof params?.token === "string" ? params.token : null;
     return (

@@ -43,6 +43,8 @@ import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surfac
 import { useRecordDesignCommit } from "@/components/canvas/use-record-design-commit";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
+import { SemanticArtifactView, postSemanticOps } from "@/components/semantic/semantic-artifact-view";
+import { isSemanticArtifactType, type SemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { SuggestionBar } from "@/components/artifacts/suggestion-bar";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { fileNameFromDisposition } from "@/lib/download-name";
@@ -229,8 +231,10 @@ export function CanvasPanel({
   const isDesign = rt.mode === "design";
   const designRef = React.useRef<DesignEditorHandle | null>(null);
   const recordDesignCommit = useRecordDesignCommit(artifact, onArtifactUpdated);
+  // A workbook, document or deck: rendered from its model, edited by operation.
+  const isSemantic = rt.mode === "semantic" && isSemanticArtifactType(artifact.type);
   // Incognito artifacts are never persisted, so there is no row for the route to export.
-  const canExportOffice = isMarkdown && !!shareable;
+  const canExportOffice = (isMarkdown || isSemantic) && !!shareable;
 
   const [tab, setTab] = React.useState<"preview" | "console" | "code">("preview");
   // The version on screen: a pinned one, or null to follow the latest. Derived
@@ -1184,7 +1188,7 @@ export function CanvasPanel({
                     ]}
                   />
                 )}
-                {tab === "preview" && rt.mode !== "none" && !isMarkdown && !isDesign && (
+                {tab === "preview" && rt.mode !== "none" && !isMarkdown && !isDesign && !isSemantic && (
                   <>
                     {canInspect && (
                       <Tooltip>
@@ -1263,6 +1267,23 @@ export function CanvasPanel({
                       readOnly={!isLatest}
                       editorRef={designRef}
                       onCommitted={recordDesignCommit}
+                    />
+                  </div>
+                ) : isSemantic ? (
+                  <div key={artifact.id} className="h-full motion-safe:animate-fade-in">
+                    <SemanticArtifactView
+                      type={artifact.type as SemanticArtifactType}
+                      content={versionContent}
+                      readOnly={!isLatest || !shareable}
+                      onApplyOps={async (ops) => {
+                        const result = await postSemanticOps<ClientArtifact>(artifact.id, selectedVersion, ops);
+                        if (result.ok) {
+                          onArtifactUpdated(result.artifact);
+                          return { ok: true };
+                        }
+                        if (result.artifact) onArtifactUpdated(result.artifact);
+                        return { ok: false, error: result.error };
+                      }}
                     />
                   </div>
                 ) : isMarkdown ? (
