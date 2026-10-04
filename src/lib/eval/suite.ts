@@ -128,12 +128,15 @@ function runIsPalindrome(code: string): { ok: boolean; detail: string } {
       }
       console.log(JSON.stringify({ ok: true, detail: "5/5 cases" }));
     });`;
-  const run = spawnSync(process.execPath, ["--permission", "-e", harness], {
+  // `/proc/.reset` is the one file Docker Desktop's Rosetta shim preloads into
+  // every Node process in an emulated amd64 container (the release build runs
+  // there); refused, the child dies before it runs a line. It is the only read
+  // allowed, and it does not exist on a real machine.
+  const run = spawnSync(process.execPath, ["--permission", "--allow-fs-read=/proc/.reset", "-e", harness], {
     input: code,
-    // Bounds a runaway loop, not the cases (they take milliseconds). Generous
-    // because a cold Node start is slow under emulation on a loaded machine
-    // (the amd64 release container on Apple silicon took over 2 s): a timeout
-    // there failed CORRECT code. The permission model is the security boundary.
+    // Bounds a runaway loop, not the cases (they take milliseconds); generous
+    // for a cold Node start under emulation. The permission model is the
+    // security boundary.
     timeout: EVAL_CODE_TIMEOUT_MS,
     encoding: "utf8",
     env: { NODE_ENV: "production" } as NodeJS.ProcessEnv,
