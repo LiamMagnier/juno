@@ -91,6 +91,7 @@ export async function POST(req: Request) {
       message: triageMessage,
       recentMessages,
       mode: input.deepResearch ? "research" : "answer",
+      userId: user.id,
     });
     return NextResponse.json(result);
   } catch (err) {

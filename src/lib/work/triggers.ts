@@ -1150,6 +1150,17 @@ export function advanceTriggerCursor(
 export const TRIGGER_POLL_INTERVAL_MS = 2 * 60_000;
 
 /**
+ * How often a topic monitor searches the web: every six hours.
+ *
+ * Unlike a mailbox or a calendar read, every topic poll is a paid fused web
+ * search billed to the user's budget (meteredWebSearch). At the two-minute
+ * cadence one monitor could spend ~$15 a day — more than a Pro month in a
+ * day. Four searches a day is a few euros a month, and news on a topic rarely
+ * needs fresher than that.
+ */
+export const TOPIC_MONITOR_POLL_INTERVAL_MS = 6 * 60 * 60_000;
+
+/**
  * The floor, so a configuration cannot ask for a poll faster than the source
  * will tolerate no matter what the arithmetic below produces.
  */
@@ -1189,6 +1200,7 @@ export const TRIGGER_POLL_UNSERVABLE_INTERVAL_MS = 60 * 60_000;
  * starting a second run.
  */
 export function triggerPollIntervalMs(parsed: TriggerConfig): number {
+  if (parsed.kind === "topic_monitor") return TOPIC_MONITOR_POLL_INTERVAL_MS;
   if (parsed.kind !== "calendar_window") return TRIGGER_POLL_INTERVAL_MS;
   const half = (parsed.config.leadMinutes * 60_000) / 2;
   return Math.max(MIN_TRIGGER_POLL_INTERVAL_MS, Math.min(TRIGGER_POLL_INTERVAL_MS, half));

@@ -231,6 +231,8 @@ export async function moderateText(
       label: "moderation/classify",
       parse: parseVerdict,
       userId,
+      // Safety runs on the turn that spent the last cent too.
+      budgetExempt: true,
       policy,
       conversationProvider,
     });

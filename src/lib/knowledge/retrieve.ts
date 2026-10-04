@@ -310,6 +310,7 @@ export async function retrieveKnowledge(options: RetrieveOptions): Promise<Knowl
   // to run the independent vector retrieval path.
   const embed = options.embed ?? embedQuery;
   const embedded = await embed({
+    userId: options.userId,
     text: options.query,
     policy: options.policy,
     conversationProvider: options.conversationProvider,

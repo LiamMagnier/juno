@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { verifyState } from "@/lib/crypto";
-import { checkBudget, recordSpend } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, recordSpend } from "@/lib/spend";
 import { getUserPlan } from "@/lib/usage";
 
 export const runtime = "nodejs";
@@ -102,10 +102,15 @@ export async function POST(req: Request) {
     });
   }
 
-  const budget = await checkBudget(user.id, await getUserPlan(user.id));
+  const plan = await getUserPlan(user.id);
+  const [budget, windows] = await Promise.all([checkBudget(user.id, plan), checkUsageWindows(user.id, plan)]);
+  // A call ends when the month OR the rolling window runs out — the same two
+  // limits that stop a chat turn. The owner account is never cut off here.
+  const windowOpen = plan === "OWNER" || windows.allowed || windows.bound === null;
+  const remains = [budget.remainingMicroUsd, windows.remainingMicroUsd].filter((v): v is number => v != null);
   return NextResponse.json({
-    allowed: budget.allowed,
-    remainingMicroUsd: budget.remainingMicroUsd,
+    allowed: budget.allowed && windowOpen,
+    remainingMicroUsd: remains.length ? Math.min(...remains) : null,
     duplicate: !!already,
   });
 }

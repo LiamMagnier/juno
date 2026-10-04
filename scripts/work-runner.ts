@@ -88,7 +88,7 @@ import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
-import { tokenRate } from "@/lib/pricing";
+import { workRunPricing } from "@/lib/metering/work-pricing";
 import { clampReasoningEffort } from "@/lib/model-metrics";
 import {
   PROVIDERS,
@@ -101,7 +101,7 @@ import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp"
 import { getObjectBytes, putObject } from "@/lib/storage";
 import { workExecDeps } from "@/lib/exec/work";
 import { runtimeManifestSummary } from "@/lib/exec/runtime";
-import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
+import { isWebSearchConfigured, meteredWebSearch } from "@/lib/web-search";
 import {
   admitConnectorResult,
   summarizeConnectors,
@@ -1793,7 +1793,9 @@ function buildTools(input: {
   const research = [
     runtime.webSearchTool({
       configured: isWebSearchConfigured,
-      search: (query, maxResults) => webSearch(query, maxResults),
+      // Billed to the run's account: every keyed engine the fused search
+      // reached costs a list-price fee, which no Work run ever paid.
+      search: (query, maxResults) => meteredWebSearch({ userId: input.userId, kind: "work", query, maxResults }),
     }),
     runtime.webFetchTool({
       allowedDomains: () => input.egressDomains.current,
@@ -3071,12 +3073,8 @@ function reasoningEffortFor(
  * ordinary requests, and pricing a cache read it never performs would make the
  * ceiling fire early on a run that had spent less than it was charged for.
  */
-function pricingFor(model: ModelInfo): WorkModelPricing {
-  const rate = tokenRate(model);
-  return {
-    inputMicroUsdPerMillion: Math.round(rate.input * 1_000_000),
-    outputMicroUsdPerMillion: Math.round(rate.output * 1_000_000),
-  };
+function pricingFor(model: ModelInfo | null, provider: string): WorkModelPricing {
+  return workRunPricing(model, provider);
 }
 
 function runModelChoice(canonicalModelId: string): RunModelChoice {
@@ -3806,7 +3804,9 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // has not heard of, and inventing a price for one would be worse than
     // admitting there isn't one. That run keeps the old behaviour — tokens
     // counted, cost zero — which is now the exception rather than every run.
-    ...(choice.info ? { pricing: pricingFor(choice.info) } : {}),
+    // Always priced: a model the catalog does not know is billed at its
+    // provider's dearest catalog rate rather than at nothing.
+    pricing: pricingFor(choice.info, choice.provider),
     ...(systemSuffix ? { systemSuffix } : {}),
     // The thinking tier the reader chose, on every request this run makes.
     //

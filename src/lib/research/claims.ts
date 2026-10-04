@@ -178,6 +178,10 @@ export function createCitationJudge(opts: {
       maxTokens: JUDGE_OUTPUT_TOKENS,
       label: "research/citation",
       parse: parseJudgeVerdict,
+      // Admitted by the research run's own reservation and per-stage ceiling,
+      // which already count this stage; the monthly re-check would only
+      // refuse the audit of a run the account already paid to start.
+      budgetExempt: true,
       userId: opts.userId,
       policy: opts.policy,
       conversationProvider: opts.conversationProvider,

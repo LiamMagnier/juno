@@ -63,7 +63,9 @@ import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowled
 // estimate and a bill drift apart, and this number is about to be compared
 // against a reservation by the research engine.
 import { estimateGenerationCostUsd } from "@/lib/pricing";
-import { recordSpend } from "@/lib/spend";
+import { checkBudget, recordSpend } from "@/lib/spend";
+import { getUserPlan } from "@/lib/usage";
+import { createUnattributedSpendMeter, unattributedDailyCeilingMicroUsd } from "@/lib/metering/unit-prices";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
@@ -253,6 +255,14 @@ export type UtilityLlm = (opts: {
   parse?: (text: string) => unknown;
 }) => Promise<string | null>;
 
+/**
+ * Spend with no account behind it (the public UI translator), per process and
+ * per UTC day. PLATFORM_UNATTRIBUTED_DAILY_USD, default $5: the route is
+ * unauthenticated, and its two rate limits alone allowed ~4,000 model calls an
+ * hour on the operator's keys.
+ */
+const unattributedUtilitySpend = createUnattributedSpendMeter({ ceilingMicroUsd: () => unattributedDailyCeilingMicroUsd() });
+
 export async function runUtilityPrompt<T>(opts: {
   system: string;
   userMsg: string;
@@ -297,9 +307,19 @@ export async function runUtilityPrompt<T>(opts: {
    * as any — summarising history — and that runs often enough to matter.
    */
   cheapestFirst?: boolean;
+  /**
+   * Run even when the account's monthly budget is spent. Only the safety
+   * classifier sets it: moderation must judge the turn that spent the last
+   * cent. Everything else — titles, follow-ups, memory, summaries, the memory
+   * editor, backfill — is refused once the account has nothing left, the same
+   * as a chat turn would be (docs/pricing/USAGE_METERING_AUDIT.md).
+   */
+  budgetExempt?: boolean;
 }): Promise<{
   result: T | null;
   transient: boolean;
+  /** Refused before any model was called: the account's budget is spent. */
+  deniedByBudget?: boolean;
   deniedByPolicy?: boolean;
   /** Set with `deniedByPolicy`, so a caller can say WHICH rule refused. */
   deniedReason?: BackgroundDenialReason;
@@ -336,6 +356,27 @@ export async function runUtilityPrompt<T>(opts: {
   if (opts.llm) {
     const text = await opts.llm(opts);
     return { result: text === null ? null : opts.parse(text), transient: false };
+  }
+
+  /*
+   * Admission. The walk always BILLED (below) but never ASKED: a spent account
+   * could keep the memory backfill, the follow-up pills or the memory editor
+   * calling models for ever, each call landing on a ledger nobody was being
+   * held to. A user-attributed walk now asks the month first; the public UI
+   * translator (no account) is bounded by a per-process daily ceiling instead.
+   */
+  if (opts.userId && !opts.budgetExempt) {
+    const allowed = await checkBudget(opts.userId, await getUserPlan(opts.userId), undefined, undefined, { reap: false })
+      .then((b) => b.allowed)
+      // A ledger outage must not silence titles and memory for everyone.
+      .catch(() => true);
+    if (!allowed) {
+      console.info(`[${opts.label}] skipped: the account's usage budget is spent.`);
+      return { result: null, transient: false, deniedByBudget: true, costMicroUsd: 0 };
+    }
+  } else if (!opts.userId && !unattributedUtilitySpend.allows()) {
+    console.warn(`[${opts.label}] skipped: the daily ceiling on unattributed utility spend is reached.`);
+    return { result: null, transient: true, costMicroUsd: 0 };
   }
 
   const decision = resolveBackgroundCandidates({
@@ -422,6 +463,7 @@ export async function runUtilityPrompt<T>(opts: {
         completionChars: out.length,
       });
       spentMicroUsd += Math.round(billed.costUsd * 1_000_000);
+      if (!opts.userId) unattributedUtilitySpend.add(Math.round(billed.costUsd * 1_000_000));
       /*
        * ONE LEDGER ROW PER ATTEMPT, from the same `billed` figure the walk's
        * own total is accumulated from — so the number the research engine
@@ -715,6 +757,7 @@ export async function embedMemoryEntries(opts: {
     let outcome: Awaited<ReturnType<MemoryEmbedder>>;
     try {
       outcome = await (opts.embed ?? embedTexts)({
+        userId: opts.userId,
         texts: opts.rows.map((row) => row.content),
         policy,
         conversationProvider,
@@ -1508,6 +1551,7 @@ async function semanticEvidenceFor(opts: {
     let embedded: Awaited<ReturnType<typeof embedQuery>>;
     try {
       embedded = await (opts.embed ?? embedQuery)({
+        userId: opts.userId,
         text: opts.query,
         policy,
         conversationProvider,

@@ -1,7 +1,8 @@
 import { isOwnerEmail } from "@/lib/owner";
 import { PLANS } from "@/lib/plans";
 import { rateLimit } from "@/lib/rate-limit";
-import { budgetExceededMessage, checkBudget } from "@/lib/spend";
+import { budgetExceededMessage, checkBudget, checkUsageWindows } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { getUserPlan } from "@/lib/usage";
 
 export type VoiceAccessSurface = "relay-token" | "context" | "transcript";
@@ -68,6 +69,21 @@ export async function evaluateVoiceAccess(
           status: 402,
           error: "budget_exceeded",
           message: budgetExceededMessage(plan, budget.resetsAtMs),
+        },
+      };
+    }
+    // The rolling windows too: chat stops at the five-hour window, and a voice
+    // call (the dearest thing per minute a person can do) went straight past it.
+    const windows = await checkUsageWindows(user.id, plan);
+    if (!windows.allowed && windows.bound !== null) {
+      return {
+        allowed: false,
+        owner,
+        plan,
+        denial: {
+          status: 402,
+          error: "budget_exceeded",
+          message: windowLimitMessage(windows.bound, windows.resetsAtMs),
         },
       };
     }

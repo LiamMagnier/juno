@@ -6,11 +6,13 @@ import { rateLimit } from "@/lib/rate-limit";
 import { resolveModel, imageEditSupport, type MediaModality } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
-import { checkBudget, recordSpend, mediaRequestCost } from "@/lib/spend";
+import { checkBudget, recordSpend, mediaRequestCost, releaseSpend, reserveSpend, settleSpend } from "@/lib/spend";
+import { admitMeteredCall } from "@/lib/metering/admit";
+import { mediaBillMicroUsd } from "@/lib/metering/unit-prices";
 import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { planRank } from "@/lib/plans";
 import { generateImage, editImage } from "@/lib/image-gen";
-import { generateVideo, isVideoGenSupported, videoGenUnsupportedMessage } from "@/lib/video-gen";
+import { BillableVideoError, generateVideo, isVideoGenSupported, videoGenUnsupportedMessage } from "@/lib/video-gen";
 import { generateAudio, isAudioGenSupported } from "@/lib/audio-gen";
 import { lyricsMarkdown } from "@/lib/audio-gen-core";
 import { generationCost, outputFileName, planGeneration, promptWithSuffix } from "@/lib/media-gen-core";
@@ -159,6 +161,13 @@ export async function POST(req: Request) {
   if (cost.estimateMicroUsd > baseCost && budget.remainingMicroUsd != null && cost.estimateMicroUsd > budget.remainingMicroUsd) {
     return NextResponse.json(budgetExceededBody(plan, budget.resetsAtMs), { status: 402 });
   }
+  // The rolling windows too, and the request's own estimate against what is
+  // left of them: a clip or a batch of images is the dearest single request
+  // the product makes, and the month alone let it through a spent window.
+  if (plan !== "OWNER") {
+    const admitted = await admitMeteredCall({ userId: user.id, plan, estimateMicroUsd: cost.estimateMicroUsd });
+    if (!admitted.allowed) return NextResponse.json(admitted.body, { status: admitted.status });
+  }
   const providerPrompt = promptWithSuffix(prompt, genPlan.wire);
 
   // Validate the edit request (source attachment + mask) before metering.
@@ -200,6 +209,26 @@ export async function POST(req: Request) {
   if (!quotaRes.allowed) {
     return NextResponse.json(consumeRefusalBody(quotaRes, "generating"), { status: 402 });
   }
+
+  /*
+   * Hold the estimate while the provider works. `checkBudget` is read-then-act
+   * and a video can take minutes, so thirty parallel requests all read the same
+   * untouched month and all went through; the hold makes the database decide,
+   * one request at a time, whether this one still fits.
+   */
+  const spendRef = `generate:${crypto.randomUUID()}`;
+  const held = await reserveSpend({
+    userId: user.id,
+    kind: media,
+    ref: spendRef,
+    estimateMicroUsd: cost.estimateMicroUsd,
+    plan,
+  });
+  if (!held.allowed) {
+    await refundMessage(user.id, plan).catch(() => undefined);
+    return NextResponse.json(budgetExceededBody(plan, budget.resetsAtMs), { status: 402 });
+  }
+  let spendSettled = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -299,14 +328,27 @@ export async function POST(req: Request) {
         // the upload/persist below fails. One row per file actually returned,
         // each at the price its choices carry (a provider that returned two of
         // four images billed two). Without choices: today's flat figure.
+        // The flat (or choice-scaled) figure, unless the provider's own usage
+        // says the response cost more — GPT Image at quality "auto" may render
+        // at "high", four times the flat price.
+        const bill = mediaBillMicroUsd({
+          perOutputMicroUsd: genPlan.params ? cost.perOutputMicroUsd : baseCost,
+          outputs: outputs.length,
+          providerCostMicroUsd: outputs.reduce(
+            (sum, o) => sum + ((o as { providerCostMicroUsd?: number }).providerCostMicroUsd ?? 0),
+            0
+          ),
+        });
         for (let i = 0; i < outputs.length; i += 1) {
           await recordSpend({
             userId: user.id,
             model: model.id,
             kind: media,
-            ...(genPlan.params ? { costUsd: cost.perOutputMicroUsd / 1_000_000 } : {}),
+            costUsd: bill.perOutputMicroUsd / 1_000_000,
           });
         }
+        await settleSpend(user.id, spendRef, bill.totalMicroUsd);
+        spendSettled = true;
 
         send({ type: "progress", stage: "uploading" });
         // AI Act art. 50(2): every file says, in machine-readable metadata,
@@ -379,6 +421,15 @@ export async function POST(req: Request) {
         const message = await serializeMessage(assistant);
         send({ type: "done", message, artifacts: [], memoryUpdated: false, quota: quotaRes.quota });
       } catch (err) {
+        if (!spendSettled) {
+          // A clip our deadline gave up on, or whose finished file would not
+          // download, was still rendered — and billed — by the provider.
+          if (err instanceof BillableVideoError) {
+            await recordSpend({ userId: user.id, model: model.id, kind: media, costUsd: cost.perOutputMicroUsd / 1_000_000, ref: spendRef });
+          }
+          await releaseSpend(user.id, spendRef).catch(() => undefined);
+          spendSettled = true;
+        }
         if (!outputPersistenceCommitted) {
           for (const key of outputStorageKeys) await deleteObject(key).catch(() => undefined);
         }
@@ -387,6 +438,7 @@ export async function POST(req: Request) {
         const msg = err instanceof Error ? err.message : FAILED[media];
         send({ type: "error", message: msg, quota });
       } finally {
+        if (!spendSettled) await releaseSpend(user.id, spendRef).catch(() => undefined);
         if (keepalive) clearInterval(keepalive);
         closed = true;
         try {

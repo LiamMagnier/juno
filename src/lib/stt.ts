@@ -34,7 +34,11 @@ export function isAnySttAvailable(): boolean {
   return sttProviders().length > 0;
 }
 
-export async function geminiTranscribe(file: File, signal?: AbortSignal): Promise<string> {
+export async function geminiTranscribe(
+  file: File,
+  signal?: AbortSignal,
+  onUsage?: (usage: { inputTokens?: number; outputTokens?: number }) => void
+): Promise<string> {
   const keys = getGoogleApiKeys();
   if (keys.length === 0) throw new Error("Gemini STT: no Google API key.");
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
@@ -51,7 +55,18 @@ export async function geminiTranscribe(file: File, signal?: AbortSignal): Promis
       signal: signal ?? AbortSignal.timeout(25_000),
     });
     if (res.ok) {
-      const json = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+      const json = (await res.json()) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
+      };
+      // The provider's own counts, for the ledger (src/app/api/voice/stt).
+      onUsage?.({
+        inputTokens: json.usageMetadata?.promptTokenCount,
+        outputTokens:
+          json.usageMetadata?.candidatesTokenCount != null || json.usageMetadata?.thoughtsTokenCount != null
+            ? (json.usageMetadata?.candidatesTokenCount ?? 0) + (json.usageMetadata?.thoughtsTokenCount ?? 0)
+            : undefined,
+      });
       const text = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
       return text;
     }

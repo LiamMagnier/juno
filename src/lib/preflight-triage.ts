@@ -1,6 +1,7 @@
 import "server-only";
 import { RESEARCH_TRIAGE_SYSTEM } from "@/lib/preflight-triage.prompt";
 import { streamChat } from "@/lib/llm";
+import { recordSpend } from "@/lib/spend";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { getModelMetrics } from "@/lib/model-metrics";
@@ -236,11 +237,14 @@ async function attemptTriage(
   system: string,
   userMsg: string,
   timeoutMs: number,
-  maxQuestions: number
+  maxQuestions: number,
+  userId: string | null
 ): Promise<PreflightClarificationResult | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let out = "";
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
   try {
     for await (const ev of streamChat({
       model,
@@ -253,6 +257,10 @@ async function attemptTriage(
       signal: ctrl.signal,
     })) {
       if (ev.type === "text") out += ev.text;
+      else if (ev.type === "usage") {
+        inputTokens = ev.input ?? inputTokens;
+        outputTokens = ev.output ?? outputTokens;
+      }
     }
   } catch (e) {
     const msg = ctrl.signal.aborted ? `timed out after ${timeoutMs}ms` : e instanceof Error ? e.message : String(e);
@@ -264,6 +272,23 @@ async function attemptTriage(
     return null;
   } finally {
     clearTimeout(timer);
+    /*
+     * Billed on every attempt, a timed-out one included: the clarify route
+     * checked the budget before the walk but no attempt ever reached the
+     * ledger, so every message's triage call was the operator's. The provider's
+     * counts when it sent them, else the character floor `recordSpend` applies.
+     */
+    if (userId) {
+      await recordSpend({
+        userId,
+        model: model.id,
+        kind: "utility",
+        promptTokens: inputTokens,
+        completionTokens: outputTokens,
+        promptChars: system.length + userMsg.length,
+        completionChars: out.length,
+      }).catch(() => {});
+    }
   }
   const parsed = sanitizeTriageOutput(out, maxQuestions);
   if (!parsed) console.error(`[clarify-triage] ${model.id} unusable output (${out.length} chars)`);
@@ -287,6 +312,8 @@ export async function triagePreflightClarification(input: {
   message: string;
   recentMessages?: TriageContextMessage[];
   mode?: TriageMode;
+  /** The account the triage calls bill to; null only for a caller with none. */
+  userId: string | null;
 }): Promise<PreflightClarificationResult> {
   const research = input.mode === "research";
   const all = triageModelCandidates();
@@ -306,7 +333,14 @@ export async function triagePreflightClarification(input: {
   for (const model of candidates) {
     const remaining = totalDeadline - (Date.now() - started);
     if (remaining < 800) break;
-    const result = await attemptTriage(model, system, userMsg, Math.min(attemptTimeout, remaining), maxQuestions);
+    const result = await attemptTriage(
+      model,
+      system,
+      userMsg,
+      Math.min(attemptTimeout, remaining),
+      maxQuestions,
+      input.userId
+    );
     if (result) return result;
   }
   return noPreflightClarification("Clarification triage was unavailable — answering directly.");

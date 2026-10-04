@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/code-remote";
-import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
+import { isWebSearchConfigured, maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
+import { admitMeteredCall } from "@/lib/metering/admit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { rateLimit } from "@/lib/rate-limit";
@@ -37,6 +38,14 @@ export async function POST(req: Request) {
       { status: 402 },
     );
   }
+  // This is the Code agent's seam, and Code is a Pro feature: Lite has web
+  // search in chat, not a Code agent to search for.
+  if (!PLANS[plan].code && !PLANS[plan].agents) {
+    return NextResponse.json(
+      { error: "Code and agents are included from the Pro plan.", code: "PLAN_REQUIRED" },
+      { status: 402 },
+    );
+  }
   if (!isWebSearchConfigured()) {
     return NextResponse.json(
       { error: `Web search is not configured on this ${PRODUCT_NAME} deployment.` },
@@ -56,7 +65,26 @@ export async function POST(req: Request) {
     );
   }
 
-  const sources = (await webSearch(parsed.data.query, parsed.data.max_results))
+  // Each fused query is up to four keyed engines' fees. It reached no ledger
+  // and asked no budget; now it asks the month and the windows first and
+  // bills what the engines that answered charge.
+  if (plan !== "OWNER") {
+    const admitted = await admitMeteredCall({
+      userId: user.id,
+      plan,
+      estimateMicroUsd: maxFusedSearchFeeMicroUsd(parsed.data.max_results),
+    });
+    if (!admitted.allowed) return NextResponse.json(admitted.body, { status: admitted.status });
+  }
+
+  const sources = (
+    await meteredWebSearch({
+      userId: user.id,
+      kind: "code",
+      query: parsed.data.query,
+      maxResults: parsed.data.max_results,
+    })
+  )
     .filter((source) => {
       try {
         const url = new URL(source.url);

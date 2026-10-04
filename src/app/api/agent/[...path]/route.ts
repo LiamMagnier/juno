@@ -5,10 +5,12 @@ import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { checkBudget, checkUsageWindows, budgetExceededMessage, recordSpend } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, budgetExceededMessage, modelRatesMicroUsdPerToken, recordSpend } from "@/lib/spend";
+import { affordableOutputTokens } from "@/lib/metering/unit-prices";
 import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import {
+  capOutputTokens,
   createUpstreamAbort,
   inspectAgentRequest,
   isUpstreamTimeout,
@@ -115,6 +117,8 @@ export async function POST(
       { status: 402 },
     );
   }
+  /** The tighter of the month's and the windows' remainders; null = uncapped. */
+  let remainingMicroUsd: number | null = null;
   if (plan !== "OWNER") {
     const rl = await rateLimit({ key: `agent:${user.id}`, limit: 120, windowSec: 60 });
     if (!rl.success) {
@@ -155,6 +159,8 @@ export async function POST(
         { status: 402 },
       );
     }
+    const remains = [budget.remainingMicroUsd, windows.remainingMicroUsd].filter((v): v is number => v != null);
+    remainingMicroUsd = remains.length ? Math.min(...remains) : null;
   }
 
   const { path } = await ctx.params;
@@ -208,6 +214,22 @@ export async function POST(
   const checked = inspectAgentRequest(wire, bodyResult.body);
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
   const request = checked.request;
+  // One request must not be able to spend far past what is left: its output
+  // allowance is lowered to what the remainder buys at this model's rates
+  // (never below 2,048 tokens, so the overshoot is bounded and small).
+  const rates = modelRatesMicroUsdPerToken(`${provider}:${request.model}`);
+  request.body = capOutputTokens(
+    wire,
+    request.body,
+    affordableOutputTokens({
+      remainingMicroUsd,
+      promptChars: request.promptChars,
+      inputMicroUsdPerToken: rates.input,
+      outputMicroUsdPerToken: rates.output,
+      floor: 2_048,
+    }),
+    provider === "openai" ? "max_completion_tokens" : "max_tokens",
+  );
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (def.kind === "anthropic") {
     headers["x-api-key"] = key;

@@ -6,6 +6,12 @@ import { PLANS } from "@/lib/plans";
 import { env } from "@/lib/env";
 import { geminiTranscribe, sttProviders, type SttProvider } from "@/lib/stt";
 import { isOwnerEmail } from "@/lib/owner";
+import { recordSpend } from "@/lib/spend";
+import { admitMeteredCall } from "@/lib/metering/admit";
+import { estimateAudioSeconds, sttCostMicroUsd } from "@/lib/metering/unit-prices";
+
+/** Token counts a provider reported for one transcription, when it did. */
+type SttUsage = { inputTokens?: number; outputTokens?: number };
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -41,13 +47,40 @@ export async function POST(req: Request) {
   // syllables and often settles on English, mangling French words.
   const language = normalizeLanguage(form?.get("language"));
 
+  // Metered (docs/pricing/USAGE_METERING_AUDIT.md). Dictation was plan-gated
+  // and rate-limited but billed nothing. The clip's length is estimated from
+  // its size, high for compressed audio, and that estimate must fit what is
+  // left before any provider hears it.
+  const audioSeconds = estimateAudioSeconds(file.size, file.type);
+  if (plan !== "OWNER") {
+    const admitted = await admitMeteredCall({
+      userId: user.id,
+      plan,
+      estimateMicroUsd: Math.max(...providers.map((p) => sttCostMicroUsd(p, { audioSeconds }))),
+    });
+    if (!admitted.allowed) return NextResponse.json(admitted.body, { status: admitted.status });
+  }
+
   // No language hint means the model detects it (dictation sends none). The
   // configured provider runs first; Gemini catches its failures, so an
   // exhausted OpenAI balance degrades to Gemini instead of to nothing.
   let lastError: unknown = null;
   for (const provider of providers) {
+    const usage: SttUsage = {};
     try {
-      const text = await transcribeWith(provider, file, language);
+      const text = await transcribeWith(provider, file, language, usage);
+      await recordSpend({
+        userId: user.id,
+        model: `stt:${provider}`,
+        kind: "voice",
+        costUsd:
+          sttCostMicroUsd(provider, {
+            audioSeconds,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            outputChars: text.length,
+          }) / 1_000_000,
+      });
       return NextResponse.json({ text, provider });
     } catch (err) {
       lastError = err;
@@ -58,9 +91,14 @@ export async function POST(req: Request) {
   return NextResponse.json({ error: "Transcription failed." }, { status: 502 });
 }
 
-async function transcribeWith(provider: SttProvider, file: File, language: string | undefined): Promise<string> {
-  if (provider === "gemini") return geminiTranscribe(file);
-  if (provider === "openai") return openaiTranscribe(file, language, env.voice.sttModel, env.voice.openaiApiKey!);
+async function transcribeWith(
+  provider: SttProvider,
+  file: File,
+  language: string | undefined,
+  usage: SttUsage
+): Promise<string> {
+  if (provider === "gemini") return geminiTranscribe(file, undefined, (u) => Object.assign(usage, u));
+  if (provider === "openai") return openaiTranscribe(file, language, env.voice.sttModel, env.voice.openaiApiKey!, usage);
   const buf = await file.arrayBuffer();
   const url = new URL("https://api.deepgram.com/v1/listen");
   url.searchParams.set("smart_format", "true");
@@ -96,7 +134,13 @@ function audioFilename(file: File): string {
   return `audio.${byMime[subtype] ?? "webm"}`;
 }
 
-async function postTranscription(file: File, language: string | undefined, model: string, apiKey: string): Promise<string> {
+async function postTranscription(
+  file: File,
+  language: string | undefined,
+  model: string,
+  apiKey: string,
+  usage?: SttUsage
+): Promise<string> {
   const upstream = new FormData();
   upstream.append("file", file, audioFilename(file));
   upstream.append("model", model);
@@ -109,18 +153,32 @@ async function postTranscription(file: File, language: string | undefined, model
     body: upstream,
   });
   if (!res.ok) throw new Error(`OpenAI STT ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  const data = (await res.json()) as { text?: string };
+  const data = (await res.json()) as {
+    text?: string;
+    usage?: { type?: string; input_tokens?: number; output_tokens?: number };
+  };
+  // gpt-4o-transcribe reports token usage; whisper-1 is billed by duration.
+  if (usage && data.usage?.type === "tokens") {
+    usage.inputTokens = data.usage.input_tokens;
+    usage.outputTokens = data.usage.output_tokens;
+  }
   return data.text ?? "";
 }
 
 /** Transcribe with the configured model, falling back to whisper-1 — which is
  *  available on every account — if the newer model is rejected (404/400). */
-async function openaiTranscribe(file: File, language: string | undefined, model: string, apiKey: string): Promise<string> {
+async function openaiTranscribe(
+  file: File,
+  language: string | undefined,
+  model: string,
+  apiKey: string,
+  usage?: SttUsage
+): Promise<string> {
   try {
-    return await postTranscription(file, language, model, apiKey);
+    return await postTranscription(file, language, model, apiKey, usage);
   } catch (err) {
     if (model === "whisper-1") throw err;
     console.error(`[stt] ${model} failed, retrying on whisper-1:`, err);
-    return postTranscription(file, language, "whisper-1", apiKey);
+    return postTranscription(file, language, "whisper-1", apiKey, usage);
   }
 }

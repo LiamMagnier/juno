@@ -6,7 +6,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import type { Plan } from "@prisma/client";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { consumeMessage, consumeRefusalBody, getUserPlan, refundMessage } from "@/lib/usage";
-import { checkBudget, recordSpend } from "@/lib/spend";
+import { checkBudget, modelRequestCost, recordSpend } from "@/lib/spend";
+import { admitMeteredCall } from "@/lib/metering/admit";
 import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { buildUsage } from "@/lib/chat-usage";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
@@ -181,6 +182,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
       budgetExceededBody(plan, budget.resetsAtMs),
       { status: 402 }
     );
+  }
+
+  // The windows, and this edit's worst case (the prompt plus a full
+  // MAX_OUTPUT_TOKENS answer) against what is left of them.
+  if (plan !== "OWNER") {
+    const admitted = await admitMeteredCall({
+      userId: user.id,
+      plan,
+      estimateMicroUsd: modelRequestCost({
+        modelId: model.id,
+        promptTokens: Math.ceil((system.length + prompt.length) / 4),
+        completionTokens: MAX_OUTPUT_TOKENS,
+      }),
+    });
+    if (!admitted.allowed) return NextResponse.json(admitted.body, { status: admitted.status });
   }
 
   const consumed = await consumeMessage(user.id, plan);

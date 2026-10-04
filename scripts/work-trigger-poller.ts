@@ -63,7 +63,9 @@ import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
+import { PLANS } from "@/lib/plans";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
+import { admissionVerdict } from "@/lib/metering/unit-prices";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
@@ -115,7 +117,7 @@ import {
   type TriggerEvent,
   type TriggerState,
 } from "@/lib/work/triggers";
-import { webSearch } from "@/lib/web-search";
+import { maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
 
 /**
@@ -594,9 +596,29 @@ async function readSource(
       return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
     }
     const query = terms.join(" ");
+    /*
+     * A topic monitor is a fused web search every two minutes — up to four
+     * keyed engines' fees each time, ~720 a day — and it ran on the operator's
+     * keys with no plan check, no budget check and no ledger row. It now needs
+     * a plan with agents, room in the month and the windows for one more
+     * query, and every query is billed to the trigger's owner.
+     */
+    const plan = await getUserPlan(userId);
+    if (!PLANS[plan].agents) {
+      throw new SourceUnavailable("Topic monitors are part of agents, which are included from the Pro plan.");
+    }
+    if (plan !== "OWNER") {
+      const [status, windows] = await Promise.all([checkBudget(userId, plan), checkUsageWindows(userId, plan)]);
+      const verdict = admissionVerdict({ budget: status, windows, estimateMicroUsd: maxFusedSearchFeeMicroUsd(10) });
+      if (!verdict.allowed) {
+        throw new SourceUnavailable(
+          "Juno paused this topic monitor because the account's usage limit is reached. It resumes when the limit resets."
+        );
+      }
+    }
     let results: Array<{ title: string; snippet: string; url: string }> = [];
     try {
-      results = await webSearch(query, 10);
+      results = await meteredWebSearch({ userId, kind: "work", query, maxResults: 10 });
     } catch {
       results = [];
     }
