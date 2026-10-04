@@ -394,3 +394,48 @@ test("a poll that left while a control was out does not override the control's a
   await flush();
   assert.equal(h.store.get("run-1").payload?.run.state, "paused");
 });
+
+test("a lost connection keeps evidence and exposes stale state; recovery clears it", async () => {
+  let fail = false;
+  const h = harness(() => {
+    if (fail) throw new Error("network offline");
+    return json(payload("investigating", [event("source_read", { url: "https://example.com" })]));
+  });
+  h.store.subscribe("run-1", () => {});
+  await flush(); await flush();
+  fail = true;
+  await h.fire();
+  assert.equal(h.store.get("run-1").disconnected, true);
+  assert.equal(h.store.get("run-1").failed, false);
+  assert.equal(h.store.get("run-1").payload?.run.state, "investigating");
+  assert.ok(h.store.get("run-1").payload?.events.length);
+  fail = false;
+  await h.fire();
+  assert.equal(h.store.get("run-1").disconnected, false);
+});
+
+test("retry after an authorization failure restarts the same poller", async () => {
+  let status = 401;
+  const h = harness(() => status === 200 ? json(payload("investigating")) : json({}, status));
+  h.store.subscribe("run-1", () => {});
+  await flush(); await flush();
+  assert.equal(h.store.get("run-1").failed, true);
+  assert.equal(h.pending().length, 0);
+  status = 200;
+  await h.store.refresh("run-1");
+  assert.equal(h.store.get("run-1").failed, false);
+  assert.equal(h.pending().length, 1);
+  await h.store.refresh("run-1");
+  assert.equal(h.pending().length, 1, "refresh never duplicates the poller");
+});
+
+test("an invalid successful response is a connection problem, never a cleared report", async () => {
+  let valid = true;
+  const h = harness(() => valid ? json(payload("investigating")) : new Response("invalid json"));
+  h.store.subscribe("run-1", () => {});
+  await flush(); await flush();
+  valid = false;
+  await h.fire();
+  assert.equal(h.store.get("run-1").disconnected, true);
+  assert.ok(h.store.get("run-1").payload);
+});

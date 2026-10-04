@@ -10,6 +10,7 @@ import {
   stepMatch,
   type SearchableMessage,
 } from "@/lib/conversation-search";
+import { focusTranscriptMessage } from "@/lib/chat/transcript-window";
 import { cn } from "@/lib/utils";
 
 /**
@@ -67,9 +68,7 @@ export function ConversationFind({
   const currentMessageId = matches[index]?.messageId;
   React.useEffect(() => {
     if (!currentMessageId) return;
-    document
-      .querySelector(`[data-message-id="${CSS.escape(currentMessageId)}"]`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    focusTranscriptMessage(currentMessageId);
   }, [currentMessageId, index]);
 
   const go = (direction: 1 | -1) => setIndex((i) => stepMatch(i, matches.length, direction));

@@ -44,6 +44,7 @@ export const GALLERY_STATES = [
   "two-live-runs",
   "mobile-scope",
   "steer-mode",
+  "field-motion",
 ] as const;
 
 export type GalleryState = (typeof GALLERY_STATES)[number];
@@ -334,6 +335,9 @@ const done = (id: string, patch: Partial<ResearchRunView> = {}): FixtureRun => (
     workingMs: 11 * 60_000 + 4_000,
     counts: { found: 14, read: 6, cited: 4, searches: 9, pages: 14 },
     questions: QUESTIONS.map((q, i) => ({ ...q, status: i === 3 ? "thin" : i === 2 ? "partial" : "covered" })),
+    // The writer's citation order, as a finished run carries it (§9.6.3).
+    sources: SOURCES.map((s, i) => ({ ...s, citedIndex: i < 4 ? i + 1 : null })),
+    auditSummary: AUDIT.summary,
     ...patch,
   }),
   events: DONE_EVENTS,
@@ -427,6 +431,28 @@ export function fixturesFor(state: GalleryState): Record<string, FixtureRun> {
       return { [id]: { run: base(id, { state: "failed", phase: "failed", phaseDetail: null, live: false, error: "The writer returned an empty report." }), events: WORKING_EVENTS } };
     case "cancelled":
       return { [id]: { run: base(id, { state: "cancelled", phase: "stopped", phaseDetail: null, live: false }), events: [...WORKING_EVENTS, ev("cancelled", 7)] } };
+    case "field-motion": {
+      // Deep Field's motion, scripted: a page is opened (the presence line
+      // moves), a found source is read (it travels inward), a new source is
+      // found (it arrives on the outer orbit), a question is answered, and
+      // the run turns to writing (the line goes, nothing is being read).
+      const step = (read: string[], extra: ResearchSourceView[] = []) =>
+        [...SOURCES.map((s) => ({ ...s, read: s.read || read.includes(s.id) })), ...extra];
+      const s7 = source("s7", "www.ashrae.org", "Cold-climate heat pump design guide", false);
+      const s8 = source("s8", "www.bre.co.uk", "Heat pump field trial, UK", false);
+      return {
+        [id]: {
+          run: base(id, { phase: "searching", phaseDetail: { query: "cold climate heat pump seasonal COP" } }),
+          events: WORKING_EVENTS,
+          script: [
+            { afterMs: 2_000, patch: { phase: "reading", phaseDetail: { domain: "theguardian.com" }, sources: step([]) }, events: [ev("worker_tool_call", 6.5, { workerId: "w3", tool: "open_page", arg: SOURCES[4].url })] },
+            { afterMs: 4_000, patch: { sources: step(["s5"], [s7]), counts: { found: 15, read: 7, cited: 0, searches: 6, pages: 7 } } },
+            { afterMs: 6_000, patch: { phase: "reading", phaseDetail: { domain: "arxiv.org" }, sources: step(["s5", "s6"], [s7, s8]), counts: { found: 16, read: 8, cited: 0, searches: 6, pages: 8 }, questions: QUESTIONS.map((q, i) => ({ ...q, status: i < 2 ? "covered" : i === 2 ? "searching" : "pending" })) } },
+            { afterMs: 9_000, patch: { state: "synthesizing", phase: "writing", phaseDetail: null }, events: [ev("state_changed", 9, { state: "synthesizing" })] },
+          ],
+        },
+      };
+    }
     case "two-live-runs":
       return {
         [`${id}-a`]: working(`${id}-a`),

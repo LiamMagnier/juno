@@ -168,6 +168,8 @@ interface ComposerProps {
   isBusy: boolean;
   status: GenerationStatus;
   onStop: () => void;
+  /** An explicit destination choice; shown in both ordinary and steering mode. */
+  modeControl?: React.ReactNode;
   /**
    * A durable run is going on this conversation, and this composer steers it.
    *
@@ -500,6 +502,7 @@ export function Composer({
   status,
   onStop,
   steering,
+  modeControl,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -2782,6 +2785,7 @@ export function Composer({
                   turn on. It sits here rather than in the transcript because the
                   question it answers ("did my redirect land?") is asked at the
                   moment of typing the next one. */}
+              {modeControl}
               {steerMode && steering?.above}
               {dragging && !privateMode && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm animate-fade-in">

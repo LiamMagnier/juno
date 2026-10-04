@@ -72,6 +72,8 @@ export interface ScopeCardProps {
   atTail: boolean;
   /** After Start: focus moves to the run's Research row. */
   onStarted?(runId: string): void;
+  /** In the transcript workspace: reuse the gate without a second surface. */
+  embedded?: boolean;
 }
 
 /** How long the collapse on Start takes before the card unmounts (`.run-collapse`, 220 ms + slack). */
@@ -111,7 +113,7 @@ function PlanningSkeleton({ runId }: { runId: string }) {
   );
 }
 
-export function ScopeCard({ runId, atTail, onStarted }: ScopeCardProps) {
+export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeCardProps) {
   const research = useResearchRun(runId);
   const { run, phase, events } = research;
   const atGate = phase === "awaiting_start";
@@ -139,7 +141,7 @@ export function ScopeCard({ runId, atTail, onStarted }: ScopeCardProps) {
     wasAtGate.current = atGate;
     if (!left || holding || collapsing) return;
     onStarted?.(runId);
-    focusResearchRow(runId);
+    if (!onStarted) focusResearchRow(runId);
   }, [phase, atGate, holding, collapsing, onStarted, runId]);
 
   if (!run || gone) return null;
@@ -170,14 +172,15 @@ export function ScopeCard({ runId, atTail, onStarted }: ScopeCardProps) {
         <ScopeCardBody
           run={run}
           events={events}
-          busy={research.busy}
+          busy={research.busy || research.disconnected || research.failed}
+          embedded={embedded}
           act={research.act}
           onStartSent={() => setHolding(true)}
           onStartAnswered={(ok) => {
             if (ok) {
               setCollapsing(true);
               onStarted?.(runId);
-              window.setTimeout(() => focusResearchRow(runId), COLLAPSE_MS);
+              if (!onStarted) window.setTimeout(() => focusResearchRow(runId), COLLAPSE_MS);
             }
             setHolding(false);
           }}
@@ -194,6 +197,7 @@ function ScopeCardBody({
   act,
   onStartSent,
   onStartAnswered,
+  embedded,
 }: {
   run: ResearchRunView;
   events: ReturnType<typeof useResearchRun>["events"];
@@ -201,6 +205,7 @@ function ScopeCardBody({
   act: ReturnType<typeof useResearchRun>["act"];
   onStartSent(): void;
   onStartAnswered(ok: boolean): void;
+  embedded: boolean;
 }) {
   const locale = useUiLocale();
   const revision = planRevisionOf(events);
@@ -288,19 +293,20 @@ function ScopeCardBody({
       aria-busy={locked || undefined}
       data-revising={revising || undefined}
       className={cn(
-        "@container/scope relative rounded-card border border-border/70 bg-card text-card-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+        "rf-scope @container/scope relative text-card-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+        !embedded && "rounded-card border border-border/70 bg-card",
         revising && "opacity-60",
       )}
     >
       <div className="space-y-5 px-4 pb-2 pt-4">
         {approach && (
-          <p lang={contentLang} className="text-reading text-foreground">
+          <p lang={contentLang} className="rf-lead text-foreground">
             {approach}
           </p>
         )}
 
         <div className="space-y-2">
-          <h3 className="text-ui font-medium text-foreground">
+          <h3 className="rf-annot text-foreground">
             <Phrase text={RESEARCH_COPY.scope.questions} />
           </h3>
           <ol className="space-y-1.5">
@@ -359,7 +365,7 @@ function ScopeCardBody({
 
         {clarifications.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-ui font-medium text-foreground">
+            <h3 className="rf-annot text-foreground">
               <Phrase text={RESEARCH_COPY.scope.beforeIStart} />
             </h3>
             {clarifications.map((clarification) => {
@@ -407,14 +413,14 @@ function ScopeCardBody({
 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="me-1 text-ui font-medium text-foreground">
+            <h3 className="rf-annot me-2 text-foreground">
               <Phrase text={RESEARCH_COPY.scope.sources} />
             </h3>
-            {kinds.map((kind) => (
-              <span key={kind} lang={contentLang} className="rounded-full bg-secondary px-2 py-0.5 text-caption text-muted-foreground">
-                {kind}
+            {kinds.length > 0 && (
+              <span lang={contentLang} className="rf-annot">
+                {kinds.join(" · ")}
               </span>
-            ))}
+            )}
           </div>
           {draft.pinnedSources.length > 0 && (
             <ul className="space-y-1">
@@ -464,7 +470,7 @@ function ScopeCardBody({
         </div>
       </div>
 
-      <footer className="sticky bottom-0 z-[1] space-y-2 rounded-b-card border-t border-border/60 bg-card px-4 py-3 @[28rem]/scope:static">
+      <footer className={cn("sticky bottom-0 z-[1] space-y-2 border-t px-4 py-3 @[28rem]/scope:static", embedded ? "border-[var(--rf-line)] bg-background" : "rounded-b-card border-border/60 bg-card")}>
         {estimate && <PhraseWithArgs spec={estimateLine(estimate)} className="block text-caption text-muted-foreground" />}
         {notify && (
           <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">

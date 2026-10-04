@@ -60,7 +60,7 @@ export function ReportView({
     <div className="space-y-5">
       <header className="space-y-1.5">
         {title && (
-          <h3 lang={run.language ?? undefined} className="text-heading text-foreground">
+          <h3 lang={run.language ?? undefined} className="research-title text-foreground">
             {title}
           </h3>
         )}

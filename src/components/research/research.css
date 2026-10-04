@@ -1,0 +1,243 @@
+/*
+ * Deep Field, in the language of the homepage and Memory (home.css,
+ * memory.css): hairlines instead of boxes, Newsreader for what is read as a
+ * page (the question, figures, claims), mono annotations for facts, and
+ * presence blue for the one live object (the page being read now). Colours
+ * resolve from the semantic theme; radii from the app's ladder.
+ *
+ * Motion says what changed and nothing else: the section rises in once, a
+ * source arrives where it was discovered and travels inward as it is read and
+ * cited, the presence line draws to the page being read, figures roll. No
+ * loops. Reduced motion places everything where it ends.
+ */
+.rf {
+  --rf-line: hsl(var(--foreground) / 0.12);
+  --rf-hair: hsl(var(--foreground) / 0.07);
+  --rf-presence: #2d49c9;
+  --rf-presence-soft: rgb(45 73 201 / 0.1);
+  --rf-attention: hsl(var(--attention));
+  --rf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  container-type: inline-size;
+  color: hsl(var(--foreground));
+  padding-block: 8px 4px;
+}
+.dark .rf {
+  --rf-line: hsl(var(--foreground) / 0.14);
+  --rf-hair: hsl(var(--foreground) / 0.08);
+  --rf-presence: #97a6e6;
+  --rf-presence-soft: rgb(151 166 230 / 0.12);
+}
+.rf ::selection { background: var(--rf-presence-soft); }
+
+/* Type */
+.rf-annot {
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.rf-annot[data-tone="attention"] { color: var(--rf-attention); }
+.rf-title,
+.research-title {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-optical-sizing: auto;
+  font-size: clamp(28px, 4.4cqi, 40px);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.research-title { font-size: clamp(28px, 3.4vw, 40px); }
+.rf-h4 {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+}
+.rf-lead {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.006em;
+  text-wrap: pretty;
+}
+.rf-figure {
+  margin-top: 8px;
+  font-family: var(--font-serif), Newsreader, serif;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.rf-link { text-decoration: underline; text-decoration-color: var(--rf-line); text-underline-offset: 3px; overflow-wrap: anywhere; transition: color 160ms, text-decoration-color 160ms; }
+.rf-link:hover { color: hsl(var(--foreground)); text-decoration-color: currentColor; }
+
+/* The stage: the field beside the questions. */
+.rf-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 15.5rem);
+  gap: 8px 28px;
+  margin-top: 20px;
+  padding-block: 4px 20px;
+  border-bottom: 1px solid var(--rf-line);
+}
+.rf-map { position: relative; min-height: 280px; aspect-ratio: 16 / 11; max-height: 340px; }
+.rf-dots { --dots-pitch: 3.6px; --dots-strength: 0.7; }
+.dark .rf-dots { --dots-strength: 0.82; }
+.rf-centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: hsl(var(--background));
+  outline: 1px solid var(--rf-line);
+  color: hsl(var(--foreground));
+}
+.rf-point {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  translate: -50% -50%;
+  border-radius: 999px;
+  background: hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(var(--muted-foreground) / 0.7);
+}
+.rf-point[data-state="read"] { background: hsl(var(--foreground) / 0.72); box-shadow: none; }
+.rf-point[data-state="cited"] { width: 9px; height: 9px; background: hsl(var(--foreground)); box-shadow: 0 0 0 3px hsl(var(--background)); }
+.rf-point[data-current] { background: var(--rf-presence); box-shadow: 0 0 0 4px var(--rf-presence-soft); }
+.rf-label {
+  position: absolute;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 42%;
+  translate: 9px -50%;
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Sits over the dotted orbits: a ground of its own keeps it legible. */
+  padding-inline: 3px;
+  border-radius: 4px;
+  background: hsl(var(--background) / 0.86);
+}
+.rf-label[data-side="start"] { translate: calc(-100% - 9px) -50%; }
+.rf-label sup { top: 0; font-size: 10px; font-weight: 600; color: hsl(var(--foreground)); }
+.rf-label[data-current] { color: var(--rf-presence); }
+a.rf-label:hover { color: hsl(var(--foreground)); }
+.rf-more { position: absolute; right: 2%; bottom: 4%; font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; color: hsl(var(--muted-foreground)); }
+
+/* The questions column. */
+.rf-rail { min-width: 0; padding-top: 18px; }
+.rf-questions { display: grid; gap: 16px; margin-top: 16px; }
+.rf-questions li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; }
+.rf-question { font-size: 13px; line-height: 19px; color: hsl(var(--muted-foreground)); text-wrap: pretty; transition: color 300ms; }
+.rf-questions li:is([data-state="covered"], [data-state="searching"], [data-state="partial"]) .rf-question { color: hsl(var(--foreground)); }
+.rf-mark { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; outline: 1px solid var(--rf-line); transition: background-color 300ms var(--rf-ease), outline-color 300ms; }
+.rf-mark svg { width: 12px; height: 12px; }
+.rf-questions li[data-state="covered"] .rf-mark { background: hsl(var(--foreground)); color: hsl(var(--background)); outline-color: transparent; }
+.rf-questions li[data-state="searching"] .rf-mark { outline-color: transparent; }
+.rf-questions li[data-state="partial"] .rf-mark { background: linear-gradient(90deg, hsl(var(--foreground) / 0.72) 50%, transparent 50%); }
+.rf-questions li[data-state="thin"] .rf-mark { outline: 1px dashed var(--rf-attention); }
+.rf-more-toggle { margin-top: 14px; min-height: 32px; }
+.rf-more-toggle:hover { color: hsl(var(--foreground)); }
+
+/* Figures, as Memory's. */
+.rf-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-block: 20px; border-bottom: 1px solid var(--rf-line); }
+.rf-figures > div { display: flex; flex-direction: column; min-width: 0; padding-inline: 16px; border-inline-start: 1px solid var(--rf-line); }
+.rf-figures > div:first-child { padding-inline-start: 0; border-inline-start: 0; }
+
+/* Evidence in the sources' own words. */
+.rf-evidence { padding-block: 20px 4px; }
+.rf-evidence ul { display: grid; gap: 16px; margin-top: 12px; }
+.rf-finding { display: grid; gap: 6px; padding-inline-start: 16px; border-inline-start: 1px solid var(--rf-line); }
+.rf-claim { font-family: var(--font-serif), Newsreader, serif; font-size: 18px; line-height: 1.4; letter-spacing: -0.006em; text-wrap: pretty; }
+
+/* The finished cover. */
+.rf-verdict { color: hsl(var(--foreground)); }
+.rf-verdict[data-tone="attention"] { color: var(--rf-attention); }
+.rf-verdict[data-tone="error"] { color: hsl(var(--destructive)); }
+.rf-figure-of { font-size: 0.6em; color: hsl(var(--muted-foreground)); letter-spacing: 0; }
+.rf-stage-still .rf-map { max-height: 300px; }
+.rf-audit { display: flex; align-items: center; gap: 10px; padding-block: 16px; border-bottom: 1px solid var(--rf-line); font-size: 14px; line-height: 20px; }
+
+/* Controls, guidance, details. */
+.rf-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px; }
+.rf-guidance { margin-top: 16px; padding-block: 18px; border-block: 1px solid var(--rf-line); }
+.rf-guidance textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid hsl(var(--input)); border-radius: 10px; background: hsl(var(--background)); padding: 12px 14px; font-size: 14px; line-height: 1.5; caret-color: var(--rf-presence); transition: border-color 160ms; }
+.rf-guidance textarea:focus-visible { outline: none; border-color: hsl(var(--foreground) / 0.4); }
+.rf-guidance textarea::placeholder { color: hsl(var(--muted-foreground)); }
+.rf-steering { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; font-size: 13px; line-height: 19px; }
+.rf-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-block: 12px; border-block: 1px solid var(--rf-line); font-size: 13px; color: var(--rf-attention); overflow-wrap: anywhere; }
+.rf-gate { margin-top: 22px; padding-top: 6px; border-top: 1px solid var(--rf-line); }
+.rf-details { margin-top: 20px; border-top: 1px solid var(--rf-line); }
+.rf-disclosure { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; gap: 12px; font-size: 13px; color: hsl(var(--muted-foreground)); transition: color 160ms; }
+.rf-disclosure:hover { color: hsl(var(--foreground)); }
+.rf-tabs { display: flex; gap: 22px; overflow-x: auto; border-bottom: 1px solid var(--rf-line); scrollbar-width: none; }
+.rf-tabs button { position: relative; flex-shrink: 0; min-height: 40px; font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.02em; color: hsl(var(--muted-foreground)); transition: color 160ms; }
+.rf-tabs button::after { content: ""; position: absolute; inset: auto 0 -1px; height: 1px; background: hsl(var(--foreground)); transform: scaleX(0); transition: transform 320ms var(--rf-ease); }
+.rf-tabs button:hover { color: hsl(var(--foreground)); }
+.rf-tabs button[aria-selected="true"] { color: hsl(var(--foreground)); }
+.rf-tabs button[aria-selected="true"]::after { transform: none; }
+.rf-rows > li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-block: 12px; font-size: 14px; border-bottom: 1px solid var(--rf-hair); }
+
+/* Narrow: the questions go under the field, which keeps only its points. */
+@container (max-width: 600px) {
+  .rf-stage { grid-template-columns: minmax(0, 1fr); }
+  .rf-map { min-height: 200px; max-height: 240px; }
+  .rf-label:not([data-current]) { display: none; }
+  .rf-rail { padding-top: 4px; }
+  .rf-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 18px; }
+  .rf-figures > div:nth-child(3) { padding-inline-start: 0; border-inline-start: 0; }
+}
+
+/* Motion */
+@media (prefers-reduced-motion: no-preference) {
+  /* `backwards` fills: a finished entrance leaves nothing running. */
+  .rf-rise { animation: rf-rise-in 800ms var(--rf-ease) backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+  .rf-point { animation: rf-arrive 700ms var(--rf-ease) backwards; transition: left 900ms var(--rf-ease), top 900ms var(--rf-ease), width 300ms, height 300ms, background-color 300ms, box-shadow 300ms; }
+  .rf-label { animation: rf-fade 500ms var(--rf-ease) 200ms backwards; transition: left 900ms var(--rf-ease), top 900ms var(--rf-ease), color 300ms; }
+  .rf-finding { animation: rf-rise-in 700ms var(--rf-ease) backwards; }
+  .rf-view-enter { animation: rf-rise-in 360ms var(--rf-ease) backwards; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rf-map[data-still] :is(.rf-point, .rf-label) { animation: none; }
+}
+@keyframes rf-rise-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes rf-arrive { from { opacity: 0; scale: 0.3; } }
+@keyframes rf-fade { from { opacity: 0; } }
+
+/* The plan gate and clarify gate sit inside the section, flat. */
+.rf-gate [role="group"] > div:first-child { padding-inline: 0; padding-top: 20px; }
+.rf-gate .rf-scope > div:first-child > * + * { margin-top: 28px; }
+.rf-gate [role="group"] > footer { padding-inline: 0; background: transparent; }
+
+/* The report document's headings (report-document.tsx, report-reader.tsx). */
+.research-document :is(h3, h4, h5) {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.016em;
+}
+.research-document h3 { font-size: 26px; }
+.research-document :is(h4, h5) { font-size: 22px; }
+.research-document-reader h3:first-child { font-size: clamp(30px, 4vw, 40px); line-height: 1.15; }
+
+/* The dev gallery's reduced-motion switch, honoured like the system setting. */
+[data-motion="reduce"] :is(.rf-rise, .rf-point, .rf-label, .rf-finding, .rf-view-enter, .rf-mark, .rf-tabs button::after) { animation: none; transition: none; }

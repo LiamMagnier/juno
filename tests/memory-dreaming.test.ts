@@ -167,5 +167,6 @@ test("an expiry is a reason to rebuild the summary", () => {
   assert.equal(decide(null), "fresh");
   const body = src("src/lib/memory.ts");
   const fn = body.slice(body.indexOf("export async function maybeConsolidate("));
-  assert.match(fn.slice(0, 2600), /newestExpiryAt: lastExpiry\?\.expiresAt \?\? null/);
+  assert.match(fn.slice(0, 2600), /readMemorySummaryChanges\(\{ userId, projectId: null, now \}/);
+  assert.match(fn.slice(0, 2600), /summaryRebuildDecision\(\{[\s\S]*\.\.\.changes/);
 });

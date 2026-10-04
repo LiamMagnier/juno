@@ -84,6 +84,26 @@ test("arguments can escalate an innocent-looking tool", () => {
   );
 });
 
+test("a reversible object cannot downgrade an external action or acquire standing approval", () => {
+  for (const toolName of ["send_draft", "share_branch", "publish_draft", "post_label", "create_draft"]) {
+    const { riskClass } = classifyExternalAction({
+      connectorId: "remote",
+      toolName,
+      annotations: { readOnlyHint: true },
+    });
+    assert.equal(riskClass, "external_write", toolName);
+    assert.equal(mayCreateStandingApproval(riskClass), false, toolName);
+    for (const policy of ACTION_PERMISSION_POLICIES) {
+      assert.notEqual(decideActionPolicy({ policy, riskClass, hasStandingApproval: true }), "allow", toolName);
+    }
+  }
+  assert.equal(classifyExternalAction({
+    connectorId: "remote", toolName: "draft_message", args: { send: true },
+  }).riskClass, "external_write");
+  assert.equal(classifyExternalAction({ connectorId: "remote", toolName: "draft_message" }).riskClass, "reversible_write");
+  assert.equal(classifyExternalAction({ connectorId: "remote", toolName: "delete_draft" }).riskClass, "destructive_or_sensitive");
+});
+
 test("every policy fails closed for unknown and destructive actions", () => {
   for (const policy of ACTION_PERMISSION_POLICIES) {
     const unknown = decideActionPolicy({ policy, riskClass: "unknown" });

@@ -28,6 +28,7 @@ struct ResearchReportDocument: Equatable {
     let words: Int
     /// The answer the citation check was run on, when the report is one.
     let messageID: String?
+    let auditSummary: NativeResearchRun.AuditSummary?
 
     init?(run: NativeResearchRun) {
         guard let body = run.reportBody, !body.isEmpty else { return nil }
@@ -39,6 +40,7 @@ struct ResearchReportDocument: Equatable {
         sources = run.sources.filter(\.read)
         words = body.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
         messageID = run.assistantMessageID
+        auditSummary = run.audit
     }
 
     /// The sections a reader can jump to.
@@ -312,6 +314,7 @@ struct ResearchReportReader: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                    cover
                     ForEach(document.sections) { section in
                         // As a reply's prose: citations open on a click, so
                         // no selection here; Copy takes the whole report.
@@ -337,6 +340,49 @@ struct ResearchReportReader: View {
             .scrollPosition(id: $reading, anchor: .top)
             .scrollEdgeEffectStyle(.soft, for: .top)
         }
+    }
+
+    private var cover: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            Text("DEEP RESEARCH")
+                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .tracking(1.2)
+                .foregroundStyle(Color.junoSecondaryInk)
+            Text(document.title)
+                .font(JunoSerif.font(size: 36, relativeTo: .largeTitle))
+                .foregroundStyle(Color.junoForeground)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(document.subtitle)
+                .junoFont(size: 12, relativeTo: .footnote)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text(auditHeadline)
+                    .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                    .foregroundStyle(Color.junoForeground)
+                Text("Citation checks compare claims with cited passages. They do not establish that the research is complete.")
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, JunoSpace.cozy)
+            .overlay(alignment: .top) { Rectangle().fill(Color.junoHairline).frame(height: 1) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.junoHairline).frame(height: 1) }
+        }
+        .padding(.bottom, JunoSpace.roomy)
+        .accessibilityIdentifier("juno.research-report.cover")
+    }
+
+    private var auditHeadline: String {
+        if let audit {
+            guard !audit.claims.isEmpty else { return "No checkable claims in this report" }
+            let supported = audit.claims.filter { $0.label == "supported" }.count
+            let unchecked = audit.claims.filter { $0.label == "unverified" }.count
+            return "\(supported)/\(audit.claims.count) claims supported"
+                + (unchecked > 0 ? " · \(unchecked) not checked" : "")
+        }
+        return document.auditSummary?.headline ?? "Citation check unavailable for this report"
     }
 
     /// The section being read: the one at the top of the column, or the

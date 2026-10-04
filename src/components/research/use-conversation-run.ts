@@ -29,11 +29,9 @@ import type { ResearchRunSummary } from "@/types/research";
  */
 
 export interface ResearchSteering {
-  /** True only while a worker is actually spending — the window where added
-   *  direction can still change what gets read. A paused run, a run waiting at
-   *  the plan gate and a finished run all steer nothing. */
+  /** Direction can be queued while working or paused, before finishing is requested. */
   accepting: boolean;
-  /** A constraint, or a source to pin if it parses as a URL. */
+  /** Guidance applied at the next research round boundary. */
   steer: (text: string) => Promise<boolean>;
   /** Cancel the run. Terminal — a cancelled run keeps what it already gathered. */
   stop: () => void;
@@ -66,17 +64,14 @@ export function useConversationResearch(conversationId: string | null, selectedR
 
   const research = useResearchRun(runId);
   const { run, post, steer } = research;
-  const accepting = !!run && run.live && isWorkingResearchState(run.state);
+  const accepting = !!run && run.live && !run.finishRequested && (isWorkingResearchState(run.state) || run.state === "paused");
 
   const steering = React.useMemo<ResearchSteering | null>(() => {
     if (!run) return null;
     return {
       accepting,
-      // A URL is a source to read; anything else is a constraint on the whole
-      // report. Kept for the composer until it moves to the explicit "Guide
-      // the research" mode (§9.7), which sends `guidance` through `steer`.
-      steer: (text: string) =>
-        post("/steer", /^https?:\/\//i.test(text.trim()) ? { sourceUrl: text.trim() } : { constraint: text.trim() }),
+      // Both the explicit composer mode and the workspace queue guidance.
+      steer: (text: string) => post("/steer", { guidance: text.trim() }),
       stop: () => void post("/control", { action: "cancel" }),
     };
   }, [run, accepting, post]);

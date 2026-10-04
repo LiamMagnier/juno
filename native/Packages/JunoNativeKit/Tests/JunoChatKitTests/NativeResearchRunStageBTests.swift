@@ -163,6 +163,15 @@ struct NativeResearchRunStageBTests {
     // MARK: The citation check
 
     @Test
+    func aCleanAuditRequiresEveryClaimToBeCheckedAndSupported() {
+        #expect(!NativeResearchRun.AuditSummary(claims: 0).isClean)
+        #expect(NativeResearchRun.AuditSummary(claims: 2, supported: 2).isClean)
+        #expect(!NativeResearchRun.AuditSummary(claims: 2, supported: 1, partiallySupported: 1).isClean)
+        #expect(!NativeResearchRun.AuditSummary(claims: 2, supported: 1, unverified: 1).isClean)
+        #expect(!NativeResearchRun.AuditSummary(claims: 2, supported: 1, contradicted: 1).isClean)
+    }
+
+    @Test
     func theAuditHeadlineIsTheWebs() {
         #expect(NativeResearchRun.AuditSummary(claims: 0).headline == "No checkable claims in this answer")
         #expect(NativeResearchRun.AuditSummary(claims: 9, supported: 9).headline == "Every claim checks out against its sources")

@@ -1267,6 +1267,16 @@ export function summaryPredatesForget(summaryUpdatedAt: Date, newestSuppressionA
   return newestSuppressionAt !== null && newestSuppressionAt.getTime() > summaryUpdatedAt.getTime();
 }
 
+/** A correction or elapsed expiry benches old prose until consolidation catches up. */
+export function summaryPredatesMemoryChange(
+  summaryUpdatedAt: Date,
+  changes: { newestRetirementAt?: Date | null; newestExpiryAt?: Date | null },
+): boolean {
+  return [changes.newestRetirementAt, changes.newestExpiryAt].some(
+    (at) => at != null && at.getTime() > summaryUpdatedAt.getTime(),
+  );
+}
+
 /** How often, at most, one summary is rebuilt — a burst of turns is one rebuild. */
 export const SUMMARY_MIN_REBUILD_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -1285,6 +1295,9 @@ export const SUMMARY_MIN_REBUILD_INTERVAL_MS = 5 * 60 * 1000;
  *   - a temporary fact EXPIRED after the summary was written, which likewise
  *     leaves its row and so the count, while "flying to Berlin this week" sat
  *     in the summary long after the week was over.
+ *   - a belief was RETIRED after the summary was written. Reinstating an old
+ *     fact can replace another without adding a row, so the count alone never
+ *     notices that the summary still describes the now-retired belief.
  *
  * `factCount` counts every FACT row in the summary's own scope, whatever its
  * status — it is the change detector, not the input. A scope with no facts at
@@ -1298,18 +1311,19 @@ export function summaryRebuildDecision(input: {
   newestSuppressionAt: Date | null;
   /** The newest `expiresAt` in scope that is already in the past, if any. */
   newestExpiryAt: Date | null;
+  /** Latest retirement in this summary's exact scope, including reinstatement of an old row. */
+  newestRetirementAt?: Date | null;
   now: Date;
   minIntervalMs?: number;
 }): "fresh" | "rebuild" | "throttled" {
   const { summary, factCount, now } = input;
   if (factCount === 0) return "fresh";
-  const expiredSince =
-    !!summary && !!input.newestExpiryAt && input.newestExpiryAt.getTime() > summary.updatedAt.getTime();
+  const lifecycleChanged = !!summary && summaryPredatesMemoryChange(summary.updatedAt, input);
   const changed =
     !summary ||
     summary.entryCount !== factCount ||
     summaryPredatesForget(summary.updatedAt, input.newestSuppressionAt) ||
-    expiredSince;
+    lifecycleChanged;
   if (!changed) return "fresh";
   const minInterval = input.minIntervalMs ?? SUMMARY_MIN_REBUILD_INTERVAL_MS;
   if (summary && now.getTime() - summary.updatedAt.getTime() < minInterval) return "throttled";

@@ -12,8 +12,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prismaUnguarded } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
-import type { ParsedArtifact } from "@/lib/message-content";
-import { ARTIFACTS_STORE_TAKES_TX, persistArtifactsWithTx } from "@/lib/research/artifacts-shim";
+import { persistArtifacts } from "@/lib/artifacts-store";
 import {
   isCompletionMessage,
   writeResearchCompletion,
@@ -54,9 +53,10 @@ export interface ResearchCompletionInput {
  * had already finished the run, in which case nothing was written at all.
  */
 export async function finalizeResearchRun(
-  input: ResearchCompletionInput
+  input: ResearchCompletionInput,
+  /** Trusted persistence seam for integration fault injection, never model input. */
+  persistence: { persistArtifacts?: typeof persistArtifacts } = {},
 ): Promise<{ messageId: string | null; raced?: boolean }> {
-  const deferred: Array<{ conversationId: string; messageId: string; parsed: ParsedArtifact[] }> = [];
   const result = await writeResearchCompletion(
     {
       runId: input.runId,
@@ -79,7 +79,7 @@ export async function finalizeResearchRun(
       // statement below is scoped by the run's userId or the conversation it
       // was checked against, which is what the ownership guard would enforce.
       transaction: (fn) =>
-        prismaUnguarded.$transaction(async (tx) => fn(prismaCompletionTx(tx, deferred)), {
+        prismaUnguarded.$transaction(async (tx) => fn(prismaCompletionTx(tx, input.userId, persistence.persistArtifacts ?? persistArtifacts)), {
           // A few rows; the default five seconds would do, but a slow pool
           // should not turn a finished run into a failed one.
           timeout: 15_000,
@@ -89,28 +89,25 @@ export async function finalizeResearchRun(
       newId: () => randomUUID(),
     }
   );
-  // The artifact store does not take a transaction yet (artifacts-shim.ts):
-  // the report artifact is written the moment the message it belongs to has
-  // committed. A failure leaves a message whose summary reads and whose report
-  // card is missing — logged loudly, never thrown at a finished run.
-  if (!result.raced) {
-    for (const item of deferred) {
-      await persistArtifactsWithTx(item.conversationId, item.messageId, item.parsed).catch((error: unknown) => {
-        console.error("[research] completion artifact write failed", { runId: input.runId, messageId: item.messageId, error });
-      });
-    }
-  }
   return result.raced ? { messageId: null, raced: true } : { messageId: result.messageId };
 }
 
 function prismaCompletionTx(
   tx: Prisma.TransactionClient,
-  deferred: Array<{ conversationId: string; messageId: string; parsed: ParsedArtifact[] }>
+  userId: string,
+  artifactWriter: typeof persistArtifacts,
 ): CompletionTx {
   return {
     async runMessage(runId, userId) {
-      const row = await tx.researchRun.findFirst({ where: { id: runId, userId }, select: { assistantMessageId: true } });
-      return row?.assistantMessageId ?? null;
+      // Serialize finalizers before they emit the same report identifier.
+      // Otherwise two resumed workers can both create a message, then race
+      // on the artifact's unique key before the terminal-state CAS runs.
+      const rows = await tx.$queryRaw<Array<{ assistantMessageId: string | null }>>(Prisma.sql`
+        SELECT "assistantMessageId" FROM "ResearchRun"
+         WHERE "id" = ${runId} AND "userId" = ${userId}
+         FOR UPDATE
+      `);
+      return rows[0]?.assistantMessageId ?? null;
     },
     async conversationExists(conversationId, userId) {
       return (await tx.conversation.count({ where: { id: conversationId, userId } })) > 0;
@@ -130,13 +127,11 @@ function prismaCompletionTx(
       });
     },
     async persistArtifacts(conversationId, messageId, parsed) {
-      if (ARTIFACTS_STORE_TAKES_TX) return persistArtifactsWithTx(conversationId, messageId, parsed, { tx });
-      deferred.push({ conversationId, messageId, parsed });
-      return [];
+      return artifactWriter(conversationId, messageId, parsed, { tx, userId });
     },
     async touchConversation(conversationId, at) {
       // Only ever called after `conversationExists` checked the owner in this transaction.
-      await tx.conversation.updateMany({ where: { id: conversationId }, data: { lastMessageAt: at } });
+      await tx.conversation.updateMany({ where: { id: conversationId, userId }, data: { lastMessageAt: at } });
     },
     async finishRun({ runId, userId, from, to, messageId, report, error, at }) {
       const moved = await tx.researchRun.updateMany({

@@ -313,7 +313,8 @@ struct JunoMobileComposer: View {
           depth: researchDepth,
           activity: model.researchActivity,
           degradedWarning: model.researchDegradedWarning,
-          onDisable: { tools.deepResearch = false }
+          onDisable: { tools.deepResearch = false },
+          onStop: generatingHere ? { model.stopGeneration() } : nil
         )
         .transition(.opacity)
       }

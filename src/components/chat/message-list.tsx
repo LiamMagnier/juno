@@ -4,6 +4,7 @@ import * as React from "react";
 import { contextReceiptFromActivity } from "@/lib/chat/context-tokens";
 import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
+import { useTranscriptWindow } from "@/hooks/use-transcript-window";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
@@ -88,34 +89,26 @@ const SCROLL_FADE_STYLE: React.CSSProperties = {
   WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
 };
 
-/*
- * A NOTE ON WHY THE FOLLOW IS NOT ANIMATED.
- *
- * An earlier version eased the follow: one rAF loop chasing the bottom, closing
- * a fraction of the remaining distance per frame. It looked better and it was
- * wrong, because it put the code and the reader in a tug of war over the same
- * scrollTop. Every fix bred another bug — the loop had to know which movements
- * were its own, that flag had to survive a hidden tab (where rAF never fires and
- * the loop parks forever on a frame that never comes), and any state that can
- * get stuck eventually does, at which point the transcript stops following for
- * the rest of the session with no way back.
- *
- * A reply grows a few pixels at a time, so pinning to the bottom on each update
- * is already smooth; there was never much to fix. The one place motion is safe
- * is "jump to latest", which is discrete, user-initiated, and cannot be racing
- * anything — that keeps `behavior: "smooth"`.
- *
- * The rule is one line: when new content arrives, follow it only if the reader
- * was already at the bottom before it arrived. Scroll away and the transcript
- * holds still; come back to the bottom and it picks you up again. No modes, no
- * flags, nothing that can end up stuck in the wrong state.
- */
+/** Follow is instant: streaming, measurement corrections and virtual jumps
+ *  cannot race a smooth-scroll animation. The window hook preserves the
+ *  reader's measured anchor whenever they leave the newest turn. */
 
-/** How close to the bottom counts as "at the bottom" and resumes the follow.
- *  Small on purpose: it has to be tighter than a single wheel notch, or the
- *  scroll a reader's own gesture produces re-attaches the follow they were
- *  trying to escape. Wide enough to absorb sub-pixel and rounding drift. */
-const ATTACH_SLOP_PX = 24;
+type ItemProps = React.ComponentProps<typeof MessageItem>;
+const TranscriptMessage = React.memo(function TranscriptMessage({ receiptActivity, ...props }: Omit<ItemProps, "contextReceipt"> & { receiptActivity?: ChatMessage["activity"] }) {
+  const receipt = React.useMemo(() => contextReceiptFromActivity(receiptActivity), [receiptActivity]);
+  return <MessageItem {...props} contextReceipt={receipt} />;
+});
+
+function MeasuredTurn({ message, observe, children }: {
+  message: ChatMessage;
+  observe: (element: HTMLDivElement, key: string) => () => void;
+  children: React.ReactNode;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const key = message.renderKey ?? message.id;
+  React.useLayoutEffect(() => ref.current ? observe(ref.current, key) : undefined, [observe, key]);
+  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className="pb-6">{children}</div>;
+}
 
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
@@ -129,10 +122,8 @@ export function MessageList(props: MessageListProps) {
     if (index >= 0 && messages[index + 1]?.role === "ASSISTANT") index++;
     runsByMessage.set(index, [...(runsByMessage.get(index) ?? []), <React.Fragment key={item.id}>{item.node}</React.Fragment>]);
   }
-  const bottomRef = React.useRef<HTMLDivElement>(null);
-  const scrollRef = React.useRef<HTMLDivElement>(null);
-  const contentRef = React.useRef<HTMLDivElement>(null);
-  const [atBottom, setAtBottom] = React.useState(true);
+  const transcript = useTranscriptWindow(messages);
+  const { scrollRef, contentRef, atBottom, onScroll, jumpToLatest } = transcript;
   // Seeded true when no entrance was asked for, so the class never goes on and
   // nothing is left waiting for an animationend that will not fire.
   const [entered, setEntered] = React.useState(!props.entrance);
@@ -155,88 +146,12 @@ export function MessageList(props: MessageListProps) {
     return map;
   }, [artifacts]);
 
-  /* Whether the reader was at the bottom BEFORE this content arrived.
-   *
-   * Deliberately not read from a `stickRef` that a scroll handler maintains.
-   * That made following depend on the scroll event having fired before the
-   * render, and when it hadn't — the content landing in the same tick as the
-   * reader's scroll — the view yanked back down on someone who had just
-   * scrolled away. Measuring the previous layout instead needs no event to
-   * have run: the geometry is already there, whatever order things happened in.
-   */
-  const prevRef = React.useRef({ scrollHeight: 0, scrollTop: 0, clientHeight: 0 });
-
-  const remember = React.useCallback((el: HTMLDivElement) => {
-    prevRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight };
-  }, []);
-
-  // A scroll ending within reach of the bottom means the reader is back, and
-  // the follow resumes. This window used to be 120px — about one wheel notch,
-  // so the scroll a reader's own scroll-up produced landed inside it and
-  // re-attached the follow they were trying to escape. That was the "can't
-  // scroll up": every nudge snapped straight back.
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    remember(el);
-    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < ATTACH_SLOP_PX);
-  };
-
-  // Follow the bottom while the reader is at it.
-  //
-  // There used to be a second behaviour here: once a streaming reply outgrew
-  // the viewport it would jump to that reply's TOP and detach itself, on the
-  // reasoning that a long answer should be read from the start. In practice it
-  // reads as the scroll breaking — the page stops following mid-reply for no
-  // reason the reader can see, and "why did it stop" costs more than "I have to
-  // scroll up myself" saves. Follow the bottom; let the reader decide when to
-  // leave.
-  //
-  // Layout effect, not effect: this runs before paint, so the transcript is
-  // never shown at the old position for a frame first.
-  const last = messages[messages.length - 1];
-  const lastContent = last?.content;
-  React.useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const prev = prevRef.current;
-    const wasAtBottom = prev.scrollHeight - prev.scrollTop - prev.clientHeight < ATTACH_SLOP_PX;
-    if (wasAtBottom) el.scrollTop = el.scrollHeight - el.clientHeight;
-    remember(el);
-  }, [messages.length, lastContent, remember]);
-
-  // The follow also has to survive reflows that are not message deltas: an
-  // image decoding, a code block's highlight landing, the composer growing a
-  // line and shrinking this viewport, the window resizing. All of those change
-  // the geometry without touching `messages`, so the layout effect above never
-  // runs and a reader pinned to the bottom quietly drifted off it. Same one
-  // rule as everywhere else — re-pin only if the PREVIOUS geometry said the
-  // reader was at the bottom, so someone who scrolled away is never yanked —
-  // and re-measure `atBottom`, so the jump-to-latest pill stays truthful
-  // through a resize the reader didn't cause. Writing scrollTop resizes
-  // nothing, so this can't feed back into its own observer.
-  React.useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      const prev = prevRef.current;
-      const wasAtBottom = prev.scrollHeight - prev.scrollTop - prev.clientHeight < ATTACH_SLOP_PX;
-      if (wasAtBottom) el.scrollTop = el.scrollHeight - el.clientHeight;
-      remember(el);
-      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < ATTACH_SLOP_PX);
-    });
-    // Both boxes matter: the scroller's own box catches viewport/composer
-    // changes, the content's box catches the transcript growing or settling.
-    observer.observe(el);
-    if (contentRef.current) observer.observe(contentRef.current);
-    return () => observer.disconnect();
-  }, [remember]);
-
   // Announce that a reply finished, once, instead of streaming every token to
   // the screen reader as it arrives. `content` is deliberately NOT a dependency:
   // the announcement fires on the streaming edge, not on each delta.
   const [completionAnnouncement, setCompletionAnnouncement] = React.useState("");
   const wasStreamingRef = React.useRef(false);
+  const last = messages[messages.length - 1];
   const lastStreaming = Boolean(last?.streaming);
   React.useEffect(() => {
     const finished = wasStreamingRef.current && !lastStreaming;
@@ -253,20 +168,6 @@ export function MessageList(props: MessageListProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastStreaming]);
 
-  const jumpToLatest = () => {
-    const el = scrollRef.current;
-    setAtBottom(true);
-    // Pretend we were already at the bottom, so a chunk landing mid-animation
-    // is followed rather than treated as "the reader is away".
-    if (el) prevRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollHeight, clientHeight: el.clientHeight };
-    // Discrete and user-initiated, so it is the one scroll safe to animate:
-    // nothing else is writing scrollTop at the same time.
-    // Instant under Reduce Motion: a smooth scroll across a long thread is
-    // exactly the kind of large travel that setting asks to skip.
-    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    bottomRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "end" });
-  };
-
   return (
     <div className={cn("relative min-h-0 flex-1", props.className)}>
       {/*
@@ -278,9 +179,20 @@ export function MessageList(props: MessageListProps) {
       <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
         {completionAnnouncement}
       </span>
+      {messages.length > 80 && (
+        <button type="button" onClick={() => transcript.setShowAll(!transcript.showAll)} className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:z-20 focus:rounded-field focus:bg-popover focus:p-2">
+          {transcript.showAll ? "Use compact conversation view" : "Read full conversation"}
+        </button>
+      )}
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        onKeyDown={transcript.onKeyDown}
+        onFocusCapture={transcript.onFocusCapture}
+        onBlurCapture={transcript.onBlurCapture}
+        tabIndex={0}
+        aria-label="Conversation messages"
+        data-transcript-windowed={transcript.windowed || undefined}
         // overflow-anchor:none — the browser's own scroll anchoring shifts
         // scrollTop when content resizes, which while streaming is constantly.
         // Left on, it moves the view out from under a reader who has scrolled
@@ -340,19 +252,20 @@ export function MessageList(props: MessageListProps) {
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
         className={cn(
-          "page-gutter mx-auto w-full transcript-column space-y-6 py-6",
+          "page-gutter mx-auto w-full transcript-column pt-6",
           !entered && "motion-safe:animate-rise-in",
         )}
       >
-          {messages.map((m, i) => (
-            // Scroll anchor for find-in-conversation. A wrapper rather than a
-            // prop on MessageItem: the id has to sit on a real element for
-            // scrollIntoView, and MessageItem's own root differs between the
-            // user and assistant branches.
-            <div key={m.renderKey ?? m.id} data-message-id={m.id}>
-            <MessageItem
+          {transcript.indices.map((i, position) => {
+            const m = messages[i];
+            const previousEnd = position === 0 ? 0 : transcript.layout.offsets[transcript.indices[position - 1] + 1];
+            const gap = transcript.layout.offsets[i] - previousEnd;
+            return <React.Fragment key={m.renderKey ?? m.id}>
+            {gap > 0 && <div aria-hidden style={{ height: gap }} />}
+            <MeasuredTurn message={m} observe={transcript.observeRow}>
+            <TranscriptMessage
               message={m}
-              contextReceipt={m.role === "USER" ? contextReceiptFromActivity(messages[i + 1]?.activity) : undefined}
+              receiptActivity={m.role === "USER" ? messages[i + 1]?.activity : undefined}
               isLast={i === messages.length - 1}
               busy={props.busy}
               status={i === messages.length - 1 ? props.status : undefined}
@@ -377,10 +290,14 @@ export function MessageList(props: MessageListProps) {
               currentModelId={props.currentModelId}
             />
             {runsByMessage.get(i)}
-            </div>
-          ))}
+            </MeasuredTurn>
+            </React.Fragment>;
+          })}
+          {transcript.indices.length > 0 && transcript.indices[transcript.indices.length - 1] < messages.length - 1 && (
+            <div aria-hidden style={{ height: transcript.layout.total - transcript.layout.offsets[transcript.indices[transcript.indices.length - 1] + 1] }} />
+          )}
           {runsByMessage.get(-1)}
-          <div ref={bottomRef} />
+          <div />
         </div>
       </div>
 

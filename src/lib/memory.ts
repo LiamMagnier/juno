@@ -27,12 +27,14 @@ import {
   coveredBySummary,
   selectMemoriesForContext,
   summaryPredatesForget,
+  summaryPredatesMemoryChange,
   summaryRebuildDecision,
   type LifecycleEntry,
   type MemoryUpdateActivity,
   type RetrievalResult,
   type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
+import { readMemorySummaryChanges } from "@/lib/memory-summary-changes";
 import {
   SENSITIVE_TOPICS,
   SENSITIVE_TOPIC_META,
@@ -1543,9 +1545,10 @@ export async function getMemoryProfile(
   // reads in isolation, the account's otherwise. Never the account's inside a
   // project — that is the isolation.
   const summaryScope = isolate && projectId ? projectId : null;
-  const [storedSummary, forgottenAt] = await Promise.all([
+  const [storedSummary, forgottenAt, changes] = await Promise.all([
     summaryScope ? getProjectMemorySummary(userId, summaryScope) : getMemorySummary(userId),
     newestSuppressionAt(userId),
+    readMemorySummaryChanges({ userId, projectId: summaryScope, now }, (args) => prisma.memoryEntry.findFirst(args)),
   ]);
   // A summary written before the newest "forget" still says the forgotten
   // thing, in prose, and would be injected whole — so it sits this turn out and
@@ -1554,8 +1557,13 @@ export async function getMemoryProfile(
   // back. See `summaryPredatesForget` for how this used to leak. A forget is
   // account-wide, so it benches a project's summary exactly as it does the
   // account's.
+  // Corrections can reinstate an existing row without changing the count.
+  // Expiry may happen before the background sweep. Neither obsolete belief
+  // may remain in prose while the active facts say something different.
   const summary =
-    storedSummary && !summaryPredatesForget(storedSummary.updatedAt, forgottenAt) ? storedSummary : null;
+    storedSummary &&
+    !summaryPredatesForget(storedSummary.updatedAt, forgottenAt) &&
+    !summaryPredatesMemoryChange(storedSummary.updatedAt, changes) ? storedSummary : null;
 
   const scopeCondition = isolate && projectId
     ? { projectId }
@@ -1599,6 +1607,7 @@ export async function getMemoryProfile(
   const result = selectMemoriesForContext(candidates, {
     query: opts.query,
     projectId,
+    isolateProjectMemory: isolate,
     now,
     budgetTokens: opts.budgetTokens ?? DEFAULT_MEMORY_TOKEN_BUDGET,
     ...(semantic ? { semantic } : {}),
@@ -1943,23 +1952,17 @@ export async function consolidateWithFallback(
  */
 export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
   const now = new Date();
-  const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
+  const [count, summary, forgottenAt, changes] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, kind: "FACT", projectId: null } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
     newestSuppressionAt(userId),
-    // The newest moment a temporary fact stopped being true. Indexed on
-    // (userId, expiresAt).
-    prisma.memoryEntry.findFirst({
-      where: { userId, kind: "FACT", projectId: null, expiresAt: { not: null, lte: now } },
-      orderBy: { expiresAt: "desc" },
-      select: { expiresAt: true },
-    }),
+    readMemorySummaryChanges({ userId, projectId: null, now }, (args) => prisma.memoryEntry.findFirst(args)),
   ]);
   const decision = summaryRebuildDecision({
     summary,
     factCount: count,
     newestSuppressionAt: forgottenAt,
-    newestExpiryAt: lastExpiry?.expiresAt ?? null,
+    ...changes,
     now,
   });
   if (decision !== "rebuild") return;
@@ -2133,24 +2136,20 @@ export async function maybeConsolidateProject(
   conversationProvider: string | null
 ): Promise<void> {
   const now = new Date();
-  const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
+  const [count, summary, forgottenAt, changes] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, projectId, kind: "FACT" } }),
     prisma.projectMemorySummary.findUnique({
       where: { userId_projectId: { userId, projectId } },
       select: { entryCount: true, updatedAt: true },
     }),
     newestSuppressionAt(userId),
-    prisma.memoryEntry.findFirst({
-      where: { userId, projectId, kind: "FACT", expiresAt: { not: null, lte: now } },
-      orderBy: { expiresAt: "desc" },
-      select: { expiresAt: true },
-    }),
+    readMemorySummaryChanges({ userId, projectId, now }, (args) => prisma.memoryEntry.findFirst(args)),
   ]);
   const decision = summaryRebuildDecision({
     summary,
     factCount: count,
     newestSuppressionAt: forgottenAt,
-    newestExpiryAt: lastExpiry?.expiresAt ?? null,
+    ...changes,
     now,
   });
   if (decision !== "rebuild") return;

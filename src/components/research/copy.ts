@@ -113,7 +113,7 @@ export const RESEARCH_COPY = {
   /** The composer's explicit steering mode (§9.7, DECISIONS R6). */
   steer: {
     switchName: "Where this message goes",
-    ask: "Ask Juno",
+    ask: "Ask Alevr",
     guide: "Guide the research",
     placeholder: "Add guidance for the research…",
     sendName: "Guide the research",

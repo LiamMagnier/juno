@@ -111,7 +111,16 @@ interface ConversationOwner {
  * callers without one (the research audit) hold a conversation id they have
  * just written a message into, which is the ownership proof.
  */
-async function conversationOwner(conversationId: string, userId?: string): Promise<ConversationOwner | null> {
+async function conversationOwner(conversationId: string, userId?: string, tx?: ArtifactTx): Promise<ConversationOwner | null> {
+  // Completion may have just created this conversation/message in its own
+  // transaction. Every ownership read must share that snapshot and be able
+  // to see those uncommitted rows; a global read can silently drop the report.
+  if (tx) {
+    return asTx(tx).conversation.findFirst({
+      where: { id: conversationId, ...(userId ? { userId } : {}) },
+      select: { userId: true, projectId: true },
+    });
+  }
   const row = userId
     ? await prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { userId: true, projectId: true } })
     : await prismaUnguarded.conversation.findUnique({ where: { id: conversationId }, select: { userId: true, projectId: true } });
@@ -258,7 +267,7 @@ export async function persistArtifacts(
 ): Promise<ClientArtifact[]> {
   const out: ClientArtifact[] = [];
   if (parsed.length === 0) return out;
-  const owner = await conversationOwner(conversationId, opts.userId);
+  const owner = await conversationOwner(conversationId, opts.userId, opts.tx);
   if (!owner) return out;
   // A planned id names one proposal. The same identifier twice in one reply
   // is held twice (the second makes the first STALE), and the second needs an

@@ -216,7 +216,7 @@ export function ReportReader({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `juno-deep-research-${new Date().toISOString().slice(0, 10)}.md`;
+      a.download = `alevr-research-${new Date().toISOString().slice(0, 10)}.md`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -367,7 +367,7 @@ export function ReportReader({
           // The tag list is OUTLINE_HEADING_TAGS spelled out, because Tailwind
           // only sees a literal class; tests/markdown-headings.test.ts keeps
           // the two in step.
-          className="min-w-0 flex-1 [&_:is(h3,h4,h5)]:scroll-mt-24"
+          className="research-document research-document-reader min-w-0 flex-1 [&_:is(h3,h4,h5)]:scroll-mt-24"
         >
           <Markdown content={report} sources={clientSources} className="text-body-lg" />
         </article>

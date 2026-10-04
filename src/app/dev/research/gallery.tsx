@@ -15,6 +15,7 @@ import { ResearchFactLine, ResearchReportCard } from "@/components/research/repo
 import { citationPassages } from "@/components/research/report-structure";
 import { ResearchPanel } from "@/components/research/research-panel";
 import { ResearchRow } from "@/components/research/research-row";
+import { HistoricalResearchRunPanel } from "@/components/chat/research-run-panel";
 import { ScopeCard } from "@/components/research/scope-card";
 import { NOTIFY_ASKED_KEY, draftEstimate, removeQuestion, seedDraft } from "@/components/research/scope-draft";
 import { steerTarget, type GuideMode } from "@/components/research/steer";
@@ -309,19 +310,24 @@ export function ResearchGallery() {
   const runId = runIds[0];
 
   const { setTheme, resolvedTheme } = useTheme();
-  const [width, setWidth] = React.useState<(typeof WIDTHS)[number]>(state === "mobile-scope" ? 375 : 1440);
+  const requestedWidth = WIDTHS.find((w) => String(w) === params.get("width"));
+  const [width, setWidth] = React.useState<(typeof WIDTHS)[number]>(requestedWidth ?? (state === "mobile-scope" ? 375 : 1440));
   const [locale, setLocale] = React.useState<"en" | "de">("en");
   const [dir, setDir] = React.useState<"ltr" | "rtl">("ltr");
   const [accent, setAccent] = React.useState<string>("coral");
   const [textSize, setTextSize] = React.useState<16 | 20>(16);
   const [reduced, setReduced] = React.useState<"off" | "on">("off");
   const [shell, setShell] = React.useState<"frame" | "shell">("frame");
+  // "chat" is what the conversation mounts (ResearchRunPanel: the live Deep
+  // Field console, the gates and the finished recap); "legacy" is the older
+  // row + side panel set kept for comparison until it is removed.
+  const surface: "chat" | "legacy" = params.get("surface") === "legacy" ? "legacy" : "chat";
 
   const gateStates: GalleryState[] = ["planning", "scope", "scope-edited", "tiny", "revising", "scope-not-at-tail", "notify-prompt", "mobile-scope"];
   const doneStates: GalleryState[] = ["completed", "report-fullscreen", "citation-card", "export", "refused-budget", "refused-live-runs", "partial"];
   const [panel, setPanel] = React.useState<{ runId: string; view: "progress" | "sources" | "plan" | "report" | "details" } | null>(null);
   React.useEffect(() => {
-    setPanel(gateStates.includes(state) ? null : { runId, view: doneStates.includes(state) ? "report" : "progress" });
+    setPanel(surface === "chat" || gateStates.includes(state) ? null : { runId, view: doneStates.includes(state) ? "report" : "progress" });
     if (state === "notify-prompt") {
       try {
         window.localStorage.removeItem(NOTIFY_ASKED_KEY);
@@ -331,7 +337,7 @@ export function ResearchGallery() {
     }
     // The lists are constants of this component; the state and run decide.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, runId]);
+  }, [state, runId, surface]);
 
   React.useEffect(() => {
     document.documentElement.lang = locale;
@@ -357,12 +363,15 @@ export function ResearchGallery() {
           <Toggle label="root text" value={textSize} options={[16, 20] as const} onChange={setTextSize} />
           <Toggle label="reduced motion" value={reduced} options={["off", "on"] as const} onChange={setReduced} />
           <Toggle label="panel" value={shell} options={["frame", "shell"] as const} onChange={setShell} />
+          <Link href={`/dev/research?state=${state}${surface === "chat" ? "&surface=legacy" : ""}`} className="text-caption text-muted-foreground underline">
+            surface: {surface}
+          </Link>
         </div>
         <nav className="flex flex-wrap gap-1">
           {GALLERY_STATES.map((s) => (
             <Link
               key={s}
-              href={`/dev/research?state=${s}`}
+              href={`/dev/research?state=${s}${surface === "legacy" ? "&surface=legacy" : ""}`}
               className={cn("rounded-full border px-2 py-0.5 font-mono text-caption", s === state ? "border-primary text-foreground" : "border-border text-muted-foreground hover:text-foreground")}
             >
               {s}
@@ -384,12 +393,16 @@ export function ResearchGallery() {
                 <div className="flex justify-end">
                   <div className={cn(USER_BUBBLE_CLASS, "max-w-[85%]")}>How well do heat pumps work in cold climates?</div>
                 </div>
-                {runIds.map((id) => (
-                  <div key={id} className="space-y-3">
-                    <ScopeCard runId={id} atTail={state !== "scope-not-at-tail"} />
-                    <ResearchRow runId={id} onOpen={open} />
-                  </div>
-                ))}
+                {runIds.map((id) =>
+                  surface === "chat" ? (
+                    <HistoricalResearchRunPanel key={id} runId={id} />
+                  ) : (
+                    <div key={id} className="space-y-3">
+                      <ScopeCard runId={id} atTail={state !== "scope-not-at-tail"} />
+                      <ResearchRow runId={id} onOpen={open} />
+                    </div>
+                  ),
+                )}
                 {state === "scope-not-at-tail" && (
                   <>
                     <div className="flex justify-end">
@@ -399,7 +412,7 @@ export function ResearchGallery() {
                   </>
                 )}
                 {state === "scope-edited" && <ScopeEditedNote runId={runId} />}
-                {(doneStates.includes(state) || state === "completed-while-panel-open") && <CompletionMessage runId={runId} onOpen={open} />}
+                {surface === "legacy" && (doneStates.includes(state) || state === "completed-while-panel-open") && <CompletionMessage runId={runId} onOpen={open} />}
                 {(state === "refused-budget" || state === "refused-live-runs") && (
                   <p className="text-caption text-warning-foreground">
                     <PhraseWithArgs spec={researchRefusalLine(state === "refused-budget" ? "budget" : "live_runs", state === "refused-budget" ? { resetsOn: "2026-10-01T00:00:00.000Z" } : {})} />

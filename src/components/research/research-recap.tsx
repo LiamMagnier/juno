@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { ArrowRight, ChevronDown, ShieldCheck } from "@/components/ui/icons";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
-import { SourceRail } from "@/components/research/source-rail";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
 import { reportTitle } from "@/components/research/report-dialog";
 import { Button } from "@/components/ui/button";
@@ -13,41 +12,37 @@ import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isResearchState, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "@/components/research/use-research-run";
 import { FEATURE_NAMES } from "@/lib/brand/names";
+import { DeepField, Figure, QuestionRail } from "./deep-field";
+import { answeredCount, researchAuditClean, researchWorkspace } from "./workspace-model";
 
 /**
- * What a finished run leaves in the conversation: a report cover.
+ * What a finished run leaves in the conversation: the report's cover.
  *
- * The verdict as a word, the report's own title, one line of provenance, the
- * citation verdict, a door into the document, and the machinery behind a
- * disclosure — in that order, because the reader's question is "can I trust
- * it and where do I read it".
+ * The live view settles into it: the same section, the same field (now
+ * still, every cited source on the inner orbit with its number), the same
+ * questions with how each ended, then the figures a reader checks a report
+ * by, the citation verdict in words, and one door into the document. The
+ * machinery is one disclosure below, where an auditor looks and a reader
+ * does not.
  *
- * TWO VOICES. The cover speaks in `ui` for the verdict and `caption` for
- * every fact; the serif title is content, not chrome. It used to speak in
- * five rungs and three faces — a mono `micro` elapsed, a captioned cost
- * capsule, two bordered provenance capsules, a `body` CTA — which is the
- * "control panel" diagnosis PREMIUM_AUDIT §2 made of the model picker,
- * repeated on a report cover. Facts are plain text now, separated by a
- * middot, and nothing on the cover wears a capsule.
- *
- * NOTHING NESTED WEARS A BOX. `.research-surface` is a 16px radius padded by
- * 16px, so FLAT_UI §6 gives a full-width child a radius of zero: the audit
- * verdict is an icon and a sentence on the panel, and the door is a button —
- * narrower than the content box, which is what puts it outside the rule.
+ * The verdict is a word, never a capsule; a run that stopped short says so
+ * in the attention colour with the reason the server recorded.
  */
 
 const RECAP_COPY = {
-  kicker: `${FEATURE_NAMES.research.label} report`,
-  complete: "Research complete",
-  read: "sources read",
-  oneRead: "source read",
-  found: "found",
-  covered: "objectives answered",
-  openReport: "Read the full report",
-  noReport: "This run stopped before it wrote a report.",
-  showWork: "Inspect methodology & sources",
-  hideWork: "Hide methodology & sources",
-  dismiss: "Hide this research receipt",
+  report: "Report",
+  ready: "Report ready",
+  cancelled: "Stopped",
+  read: "Read",
+  cited: "Cited",
+  answered: "Answered",
+  time: "Time",
+  openReport: "Read the report",
+  library: "Saved in Library",
+  noReport: "This research stopped before it wrote a report.",
+  showWork: "How it was researched",
+  hideWork: "Hide how it was researched",
+  dismiss: "Hide this research",
 } as const;
 
 export function ResearchRecap({
@@ -64,161 +59,100 @@ export function ResearchRecap({
   className?: string;
 }) {
   const [workOpen, setWorkOpen] = React.useState(false);
-
   const state: ResearchState = isResearchState(run.state) ? run.state : "failed";
-  const clean = state === "completed";
-  const read = run.sources.filter((source) => source.read).length;
-  const objectives = run.plan.objectives ?? [];
-  const covered = objectives.filter((objective) => objective.status === "covered").length;
+  const model = React.useMemo(() => researchWorkspace(run, []), [run]);
   const elapsed = runDuration(run.createdAt ?? "", run.finishedAt ?? null);
-
-  const title = run.report ? reportTitle(run.report) : null;
+  const title = (run.report ? reportTitle(run.report) : null) ?? run.title ?? run.goal;
+  const subtitle = title.trim() !== run.goal.trim() ? run.goal : null;
   const audit = run.auditSummary;
-  const auditClean = audit ? audit.contradicted + audit.unsupported === 0 : false;
+  const auditClean = audit ? researchAuditClean(audit) : false;
+  const verdict =
+    state === "completed" ? RECAP_COPY.ready : state === "cancelled" ? RECAP_COPY.cancelled : RESEARCH_STATE_MESSAGE[state];
+  const tone = state === "completed" ? undefined : state === "failed" ? "error" : state === "cancelled" ? undefined : "attention";
 
   return (
-    <section
-      aria-label={RECAP_COPY.kicker}
-      className={cn(
-        "research-surface relative overflow-hidden",
-        className
-      )}
-    >
-      {/*
-       * THE VERDICT, AS A WORD. These four were `rounded-full` capsules with
-       * their own border, a 15%-alpha tinted fill and 12px semibold type — the
-       * loudest treatment the design system can produce, spent on a label that
-       * repeats what the surface around it already says. FLAT_UI §2.4: the
-       * accent (and every semantic hue) is state, never furniture. They are
-       * now a glyph and a word in the hue that carries the meaning, which is
-       * the same badge idiom the model picker uses.
-       */}
-      {/* Top Header: Status badge & metadata */}
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {clean ? (
-            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-success-ink">
-              <StatusIcons.success className="size-3.5 text-success-ink" />
-              {RECAP_COPY.complete}
-            </span>
-          ) : state === "failed" ? (
-            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-destructive">
-              <StatusIcons.error className="size-3.5 text-destructive" />
-              {RESEARCH_STATE_MESSAGE[state]}
-            </span>
-          ) : state === "cancelled" ? (
-            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-muted-foreground">
-              Cancelled
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-warning-foreground">
-              {RESEARCH_STATE_MESSAGE[state]}
-            </span>
-          )}
+    <section aria-label={`${FEATURE_NAMES.research.label} ${RECAP_COPY.report}`} data-state={state} className={cn("rf min-w-0", className)}>
+      <header className="rf-rise" style={{ ["--i" as string]: 0 }}>
+        <div className="rf-annot flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 whitespace-nowrap text-foreground">{FEATURE_NAMES.research.label}</span>
+            <span aria-hidden>·</span>
+            <span className="rf-verdict" data-tone={tone}>{verdict}</span>
+          </span>
+          <span className="flex shrink-0 items-center gap-3 tabular-nums">
+            {elapsed && <span>{elapsed}</span>}
+            <span>{formatMicroUsd(run.costMicroUsd)}</span>
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                aria-label={RECAP_COPY.dismiss}
+                title={RECAP_COPY.dismiss}
+                className="pressable -me-1.5 inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:size-11"
+              >
+                <ActionIcons.dismiss className="size-3.5" />
+              </button>
+            )}
+          </span>
         </div>
-
-        <div className="flex items-center gap-2 text-caption tabular-nums text-muted-foreground">
-          {elapsed && (
-            <>
-              <span>{elapsed}</span>
-              <span aria-hidden>·</span>
-            </>
-          )}
-          <span>{formatMicroUsd(run.costMicroUsd)}</span>
-          {onDismiss && (
-            <button
-              type="button"
-              onClick={onDismiss}
-              aria-label={RECAP_COPY.dismiss}
-              title="Hide"
-              className="pressable inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
-            >
-              <ActionIcons.dismiss className="size-3.5" />
-            </button>
-          )}
-        </div>
+        <h3 lang={run.language ?? undefined} className="rf-title mt-3">{title}</h3>
+        {subtitle && <p lang={run.language ?? undefined} className="mt-2 max-w-[38rem] text-pretty text-ui text-muted-foreground">{subtitle}</p>}
       </header>
 
-      {/* Report Document Title */}
-      <div className="mt-3.5 ">
-        <h3 className="text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground">
-          {title ?? run.goal}
-        </h3>
-      </div>
-
-      {/* Provenance. "Read" leads because it is the number the reader will
-          meet again in the report: the reader is handed the read corpus, so
-          its "7 sources read" and this line's "7 sources read" are the same
-          count in the same words. The old capsule led with the found total
-          and the reader answered with the read one — two totals for one run,
-          one click apart. */}
-      <p className="mt-2 text-caption tabular-nums text-muted-foreground">
-        {read} {read === 1 ? RECAP_COPY.oneRead : RECAP_COPY.read} · {run.sources.length} {RECAP_COPY.found}
-        {objectives.length > 0 && ` · ${covered}/${objectives.length} ${RECAP_COPY.covered}`}
-      </p>
-
-      {/* Publishers Rail */}
       {run.sources.length > 0 && (
-        <div className="mt-4 border-t border-border/50 pt-3.5">
-          <SourceRail sources={run.sources} onOpenSources={() => setWorkOpen(true)} />
+        <div className="rf-stage rf-stage-still rf-rise" style={{ ["--i" as string]: 1 }}>
+          <DeepField
+            sources={run.sources}
+            currentHost={null}
+            working={false}
+            still
+            counts={{ found: model.found, read: model.read, cited: model.cited }}
+          />
+          <QuestionRail questions={model.questions} working={false} language={run.language} sources={run.sources} />
         </div>
       )}
 
-      {/* The citation verdict: an icon and a sentence on the panel. */}
+      <dl className="rf-figures rf-rise" style={{ ["--i" as string]: 2 }}>
+        <Figure label={RECAP_COPY.read}>{model.read}</Figure>
+        <Figure label={RECAP_COPY.cited}>{model.cited ?? <span className="text-muted-foreground">–</span>}</Figure>
+        <Figure label={RECAP_COPY.answered}>
+          {model.questions.length ? <>{answeredCount(model.questions)}<span className="rf-figure-of">/{model.questions.length}</span></> : <span className="text-muted-foreground">–</span>}
+        </Figure>
+        <Figure label={RECAP_COPY.time}>{elapsed ?? <span className="text-muted-foreground">–</span>}</Figure>
+      </dl>
+
       {audit && (
-        <div className="mt-4 flex items-center gap-2.5 text-caption">
-          <ShieldCheck className={cn("size-4 shrink-0", auditClean ? "text-success" : "text-warning-foreground")} />
-          <span className="flex-1 font-medium text-foreground/90">{auditHeadline(audit)}</span>
-        </div>
-      )}
-
-      {/* The door into the document. */}
-      {onOpenReport ? (
-        // The arrow nudges on its own articulation (icons.tsx); a second,
-        // hand-rolled translate on the same glyph doubled the travel. Button
-        // already sets the glyph gap, so the `ml-2` made it 16px.
-        <Button type="button" variant="secondary" onClick={onOpenReport} className="mt-4">
-          {RECAP_COPY.openReport}
-          <ArrowRight aria-hidden className="size-4 shrink-0" />
-        </Button>
-      ) : (
-        <p className="mt-4 text-caption text-muted-foreground">{RECAP_COPY.noReport}</p>
-      )}
-
-      {run.error && (
-        <p role="status" className="mt-4 rounded-field bg-destructive/10 px-3 py-2 text-ui text-destructive">
-          {run.error}
+        <p className="rf-audit rf-rise" style={{ ["--i" as string]: 3 }}>
+          <ShieldCheck className={cn("size-4 shrink-0", auditClean ? "text-foreground" : "text-[hsl(var(--attention))]")} aria-hidden />
+          <span>{auditHeadline(audit)}</span>
         </p>
       )}
 
-      {/* Inspect Methodology Drawer */}
+      {run.error && <p role="status" className="rf-notice">{run.error}</p>}
+
+      <div className="rf-controls rf-rise" style={{ ["--i" as string]: 4 }}>
+        {onOpenReport ? (
+          <>
+            <Button type="button" onClick={onOpenReport}>
+              {RECAP_COPY.openReport}
+              <ArrowRight aria-hidden className="size-4 shrink-0" />
+            </Button>
+            {/* Completion writes the report into Library in the same transaction as this message. */}
+            {run.assistantMessageId && <span className="rf-annot ms-2">{RECAP_COPY.library}</span>}
+          </>
+        ) : (
+          <p className="text-ui text-muted-foreground">{RECAP_COPY.noReport}</p>
+        )}
+      </div>
+
       {work && (
-        <div className="mt-4 border-t border-border/40 pt-3">
-          <button
-            type="button"
-            aria-expanded={workOpen}
-            onClick={() => setWorkOpen((value) => !value)}
-            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground hover:bg-secondary/60 hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
-          >
-            <span>{workOpen ? RECAP_COPY.hideWork : RECAP_COPY.showWork}</span>
-            <ChevronDown
-              aria-hidden
-              className={cn(
-                "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                workOpen && "rotate-180"
-              )}
-            />
+        <div className="rf-details">
+          <button type="button" className="rf-disclosure" aria-expanded={workOpen} onClick={() => setWorkOpen((value) => !value)}>
+            {workOpen ? RECAP_COPY.hideWork : RECAP_COPY.showWork}
+            <ChevronDown aria-hidden className={cn("size-4 transition-transform duration-base motion-reduce:transition-none", workOpen && "rotate-180")} />
           </button>
-          {/* Unfolds under its toggle and folds back the same way
-              (ICONS_AND_MOTION §2.2 rule 6). The wrapper goes `inert` as the
-              toggle closes, so what is still on screen while the fold plays
-              is out of the tab order; Collapse unmounts it after. The gutter
-              (`-mx-1` out, `px-1 pb-1` back in) keeps focus outlines at the
-              drawer's edges inside the fold's clip. */}
           <div className="contents" inert={!workOpen}>
-            <Collapse open={workOpen} className="-mx-1" innerClassName="px-1 pb-1 pt-4">
-              <div className="border-t border-border/50 pt-4">{work}</div>
-            </Collapse>
+            <Collapse open={workOpen} innerClassName="pb-1 pt-4">{work}</Collapse>
           </div>
         </div>
       )}

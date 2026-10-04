@@ -1,217 +1,250 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Pause, Play, Square } from "@/components/ui/icons";
-import { ActionIcons } from "@/lib/app-icons";
+import { ChevronDown, Pause, Play } from "@/components/ui/icons";
 import { Collapse } from "@/components/ui/collapse";
-import { IconSwap } from "@/components/ui/icon-swap";
+import { Button } from "@/components/ui/button";
+import { RollingNumber } from "@/components/ui/micro";
+import { hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
+import { RunClock } from "@/components/chat/run/run-clock";
+import { PhraseWithArgs } from "@/lib/i18n-phrase";
 import { EvidencePanel } from "./evidence-panel";
-import { ClarifyGate, PlanOutline, PlanReview } from "./run-controls";
-import { workingElapsedMs } from "./run-clock";
-import { formatMicroUsd } from "./run-format";
-import { RunSpine, type StageYield } from "./run-spine";
+import { ClarifyGate, PlanOutline } from "./run-controls";
 import { RunTimeline } from "./run-timeline";
 import { SourceDeck } from "./source-deck";
-import { hostOf } from "@/components/chat/source-chip";
-import { formatSpan } from "@/lib/run-receipt";
-import { RollingNumber } from "@/components/ui/micro";
-import { cn } from "@/lib/utils";
-import { RESEARCH_STATE_MESSAGE, isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
+import { ScopeCard } from "./scope-card";
+import { DeepField, Figure, QuestionRail } from "./deep-field";
+import { formatMicroUsd } from "./run-format";
+import { panelControls, researchClock, rowLine } from "./research-view";
+import { phaseOfRun } from "@/lib/research/phase";
+import { readingHost, researchWorkspace } from "./workspace-model";
+import { isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
-import { LiveLine } from "@/components/chat/live-line";
-import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { cn } from "@/lib/utils";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
-/**
- * A run being watched.
- *
- * The card opens with the question, set as the recap sets the report's title,
- * because that is the one thing on it a person cannot get from anywhere else
- * — "Researching your question" above it said nothing the question did not
- * (PREMIUM_AUDIT rule 15). Under it, in order: the one state sentence, the
- * four acts with the live one marked, and a line of facts a person watching
- * paid work actually asks about — how long, how much, what it has found, what
- * it is reading right now. The machinery (sources, activity, plan, evidence)
- * is one disclosure down, and the disclosure opens on Activity because a live
- * run's question is "is it doing anything".
- *
- * The rail used to sit INSIDE that disclosure, so a live run collapsed to a
- * label, a sentence and a middot line — the panel one level up promised "five
- * acts with the live one open" and drew none of them.
- */
-const CONSOLE_COPY = {
-  oneQuery: "query", queries: "queries", found: "found", read: "read", checked: "checked",
-  of: "of",
-  sourcesRead: "sources read",
-  working: "researchers working",
-  reported: "researchers reported",
-  findings: "findings",
-  show: "View research activity",
-  hide: "Hide research details",
-  noActivity: "Nothing yet — steps appear here as researchers search and read.",
-  noEvidence: "Nothing yet — what each question rests on appears here as sources are read.",
-  noPlan: `The plan appears here once ${PRODUCT_NAME} has worked out what to look up.`,
+const WORKSPACE_COPY = {
+  guide: "Guide", pause: "Pause", resume: "Resume", stop: "Stop",
+  found: "Found", read: "Read", cited: "Cited", researchers: "Researchers",
+  evidence: "Latest evidence",
+  details: "Sources, evidence and activity", hideDetails: "Hide sources, evidence and activity",
+  guidance: "What should the research focus on?", placeholder: "Change the scope, suggest an angle, or add a source…",
+  addGuidance: "Add guidance", guidanceQueued: "Added. It applies at the next research round.",
+  guidanceNote: "Guidance applies at the next round. Adding it while paused keeps the research paused.",
+  queued: "Queued guidance", applied: "Applied guidance",
+  noEvidence: "Evidence appears here as sources answer the questions.",
+  noActivity: "Activity appears here as sources are searched and read.",
+  noResearchers: "No researchers have started yet.",
+  working: "Working", waiting: "Paused", finished: "Finished", idle: "Idle",
+  retry: "Retry connection", reconnecting: "Connection lost. Showing the last saved research.",
+  unavailable: "This research is unavailable. Sign in again or return to the conversation.",
+  finish: "Write with what you have", finishing: "Finishing with the evidence gathered so far",
+  limit: "limit",
 };
-export function stageYields(run: ResearchRunView): StageYield {
-  const read = run.sources.filter((source) => source.read).length;
-  const queries = run.plan.queries.length;
-  const coverage = run.plan.coverage ?? [];
-  const satisfied = coverage.filter((entry) => entry.status === "satisfied").length;
-  return {
-    plan: queries > 0 ? `${queries} ${queries === 1 ? CONSOLE_COPY.oneQuery : CONSOLE_COPY.queries}` : null,
-    investigate:
-      run.sources.length > 0
-        ? `${run.sources.length} ${CONSOLE_COPY.found}${read > 0 ? ` · ${read} ${CONSOLE_COPY.read}` : ""}`
-        : null,
-    review: coverage.length > 0 ? `${satisfied}/${coverage.length} ${CONSOLE_COPY.checked}` : null,
-    write: null,
-  };
-}
+
+const TABS = [
+  { id: "sources", label: "Sources" },
+  { id: "evidence", label: "Evidence" },
+  { id: "activity", label: "Activity" },
+  { id: "researchers", label: "Researchers" },
+  { id: "plan", label: "Plan" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
 
 /**
- * The working clock, as its own leaf so the 1s tick re-renders one span and
- * not the deck, the timeline and the evidence panel under it. `now` is read in
- * an effect, never during render: the console is server-rendered on the chat
- * page and `Date.now()` in render is a hydration mismatch by construction.
- * The interval runs only while the run is working; a parked run's figure is
- * fixed by the log and needs no clock.
+ * A research run in the conversation, while it works: Deep Field.
+ *
+ * Laid out like Memory, the page it belongs with: a mono line saying what is
+ * happening, the question in Newsreader, then the field (the run's real
+ * sources on their orbits) beside the questions it is answering, the figures,
+ * the newest evidence in the sources' own words, and the controls. The
+ * machinery (every source, the coverage, the activity, the researchers and
+ * the plan) is one disclosure below. Nothing here is boxed: it is a section
+ * of the conversation, separated by hairlines.
  */
-function RunClock({ events, state, createdAt }: { events: ResearchEventDTO[]; state: ResearchState; createdAt?: string }) {
-  const working = isWorkingResearchState(state);
-  const [now, setNow] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    const tick = () => setNow(Date.now());
-    tick();
-    if (!working) return;
-    const interval = window.setInterval(tick, 1_000);
-    return () => window.clearInterval(interval);
-  }, [working]);
-  if (now === null) return null;
-  const ms = workingElapsedMs(events, { state, createdAt }, now);
-  if (ms === null) return null;
-  return <span className="tabular-nums">{formatSpan(ms, { live: true })}</span>;
-}
-
-export function ResearchConsole({ run, state, events, busy, notice, post, onDismiss, className }: {
+export function ResearchConsole({ run, state, events, busy, notice, post, className, disconnected = false, failed = false, reload, fetchedAt }: {
   run: ResearchRunView; state: ResearchState; events: ResearchEventDTO[]; busy: boolean; notice: string | null;
-  post: (path: string, body: Record<string, unknown>) => Promise<boolean>; onDismiss?: () => void; className?: string;
+  post: (path: string, body: Record<string, unknown>) => Promise<boolean>; className?: string;
+  disconnected?: boolean; failed?: boolean; reload?: () => Promise<unknown>; fetchedAt?: number | null;
 }) {
-  // Activity, not Sources: this console only ever mounts for a run that is
-  // still going (the recap takes over at the terminal states), and the tab a
-  // person opens on a live run is the one that moves.
-  const [tab, setTab] = React.useState("activity");
+  const titleRef = React.useRef<HTMLHeadingElement>(null);
+  const onStarted = React.useCallback(() => titleRef.current?.focus(), []);
+  const model = React.useMemo(() => researchWorkspace(run, events), [run, events]);
+  const [tab, setTab] = React.useState<Tab>("sources");
   const [expanded, setExpanded] = React.useState(false);
+  const [guideOpen, setGuideOpen] = React.useState(false);
+  const [guidance, setGuidance] = React.useState("");
+  const [guided, setGuided] = React.useState(false);
+  const guideId = React.useId();
+  const detailsId = React.useId();
   const awaitingPlan = state === "awaiting_plan_confirmation";
-  // The two gates are mutually exclusive states, but they share the header and
-  // the panel, so "is a person being asked something" is one flag.
   const awaitingClarify = state === "awaiting_clarification";
   const atGate = awaitingPlan || awaitingClarify;
-  const latest = [...events].reverse().find(event => event.kind === "source_read" || event.kind === "query_issued");
-  const detail = typeof latest?.payload.url === "string" ? hostOf(latest.payload.url) : typeof latest?.payload.query === "string" ? latest.payload.query : null;
-  const team = React.useMemo(() => {
-    const spawned = new Set<string>();
-    const finished = new Set<string>();
-    let findings = 0;
-    for (const event of events) {
-      const workerId = typeof event.payload.workerId === "string" ? event.payload.workerId : "";
-      if (event.kind === "worker_spawned" && workerId) spawned.add(workerId);
-      else if (event.kind === "worker_finished" && workerId) finished.add(workerId);
-      else if (event.kind === "worker_tool_call" && event.payload.tool === "note_finding" && event.payload.ok !== false) findings += 1;
-    }
-    return { total: spawned.size, working: [...spawned].filter((id) => !finished.has(id)).length, findings };
-  }, [events]);
-  const planEmpty = !run.plan.approach && (run.plan.objectives?.length ?? 0) === 0 && (run.plan.steps?.length ?? 0) === 0 && run.plan.queries.length === 0;
-  // Not `emptyNote`: scripts/generate-i18n-catalog.mjs harvests every string
-  // literal inside a variable whose name ends in Note/Copy/Label, class lists
-  // included. The copy this draws lives in CONSOLE_COPY, where it belongs.
-  const emptyLine = (text: string) => <p className="text-ui text-muted-foreground">{text}</p>;
-  return <section aria-label={FEATURE_NAMES.research.accessibleLabel} className={cn("research-surface research-enter relative min-w-0", className)}>
-    <header className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        {atGate
-          // The gate labels earn their line: "Before Juno starts" says something
-          // the question does not, and the gates print the question themselves.
-          ? <p className="text-ui font-medium">{awaitingClarify ? `Before ${PRODUCT_NAME} starts` : "Your research plan"}</p>
-          : <h3 className="line-clamp-2 text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground">{run.goal}</h3>}
-        {/* The live line every working row uses: the Continuum mark beside the
-            truthful stage, still while the run waits on you. */}
-        {isWorkingResearchState(state) || state.startsWith("awaiting_")
-          ? <LiveLine className="mt-1" size={16} text={RESEARCH_STATE_MESSAGE[state]} phase={state.startsWith("awaiting_") ? "waiting" : "working"} immediate />
-          : <p role="status" className="mt-1 text-ui text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>}
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {!atGate && run.live && <>
-          {/* Pause ⇄ play cross-fade in one cell rather than cutting;
-              `.pressable` gives these the house press and `.research-icon`
-              the colour cross-fade. */}
-          <button type="button" disabled={busy} aria-label={state === "paused" ? "Resume research" : "Pause research"} title={state === "paused" ? "Resume research" : "Pause research"} onClick={() => void post("/control", { action: state === "paused" ? "resume" : "pause" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><IconSwap swapped={state === "paused"} from={<Pause className="size-4" />} to={<Play className="size-4" />} /></button>
-          <button type="button" disabled={busy} aria-label="Stop research" title="Stop research" onClick={() => void post("/control", { action: "cancel" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><Square className="size-3.5" /></button>
-        </>}
-        {onDismiss && !run.live && <button type="button" aria-label="Hide this research run" title="Hide" onClick={onDismiss} className="research-icon pressable motion-reduce:transition-none motion-reduce:active:scale-100"><ActionIcons.dismiss className="size-4" /></button>}
-      </div>
-    </header>
-    {awaitingClarify ? <div className="mt-5"><ClarifyGate key={`${run.id}-clarify`} goal={run.goal} questions={run.plan.clarifications ?? []} busy={busy} onSubmit={answers => void post("/clarify", { answers })} /></div> : awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} goal={run.goal} effort={run.plan.effort ?? null} budgetMicroUsd={run.budgetMicroUsd} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} successCriteria={run.plan.successCriteria} risks={run.plan.risks} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
-      <RunSpine className="mt-5" state={state} live={run.live} yields={stageYields(run)} />
-      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-        <RunClock events={events} state={state} createdAt={run.createdAt} />
-        {/* The ceiling beside the spend, while there is still time to act on
-            it. It used to surface only in the Activity tab's "Stopped at the
-            research budget" note — after it had truncated the report. */}
-        <span className="tabular-nums">{formatMicroUsd(run.costMicroUsd)}{run.budgetMicroUsd ? ` ${CONSOLE_COPY.of} ${formatMicroUsd(run.budgetMicroUsd)}` : ""}</span>
-        <span aria-hidden>·</span>
-        {/* THESE THREE ROLL, and this is the surface the roll was built for.
-            A research run's figures change every few seconds while the reader
-            sits watching them — a source finishing, a researcher reporting, a
-            finding landing — and a digit that cuts is indistinguishable from
-            a digit that was always there. On a card whose entire job is to
-            answer "is it doing anything", a silent counter is the failure
-            mode. The clock and the spend beside them are excluded on purpose:
-            a figure that changes every single tick is not news, and six
-            rolling numbers on one line is a slot machine. */}
-        <span><RollingNumber value={run.sources.filter(source => source.read).length} /> {CONSOLE_COPY.sourcesRead}</span>
-        {team.total > 0 && <>
-          <span aria-hidden>·</span>
-          <span>
-            {team.working > 0 ? (
-              <><RollingNumber value={team.working} /> {CONSOLE_COPY.of} <RollingNumber value={team.total} /> {CONSOLE_COPY.working}</>
-            ) : (
-              <><RollingNumber value={team.total} /> {CONSOLE_COPY.reported}</>
-            )}
+  const phase = phaseOfRun(run, events);
+  const controls = panelControls(run, phase);
+  const clock = researchClock(run, phase, fetchedAt ?? null);
+  const working = isWorkingResearchState(state) && !disconnected && !failed;
+  const host = React.useMemo(() => readingHost(run, events), [run, events]);
+  const lastSeq = events.at(-1)?.seq;
+  const disabled = busy || disconnected || failed;
+  const steering = run.steering?.at(-1) ?? null;
+  const findings = (run.latestFindings ?? []).slice(0, 2);
+  const subtitle = run.title && run.title.trim() !== run.goal.trim() ? run.goal : null;
+
+  return (
+    <section aria-label={FEATURE_NAMES.research.accessibleLabel} data-research-workspace data-state={state} className={cn("rf min-w-0", className)}>
+      <header className="rf-rise" style={{ ["--i" as string]: 0 }}>
+        <div className="rf-annot flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 whitespace-nowrap text-foreground">{FEATURE_NAMES.research.label}</span>
+            <span aria-hidden>·</span>
+            <span className="min-w-0 truncate" aria-live="polite">
+              {controls.finishing ? WORKSPACE_COPY.finishing : <PhraseWithArgs spec={rowLine(phase, run)} />}
+            </span>
           </span>
-          {team.findings > 0 && <><span aria-hidden>·</span><span><RollingNumber value={team.findings} /> {CONSOLE_COPY.findings}</span></>}
-        </>}
-        {detail && <><span aria-hidden>·</span><span className="min-w-0 truncate">{detail}</span></>}
-      </div>
-      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="mt-4 flex min-h-9 w-full items-center justify-between border-t border-border pt-3 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none">
-        {expanded ? CONSOLE_COPY.hide : CONSOLE_COPY.show}<ChevronDown className={cn("size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none", expanded && "rotate-180")} />
-      </button>
-      {/* The machinery unfolds under its toggle and folds back the same way
-          (ICONS_AND_MOTION §2.2 rule 6), where it used to vanish in a frame.
-          The wrapper goes `inert` as the toggle closes, so the tabs and links
-          still on screen while the fold plays are out of the tab order;
-          Collapse unmounts them after. The gutter (`-mx-1` out, `px-1 pb-1`
-          back in) keeps focus outlines at the panel's edges inside the fold's
-          clip. `research-tab-body`'s own arrival is dropped here — the fold
-          and its fade are the entrance — and kept on the keyed tab body below,
-          where it marks a tab change. */}
-      <div className="contents" inert={!expanded}>
-        <Collapse open={expanded} className="-mx-1" innerClassName="min-w-0 px-1 pb-1 pt-6">
-          <nav aria-label="Research view" className="flex gap-4 overflow-x-auto border-b border-border">
-            {[{value:"activity",label:"Activity"},{value:"sources",label:"Sources"},{value:"plan",label:"Plan"},{value:"evidence",label:"Evidence"}].map(item => <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("shrink-0 border-b-2 px-1 py-3 text-ui transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none", tab === item.value ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{item.label}</button>)}
-          </nav>
-          {/* Every tab says something when it has nothing: a tab opened during
-              planning used to render a bare region, and an empty region under a
-              tab bar reads as a broken tab, not an early one. The empty copy
-              lives here rather than in the panels because the recap mounts the
-              same panels in a stack that relies on them rendering nothing. */}
-          <div key={tab} className="research-tab-body" role="region" aria-label={tab}>
-            {tab === "plan" && (planEmpty ? emptyLine(CONSOLE_COPY.noPlan) : <PlanOutline approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} steps={run.plan.steps ?? []} queries={run.plan.queries} successCriteria={run.plan.successCriteria} risks={run.plan.risks} />)}
-            {tab === "sources" && <SourceDeck sources={run.sources} />}
-            {tab === "activity" && <RunTimeline events={events} live={run.live} empty={emptyLine(CONSOLE_COPY.noActivity)} />}
-            {tab === "evidence" && <EvidencePanel objectives={run.plan.objectives ?? []} coverage={run.plan.coverage ?? []} conflicts={(run.plan.conflicts ?? []).filter(item => !item.resolved)} sources={run.sources} empty={emptyLine(CONSOLE_COPY.noEvidence)} />}
+          <span className="flex shrink-0 items-center gap-3 tabular-nums">
+            <RunClock elapsedMs={clock.elapsedMs} since={disconnected || failed ? null : clock.since} showAfterMs={0} />
+            <span>
+              {formatMicroUsd(run.costMicroUsd)}
+              {run.budgetMicroUsd ? ` / ${formatMicroUsd(run.budgetMicroUsd)} ${WORKSPACE_COPY.limit}` : ""}
+            </span>
+          </span>
+        </div>
+        <h3 ref={titleRef} tabIndex={-1} lang={run.language ?? undefined} className="rf-title mt-3 outline-none">
+          {run.title || run.goal}
+        </h3>
+        {subtitle && <p lang={run.language ?? undefined} className="mt-2 max-w-[38rem] text-pretty text-ui text-muted-foreground">{subtitle}</p>}
+      </header>
+
+      {(disconnected || failed) && (
+        <div className="rf-notice" role="alert">
+          <p>{failed ? WORKSPACE_COPY.unavailable : WORKSPACE_COPY.reconnecting}</p>
+          {reload && <Button variant="outline" size="sm" onClick={() => void reload()}>{WORKSPACE_COPY.retry}</Button>}
+        </div>
+      )}
+
+      {awaitingClarify ? (
+        <div className="rf-gate rf-rise" style={{ ["--i" as string]: 1 }}>
+          <ClarifyGate key={`${run.id}-clarify`} goal={run.goal} questions={run.plan.clarifications ?? []} busy={disabled} onSubmit={answers => void post("/clarify", { answers })} />
+        </div>
+      ) : awaitingPlan ? (
+        <div className="rf-gate rf-rise" style={{ ["--i" as string]: 1 }}>
+          <ScopeCard runId={run.id} atTail embedded onStarted={onStarted} />
+        </div>
+      ) : (
+        <>
+          <div className="rf-stage rf-rise" style={{ ["--i" as string]: 1 }}>
+            <DeepField
+              sources={run.sources}
+              currentHost={host}
+              working={working}
+              eventKey={working ? lastSeq : undefined}
+              counts={{ found: model.found, read: model.read, cited: model.cited }}
+            />
+            <QuestionRail questions={model.questions} working={working} language={run.language} sources={run.sources} eventKey={lastSeq} />
           </div>
+
+          <dl className="rf-figures rf-rise" style={{ ["--i" as string]: 2 }}>
+            <Figure label={WORKSPACE_COPY.found}><RollingNumber value={model.found} /></Figure>
+            <Figure label={WORKSPACE_COPY.read}><RollingNumber value={model.read} /></Figure>
+            <Figure label={WORKSPACE_COPY.cited}>{model.cited == null ? <span className="text-muted-foreground">–</span> : <RollingNumber value={model.cited} />}</Figure>
+            <Figure label={WORKSPACE_COPY.researchers}><RollingNumber value={model.activeWorkers} /></Figure>
+          </dl>
+
+          {findings.length > 0 && (
+            <section className="rf-evidence rf-rise" style={{ ["--i" as string]: 3 }} aria-label={WORKSPACE_COPY.evidence}>
+              <h4 className="rf-annot">{WORKSPACE_COPY.evidence}</h4>
+              <ul>
+                {findings.map(finding => (
+                  <li key={finding.id} className="rf-finding">
+                    <p lang={run.language ?? undefined} className="rf-claim">{finding.claim}</p>
+                    {isRenderableSourceUrl(finding.url) && (
+                      <a href={finding.url} target="_blank" rel="noopener noreferrer" title={finding.title} className="rf-annot rf-link">
+                        <bdi translate="no">{hostOf(finding.url)}</bdi>
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
+
+      <div className="rf-controls">
+        {model.canGuide && (
+          <Button variant="secondary" size="sm" aria-expanded={guideOpen} aria-controls={guideId} disabled={disabled} onClick={() => setGuideOpen(value => !value)}>
+            {WORKSPACE_COPY.guide}
+          </Button>
+        )}
+        {controls.pause && <Button variant="ghost" size="sm" disabled={disabled} onClick={() => void post("/control", { action: "pause" })}><Pause className="size-3.5" aria-hidden />{WORKSPACE_COPY.pause}</Button>}
+        {controls.resume && <Button variant="secondary" size="sm" disabled={disabled} onClick={() => void post("/control", { action: "resume" })}><Play className="size-3.5" aria-hidden />{WORKSPACE_COPY.resume}</Button>}
+        {!atGate && controls.finish !== "hidden" && <Button variant="ghost" size="sm" disabled={disabled || controls.finish === "disabled"} onClick={() => void post("/control", { action: "finish" })}>{WORKSPACE_COPY.finish}</Button>}
+        {controls.cancel && !awaitingPlan && <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={busy} onClick={() => void post("/control", { action: "cancel" })}>{WORKSPACE_COPY.stop}</Button>}
+      </div>
+
+      <div id={guideId} inert={!guideOpen || !model.canGuide}>
+        <Collapse open={guideOpen && model.canGuide}>
+          <form className="rf-guidance" onSubmit={async event => {
+            event.preventDefault();
+            if (!guidance.trim() || disabled) return;
+            const ok = await post("/steer", { guidance: guidance.trim() });
+            if (ok) { setGuidance(""); setGuided(true); }
+          }}>
+            <label htmlFor={`${guideId}-field`} className="rf-h4 mb-3 block">{WORKSPACE_COPY.guidance}</label>
+            <textarea id={`${guideId}-field`} value={guidance} maxLength={1000} disabled={disabled} placeholder={WORKSPACE_COPY.placeholder} onChange={event => { setGuidance(event.target.value); setGuided(false); }} />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button size="sm" type="submit" disabled={disabled || !guidance.trim()}>{WORKSPACE_COPY.addGuidance}</Button>
+              <p className="flex-1 text-caption text-muted-foreground">{WORKSPACE_COPY.guidanceNote}</p>
+            </div>
+            {guided && <p role="status" className="mt-3 text-caption text-foreground">{WORKSPACE_COPY.guidanceQueued}</p>}
+          </form>
         </Collapse>
       </div>
-    </>}
-    {(run.error || notice) && <p role="alert" className="mt-4 rounded-field bg-destructive/10 p-3 text-ui text-destructive">{run.error ?? notice}</p>}
-  </section>;
+
+      {steering && (
+        <p className="rf-steering">
+          <span className="rf-annot">{steering.appliedAtRound === null ? WORKSPACE_COPY.queued : WORKSPACE_COPY.applied}</span>
+          <span lang={run.language ?? undefined}>{steering.text}</span>
+        </p>
+      )}
+
+      {!atGate && (
+        <div className="rf-details">
+          <button type="button" className="rf-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>
+            {expanded ? WORKSPACE_COPY.hideDetails : WORKSPACE_COPY.details}
+            <ChevronDown className={cn("size-4 transition-transform duration-base motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden />
+          </button>
+          <div id={detailsId} inert={!expanded}>
+            <Collapse open={expanded} innerClassName="pb-1">
+              <div role="tablist" aria-label="Research details" className="rf-tabs">
+                {TABS.map(item => (
+                  <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`${detailsId}-panel`} onClick={() => setTab(item.id)}>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <div key={tab} id={`${detailsId}-panel`} role="tabpanel" className="rf-view-enter min-w-0 pt-5">
+                {tab === "sources" && <SourceDeck sources={run.sources} />}
+                {tab === "evidence" && <EvidencePanel objectives={run.plan.objectives ?? []} coverage={run.plan.coverage ?? []} conflicts={(run.plan.conflicts ?? []).filter(item => !item.resolved)} sources={run.sources} empty={<p className="text-ui text-muted-foreground">{WORKSPACE_COPY.noEvidence}</p>} />}
+                {tab === "activity" && <RunTimeline events={events} live={run.live} empty={<p className="text-ui text-muted-foreground">{WORKSPACE_COPY.noActivity}</p>} />}
+                {tab === "researchers" && (model.workers.length ? (
+                  <ul className="rf-rows">
+                    {model.workers.map((worker, index) => (
+                      <li key={worker.id}>
+                        <span className="min-w-0">{worker.label === "Researcher" ? `Researcher ${index + 1}` : worker.label}</span>
+                        <span className="rf-annot shrink-0">{worker.state === "finished" ? WORKSPACE_COPY.finished : state === "paused" ? WORKSPACE_COPY.waiting : working ? WORKSPACE_COPY.working : WORKSPACE_COPY.idle}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-ui text-muted-foreground">{WORKSPACE_COPY.noResearchers}</p>)}
+                {tab === "plan" && <PlanOutline approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} steps={run.plan.steps ?? []} queries={run.plan.queries} successCriteria={run.plan.successCriteria} risks={run.plan.risks} />}
+              </div>
+            </Collapse>
+          </div>
+        </div>
+      )}
+      {(run.error || notice) && <p role="alert" className="mt-4 text-ui text-destructive">{notice ?? run.error}</p>}
+    </section>
+  );
 }

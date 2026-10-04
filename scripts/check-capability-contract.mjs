@@ -54,6 +54,19 @@ try {
     );
   }
   console.log("Swift capability contract matches contracts/capabilities/juno-capabilities-v1.json.");
+  // Product maturity is a separate concern from model negotiation, but both
+  // shared projections must pass the existing cross-platform release gate.
+  await new Promise((resolvePromise, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", "scripts/generate-capability-maturity.ts", "--check"],
+      { cwd: process.cwd(), stdio: "inherit" },
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0
+      ? resolvePromise()
+      : reject(new Error(`Product maturity contract check exited with status ${code}`)));
+  });
 } finally {
   await rm(directory, { recursive: true, force: true });
 }

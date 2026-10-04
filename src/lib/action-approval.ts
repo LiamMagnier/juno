@@ -284,12 +284,16 @@ export function classifyExternalAction(input: ActionClassificationInput): Action
     return { action, riskClass: "unknown", reasons: ["contradictory_read_evidence"] };
   }
 
-  if (allTokens.some((token) => REVERSIBLE_TOKENS.has(token))) {
-    return { action, riskClass: "reversible_write", reasons: ["reversible_write_semantics"] };
-  }
-
+  // A low-risk object name (draft, branch, label) cannot downgrade the verb
+  // acting on it: sending a draft and publishing a branch leave the account.
+  // Remote metadata is untrusted; conflicting write evidence takes the higher
+  // floor, including argument keys such as `send` on an otherwise draft tool.
   if (allTokens.some((token) => EXTERNAL_TOKENS.has(token))) {
     return { action, riskClass: "external_write", reasons: ["external_write_semantics"] };
+  }
+
+  if (allTokens.some((token) => REVERSIBLE_TOKENS.has(token))) {
+    return { action, riskClass: "reversible_write", reasons: ["reversible_write_semantics"] };
   }
 
   if (hintSaysWrite) {

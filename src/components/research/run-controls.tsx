@@ -285,8 +285,8 @@ export function ClarifyGate({
 
   return (
     <div className="motion-safe:animate-research-detail-in">
-      <p className="text-ui leading-relaxed text-muted-foreground">{CLARIFY_COPY.lede}</p>
-      <p className="mt-3 line-clamp-2 text-ui leading-relaxed text-foreground/85">{goal}</p>
+      {/* The question itself is the section's title above; the gate says only what it needs. */}
+      <p className="rf-lead pt-5 text-foreground" title={goal}>{CLARIFY_COPY.lede}</p>
 
       <div className="mt-5 space-y-5">
         {questions.map((question, index) => (

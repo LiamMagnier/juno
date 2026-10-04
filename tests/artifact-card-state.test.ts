@@ -290,7 +290,7 @@ test("nothing in the chat opens a trashed artifact (R1 §3B)", () => {
   assert.match(view, /liveArtifacts\(chat\.artifacts\)/, "the chat derives what it can open");
   assert.match(view, /openableArtifacts\.find\(\(a\) => a\.id === openArtifactId\)/, "the canvas");
   assert.match(view, /openableArtifacts\.find\(\(x\) => x\.identifier === initialArtifactIdentifier\)/, "the deep link");
-  assert.match(view, /openableArtifacts\.find\(\(x\) => x\.identifier === identifier\)/, "opening by identifier");
+  assert.match(view, /openableArtifacts(?:Ref\.current)?\.find\(\(x\) => x\.identifier === identifier\)/, "opening by identifier");
   assert.match(view, /<SessionOutputs\s+artifacts=\{openableArtifacts\}/, "SessionOutputs");
   assert.match(view, /<MessageList[\s\S]*?artifacts=\{chat\.artifacts\}/, "the transcript keeps them for its cards");
   const item = read("src/components/chat/message-item.tsx");

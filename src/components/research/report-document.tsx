@@ -67,7 +67,10 @@ export function useReportModel(run: ResearchRunView | null): ReportModel {
   const audit = auditState.phase === "ready" ? auditState.audit : null;
   const parsed = React.useMemo(() => (report ? parseReport(report) : null), [report]);
   const runSources = run?.sources;
-  const citationOrder = React.useMemo(() => citationSources(runSources ?? [], audit), [runSources, audit]);
+  // Without an audit or the writer's indices, citations are numbered by
+  // position in the READ corpus (the writer saw only sources with a snapshot),
+  // so the fallback must never include sources that were found but not read.
+  const citationOrder = React.useMemo(() => citationSources((runSources ?? []).filter((source) => source.read), audit), [runSources, audit]);
   const cited = React.useMemo(() => (report ? citedNumbers(report) : new Set<number>()), [report]);
   const sections = React.useMemo(() => sourceSections(runSources ?? [], citationOrder, cited), [runSources, citationOrder, cited]);
   return { report, parsed, audit, citationOrder, cited, sections };
@@ -178,7 +181,7 @@ export function ReportDocument({
   if (!parsed) return null;
   return (
     <CitationHoverLayer render={render} onActive={onActiveCitation}>
-      <div lang={run.language ?? undefined} className={cn("space-y-6", className)}>
+      <div lang={run.language ?? undefined} className={cn("research-document space-y-6", className)}>
         {parsed.preamble && (
           <div className="space-y-3">
             <Groups text={parsed.preamble} claims={claims} sources={citationOrder} />
@@ -249,4 +252,3 @@ export function ReportContentsMenu({ toc, anchorPrefix }: { toc: Array<{ id: str
     </DropdownMenu>
   );
 }
-

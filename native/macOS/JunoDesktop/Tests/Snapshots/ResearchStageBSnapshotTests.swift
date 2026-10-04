@@ -25,6 +25,22 @@ struct ResearchStageBSnapshotTests {
     }
 
     @Test
+    func theLiveResearchWorkspaceDraws() async throws {
+        try await render(
+            DesktopResearchRow(run: TranscriptSnapshotFixtures.liveResearchRun, open: {})
+                .padding(JunoSpace.roomy)
+                .environment(\.junoSnapshotRunElapsed, 42),
+            name: "research-live-cover"
+        )
+        try await render(
+            DesktopResearchPanel(run: TranscriptSnapshotFixtures.liveResearchRun, control: { _ in }, close: {})
+                .frame(height: 680),
+            name: "research-live-panel",
+            width: 380
+        )
+    }
+
+    @Test
     func theRecapDraws() async throws {
         try await render(
             TranscriptSnapshotFixtures.column {

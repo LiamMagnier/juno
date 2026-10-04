@@ -8,7 +8,7 @@ import type { ResearchRunView } from "@/components/research/use-research-run";
 import { useUiLocale, formatClock } from "@/lib/i18n-format";
 import { Phrase, PhraseWithArgs } from "@/lib/i18n-phrase";
 import type { ResearchEventDTO } from "@/lib/research/domain";
-import { claimLoop, useLoopOwner } from "@/lib/run/store";
+import { LiveLine } from "@/components/chat/live-line";
 import { cn } from "@/lib/utils";
 import type { ResearchQuestionView } from "@/types/research";
 
@@ -16,10 +16,8 @@ import type { ResearchQuestionView } from "@/types/research";
  * The Progress tab (SPEC §9.11.4): the questions with their status, the
  * reader's guidance, the activity stream and "Found so far".
  *
- * - A question's chip cross-fades between states (220 ms) rather than
- *   swapping. The question being searched is the panel's one loop owner
- *   (priority 1, §7.9.1): its marker breathes while nothing outranks it, and
- *   the header never loops.
+ * - Questions use plain state words. The shared Continuum mark responds once
+ *   to real activity; paused research has no activity animation.
  * - The activity stream is one line per round boundary and notable event,
  *   newest first, at most 50, each keyed by its event so a poll never deals
  *   the list again (bug 24); lines present when the tab opens carry
@@ -28,37 +26,21 @@ import type { ResearchQuestionView } from "@/types/research";
  *   is in the reader's.
  */
 
-function QuestionRow({ question, runId, lang }: { question: ResearchQuestionView; runId: string; lang?: string }) {
-  const searching = question.status === "searching";
-  const loopId = `research-question:${runId}:${question.id}`;
-  React.useEffect(() => {
-    if (!searching) return;
-    return claimLoop(loopId, 1);
-  }, [loopId, searching]);
-  const owns = useLoopOwner(loopId);
+function QuestionRow({ question, lang, active }: { question: ResearchQuestionView; lang?: string; active: boolean }) {
+  const searching = active && question.status === "searching";
   return (
     <li className="flex items-start gap-2.5 py-1.5">
-      <span
-        aria-hidden
-        className={cn("run-marker mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground/50", searching && "bg-foreground/70")}
-        data-state={searching ? "running" : undefined}
-        data-loop={searching && !owns ? "off" : undefined}
-        data-run-loop-owner={searching && owns ? "" : undefined}
-      />
       <span lang={lang} className="min-w-0 flex-1 text-body text-foreground/90">
         {question.question}
       </span>
       <span
         key={question.status}
         className={cn(
-          "shrink-0 rounded-full px-2 py-0.5 text-caption motion-safe:animate-fade-in",
-          question.status === "covered" && "bg-success/10 text-success-ink",
-          question.status === "partial" && "bg-secondary text-foreground/80",
-          question.status === "thin" && "bg-warning/10 text-warning-foreground",
-          (question.status === "pending" || question.status === "searching") && "bg-secondary text-muted-foreground",
+          "shrink-0 pt-0.5 text-caption",
+          question.status === "covered" ? "text-foreground" : "text-muted-foreground",
         )}
       >
-        <Phrase text={QUESTION_STATUS_PHRASE[question.status]} />
+        <Phrase text={QUESTION_STATUS_PHRASE[searching ? "searching" : question.status === "searching" ? "pending" : question.status]} />
       </span>
     </li>
   );
@@ -81,6 +63,7 @@ export function ResearchProgress({ run, events }: { run: ResearchRunView; events
 
   return (
     <div className="space-y-6">
+      <LiveLine phase={run.live && run.state !== "paused" ? "working" : "waiting"} eventKey={run.state === "paused" ? undefined : events.at(-1)?.seq} text={run.state === "paused" ? "Research paused" : run.live ? "Research activity" : "Research complete"} immediate />
       {questions.length > 0 && (
         <section>
           <SectionHeading>
@@ -88,7 +71,7 @@ export function ResearchProgress({ run, events }: { run: ResearchRunView; events
           </SectionHeading>
           <ol className="divide-y divide-border/50">
             {questions.map((question) => (
-              <QuestionRow key={question.id} question={question} runId={run.id} lang={lang} />
+              <QuestionRow key={question.id} question={question} lang={lang} active={run.live && run.state !== "paused"} />
             ))}
           </ol>
         </section>

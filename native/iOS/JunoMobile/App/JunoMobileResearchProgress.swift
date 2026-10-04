@@ -2,205 +2,159 @@ import JunoChatKit
 import JunoDesignSystem
 import SwiftUI
 
-/// Deep research state above the composer: that the mode is on, what the server
-/// is currently doing, and whether the research quietly degraded.
-///
-/// The live steps are the point. Research runs PLAN → SEARCH → READ for tens of
-/// seconds before a single token of the report is streamed, so without them the
-/// screen is an empty bubble and a spinner for the entire prep phase — which
-/// reads as a hung app rather than as work in progress.
+/// A compact research workspace over the server's actual events. It stays stable
+/// beside the composer, with evidence and the real search trail one disclosure away.
 struct JunoMobileResearchProgress: View {
     let enabled: Bool
-    /// The depth the run will get, derived from the model and thinking level
-    /// — see `NativeResearchEffort.derived`. Nil hides the line, which only
-    /// the previews do; the composer always knows.
     var depth: NativeResearchEffort? = nil
     let activity: [NativeChatActivity]
     let degradedWarning: String?
     let onDisable: () -> Void
+    var onStop: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showsEvidence = false
 
-    /// The server's own `activity` stream, read through the same lens a local
-    /// run is read through.
-    ///
-    /// A projection and not a second research engine: deep research runs
-    /// server-side, and re-deriving phase, queries and sources here would give
-    /// the phone a different account of the run from the one the report was
-    /// written against. See ``DeepResearchActivityProjection``.
-    private var progress: ServerResearchProgress {
-        DeepResearchActivityProjection.progress(from: activity)
-    }
+    private var progress: ServerResearchProgress { DeepResearchActivityProjection.progress(from: activity) }
+    private var hasActivity: Bool { !activity.isEmpty }
+    private var working: Bool { hasActivity && progress.phase != .completed && progress.phase != .stopped && onStop != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            if enabled { header }
-            phaseRail
-            runRow
-            searchBlock
-            if let degradedWarning { warningRow(degradedWarning) }
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            header
+            if hasActivity {
+                HStack(alignment: .top, spacing: JunoSpace.snug) {
+                    JunoResearchPresence(active: working, eventKey: "\(progress.phase):\(activity.count)", size: 20)
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        Text(!working && progress.phase != .completed ? "Last activity · \(progress.phase.displayName)" : progress.phase.displayName)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Color.junoForeground)
+                        if let query = progress.currentQuery, progress.phase == .searching {
+                            Text(query)
+                                .font(.caption)
+                                .foregroundStyle(Color.junoSecondaryInk)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("juno.mobile.research-phase")
+                evidence
+            } else if let depth {
+                Text(depth.summary)
+                    .font(.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let degradedWarning { warning(degradedWarning) }
+            ForEach(Array(progress.warnings.filter { $0 != degradedWarning }.enumerated()), id: \.offset) { _, message in
+                warning(message)
+            }
         }
+        .padding(JunoSpace.regular)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: JunoRadius.card).strokeBorder(Color.junoHairline, lineWidth: 1))
         .padding(.horizontal, JunoSpace.regular)
-        .animation(
-            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
-            value: progress.phase
-        )
+        .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion), value: showsEvidence)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.mobile.research-progress")
     }
 
-    /// A compact, truthful map of the run. It makes the waiting state legible
-    /// without promising a stage that the server has not actually reached.
-    private var phaseRail: some View {
-        let current = phaseIndex(progress.phase)
-        return HStack(spacing: JunoSpace.tight) {
-            ForEach(Array(phaseLabels.enumerated()), id: \.offset) { index, label in
-                HStack(spacing: 4) {
-                    Capsule()
-                        .fill(index <= current ? Color.junoAccent : Color.junoMutedForeground.opacity(0.25))
-                        .frame(width: index == current ? 14 : 7, height: 3)
-                    if index == current {
-                        Text(label)
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(Color.junoForeground)
-                            .lineLimit(1)
-                    }
-                }
+    private var header: some View {
+        HStack(alignment: .center, spacing: JunoSpace.snug) {
+            Text("Deep research")
+                .font(JunoSerif.font(size: 20, relativeTo: .headline))
+                .foregroundStyle(Color.junoForeground)
+                .accessibilityAddTraits(.isHeader)
+            if let depth, !hasActivity {
+                Text(depth.label)
+                    .font(.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .accessibilityIdentifier("juno.mobile.research-depth")
             }
             Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Research stage: \(progress.phase.displayName)")
-        .accessibilityValue("Step \(current + 1) of \(phaseLabels.count)")
-        .accessibilityIdentifier("juno.mobile.research-phase")
-    }
-
-    private var phaseLabels: [String] {
-        ["Plan", "Search", "Read", "Check", "Write"]
-    }
-
-    private func phaseIndex(_ phase: DeepResearchPhase) -> Int {
-        switch phase {
-        case .planning, .stopped: 0
-        case .searching: 1
-        case .reading: 2
-        case .gapAnalysis: 3
-        case .synthesizing, .completed: 4
-        }
-    }
-
-    /// What stage the run is at, and how much it has covered.
-    ///
-    /// The block below already shows the *current* query and, unfolded, the
-    /// sources — so this line carries only what that block cannot: the phase, and
-    /// the totals. Without them a long run reads as one query repeating, because
-    /// the block only ever shows the latest.
-    ///
-    /// The phase never runs ahead of the events: a run that has searched and not
-    /// yet visited anything says "Searching", not "Reading". A label that guesses
-    /// forward is how a stuck run looks healthy.
-    @ViewBuilder
-    private var runRow: some View {
-        let run = progress
-        // Absent, not zero. Before the first search there is genuinely nothing
-        // to report, and "Planning · 0 sources" states a fact nobody has.
-        if let counts = run.countsSummary {
-            HStack(spacing: JunoSpace.tight) {
-                // Not `binoculars`: the header above already carries that glyph
-                // for "research is on", and repeating it here would make two
-                // rows that look like the same statement twice.
-                JunoIconView(.research, size: 13)
-                Text("\(run.phase.displayName) · \(counts)")
-                    .font(.caption2)
-                    .lineLimit(1)
-                Spacer()
+            if working, let onStop {
+                Button("Stop", action: onStop)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.junoForeground)
+                    .buttonStyle(.plain)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel("Stop research")
+            } else if enabled {
+                Button("Turn off", action: onDisable)
+                    .font(.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .buttonStyle(.plain)
+                    .frame(minWidth: 44, minHeight: 44)
             }
-            .foregroundStyle(Color.junoMutedForeground)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.updatesFrequently)
-            .accessibilityIdentifier("juno.mobile.research-run")
         }
     }
 
-    /// The searches, in AIcss's Web Search block — the same block the Mac and the
-    /// web show for the same events.
-    ///
-    /// This used to be the latest activity item only, as an SF Symbol beside
-    /// `title` and `detail`, on the reasoning that a growing list above the
-    /// composer would push the text field around while someone types into it.
-    /// That reasoning still holds and this still honours it: the block's own list
-    /// is collapsible and, once folded, the whole thing is one line. What changed
-    /// is that the one line is now the QUERY — the thing a reader is waiting on —
-    /// rather than whichever event happened to arrive last, which was as often
-    /// "Selected model" as it was a search.
-    @ViewBuilder
-    private var searchBlock: some View {
-        let sites = NativeSearchActivity.sites(in: activity)
-        let query = NativeSearchActivity.query(in: activity)
-        if query != nil || !sites.isEmpty {
-            JunoAIcssWebSearch(
-                query: query,
-                sites: sites,
-                settled: NativeSearchActivity.settled(in: activity),
-                // Folded above the composer: the reader is typing, and the rail of
-                // sources is reference rather than status. The query alone is the
-                // status, and it stays visible.
-                defaultOpen: false
-            )
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-            JunoIconView(.research, size: 14)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: JunoSpace.hairline) {
-                    Text("research.enabled")
-                        .font(.caption.weight(.medium))
-                    if let depth {
-                        Text("· \(depth.label)")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(Color.junoAccent)
-                            .contentTransition(.numericText())
-                            .accessibilityIdentifier("juno.mobile.research-depth")
+    private var evidence: some View {
+        DisclosureGroup(isExpanded: $showsEvidence) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                ForEach(Array(progress.queriesRun.enumerated()), id: \.offset) { _, query in
+                    Text(query)
+                        .font(.caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(Array(progress.pagesRead.enumerated()), id: \.offset) { _, source in
+                    Link(destination: source.url) {
+                        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                            Text(source.title.isEmpty ? source.url.host ?? "Source" : source.title)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Color.junoForeground)
+                            Text(source.url.host ?? source.url.absoluteString)
+                                .font(.caption2)
+                                .foregroundStyle(Color.junoSecondaryInk)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(.rect)
                     }
                 }
-                // The depth is not chosen here; it follows the model and the
-                // thinking level in the row below, so the line says what
-                // those choices bought rather than offering a second menu.
-                if let depth {
-                    Text(depth.summary)
-                        .font(.caption2)
-                        .foregroundStyle(Color.junoMutedForeground)
-                        .lineLimit(1)
+                if progress.queriesRun.isEmpty && progress.pagesRead.isEmpty {
+                    Text("Sources appear here when the server reports reading them.")
+                        .font(.caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                }
+                Text("Read sources are not yet verified citations. Citation numbers belong to the finished report.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, JunoSpace.snug)
+        } label: {
+            HStack(spacing: JunoSpace.regular) {
+                if !progress.queriesRun.isEmpty { figure("Searches", progress.queriesRun.count) }
+                if !progress.pagesRead.isEmpty { figure("Read", progress.pagesRead.count) }
+                if progress.queriesRun.isEmpty && progress.pagesRead.isEmpty {
+                    Text("Evidence & activity").font(.caption)
                 }
             }
-            Spacer()
-            Button("research.turn-off", action: onDisable)
-                .font(.caption)
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .frame(minHeight: 44)
         }
-        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: depth)
-        .accessibilityElement(children: .combine)
+        .padding(.top, JunoSpace.tight)
+        .overlay(alignment: .top) { Rectangle().fill(Color.junoHairline).frame(height: 1) }
+        .accessibilityIdentifier("juno.mobile.research-evidence")
     }
 
-
-    /// Shown separately from the steps because it changes what the answer *is*.
-    /// A reader who asked for research and silently received plain chat has
-    /// been misled about the basis of the reply.
-    private func warningRow(_ message: String) -> some View {
+    private func figure(_ label: String, _ count: Int) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            JunoIconView(.error, size: 13)
-            Text(message)
-                .font(.caption2)
-                .lineLimit(2)
-            Spacer()
+            Text(count.formatted()).monospacedDigit().foregroundStyle(Color.junoForeground)
+            Text(label)
         }
-        .foregroundStyle(Color.junoCaution)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("juno.mobile.research-degraded")
+        .font(.caption)
     }
 
+    private func warning(_ message: String) -> some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(Color.junoWarningInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("juno.mobile.research-degraded")
+    }
 }

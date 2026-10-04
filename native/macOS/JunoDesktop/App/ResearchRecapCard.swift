@@ -27,20 +27,28 @@ struct ResearchRecapCard: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Text(run.displayTitle)
-                .junoFont(size: 15, relativeTo: .body, weight: .semibold)
+                .font(JunoSerif.font(size: 26, relativeTo: .title2))
                 .foregroundStyle(Color.junoForeground)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, JunoSpace.cozy)
-            Text(ResearchRecapWords.provenance(run))
-                .junoFont(size: 13, relativeTo: .callout)
-                .monospacedDigit()
-                .foregroundStyle(Color.junoSecondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, JunoSpace.tight)
+            if let answered = run.objectivesAnswered {
+                Text("\(answered.covered)/\(answered.total) questions answered")
+                    .junoFont(size: 13, relativeTo: .callout)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .padding(.top, JunoSpace.tight)
+            }
+            ResearchEvidenceLedger(run: run)
+                .padding(.top, JunoSpace.regular)
             if let audit = run.audit {
                 auditLine(audit)
+                    .padding(.top, JunoSpace.cozy)
+            } else if run.reportBody != nil {
+                Text("Citation check unavailable for this report.")
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .foregroundStyle(Color.junoSecondaryInk)
                     .padding(.top, JunoSpace.cozy)
             }
             if let error = run.error {
@@ -106,14 +114,20 @@ struct ResearchRecapCard: View {
     // MARK: The citation check
 
     private func auditLine(_ audit: NativeResearchRun.AuditSummary) -> some View {
-        HStack(alignment: .center, spacing: JunoSpace.snug) {
-            JunoIconView(.shieldCheck, size: 12)
-                .foregroundStyle(audit.isClean ? Color.junoSuccessInk : Color.junoWarningInk)
-                .accessibilityHidden(true)
-            Text(audit.headline)
-                .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                .monospacedDigit()
-                .foregroundStyle(Color.junoForeground)
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(alignment: .center, spacing: JunoSpace.snug) {
+                JunoIconView(audit.isClean ? .shieldCheck : .warning, size: 12)
+                    .foregroundStyle(audit.isClean ? Color.junoSuccessInk : Color.junoWarningInk)
+                    .accessibilityHidden(true)
+                Text(audit.headline)
+                    .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Checked against cited passages; completeness is not verified.")
+                .junoFont(size: 11, relativeTo: .caption)
+                .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)

@@ -288,11 +288,11 @@ test("the regenerate guard's predicate: a message some run points at is a comple
   assert.equal(isCompletionMessage([], "msg_7"), false);
 });
 
-test("completion.ts writes the artifact after commit until the store takes a transaction", () => {
+test("completion.ts persists the report through the same transaction with no deferred success path", () => {
   const binding = readSource("src/lib/research/completion.ts");
-  const shim = readSource("src/lib/research/artifacts-shim.ts");
-  assert.match(shim, /export const ARTIFACTS_STORE_TAKES_TX = false;/);
-  assert.match(binding, /if \(ARTIFACTS_STORE_TAKES_TX\) return persistArtifactsWithTx\(conversationId, messageId, parsed, \{ tx \}\);/);
+  assert.match(binding, /return artifactWriter\(conversationId, messageId, parsed, \{ tx, userId \}\);/);
+  assert.doesNotMatch(binding, /ARTIFACTS_STORE_TAKES_TX|deferred|artifacts-shim/);
+  assert.match(binding, /FOR UPDATE/);
   assert.match(binding, /encryptMessageText/);
   assert.match(binding, /lastMessageAt: at/);
 });

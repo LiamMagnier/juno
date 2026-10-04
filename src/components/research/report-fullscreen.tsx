@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SourceFavicon } from "@/components/chat/source-chip";
 import { Phrase, PhraseWithArgs, formatPhrase, usePhrase } from "@/lib/i18n-phrase";
 import { cn } from "@/lib/utils";
+import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /*
  * The full-screen reader (SPEC §9.12): a full-bleed dialog with no route of
@@ -93,12 +94,21 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
+        // Open on the document, not on its first toolbar button: focus lands on
+        // the title (read first by a screen reader), with no ring drawn on Markdown.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>("[data-report-title]")?.focus({ preventScroll: true });
+        }}
         className="inset-0 left-0 top-0 h-dvh max-h-none w-screen max-w-none gap-0 overflow-hidden rounded-none p-0 [translate:none] sm:p-0 print:static print:h-auto print:overflow-visible print:shadow-none"
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <div className="flex h-full flex-col print:block">
           <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 print:hidden">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-3">
+              <span className="rf-annot hidden whitespace-nowrap ps-1 sm:inline">
+                <span className="text-foreground">{FEATURE_NAMES.research.label}</span> · <Phrase text={RESEARCH_COPY.report.name} />
+              </span>
               {toc.length >= 2 && (
                 <Popover open={tocOpen} onOpenChange={setTocOpen}>
                   <PopoverTrigger asChild>
@@ -130,7 +140,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
             <div className="mx-auto grid max-w-[96rem] gap-8 px-5 py-8 min-[1100px]:grid-cols-[14rem_minmax(0,1fr)_18rem] print:block print:p-0">
               {toc.length >= 2 ? (
                 <nav aria-label={contentsName} className="sticky top-0 hidden max-h-[calc(100dvh-8rem)] self-start overflow-y-auto min-[1100px]:block print:hidden">
-                  <p className="mb-2 px-2 text-ui font-medium text-foreground">
+                  <p className="rf-annot mb-3 px-2 text-foreground">
                     <Phrase text={RESEARCH_COPY.report.contents} />
                   </p>
                   <Contents toc={toc} anchorPrefix={anchorPrefix} />
@@ -140,11 +150,11 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
               )}
 
               <article data-print-document="" className="mx-auto w-full min-w-0 max-w-[68ch] space-y-6">
-                <header className="space-y-1.5">
-                  <h1 lang={run.language ?? undefined} className="text-title font-semibold text-foreground">
+                <header className="space-y-2 pb-2">
+                  <h1 data-report-title tabIndex={-1} lang={run.language ?? undefined} className="research-title text-foreground outline-none">
                     {title}
                   </h1>
-                  <PhraseWithArgs spec={provenanceLine(run, model.sections.cited.length)} className="block text-caption text-muted-foreground" />
+                  <PhraseWithArgs spec={provenanceLine(run, model.sections.cited.length)} className="rf-annot block pt-1" />
                 </header>
                 <ReportDocument run={run} model={model} anchorPrefix={anchorPrefix} onActiveCitation={setActive} />
                 <ReportSources sections={model.sections} />
@@ -155,7 +165,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
                   aria-label={formatPhrase(RESEARCH_COPY.sources.cited)}
                   className="sticky top-0 hidden max-h-[calc(100dvh-8rem)] self-start overflow-y-auto min-[1100px]:block print:hidden"
                 >
-                  <p className="mb-2 px-2 text-ui font-medium text-foreground">
+                  <p className="rf-annot mb-3 px-2 text-foreground">
                     <Phrase text={RESEARCH_COPY.sources.cited} />
                   </p>
                   <ol className="space-y-0.5">

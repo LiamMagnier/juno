@@ -52,6 +52,8 @@ export interface RunSnapshot {
   fetchedAt: number | null;
   /** The run is not this person's, or does not exist. A blip on one poll is not a failure. */
   failed: boolean;
+  /** Last read failed transiently; saved evidence remains usable. */
+  disconnected: boolean;
   /** A control is in flight. */
   busy: boolean;
   /** The server's own words for the last refused control, or null. */
@@ -64,6 +66,7 @@ export const EMPTY_SNAPSHOT: RunSnapshot = Object.freeze({
   payload: null,
   fetchedAt: null,
   failed: false,
+  disconnected: false,
   busy: false,
   notice: null,
   phase: null,
@@ -189,6 +192,7 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
       payload: merged,
       fetchedAt: stale ? entry.snapshot.fetchedAt : deps.now(),
       failed: false,
+      disconnected: false,
       phase: phaseOfRun(merged.run, merged.events),
     });
     return merged;
@@ -196,15 +200,27 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
 
   const load = async (entry: Entry): Promise<RunPayload | null> => {
     const request = ++entry.requests;
-    const res = await deps.fetch(`/api/research/${encodeURIComponent(entry.runId)}?after=${entry.cursor}`);
+    let res: Response;
+    try {
+      res = await deps.fetch(`/api/research/${encodeURIComponent(entry.runId)}?after=${entry.cursor}`);
+    } catch {
+      if (request >= entry.applied) update(entry, { disconnected: true });
+      return null;
+    }
     if (!res.ok) {
       // Only a definitive "not yours / does not exist" marks the run failed; a
       // blip is retried by the next tick.
-      if (res.status === 404 || res.status === 401) update(entry, { failed: true });
+      if (request >= entry.applied) {
+        const failed = res.status === 404 || res.status === 401 || res.status === 403;
+        update(entry, { failed, disconnected: !failed });
+      }
       return null;
     }
-    const data = (await res.json()) as RunPayload;
-    if (!data?.run) return null;
+    const data = (await res.json().catch(() => null)) as RunPayload | null;
+    if (!data?.run) {
+      if (request >= entry.applied) update(entry, { disconnected: true });
+      return null;
+    }
     return absorb(entry, data, request);
   };
 
@@ -276,8 +292,15 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
       return entries.get(runId)?.snapshot ?? EMPTY_SNAPSHOT;
     },
 
-    refresh(runId) {
-      return load(entryFor(runId)).catch(() => null);
+    async refresh(runId) {
+      const entry = entryFor(runId);
+      const result = await load(entry).catch(() => null);
+      // Retry must restart a poller stopped by a former 401/404. A normal
+      // refresh reuses its schedule, and never adds a second poll loop.
+      if (!entry.looping && entry.listeners.size > 0 && !settled(entry)) {
+        schedule(entry, entry.snapshot.failed ? null : pollDelay(entry.snapshot.payload?.run ?? null, behind(entry)));
+      }
+      return result;
     },
 
     async post(runId, path, body) {

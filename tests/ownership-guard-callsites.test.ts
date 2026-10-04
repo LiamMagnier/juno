@@ -55,9 +55,11 @@ const REVIEWED: Record<string, string> = {
   "scripts/encrypt-columns.ts|ScheduledTask.findMany|pageArgs(cursor, take, { id: true, prompt: true })":
     "Same unguarded backfill client.",
   "scripts/encrypt-columns.ts|ScheduledTask.update|{ id }": "Same unguarded backfill client.",
-  "src/lib/research/completion.ts|Conversation.updateMany|{ id: conversationId }":
-    "Called only inside touchConversation, which is invoked after conversationExists has already " +
-    "verified ownership of that id in the same transaction.",
+  "src/lib/artifacts-store.ts|Conversation.findFirst|{ id: conversationId, ...(userId ? { userId } : {}) }":
+    "The transactional twin of conversationOwner's reviewed branches: owner-scoped whenever the caller has a userId; " +
+    "without one (research completion) the caller wrote this conversation's message in the same transaction, which is the ownership proof.",
+  "src/lib/memory.ts|MemoryEntry.findFirst|args":
+    "The adapter readMemorySummaryChanges is handed: every query it builds spreads { userId: input.userId, projectId, kind } (memory-summary-changes.ts).",
 };
 
 const sites = scanOwnershipCallSites(ROOT, OWNER_COLUMN);

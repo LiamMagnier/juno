@@ -178,8 +178,11 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
             self.unverified = unverified
         }
 
-        /// Nothing the check could fault.
-        public var isClean: Bool { contradicted + unsupported == 0 }
+        /// Every claim was checked and fully supported; absence or uncertainty is not clean.
+        public var isClean: Bool {
+            claims > 0 && supported == claims
+                && partiallySupported + unsupported + contradicted + unverified == 0
+        }
 
         /// The web's `auditHeadline`, word for word.
         public var headline: String {

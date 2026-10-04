@@ -12,6 +12,7 @@ import { useSplitPane } from "@/hooks/use-split-pane";
 import { useRealtimeVoice, type VoiceTurnResult } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
+import { focusTranscriptMessage } from "@/lib/chat/transcript-window";
 import { MessageList } from "@/components/chat/message-list";
 import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
@@ -60,6 +61,7 @@ import { AgentThreadContext, type AgentThreadIdentity } from "@/components/agent
 import { AGENTS_CHANGED_EVENT, fetchAgentDetail } from "@/components/agents/agents-transport";
 import { SessionOutputs } from "@/components/chat/session-outputs";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
+import { GuideModeSwitch, type GuideMode } from "@/components/research/guide-mode-switch";
 import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
 import { composerTaskId } from "@/lib/work/conversation-tasks";
 import { isTerminalStatus } from "@/lib/work/domain";
@@ -523,6 +525,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    */
   const research = useConversationResearch(privateMode ? null : currentConversationId, privateMode ? undefined : initialResearchRun);
   const researchSteering = research.steering;
+  const [researchGuideMode, setResearchGuideMode] = React.useState<GuideMode>("ask");
+  React.useEffect(() => setResearchGuideMode("ask"), [research.runId]);
+  const guidingResearch = researchSteering?.accepting && researchGuideMode === "guide";
 
   /**
    * Every task on this conversation: the person's, a routine that fired in a
@@ -1055,12 +1060,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    * ConversationFind jumps to, so this stays independent of how a message is
    * laid out.
    *
-   * Consumed once per id, and only after the message is actually in the DOM:
-   * MessageList virtualises nothing but does mount after the first paint, so a
-   * single unconditional scroll on mount lands on nothing. `behavior: "auto"`
-   * rather than "smooth" because MessageList pins scrollTop to the bottom on
-   * mount, and a smooth scroll would spend half a second losing that fight in
-   * full view of the user.
+   * The transcript mounts the requested row before centering it, including
+   * targets outside its measured window. Wait for loaded message data first.
    */
   const focusedMessageRef = React.useRef<string | null>(null);
   React.useEffect(() => {
@@ -1068,12 +1069,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [conversationId]);
   React.useEffect(() => {
     if (!initialFocusMessageId || focusedMessageRef.current === initialFocusMessageId) return;
-    const el = document.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(initialFocusMessageId)}"]`
-    );
-    if (!el) return;
-    focusedMessageRef.current = initialFocusMessageId;
-    el.scrollIntoView({ block: "center" });
+    if (!chat.messages.some((message) => message.id === initialFocusMessageId)) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusedMessageRef.current = initialFocusMessageId;
+      focusTranscriptMessage(initialFocusMessageId);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [chat.messages, initialFocusMessageId]);
 
   // Keep the panel mounted through its slide-out; reopening cancels the exit.
@@ -1095,12 +1096,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     return () => window.clearTimeout(t);
   }, [openArtifact, closingArtifact]);
 
-  const openArtifactByIdentifier = (identifier: string, opts?: { fullscreen?: boolean }) => {
-    if (voiceOpen && !splitEngaged(layoutRef.current)) {
+  const openableArtifactsRef = React.useRef(openableArtifacts);
+  openableArtifactsRef.current = openableArtifacts;
+  const openArtifactByIdentifier = React.useCallback((identifier: string, opts?: { fullscreen?: boolean }) => {
+    if (voiceOpenRef.current && !splitEngaged(layoutRef.current)) {
       toast.error("End voice mode before opening an artifact on this screen, so the microphone controls stay visible.");
       return;
     }
-    const a = openableArtifacts.find((x) => x.identifier === identifier);
+    const a = openableArtifactsRef.current.find((x) => x.identifier === identifier);
     if (a) {
       setOpenArtifactId(a.id);
       setFullscreen(!!opts?.fullscreen);
@@ -1118,7 +1121,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       setOpenDocumentId(null);
       setClosingDocument(null);
     }
-  };
+  }, []);
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {
@@ -1662,9 +1665,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [hasMessages]);
-  const handleSpeak = (id: string, text: string) => {
-    if (speakingId === id) {
-      tts.stop();
+  const speechContextRef = React.useRef({ speakingId, tts, messages: chat.messages, voiceId: settings.voiceId });
+  speechContextRef.current = { speakingId, tts, messages: chat.messages, voiceId: settings.voiceId };
+  const handleSpeak = React.useCallback((id: string, text: string) => {
+    const speech = speechContextRef.current;
+    if (speech.speakingId === id) {
+      speech.tts.stop();
       setSpeakingId(null);
       return;
     }
@@ -1672,9 +1678,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // The reply as speech, plus the files its runs made, named once when the
     // reply did not already name them (lib/chat/tool-run-speech). Code and raw
     // output are never read aloud.
-    const activity = chat.messages.find((m) => m.id === id)?.activity;
-    tts.speak(speechForReply(text, activity), settings.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
-  };
+    const activity = speech.messages.find((m) => m.id === id)?.activity;
+    speech.tts.speak(speechForReply(text, activity), speech.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
+  }, []);
 
   const sendFromComposer = React.useCallback(
     async (text: string, attachments: import("@/types/chat").ClientAttachment[], options?: import("@/hooks/use-chat").SendOptions) => {
@@ -1948,6 +1954,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       model={model}
       onModelChange={setModel}
       onSend={sendFromComposer}
+      modeControl={researchSteering?.accepting ? (
+        <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
+      ) : undefined}
       isBusy={chat.isBusy}
       status={chat.status}
       // Stopping a deep-research turn has to stop BOTH halves. The stream is
@@ -1956,7 +1965,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // is waiting for any more. Order matters — the run first, so the money
       // stops even if the stream teardown throws.
       onStop={
-        researchSteering?.accepting
+        guidingResearch
           ? () => {
               researchSteering.stop();
               chat.stop();
@@ -1976,18 +1985,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             : chat.stop
       }
       steering={
-        researchSteering?.accepting
+        guidingResearch
           ? {
               active: true,
-              placeholder: "Add a constraint, or paste a source to include…",
-              sendLabel: "Add to the research",
+              standalone: true,
+              placeholder: "Add direction for the next research round…",
+              sendLabel: "Guide the research",
               stopLabel: "Stop the research",
-              onSteer: async (value: string) => {
-                const accepted = await researchSteering.steer(value);
-                if (accepted) toast.success("Added to this research run");
-                else toast.error(research.notice ?? "That could not be added to the run.");
-                return accepted;
-              },
+              onSteer: research.guide,
             }
           : workSteering
             ? {
@@ -2447,7 +2452,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}
                 inlineRuns={privateMode ? [] : [
-                  ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} className="mt-5" /> }] : []),
+                  ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel runId={research.runId} run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} disconnected={research.disconnected} failed={research.failed} reload={research.reload} fetchedAt={research.fetchedAt} className="mt-5" /> }] : []),
                   ...research.history.filter(run => run.id !== research.runId).map(run => ({ ...run, node: <HistoricalResearchRunPanel runId={run.id} /> })),
                   // Placed by its own createdAt, so it lands under the turn that
                   // asked for it rather than at the end of a transcript the

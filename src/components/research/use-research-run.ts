@@ -249,6 +249,7 @@ export interface ResearchRunHandle {
   run: ResearchRunView | null;
   events: ResearchEventDTO[];
   failed: boolean;
+  disconnected: boolean;
   busy: boolean;
   notice: string | null;
   /** POST to a run sub-route. Resolves true only when the server accepted it. */
@@ -290,6 +291,7 @@ export function useResearchRun(runId: string | null): ResearchRunHandle {
     run: payload?.run ?? null,
     events: payload?.events ?? EMPTY_EVENTS,
     failed: snapshot.failed,
+    disconnected: snapshot.disconnected,
     busy: snapshot.busy,
     notice: snapshot.notice,
     post,

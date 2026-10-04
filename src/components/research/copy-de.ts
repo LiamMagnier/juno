@@ -78,7 +78,7 @@ export const RESEARCH_COPY_DE: Readonly<Record<string, string>> = {
   Review: "Ansehen",
   "The research couldn't start. Try again.": "Die Recherche konnte nicht starten. Versuche es noch einmal.",
   "Where this message goes": "Wohin diese Nachricht geht",
-  "Ask Juno": "Juno fragen",
+  "Ask Alevr": "Alevr fragen",
   "Guide the research": "Recherche lenken",
   "Add guidance for the research…": "Hinweise für die Recherche hinzufügen…",
   "Added to the research": "Zur Recherche hinzugefügt",
