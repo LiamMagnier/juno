@@ -123,7 +123,7 @@ async function main() {
     const started = Date.now();
     const result = gate
       ? { needsClarification: false, reason: `quick gate: ${gate}`, title: "", description: "", questions: [] }
-      : await triagePreflightClarification({ message: probe.message, recentMessages: probe.recentMessages });
+      : await triagePreflightClarification({ message: probe.message, recentMessages: probe.recentMessages, userId: null });
     const ms = Date.now() - started;
 
     if (!isPreflightClarificationResult(result)) {

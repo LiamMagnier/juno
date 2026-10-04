@@ -7,6 +7,8 @@ import {
   type BackgroundDenialReason,
 } from "@/lib/background-provider-policy";
 import { isProviderConfigured, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
+import { recordSpend } from "@/lib/spend";
+import { embeddingCostMicroUsd } from "@/lib/metering/unit-prices";
 
 /**
  * Embeddings for the knowledge index.
@@ -149,6 +151,13 @@ const openAiCompatibleTransport: EmbeddingTransport = async ({ model, texts, sig
 
 export interface EmbedOptions {
   texts: readonly string[];
+  /**
+   * The account the vectors bill to, or null when none (and then nothing is
+   * written). Required, like `runUtilityPrompt`'s: embeddings were the one
+   * provider call in memory and knowledge retrieval that never reached the
+   * ledger, and an optional field is how that comes back.
+   */
+  userId: string | null;
   /** Where this account's content may be sent. Required — there is no default. */
   policy: BackgroundProviderPolicy;
   /** Provider of the model the user chose, for `same_provider`. */
@@ -218,6 +227,16 @@ export async function embedTexts(options: EmbedOptions): Promise<EmbeddingOutcom
       for (let i = 0; i < texts.length; i += MAX_INPUTS_PER_REQUEST) {
         const batch = texts.slice(i, i + MAX_INPUTS_PER_REQUEST);
         vectors.push(...(await transport({ model, texts: batch, signal: options.signal })));
+      }
+      // Billed only on the real provider path: an injected transport is a test.
+      if (options.userId && !options.transport) {
+        const chars = texts.reduce((sum, text) => sum + text.length, 0);
+        await recordSpend({
+          userId: options.userId,
+          model: `embedding:${model.id}`,
+          kind: "utility",
+          costUsd: embeddingCostMicroUsd(model.id, { chars }) / 1_000_000,
+        }).catch(() => {});
       }
       options.onDecision?.({
         purpose: "knowledge_embedding",
