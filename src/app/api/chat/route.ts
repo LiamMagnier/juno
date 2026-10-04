@@ -1,3 +1,4 @@
+import { agentMemoryAccessOf } from "@/lib/memory-scope";
 import { NextResponse, after } from "next/server";
 import { admitChatRequest } from "@/lib/chat-admission";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
@@ -2319,8 +2320,22 @@ async function handleChat(req: Request) {
   // user just asked, scoped to this conversation's project, and cut to a token
   // budget. `used` names them, which is what the memory receipt below reports.
   const latestUserMessage = [...baseHistory].reverse().find((m) => m.role === "USER")?.content;
+  // An agent's turn reads only what that agent's memory grant allows
+  // (src/lib/memory-scope.ts): it is not the person, and does not inherit
+  // every private memory just because its owner has them.
+  const memoryAgentId = roomSetup ? roomSetup.speaker.agentId : conversation.agentId;
+  const memoryAgent = memoryEnabled && memoryAgentId
+    ? await prisma.agent.findFirst({
+        where: { id: memoryAgentId, userId: user.id, deletedAt: null },
+        select: { id: true, memoryAccess: true },
+      })
+    : null;
   const memoryProfile = memoryEnabled
-    ? await getMemoryProfile(user.id, { projectId: conversation.projectId, query: latestUserMessage })
+    ? await getMemoryProfile(user.id, {
+        projectId: conversation.projectId,
+        query: latestUserMessage,
+        agent: memoryAgent ? { id: memoryAgent.id, access: agentMemoryAccessOf(memoryAgent.memoryAccess) } : null,
+      })
     : { summary: null, summaryScope: "account" as const, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
 
   // Project context: instructions + reference file contents injected into the system prompt.
@@ -4488,6 +4503,15 @@ async function handleChat(req: Request) {
         await maybeConsolidateProject(user.id, conversation.projectId, modelInfo.provider).catch(() => {});
       }
     }
+
+    // Session recall: keep this account's blind-token index current, a bounded
+    // slice per turn (src/lib/recall). Search bookkeeping, not memory: it runs
+    // whether or not memory is on, makes no model call, and stores no words.
+    await import("@/lib/recall")
+      .then(({ recallDeps, indexPendingMessages }) => indexPendingMessages(recallDeps, user.id, { limit: 200 }))
+      .catch((error) => {
+        console.error("[recall] index pass failed:", error instanceof Error ? error.message : error);
+      });
 
     /*
      * Retire frame logs that have served their purpose (finished ~10 minutes

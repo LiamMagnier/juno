@@ -84,6 +84,35 @@ export interface SearchDeps {
    * deployment with no key configured degrades through one obvious seam.
    */
   decryptMessage: (stored: string) => string;
+  /**
+   * Full-history session recall over the account's blind-token index
+   * (src/lib/recall). When present, message text is searched through it —
+   * every conversation, not the recent window — and the window scan below
+   * shrinks to the few newest chats, to catch messages written since the
+   * last indexing pass. Absent (tests, or a failure), the bounded scan is
+   * the whole message search, exactly as before.
+   */
+  recall?: (request: {
+    userId: string;
+    query: string;
+    projectId: string | null;
+    since: Date | null;
+    limit: number;
+  }) => Promise<{
+    hits: {
+      messageId: string;
+      conversationId: string;
+      conversationTitle: string;
+      projectId: string | null;
+      role: string;
+      createdAt: Date;
+      body: string;
+      matchedWords: string[];
+      score: number;
+    }[];
+    indexed: number;
+    pending: number;
+  }>;
   now?: Date;
 }
 
@@ -113,6 +142,9 @@ const MAX_LIMIT_PER_TYPE = 25;
  */
 const MESSAGE_CONVERSATION_SCAN = 50;
 const MESSAGE_ROW_SCAN = 1500;
+/** With the recall index present, the scan only has to cover what was written since it last ran. */
+const MESSAGE_CONVERSATION_SCAN_FRESH = 5;
+const MESSAGE_ROW_SCAN_FRESH = 300;
 
 /** Longest title synthesised from a body that has no title of its own. */
 const SYNTHETIC_TITLE_CHARS = 80;
@@ -275,7 +307,7 @@ export async function runUnifiedSearch(
     return { query: request.query.trim(), groups: [], total: 0, coverage: [], partial: false };
   }
 
-  const { executor, decryptMessage } = deps;
+  const { executor, decryptMessage, recall } = deps;
   const now = deps.now ?? new Date();
   const limit = Math.min(Math.max(1, Math.floor(request.limitPerType ?? DEFAULT_LIMIT_PER_TYPE)), MAX_LIMIT_PER_TYPE);
   const wanted = new Set<SearchType>(request.types?.length ? request.types : SEARCH_TYPES);
@@ -533,14 +565,51 @@ export async function runUnifiedSearch(
   if (wanted.has("message")) {
     tasks.push(
       attempt("message", terms, async () => {
+        let indexed: Awaited<ReturnType<NonNullable<SearchDeps["recall"]>>> | null = null;
+        if (recall) {
+          try {
+            indexed = await recall({ userId: request.userId, query: parsed.raw, projectId, since, limit });
+          } catch (error) {
+            // The index is an accelerator, never a single point of failure:
+            // fall back to the bounded scan, which says what it covered.
+            console.error("[search] recall index unavailable:", error instanceof Error ? error.message : error);
+            indexed = null;
+          }
+        }
+        const conversationScan = indexed ? MESSAGE_CONVERSATION_SCAN_FRESH : MESSAGE_CONVERSATION_SCAN;
+        const rowScan = indexed ? MESSAGE_ROW_SCAN_FRESH : MESSAGE_ROW_SCAN;
+        const indexedHits: RawHit[] = (indexed?.hits ?? []).map((hit) => ({
+          id: `message:${hit.messageId}`,
+          type: "message" as const,
+          title: hit.conversationTitle || "New chat",
+          snippet:
+            buildSnippet(hit.body, terms) ??
+            buildSnippet(hit.body, hit.matchedWords) ??
+            { text: hit.body.slice(0, 200), marks: [] },
+          href: href(`/chat/${hit.conversationId}`, { m: hit.messageId }),
+          locator: hit.role === "USER" ? "You" : PRODUCT_NAME,
+          projectId: hit.projectId,
+          updatedAt: hit.createdAt.toISOString(),
+          score: TYPE_WEIGHT.message * Math.min(1, hit.score),
+        }));
+
         const conversations = await executor.run<{ id: string; title: string; projectId: string | null }>(
           messageScanConversationsSql({
             userId: request.userId,
             since,
             projectId,
-            limit: MESSAGE_CONVERSATION_SCAN,
+            limit: conversationScan,
           })
         );
+        if (conversations.length === 0 && indexed) {
+          return {
+            hits: indexedHits,
+            coverage:
+              indexed.pending > 0
+                ? partial("message", `${indexed.pending} older messages are still being indexed for search.`)
+                : complete("message"),
+          };
+        }
         if (conversations.length === 0) return { hits: [], coverage: complete("message") };
 
         const rows = await executor.run<MessageScanRow>(
@@ -548,7 +617,7 @@ export async function runUnifiedSearch(
             userId: request.userId,
             conversationIds: conversations.map((c) => c.id),
             since,
-            limit: MESSAGE_ROW_SCAN,
+            limit: rowScan,
           })
         );
 
@@ -590,6 +659,25 @@ export async function runUnifiedSearch(
         hits.forEach((hit, i) => {
           hit.score = scores[i];
         });
+
+        if (indexed) {
+          // Index first (it ranks across all history), then anything fresh the
+          // index has not reached yet, once per message.
+          const seen = new Set(indexedHits.map((hit) => hit.id));
+          const merged = [...indexedHits, ...hits.filter((hit) => !seen.has(hit.id))]
+            .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
+            .slice(0, limit);
+          if (undecryptable > 0 && merged.length === 0) {
+            return { hits: [], coverage: unavailable("message", COVERAGE_COPY.messagesUnreadable.detail) };
+          }
+          return {
+            hits: merged,
+            coverage:
+              indexed.pending > 0
+                ? partial("message", `${indexed.pending} older messages are still being indexed for search.`)
+                : complete("message"),
+          };
+        }
 
         if (undecryptable > 0 && hits.length === 0) {
           return {

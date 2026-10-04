@@ -27,6 +27,7 @@ import {
   decideIdea,
   deleteNote,
   retireAgent,
+  setAgentMemoryAccess,
   updateAgent,
   updateGoal,
   updateRoutine,
@@ -34,6 +35,7 @@ import {
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
+import { AGENT_MEMORY_ACCESS, AGENT_MEMORY_ACCESS_META, DEFAULT_AGENT_MEMORY_ACCESS } from "@/lib/memory-scope";
 import { AGENT_STATE_NAMES } from "@/lib/brand/names";
 
 /**
@@ -353,6 +355,38 @@ export function AgentProfile({
         <Section title="How much it asks">
           <p className="text-body text-foreground">{ASKS_COPY[agent.approvalMode]}</p>
           <p className="mt-1 text-ui text-muted-foreground">Ask {agent.name} to change this.</p>
+        </Section>
+
+        <Section title="What it may remember about you">
+          {/* Set here and only here: the agent's own tools cannot widen this. */}
+          <div role="radiogroup" aria-label={`What ${agent.name} may read of your memory`} className="flex flex-col gap-1">
+            {AGENT_MEMORY_ACCESS.map((access) => {
+              const current = (agent.memoryAccess ?? DEFAULT_AGENT_MEMORY_ACCESS) === access;
+              return (
+                <button
+                  key={access}
+                  type="button"
+                  role="radio"
+                  aria-checked={current}
+                  disabled={busy === "memory"}
+                  data-memory-access={access}
+                  onClick={() => {
+                    if (!current) void act("memory", () => setAgentMemoryAccess(agent.id, access));
+                  }}
+                  className={cn(
+                    "-mx-2 rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                    current && "bg-secondary/60"
+                  )}
+                >
+                  <span className={cn("block text-body", current ? "font-medium text-foreground" : "text-foreground")}>
+                    {AGENT_MEMORY_ACCESS_META[access].label}
+                  </span>
+                  <span className="block text-ui text-muted-foreground">{AGENT_MEMORY_ACCESS_META[access].description}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-ui text-muted-foreground">Its own notes stay its own either way.</p>
         </Section>
       </div>
 
