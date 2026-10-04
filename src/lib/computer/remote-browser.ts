@@ -11,6 +11,8 @@ import {
   selectorForElement,
   snapshotPage,
   submitsFormOnPage,
+  fieldKindOnPage,
+  SECRET_FIELD_REFUSAL,
 } from "@/lib/work/browser-page";
 import { computerProvider } from "./provider";
 import type { ComputerHandle, ComputerProvider, ComputerSecrets } from "./types";
@@ -270,7 +272,31 @@ export function connectAgentBrowser(
       }
       const selector = resolved.selector;
       return act(async (current) => {
+        const kind = await fieldKindOnPage(current, selector);
+        if (kind === "password" || kind === "secret") return SECRET_FIELD_REFUSAL;
         await current.fill(selector, text, { timeout: actionTimeout });
+        return null;
+      });
+    },
+
+    async fieldKind(target) {
+      const resolved = selectorForElement(elements, target);
+      if ("refusal" in resolved || !page) return null;
+      return fieldKindOnPage(page, resolved.selector);
+    },
+
+    fillSecret(target, value, opts) {
+      const resolved = selectorForElement(elements, target);
+      if ("refusal" in resolved) {
+        return Promise.resolve({ ok: false, message: resolved.refusal });
+      }
+      const selector = resolved.selector;
+      return act(async (current) => {
+        const kind = await fieldKindOnPage(current, selector);
+        if (opts.requirePasswordField ? kind !== "password" : kind !== "text" && kind !== "password") {
+          return "That field is not one a saved credential can be filled into.";
+        }
+        await current.fill(selector, value, { timeout: actionTimeout });
         return null;
       });
     },

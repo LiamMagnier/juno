@@ -15,6 +15,7 @@ import {
   takeoverClosed,
   takeoverHolder,
   takeoverOpened,
+  takeoverReleasableBy,
 } from "./takeover";
 import {
   COMPUTER_PATH_REFUSED,
@@ -52,6 +53,7 @@ export interface AgentComputerRow {
   takeoverUntil?: Date | null;
   takeoverStartedAt?: Date | null;
   takeoverBy?: string | null;
+  takeoverEpoch?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -214,6 +216,7 @@ function toRow(raw: {
   takeoverUntil?: Date | null;
   takeoverStartedAt?: Date | null;
   takeoverBy?: string | null;
+  takeoverEpoch?: number;
   createdAt: Date;
   updatedAt: Date;
 }): AgentComputerRow {
@@ -1334,6 +1337,21 @@ export async function computerBlockedReason(userId: string, agentId: string, now
 }
 
 /**
+ * The takeover fence: the refusal (if any) plus how many takeovers have ever
+ * started. A guard reads it before and after a call; a changed epoch means a
+ * takeover overlapped the call — even one that started and ended inside it —
+ * and the call's result is discarded (security audit, computer gap 2).
+ */
+export async function computerTakeoverFence(
+  userId: string,
+  agentId: string,
+  now = new Date(),
+): Promise<{ reason: string | null; epoch: number }> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  return { reason: takeoverActive(row, now) ? TAKEOVER_REFUSAL : null, epoch: row?.takeoverEpoch ?? 0 };
+}
+
+/**
  * The person takes (or keeps) control: the takeover window opens or extends.
  * Only the person's own clients reach this, through their session.
  */
@@ -1489,6 +1507,14 @@ export async function heartbeatComputerViewSession(
       agentId,
       takeoverOpened({ state: existing, by: takeoverHolder(input.deviceSessionId ?? null), now })
     );
+  }
+  // Only the client that holds the takeover can hand it back. Another tab or
+  // device signed in to the same account cannot end someone's control session
+  // and let the agent resume while they are still typing.
+  const releasable = takeoverReleasableBy(existing, takeoverHolder(input.deviceSessionId ?? null), now);
+  if (input.ended && input.mode === "control" && !releasable) {
+    await activePersistence.updateByAgent(userId, agentId, { lastViewedAt: now });
+    return getPublicComputerState(userId, agentId);
   }
   if (input.ended && input.mode === "control") {
     await activePersistence.updateByAgent(userId, agentId, takeoverClosed());

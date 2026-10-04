@@ -68,10 +68,14 @@ import { WORK_MAX_STEPS_PER_RUN } from "@/lib/work/budget";
 import { createWorkBrowser, sealedResponseHeaders, type WorkBrowser } from "@/lib/work/browser";
 import { connectAgentBrowser } from "@/lib/computer/remote-browser";
 import { guardBrowserForTakeover } from "@/lib/computer/takeover";
+import { createCredentialFill } from "@/lib/secrets/browser-fill";
+import { workTaskKey } from "@/lib/secrets/policy";
+import { redeemSecretGrant, secretRefsForTask } from "@/lib/secrets/store";
 import {
   BUSY_COMPUTER_FALLBACK_NOTE,
   YOUR_COMPUTER_PROMPT_SECTION,
   computerBlockedReason,
+  computerTakeoverFence,
   resolveRunComputerSession,
   setCachedPoster,
   type RunComputerAttachment,
@@ -1894,26 +1898,54 @@ function buildTools(input: {
     input.disposers.push(() => browser.close());
   }
 
+  // Alevr Secrets (BRIEF §7): the model holds references to grants made to
+  // THIS task; the value is redeemed and filled here, and everything the
+  // browser returns afterwards is scrubbed of what was filled.
+  const secretTaskKey = workTaskKey(input.sessionId);
+  const credentialFill = createCredentialFill({
+    currentUrl: () => browser.currentUrl(),
+    fieldKind: async (target) => (browser.fieldKind ? browser.fieldKind(target) : null),
+    fillSecret: async (target, value, opts) =>
+      browser.fillSecret
+        ? browser.fillSecret(target, value, opts)
+        : { ok: false, message: "This browser cannot fill saved credentials." },
+    redeem: (request) =>
+      redeemSecretGrant({
+        ...request,
+        userId: input.userId,
+        taskKey: secretTaskKey,
+        receiptRef: `work-run:${input.runId}`,
+      }),
+  });
+  const scrubbed = credentialFill.scrub;
+
   const browserTool = runtime.browserTool({
     available: () => browser.available(),
     open: async (url) => {
-      const outcome = await browser.open(url);
+      const outcome = scrubbed(await browser.open(url));
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
-    read: () => browser.read(),
+    read: async () => scrubbed(await browser.read()),
     click: async (target) => {
-      const outcome = await browser.click(target);
+      const outcome = scrubbed(await browser.click(target));
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
     typeText: async (target, text) => {
-      const outcome = await browser.typeText(target, text);
+      const outcome = scrubbed(await browser.typeText(target, text));
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
     submit: async (target) => {
-      const outcome = await browser.submit(target);
+      const outcome = scrubbed(await browser.submit(target));
+      if (outcome.ok) bumpEpoch();
+      return outcome;
+    },
+    credentials: async () =>
+      (await secretRefsForTask(input.userId, secretTaskKey)).map(({ ref, label, hosts }) => ({ ref, label, hosts })),
+    fillCredential: async (target, request) => {
+      const outcome = await credentialFill.fill(target, request);
       if (outcome.ok) bumpEpoch();
       return outcome;
     },
@@ -1943,6 +1975,8 @@ function buildTools(input: {
         // While the person has control, every computer tool (screenshots
         // included) refuses before and after acting (D-011, audit C3).
         blockedReason: () => computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId),
+        takeoverEpoch: async () =>
+          (await computerTakeoverFence(input.userId, input.remoteComputer!.attachment.agentId)).epoch,
         pageTakesPayment: () => browser.pageTakesPayment(),
         currentUrl: () => browser.currentUrl(),
         screenEpoch: getEpoch,
@@ -3445,7 +3479,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         connectAgentBrowser(computerAttachment.handle, computerAttachment.secrets, {
           provider: computerAttachment.provider,
         }),
-        () => computerBlockedReason(input.userId, takeoverAgentId)
+        () => computerTakeoverFence(input.userId, takeoverAgentId)
       );
       remoteComputer = { attachment: computerAttachment, browser: remoteBrowser };
     } catch {

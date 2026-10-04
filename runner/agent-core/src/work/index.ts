@@ -278,6 +278,7 @@ export {
   REMOTE_TOOL_NAMES,
   computerTools,
   isNavigationKeypress,
+  TAKEOVER_OVERLAP_TEXT,
   isSafeComputerWritePath,
   type ComputerExecOutcome,
   type ComputerFileEntryItem,

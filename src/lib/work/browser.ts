@@ -66,6 +66,9 @@ import {
   selectorForElement,
   snapshotPage,
   submitsFormOnPage,
+  fieldKindOnPage,
+  SECRET_FIELD_REFUSAL,
+  type FieldKind,
 } from "./browser-page";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -155,6 +158,23 @@ export interface WorkBrowser {
   read(): Promise<BrowserOutcome>;
   click(target: { ref?: number; selector?: string }): Promise<BrowserOutcome>;
   typeText(target: { ref?: number; selector?: string }, text: string): Promise<BrowserOutcome>;
+  /**
+   * What kind of field a target is (password, other secret, text), read from
+   * the DOM by trusted code. The credential broker needs it before it will
+   * produce a password: the model's description of a field is not evidence.
+   */
+  fieldKind?(target: { ref?: number; selector?: string }): Promise<FieldKind | null>;
+  /**
+   * Fill a value the trusted side obtained from Alevr Secrets. Never wired to
+   * a tool argument: the model names a credential reference, the runner
+   * redeems it, and only the runner calls this. Re-checks the field kind in the
+   * same step it fills, so a page that swapped the field in between is refused.
+   */
+  fillSecret?(
+    target: { ref?: number; selector?: string },
+    value: string,
+    opts: { requirePasswordField: boolean },
+  ): Promise<BrowserOutcome>;
   submit(target: { ref?: number; selector?: string }): Promise<BrowserOutcome>;
   currentUrl(): string;
   /**
@@ -564,7 +584,29 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       if ("refusal" in resolved) return Promise.resolve({ ok: false, message: resolved.refusal });
       const selector = resolved.selector;
       return act(async (current) => {
+        const kind = await fieldKindOnPage(current, selector);
+        if (kind === "password" || kind === "secret") return SECRET_FIELD_REFUSAL;
         await current.fill(selector, text, { timeout: actionTimeout });
+        return null;
+      });
+    },
+
+    async fieldKind(target) {
+      const resolved = selectorFor(target);
+      if ("refusal" in resolved || !page) return null;
+      return fieldKindOnPage(page, resolved.selector);
+    },
+
+    fillSecret(target, value, opts) {
+      const resolved = selectorFor(target);
+      if ("refusal" in resolved) return Promise.resolve({ ok: false, message: resolved.refusal });
+      const selector = resolved.selector;
+      return act(async (current) => {
+        const kind = await fieldKindOnPage(current, selector);
+        if (opts.requirePasswordField ? kind !== "password" : kind !== "text" && kind !== "password") {
+          return "That field is not one a saved credential can be filled into.";
+        }
+        await current.fill(selector, value, { timeout: actionTimeout });
         return null;
       });
     },
@@ -590,6 +632,8 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
     close,
   };
 }
+
+export { SECRET_FIELD_REFUSAL };
 
 function describe(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);

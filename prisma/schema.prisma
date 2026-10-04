@@ -4332,6 +4332,10 @@ model AgentComputer {
   takeoverStartedAt DateTime?
   /// Which client holds it: "web" or "native:<device session id>".
   takeoverBy        String?
+  /// Counts takeovers ever started. A tool call that read one value before it
+  /// ran and another after was overlapped by a takeover, even one that began
+  /// and ended inside the call, and its result is discarded.
+  takeoverEpoch     Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
