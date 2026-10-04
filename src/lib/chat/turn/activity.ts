@@ -1,3 +1,4 @@
+import type { RoutingReceipt } from "@/lib/router/receipt";
 import "server-only";
 import {
   artifactRefusalNotice,
@@ -35,7 +36,8 @@ export function privateAssistantMessage(
   model: string,
   usage: { totalInput: number; output: number; cost: number },
   finishReason: ChatFinishReason,
-  activity: ClientActivityEvent[]
+  activity: ClientActivityEvent[],
+  routing: RoutingReceipt | null = null
 ) {
   return {
     id: `private-${Date.now()}`,
@@ -54,6 +56,7 @@ export function privateAssistantMessage(
     completionTokens: usage.output || undefined,
     costUsd: usage.cost || undefined,
     ...cacheTokenFields(acc),
+    ...(routing ? { routing } : {}),
   };
 }
 

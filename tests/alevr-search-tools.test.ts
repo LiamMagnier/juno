@@ -74,8 +74,10 @@ test("Auto no longer excludes models without native search when Alevr Search can
   assert.equal(webSearchPossible(DEEPSEEK, false), false);
   assert.equal(webSearchPossible(DEEPSEEK, true), true);
   const message = "What changed in the EU heat pump subsidy rules this week?";
-  const without = pickAutoModel({ message, plan: "MAX", wantsWebSearch: true, alevrSearch: false });
-  const withAlevr = pickAutoModel({ message, plan: "MAX", wantsWebSearch: true, alevrSearch: true });
+  // Every provider configured: Auto Router 2.0 has no plan-blind last resort.
+  const context = { isConfigured: () => true };
+  const without = pickAutoModel({ message, plan: "MAX", wantsWebSearch: true, alevrSearch: false, context });
+  const withAlevr = pickAutoModel({ message, plan: "MAX", wantsWebSearch: true, alevrSearch: true, context });
   assert.equal(without.model.webSearch, true, "without Alevr Search only native searchers qualify");
   assert.ok(withAlevr.candidatesConsidered >= without.candidatesConsidered);
   assert.ok(

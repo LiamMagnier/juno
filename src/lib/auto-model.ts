@@ -1,23 +1,16 @@
 /**
- * "Auto" model routing: pick the cheapest chat model that can handle the prompt.
+ * "Auto" model routing: the prompt-complexity grader, the thinking-effort
+ * choice and the `pickAutoModel` entry point. The decision itself is the
+ * task-success router in `src/lib/router/decide.ts`.
  *
  * Complexity is estimated with cheap, deterministic heuristics (no extra LLM call)
- * so routing adds near-zero latency. Capability floors use the same intelligence /
- * price metrics as the model selector.
+ * so routing adds near-zero latency.
  */
 
 import type { Plan } from "@prisma/client";
-import { canUseModel } from "@/lib/plans";
-import { MODEL_LIST, trainsOnPrompts, type ModelId, type ModelInfo } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
-import { webSearchPossible } from "@/lib/search/alevr/policy";
-import {
-  averageRequestCostMicroUsd,
-  clampReasoningEffort,
-  getModelMetrics,
-  reasoningCaps,
-  type ReasoningEffort,
-} from "@/lib/model-metrics";
+import type { ModelId, ModelInfo } from "@/lib/models";
+import { clampReasoningEffort, reasoningCaps, type ReasoningEffort } from "@/lib/model-metrics";
+import { routeAuto, type RouteDecision, type RouteInput } from "@/lib/router/decide";
 
 /** Sentinel id shown in the model selector; never sent to a provider API. */
 export const AUTO_MODEL_ID: ModelId = "juno:auto";
@@ -43,21 +36,18 @@ export interface AutoPickInput {
   plan: Plan;
   hasImages?: boolean;
   wantsWebSearch?: boolean;
-  /**
-   * Alevr Search can answer on this deployment (`alevrSearchAvailable()`).
-   * Then web search no longer narrows the pool to models whose provider
-   * searches: every tool-capable model gets Alevr's search tools (BRIEF §15).
-   */
-  alevrSearch?: boolean;
   /** Prefer current generation models unless nothing else fits. */
   preferCurrent?: boolean;
-  /**
-   * Less than 10% of the month's budget is left (`isBudgetLow` in credits.ts).
-   * Auto then keeps to cost-1 models so what remains lasts, instead of one
-   * frontier turn ending the month. Only Auto bends: a model the user picked
-   * by name is still the model they get.
-   */
+  /** Alevr Search can serve this turn, so models without native search may search. */
+  alevrSearch?: boolean;
+  /** Less than 10% of the month's budget left: keep to cost-1 models. */
   lowBudget?: boolean;
+  /**
+   * The rest of the router's inputs: preference, data boundary, paid-tier
+   * attestation, evidence, availability, budget. Absent = defaults (no
+   * evidence, every provider available, no budget bound).
+   */
+  context?: Omit<RouteInput, "message" | "plan" | "hasImages" | "wantsWebSearch" | "preferCurrent" | "alevrSearch" | "lowBudget">;
 }
 
 export interface AutoPickResult {
@@ -68,10 +58,12 @@ export interface AutoPickResult {
    * `null` = Instant / no extra reasoning (when the model allows disabling).
    */
   reasoningEffort: ReasoningEffort;
-  /** Models considered, cheapest-first among eligible (for logging). */
+  /** Models scored after the hard filters (for logging). */
   candidatesConsidered: number;
   /** True when a low budget narrowed the pick to cost-1 models. */
   budgetSaver: boolean;
+  /** The full decision record: profile, scores, reasons, alternates. */
+  decision: RouteDecision;
 }
 
 const MIN_INTEL: Record<PromptComplexity, number> = {
@@ -322,32 +314,6 @@ export function classifyPromptComplexity(message: string): PromptComplexityResul
   };
 }
 
-function isEligibleChatModel(
-  m: ModelInfo,
-  plan: Plan,
-  needsVision: boolean,
-  needsWebSearch: boolean,
-  alevrSearch = false,
-): boolean {
-  if (m.modality !== "chat") return false;
-  if (m.comingSoon) return false;
-  if (m.status === "deprecated") return false;
-  // Auto ranks cheapest-first, and the cheapest tier on this catalog is the one
-  // whose discount is paid for with the reader's prompts (Meta's
-  // `-contributor` ids). Ranking would hand it almost every turn, and the
-  // reader would never see the trade they had made. Excluded from the pool
-  // rather than penalised in the sort: a data decision is not a price the
-  // ranking can weigh. Choosing it by hand still works.
-  if (trainsOnPrompts(m)) return false;
-  if (!isProviderConfigured(m.provider)) return false;
-  if (!canUseModel(plan, m.id)) return false;
-  if (needsVision && !m.vision) return false;
-  // Web search needs a model that can search: its provider's own search, or
-  // Alevr Search's tools, which any model taking function tools can call.
-  if (needsWebSearch && !webSearchPossible(m, alevrSearch)) return false;
-  return true;
-}
-
 /**
  * Map prompt complexity → a target thinking tier, then clamp to what the
  * chosen model actually supports (Instant / on-off / multi-tier).
@@ -383,77 +349,33 @@ export function pickAutoReasoningEffort(
 }
 
 /**
- * Among models the user can call, pick the cheapest that clears the intelligence
- * floor for this prompt. Prefer `current` over legacy when prices are close.
- * Also chooses thinking effort for that model from the same complexity score.
+ * Auto's pick for one turn. Delegates to the task-success router
+ * (`src/lib/router/decide.ts`): hard filters (plan, configuration, data-use
+ * terms, capability, availability, budget), then the lowest EXPECTED total
+ * cost — the call, its tool rounds and retries, and the cost of recovering
+ * from a wrong answer — rather than the cheapest call above a floor.
+ *
+ * Throws `NoAutoCandidateError` when no model may be used; the caller says so
+ * instead of silently choosing a model the filters refused.
  */
 export function pickAutoModel(input: AutoPickInput): AutoPickResult {
-  const complexity = classifyPromptComplexity(input.message);
-  const needsVision = !!input.hasImages;
-  const needsWebSearch = !!input.wantsWebSearch;
-  const preferCurrent = input.preferCurrent !== false;
-
-  let pool = MODEL_LIST.filter((m) => isEligibleChatModel(m, input.plan, needsVision, needsWebSearch, !!input.alevrSearch));
-
-  // The fair fallback: near the end of the budget, only the cheapest tier —
-  // as long as one of them can take this request at all.
-  let budgetSaver = false;
-  if (input.lowBudget) {
-    const cheap = pool.filter((m) => m.cost <= 1);
-    if (cheap.length > 0) {
-      pool = cheap;
-      budgetSaver = true;
-    }
-  }
-
-  // Prefer current generation; fall back to legacy if the floor can't be met.
-  if (preferCurrent) {
-    const currentOnly = pool.filter((m) => m.status === "current" || !m.status);
-    if (currentOnly.some((m) => getModelMetrics(m).intelligence >= complexity.minIntelligence)) {
-      pool = currentOnly;
-    }
-  }
-
-  const capable = pool.filter((m) => {
-    const intel = getModelMetrics(m).intelligence;
-    if (intel < complexity.minIntelligence) return false;
-    if (complexity.preferReasoning && complexity.level === "expert" && !m.reasoning && intel < 9) {
-      // Expert work: require explicit reasoning OR top-tier intelligence.
-      return false;
-    }
-    return true;
+  const decision = routeAuto({
+    message: input.message,
+    plan: input.plan,
+    hasImages: input.hasImages,
+    wantsWebSearch: input.wantsWebSearch,
+    preferCurrent: input.preferCurrent,
+    alevrSearch: input.alevrSearch,
+    lowBudget: input.lowBudget,
+    ...input.context,
   });
-
-  const ranked = (capable.length > 0 ? capable : pool).slice().sort((a, b) => {
-    const costA = averageRequestCostMicroUsd(a);
-    const costB = averageRequestCostMicroUsd(b);
-    if (costA !== costB) return costA - costB;
-    // Tie-break: higher intelligence at same price, then current over legacy.
-    const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
-    if (intelDelta !== 0) return intelDelta;
-    const curA = a.status === "current" ? 0 : 1;
-    const curB = b.status === "current" ? 0 : 1;
-    if (curA !== curB) return curA - curB;
-    return a.name.localeCompare(b.name);
-  });
-
-  const fallback =
-    ranked[0] ??
-    MODEL_LIST.find((m) => isEligibleChatModel(m, input.plan, false, false)) ??
-    MODEL_LIST.find((m) => m.modality === "chat" && !m.comingSoon);
-
-  if (!fallback) {
-    throw new Error("No chat model is available for Auto routing.");
-  }
-
-  const reasoningEffort = pickAutoReasoningEffort(fallback, complexity);
-
   return {
-    model: fallback,
-    complexity,
-    reasoningEffort,
-    candidatesConsidered: ranked.length || pool.length,
-    budgetSaver,
+    model: decision.model,
+    complexity: decision.complexity,
+    reasoningEffort: decision.reasoningEffort,
+    candidatesConsidered: decision.ranked.length,
+    budgetSaver: decision.budgetSaver,
+    decision,
   };
 }
 
@@ -463,7 +385,7 @@ export const AUTO_MODEL_INFO: ModelInfo = {
   provider: "anthropic", // logo fallback; UI special-cases Auto with Juno mark
   providerModel: "auto",
   name: "Auto",
-  description: "Picks the cheapest model and thinking depth that can handle each prompt.",
+  description: "Picks the model and thinking depth most likely to answer each prompt well for the least total cost.",
   minPlan: "FREE",
   vision: true,
   reasoning: true,
@@ -477,35 +399,3 @@ export const AUTO_MODEL_INFO: ModelInfo = {
   family: "auto",
   legacy: false,
 };
-
-/**
- * Resolve an ordered chain of fallback models for resilience against provider downtime or rate limits.
- */
-export function resolveModelFallbackChain(primaryModel: ModelInfo, plan: Plan): ModelInfo[] {
-  const chain: ModelInfo[] = [primaryModel];
-  const primaryProvider = primaryModel.provider;
-  const primaryIntel = getModelMetrics(primaryModel).intelligence;
-
-  // Find candidate models from other providers that match modality and capabilities
-  const alternates = MODEL_LIST.filter(
-    (m) =>
-      m.id !== primaryModel.id &&
-      m.provider !== primaryProvider &&
-      isEligibleChatModel(m, plan, primaryModel.vision, primaryModel.webSearch) &&
-      getModelMetrics(m).intelligence >= primaryIntel - 1
-  ).sort((a, b) => {
-    const intelDiff = Math.abs(getModelMetrics(a).intelligence - primaryIntel) - Math.abs(getModelMetrics(b).intelligence - primaryIntel);
-    if (intelDiff !== 0) return intelDiff;
-    return averageRequestCostMicroUsd(a) - averageRequestCostMicroUsd(b);
-  });
-
-  for (const alt of alternates) {
-    if (!chain.some((c) => c.provider === alt.provider)) {
-      chain.push(alt);
-      if (chain.length >= 3) break;
-    }
-  }
-
-  return chain;
-}
-

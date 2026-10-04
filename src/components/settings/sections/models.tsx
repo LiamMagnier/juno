@@ -15,6 +15,8 @@ import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { DEFAULT_AUTO_PREFERENCE, type AutoPreference } from "@/lib/router/decide";
+import { DEFAULT_AUTO_DATA_BOUNDARY, type AutoDataBoundary } from "@/lib/router/data-policy";
 
 const EFFORTS: { value: Exclude<ReasoningEffort, null>; label: string }[] = [
   { value: "minimal", label: "Minimal" },
@@ -25,6 +27,45 @@ const EFFORTS: { value: Exclude<ReasoningEffort, null>; label: string }[] = [
   { value: "max", label: "Max" },
 ];
 const AUTO_EFFORT = "__auto__";
+
+/** What Auto weighs (src/lib/router/decide.ts PREFERENCE_WEIGHTS), in the words of what each does. */
+const AUTO_PREFERENCE_OPTIONS: { value: AutoPreference; label: string; description: string }[] = [
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "Auto weighs the price of each answer against the chance it has to be asked again.",
+  },
+  {
+    value: "quality",
+    label: "Best answer",
+    description: "Auto pays more for a better chance of getting it right the first time.",
+  },
+  {
+    value: "economy",
+    label: "Lowest cost",
+    description: "Auto prefers cheaper models and accepts that some answers may need a retry.",
+  },
+];
+
+/** Which providers Auto may choose (src/lib/router/data-policy.ts). Every option already excludes training. */
+const AUTO_BOUNDARY_OPTIONS: { value: AutoDataBoundary; label: string; description: string }[] = [
+  {
+    value: "verified_no_training",
+    label: "Any lab that doesn’t train on it",
+    description:
+      "Auto only uses labs whose published terms say they don’t train on what you send. Labs whose terms haven’t been checked are left out.",
+  },
+  {
+    value: "exclude_prc",
+    label: "Leave out China-based labs",
+    description: "The same, and Auto never chooses a lab headquartered in China. You can still pick one yourself.",
+  },
+  {
+    value: "eu_us_only",
+    label: "EU and US labs only",
+    description: "The same, and Auto only chooses labs based in the EU or the US.",
+  },
+];
 
 /**
  * One pinned model: its lab's mark, its name, and the filled star that unpins
@@ -143,6 +184,58 @@ export function ModelsSection() {
             >
               <ModelTrigger model={defaultModel} label="Default model" className="w-full @[34rem]/pane:w-64" />
             </ModelCombobox>
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Auto"
+        description="How Auto chooses when it picks the model for you. Choosing a model yourself always overrides it."
+      >
+        <SettingRow
+          label="Optimise for"
+          description={AUTO_PREFERENCE_OPTIONS.find((o) => o.value === (settings.autoPreference ?? DEFAULT_AUTO_PREFERENCE))?.description}
+          wide
+          status={saves.status("autoPreference")}
+          control={
+            <Select
+              value={settings.autoPreference ?? DEFAULT_AUTO_PREFERENCE}
+              onValueChange={(v) => void saves.track("autoPreference", () => save({ autoPreference: v as AutoPreference }))}
+            >
+              <SelectTrigger aria-label="What Auto optimises for" className="w-full @[34rem]/pane:w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AUTO_PREFERENCE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        />
+        <SettingRow
+          label="Labs Auto may use"
+          description={AUTO_BOUNDARY_OPTIONS.find((o) => o.value === (settings.autoDataBoundary ?? DEFAULT_AUTO_DATA_BOUNDARY))?.description}
+          wide
+          status={saves.status("autoDataBoundary")}
+          control={
+            <Select
+              value={settings.autoDataBoundary ?? DEFAULT_AUTO_DATA_BOUNDARY}
+              onValueChange={(v) => void saves.track("autoDataBoundary", () => save({ autoDataBoundary: v as AutoDataBoundary }))}
+            >
+              <SelectTrigger aria-label="Labs Auto may use" className="w-full @[34rem]/pane:w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AUTO_BOUNDARY_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           }
         />
       </SettingsGroup>

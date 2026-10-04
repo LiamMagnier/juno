@@ -10,6 +10,8 @@ import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
 import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
 import { SENSITIVE_TOPICS } from "@/lib/memory-sensitive";
+import { AUTO_PREFERENCES } from "@/lib/router/decide";
+import { AUTO_DATA_BOUNDARIES } from "@/lib/router/data-policy";
 
 const schema = z.object({
   // The display name — what the sidebar and the greeting call you. Lives on
@@ -38,6 +40,12 @@ const schema = z.object({
   // providers.
   backgroundProviderMode: z.enum(BACKGROUND_PROVIDER_MODES).optional(),
   backgroundProviderSelected: z.string().max(60).nullable().optional(),
+  // Auto's objective and data boundary (src/lib/router). Enumerated: both are
+  // TEXT columns the router reads on every Auto turn. The boundary can only
+  // NARROW what Auto may use — training and unverified terms are excluded in
+  // code whatever is stored here.
+  autoPreference: z.enum(AUTO_PREFERENCES).optional(),
+  autoDataBoundary: z.enum(AUTO_DATA_BOUNDARIES).optional(),
   voiceId: z.string().max(100).nullable().optional(),
   favoriteModels: z.array(z.string().max(120)).max(200).optional(),
   emailBudgetAlerts: z.boolean().optional(),
@@ -90,6 +98,8 @@ export async function GET() {
       // than each client assuming a default.
       backgroundProviderMode: true,
       backgroundProviderSelected: true,
+      autoPreference: true,
+      autoDataBoundary: true,
       defaultModel: true,
       favoriteModels: true,
       // The approval policy is enforced server-side on every connector call, so
@@ -160,6 +170,8 @@ export async function PATCH(req: Request) {
       ...(d.backgroundProviderSelected !== undefined
         ? { backgroundProviderSelected: d.backgroundProviderSelected }
         : {}),
+      ...(d.autoPreference !== undefined ? { autoPreference: d.autoPreference } : {}),
+      ...(d.autoDataBoundary !== undefined ? { autoDataBoundary: d.autoDataBoundary } : {}),
       ...(d.voiceId !== undefined ? { voiceId: d.voiceId } : {}),
       ...(d.favoriteModels !== undefined ? { favoriteModels: d.favoriteModels } : {}),
       ...(d.emailBudgetAlerts !== undefined ? { emailBudgetAlerts: d.emailBudgetAlerts } : {}),

@@ -79,7 +79,7 @@ export async function runPrivateTurn({
   toolDetailEnabled: boolean;
 }): Promise<Response> {
   const { input, privateHistory, legacyClient, moderate, moderationTexts } = request;
-  const { modelInfo, modelId, requestedId, requestedEffort, autoReasoningEffort, routingNote, routingWarning } = model;
+  const { modelInfo, modelId, requestedId, requestedEffort, autoReasoningEffort, routingNote, routingWarning, routingReceipt } = model;
   const { turnContext, activeConnectors, turnSkillSlug } = tokens;
   const unavailable = privateModeFeatureRefusal(input);
   if (unavailable) return refuse(unavailable);
@@ -373,7 +373,7 @@ export async function runPrivateTurn({
 
         send({
           type: "done",
-          message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog),
+          message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog, routingReceipt),
           artifacts: [],
           memoryUpdated: false,
           quota: consumed.quota,
@@ -443,7 +443,7 @@ export async function runPrivateTurn({
           );
           send({
             type: "done",
-            message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog),
+            message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog, routingReceipt),
             artifacts: [],
             memoryUpdated: false,
             quota: consumed.quota,

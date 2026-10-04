@@ -1,4 +1,6 @@
 import "server-only";
+import { DEFAULT_AUTO_PREFERENCE, isAutoPreference } from "@/lib/router/decide";
+import { DEFAULT_AUTO_DATA_BOUNDARY, isAutoDataBoundary } from "@/lib/router/data-policy";
 import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { listConversations } from "@/lib/queries";
@@ -159,6 +161,9 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     backgroundProviderMode: normalizeBackgroundProviderPolicy({
       mode: settings?.backgroundProviderMode as BackgroundProviderMode,
     }).mode,
+    // TEXT columns read through their guards: an unknown value shows as the default.
+    autoPreference: isAutoPreference(settings?.autoPreference) ? settings.autoPreference : DEFAULT_AUTO_PREFERENCE,
+    autoDataBoundary: isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : DEFAULT_AUTO_DATA_BOUNDARY,
     voiceId: settings?.voiceId ?? null,
     favoriteModels: settings?.favoriteModels ?? [],
     emailBudgetAlerts: settings?.emailBudgetAlerts ?? true,

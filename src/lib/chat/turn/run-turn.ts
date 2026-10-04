@@ -1,4 +1,8 @@
 import "server-only";
+import type { TurnModel } from "./model";
+import { classifyProviderError } from "@/lib/provider-error";
+import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
+import { completionStateFor, recordRoutingOutcome } from "@/lib/router/telemetry-store";
 import { createAlevrSearchTurn } from "@/lib/search/alevr/turn";
 import type { Plan } from "@prisma/client";
 import type { EffectiveBudget } from "@/lib/spend-ceiling";
@@ -125,6 +129,8 @@ export interface SavedTurnPlan {
   autoReasoningEffort: ReasoningEffort | null | undefined;
   routingNote: string | null;
   routingWarning: string | null;
+  routingReceipt: TurnModel["routingReceipt"];
+  routingTelemetryBase: TurnModel["routingTelemetryBase"];
   turnContext: TurnContext;
   activeConnectors: ActiveConnector[];
   memory: TurnMemory;
@@ -190,6 +196,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     autoReasoningEffort,
     routingNote,
     routingWarning,
+    routingReceipt,
+    routingTelemetryBase,
     turnContext,
     activeConnectors,
     memory: { memoryEnabled, memoryProfile },
@@ -308,7 +316,16 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       acc,
       activityLog,
       roomTurnId,
+      routingReceipt,
     });
+    /** Routing telemetry for this turn, filled by whichever terminal path runs. */
+    const turnStartedAt = Date.now();
+    let turnOutcome: {
+      messageId: string | null;
+      finishReason: string | null;
+      persistedPartial: boolean;
+      costMicroUsd: number | null;
+    } | null = null;
 
     send({
       type: "meta",
@@ -679,6 +696,12 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         cacheWriteTokens: acc.tokens.cacheWriteTokens,
         costMicroUsd: researchNotice ? 0 : usage.costMicroUsd || null,
       });
+      turnOutcome = {
+        messageId: assistant.id,
+        finishReason,
+        persistedPartial: false,
+        costMicroUsd: researchNotice ? null : usage.costMicroUsd || null,
+      };
 
       // Artifacts + memory side effects. Only a finished artifact becomes a
       // version: a reply cut off at the output limit ends inside its last
@@ -824,6 +847,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         shutdown: wasGenerationAbortedForShutdown(generationId),
         leaseLost: receipt.leaseLost || err instanceof DurableReceiptLeaseLostError,
       };
+      // Overwritten below if the partial answer is saved.
+      turnOutcome = { messageId: null, finishReason: reason, persistedPartial: false, costMicroUsd: null };
+      if (classifyProviderError(err).class === "rate_limit") recordProviderRateLimit(modelInfo.provider);
       console.error("[chat] generation error", {
         generationId,
         conversationId,
@@ -866,6 +892,12 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             cacheWriteTokens: acc.tokens.cacheWriteTokens,
             costMicroUsd: researchNotice ? 0 : partialUsage.costMicroUsd || null,
           });
+          turnOutcome = {
+            messageId: assistant.id,
+            finishReason: reason,
+            persistedPartial: true,
+            costMicroUsd: researchNotice ? null : partialUsage.costMicroUsd || null,
+          };
           // Only finished artifacts, as on the success path. A Stop inside a
           // block leaves it unfinished: the partial answer is still saved,
           // and the artifact keeps its current version (X-07).
@@ -1002,6 +1034,24 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         });
       }
     } finally {
+      // Auto's feedback loop: one content-free row per saved-chat turn
+      // (src/lib/router/telemetry-store.ts). Research notices are not model
+      // turns; the smoke provider is not a model at all.
+      if (turnOutcome && !researchNotice && !deterministicSmokeProviderEnabled) {
+        const outcome = turnOutcome;
+        void recordRoutingOutcome({
+          ...routingTelemetryBase,
+          messageId: outcome.messageId,
+          effort: (autoReasoningEffort !== undefined ? autoReasoningEffort : requestedEffort) ?? null,
+          latencyMs: Date.now() - turnStartedAt,
+          firstTokenMs: null,
+          toolRounds: acc.currentRound,
+          retryCount: 0,
+          completionState: completionStateFor(outcome.finishReason, outcome.persistedPartial),
+          finishReason: outcome.finishReason,
+          costMicroUsd: outcome.costMicroUsd,
+        });
+      }
       trace.finish(traceEnd ?? { finishReason: "error", outcome: "failed", failureCode: INTERNAL_ERROR_FAILURE_CODE });
       toolWatch.releaseAll();
       stallWatchdog.stop();

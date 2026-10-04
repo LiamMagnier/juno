@@ -50,7 +50,10 @@ test("the route decides execution tools from the entitlement rows and the verifi
   assert.match(toolTurn, /skillSlug: appliedSkill\?\.candidate\.slug \?\? null,/);
   assert.doesNotMatch(toolTurn, /turnSkillSlug/);
   // One capability snapshot per request: routing and tools read the same rows.
-  assert.equal(route.match(/loadModelCapabilityMap\(/g)?.length, 1);
+  // Auto loads it with its other inputs; a hand-routed turn loads it once
+  // below, and only when Auto has not already (`if (!autoDecision)`).
+  assert.equal(route.match(/loadModelCapabilityMap\(/g)?.length, 2);
+  assert.match(route, /if \(!autoDecision\) capabilityProbes = await loadModelCapabilityMap\(/);
 });
 
 const DB_URL = process.env.TOOL_TEST_DATABASE_URL;

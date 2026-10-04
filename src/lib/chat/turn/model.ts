@@ -5,10 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { canUseModel } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
+import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId, pickAutoModel, pickAutoReasoningEffort } from "@/lib/auto-model";
+import { receiptFromDecision, type RoutingReceipt } from "@/lib/router/receipt";
+import { NoAutoCandidateError, ROUTER_VERSION, isAutoPreference, type RouteDecision } from "@/lib/router/decide";
+import { autoDataUseVerdict, isAutoDataBoundary } from "@/lib/router/data-policy";
+import { providerRetryPressure } from "@/lib/router/provider-pressure";
+import { autoBudgetRoom, autoContextTokens, autoPaidTierProviders, classifyTaskForTelemetry } from "@/lib/router/chat-inputs";
+import { loadRoutingEvidence } from "@/lib/router/telemetry-store";
 import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
-import { loadModelCapabilityMap, modelCanRoute } from "@/lib/model-capability";
+import { loadModelCapabilityMap, modelCanRoute, modelToolCallingVerdict } from "@/lib/model-capability";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { formatClarificationModelMessage } from "@/lib/clarification-wizard";
 import { formatPreflightClarificationModelMessage } from "@/lib/preflight-clarification";
@@ -104,6 +110,15 @@ export async function resolveModel({
   let routingNote: string | null = null;
   /** Set when the model actually used is NOT the one that was asked for. */
   let routingWarning: string | null = null;
+  /** Auto's full decision record, when Auto routed: the receipt and the telemetry read it. */
+  let autoDecision: RouteDecision | null = null;
+  /*
+   * The capability rows, kept for the whole request: routing reads the
+   * transport verdict here, and the tool entitlements below read the tool
+   * round-trip verdict from the same snapshot (src/lib/model-tool-probe.ts).
+   * Empty under the deterministic smoke provider, so every model is untested.
+   */
+  let capabilityProbes: Awaited<ReturnType<typeof loadModelCapabilityMap>> = new Map();
   if (isAutoModelId(requestedId)) {
     const routingMessage =
       input.preflightClarification
@@ -124,7 +139,16 @@ export async function resolveModel({
     }
     // The fair fallback: with under 10% of the month left, Auto keeps to the
     // cost-1 models. A read only (no reaping); the gate proper runs later.
-    const autoBudget = await checkBudget(user.id, plan, period, effective, { reap: false }).catch(() => null);
+    // The router's environment, read once: measured outcomes, the capability
+    // probes (tool reliability), and the room left under the account's binding
+    // window — Auto never plans a turn the account cannot pay for.
+    const [autoBudget, evidence, probes, budgetRoom] = await Promise.all([
+      checkBudget(user.id, plan, period, effective, { reap: false }).catch(() => null),
+      loadRoutingEvidence(),
+      deterministicSmokeProviderEnabled ? Promise.resolve(capabilityProbes) : loadModelCapabilityMap(MODEL_LIST.map((model) => model.id)),
+      autoBudgetRoom(user.id, plan, period, effective),
+    ]);
+    capabilityProbes = probes;
     try {
       const pick = pickAutoModel({
         message: routingMessage,
@@ -134,21 +158,41 @@ export async function resolveModel({
         // Voice keeps the provider's own search (policy.ts), so it never widens the pool.
         alevrSearch: !input.voiceMode && chatSearchAvailable(),
         lowBudget: autoBudget ? isBudgetLow(autoBudget.remainingMicroUsd, autoBudget.budgetMicroUsd) : false,
+        context: {
+          toolsOffered: input.connectors?.length ?? 0,
+          contextTokens: autoContextTokens(input, privateHistory),
+          preference: isAutoPreference(settings?.autoPreference) ? settings.autoPreference : undefined,
+          boundary: isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined,
+          paidTier: autoPaidTierProviders(),
+          evidence,
+          isProviderAvailable: (provider) => providerHealthy(provider as Provider),
+          retryPressure: providerRetryPressure,
+          toolVerdict: (modelId) => {
+            const m = getModel(modelId);
+            return m ? modelToolCallingVerdict(m, capabilityProbes) : "untested";
+          },
+          remainingBudgetMicroUsd: budgetRoom,
+        },
       });
       modelInfo = pick.model;
       autoReasoningEffort = pick.reasoningEffort;
-      routingNote = `Auto picked ${pick.model.name} — ${pick.complexity.level} prompt${
-        pick.complexity.reasons.length ? ` (${pick.complexity.reasons.slice(0, 2).join(", ")})` : ""
-      }${pick.budgetSaver ? " · saving your remaining budget" : ""}`;
+      autoDecision = pick.decision;
+      routingNote = `Auto picked ${pick.model.name} — ${pick.decision.reasons.slice(0, 2).join(", ")}`;
       logDebug("chat.auto", {
         level: pick.complexity.level,
-        minIntelligence: pick.complexity.minIntelligence,
-        reasons: pick.complexity.reasons,
+        taskClass: pick.decision.profile.taskClass,
         picked: modelInfo.id,
         reasoning: pick.reasoningEffort ?? "instant",
         candidates: pick.candidatesConsidered,
+        expectedMicroUsd: pick.decision.ranked[0]?.expectedTotalMicroUsd,
+        excluded: pick.decision.excluded,
+        degraded: pick.decision.degraded,
+        budgetSaver: pick.budgetSaver,
       });
     } catch (err) {
+      if (err instanceof NoAutoCandidateError) {
+        return NextResponse.json({ error: err.message, code: "AUTO_NO_ELIGIBLE_MODEL" }, { status: 503 });
+      }
       console.error("[chat:auto] routing failed", err);
       modelInfo = undefined;
     }
@@ -157,13 +201,6 @@ export async function resolveModel({
   }
 
   let eligible: (model: ModelInfo) => boolean;
-  /*
-   * The capability rows, kept for the whole request: routing reads the
-   * transport verdict here, and the tool entitlements below read the tool
-   * round-trip verdict from the same snapshot (src/lib/model-tool-probe.ts).
-   * Empty under the deterministic smoke provider, so every model is untested.
-   */
-  let capabilityProbes: Awaited<ReturnType<typeof loadModelCapabilityMap>> = new Map();
   if (deterministicSmokeProviderEnabled) {
     // Keep the requested model's identity in receipts and UI diagnostics while
     // replacing only the external generation call below. This makes the E2E
@@ -176,7 +213,7 @@ export async function resolveModel({
     // keeps every fallback decision in this request on the same snapshot: a
     // model cannot pass the explicit-selection check and fail the platform
     // budget degradation check because two probes changed between them.
-    capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
+    if (!autoDecision) capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
 
     // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
     // decide what a turn costs, and inline here they were reachable only by
@@ -186,13 +223,30 @@ export async function resolveModel({
     // substitution branch below. Concrete selector choices never do: a user who
     // picks Claude/GPT/etc. must not have that prompt silently sent to Gemini (or
     // any other provider) just because it is the only healthy configured lab.
+    // Under Auto, every substitute below (provider down, platform budget) must
+    // clear the same data-use terms the router applied: a reroute is still Auto
+    // choosing, and it may not land on terms the reader never accepted.
+    const autoPaidTier = autoPaidTierProviders();
+    const autoBoundary = isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined;
     eligible = (m: ModelInfo) =>
       m.modality === "chat" &&
       !m.comingSoon &&
       !isAutoModelId(m.id) &&
       isProviderConfigured(m.provider) &&
       canUseModel(plan, m.id) &&
-      modelCanRoute(m, capabilityProbes);
+      modelCanRoute(m, capabilityProbes) &&
+      (!isAutoModelId(requestedId) || autoDataUseVerdict(m, { paidTier: autoPaidTier, boundary: autoBoundary }).eligible);
+
+    // Auto's own runner-up before the generic fallback: when the pick cannot
+    // route here (an unprobed discovered model, a provider that went down
+    // since), the next candidate in the decision's ranking is the router's
+    // answer, not whichever eligible model is cheapest.
+    if (autoDecision && modelInfo && !(eligible(modelInfo) && providerHealthy(modelInfo.provider as Provider))) {
+      const next = autoDecision.ranked
+        .map((c) => getModel(c.modelId))
+        .find((m): m is ModelInfo => !!m && eligible(m) && providerHealthy(m.provider as Provider));
+      if (next) modelInfo = next;
+    }
 
     const selection = selectModel<ModelInfo>({
       requestedId,
@@ -260,6 +314,31 @@ export async function resolveModel({
     return NextResponse.json({ error: msg, code }, { status });
   }
   const modelId = modelInfo.id;
+  /**
+   * Auto's receipt for this turn ("Auto · model · effort" + "Selected for:"),
+   * from the decision that ran. Null for a turn routed by hand. When the pick
+   * was replaced after routing, the effort is recomputed for the model that
+   * actually answers and the receipt says it was rerouted.
+   */
+  let routingReceipt: RoutingReceipt | null = null;
+  if (autoDecision) {
+    const rerouted = modelInfo.id !== autoDecision.model.id;
+    if (rerouted) autoReasoningEffort = pickAutoReasoningEffort(modelInfo, autoDecision.complexity);
+    routingReceipt = {
+      ...receiptFromDecision({ ...autoDecision, reasoningEffort: autoReasoningEffort ?? null }),
+      rerouted: rerouted ? autoDecision.model.id : null,
+    };
+  }
+  /** Telemetry for this turn's outcome; written once, when the generation settles. */
+  const routingTelemetryBase = {
+    routerVersion: ROUTER_VERSION,
+    auto: !!autoDecision,
+    taskClass: autoDecision?.profile.taskClass ?? classifyTaskForTelemetry(input.message ?? ""),
+    complexity: autoDecision?.complexity.level ?? classifyPromptComplexity(input.message ?? "").level,
+    modelId,
+    provider: modelInfo.provider,
+    expectedMicroUsd: autoDecision?.ranked.find((c) => c.modelId === modelId)?.expectedTotalMicroUsd ?? null,
+  };
   // Persist the user's *selection* on the conversation (keep requested model sticky). The
   // concrete `modelId` is what every generation / message version records.
   const conversationModelId = isAutoModelId(requestedId) ? AUTO_MODEL_ID : requestedId;
@@ -274,6 +353,8 @@ export async function resolveModel({
     routingNote,
     routingWarning,
     capabilityProbes,
+    routingReceipt,
+    routingTelemetryBase,
   };
 }
 

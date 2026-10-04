@@ -1,4 +1,5 @@
 import "server-only";
+import { markRoutingSignal } from "@/lib/router/telemetry-store";
 import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { NextResponse } from "next/server";
 import { Prisma, type Plan } from "@prisma/client";
@@ -58,6 +59,8 @@ export async function acceptTurn({
   legacyOrphanConversationId,
   requestedConnectorIDs,
   conversationModelId,
+  answeringModelId,
+  deterministicSmokeProviderEnabled,
   turnContext,
   roomSetup,
 }: {
@@ -71,6 +74,9 @@ export async function acceptTurn({
   legacyOrphanConversationId: string | null;
   requestedConnectorIDs: string[];
   conversationModelId: string;
+  /** The model that will answer, for Auto's regenerate signal. */
+  answeringModelId: string;
+  deterministicSmokeProviderEnabled: boolean;
   turnContext: TurnContext;
   roomSetup: RoomTurnSetup | null;
 }) {
@@ -436,7 +442,15 @@ export async function acceptTurn({
     });
     // A room's follow-up turn answers the same message as a NEW reply: the
     // answer before it is another member's and must stay.
-    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up") staleAssistantId = last.id;
+    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up") {
+      staleAssistantId = last.id;
+      // The reader's verdict on the answer being replaced, for Auto's feedback
+      // loop: a regenerate is a miss, and a regenerate on another model is a
+      // stronger one. Marked before the new outcome takes over the message id.
+      if (!input.privateMode && !deterministicSmokeProviderEnabled) {
+        await markRoutingSignal(last.id, { regenerated: true, switchedModel: !!last.model && last.model !== answeringModelId });
+      }
+    }
     // The native clients append the user turn first and then regenerate, so
     // their file tokens arrive here: cloned onto the turn being answered,
     // once — a retry that re-sends them finds the file already there.

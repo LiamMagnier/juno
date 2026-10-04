@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { markRoutingSignal } from "@/lib/router/telemetry-store";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
@@ -33,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const version = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // Preserve the pre-edit wording as read-only history.
     const version = await tx.messageVersion.create({
       data: { messageId: message.id, content: message.content },
@@ -51,11 +52,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Later messages' own MessageVersion rows cascade with them. Their
     // artifacts do not: Artifact.messageId is SetNull too, so each one is
     // detached here with its versions and share links intact.
+    const discarded = await tx.message.findMany({
+      where: { conversationId: message.conversationId, createdAt: { gt: message.createdAt }, role: "ASSISTANT" },
+      select: { id: true },
+    });
     await tx.message.deleteMany({
       where: { conversationId: message.conversationId, createdAt: { gt: message.createdAt } },
     });
-    return version;
+    return { version, discarded: discarded.map((m) => m.id) };
   });
+  // The answers this edit discarded were not what the reader wanted: a signal
+  // for Auto's feedback loop, on content-free rows (src/lib/router/telemetry-store.ts).
+  await markRoutingSignal(result.discarded, { edited: true });
+  const version = result.version;
 
   // Version metadata so the client can grow the pager without a refetch.
   return NextResponse.json({

@@ -117,6 +117,8 @@ const AGENTS = [MIRA, SCOUT, LEDGER, ROVE];
 function detailFor(a: ClientAgent, computer: Partial<ClientAgentComputer> | null = {}): ClientAgentDetail {
   return {
     agent: a,
+    // Its weekly budget line (src/lib/budgets.ts): $3.10 of a $5.00 cap.
+    budget: { scope: "agent", subject: a.name, ceilingMicroUsd: 5_000_000, spentMicroUsd: 3_100_000, heldMicroUsd: 0, window: "week", resetsAtMs: null },
     computerConfigured: true,
     computer:
       computer === null

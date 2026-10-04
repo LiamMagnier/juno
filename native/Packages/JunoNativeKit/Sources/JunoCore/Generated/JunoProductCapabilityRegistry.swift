@@ -22,7 +22,7 @@ public struct JunoProductCapability: Sendable {
 
 public enum JunoProductCapabilityRegistry {
     public static let version = 1
-    public static let digest = "d95ff330d1c899db9ab3b660666198b76878ea903a3f1d6c64c2cb3886d6708b"
+    public static let digest = "07c29e6fe985cd0dad7ef6de01f9a9e99d01594424144956db531e499762d640"
     public static let entries: [JunoProductCapability] = [
         JunoProductCapability(
             id: "chat_streaming",
@@ -134,7 +134,19 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "auto_routing",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "cost_budgets",
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "evaluation_harness",
+            maturity: ["backend": .verified, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),

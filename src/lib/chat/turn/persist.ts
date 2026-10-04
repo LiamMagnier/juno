@@ -1,3 +1,4 @@
+import type { RoutingReceipt } from "@/lib/router/receipt";
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -24,6 +25,7 @@ export function createAssistantTurnWriter({
   acc,
   activityLog,
   roomTurnId,
+  routingReceipt,
 }: {
   user: TurnUser;
   conversationId: string;
@@ -32,6 +34,7 @@ export function createAssistantTurnWriter({
   acc: GenerationAccumulator;
   activityLog: ClientActivityEvent[];
   roomTurnId: string | null;
+  routingReceipt: RoutingReceipt | null;
 }) {
   /**
    * Persist the assistant's answer. A normal turn appends a new Message row.
@@ -76,6 +79,9 @@ export function createAssistantTurnWriter({
     const base = {
       ...assistantTurnFields({ ...data, model: modelId }, encryptMessageText),
       activity: encryptJsonField(activityLog) as unknown as Prisma.InputJsonValue,
+      // Explicit DbNull for a hand-routed turn: a regenerate that switches
+      // from Auto to a chosen model must not keep the old Auto receipt.
+      routing: routingReceipt ? (routingReceipt as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     };
     const sources = acc.sources;
     // Metadata for the pager rides along on the done chunk.

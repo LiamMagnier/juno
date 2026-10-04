@@ -113,6 +113,8 @@ async function handleChat(req: Request) {
     legacyOrphanConversationId: request.legacyOrphanConversationId,
     requestedConnectorIDs: tokens.requestedConnectorIDs,
     conversationModelId: model.conversationModelId,
+    answeringModelId: model.modelId,
+    deterministicSmokeProviderEnabled: request.deterministicSmokeProviderEnabled,
     turnContext,
     roomSetup,
   });
@@ -326,6 +328,8 @@ async function handleChat(req: Request) {
       autoReasoningEffort: model.autoReasoningEffort,
       routingNote: model.routingNote,
       routingWarning: model.routingWarning,
+      routingReceipt: model.routingReceipt,
+      routingTelemetryBase: model.routingTelemetryBase,
       turnContext,
       activeConnectors,
       memory,

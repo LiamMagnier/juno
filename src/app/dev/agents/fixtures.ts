@@ -82,6 +82,8 @@ export function miraDetail(overrides: Partial<ClientAgent> = {}): ClientAgentDet
   const a = { ...MIRA, ...overrides };
   return {
     agent: a,
+    // Its weekly budget line (src/lib/budgets.ts): $3.10 of a $5.00 cap.
+    budget: { scope: "agent", subject: a.name, ceilingMicroUsd: 5_000_000, spentMicroUsd: 3_100_000, heldMicroUsd: 0, window: "week", resetsAtMs: null },
     computerConfigured: true,
     computer: {
       enabled: true,
