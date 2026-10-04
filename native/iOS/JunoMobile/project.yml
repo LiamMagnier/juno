@@ -151,6 +151,9 @@ schemes:
         JunoMobileUITests: [test]
     run:
       config: Debug
+      # Local StoreKit testing: the plans page loads these twelve products in a
+      # Debug run on the simulator. Release builds read App Store Connect.
+      storeKitConfiguration: ../../StoreKit/Alevr.storekit
     test:
       config: Debug
       targets:

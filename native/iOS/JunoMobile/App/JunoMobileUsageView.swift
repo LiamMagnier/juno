@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoSync
 import SwiftUI
@@ -166,6 +167,7 @@ struct JunoMobileUsageView: View {
             .load(range: range, for: session.profile.id)
         breakdown = snapshot.breakdown
         plan = snapshot.plan
+        JunoMobilePlanStore.shared.update(planID: snapshot.plan?.planID)
         serverTooOld = snapshot.isServerTooOld
         // A server that simply predates the breakdown route is explained, not
         // reported as a failure — there is nothing wrong from the app's side and
@@ -511,7 +513,9 @@ private struct JunoMobileUsagePlanCard: View {
                     Text("Plan")
                         .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                     Spacer(minLength: 6)
-                    JunoStatusPill(text: plan.planName, tint: .junoAccent)
+                    Text(plan.planName)
+                        .junoFont(size: 16, relativeTo: .headline)
+                        .junoSecondaryInk()
                 }
 
                 if plan.isUnlimited {
@@ -519,7 +523,7 @@ private struct JunoMobileUsagePlanCard: View {
                         .junoFont(size: 13, relativeTo: .footnote)
                         .junoSecondaryInk()
                 } else if plan.isBrowseOnly {
-                    Text("Free is a browse-only tier. Upgrade to start using models.")
+                    Text("Your monthly allowance is used up. A plan opens more models and more usage.")
                         .junoFont(size: 13, relativeTo: .footnote)
                         .junoSecondaryInk()
                 } else {
@@ -531,6 +535,20 @@ private struct JunoMobileUsagePlanCard: View {
                     Text("\(plan.renewalLabel) \(renewsAt.formatted(date: .abbreviated, time: .omitted))")
                         .junoFont(size: 12, relativeTo: .caption)
                         .junoSecondaryInk()
+                }
+
+                if plan.plan.canUpgrade {
+                    Button {
+                        JunoMobilePlanStore.shared.showPlans()
+                    } label: {
+                        Text("See Plans")
+                            .junoFont(size: 15, relativeTo: .body, weight: .semibold)
+                            .foregroundStyle(Color.junoAccentInk)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("juno.mobile.usage.plans")
                 }
             }
         }
