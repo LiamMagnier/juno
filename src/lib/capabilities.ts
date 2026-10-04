@@ -535,6 +535,58 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
     ),
     production: { accepted: false, evidence: [], blockers: ["Shared ownership and personal memory isolation acceptance remain required."] },
   },
+  web_navigation_performance: {
+    id: "web_navigation_performance",
+    name: "Immediate web navigation",
+    summary: "Mounted app shell, intent prefetch, shared stale-while-revalidate reads and no remount on cross-section navigation, measured on a production build.",
+    status: "beta",
+    platforms: ["web"],
+    maturity: surfaces(
+      implemented("src/lib/client-cache.ts"),
+      {
+        state: "verified",
+        evidence: [
+          "src/components/app/page-transition.tsx", "src/lib/client-cache.ts", "src/lib/intent-prefetch.ts",
+          "scripts/perf/measure-navigation.mjs", "docs/rework/program/PERFORMANCE.md", "docs/rework/program/perf/navigation-after-local.json",
+        ],
+        verification: {
+          command: "node scripts/perf/measure-navigation.mjs --runs 3 [--profile remote] && npx tsx --test tests/client-cache.test.ts",
+          checkedAt: "2026-10-04",
+          scope: "Production build on loopback with a seeded local account, Chrome headless 1440×900, unthrottled and 60 ms/20 Mbit/CPU×2. Not a hosted deployment; no real-user timing.",
+        },
+      },
+      planned("Native shells navigate natively; this web benchmark does not measure them."),
+      planned("Native shells navigate natively; this web benchmark does not measure them."),
+      planned("Native shells navigate natively; this web benchmark does not measure them."),
+    ),
+    production: { accepted: false, evidence: [], blockers: ["No measurement against the hosted deployment (real database latency, real accounts) has been recorded."] },
+  },
+  chat_transcript_virtualization: {
+    id: "chat_transcript_virtualization",
+    name: "Long-conversation transcript windowing",
+    summary: "Dynamic-height windowing with reader anchoring, find and deep-link jumps to unmounted rows, and a streamed reply that re-renders only its own row.",
+    status: "beta",
+    platforms: ["web", "macos"],
+    maturity: surfaces(
+      planned("Client rendering concern; the server still sends every message of a conversation in the route payload."),
+      {
+        state: "verified",
+        evidence: [
+          "src/lib/chat/transcript-window.ts", "src/hooks/use-transcript-window.ts", "src/hooks/use-latest-handler.ts",
+          "src/components/chat/message-list.tsx", "tests/transcript-window.test.ts", "e2e/transcript-window.spec.ts", "e2e/transcript-route.spec.ts",
+        ],
+        verification: {
+          command: "npx tsx --test tests/transcript-window.test.ts && PERF_LONG_CONVERSATION_ID=<seeded> npx playwright test --config scripts/perf/playwright.perf.config.ts e2e/transcript-window.spec.ts e2e/transcript-route.spec.ts",
+          checkedAt: "2026-10-04",
+          scope: "Development server for render counts and anchoring; production build for frame times and long tasks. Screen-reader behaviour checked structurally (full-transcript mode, log role), not with an assistive-technology user.",
+        },
+      },
+      implemented("native/macOS/JunoDesktop/App/ChatTranscript.swift"),
+      planned("iOS transcript windowing has not been measured against a 1,000-message conversation."),
+      planned("iPadOS transcript windowing has not been measured against a 1,000-message conversation."),
+    ),
+    production: { accepted: false, evidence: [], blockers: ["No hosted, real-account acceptance; the 1,000-message route payload is still sent whole."] },
+  },
 };
 
 /** Implementation availability; never an assertion of deployment or acceptance. */
