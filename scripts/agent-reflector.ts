@@ -50,8 +50,8 @@ async function sweep(): Promise<boolean> {
     // bounded step (src/lib/agents/goal-runner.ts). Their tasks run on the
     // Work runner like any other; this only decides and starts them.
     if (!stopping) {
-      const goals = await sweepGoals();
-      if (goals.advanced > 0) console.log(`[agent-reflector] goals advanced=${goals.advanced}`);
+      const driven = await sweepGoals();
+      if (driven.advanced > 0) console.log(`[agent-reflector] driven=${driven.advanced}`);
     }
     return true;
   } catch (error) {
