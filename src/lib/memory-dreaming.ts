@@ -38,6 +38,13 @@ export const DREAM_ACCOUNTS_PER_TICK = 5;
 /** Conversations distilled per account per tick (two chunks each, see backfillMemories). */
 export const DREAM_CONVERSATIONS_PER_ACCOUNT = 2;
 /**
+ * Conversations a Batch API pass reads per account per tick. Larger, because
+ * a batched pass advances each conversation by one chunk per batch round
+ * (queue, then apply on a later tick) instead of two chunks inline — and a
+ * queued prompt costs nothing until the batch runs, at half price.
+ */
+export const DREAM_BATCH_CONVERSATIONS_PER_ACCOUNT = 6;
+/**
  * Project summaries checked per account per productive tick — the projects
  * with the most recent memory activity first. Each one that turns out stale
  * is a model call, so this bounds them the way the line above bounds reading.
