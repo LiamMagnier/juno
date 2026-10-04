@@ -145,6 +145,26 @@
 .plans-usage > i[data-on] { background: hsl(var(--foreground) / 0.82); }
 .plans-col[data-selected] { background: hsl(var(--foreground) / 0.035); }
 
+/* The plan chips: the one row that switches the decision above it. */
+.plans-chips { scrollbar-width: none; }
+.plans-chips::-webkit-scrollbar { display: none; }
+.plans-chip {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  flex: none;
+  min-width: 84px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+  transition: background-color 220ms var(--alv-ease, ease), color 220ms var(--alv-ease, ease), box-shadow 220ms var(--alv-ease, ease);
+}
+.plans-chip:hover { color: hsl(var(--foreground)); background: hsl(var(--foreground) / 0.04); }
+.plans-chip[aria-checked="true"] { color: hsl(var(--foreground)); background: hsl(var(--card)); box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.14); }
+.plans-chip:active { transform: scale(0.98); }
+
 /* The price changing: the old figure leaves upward, the new one rises in. */
 @keyframes plans-roll-in { from { opacity: 0; transform: translateY(0.35em); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 .plans-roll { display: inline-block; animation: plans-roll-in 520ms var(--alv-ease) both; }
@@ -152,6 +172,7 @@
 @media (prefers-reduced-motion: reduce) {
   .plans-stage, .plans-node, .plans-node-point, .plans-node-name { transition: none; }
   .plans-roll { animation: none; }
+  .plans-chip { transition: none; }
 }
 
 /* ── Phone: the stage keeps the orbits, the list does the choosing ─────── */
