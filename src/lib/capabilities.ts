@@ -449,16 +449,33 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   semantic_artifacts: {
     id: "semantic_artifacts",
     name: "Editable deliverables",
-    summary: "Existing documents, spreadsheets, decks and sites with typed validation.",
+    summary:
+      "Workbooks (formulas, recalculation, charts), documents (blocks, comments, tracked revisions) and decks (theme, layouts, charts, notes) stored as semantic models, edited incrementally by operations from chat or the canvas, versioned with undo and proposals, exported to XLSX/DOCX/PPTX.",
     status: "beta",
-    platforms: ["web", "macos"],
+    platforms: ["web"],
     maturity: surfaces(
-      implemented("src/lib/work/deliverables/index.ts"),
-      implemented("src/components/artifacts/artifact-preview.tsx"),
-      implemented("native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift"),
-      planned("Native integration and acceptance have not been verified in this audit."),
+      verified(
+        "npx tsx --test tests/semantic-workbook.test.ts tests/semantic-document.test.ts tests/semantic-deck.test.ts tests/artifact-ops.test.ts && SEMANTIC_TEST_DATABASE_URL=<throwaway> NODE_OPTIONS=--conditions=react-server npx tsx --test --experimental-test-module-mocks tests/semantic-artifact-chat.integration.test.ts",
+        "src/lib/work/deliverables/semantic/index.ts",
+        "src/lib/artifact-ops.ts",
+        "src/app/api/artifacts/[id]/ops/route.ts",
+        "tests/semantic-artifact-chat.integration.test.ts"
+      ),
+      implemented(
+        "src/components/semantic/semantic-artifact-view.tsx",
+        "src/components/canvas/canvas-panel.tsx",
+        "src/app/dev/deliverables/gallery.tsx"
+      ),
+      planned("Installed Mac builds skip SPREADSHEET/DOCUMENT/PRESENTATION rows (lenient NativeArtifactKind decode); no native semantic view yet."),
+      planned("Installed iOS builds skip SPREADSHEET/DOCUMENT/PRESENTATION rows (lenient NativeArtifactKind decode); no native semantic view yet."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Real workflow, deployment and cross-platform acceptance are pending."] },
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: [
+        "Signed-in canvas acceptance with a real model, native clients and Office/Keynote/Numbers open checks are pending.",
+      ],
+    },
   },
   credential_broker: {
     id: "credential_broker",
