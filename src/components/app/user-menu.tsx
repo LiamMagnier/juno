@@ -19,6 +19,8 @@ import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
 import { DotIdenticon, DotFillBar } from "@/components/signature/dot-matrix";
 import { cn } from "@/lib/utils";
+import type { ClientSpend } from "@/types/app";
+import type { ClientQuota } from "@/types/chat";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { menuEntranceClass, menuInsetSeparatorClass } from "@/components/chat/composer-plus-menu";
 import { Pressable } from "@/components/ui/pressable";
@@ -129,8 +131,9 @@ export function UserMenu({
   onOpenArchived?: () => void;
   archivedLabel?: string;
 }) {
-  const { user, quota, features, setSidebarOpen } = useApp();
+  const { user, quota, spend, features, setSidebarOpen } = useApp();
   const plan = PLANS[quota.plan];
+  const usedPct = monthUsedPct(spend);
   const mod = useModifierKeyLabel();
   /* Every row leaves the menu for somewhere else, so every row closes the
      phone drawer this menu sits in, as a row in the column does. The drawer's
@@ -235,33 +238,32 @@ export function UserMenu({
             nothing about usage below 80% and one word above it. A hairline
             block rather than a filled one (the homepage's product windows draw
             structure with 1px lines, not slabs), flush with the rows' edges and
-            at their radius, with its text on the rows' text column. */}
+            at their radius, with its text on the rows' text column.
+
+            Every plan is metered by tokens now (Free included: a small
+            allowance on the fast models), so this reads the month's spend
+            against the enforced budget, as a share. The euro figures live in
+            Settings › Usage, where there is room to say what they mean. */}
         <div className="rounded-control border border-foreground/[0.08] px-[9px] py-2.5">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-caption text-muted-foreground">Messages</span>
-            {/* tabular-nums: this counter changes in place as messages are sent,
-                and proportional digits make the readout shuffle sideways when
-                9 becomes 10. */}
-            {/* A count is a figure (mono, like the menu's key hints); "No cap"
-                is a word and stays in the sans. */}
+            <span className="text-caption text-muted-foreground">
+              {quota.plan === "FREE" ? "Free allowance" : "This month"}
+            </span>
+            {/* tabular-nums: the share changes in place as replies land, and
+                proportional digits make the readout shuffle sideways. A share
+                is a figure (mono, like the menu's key hints); "No cap" is a
+                word and stays in the sans. */}
             <span
               className={cn(
                 "truncate text-caption tabular-nums text-foreground",
-                quota.limit != null && "font-mono tracking-[0.02em]"
+                usedPct != null && "font-mono tracking-[0.02em]"
               )}
             >
-              {quota.limit == null ? "No cap" : `${quota.used} / ${quota.limit}`}
+              {usedPct == null ? "No cap" : `${usedPct}% used`}
             </span>
           </div>
-          {quota.limit != null ? (
-            <DotFillBar value={quota.used} max={quota.limit} dots={18} className="mt-2" />
-          ) : (
-            <p className="mt-1 text-caption leading-4 text-muted-foreground">
-              {quota.plan === "OWNER"
-                ? "Everything unlocked, with no usage cap."
-                : "All models, with a monthly token limit."}
-            </p>
-          )}
+          {usedPct != null && <DotFillBar value={usedPct} max={100} dots={18} className="mt-2" />}
+          <p className="mt-1.5 text-caption leading-4 text-muted-foreground">{planUsageCaption(quota.plan)}</p>
         </div>
 
         <Separator />
@@ -337,4 +339,18 @@ export function UserMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/** The month's spend (held generations included) as a whole share of the enforced budget; null when nothing meters the account. */
+function monthUsedPct(spend: ClientSpend): number | null {
+  if (spend.budgetMicroUsd == null || spend.budgetMicroUsd <= 0) return null;
+  return Math.min(100, Math.round(((spend.spentMicroUsd + spend.reservedMicroUsd) / spend.budgetMicroUsd) * 100));
+}
+
+/** One line on what the plan's meter covers. */
+function planUsageCaption(plan: ClientQuota["plan"]): string {
+  if (plan === "OWNER") return "Everything unlocked, with no usage cap.";
+  if (plan === "FREE") return "A small monthly allowance on the fast models.";
+  if (plan === "LITE") return "Everyday models, with a monthly token limit.";
+  return "Every model, with a monthly token limit.";
 }

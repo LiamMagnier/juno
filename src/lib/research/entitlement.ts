@@ -54,7 +54,7 @@ export const RESEARCH_REFUSAL_COPY = {
   skippedTitle: "Research was skipped",
   resetsOn: "Resets on",
   reasons: {
-    plan: "Research is available on paid plans.",
+    plan: "Research is included from the Pro plan.",
     not_configured: "Research isn't set up on this server.",
     workspace: "This project doesn't allow Research.",
     private: "Research isn't available in private chats.",

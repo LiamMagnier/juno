@@ -151,7 +151,7 @@ export const RUN_COPY = {
 
   // ── Research refusals (§9.9) ───────────────────────────────────────────────
   researchUnconfigured: "Research isn't set up on this server.",
-  researchPlan: "Research is available on paid plans.",
+  researchPlan: "Research is included from the Pro plan.",
   researchWorkspace: "This project doesn't allow Research.",
   researchPrivate: "Research isn't available in private chats.",
   researchLockdown: "Research is off (Lockdown).",

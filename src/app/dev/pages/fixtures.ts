@@ -85,7 +85,7 @@ export function bootstrap(): AppBootstrap {
     folders: [],
     features: {
       billing: true,
-      purchasablePlans: ["PRO", "MAX"],
+      purchasablePlans: ["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"],
       purchasableAnnualPlans: [],
       serverStt: false,
       serverTts: false,

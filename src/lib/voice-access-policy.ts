@@ -37,7 +37,7 @@ export async function evaluateVoiceAccess(
       allowed: false,
       owner,
       plan,
-      denial: { status: 403, error: "Voice mode requires a paid plan." },
+      denial: { status: 403, error: "Voice mode is included from the Pro plan." },
     };
   }
   if (owner) return { allowed: true, owner, plan };
