@@ -9,6 +9,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import { eurPerUsd } from "@/lib/spend";
 import { grantCredit, rewardReferralForPayment } from "@/lib/billing/credit-ledger";
 import { renewalNoticeForSubscription } from "@/lib/billing/renewal-reminders";
+import { sendOrderConfirmation } from "@/lib/billing/order-confirmation";
+import { PLANS } from "@/lib/plans";
 import {
   checkoutIntent,
   customerIdOf,
@@ -195,6 +197,23 @@ export async function POST(req: Request) {
           await syncSubscription(sub, session.client_reference_id);
         } else if (intent.kind === "topup") {
           await creditTopUp(session as unknown as CheckoutSessionLike);
+        }
+        // L221-13: confirm the contract on a durable medium, Terms of Sale attached.
+        const buyerId = session.metadata?.userId || session.client_reference_id;
+        if (intent.kind !== "ignore" && buyerId) {
+          const meta = session.metadata ?? {};
+          const plan = meta.plan && meta.plan in PLANS ? PLANS[meta.plan as keyof typeof PLANS] : null;
+          void sendOrderConfirmation({
+            userId: buyerId,
+            sessionId: session.id,
+            kind: intent.kind,
+            itemLabel:
+              intent.kind === "topup"
+                ? `${PRODUCT_NAME} usage top-up (${meta.pack ?? ""} € HT)`
+                : `${PRODUCT_NAME} ${plan?.name ?? "subscription"}, ${meta.interval === "year" ? "yearly / annuel" : "monthly / mensuel"}`,
+            amountTotalCents: session.amount_total ?? null,
+            amountTaxCents: session.total_details?.amount_tax ?? null,
+          });
         }
         break;
       }

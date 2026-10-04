@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { ensureUserDefaults } from "@/lib/auth";
 import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe, priceIdForPlan } from "@/lib/stripe";
+import { subscriptionConsentMarkdown } from "@/lib/billing/consent";
 
 const schema = z.object({
   plan: z.enum(["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"]),
@@ -74,10 +75,7 @@ export async function POST(req: Request) {
     consent_collection: { terms_of_service: "required" },
     custom_text: {
       terms_of_service_acceptance: {
-        message:
-          "I accept the [Terms of Sale](" +
-          `${env.appUrl}/legal/cgv` +
-          ") and ask for my subscription to start now, before the 14-day withdrawal period ends. If I withdraw within it, I pay for the service provided until then; I acknowledge that I lose my right of withdrawal once the service has been fully provided. / J'accepte les CGV et demande que mon abonnement commence dès maintenant, avant la fin du délai de rétractation de 14 jours. Si je me rétracte pendant ce délai, je paie le service fourni jusque-là ; je reconnais perdre mon droit de rétractation une fois le service pleinement exécuté.",
+        message: subscriptionConsentMarkdown(env.appUrl),
       },
     },
     success_url: `${env.appUrl}/chat?upgraded=1`,

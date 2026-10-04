@@ -14,6 +14,7 @@ import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { UsageHistory } from "@/components/settings/usage-history";
 import { TopUpCard } from "@/components/settings/top-up-card";
 import { ReferralCard } from "@/components/settings/referral-card";
+import { CancelSubscription } from "@/components/settings/cancel-subscription";
 import {
   formatCountdown,
   formatDate,
@@ -171,6 +172,13 @@ export function BillingSection() {
             </div>
           )}
         </div>
+        {/* Résiliation en ligne (L215-1-1, D215-1): a named "Cancel subscription"
+            control in the app, not only inside Stripe's portal. */}
+        {features.billing && quota.plan !== "FREE" && quota.plan !== "OWNER" && (
+          <div className="pb-4">
+            <CancelSubscription />
+          </div>
+        )}
       </SettingsGroup>
 
       <SettingsGroup title="Usage">

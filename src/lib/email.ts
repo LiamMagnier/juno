@@ -30,6 +30,8 @@ export interface SendEmailInput {
   html: string;
   /** Plain-text alternate (always provide one — some clients prefer it). */
   text?: string;
+  /** Files to attach; `content` is base64. */
+  attachments?: Array<{ filename: string; content: string }>;
 }
 
 export type SendEmailResult =
@@ -57,6 +59,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         subject: input.subject,
         html: input.html,
         ...(input.text ? { text: input.text } : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       }),
     });
     if (!res.ok) {

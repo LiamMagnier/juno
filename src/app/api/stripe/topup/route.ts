@@ -7,6 +7,7 @@ import { getUserPlan } from "@/lib/usage";
 import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe, priceIdForTopUp } from "@/lib/stripe";
 import { TOP_UP_PACKS, canBuyTopUp } from "@/lib/credits";
+import { topUpConsentMarkdown } from "@/lib/billing/consent";
 
 /**
  * One-time usage top-up: POST { pack: "5" | "20" } → { url } of a Stripe
@@ -83,10 +84,7 @@ export async function POST(req: Request) {
     consent_collection: { terms_of_service: "required" },
     custom_text: {
       terms_of_service_acceptance: {
-        message:
-          "I accept the [Terms of Sale](" +
-          `${env.appUrl}/legal/cgv` +
-          ") and ask for this usage credit to be available now. I acknowledge that I lose my 14-day right of withdrawal once it is. / J'accepte les CGV et demande que ce crédit d'usage soit disponible immédiatement ; je reconnais perdre mon droit de rétractation de 14 jours dès lors.",
+        message: topUpConsentMarkdown(env.appUrl),
       },
     },
     success_url: `${env.appUrl}/settings?section=billing&topup=1`,
