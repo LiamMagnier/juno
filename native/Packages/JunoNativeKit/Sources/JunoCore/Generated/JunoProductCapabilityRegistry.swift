@@ -22,7 +22,7 @@ public struct JunoProductCapability: Sendable {
 
 public enum JunoProductCapabilityRegistry {
     public static let version = 1
-    public static let digest = "4a02a4b3104f3f9d3e272ca75978e987053ea02463159ca884dfa57c4f873527"
+    public static let digest = "7cd3573c6b2df522c1ef8f218f97ee18973bcdece645c46e7a55a8e6143ce6d5"
     public static let entries: [JunoProductCapability] = [
         JunoProductCapability(
             id: "chat_streaming",
@@ -50,7 +50,7 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "agent_swarm_orchestration",
-            maturity: ["backend": .implemented, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web", "macos"],
             productionAccepted: false
         ),
@@ -146,13 +146,13 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "orbit_rooms",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .verified, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
             id: "orbit_goals",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web"],
             productionAccepted: false
         ),
