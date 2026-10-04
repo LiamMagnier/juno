@@ -227,6 +227,15 @@ export function updateGoal(
   return call(`${base(id)}/goals/${encodeURIComponent(goalId)}`, { method: "PATCH", body: patch }, (d) => d.goal as ClientAgentGoal);
 }
 
+/** "Keep working on it" / "Continue": the agent drives this goal one bounded step now. */
+export function advanceGoal(id: string, goalId: string): Promise<AgentOutcome<{ goal: ClientAgentGoal | null; busy: boolean }>> {
+  return call(
+    `${base(id)}/goals/${encodeURIComponent(goalId)}/advance`,
+    { method: "POST" },
+    (d) => ({ goal: (d.goal as ClientAgentGoal | null) ?? null, busy: d.busy === true })
+  );
+}
+
 export function deleteGoal(id: string, goalId: string): Promise<AgentOutcome<true>> {
   return call(`${base(id)}/goals/${encodeURIComponent(goalId)}`, { method: "DELETE" }, () => true as const);
 }

@@ -2684,6 +2684,20 @@ model WorkSession {
   /// still with the member it was created for.
   ownerTransferredAt   DateTime?
 
+  // --- the work ledger's task fields (src/lib/work/board.ts) ----------------
+  /// The durable goal this task advances, when one does (`AgentGoal.id`).
+  goalId               String?
+  /// Which step of that goal: the milestone id, or "next" for a goal without milestones.
+  goalStepKey          String?
+  /// Tasks that must complete before this one may start. Same account, checked on write.
+  dependsOnSessionIds  String[] @default([])
+  /// When it should be done by. Past it the board says overdue; nothing is killed.
+  deadlineAt           DateTime?
+  /// What "done" means for this task, checked by the person or the goal's driver.
+  completionCriteria   String?  @db.Text
+  /// Attempts this task may get from automatic retries (a person may always retry).
+  maxAttempts          Int      @default(1)
+
   title       String
   titleSource String @default("default")
   /// What the user actually asked for, verbatim. The runs paraphrase it into
@@ -2751,6 +2765,7 @@ model WorkSession {
   @@index([conversationId])
   @@index([userId, agentId, lastActivityAt])
   @@index([parentSessionId])
+  @@index([userId, goalId, createdAt])
 }
 
 /// One connected app a single task is allowed to reach.
@@ -4140,6 +4155,40 @@ model AgentGoal {
   lastCheckInAt   DateTime?
   lastCheckInNote String?   @db.Text
   dueAt           DateTime?
+
+  // --- durable goal (docs/rework/program/ORBIT.md §Goals) -------------------
+  // `title` + `detail` are the objective. Everything below is what lets an
+  // agent keep at it across sessions without being reminded, and what keeps
+  // that bounded: a goal never runs more than `maxRuns` tasks or spends past
+  // `budgetMicroUsd` before it stops and asks. The rules are pure, in
+  // src/lib/agents/goals.ts; the driver is src/lib/agents/goal-runner.ts and
+  // its tasks are ordinary Work sessions (`WorkSession.goalId`), never a
+  // second queue.
+
+  /// [{id, title, done, sessionId?, doneAt?}], in order. At most 12.
+  milestones      Json      @default("[]")
+  /// ["The report cites at least 5 primary sources", …]. At most 8.
+  successCriteria Json      @default("[]")
+  /// [{kind, text, at}] — what is stopping it now, in the person's words.
+  blockers        Json      @default("[]")
+  /// 0..100, derived from milestones and stored so lists need no join.
+  progress        Int       @default(0)
+  /// One sentence: what happens next, or what it is waiting for.
+  nextAction      String?   @db.Text
+  /// The goal's own spend cap across all its tasks, micro-USD. Null: the agent's cap applies.
+  budgetMicroUsd  Int?
+  spentMicroUsd   Int       @default(0)
+  /// Bounded execution: tasks this goal may start in total before it asks to
+  /// continue. 0 means the goal is not driven at all (a reflection topic, as
+  /// every goal was before durable goals): the sweep never starts its work.
+  maxRuns         Int       @default(0)
+  runsUsed        Int       @default(0)
+  /// Attempts one milestone gets (an interrupted run that did nothing is retried within this).
+  maxAttemptsPerStep Int    @default(2)
+  /// The driver's lease, so two sweeps (or a sweep and a press) never advance one goal twice.
+  advanceLeaseUntil DateTime?
+  lastAdvancedAt  DateTime?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -4147,6 +4196,7 @@ model AgentGoal {
   agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@index([agentId, status, createdAt])
+  @@index([status, lastAdvancedAt])
   @@index([userId, createdAt])
 }
 

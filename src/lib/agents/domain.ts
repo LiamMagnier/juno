@@ -174,6 +174,13 @@ export const AGENT_EVENT_KINDS = [
   "payment_issued",
   // iMessage (src/lib/channels): a text reached this agent.
   "channel_message",
+  // Durable goals (src/lib/agents/goal-runner.ts): a step started or finished,
+  // the goal stopped to ask, or it was met.
+  "goal_step",
+  "goal_blocked",
+  "goal_achieved",
+  // Teams (src/lib/agents/team.ts): a temporary specialist team ran a request.
+  "team_run",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 
@@ -547,11 +554,27 @@ export const patchAgentSchema = z
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 export type PatchAgentInput = z.infer<typeof patchAgentSchema>;
 
+/** A milestone as a request names it: a title, or {id?, title, done?}. */
+const goalMilestoneInput = z.union([
+  z.string().trim().min(1).max(160),
+  z.object({ id: z.string().trim().max(40).optional(), title: z.string().trim().min(1).max(160), done: z.boolean().optional() }),
+]);
+
+/** The durable-goal fields (src/lib/agents/goals.ts), shared by create and patch. */
+const durableGoalFields = {
+  milestones: z.array(goalMilestoneInput).max(12).optional(),
+  successCriteria: z.array(z.string().trim().min(1).max(240)).max(8).optional(),
+  /** Tasks this goal may start before it asks; 0 turns driving off. */
+  maxRuns: z.int().min(0).max(50).optional(),
+  budgetMicroUsd: z.int().min(0).max(MAX_MEMBER_BUDGET_MICRO_USD).nullable().optional(),
+};
+
 export const createGoalSchema = z.object({
   title: z.string().trim().min(1).max(MAX_GOAL_TITLE_CHARS),
   detail: z.string().trim().max(MAX_GOAL_DETAIL_CHARS).default(""),
   cadence: z.enum(AGENT_GOAL_CADENCES).default("weekly"),
   dueAt: z.iso.datetime().nullable().optional(),
+  ...durableGoalFields,
 });
 
 export const patchGoalSchema = z
@@ -561,6 +584,7 @@ export const patchGoalSchema = z
     cadence: z.enum(AGENT_GOAL_CADENCES).optional(),
     status: z.enum(AGENT_GOAL_STATUSES).optional(),
     dueAt: z.iso.datetime().nullable().optional(),
+    ...durableGoalFields,
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 

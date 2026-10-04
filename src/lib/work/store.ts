@@ -1075,6 +1075,36 @@ export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
   return { claimed: true, run };
 }
 
+/**
+ * The executor's heartbeat: extends its own lease on a live run.
+ *
+ * Fenced to the lease holder and to the leased statuses, exactly like
+ * `startLeaseRenewal` in scripts/work-runner.ts, so a worker whose lease
+ * already lapsed (and whose run the sweep ended or another worker took)
+ * cannot steal it back. Returns false when the heartbeat no longer holds
+ * anything, which is the executor's signal to stop.
+ */
+export async function renewRunLease(input: {
+  runId: string;
+  userId: string;
+  executorId: string;
+  leaseMs?: number;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const renewed = await prisma.workRun.updateMany({
+    where: {
+      id: input.runId,
+      userId: input.userId,
+      claimedBy: input.executorId,
+      status: { in: [...WORK_LEASED_STATUSES] },
+      leaseExpiresAt: { gte: now },
+    },
+    data: { leaseExpiresAt: new Date(now.getTime() + (input.leaseMs ?? RUN_LEASE_MS)) },
+  });
+  return renewed.count === 1;
+}
+
 // ---------------------------------------------------------------------------
 // Checkpoints and parking
 // ---------------------------------------------------------------------------
