@@ -127,15 +127,20 @@ export function chooseSpecialists(request: string, asked?: readonly string[] | n
  * over everything. Validated as a DAG by the swarm coordinator (it throws on a
  * cycle, which this shape cannot produce, so a throw is a bug, not input).
  */
+/** A member's share of the team's budget, in thousandths, given the team's roles. */
+export function teamBudgetShare(role: TeamRole, roles: readonly TeamRole[]): number {
+  const total = roles.reduce((sum, r) => sum + BUDGET_WEIGHT[r], 0);
+  return total > 0 ? Math.floor((BUDGET_WEIGHT[role] * 1000) / total) : 0;
+}
+
 export function planTeam(request: string, asked?: readonly string[] | null): TeamPlanNode[] {
   const specialists = chooseSpecialists(request, asked);
+  const roles: TeamRole[] = [...specialists, "critic", "synthesis"];
   const nodes: TeamPlanNode[] = [
-    ...specialists.map((role) => ({ role, dependsOn: [] as TeamRole[], budgetShare: BUDGET_WEIGHT[role] })),
-    { role: "critic", dependsOn: [...specialists], budgetShare: BUDGET_WEIGHT.critic },
-    { role: "synthesis", dependsOn: [...specialists, "critic"], budgetShare: BUDGET_WEIGHT.synthesis },
+    ...specialists.map((role) => ({ role, dependsOn: [] as TeamRole[], budgetShare: teamBudgetShare(role, roles) })),
+    { role: "critic", dependsOn: [...specialists], budgetShare: teamBudgetShare("critic", roles) },
+    { role: "synthesis", dependsOn: [...specialists, "critic"], budgetShare: teamBudgetShare("synthesis", roles) },
   ];
-  const total = nodes.reduce((sum, node) => sum + node.budgetShare, 0);
-  for (const node of nodes) node.budgetShare = Math.floor((node.budgetShare * 1000) / total);
   const dag = new AgentSwarmCoordinator(`team-plan`, request, TEAM_MAX_PARALLEL);
   for (const node of nodes) {
     dag.addTask(TEAM_ROLE_INFO[node.role].swarmRole, node.role, { id: node.role, dependencies: node.dependsOn });

@@ -41,6 +41,7 @@ import {
   composeTeamNodePrompt,
   planTeam,
   planTeamTick,
+  teamBudgetShare,
   teamMemberSentence,
   type TeamNodeState,
   type TeamRole,
@@ -110,8 +111,6 @@ export async function createTeamForLead(input: {
           dependsOnSessionIds: node.dependsOn.map((role) => memberSessionId(input.lead.id, role)),
           dependencyMode: "settled",
           maxAttempts: TEAM_NODE_MAX_ATTEMPTS,
-          // The member's slice of the lead's budget, in thousandths; read at start.
-          completionCriteria: `budgetShare=${node.budgetShare}`,
         },
       });
       if (info.connectors && connectors.length) {
@@ -157,10 +156,6 @@ async function runOutput(userId: string, runId: string): Promise<string | null> 
   return typeof text === "string" && text.trim() ? text : null;
 }
 
-function shareOf(member: Pick<WorkSession, "completionCriteria">): number {
-  const match = /budgetShare=(\d+)/.exec(member.completionCriteria ?? "");
-  return match ? Math.min(1000, Number(match[1])) : 200;
-}
 
 export type AdvanceTeamOutcome =
   | { kind: "skipped"; reason: string }
@@ -327,7 +322,10 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
         requiredCapabilities: TEAM_ROLE_INFO[role].capabilities,
         permissionPolicy: { ...leadPolicy, policy, session: policy, team: role } as Prisma.InputJsonValue,
         budget: {
-          maxCostMicroUsd: leadRun!.maxCostMicroUsd > 0 ? Math.max(1, Math.floor((leadRun!.maxCostMicroUsd * shareOf(member)) / 1000)) : 0,
+          maxCostMicroUsd:
+            leadRun!.maxCostMicroUsd > 0
+              ? Math.max(1, Math.floor((leadRun!.maxCostMicroUsd * teamBudgetShare(role, states.map((st) => st.role))) / 1000))
+              : 0,
           maxTokens: 0,
           maxRuntimeMs: 0,
         },
