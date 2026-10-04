@@ -206,6 +206,14 @@ export interface RecordSpendInput {
    */
   costUsd?: number;
   /**
+   * The call went through the provider's Batch API, which bills tokens at a
+   * discount (`batchPriceMultiplier`). The user is billed what Juno paid: the
+   * recompute from tokens applies the same discount, so the "never underbill"
+   * max below cannot quietly restore the interactive price. A caller passing
+   * `costUsd` with this flag passes the already-discounted figure.
+   */
+  batch?: boolean;
+  /**
    * Set only by a writer that can legitimately retry the same charge — today,
    * the voice relay, which re-sends any delta it could not confirm. The unique
    * index on (userId, idempotencyKey) turns that retry into a no-op instead of
@@ -262,6 +270,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
           promptChars: input.promptChars,
           completionChars: input.completionChars,
           reasoningChars: input.reasoningChars,
+          batch: input.batch,
         });
         promptTokens = billed.promptTokens;
         completionTokens = billed.completionTokens;
