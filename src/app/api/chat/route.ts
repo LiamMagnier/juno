@@ -242,7 +242,7 @@ import {
   roomSpeakers,
   type RoomTurnSetup,
 } from "@/lib/agents/room-store";
-import { buildRoomPromptBlock, labelRoomHistory } from "@/lib/agents/rooms";
+import { buildRoomPromptBlock, canAskMember, labelRoomHistory } from "@/lib/agents/rooms";
 import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isGemini3OrLater } from "@/lib/gemini-core";
@@ -360,10 +360,17 @@ function refuse(rejection: EntitlementRejection) {
  */
 /** Whether the answering member of a room may ask another one (`ask_room_member`). */
 function roomMayAsk(setup: RoomTurnSetup, roomMessageId: string | null): boolean {
+  // Offered only when some member could actually be asked: the same pure rule
+  // `askRoomMember` enforces (cap, loop guard, paused), so the prompt never
+  // invites a call the room would refuse.
+  const turns = setup.messageTurnAgentIds.map((agentId) => ({ agentId }));
   return (
     !!roomMessageId &&
     setup.mode.kind !== "retry" &&
-    setup.room.members.some((member) => member.agentId !== setup.speaker.agentId && !member.paused)
+    setup.room.members.some(
+      (member) =>
+        canAskMember({ fromAgentId: setup.speaker.agentId, targetAgentId: member.agentId, members: setup.room.members, turns }).ok
+    )
   );
 }
 
