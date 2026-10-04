@@ -1,5 +1,7 @@
 "use client";
 
+import { AgentThreadContext } from "@/components/agents/agent-thread-context";
+import type { RoomSpeaker } from "@/lib/agents/room-client";
 import * as React from "react";
 import { contextReceiptFromActivity } from "@/lib/chat/context-tokens";
 import { ArrowDown } from "@/components/ui/icons";
@@ -82,6 +84,21 @@ interface MessageListProps {
    * request". Chat is the default.
    */
   surface?: "chat" | "code";
+  /**
+   * In a room (src/lib/agents/rooms.ts): who wrote this reply, drawn as that
+   * agent's byline, with the handoff line ("Mira asked Scout to check the
+   * pricing") above an asked member's reply. Null for every other message.
+   */
+  speakerFor?: (message: ChatMessage, isLast: boolean) => RoomSpeaker | null;
+}
+
+/** "Mira asked Scout to check the pricing": an annotation, not a card. */
+function RoomHandoffLine({ text }: { text: string }) {
+  return (
+    <p className="mb-2 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in">
+      {text}
+    </p>
+  );
 }
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
@@ -263,7 +280,9 @@ export function MessageList(props: MessageListProps) {
             return <React.Fragment key={m.renderKey ?? m.id}>
             {gap > 0 && <div aria-hidden style={{ height: gap }} />}
             <MeasuredTurn message={m} observe={transcript.observeRow}>
-            <TranscriptMessage
+            {(() => {
+            const speaker = m.role === "ASSISTANT" && props.speakerFor ? props.speakerFor(m, i === messages.length - 1) : null;
+            const item = <TranscriptMessage
               message={m}
               receiptActivity={m.role === "USER" ? messages[i + 1]?.activity : undefined}
               isLast={i === messages.length - 1}
@@ -288,7 +307,16 @@ export function MessageList(props: MessageListProps) {
               onImageEdit={props.onImageEdit}
               onOpenAttachment={props.onOpenAttachment}
               currentModelId={props.currentModelId}
-            />
+            />;
+            return speaker ? (
+              <>
+                {speaker.handoff && <RoomHandoffLine text={speaker.handoff} />}
+                <AgentThreadContext.Provider value={{ name: speaker.name, avatar: speaker.avatar, state: speaker.state }}>
+                  {item}
+                </AgentThreadContext.Provider>
+              </>
+            ) : item;
+            })()}
             {runsByMessage.get(i)}
             </MeasuredTurn>
             </React.Fragment>;
