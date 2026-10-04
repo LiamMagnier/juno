@@ -52,6 +52,9 @@ import {
   unsupportedTypeText,
   urlLine,
 } from "@/lib/web/fetch-page.prompt";
+import { openPage } from "@/lib/search/alevr/retrieve";
+import { defaultSearchStore } from "@/lib/search/alevr/service";
+import type { SearchStore } from "@/lib/search/alevr/types";
 import { scanUntrusted } from "@/lib/web/injection";
 import type { TurnTaint } from "@/lib/web/taint";
 import { auditWeb, webTurnState, type PrefetchedPage } from "@/lib/web/turn-state";
@@ -81,6 +84,11 @@ export interface FetchPageDeps {
   now?: () => Date;
   /** Juno's own hostnames; from the deployment's environment when absent. */
   ownHosts?: ReadonlySet<string>;
+  /**
+   * Alevr Search's page cache (BRIEF §16). `null` turns it off; absent means
+   * the deployment's store, except when a test injected `extract`.
+   */
+  pageStore?: SearchStore | null;
 }
 
 /** §6.1 step 7: the whole redirect chain, the body and the extraction. */
@@ -224,8 +232,23 @@ function fromExtract(requestedUrl: string, page: ExtractResult): Readable {
   };
 }
 
+/** Pages kept per turn for `find_in_page`. */
+const OPENED_MAX_PAGES = 24;
+
+/** The whole text of an opened page, under both its requested and its final URL. */
+function rememberOpened(page: Readable, limits: TurnWebLimits): void {
+  const opened = webTurnState(limits).opened;
+  if (opened.size >= OPENED_MAX_PAGES) return;
+  const entry = { url: page.finalUrl, title: page.title, text: page.text };
+  for (const raw of [page.requestedUrl, page.finalUrl]) {
+    const canon = canonicalize(raw, { bareDomain: false });
+    if (canon) opened.set(canonKey(canon), entry);
+  }
+}
+
 /** Steps 10–12: scan, ledger, and the result the model and the panel read. */
 function present(page: Readable, input: FetchPageInput, ctx: FetchPageContext, now: Date): ToolOutcome {
+  rememberOpened(page, ctx.limits);
   const offset = Math.max(0, Math.floor(input.offset ?? 0));
   const maxChars = Math.min(FETCH_MAX_CHARS, Math.max(FETCH_MIN_CHARS, Math.floor(input.maxChars ?? FETCH_DEFAULT_CHARS)));
   const available = page.text.length;
@@ -342,17 +365,33 @@ export async function fetchPageForChat(
   const prefetched = state.prefetch.get(canonKey(canon));
   if (prefetched) return present(fromPrefetch(url, prefetched), input, ctx, now());
 
-  // 7–9. Fetch and extract.
+  // 7–9. Fetch and extract — through Alevr's page cache: a fresh copy is
+  //      served without a request, a stale one is revalidated with its
+  //      validators, and a discovered page is stored for the next reader.
+  //      Every network hop still goes through the extractor's guards.
   const extract = deps.extract ?? extractUrlDocument;
-  const outcome = await extract(url, ctx.signal, {
-    maxChars: MAX_EXTRACT_CHARS,
-    userAgent: chatUserAgent(),
-    guard: (hop) => urlGuard(hop, deps.ownHosts),
-    timeoutMs: FETCH_DEADLINE_MS,
-    maxHtmlBytes: CHAT_MAX_HTML_BYTES,
-    maxPdfBytes: CHAT_MAX_PDF_BYTES,
-  });
+  const store = deps.pageStore !== undefined ? deps.pageStore : deps.extract ? null : await defaultSearchStore();
+  // Only pages a search (or a page a search found) surfaced may join the shared
+  // cache; a URL the person typed, a remembered one or an attachment's never does.
+  const admit = match.kind === "search_result" || match.kind === "fetched_page" || match.kind === "research_source";
+  const opened = await openPage(
+    {
+      url,
+      signal: ctx.signal,
+      admit: admit ? "discovered" : false,
+      private: ctx.private,
+      extractOptions: {
+        maxChars: MAX_EXTRACT_CHARS,
+        userAgent: chatUserAgent(),
+        guard: (hop) => urlGuard(hop, deps.ownHosts),
+        timeoutMs: FETCH_DEADLINE_MS,
+        maxHtmlBytes: CHAT_MAX_HTML_BYTES,
+        maxPdfBytes: CHAT_MAX_PDF_BYTES,
+      },
+    },
+    { store, extract, ...(deps.now ? { now: deps.now } : {}) },
+  );
   if (ctx.signal.aborted) throw abortError();
-  if (!outcome.ok) return failureOutcome(outcome.failure);
-  return present(fromExtract(url, outcome.page), input, ctx, now());
+  if (!opened.ok) return failureOutcome(opened.outcome.failure);
+  return present(fromExtract(url, opened.page), input, ctx, now());
 }

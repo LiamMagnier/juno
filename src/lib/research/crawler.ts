@@ -6,8 +6,8 @@
  * for JavaScript-rendered Single-Page Applications (React, Vue, Angular, Next.js).
  */
 
-import type { ExtractOutcome, ExtractResult } from "@/lib/search/search-engine";
-import { isDisallowedHost } from "@/lib/search/url-safety";
+import type { ExtractOptions, ExtractOutcome, ExtractResult } from "@/lib/search/search-engine";
+import { isDisallowedAddress, isDisallowedHost } from "@/lib/search/url-safety";
 import type { Browser, Route } from "@playwright/test";
 
 // The shell heuristic lives with the other page signals now, where the
@@ -22,6 +22,10 @@ export interface CrawlerOptions {
   forceHeadless?: boolean;
   waitForSelector?: string;
   userAgent?: string;
+  /** Validators of a cached copy, for the fast path's conditional GET (Alevr page cache). */
+  conditional?: ExtractOptions["conditional"];
+  /** Test seam: resolves a hostname for the headless request guard. */
+  resolve?: (hostname: string) => Promise<Array<{ address: string; family: number }>>;
 }
 
 export interface CrawledPage extends ExtractResult {
@@ -95,6 +99,44 @@ function browserIsMissing(error: unknown): boolean {
 }
 
 /**
+ * Whether the headless browser may make one request (BRIEF §17).
+ *
+ * The fast path's transport pins every connection to an address it has
+ * checked; a browser resolves names itself and loads every subresource and
+ * redirect a page asks for. So EVERY request the page makes — the navigation,
+ * each redirect hop, each script and XHR — is checked here before Chromium is
+ * allowed to send it: http(s) only, no literal non-public address, and the
+ * hostname's current DNS answers all public. The browser's own later lookup
+ * can still differ from this one (a rebinding race this guard narrows but
+ * cannot close), which is why headless rendering stays opt-in per deployment
+ * (`RESEARCH_HEADLESS`) and SEARCH.md lists it as a residual risk.
+ */
+export async function headlessRequestAllowed(
+  url: string,
+  resolve: (hostname: string) => Promise<Array<{ address: string; family: number }>> = defaultResolve,
+): Promise<boolean> {
+  if (url.startsWith("data:") || url.startsWith("blob:")) return true;
+  if (!/^https?:\/\//i.test(url) || isDisallowedHost(url)) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return false;
+  }
+  try {
+    const answers = await resolve(hostname);
+    return answers.length > 0 && !answers.some((answer) => isDisallowedAddress(answer.address));
+  } catch {
+    return false;
+  }
+}
+
+async function defaultResolve(hostname: string): Promise<Array<{ address: string; family: number }>> {
+  const { lookup } = await import("node:dns/promises");
+  return lookup(hostname, { all: true, verbatim: true });
+}
+
+/**
  * Renders a web page using a headless Playwright Chromium instance
  * with resource blocking (images, media, fonts) for minimal latency and memory usage.
  */
@@ -162,14 +204,17 @@ export async function renderHeadlessPage(
       });
     }
 
-    // Block images, fonts, and heavy media to maximize scrape performance
-    await page.route("**/*", (route: Route) => {
+    // Every request passes the SSRF guard first; images, fonts and media are
+    // never loaded at all (speed, and nothing to decode).
+    await page.route("**/*", async (route: Route) => {
       const type = route.request().resourceType();
       if (["image", "media", "font", "imageset"].includes(type)) {
-        route.abort();
-      } else {
-        route.continue();
+        await route.abort().catch(() => undefined);
+        return;
       }
+      const allowed = await headlessRequestAllowed(route.request().url(), options.resolve);
+      if (allowed) await route.continue().catch(() => undefined);
+      else await route.abort("blockedbyclient").catch(() => undefined);
     });
 
     try {
@@ -271,6 +316,11 @@ function fastPage(page: ExtractResult): CrawlResult {
       links: page.links,
       author: page.author,
       publishedAt: page.publishedAt,
+      ...(page.finalUrl ? { finalUrl: page.finalUrl } : {}),
+      ...(page.hops ? { hops: page.hops } : {}),
+      ...(page.contentType ? { contentType: page.contentType } : {}),
+      ...(page.totalChars !== undefined ? { totalChars: page.totalChars } : {}),
+      ...(page.cache ? { cache: page.cache } : {}),
       isSpa: false,
       crawler: "http_fast",
     },
@@ -302,7 +352,12 @@ export async function crawlResearchPage(
   const { extractUrlDocument } = await import("@/lib/search/search-engine");
   const fastOutcome: ExtractOutcome = await extractUrlDocument(url, options.signal, {
     maxChars: options.maxChars,
+    ...(options.conditional ? { conditional: options.conditional } : {}),
   });
+  // A 304 to a conditional request is the cached copy's answer, never a reason to render.
+  if (!fastOutcome.ok && fastOutcome.failure.reason === "http_error" && fastOutcome.failure.httpStatus === 304) {
+    return { ok: false, failure: { reason: "http_error", httpStatus: 304 } };
+  }
 
   if (shouldRenderHeadless(fastOutcome) && headlessRenderingEnabled()) {
     const headlessOutcome = await renderHeadlessPage(url, options);

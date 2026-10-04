@@ -157,7 +157,7 @@ async function handleChat(req: Request) {
     const { attachmentToolToggles } = context;
 
     const capabilities = resolveCapabilities({ input, plan, modelInfo, workspaceConfig });
-    const { researchActive, useWebSearch, useProMode, canvasOn } = capabilities;
+    const { researchActive, useWebSearch, useAlevrSearch, useProMode, canvasOn } = capabilities;
 
     const skill = await resolveSkills({
       userId: user.id,
@@ -165,7 +165,7 @@ async function handleChat(req: Request) {
       turnSkillSlug: tokens.turnSkillSlug,
       projectId: conversation.projectId,
       grant: {
-        webSearch: useWebSearch,
+        webSearch: useWebSearch || useAlevrSearch,
         canvas: canvasOn,
         documents: attachmentToolToggles.documents,
         images: attachmentToolToggles.images,
@@ -179,6 +179,7 @@ async function handleChat(req: Request) {
     const untrustedContentInTurn = turnCarriesUntrustedContent({
       connectors: activeConnectors.length,
       useWebSearch,
+      useAlevrSearch,
       researchActive,
       projectKnowledge: !!context.projectKnowledge,
       attachmentKnowledge: !!context.attachmentKnowledge,
@@ -259,6 +260,7 @@ async function handleChat(req: Request) {
       untrustedContentInTurn,
       taskToolOn: approvals.taskToolOn,
       useWebSearch,
+      useAlevrSearch,
       attachmentToolToggles,
       executionSections: tools.executionSections,
       artifactEditTarget,
@@ -281,7 +283,7 @@ async function handleChat(req: Request) {
       rerouted: !!model.routingWarning,
       reasoningEffort: model.autoReasoningEffort ?? model.requestedEffort,
       features: {
-        webSearch: useWebSearch,
+        webSearch: useWebSearch || useAlevrSearch,
         research: researchActive,
         connectors: activeConnectors.length,
         actingTools: Number(approvals.taskToolOn) + Number(!!agentContext?.handoff) + Number(approvals.agentConfigToolsOn),
@@ -338,6 +340,7 @@ async function handleChat(req: Request) {
       researchActive,
       researchRequested: capabilities.researchRequested,
       useWebSearch,
+      useAlevrSearch,
       useFastMode: capabilities.useFastMode,
       useProMode,
       skill,

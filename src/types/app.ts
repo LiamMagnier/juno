@@ -144,6 +144,12 @@ export interface AppBootstrap {
     ttsProvider: "google" | "openai" | "elevenlabs" | null;
     storage: boolean;
     webSearch: boolean;
+    /**
+     * Alevr Search serves its own search tools here (BRIEF §15), so web search
+     * works on every model that takes function tools, not only on models whose
+     * provider searches. Optional: an older server never sends it.
+     */
+    alevrSearch?: boolean;
     /** Deep research is configured (TAVILY_API_KEY present) — gates the composer toggle. */
     deepResearch: boolean;
     /** Email delivery is configured (RESEND_API_KEY present). */

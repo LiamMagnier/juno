@@ -1,4 +1,6 @@
 import "server-only";
+import { nativeSearchPolicy, planTurnSearch } from "@/lib/search/alevr/policy";
+import { chatSearchAvailable } from "@/lib/web/search";
 import type { Plan } from "@prisma/client";
 import { PLANS } from "@/lib/plans";
 import { isWebSearchConfigured } from "@/lib/web-search";
@@ -30,11 +32,23 @@ export function resolveCapabilities({
   const researchRequested = !!input.deepResearch && !input.voiceMode
     && workspacePermits(workspaceConfig, "deepResearch");
   const researchActive = researchRequested && PLANS[plan].webSearch && isWebSearchConfigured();
-  // Native web search: the model searches via its own tool/grounding while it
-  // streams (Gemini Google Search, Claude web_search, Grok Live Search). We
-  // collect the sources it returns from the stream below — no third-party search.
-  const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch
-    && modelInfo.webSearch && workspacePermits(workspaceConfig, "webSearch");
+  // Web search (BRIEF §15): Alevr Search's provider-neutral tools on every
+  // tool-capable model when a backend is configured (`useAlevrSearch`); the
+  // provider's own search (Gemini grounding, Claude web_search, Grok Live
+  // Search…) only as the fallback, or beside it when the operator asks
+  // (`ALEVR_SEARCH_PROVIDER_NATIVE`). `src/lib/search/alevr/policy.ts`.
+  const webRequested = !researchActive && !!input.webSearch && PLANS[plan].webSearch
+    && workspacePermits(workspaceConfig, "webSearch");
+  const searchPlan = planTurnSearch({
+    webRequested,
+    model: modelInfo,
+    alevrAvailable: chatSearchAvailable(),
+    voice: !!input.voiceMode,
+    private: false,
+    policy: nativeSearchPolicy(),
+  });
+  const useWebSearch = searchPlan.native;
+  const useAlevrSearch = searchPlan.alevr;
   const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
 
@@ -46,7 +60,7 @@ export function resolveCapabilities({
   // exclude "canvas", and a legacy native build that explicitly sends false.
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)
     && workspacePermits(workspaceConfig, "canvas");
-  return { researchRequested, researchActive, useWebSearch, useFastMode, useProMode, canvasOn };
+  return { researchRequested, researchActive, useWebSearch, useAlevrSearch, useFastMode, useProMode, canvasOn };
 }
 
 export type TurnCapabilities = ReturnType<typeof resolveCapabilities>;
@@ -61,6 +75,8 @@ export type TurnCapabilities = ReturnType<typeof resolveCapabilities>;
 export function turnCarriesUntrustedContent(signals: {
   connectors: number;
   useWebSearch: boolean;
+  /** Alevr Search hands the model pages strangers wrote (INV-34). */
+  useAlevrSearch: boolean;
   researchActive: boolean;
   projectKnowledge: boolean;
   attachmentKnowledge: boolean;
@@ -79,6 +95,7 @@ export function turnCarriesUntrustedContent(signals: {
   return (
     signals.connectors > 0 ||
     signals.useWebSearch ||
+    signals.useAlevrSearch ||
     signals.researchActive ||
     signals.projectKnowledge ||
     signals.attachmentKnowledge ||

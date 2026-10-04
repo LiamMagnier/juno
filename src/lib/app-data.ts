@@ -12,7 +12,7 @@ import { purchasablePlans } from "@/lib/stripe";
 import { configuredProviders } from "@/lib/providers";
 import { DEFAULT_MODEL, providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
-import { keyedSearchEngineConfigured } from "@/lib/web/search";
+import { chatSearchAvailable } from "@/lib/web/search";
 import { searchProviderStatus } from "@/lib/search/search-engine";
 import { researchEntitlement } from "@/lib/research/entitlement";
 import { isOwnerEmail } from "@/lib/owner";
@@ -28,16 +28,14 @@ import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
 /**
- * A keyed engine (Tavily, Serper, Brave or Exa) is configured (§6.3). Asked
- * of the chat search profile, which owns the answer; until that lands
- * (`src/lib/web/search.ts` is a stub that throws) the search stack's own
- * roster says the same thing.
+ * Alevr Search can answer a chat search here: a keyed engine, or the
+ * operator's own SearXNG rated above the chat floor (BRIEF §15–16).
  */
-function keyedSearchConfigured(): boolean {
+function alevrSearchConfigured(): boolean {
   try {
-    return keyedSearchEngineConfigured();
+    return chatSearchAvailable();
   } catch {
-    return searchProviderStatus().hasKeyedProvider;
+    return searchProviderStatus().hasGoodIndex;
   }
 }
 
@@ -216,9 +214,10 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       ttsProvider: activeTtsProvider(),
       storage: isStorageAvailable(),
       // "Web is possible on this deployment" (SPEC §3.6): a provider with
-      // native search, OR a keyed engine for Juno's own web_search — which is
-      // what lets every tools-capable model turn web on (RC-2).
-      webSearch: configuredProviders().some(providerSupportsWebSearch) || keyedSearchConfigured(),
+      // native search, OR Alevr Search — which is what lets every
+      // tools-capable model turn web on (RC-2, BRIEF §15).
+      webSearch: configuredProviders().some(providerSupportsWebSearch) || alevrSearchConfigured(),
+      alevrSearch: alevrSearchConfigured(),
       // Per person now (§9.1): the plan, the deployment and lockdown. The
       // field name stays (native contract); private, voice and a project's
       // workspace are decided where the request is made.

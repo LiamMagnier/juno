@@ -37,12 +37,27 @@ export interface PumpOptions {
   forwardDeltas: boolean;
   /** Observes every effect after it is applied (the turn trace). */
   onEffect?: (effect: StreamEffect) => void;
+  /** The sources Alevr Search's tools produced since the last event (saved turns). */
+  drainSources?: () => Array<{ sources: unknown[]; origin?: unknown }>;
 }
 
 export async function pumpTurnStream(stream: AsyncIterable<LlmEvent>, options: PumpOptions): Promise<void> {
   const { acc, stallWatchdog, toolWatch, toolActivity, send, sendActivity, enforceStreamBudget } = options;
   for await (const ev of stream) {
     stallWatchdog.touch();
+    for (const batch of options.drainSources?.() ?? []) {
+      const found = acc.apply({ type: "sources", sources: batch.sources, origin: batch.origin } as LlmEvent);
+      if (found.kind !== "sources") continue;
+      for (const source of found.added) {
+        sendActivity({
+          kind: "visit",
+          title: "Visited source",
+          detail: truncate(source.title && source.title !== source.url ? source.title : sourceHost(source.url), 96),
+          url: source.url,
+        });
+      }
+      if (found.all.length) send({ type: "sources", sources: found.all });
+    }
     // While a call runs the turn waits on the tool, which has its own
     // bound: the watchdog is held from its `running` act to its result.
     toolWatch?.observe(ev);
@@ -108,7 +123,7 @@ export function sendSelectedModel(
 /** The thinking effort this turn runs at, and the rows that say so (both turns). */
 export function sendReasoningAndSearch(
   sendActivity: SseSender["sendActivity"],
-  input: { reasoningEffort: ReasoningEffort | undefined; auto: boolean; webSearch: boolean; modelInfo: ModelInfo }
+  input: { reasoningEffort: ReasoningEffort | undefined; auto: boolean; webSearch: boolean; alevrSearch?: boolean; modelInfo: ModelInfo }
 ): void {
   const { reasoningEffort } = input;
   if (reasoningEffort) {
@@ -124,11 +139,11 @@ export function sendReasoningAndSearch(
       detail: "Instant — no extra reasoning for this prompt",
     });
   }
-  if (input.webSearch) {
+  if (input.webSearch || input.alevrSearch) {
     sendActivity({
       kind: "search",
       title: "Preparing web search",
-      detail: searchToolLabel(input.modelInfo.provider),
+      detail: input.alevrSearch ? "Alevr Search" : searchToolLabel(input.modelInfo.provider),
     });
   }
 }

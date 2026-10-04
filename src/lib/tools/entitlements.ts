@@ -162,7 +162,12 @@ export interface EntitlementInput {
   hasFileAttachment: boolean;
   hasInspectable: boolean;
   sandboxConfigured: boolean;
+  /** Alevr Search can answer here (`chatSearchAvailable()`); the pre-Alevr name. */
   keyedSearchEngine: boolean;
+  /** Alevr Search can answer here; wins over `keyedSearchEngine` when set. */
+  alevrSearch?: boolean;
+  /** `ALEVR_SEARCH_PROVIDER_NATIVE`; "fallback" when absent. */
+  nativeSearchPolicy?: import("@/lib/search/alevr/policy").NativeSearchPolicy;
   saved: { userMessageId: string | null; conversationKind: "chat" | "code" } | null;
   taskTool: boolean;
   effort?: import("@/types/chat").ReasoningEffort | null;
@@ -219,14 +224,25 @@ export function chatToolEntitlements(input: EntitlementInput): ChatToolPlan {
   const web = input.webToggle && PLANS[input.plan].webSearch && !blocked && webWorkspace && !input.researchActive;
 
   const minimalBlocksHosted = input.effort === "minimal" && !!caps.hostedSearchMinEffort;
-  const nativeSearch = web && caps.nativeSearch && !minimalBlocksHosted && skillAllows("web_search");
+  const providerSearch = web && caps.nativeSearch && !minimalBlocksHosted && skillAllows("web_search");
+  // Alevr Search first, on every model that takes function tools (BRIEF §15);
+  // the provider's own search only as the fallback or, by policy, beside it.
+  const alevrAvailable = input.alevrSearch ?? input.keyedSearchEngine;
+  const policy = input.nativeSearchPolicy ?? "fallback";
+  const alevr =
+    functions && web && alevrAvailable && !input.voice && skillAllows("web_search") && !(policy === "prefer" && providerSearch);
+  const nativeSearch = providerSearch && (!alevr || policy === "also");
 
   const attached = new Set<import("@/lib/tools/types").JunoToolId>();
   if (functions) {
-    if (web && !nativeSearch && input.keyedSearchEngine && !input.voice && skillAllows("web_search")) {
+    if (alevr) {
       attached.add("web_search");
+      attached.add("search_news");
     }
-    if (web && skillAllows("web_fetch") && (!input.voice || caps.nativeSearch)) attached.add("web_fetch");
+    if (web && skillAllows("web_fetch") && (!input.voice || caps.nativeSearch)) {
+      attached.add("web_fetch");
+      if (alevr) attached.add("find_in_page");
+    }
 
     if (!input.private && !blocked) {
       if (input.hasFileAttachment && skillAllows("read_document")) attached.add("read_document");

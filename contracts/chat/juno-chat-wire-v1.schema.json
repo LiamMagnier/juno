@@ -1050,6 +1050,7 @@
       "enum": [
         "calculate",
         "current_time",
+        "find_in_page",
         "inspect_image",
         "mcp",
         "provider_web_search",
@@ -1057,6 +1058,7 @@
         "read_document",
         "run_code",
         "search_chats",
+        "search_news",
         "start_task",
         "suggest_research",
         "web_fetch",

@@ -42,7 +42,7 @@ import { call, message, toolRow } from "./fixtures/run-events";
 
 const ALL_TOOLS: CanonicalToolId[] = [
   "web_search", "web_fetch", "read_document", "inspect_image", "run_code", "search_chats", "current_time",
-  "calculate", "start_task", "suggest_research", "provider_web_search", "provider_x_search", "mcp",
+  "calculate", "start_task", "suggest_research", "search_news", "find_in_page", "provider_web_search", "provider_x_search", "mcp",
 ];
 
 const ARG_VARIANTS: Array<ToolCallRecord["args"]> = [

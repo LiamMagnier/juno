@@ -84,12 +84,12 @@ function capabilityDecision(model: ModelInfo, capability: NativeModelCapability 
 /** Server facts the manifest cannot read from a `ModelInfo`. */
 export interface NativeModelCatalogOptions {
   /**
-   * A keyed engine serves Juno's `web_search` on this deployment
-   * (`keyedSearchEngineConfigured()`, SPEC §6.3). The routes pass it once
-   * `/api/chat` plans a turn's tools with `chatToolEntitlements` (WS9a).
-   * Absent means false, which matches what the route runs before then: web
-   * only where the provider searches.
+   * Alevr Search serves its tools on this deployment (`chatSearchAvailable()`,
+   * BRIEF §15), so every tool-capable model can turn web on. The routes pass
+   * it; absent means false (web only where the provider searches).
    */
+  alevrSearch?: boolean;
+  /** The pre-Alevr name of `alevrSearch`, still read. */
   keyedSearchEngine?: boolean;
 }
 
@@ -116,7 +116,7 @@ export function nativeModelCatalog(
   capabilities?: ReadonlyMap<string, NativeModelCapability>,
   options: NativeModelCatalogOptions = {},
 ) {
-  const keyedSearchEngine = options.keyedSearchEngine === true;
+  const keyedSearchEngine = (options.alevrSearch ?? options.keyedSearchEngine) === true;
   const chatModels = models.filter((model) => model.modality === "chat" && !model.comingSoon);
   const autoUsable = chatModels.some((model) => usable(model, plan));
   const listed = autoUsable ? [AUTO_MODEL_INFO, ...models] : models;

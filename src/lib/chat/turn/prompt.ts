@@ -41,6 +41,7 @@ export function composeTurnSystem({
   untrustedContentInTurn,
   taskToolOn,
   useWebSearch,
+  useAlevrSearch,
   attachmentToolToggles,
   executionSections,
   artifactEditTarget,
@@ -58,6 +59,7 @@ export function composeTurnSystem({
   untrustedContentInTurn: boolean;
   taskToolOn: boolean;
   useWebSearch: boolean;
+  useAlevrSearch: boolean;
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
   executionSections: string[];
   artifactEditTarget: (ArtifactSourceForEdit & { id: string }) | null;
@@ -95,7 +97,8 @@ export function composeTurnSystem({
       appendSkillBlock(
         composeSystemPrompt({
           base: baseSystem,
-          webSearch: useWebSearch,
+          webSearch: useWebSearch && !useAlevrSearch,
+          alevrSearch: useAlevrSearch,
           documentTool: attachmentToolToggles.documents,
           imageTool: attachmentToolToggles.images,
           codeTool: attachmentToolToggles.code,

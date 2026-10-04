@@ -10,6 +10,7 @@ import type { Plan } from "@prisma/client";
 import { canUseModel } from "@/lib/plans";
 import { MODEL_LIST, trainsOnPrompts, type ModelId, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
+import { webSearchPossible } from "@/lib/search/alevr/policy";
 import {
   averageRequestCostMicroUsd,
   clampReasoningEffort,
@@ -42,6 +43,12 @@ export interface AutoPickInput {
   plan: Plan;
   hasImages?: boolean;
   wantsWebSearch?: boolean;
+  /**
+   * Alevr Search can answer on this deployment (`alevrSearchAvailable()`).
+   * Then web search no longer narrows the pool to models whose provider
+   * searches: every tool-capable model gets Alevr's search tools (BRIEF §15).
+   */
+  alevrSearch?: boolean;
   /** Prefer current generation models unless nothing else fits. */
   preferCurrent?: boolean;
   /**
@@ -315,7 +322,13 @@ export function classifyPromptComplexity(message: string): PromptComplexityResul
   };
 }
 
-function isEligibleChatModel(m: ModelInfo, plan: Plan, needsVision: boolean, needsWebSearch: boolean): boolean {
+function isEligibleChatModel(
+  m: ModelInfo,
+  plan: Plan,
+  needsVision: boolean,
+  needsWebSearch: boolean,
+  alevrSearch = false,
+): boolean {
   if (m.modality !== "chat") return false;
   if (m.comingSoon) return false;
   if (m.status === "deprecated") return false;
@@ -329,7 +342,9 @@ function isEligibleChatModel(m: ModelInfo, plan: Plan, needsVision: boolean, nee
   if (!isProviderConfigured(m.provider)) return false;
   if (!canUseModel(plan, m.id)) return false;
   if (needsVision && !m.vision) return false;
-  if (needsWebSearch && !m.webSearch) return false;
+  // Web search needs a model that can search: its provider's own search, or
+  // Alevr Search's tools, which any model taking function tools can call.
+  if (needsWebSearch && !webSearchPossible(m, alevrSearch)) return false;
   return true;
 }
 
@@ -378,7 +393,7 @@ export function pickAutoModel(input: AutoPickInput): AutoPickResult {
   const needsWebSearch = !!input.wantsWebSearch;
   const preferCurrent = input.preferCurrent !== false;
 
-  let pool = MODEL_LIST.filter((m) => isEligibleChatModel(m, input.plan, needsVision, needsWebSearch));
+  let pool = MODEL_LIST.filter((m) => isEligibleChatModel(m, input.plan, needsVision, needsWebSearch, !!input.alevrSearch));
 
   // The fair fallback: near the end of the budget, only the cheapest tier —
   // as long as one of them can take this request at all.

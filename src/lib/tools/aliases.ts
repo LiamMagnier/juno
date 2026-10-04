@@ -22,6 +22,10 @@ import type { CanonicalToolId } from "@/types/run";
 export const TOOL_ID_ALIASES: Readonly<Record<string, CanonicalToolId>> = {
   code_interpreter: "run_code",
   browser_agent: "web_fetch",
+  // Alevr Search's names in the brief (§15): a skill or an assistant that asks
+  // for `search_web` or `open_page` gets the same two tools under their ids.
+  search_web: "web_search",
+  open_page: "web_fetch",
 };
 
 /** The alias target, or the id unchanged. */

@@ -13,6 +13,7 @@ import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { formatClarificationModelMessage } from "@/lib/clarification-wizard";
 import { formatPreflightClarificationModelMessage } from "@/lib/preflight-clarification";
 import { logDebug } from "@/lib/logger";
+import { chatSearchAvailable } from "@/lib/web/search";
 import { checkBudget, type billingPeriodFor } from "@/lib/spend";
 import type { EffectiveBudget } from "@/lib/spend-ceiling";
 import { isBudgetLow } from "@/lib/credits";
@@ -130,6 +131,8 @@ export async function resolveModel({
         plan,
         hasImages,
         wantsWebSearch: !!input.webSearch,
+        // Voice keeps the provider's own search (policy.ts), so it never widens the pool.
+        alevrSearch: !input.voiceMode && chatSearchAvailable(),
         lowBudget: autoBudget ? isBudgetLow(autoBudget.remainingMicroUsd, autoBudget.budgetMicroUsd) : false,
       });
       modelInfo = pick.model;

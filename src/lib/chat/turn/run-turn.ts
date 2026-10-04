@@ -1,4 +1,5 @@
 import "server-only";
+import { createAlevrSearchTurn } from "@/lib/search/alevr/turn";
 import type { Plan } from "@prisma/client";
 import type { EffectiveBudget } from "@/lib/spend-ceiling";
 import { PLANS } from "@/lib/plans";
@@ -138,6 +139,7 @@ export interface SavedTurnPlan {
   researchActive: boolean;
   researchRequested: boolean;
   useWebSearch: boolean;
+  useAlevrSearch: boolean;
   useFastMode: boolean;
   useProMode: boolean;
   skill: TurnSkill;
@@ -202,6 +204,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     researchActive,
     researchRequested,
     useWebSearch,
+    useAlevrSearch,
     useFastMode,
     useProMode,
     skill: { skillOutcome, appliedSkill },
@@ -406,8 +409,26 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       reasoningEffort,
       auto: isAutoModelId(requestedId),
       webSearch: useWebSearch,
+      alevrSearch: useAlevrSearch,
       modelInfo,
     });
+    /*
+     * Alevr Search's tools for this turn, bound to its ledger, taint, limits and
+     * sources (`src/lib/search/alevr/turn.ts`). A skill that names its tools
+     * keeps the family only when it asked for web search or page reading.
+     */
+    const alevrSearchTurn =
+      useAlevrSearch && narrowRuntimeToolsForSkill(["web_search", "web_fetch"], appliedSkill).length > 0
+        ? createAlevrSearchTurn({
+            userId: user.id,
+            conversationId,
+            private: false,
+            effort: reasoningEffort,
+            voice: !!input.voiceMode,
+            userTexts: input.message ? [input.message] : [],
+            staticContent: untrustedContentInTurn,
+          })
+        : null;
 
     // Web research parks at the editable plan; only a ready corpus may be
     // synthesized. Planning spend is recorded inside runDeepResearch.
@@ -558,7 +579,10 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         nativeTools: nativeTools.length > 0 ? nativeTools : undefined,
         // The execution and skill tools this turn was granted
         // (`executionEntitlements` above), run behind the runtime broker.
-        toolSpecs: toolProviderSessions?.specs.length ? toolProviderSessions.specs : undefined,
+        toolSpecs:
+          (toolProviderSessions?.specs.length ?? 0) + (alevrSearchTurn?.specs.length ?? 0) > 0
+            ? [...(toolProviderSessions?.specs ?? []), ...(alevrSearchTurn?.specs ?? [])]
+            : undefined,
       });
       await pumpTurnStream(modelStream, {
         acc,
@@ -573,6 +597,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           : { title: "Writing the answer", detail: "Streaming response text" },
         forwardDeltas: !artifactEditTarget,
         onEffect: trace.observe,
+        drainSources: alevrSearchTurn ? () => alevrSearchTurn.drainSources() : undefined,
       });
       toolWatch.releaseAll();
       // The provider is done. Everything below is Juno's own persistence, and

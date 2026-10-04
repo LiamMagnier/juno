@@ -98,6 +98,7 @@ import {
 } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
+import { alevrToolsUsable } from "@/lib/search/alevr/policy";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
@@ -596,13 +597,16 @@ function ComposerImpl({
     },
     [onModelChange, onReasoningChange, reasoningEffort],
   );
-  // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
-  // model capability; no third-party key required.
+  // Web search — gated by plan and by whether this model can search here:
+  // its provider's own search, or Alevr Search's tools on any model that
+  // takes function tools (BRIEF §15). Private and voice turns run only the
+  // provider's own search (src/lib/search/alevr/policy.ts).
   const canWebSearch =
     !!onToggleWebSearch &&
     PLANS[quota.plan].webSearch &&
     modality === "chat" &&
-    (resolved?.webSearch ?? false);
+    !!resolved &&
+    (resolved.webSearch || (!!features.alevrSearch && !privateMode && !voiceActive && alevrToolsUsable(resolved)));
   // Voice mode never loads connectors (every fetch effect below bails on it), so
   // the "@" palette must not offer rows it has no data for either.
   const showConnectors =

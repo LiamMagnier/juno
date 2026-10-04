@@ -87,6 +87,12 @@ export interface EngineCallOptions {
    * and the bill is the highlight, not the page).
    */
   exaContents?: "text" | "highlights";
+  /**
+   * Alevr Search's news vertical (`search_news`). Each engine has its own news
+   * surface: Serper's /news, Brave's news endpoint, Tavily's `topic: "news"`,
+   * Exa's `category: "news"`, SearXNG's `news` category. Absent means web.
+   */
+  vertical?: "web" | "news";
 }
 
 /** One engine as the fan-out runs it: the fusion spec, plus the chat options. */
@@ -113,12 +119,15 @@ async function searchBrave(
   const key = process.env.BRAVE_SEARCH_API_KEY?.trim() || process.env.BRAVE_API_KEY?.trim();
   if (!key) return [];
 
-  const url = new URL("https://api.search.brave.com/res/v1/web/search");
+  const news = opts.vertical === "news";
+  const url = new URL(
+    news ? "https://api.search.brave.com/res/v1/news/search" : "https://api.search.brave.com/res/v1/web/search",
+  );
   url.searchParams.set("q", query);
   // Brave's own documented ceiling, unlike the 20 the other providers were
   // being held to for no reason. Asking for more is a 422, not more results.
   url.searchParams.set("count", String(Math.min(20, maxResults)));
-  url.searchParams.set("result_filter", "web");
+  if (!news) url.searchParams.set("result_filter", "web");
   if (opts.recency) url.searchParams.set("freshness", `p${opts.recency[0]}`);
 
   const res = await fetch(url.toString(), {
@@ -131,13 +140,14 @@ async function searchBrave(
 
   if (!res.ok) throw new EngineHttpError("brave", res.status);
   const data = await res.json();
-  const results = data.web?.results ?? [];
+  // The news endpoint answers a top-level `results`; web nests it under `web`.
+  const results = (news ? data.results : data.web?.results) ?? [];
 
   return results.slice(0, maxResults).map((r: Record<string, unknown>) => ({
     title: (r.title as string) ?? "",
     url: (r.url as string) ?? "",
     snippet: (r.description as string) ?? "",
-    publishedAt: r.page_age ? new Date(r.page_age as string) : undefined,
+    publishedAt: r.page_age && Number.isFinite(Date.parse(r.page_age as string)) ? new Date(r.page_age as string) : undefined,
     engine: "brave",
   }));
 }
@@ -154,7 +164,8 @@ async function searchSerper(
   const key = process.env.SERPER_API_KEY?.trim();
   if (!key) return [];
 
-  const res = await fetch("https://google.serper.dev/search", {
+  const news = opts.vertical === "news";
+  const res = await fetch(news ? "https://google.serper.dev/news" : "https://google.serper.dev/search", {
     method: "POST",
     headers: {
       "X-API-KEY": key,
@@ -166,7 +177,7 @@ async function searchSerper(
 
   if (!res.ok) throw new EngineHttpError("serper", res.status);
   const data = await res.json();
-  const organic = data.organic ?? [];
+  const organic = (news ? data.news : data.organic) ?? [];
 
   return organic.slice(0, maxResults).map((r: Record<string, unknown>) => ({
     title: (r.title as string) ?? "",
@@ -198,6 +209,7 @@ async function searchExa(
     body: JSON.stringify({
       query,
       numResults: maxResults,
+      ...(opts.vertical === "news" ? { category: "news" } : {}),
       // Chat asks for one highlight per result (priced per result, SPEC §3.9)
       // instead of the page text, so its snippets are not empty.
       contents:
@@ -249,6 +261,7 @@ async function searchTavily(
       max_results: maxResults,
       search_depth: "basic",
       include_raw_content: true,
+      ...(opts.vertical === "news" ? { topic: "news" } : {}),
       ...(opts.recency ? { time_range: opts.recency } : {}),
     }),
     signal,
@@ -269,84 +282,75 @@ async function searchTavily(
 }
 
 /**
- * SearXNG Public Meta-Search API
+ * SearXNG — the operator's own instance, never a public one (BRIEF §16).
+ *
+ * This used to fall back to three hardcoded public instances. Public SearXNG
+ * rate-limits anonymous JSON traffic (most instances disable the JSON API
+ * outright), its operators never agreed to carry a product's traffic, and a
+ * production that depends on them fails the day they say no. Alevr Search now
+ * asks only the instance named by `SEARXNG_URL`, which the operator runs and
+ * configures (`deploy/searxng/`): which upstream engines it queries, and on
+ * what terms, is decided in that instance's settings.yml, not here. The
+ * shipped settings enable only engines that are official APIs (SEARCH.md).
+ *
+ * No `engines=` parameter is sent for the same reason: the instance's own
+ * configuration is the policy.
  */
-/**
- * Where SearXNG lives — yours first, if you run one.
- *
- * This used to be three hardcoded public instances and nothing else. Public
- * SearXNG aggressively rate-limits anonymous JSON traffic (most instances
- * disable the JSON API outright), so on a deployment with no commercial key the
- * fan-out was effectively falling through to scraped DuckDuckGo and Wikipedia's
- * five-result index — the real reason "deep" research bottomed out at a handful
- * of sites.
- *
- * A SearXNG you host yourself is the answer for anyone who does not want to pay
- * for a search API: it queries Google, Bing, Brave and DuckDuckGo on your
- * behalf, you own the rate limit, and it needs no key. One container:
- *
- *   docker run -d -p 8080:8080 -e SEARXNG_BASE_URL=http://localhost:8080/ \
- *     -v ./searxng:/etc/searxng searxng/searxng
- *
- * then set SEARXNG_URL=http://localhost:8080 and enable the JSON format in
- * settings.yml (`search.formats: [html, json]`). The public instances stay as a
- * last resort rather than the primary path.
- */
-function searxngInstances(): string[] {
-  const configured = process.env.SEARXNG_URL?.trim();
-  const own = configured
-    ? [`${configured.replace(/\/+$/, "")}/search`]
-    : [];
-  return [
-    ...own,
-    "https://searx.be/search",
-    "https://search.sapti.me/search",
-    "https://priv.au/search",
-  ];
-}
-
-async function searchSearxng(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
-  const instances = searxngInstances();
-
-  for (const instance of instances) {
-    try {
-      const url = new URL(instance);
-      url.searchParams.set("q", query);
-      url.searchParams.set("format", "json");
-      url.searchParams.set("engines", "google,bing,duckduckgo");
-
-      const res = await fetch(url.toString(), {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-          Accept: "application/json",
-        },
-        signal,
-      });
-
-      if (!res.ok) continue;
-      const data = await res.json();
-      const results = (data.results ?? []) as Array<Record<string, unknown>>;
-      if (results.length === 0) continue;
-
-      return results
-        .filter((r) => typeof r.url === "string" && !isDisallowedHost(r.url))
-        .slice(0, maxResults)
-        .map((r) => ({
-          title: (r.title as string) ?? "",
-          url: (r.url as string) ?? "",
-          snippet: (r.content as string) ?? "",
-          engine: "searxng",
-        }));
-    } catch {
-      continue;
-    }
+export function selfHostedSearxngUrl(env: Readonly<Record<string, string | undefined>> = process.env): string | null {
+  const configured = env.SEARXNG_URL?.trim();
+  if (!configured) return null;
+  try {
+    const url = new URL(configured);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return `${configured.replace(/\/+$/, "")}/search`;
+  } catch {
+    return null;
   }
+}
 
-  return [];
+async function searchSearxng(
+  query: string,
+  maxResults: number,
+  signal?: AbortSignal,
+  opts: EngineCallOptions = {},
+): Promise<SearchResult[]> {
+  const instance = selfHostedSearxngUrl();
+  if (!instance) return [];
+  const url = new URL(instance);
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("categories", opts.vertical === "news" ? "news" : "general");
+  if (opts.recency) url.searchParams.set("time_range", opts.recency);
+
+  // The operator's own service, on an address they chose (often a private
+  // one, beside the app): a plain fetch, not the public-only pinned fetch.
+  const res = await fetch(url.toString(), {
+    headers: { "User-Agent": "AlevrSearch/1.0 (self-hosted SearXNG client)", Accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) throw new EngineHttpError("searxng", res.status);
+  const data = await res.json();
+  const results = (data.results ?? []) as Array<Record<string, unknown>>;
+  return results
+    .filter((r) => typeof r.url === "string" && !isDisallowedHost(r.url))
+    .slice(0, maxResults)
+    .map((r) => ({
+      title: (r.title as string) ?? "",
+      url: (r.url as string) ?? "",
+      snippet: (r.content as string) ?? "",
+      publishedAt:
+        typeof r.publishedDate === "string" && Number.isFinite(Date.parse(r.publishedDate))
+          ? new Date(r.publishedDate)
+          : undefined,
+      engine: "searxng",
+    }));
 }
 
 /**
- * Wikipedia Encyclopedia API Fallback
+ * Wikipedia's search API — an open-data source whose operator permits
+ * programmatic access under the Wikimedia User-Agent policy (a descriptive
+ * agent with contact details), which is what this sends. Encyclopedic only,
+ * so it is a supplement in the research fan-out and never a chat backend.
  */
 async function searchWikipedia(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
   try {
@@ -358,7 +362,7 @@ async function searchWikipedia(query: string, maxResults: number, signal?: Abort
     url.searchParams.set("format", "json");
 
     const res = await fetch(url.toString(), {
-      headers: { "User-Agent": "JunoSearch/1.0 (https://juno.app)" },
+      headers: { "User-Agent": "AlevrSearch/1.0 (https://alevr.com; search@alevr.com)" },
       signal,
     });
 
@@ -387,79 +391,11 @@ async function searchWikipedia(query: string, maxResults: number, signal?: Abort
   }
 }
 
-/**
- * DuckDuckGo Search API & HTML Fallback (Zero Config Required)
+/*
+ * Scraped DuckDuckGo HTML was removed (BRIEF §16: no fragile or abusive
+ * scraping, no violating a provider's terms). Its endpoint answers 202/403 to
+ * anything it judges a bot, which is exactly what a server is.
  */
-async function searchDuckDuckGo(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
-  try {
-    const url = new URL("https://html.duckduckgo.com/html/");
-    const res = await fetch(url.toString(), {
-      method: "POST",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      body: new URLSearchParams({ q: query }).toString(),
-      signal,
-    });
-
-    // Not silent, unlike every other keyless path: DuckDuckGo's HTML endpoint
-    // answers 202/403 when it decides a caller is a bot, and that is a real
-    // degradation a keyless deployment should be able to see in the logs.
-    if (!res.ok) throw new EngineHttpError("duckduckgo", res.status);
-    const html = await res.text();
-    const results: SearchResult[] = [];
-
-    // Parse DuckDuckGo result blocks
-    const resultBlocks = html.split(/class="result\s+results_links/i).slice(1);
-    for (const block of resultBlocks) {
-      const linkMatch = block.match(/href="([^"]+)"[^>]*class="result__url"[^>]*>([\s\S]*?)<\/a>/i) ||
-        block.match(/<a[^>]+class="result__snippet[^>]+href="([^"]+)"/i) ||
-        block.match(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-
-      const titleMatch = block.match(/<a[^>]+class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
-      const snippetMatch = block.match(/<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
-        block.match(/class="result__snippet">([\s\S]*?)<\/td>/i);
-
-      if (linkMatch && titleMatch) {
-        let rawUrl = linkMatch[1];
-        // Decode DDG proxy url if present
-        if (rawUrl.includes("uddg=")) {
-          try {
-            const parsed = new URL("https://duckduckgo.com" + rawUrl);
-            const uddg = parsed.searchParams.get("uddg");
-            if (uddg) rawUrl = decodeURIComponent(uddg);
-          } catch {
-            /* use raw */
-          }
-        }
-
-        const title = titleMatch[1].replace(/<[^>]+>/g, "").trim();
-        const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]+>/g, "").trim() : "";
-
-        if (rawUrl.startsWith("http") && !isDisallowedHost(rawUrl) && title) {
-          results.push({
-            title,
-            url: rawUrl,
-            snippet,
-            engine: "duckduckgo",
-          });
-        }
-      }
-
-      if (results.length >= maxResults) break;
-    }
-
-    return results;
-  } catch (e) {
-    if (e instanceof EngineHttpError) throw e;
-    if (!signal?.aborted) {
-      console.warn("[search-engine] duckduckgo search failed:", e instanceof Error ? e.message : e);
-    }
-    return [];
-  }
-}
 
 const ENGINES: Engine[] = [
   { name: "tavily", weight: 1, available: () => !!process.env.TAVILY_API_KEY?.trim(), run: searchTavily },
@@ -471,9 +407,14 @@ const ENGINES: Engine[] = [
     run: searchBrave,
   },
   { name: "exa", weight: 0.95, available: () => !!process.env.EXA_API_KEY?.trim(), run: searchExa },
-  { name: "searxng", weight: 0.7, available: () => true, run: searchSearxng },
-  { name: "duckduckgo", weight: 0.7, available: () => true, run: searchDuckDuckGo },
-  { name: "wikipedia", weight: 0.35, available: () => true, run: searchWikipedia },
+  { name: "searxng", weight: 0.7, available: () => selfHostedSearxngUrl() !== null, run: searchSearxng },
+  // Encyclopedic and web-only: never asked for news.
+  {
+    name: "wikipedia",
+    weight: 0.35,
+    available: () => true,
+    run: (query, maxResults, signal, opts) => (opts?.vertical === "news" ? Promise.resolve([]) : searchWikipedia(query, maxResults, signal)),
+  },
 ];
 
 export interface SearchProviderStatus {
@@ -490,15 +431,16 @@ export interface SearchProviderStatus {
  * `hasGoodIndex` is the question worth asking, and it is deliberately NOT "is a
  * paid key set". A self-hosted SearXNG is a first-class answer here: it queries
  * the same engines a commercial API resells, needs no key, and is not subject to
- * the anonymous rate limits that make the PUBLIC instances close to useless. A
- * deployment with neither is running on scraped endpoints and should say so
- * rather than quietly returning eight results.
+ * the anonymous rate limits that make the PUBLIC instances close to useless
+ * (which Alevr no longer asks at all). A deployment with neither has only
+ * Wikipedia's encyclopedic API and should say so rather than quietly
+ * returning five results.
  */
 export function searchProviderStatus(): SearchProviderStatus {
   const keyedNames = ["tavily", "serper", "brave", "exa"];
   const keyed = ENGINES.filter((e) => keyedNames.includes(e.name) && e.available()).map((e) => e.name);
-  const keyless = ENGINES.filter((e) => !keyedNames.includes(e.name)).map((e) => e.name);
-  const selfHostedSearxng = !!process.env.SEARXNG_URL?.trim();
+  const keyless = ENGINES.filter((e) => !keyedNames.includes(e.name) && e.available()).map((e) => e.name);
+  const selfHostedSearxng = selfHostedSearxngUrl() !== null;
   return {
     keyed,
     keyless,
@@ -509,14 +451,16 @@ export function searchProviderStatus(): SearchProviderStatus {
 }
 
 /**
- * Check if search capability is available in any form.
+ * Whether this deployment can search the web: a keyed engine or the
+ * operator's own SearXNG.
  *
- * Always true: SearXNG, DuckDuckGo and Wikipedia need no key. Whether the
- * deployment has a *good* index is `searchProviderStatus().hasKeyedProvider`,
- * which is a different question and the one worth surfacing to a user.
+ * This used to be `true` unconditionally, because scraped DuckDuckGo and the
+ * public SearXNG instances "needed no key". Both are gone (BRIEF §16), and an
+ * encyclopedia's title search is not web search, so a deployment without a
+ * real index now says so instead of offering Research that cannot find pages.
  */
 export function isSearchEngineAvailable(): boolean {
-  return true;
+  return searchProviderStatus().hasGoodIndex;
 }
 
 /** One engine is allowed this long before the merge proceeds without it. */

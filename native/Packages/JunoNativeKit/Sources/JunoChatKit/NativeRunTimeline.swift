@@ -864,7 +864,7 @@ public struct NativeRunView: Equatable, Sendable {
             switch item {
             case .tool(_, let call, _):
                 switch call.tool {
-                case "web_search", "provider_web_search", "provider_x_search": counts.searches += 1
+                case "web_search", "search_news", "provider_web_search", "provider_x_search": counts.searches += 1
                 case "run_code":
                     counts.codeRuns += 1
                     if let files = call.run?.files, !files.isEmpty {
@@ -932,8 +932,8 @@ public enum NativeRunPhase: Equatable, Sendable {
     /// The working phase a running call puts the run in (rule 3).
     public static func phase(of call: NativeToolCall) -> NativeRunPhase {
         switch call.tool {
-        case "web_search", "provider_web_search", "provider_x_search", "search_chats": .searching
-        case "web_fetch", "read_document", "inspect_image": .reading
+        case "web_search", "search_news", "provider_web_search", "provider_x_search", "search_chats": .searching
+        case "web_fetch", "find_in_page", "read_document", "inspect_image": .reading
         default: .tool
         }
     }
