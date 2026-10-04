@@ -8,15 +8,19 @@ Third-Party and Vendored Notices
 ========================================================================
 
 1. Agent Core (`runner/agent-core/`):
-   Vendored runtime component for cloud task execution.
-   See `runner/agent-core/VENDORED.md` for upstream provenance, divergence history,
-   and independent package dependency notices.
+   Originally imported from the internal `juno-app/core` (@juno/agent-core) architecture
+   developed by Liam Magnier for the Juno desktop client, maintained directly within
+   this repository since Phase 9 refoundation to achieve cross-platform execution
+   parity with the Swift engine. All Juno modifications and wrapper components are
+   licensed under Apache-2.0. Upstream package dependencies retain their respective
+   open-source licenses (see runner/agent-core/package.json).
 
 2. Typography and Fonts:
-   - Newsreader font (`native/iOS/JunoMobile/Resources/Fonts/` and related web assets):
-     Licensed under the SIL Open Font License, Version 1.1.
-   - JetBrains Mono font (`native/iOS/JunoMobile/Resources/Fonts/`):
-     Licensed under the Apache License, Version 2.0.
+   - Newsreader font (`native/iOS/JunoMobile/Resources/Fonts/`):
+     Copyright 2020 The Newsreader Project Authors. Licensed under the SIL Open Font
+     License, Version 1.1 (see OFL.txt).
+   - JetBrains Mono font (`native/desktop-electron/src/renderer/public/fonts/`):
+     Copyright 2020 JetBrains s.r.o. Licensed under the Apache License, Version 2.0.
 
 3. Artifact Runtime Bundles (`native/macOS/JunoDesktop/Resources/ArtifactRuntime/`):
    - Mermaid (MIT License, Copyright Knut Sveidqvist)

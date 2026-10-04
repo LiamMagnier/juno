@@ -200,9 +200,9 @@ and production restart have not been performed by this source change.
 
 To catch regressions early, Juno runs automated security mechanisms across pull requests and pushes:
 
-1. **GitHub Secret Scanning & Push Protection:** Enabled across the repository to block leaked credentials, API tokens, and provider keys before they land in git history.
+1. **GitHub Secret Scanning & Push Protection:** Verified enabled on the repository to block leaked credentials, API tokens, and provider keys before they land in git history.
 2. **CodeQL Static Analysis:** Automated CodeQL workflow (`.github/workflows/codeql.yml`) scanning JavaScript and TypeScript code for security vulnerabilities using the `security-extended` suite.
-3. **Dependency Review & Dependabot:** Automated weekly supply-chain updates and PR dependency review (`.github/workflows/dependency-review.yml`) blocking vulnerable dependencies before merge.
+3. **Dependabot Updates:** Automated weekly configuration (`.github/dependabot.yml`) tracking root npm packages, runner dependencies, and GitHub Actions.
 4. **Ownership Query Verification:** Dedicated static suite (`tests/ownership-guard-callsites.test.ts`) that verifies every Prisma database query on user-owned models is explicitly scoped to `userId` or annotated with an authorized bypass.
 5. **Action-Approval Policy Tests:** Comprehensive test gate (`tests/action-approval.test.ts`) verifying connector arguments, receipt hashing, permission boundary rules, and prompt-injection mitigations fail closed.
 

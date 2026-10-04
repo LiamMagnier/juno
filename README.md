@@ -8,7 +8,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15_App_Router-black.svg?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![Swift](https://img.shields.io/badge/Swift-6.0-FA7343.svg?logo=swift&logoColor=white)](https://swift.org/)
-[![Tests](https://img.shields.io/badge/Tests-487_Suites_Passing-brightgreen.svg)]()
 [![Production](https://img.shields.io/badge/Live_Deployment-chat.liams.dev-success.svg)](https://chat.liams.dev)
 
 Streaming Chat · Deep Research · Durable Memory · Canvas Artifacts · Model Context Protocol (MCP) · Realtime Voice Relay · Cloud & Device Code Agents · Native macOS & iOS Apps
@@ -58,7 +57,7 @@ Juno fills this gap by delivering:
             ▼                      ▼                      ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        Juno Backend Core                               │
-│  • Next.js App Router (1,400+ API & Route Handlers)                    │
+│  • Next.js App Router (Modular API & Route Handlers)                   │
 │  • NextAuth v5 + TOTP 2FA + Immediate Session Revocation               │
 │  • Ownership Query Guard (Mandatory User-Scoping)                      │
 │  • Encrypted Transcript & Credential Storage (AES-256-GCM)             │
@@ -68,7 +67,7 @@ Juno fills this gap by delivering:
     ▼                ▼     ▼                ▼     ▼                ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
 │  PostgreSQL  │ │  S3 Storage  │ │ Voice Relay  │ │ Cloud Runner │
-│ (129 Models, │ │ (Attachments,│ │  (WebSocket  │ │ (Agent Core, │
+│   (Prisma    │ │ (Attachments,│ │  (WebSocket  │ │ (Agent Core, │
 │  Migrations) │ │  Artifacts)  │ │   Service)   │ │  Sandboxed)  │
 └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
 ```
@@ -83,7 +82,7 @@ Juno implements defense-in-depth controls audited for production workloads:
 - **Database Ownership Enforcement:** The Prisma data access layer (`src/lib/db.ts`) automatically rejects unscoped queries on user-owned tables, verified by static call-site auditing (`tests/ownership-guard-callsites.test.ts`).
 - **Action-Bound Approval Receipts:** External mutations and sensitive connector invocations require cryptographic SHA-256 approval receipts bound to user, session, and exact arguments.
 - **Origin & CSRF Protection:** Strict same-origin validation on cookie-authenticated mutations; bearer authentication contract enforced for native clients.
-- **Automated Security Pipelines:** CodeQL static analysis, GitHub Secret Scanning push protection, Dependabot supply chain checks, and automated dependency review on pull requests.
+- **Automated Security Pipelines:** CodeQL static analysis, GitHub Secret Scanning push protection, and Dependabot supply chain updates.
 
 For detailed disclosure guidelines, see [SECURITY.md](SECURITY.md).
 
@@ -130,13 +129,13 @@ Juno enforces strict quality and contract integrity gates across both web and na
 # Extract UI translation strings
 npm run i18n:extract
 
-# Run full project typecheck (enforces strict TypeScript across 12,000+ files)
+# Run full project typecheck
 npm run typecheck
 
 # Run linter
 npm run lint
 
-# Run automated test suites (480+ unit and integration test suites)
+# Run automated test suites
 npm test
 
 # Verify Swift-TypeScript contract sync
