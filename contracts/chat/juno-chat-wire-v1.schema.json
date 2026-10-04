@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 190,
-    "planned": 220,
+    "planned": 227,
     "web-only": 45,
     "unclassified": 0
   },
@@ -1031,10 +1031,13 @@
       "enum": [
         "CODE",
         "DESIGN",
+        "DOCUMENT",
         "HTML",
         "MARKDOWN",
         "MERMAID",
+        "PRESENTATION",
         "REACT",
+        "SPREADSHEET",
         "SVG"
       ]
     },
@@ -2454,6 +2457,18 @@
             "null"
           ],
           "x-native": "native"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "planned",
+          "x-native-note": "Auto's routing receipt (which model it picked and why, src/lib/router/receipt.ts). The web shows it under an Auto reply; the Swift apps ignore the key until they draw the same receipt."
         }
       },
       "required": [
@@ -2495,10 +2510,13 @@
           "type": "string",
           "enum": [
             "FREE",
+            "LITE",
             "MAX",
             "MAX20",
             "OWNER",
-            "PRO"
+            "PLUS",
+            "PRO",
+            "ULTRA"
           ],
           "x-native": "planned"
         },
@@ -3086,6 +3104,21 @@
         "USER"
       ]
     },
+    "ReasoningEffort": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "minimal",
+        "xhigh",
+        null
+      ]
+    },
     "ReasoningSegment": {
       "type": "object",
       "properties": {
@@ -3108,6 +3141,67 @@
       "required": [
         "round",
         "offset"
+      ]
+    },
+    "RoutingReceipt": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1,
+          "x-native": "planned"
+        },
+        "effort": {
+          "$ref": "#/$defs/ReasoningEffort",
+          "x-native": "planned"
+        },
+        "taskClass": {
+          "type": "string",
+          "enum": [
+            "agentic",
+            "coding",
+            "everyday",
+            "long_context",
+            "reasoning",
+            "research",
+            "structured_output",
+            "vision",
+            "writing"
+          ],
+          "x-native": "planned"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "planned"
+        },
+        "degraded": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "all_providers_unavailable",
+            "over_budget",
+            null
+          ],
+          "x-native": "planned"
+        },
+        "rerouted": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "v",
+        "effort",
+        "taskClass",
+        "reasons"
       ]
     },
     "RunNotice": {

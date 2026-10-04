@@ -223,6 +223,10 @@
     "ClientMessage.costUsd": "native",
     "ClientMessage.cacheReadTokens": "native",
     "ClientMessage.cacheWriteTokens": "native",
+    "ClientMessage.routing": {
+      "status": "planned",
+      "note": "Auto's routing receipt (which model it picked and why, src/lib/router/receipt.ts). The web shows it under an Auto reply; the Swift apps ignore the key until they draw the same receipt."
+    },
     "ClientAttachment.id": "native",
     "ClientAttachment.kind": "native",
     "ClientAttachment.fileName": "native",
