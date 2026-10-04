@@ -600,16 +600,12 @@ public struct NativeUsagePlan: Equatable, Sendable {
         return budgetMicroUsd <= 0
     }
 
-    public var planName: String {
-        switch planID.uppercased() {
-        case "FREE": "Free"
-        case "PRO": "Pro"
-        case "MAX": "Max x5"
-        case "MAX20": "Max x20"
-        case "OWNER": "Owner"
-        default: planID
-        }
-    }
+    /// The plan, known to this build or not — never Free for a plan id this
+    /// build has not heard of.
+    public var plan: JunoAccountPlan { JunoAccountPlan(serverID: planID) }
+
+    /// "Max ×10" for MAX20, the server's id in title case for a newer plan.
+    public var planName: String { plan.displayName }
 
     public var renewalLabel: String {
         cancelAtPeriodEnd ? "Access ends" : "Budget renews"

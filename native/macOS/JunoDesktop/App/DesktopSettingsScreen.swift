@@ -245,7 +245,9 @@ final class DesktopSettingsContext {
                 plan = .failed("Your plan couldn’t be loaded.")
                 return
             }
-            plan = .loaded(try NativeUsagePlan.decode(response.body))
+            let loaded = try NativeUsagePlan.decode(response.body)
+            plan = .loaded(loaded)
+            DesktopPlanGate.shared.update(planID: loaded.planID)
         } catch {
             plan = .failed("Your plan couldn’t be loaded.")
         }

@@ -1,4 +1,5 @@
 import Foundation
+import JunoCore
 import Observation
 
 /// The tools the composer's `+` menu switches on and off for the next message.
@@ -37,7 +38,18 @@ final class JunoMobileComposerTools {
     }
 
     /// Per-send. Cleared by ``consumeForSend()``.
-    var deepResearch = false
+    ///
+    /// Research is Pro and up: arming it on a plan without it opens the plans
+    /// page instead, whichever way it was asked for (the Tools menu, `/research`,
+    /// a "Research this" suggestion).
+    var deepResearch = false {
+        didSet {
+            if deepResearch, !planStore.require(.research) { deepResearch = false }
+        }
+    }
+
+    /// The gate research and web search ask.
+    @ObservationIgnored var planStore: JunoMobilePlanStore = .shared
 
     var webSearch: Bool {
         didSet { defaults.set(webSearch, forKey: Key.webSearch) }
@@ -122,7 +134,9 @@ final class JunoMobileComposerTools {
     func consumeForSend() -> Sent {
         let sent = Sent(
             deepResearch: deepResearch,
-            webSearch: webSearch,
+            // The sticky switch survives a plan without web search (Free);
+            // the turn simply does not ask for it.
+            webSearch: webSearch && planStore.allows(.webSearch),
             canvas: canvas,
             connectors: connectors,
             fastMode: fastMode,

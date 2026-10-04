@@ -213,6 +213,7 @@ struct DesktopAccountFooter: View {
         else { return }
         planReadAt = Date()
         plan = loaded
+        DesktopPlanGate.shared.update(planID: loaded.planID)
     }
 }
 
@@ -505,11 +506,12 @@ struct DesktopAccountPopoverRows: Equatable {
     /// An uncapped plan's sentence stands a little taller than the dots.
     var usageHasSentence = false
 
-    /// Plans below the top one that is for sale today (FREE, PRO, MAX) may
-    /// upgrade; the row also needs the Upgrade presenter (seam 4).
+    /// Plans below the top one for sale (Ultra) may upgrade; Owner and a
+    /// plan this build does not know may not. The row also needs the Upgrade
+    /// presenter (seam 4).
     static func canUpgrade(planID: String?) -> Bool {
         guard let planID else { return false }
-        return ["FREE", "PRO", "MAX"].contains(planID.uppercased())
+        return JunoAccountPlan(serverID: planID).canUpgrade
     }
 
     /// The popover's height: a constant per row set, never measured at run

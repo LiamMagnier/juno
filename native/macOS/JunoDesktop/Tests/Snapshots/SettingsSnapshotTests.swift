@@ -90,6 +90,10 @@ enum SettingsSnapshotFixtures {
         "settings-plan-pro",
         "settings-save-status",
         "upgrade-sheet",
+        "upgrade-sheet-full",
+        "upgrade-sheet-lite-yearly",
+        "upgrade-sheet-code-locked",
+        "plan-locked-agents",
         "onboarding",
         "announcement-image",
         "announcement-plain",
@@ -160,11 +164,40 @@ enum SettingsSnapshotFixtures {
             context.saves.mark("fontSize", ok: false)
             return window(.general, context)
         case "upgrade-sheet":
-            return sheet(width: 760, height: 640) {
+            return sheet(width: 720, height: 680) {
                 DesktopUpgradeSheet(
                     model: DesktopUpgradeModel(sender: nil, accountID: nil, currentPlanID: "FREE"),
-                    done: {}
+                    done: {},
+                    locale: Locale(identifier: "en_IE")
                 )
+            }
+        case "upgrade-sheet-full":
+            return sheet(width: 720, height: 1240) {
+                DesktopUpgradeSheet(
+                    model: DesktopUpgradeModel(sender: nil, accountID: nil, currentPlanID: "PRO"),
+                    done: {},
+                    locale: Locale(identifier: "en_IE"),
+                    height: 1240
+                )
+            }
+        case "upgrade-sheet-lite-yearly":
+            let model = DesktopUpgradeModel(sender: nil, accountID: nil, currentPlanID: "LITE")
+            model.interval = .year
+            return sheet(width: 720, height: 680) {
+                DesktopUpgradeSheet(model: model, done: {}, locale: Locale(identifier: "fr_FR"))
+            }
+        case "upgrade-sheet-code-locked":
+            return sheet(width: 720, height: 680) {
+                DesktopUpgradeSheet(
+                    model: DesktopUpgradeModel(sender: nil, accountID: nil, currentPlanID: "LITE"),
+                    reason: .code,
+                    done: {},
+                    locale: Locale(identifier: "en_IE")
+                )
+            }
+        case "plan-locked-agents":
+            return sheet(width: 720, height: 480) {
+                DesktopPlanLockedPage(feature: .agents, title: "Orbit", icon: JunoShellDestination.agents.icon)
             }
         case "onboarding":
             return sheet(width: 480, height: 440) {

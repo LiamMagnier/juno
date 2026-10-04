@@ -1,0 +1,291 @@
+{
+  "identifier": "A1E5C0DE-5A1E-4C0D-9E11-A1E7A1E7A1E7",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "",
+    "_failTransactionsEnabled": false,
+    "_lastSynchronizedDate": null,
+    "_locale": "en_US",
+    "_storefront": "FRA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "21580001",
+      "localizations": [],
+      "name": "Alevr",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "10.99",
+          "familyShareable": false,
+          "groupNumber": 6,
+          "internalID": "1436013362",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Everyday models and web search.",
+              "displayName": "Lite (Monthly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.lite.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Lite Monthly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "107.99",
+          "familyShareable": false,
+          "groupNumber": 6,
+          "internalID": "3020885128",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Everyday models and web search.",
+              "displayName": "Lite (Yearly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.lite.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Lite Yearly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "23.99",
+          "familyShareable": false,
+          "groupNumber": 5,
+          "internalID": "8077157199",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Every model, Code, agents, deep research and voice.",
+              "displayName": "Pro (Monthly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.pro.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Pro Monthly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "239.99",
+          "familyShareable": false,
+          "groupNumber": 5,
+          "internalID": "6756453340",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Every model, Code, agents, deep research and voice.",
+              "displayName": "Pro (Yearly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.pro.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Pro Yearly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "59.99",
+          "familyShareable": false,
+          "groupNumber": 4,
+          "internalID": "3454487632",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "2.5× Pro's usage, at higher priority.",
+              "displayName": "Plus (Monthly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.plus.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Plus Monthly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "599.99",
+          "familyShareable": false,
+          "groupNumber": 4,
+          "internalID": "5555775935",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "2.5× Pro's usage, at higher priority.",
+              "displayName": "Plus (Yearly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.plus.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Plus Yearly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "119.99",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "2868459497",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "5× Pro's usage, at highest priority.",
+              "displayName": "Max ×5 (Monthly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.max.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Max ×5 Monthly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1199.99",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "7132042802",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "5× Pro's usage, at highest priority.",
+              "displayName": "Max ×5 (Yearly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.max.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Max ×5 Yearly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "239.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "4674165426",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "10× Pro's usage, at highest priority.",
+              "displayName": "Max ×10 (Monthly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.max20.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Max ×10 Monthly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2399.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "8017946557",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "10× Pro's usage, at highest priority.",
+              "displayName": "Max ×10 (Yearly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.max20.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Max ×10 Yearly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "599.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "6498390414",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "25× Pro's usage, agents all day.",
+              "displayName": "Ultra (Monthly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.ultra.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Ultra Monthly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "5999.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "1216153670",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "25× Pro's usage, agents all day.",
+              "displayName": "Ultra (Yearly)",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.liammagnier.juno.ultra.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Ultra Yearly",
+          "subscriptionGroupID": "21580001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

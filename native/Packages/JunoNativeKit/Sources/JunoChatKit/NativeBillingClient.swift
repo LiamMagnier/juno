@@ -39,14 +39,17 @@ public struct NativeWebRouteError: Error, Equatable, LocalizedError, Sendable {
 /// sees a card; it only asks the server for the address to send the reader to.
 public struct NativeBillingClient: Sendable {
     /// The plans checkout sells, as the route's schema names them.
+    /// `src/app/api/stripe/checkout/route.ts` sells these six, lowest first.
     public enum Plan: String, Sendable, CaseIterable {
+        case lite = "LITE"
         case pro = "PRO"
+        case plus = "PLUS"
         case max = "MAX"
         case max20 = "MAX20"
+        case ultra = "ULTRA"
     }
 
-    /// `month` or `year`. Only monthly is offered on the Mac until the server
-    /// says which intervals are for sale (P3-8).
+    /// `month` or `year`. A year bills ten months (two months free).
     public enum Interval: String, Sendable {
         case month
         case year

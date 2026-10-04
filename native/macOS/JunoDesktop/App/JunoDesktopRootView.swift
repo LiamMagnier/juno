@@ -37,9 +37,18 @@ struct JunoDesktopRootView: View {
                 // frame. The route is released only after
                 // Chat appears.
                 guard !startupRoutePending else { return .chat }
-                return DesktopProductMode(rawValue: storedProduct) ?? .chat
+                let stored = DesktopProductMode(rawValue: storedProduct) ?? .chat
+                // Code is Pro and up (the contract's `minPlan`). A window left
+                // on Code by a plan that has since lapsed opens on Chat.
+                if stored == .code, !DesktopPlanGate.shared.allows(.code) { return .chat }
+                return stored
             },
-            set: { storedProduct = $0.rawValue }
+            set: { next in
+                // ⌘2, the switch and View › Code all land here: a plan without
+                // Code gets the Upgrade sheet on Pro instead of the product.
+                if next == .code, !DesktopPlanGate.shared.require(.code) { return }
+                storedProduct = next.rawValue
+            }
         )
     }
 

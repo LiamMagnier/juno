@@ -1,5 +1,6 @@
 import AppKit
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoSync
 import SwiftUI
@@ -101,7 +102,7 @@ struct DesktopSettingsPlanPane: View {
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            let price = Self.priceSentence(price: catalog?.price ?? 0, renewsAt: plan.renewsAt, cancelAtPeriodEnd: plan.cancelAtPeriodEnd)
+            let price = Self.priceSentence(price: catalog?.priceHT ?? 0, renewsAt: plan.renewsAt, cancelAtPeriodEnd: plan.cancelAtPeriodEnd)
             // "Free." under a plan already named Free says nothing twice.
             if price != "Free." {
                 Text(price)
@@ -115,9 +116,11 @@ struct DesktopSettingsPlanPane: View {
         .padding(.vertical, JunoSpace.snug)
     }
 
-    /// "€20 a month, excluding VAT. Renews Oct 3, 2026." or "Free."
-    static func priceSentence(price: Int, renewsAt: Date?, cancelAtPeriodEnd: Bool) -> String {
-        var sentence = price > 0 ? "\(DesktopPlanCatalog.price(price)) a month, excluding VAT." : "Free."
+    /// "€24 a month incl. VAT. Renews Oct 3, 2026." or "Free." `price` is the
+    /// plan's HT price; the sentence shows what the reader pays.
+    static func priceSentence(price: Int, renewsAt: Date?, cancelAtPeriodEnd: Bool, locale: Locale = .current) -> String {
+        let ttc = JunoPlanPrice(ht: price)
+        var sentence = price > 0 ? "\(ttc.monthly(locale: locale)) a month incl. VAT." : "Free."
         if let renewsAt {
             // Non-breaking spaces, so a wrap can never split the date.
             let date = renewsAt.formatted(.dateTime.month(.abbreviated).day().year())
@@ -144,13 +147,13 @@ struct DesktopSettingsPlanPane: View {
 
     @ViewBuilder
     private func usageRows(_ plan: NativeUsagePlan) -> some View {
-        let id = plan.planID.uppercased()
         if plan.budgetMicroUsd == nil {
             DesktopSettingsNote(text: "Nothing is metering this account. A task Juno starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.")
-        } else if id == "FREE" {
-            // Free includes no messages: every model needs a paid plan, so
-            // there is nothing to meter — only the way out.
-            DesktopSettingsNote(text: "The Free plan doesn’t include any messages. Pro unlocks every model and a monthly budget.")
+        } else if plan.isBrowseOnly {
+            // No budget at all (a server from before Free's allowance): there
+            // is nothing to meter, only the way out. Free with its small
+            // allowance meters like every other plan.
+            DesktopSettingsNote(text: "This plan has no usage included. Lite opens the everyday models; Pro opens every model, Code and agents.")
         } else {
             TimelineView(.periodic(from: .now, by: 30)) { timeline in
                 VStack(spacing: 0) {

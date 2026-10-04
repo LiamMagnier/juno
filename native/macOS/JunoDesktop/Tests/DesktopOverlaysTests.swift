@@ -425,9 +425,12 @@ struct DesktopOverlaysTests {
         #expect(DesktopAccountUsage.uncappedSentence(isOwner: true) == "Everything unlocked, with no usage cap.")
         #expect(DesktopAccountUsage.uncappedSentence(isOwner: false) == "All models, with a monthly token limit.")
         #expect(DesktopAccountPopoverRows.canUpgrade(planID: "free"))
+        #expect(DesktopAccountPopoverRows.canUpgrade(planID: "lite"))
         #expect(DesktopAccountPopoverRows.canUpgrade(planID: "MAX"))
-        #expect(!DesktopAccountPopoverRows.canUpgrade(planID: "MAX20"))
+        #expect(DesktopAccountPopoverRows.canUpgrade(planID: "MAX20"), "Ultra is above Max ×10")
+        #expect(!DesktopAccountPopoverRows.canUpgrade(planID: "ULTRA"), "the top plan for sale")
         #expect(!DesktopAccountPopoverRows.canUpgrade(planID: "OWNER"))
+        #expect(!DesktopAccountPopoverRows.canUpgrade(planID: "TEAM"), "a plan this build does not know")
         let base = DesktopAccountPopoverRows(showsUpgrade: false, showsAdmin: false).height
         #expect(DesktopAccountPopoverRows(showsUpgrade: true, showsAdmin: true).height == base + 56)
     }

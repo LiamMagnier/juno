@@ -1,4 +1,5 @@
 import CoreSpotlight
+import JunoAPI
 import JunoAuth
 import JunoChatKit
 import JunoCodeKit
@@ -197,6 +198,8 @@ struct JunoMobileRootView: View {
     // this body.
     .junoScreenCanvas()
     .preferredColorScheme(preferredColorScheme)
+    // The plans page, wherever a locked feature or Settings asks for it.
+    .junoMobilePlansSheet()
     // NOTE: `.tint(Color.junoAccent)` must NOT go here. Reading the accent in
     // this body makes the body re-evaluate whenever it changes, and this body is
     // an ancestor of the Settings sheet — so choosing a colour tore the sheet
@@ -345,6 +348,15 @@ struct JunoMobileRootView: View {
         // to the server now. Quiet delivery is taken without a prompt; the
         // question about banners waits for a moment that explains it.
         if let requestSender {
+          // The plan the gates read, and the server that confirms an App
+          // Store purchase for this account.
+          let accountID = session.profile.id
+          Task { await JunoMobilePlanStore.shared.refresh(sender: requestSender, accountID: accountID) }
+          Task {
+            await JunoStoreKitManager.shared.setBackendSyncHandler(
+              JunoMobileAppStoreSync.handler(sender: requestSender, accountID: accountID)
+            )
+          }
           NativePushRegistrar.shared.start(for: session.profile.id, sender: requestSender)
           Task { await NativePushRegistrar.shared.requestQuietAuthorizationIfUndetermined() }
         }
@@ -805,6 +817,8 @@ struct JunoMobileRootView: View {
   /// same session — and `start()` is legal from `ended`, which would make that
   /// second appearance silently redial a call the reader had hung up.
   private func startVoice() {
+    // Voice is Pro and up: a plan without it gets the plans page instead.
+    guard JunoMobilePlanStore.shared.require(.voice) else { return }
     guard voiceSession == nil,
       let requestSender,
       let session = currentSession
@@ -1258,7 +1272,9 @@ struct JunoMobileRootView: View {
   /// checker has to solve in a single expression.
   @ViewBuilder
   private var agentsDestination: some View {
-    if let agentsModel {
+    if !JunoMobilePlanStore.shared.allows(.agents) {
+      JunoMobilePlanLockedView(feature: .agents, title: "Agents", icon: .agents)
+    } else if let agentsModel {
       NativeAgentsScreen(
         model: agentsModel,
         apps: agentApps,
@@ -1379,7 +1395,9 @@ struct JunoMobileRootView: View {
         unavailable
       }
     case .code:
-      if let codeModel {
+      if !JunoMobilePlanStore.shared.allows(.code) {
+        JunoMobilePlanLockedView(feature: .code, title: "Code", icon: .code)
+      } else if let codeModel {
         JunoMobileCodeView(
           model: codeModel,
           remoteModel: remoteCodeModel,
@@ -1401,7 +1419,9 @@ struct JunoMobileRootView: View {
         unavailable
       }
     case .work:
-      if let workModel {
+      if !JunoMobilePlanStore.shared.allows(.agents) {
+        JunoMobilePlanLockedView(feature: .agents, title: "Work", icon: .work)
+      } else if let workModel {
         JunoMobileWorkView(model: workModel)
       } else {
         unavailable

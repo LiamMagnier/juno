@@ -139,6 +139,30 @@ import Testing
         #expect(plan.session.fraction == 0.37)
     }
 
+    @Test func everyPlanIdDecodesAndNamesItself() throws {
+        let names = try ["FREE", "LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA", "OWNER", "TEAM"].map { id in
+            try NativeUsagePlan.decode(Data("""
+            {"quota":{"plan":"\(id)"},
+             "spend":{"spentMicroUsd":0,"budgetMicroUsd":5000000,
+              "windows":{"session":{"pct":0,"resetsAtMs":null},"weekly":{"pct":0,"resetsAtMs":null}},
+              "billing":{"renewsAtMs":null,"cancelAtPeriodEnd":false}}}
+            """.utf8)).planName
+        }
+        #expect(names == ["Free", "Lite", "Pro", "Plus", "Max ×5", "Max ×10", "Ultra", "Owner", "Team"])
+    }
+
+    @Test func aNewerPlanIsNotReadAsFree() throws {
+        let plan = try NativeUsagePlan.decode(Data("""
+        {"quota":{"plan":"STUDIO"},
+         "spend":{"spentMicroUsd":0,"budgetMicroUsd":90000000,
+          "windows":{"session":{"pct":0,"resetsAtMs":null},"weekly":{"pct":0,"resetsAtMs":null}},
+          "billing":{"renewsAtMs":null,"cancelAtPeriodEnd":false}}}
+        """.utf8))
+        #expect(plan.plan.isPaid)
+        #expect(plan.plan.includes(.code))
+        #expect(plan.planName == "Studio")
+    }
+
     @Test func anOlderUsageBodyStillDecodes() throws {
         let plan = try NativeUsagePlan.decode(Data("""
         {"quota":{"plan":"FREE"},
@@ -172,6 +196,15 @@ import Testing
         #expect(request.method == .post)
         let object = try #require(try JSONSerialization.jsonObject(with: request.body ?? Data()) as? [String: String])
         #expect(object == ["plan": "PRO", "interval": "month"])
+    }
+
+    @Test func checkoutSellsEveryPlanTheRouteSells() async throws {
+        #expect(NativeBillingClient.Plan.allCases.map(\.rawValue) == ["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"])
+        let sender = RecordingSender(routes: ["/api/stripe/checkout": (200, #"{"url":"https://checkout.stripe.com/c/pay/cs_test_a2"}"#)])
+        _ = try await NativeBillingClient(sender: sender).checkout(plan: .ultra, interval: .year, for: account)
+        let request = try #require(await sender.requests.first)
+        let object = try #require(try JSONSerialization.jsonObject(with: request.body ?? Data()) as? [String: String])
+        #expect(object == ["plan": "ULTRA", "interval": "year"])
     }
 
     @Test func aPortalRefusalIsTheServersSentence() async throws {
