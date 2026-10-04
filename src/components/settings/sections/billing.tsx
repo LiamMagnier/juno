@@ -12,6 +12,8 @@ import { useApp } from "@/components/app/app-provider";
 import { useSaveStates, type SaveState } from "@/components/settings/save-status";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { UsageHistory } from "@/components/settings/usage-history";
+import { TopUpCard } from "@/components/settings/top-up-card";
+import { ReferralCard } from "@/components/settings/referral-card";
 import {
   formatCountdown,
   formatDate,
@@ -224,6 +226,8 @@ export function BillingSection() {
         )}
       </SettingsGroup>
 
+      {features.billing && <TopUpCard />}
+      {features.billing && <ReferralCard />}
       <SettingsGroup title="Spend ceiling">
         {spend.capDisabled ? (
           <p role="status" className="flex items-start gap-2 py-4 text-ui text-warning-foreground">
