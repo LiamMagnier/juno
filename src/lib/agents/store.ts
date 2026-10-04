@@ -16,7 +16,8 @@ import "server-only";
  */
 
 import { createAgentTransaction } from "@/lib/agents/creation";
-import type { Agent, Prisma } from "@prisma/client";
+import type { Agent, AgentGoal, Prisma } from "@prisma/client";
+import { goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
 import { prisma } from "@/lib/prisma";
 import { decryptField, encryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
@@ -1590,10 +1591,47 @@ export async function agentChatContext(
 // Goals, notes and ideas
 // ---------------------------------------------------------------------------
 
+export interface DurableGoalInput {
+  milestones?: (string | { id?: string; title: string; done?: boolean })[];
+  successCriteria?: string[];
+  maxRuns?: number;
+  budgetMicroUsd?: number | null;
+}
+
+/**
+ * The durable-goal columns a create or patch writes. Milestones keep the
+ * done state and task link of an existing milestone with the same id, so
+ * editing the list does not forget what was already finished.
+ */
+interface DurableGoalData {
+  milestones?: Prisma.InputJsonValue;
+  progress?: number;
+  successCriteria?: Prisma.InputJsonValue;
+  maxRuns?: number;
+  budgetMicroUsd?: number | null;
+}
+
+function durableGoalData(input: DurableGoalInput, existing?: AgentGoal): DurableGoalData {
+  const data: DurableGoalData = {};
+  if (input.milestones !== undefined) {
+    const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
+    const milestones = parseMilestones(input.milestones).map((m) => {
+      const before = previous.get(m.id);
+      return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
+    });
+    data.milestones = milestones as unknown as Prisma.InputJsonValue;
+    data.progress = goalProgress(milestones, existing?.status ?? "active");
+  }
+  if (input.successCriteria !== undefined) data.successCriteria = parseCriteria(input.successCriteria);
+  if (input.maxRuns !== undefined) data.maxRuns = input.maxRuns;
+  if (input.budgetMicroUsd !== undefined) data.budgetMicroUsd = input.budgetMicroUsd;
+  return data;
+}
+
 export async function createAgentGoal(
   user: AgentActor,
   agent: Agent,
-  input: { title: string; detail: string; cadence: string; dueAt?: string | null }
+  input: { title: string; detail: string; cadence: string; dueAt?: string | null } & DurableGoalInput
 ): Promise<AgentResult> {
   const count = await prisma.agentGoal.count({
     where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused"] } },
@@ -1609,6 +1647,7 @@ export async function createAgentGoal(
       detail: input.detail,
       cadence: input.cadence,
       dueAt: input.dueAt ? new Date(input.dueAt) : null,
+      ...durableGoalData(input),
     },
   });
   const eventId = await recordAgentEvent({
@@ -1632,7 +1671,7 @@ export async function updateAgentGoal(
   user: AgentActor,
   agent: Agent,
   goalId: string,
-  patch: { title?: string; detail?: string; cadence?: string; status?: string; dueAt?: string | null }
+  patch: { title?: string; detail?: string; cadence?: string; status?: string; dueAt?: string | null } & DurableGoalInput
 ): Promise<AgentResult> {
   const goal = await prisma.agentGoal.findFirst({ where: { id: goalId, userId: user.id, agentId: agent.id } });
   if (!goal) return refusal(404, "not_found", "That goal no longer exists.");
@@ -1651,6 +1690,9 @@ export async function updateAgentGoal(
       ...(patch.cadence !== undefined ? { cadence: patch.cadence } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
       ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt ? new Date(patch.dueAt) : null } : {}),
+      ...durableGoalData(patch, goal),
+      // A goal the person resumes starts clean: whatever stopped it is theirs to have resolved.
+      ...(patch.status === "active" && goal.status !== "active" ? { blockers: [] } : {}),
     },
   });
   let eventId: string | undefined;

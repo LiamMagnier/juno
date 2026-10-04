@@ -28,6 +28,9 @@ import { StatusIcons } from "@/lib/app-icons";
 import { TIMING } from "@/lib/interaction";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ActivityLines } from "@/components/chat/team-activity";
+import { isTeamActivity, teamMemberLines, workSummaryLines } from "@/lib/agents/activity-words";
 
 /**
  * The task the model started, drawn inside the conversation that started it.
@@ -203,7 +206,7 @@ export function WorkRunPanel({
           exit={{ opacity: 0, transition: transition.exit }}
         >
           {finished ? (
-            <TerminalRun session={session} run={run} work={work} spoken={spoken} />
+            <TerminalRun session={session} run={run} work={work} spoken={spoken} actor={actor} />
           ) : (
             <LiveRun work={work} spoken={spoken} />
           )}
@@ -344,9 +347,12 @@ function StopButton({ stop }: { stop: () => Promise<boolean> }) {
 
 function LiveRun({ work, spoken }: { work: ConversationWork; spoken: ReturnType<typeof deriveTurns> }) {
   const hasNeeds = work.questions.length > 0 || work.openApprovals.length > 0;
-  if (spoken.length === 0 && !hasNeeds) return null;
+  // A temporary specialist team (src/lib/agents/team.ts): one line per member.
+  const team = React.useMemo(() => teamMemberLines(work.events), [work.events]);
+  if (spoken.length === 0 && !hasNeeds && team.length === 0) return null;
   return (
     <div className="space-y-4 px-4 pb-4 @[30rem]:pl-12">
+      <ActivityLines lines={team} label="The team" />
       <RunWords spoken={spoken} />
       {hasNeeds && (
         // Every attention item is listed the same way: a question and an
@@ -486,13 +492,21 @@ function TerminalRun({
   run,
   work,
   spoken,
+  actor,
 }: {
   session: ClientWorkSession;
   run: ClientWorkRun | null;
   work: ConversationWork;
   spoken: ReturnType<typeof deriveTurns>;
+  actor?: string | null;
 }) {
   const performed = React.useMemo(() => derivePerformedActions(work.events), [work.events]);
+  // What it did, as sentences named after whoever did it; the team's members
+  // when it was a team. Event kinds and tool names stay behind Details.
+  const activity = React.useMemo(() => {
+    const team = teamMemberLines(work.events);
+    return team.length > 0 ? team : workSummaryLines(work.events, actor ?? PRODUCT_NAME).filter((line) => line.tone !== "attention");
+  }, [work.events, actor]);
   // Anything that is not a clean finish — failed, cancelled, interrupted, a Mac
   // that went away. The digest is written for a failure and is just as much use
   // on a cancel: how far it got and whether it left anything behind are the two
@@ -520,6 +534,8 @@ function TerminalRun({
           <WorkOutcomeDigest run={run} plan={work.plan} performed={performed} />
         </div>
       )}
+
+      <ActivityLines lines={activity} label={isTeamActivity(work.events) ? "The team" : "What it did"} />
 
       <RunWords spoken={spoken} />
 

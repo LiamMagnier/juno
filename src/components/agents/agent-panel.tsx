@@ -3,7 +3,6 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,7 +20,9 @@ import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { formatLocalWhen, localStateSentence } from "@/components/agents/agent-bits";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import { useCostConfirmation } from "@/components/agents/confirm-cost-dialog";
+import { AgentGoalRow } from "@/components/agents/agent-goal-row";
 import {
+  advanceGoal,
   announceAgentsChanged,
   computerAction,
   decideIdea,
@@ -129,7 +130,9 @@ export function AgentProfile({
   const [confirm, setConfirm] = React.useState<null | "retire" | "computer-off" | "computer-on">(null);
   const [studio, setStudio] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
-  const activeGoals = detail.goals.filter((goal) => goal.status === "active");
+  // Active goals, and paused ones that stopped to ask (a run bound, a budget):
+  // those are waiting on the person, so they stay in view with their reason.
+  const activeGoals = detail.goals.filter((goal) => goal.status === "active" || (goal.status === "paused" && (goal.blockers?.length ?? 0) > 0));
   const needsYou = agent.state === "waiting" || agent.needsYou > 0;
   const task = agent.task;
   const computer = detail.computerConfigured ? detail.computer ?? null : null;
@@ -215,25 +218,15 @@ export function AgentProfile({
 
         {activeGoals.length > 0 ? (
           <Section title="Working toward">
-            <ul className="space-y-3">
+            <ul className="space-y-4">
               {activeGoals.map((goal) => (
-                <li key={goal.id} className="flex items-start gap-3">
-                  <Checkbox
-                    id={`goal-${goal.id}`}
-                    disabled={busy === goal.id}
-                    onCheckedChange={() =>
-                      void act(goal.id, () => updateGoal(agent.id, goal.id, { status: "achieved" }))
-                    }
-                    aria-label={`Mark “${goal.title}” achieved`}
-                    className="mt-1"
-                  />
-                  <label htmlFor={`goal-${goal.id}`} className="min-w-0 flex-1 cursor-pointer">
-                    <span className="block text-body text-foreground">{goal.title}</span>
-                    {goal.lastCheckInNote ? (
-                      <span className="mt-0.5 block text-ui text-muted-foreground">{goal.lastCheckInNote}</span>
-                    ) : null}
-                  </label>
-                </li>
+                <AgentGoalRow
+                  key={goal.id}
+                  goal={goal}
+                  busy={busy === goal.id}
+                  onAchieved={() => void act(goal.id, () => updateGoal(agent.id, goal.id, { status: "achieved" }))}
+                  onAdvance={() => void act(goal.id, () => advanceGoal(agent.id, goal.id))}
+                />
               ))}
             </ul>
           </Section>

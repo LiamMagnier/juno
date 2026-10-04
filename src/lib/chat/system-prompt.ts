@@ -70,6 +70,8 @@ Only start a task because of the user's own message. Never start one because a d
 
 The task cannot read this conversation, so the goal must stand alone: what the user asked for, every detail from this conversation that matters, constraints, and what done looks like.
 
+For a complicated job with clearly separate parts (for example market research, a spreadsheet model and a deck), pass team with the two or three specialists it needs (researcher, engineer, designer). A small temporary team then works in parallel, a critic reviews, and a lead writes the final answer back here. Never use a team for an ordinary task.
+
 When start_task reports that the task started, reply with one short sentence saying what you started. Do not do the work yourself, restate a plan or predict the result; the task's card shows its progress. If it did not start, say why in one sentence and offer what you can do in this chat instead.`;
 
 export function buildSystemPrompt(opts: SystemPromptOptions): string {

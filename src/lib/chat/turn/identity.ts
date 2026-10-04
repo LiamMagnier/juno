@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { prepareRoomTurn, type RoomTurnSetup } from "@/lib/agents/room-store";
-import { buildRoomPromptBlock } from "@/lib/agents/rooms";
+import { buildRoomPromptBlock, canAskMember } from "@/lib/agents/rooms";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { TurnUser } from "./types";
 
@@ -16,10 +16,17 @@ import type { TurnUser } from "./types";
 
 /** Whether the answering member of a room may ask another one (`ask_room_member`). */
 export function roomMayAsk(setup: RoomTurnSetup, roomMessageId: string | null): boolean {
+  // Offered only when some member could actually be asked: the same pure rule
+  // `askRoomMember` enforces (cap, loop guard, paused), so the prompt never
+  // invites a call the room would refuse.
+  const turns = setup.messageTurnAgentIds.map((agentId) => ({ agentId }));
   return (
     !!roomMessageId &&
     setup.mode.kind !== "retry" &&
-    setup.room.members.some((member) => member.agentId !== setup.speaker.agentId && !member.paused)
+    setup.room.members.some(
+      (member) =>
+        canAskMember({ fromAgentId: setup.speaker.agentId, targetAgentId: member.agentId, members: setup.room.members, turns }).ok
+    )
   );
 }
 

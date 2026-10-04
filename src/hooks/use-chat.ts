@@ -1750,6 +1750,45 @@ export function useChat(opts: UseChatOptions) {
     );
   }, [status, runGeneration, startGeneration, resendUnsent, reconnect, opts.model, opts.voiceMode, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]);
 
+  /**
+   * A room's follow-up turn (src/lib/agents/rooms.ts): the next planned or
+   * asked member answers the room's newest message as a NEW reply, below the
+   * ones already written. Nothing is dropped, unlike a regenerate. The server
+   * runs it only when this member is the next turn of that message, so a stale
+   * or duplicate dispatch is refused (409) rather than answered twice.
+   */
+  const continueRoomTurn = React.useCallback(async (agentId: string): Promise<boolean> => {
+    if (status !== "idle" && status !== "error") return false;
+    if (!convoIdRef.current || opts.privateMode) return false;
+    const assistantTempId = tempId();
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantTempId, renderKey: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
+    ]);
+    await runGeneration(
+      {
+        conversationId: convoIdRef.current,
+        regenerate: true,
+        roomTurn: { agentId },
+        voiceMode: opts.voiceMode,
+        reasoningEffort: opts.reasoningEffort,
+        connectors: opts.connectors,
+      },
+      assistantTempId
+    );
+    // Another tab (or a reload) already ran this turn: the server refused it
+    // with 409 and nothing was charged. That is not an error to show; the
+    // placeholder goes and the room's detail refresh draws the real reply.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const placeholder = messagesRef.current.find((m) => m.id === assistantTempId);
+    const refused = !!placeholder?.error && /next to answer|already started|nothing to answer|cannot answer right now|not a room/i.test(placeholder.errorMessage ?? "");
+    if (refused) {
+      setMessages((prev) => prev.filter((m) => m.id !== assistantTempId));
+      setStatus("idle");
+    }
+    return !refused;
+  }, [status, runGeneration, opts.privateMode, opts.voiceMode, opts.reasoningEffort, opts.connectors]);
+
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
       if (status !== "idle" && status !== "error") return;
@@ -1964,6 +2003,7 @@ export function useChat(opts: UseChatOptions) {
     cancelPendingClarification,
     continueResponse,
     regenerate,
+    continueRoomTurn,
     /** True while the last turn dropped but can still be picked up from its
      *  frame log. The retry affordance should read "Reconnect": it costs
      *  nothing and continues the same answer. */

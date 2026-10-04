@@ -57,6 +57,9 @@ import type { ClientAgent } from "@/lib/agents/types";
 import { AgentGreeting, AgentThreadHeader, threadAgentState } from "@/components/agents/agent-thread-header";
 import { AgentPanel, normalizeAgentPanelTab, type AgentPanelTab } from "@/components/agents/agent-panel";
 import { AgentComputerOverlay, AgentComputerPip } from "@/components/agents/agent-computer";
+import { useRoom } from "@/components/chat/use-room";
+import { roomMembersLine } from "@/lib/agents/room-client";
+import type { ClientRoomDetail } from "@/lib/agents/room-types";
 import { AgentThreadContext, type AgentThreadIdentity } from "@/components/agents/agent-thread-context";
 import { AGENTS_CHANGED_EVENT, fetchAgentDetail } from "@/components/agents/agents-transport";
 import { SessionOutputs } from "@/components/chat/session-outputs";
@@ -113,6 +116,8 @@ interface ChatViewProps {
   initialArtifactIdentifier?: string;
   /** Scroll to and briefly mark this message on arrival (?m= deep link from search). */
   initialFocusMessageId?: string;
+  /** Set when this conversation is a room (src/lib/agents/rooms.ts): its members, turns and next turn. */
+  initialRoom?: ClientRoomDetail | null;
 }
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
@@ -173,7 +178,7 @@ function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT";
     .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, agent: initialAgent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, agent: initialAgent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId, initialRoom }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -530,6 +535,23 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const currentConversationId =
     conversationId ??
     (activeConversationId && activeConversationId === ownedConversationIdRef.current ? activeConversationId : createdIdRef.current);
+
+  // A room: who answers each message, and the bounded follow-up turns the
+  // server planned. Null in every other chat (nothing is fetched for them).
+  const room = useRoom({
+    conversationId,
+    initialRoom: initialRoom ?? null,
+    privateMode,
+    busy: chat.isBusy,
+    continueRoomTurn: chat.continueRoomTurn,
+  });
+  const roomSpeakers = room.speakers;
+  const roomLive = room.live;
+  const roomSpeakerFor = React.useCallback(
+    (message: ChatMessage, isLast: boolean) =>
+      roomSpeakers.get(message.id) ?? (isLast && message.streaming ? roomLive : null),
+    [roomSpeakers, roomLive]
+  );
 
   /**
    * The durable research run attached to this conversation, if there is one.
@@ -2272,6 +2294,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   subject={currentConversationId}
                   className="max-w-[40rem]"
                 />
+                {room.detail && (
+                  <span className="mt-0.5 block truncate font-mono text-caption font-normal text-muted-foreground">
+                    {roomMembersLine(room.detail)}
+                  </span>
+                )}
               </h1>
             ) : (
               <div className="min-w-0 flex-1" aria-hidden="true" />
@@ -2551,6 +2578,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // h1 at all for that window. The list's hidden fallback stays
                 // until the band has something to show.
                 titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
+                speakerFor={room.detail ? roomSpeakerFor : undefined}
               />
               </AgentThreadContext.Provider>
               {currentConversationId && !privateMode && (

@@ -63,10 +63,11 @@ test("the tool declares a title and a goal, and nothing a provider would reject"
     required: string[];
   };
   assert.equal(parameters.type, "object");
-  assert.deepEqual(Object.keys(parameters.properties).sort(), ["deliverable", "goal", "title"]);
+  assert.deepEqual(Object.keys(parameters.properties).sort(), ["deliverable", "goal", "team", "title"]);
   assert.deepEqual(parameters.required, ["title", "goal"]);
   for (const [name, property] of Object.entries(parameters.properties)) {
-    assert.equal(property.type, "string", name);
+    // `team` (src/lib/agents/team.ts) is the one list: the specialists of a temporary team.
+    assert.equal(property.type, name === "team" ? "array" : "string", name);
     assert.ok(property.description.length > 20, `${name} has no real description`);
   }
   // Gemini refuses the whole request over `additionalProperties`, and length
@@ -161,7 +162,12 @@ test("arguments are trimmed and bounded, and both required fields are required",
   assert.equal(parseStartTaskArgs({ title: 7, goal: "Build it" }), null);
 
   const parsed = parseStartTaskArgs({ title: "  Pricing\n sheet ", goal: "  Build it  ", deliverable: " " });
-  assert.deepEqual(parsed, { title: "Pricing sheet", goal: "Build it", deliverable: null });
+  assert.deepEqual(parsed, { title: "Pricing sheet", goal: "Build it", deliverable: null, team: null });
+
+  // A team names known specialists only, once each, at most three.
+  assert.deepEqual(parseStartTaskArgs({ title: "t", goal: "g", team: ["researcher", "hacker", "researcher", "designer", "engineer"] })?.team, ["researcher", "designer", "engineer"]);
+  assert.equal(parseStartTaskArgs({ title: "t", goal: "g", team: "researcher" })?.team, null);
+  assert.equal(parseStartTaskArgs({ title: "t", goal: "g", team: ["critic"] })?.team, null);
 
   // A title that runs long is cut at a word, never mid-word, and never over 80.
   const long = parseStartTaskArgs({

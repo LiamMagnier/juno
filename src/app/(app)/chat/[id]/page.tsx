@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
 import { agentForThread, pendingAgentStarter } from "@/lib/agents/store";
+import { loadRoomDetail } from "@/lib/agents/room-store";
 
 /**
  * Split, not imported. This route renders ONE of two surfaces and the chat one
@@ -66,6 +67,10 @@ export default async function ConversationPage({
   // transcript. Null for every other chat, and for a retired agent's thread,
   // which reads as the ordinary chat it now is.
   const agent = await agentForThread(user.id, thread.conversation.id);
+  // A room is an ordinary chat with member agents; its members, turns and the
+  // turn waiting to run come with the page, so reloading resumes the plan
+  // without a second responder (src/lib/agents/rooms.ts).
+  const room = agent ? null : await loadRoomDetail(user.id, thread.conversation.id).catch(() => null);
   // Agents home opens a new agent's empty thread with the job as `?q=`; it is sent
   // as the thread's first message, once. Any other thread ignores it.
   const firstMessage =
@@ -84,6 +89,7 @@ export default async function ConversationPage({
       initialConnectors={thread.conversation.activeConnectors}
       initialArtifactIdentifier={typeof artifact === "string" && artifact ? artifact : undefined}
       initialFocusMessageId={typeof m === "string" && m ? m : undefined}
+      initialRoom={room}
     />
   );
   return chat;

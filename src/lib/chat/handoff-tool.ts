@@ -122,7 +122,7 @@ export function handoffIdempotencyKeys(userMessageId: string): { task: string; a
   return { task: `handoff:${userMessageId}`, approval: `agent-handoff-approval:${userMessageId}` };
 }
 
-export interface HandoffArgs extends StartTaskArgs {
+export interface HandoffArgs extends Omit<StartTaskArgs, "team"> {
   teammate: string;
 }
 
@@ -139,7 +139,9 @@ export function parseHandoffArgs(args: Record<string, unknown>): HandoffArgs | n
   const teammate = typeof args.teammate === "string" ? oneLine(args.teammate).replace(/^@/, "") : "";
   const task = parseStartTaskArgs(args);
   if (!teammate || !task) return null;
-  return { teammate, ...task };
+  // A handoff goes to one named teammate; a specialist team is a task's option only.
+  const { team: _team, ...rest } = task;
+  return { teammate, ...rest };
 }
 
 /** An agent as the resolver needs it. */

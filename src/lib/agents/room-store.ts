@@ -212,6 +212,12 @@ export interface RoomTurnSetup {
   room: RoomMembersRead;
   /** The agent answering this request. */
   speaker: RoomMemberInfo;
+  /**
+   * The members already planned or asked for this message (the plan itself for
+   * a new one), so the prompt only offers `ask_room_member` when a member is
+   * still askable under the cap and the loop guard.
+   */
+  messageTurnAgentIds: string[];
   /** How this turn came to be. */
   mode:
     | { kind: "new"; plan: { agentId: string; reason: "addressed" | "routed" }[] }
@@ -278,6 +284,7 @@ export async function prepareRoomTurn(input: {
     return {
       room,
       speaker,
+      messageTurnAgentIds: turns.map((turn) => turn.agentId),
       mode: {
         kind: "follow_up",
         turnId: next.id,
@@ -306,7 +313,7 @@ export async function prepareRoomTurn(input: {
           data: { status: "running" },
         });
       }
-      return { room, speaker, mode: { kind: "retry", turnId: turn?.id ?? null, userMessageId: turn?.userMessageId ?? null } };
+      return { room, speaker, messageTurnAgentIds: [], mode: { kind: "retry", turnId: turn?.id ?? null, userMessageId: turn?.userMessageId ?? null } };
     }
     if (last?.role === "USER") {
       const text = decryptMessageText(last.content) ?? "";
@@ -317,7 +324,7 @@ export async function prepareRoomTurn(input: {
       });
       const speaker = plan[0] ? byId(plan[0].agentId) : null;
       if (!speaker) return { status: 409, error: "room_paused", message: "Everyone in this room is paused." };
-      return { room, speaker, mode: { kind: "new", plan } };
+      return { room, speaker, messageTurnAgentIds: plan.map((turn) => turn.agentId), mode: { kind: "new", plan } };
     }
   }
 
@@ -328,7 +335,7 @@ export async function prepareRoomTurn(input: {
   });
   const speaker = plan[0] ? byId(plan[0].agentId) : null;
   if (!speaker) return { status: 409, error: "room_paused", message: "Everyone in this room is paused." };
-  return { room, speaker, mode: { kind: "new", plan } };
+  return { room, speaker, messageTurnAgentIds: plan.map((turn) => turn.agentId), mode: { kind: "new", plan } };
 }
 
 /**

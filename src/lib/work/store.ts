@@ -40,6 +40,7 @@ import {
 } from "@/lib/spend";
 import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { dependenciesSatisfied } from "@/lib/work/board";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -1043,6 +1044,23 @@ export type ClaimRunResult =
  */
 export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
   const now = input.now ?? new Date();
+  // Dependencies (WorkSession.dependsOnSessionIds) are part of the claim: a
+  // run whose session waits on another task is not claimable yet, whoever
+  // created it. One extra indexed read, only for a session that has any.
+  const gate = await prisma.workRun.findFirst({
+    where: { id: input.runId, userId: input.userId },
+    select: { session: { select: { dependsOnSessionIds: true, dependencyMode: true } } },
+  });
+  const dependsOn = gate?.session.dependsOnSessionIds ?? [];
+  if (dependsOn.length > 0) {
+    const deps = await prisma.workSession.findMany({
+      where: { userId: input.userId, id: { in: dependsOn }, deletedAt: null },
+      select: { status: true },
+    });
+    if (!dependenciesSatisfied({ mode: gate!.session.dependencyMode, expected: new Set(dependsOn).size, statuses: deps.map((d) => d.status) })) {
+      return { claimed: false, run: await prisma.workRun.findFirst({ where: { id: input.runId, userId: input.userId } }) };
+    }
+  }
   const claimed = await prisma.workRun.updateMany({
     where: {
       id: input.runId,
@@ -1073,6 +1091,36 @@ export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
     now,
   });
   return { claimed: true, run };
+}
+
+/**
+ * The executor's heartbeat: extends its own lease on a live run.
+ *
+ * Fenced to the lease holder and to the leased statuses, exactly like
+ * `startLeaseRenewal` in scripts/work-runner.ts, so a worker whose lease
+ * already lapsed (and whose run the sweep ended or another worker took)
+ * cannot steal it back. Returns false when the heartbeat no longer holds
+ * anything, which is the executor's signal to stop.
+ */
+export async function renewRunLease(input: {
+  runId: string;
+  userId: string;
+  executorId: string;
+  leaseMs?: number;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const renewed = await prisma.workRun.updateMany({
+    where: {
+      id: input.runId,
+      userId: input.userId,
+      claimedBy: input.executorId,
+      status: { in: [...WORK_LEASED_STATUSES] },
+      leaseExpiresAt: { gte: now },
+    },
+    data: { leaseExpiresAt: new Date(now.getTime() + (input.leaseMs ?? RUN_LEASE_MS)) },
+  });
+  return renewed.count === 1;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@
  * module into the bundle. Dates are ISO strings on the wire, like Work's.
  */
 
+import { parseBlockers, parseCriteria, parseMilestones, type GoalBlocker, type GoalMilestone } from "@/lib/agents/goals";
 import type { Agent, AgentEvent, AgentGoal, AgentIdea, AgentNote } from "@prisma/client";
 import type { BudgetLine } from "@/lib/budgets";
 import { normalizeAgentAvatar, type AgentAvatar } from "@/lib/agents/avatar";
@@ -108,6 +109,22 @@ export interface ClientAgentGoal {
   dueAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Durable-goal fields (src/lib/agents/goals.ts). Optional for clients
+   * written before them; the server always sends them.
+   */
+  milestones?: GoalMilestone[];
+  successCriteria?: string[];
+  blockers?: GoalBlocker[];
+  /** 0..100 */
+  progress?: number;
+  nextAction?: string | null;
+  budgetMicroUsd?: number | null;
+  spentMicroUsd?: number;
+  /** 0: not driven (the agent reflects on it but starts nothing). */
+  maxRuns?: number;
+  runsUsed?: number;
+  lastAdvancedAt?: string | null;
 }
 
 export interface ClientAgentIdea {
@@ -243,6 +260,16 @@ export function serializeGoal(goal: AgentGoal): ClientAgentGoal {
     dueAt: iso(goal.dueAt),
     createdAt: goal.createdAt.toISOString(),
     updatedAt: goal.updatedAt.toISOString(),
+    milestones: parseMilestones(goal.milestones),
+    successCriteria: parseCriteria(goal.successCriteria),
+    blockers: parseBlockers(goal.blockers),
+    progress: goal.progress,
+    nextAction: goal.nextAction,
+    budgetMicroUsd: goal.budgetMicroUsd,
+    spentMicroUsd: goal.spentMicroUsd,
+    maxRuns: goal.maxRuns,
+    runsUsed: goal.runsUsed,
+    lastAdvancedAt: iso(goal.lastAdvancedAt),
   };
 }
 
