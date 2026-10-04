@@ -282,15 +282,33 @@ export class RingsScene implements Scene {
   opts: RingsOptions;
   private lastT = 0;
   private lineOn: { on: boolean; at: number }[] = [];
+  /** When each arc last moved (another ring or other angles): it draws on again from there. */
+  private arcMoved: { key: string; at: number | null }[] = [];
 
   constructor(opts: RingsOptions) {
     this.opts = opts;
     this.syncLines(opts);
+    this.syncArcs(opts);
   }
 
   update(opts: RingsOptions) {
     this.opts = opts;
     this.syncLines(opts);
+    this.syncArcs(opts);
+  }
+
+  /**
+   * An arc that moves draws itself on again, on the instance's own clock,
+   * the way a line switched on does: a chooser (the plans page) sends the
+   * presence trajectory to the orbit just picked instead of teleporting it.
+   */
+  private syncArcs(opts: RingsOptions) {
+    this.arcMoved = (opts.arcs ?? []).map((arc, i) => {
+      const key = `${arc.ring}:${arc.from}:${arc.to}`;
+      const was = this.arcMoved[i];
+      if (!was) return { key, at: null };
+      return was.key === key ? was : { key, at: opts.animate ? this.lastT : null };
+    });
   }
 
   private syncLines(opts: RingsOptions) {
@@ -410,13 +428,15 @@ export class RingsScene implements Scene {
     (o.arcs ?? []).forEach((arc) => {
       const ring = o.rings[arc.ring];
       if (!ring) return;
-      const t0 = delay + stagger * (o.rings.length + 3);
-      const p = driven ? P : ease((t - t0) / draw);
+      const moved = this.arcMoved[o.arcs!.indexOf(arc)]?.at ?? null;
+      const t0 = moved ?? delay + stagger * (o.rings.length + 3);
+      const clockT = moved != null && !f.still ? f.t : t;
+      const p = driven ? P : ease((clockT - t0) / draw);
       if (p <= 0) {
         busy = true;
         return;
       }
-      if (!driven && t - t0 < draw) busy = true;
+      if (!driven && clockT - t0 < draw) busy = true;
       const from = arc.from * DEG;
       const to = arc.to * DEG;
       const end = from + (to - from) * p;

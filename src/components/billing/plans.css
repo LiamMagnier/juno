@@ -1,0 +1,162 @@
+/*
+ * The plans page (upgrade-view.tsx), in the house construction: the stage is
+ * the "bold dot matrix, deep background" panel from /dev/ascii (graded ground,
+ * a faint dot grid, a presence haze, a vignette), with the plans' orbits drawn
+ * by the dot engine (DotRings). Light mode gets the same object on paper.
+ * Separators are dot rules on the engine's pitch, never hairlines.
+ */
+
+/* ── The stage ─────────────────────────────────────────────────────────── */
+.plans-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 28px;
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(46% 34% at var(--haze-x, 50%) var(--haze-y, 46%), rgb(45 73 201 / 0.07), transparent 72%),
+    radial-gradient(120% 95% at 50% 42%, #fbfbfc 0%, #f2f3f5 64%, #eceef1 100%);
+  outline: 1px solid hsl(var(--foreground) / 0.06);
+  transition: --haze-x 900ms var(--alv-ease), --haze-y 900ms var(--alv-ease);
+}
+.dark .plans-stage {
+  background:
+    radial-gradient(42% 32% at var(--haze-x, 50%) var(--haze-y, 46%), rgb(151 166 230 / 0.15), transparent 70%),
+    radial-gradient(120% 90% at 50% 40%, #16181d 0%, #0d0e11 62%, #08090b 100%);
+  outline-color: rgb(255 255 255 / 0.06);
+}
+/* The drawing's own cell grid, like graph paper, quiet at the corners. */
+.plans-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle, hsl(var(--foreground) / 0.08) 0.6px, transparent 1px) 0 0 / 7.8px 15.3px;
+  -webkit-mask-image: radial-gradient(85% 70% at 50% 44%, #000 30%, transparent 85%);
+  mask-image: radial-gradient(85% 70% at 50% 44%, #000 30%, transparent 85%);
+}
+.plans-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 90px 10px rgb(20 22 28 / 0.06);
+}
+.dark .plans-stage::after { box-shadow: inset 0 0 120px 30px rgb(0 0 0 / 0.55); }
+@property --haze-x { syntax: "<percentage>"; inherits: false; initial-value: 50%; }
+@property --haze-y { syntax: "<percentage>"; inherits: false; initial-value: 46%; }
+
+.plans-stage-dots { --dots-pitch: 4.2px; }
+
+/* You, at the centre: the account the orbits are drawn around. */
+.plans-you {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.plans-you-disc {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--alv-surface);
+  outline: 1px solid var(--alv-line);
+  box-shadow: var(--alv-shadow);
+  overflow: hidden;
+}
+.plans-you-label { font-size: 11px; line-height: 16px; letter-spacing: 0.02em; color: var(--alv-sub); font-family: var(--font-mono), monospace; }
+
+/* A plan on its orbit: a point on the ring, its name, its price. */
+.plans-node {
+  position: absolute;
+  z-index: 3;
+  translate: -50% -50%;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: 172px;
+  padding: 8px 6px;
+  border-radius: 14px;
+  text-align: center;
+  color: var(--alv-sub);
+  transition: color 420ms var(--alv-ease), transform 520ms var(--alv-ease), opacity 420ms var(--alv-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.plans-node[data-outside] { opacity: 0.55; }
+.plans-node:hover { color: var(--alv-ink); opacity: 1; }
+.plans-node:focus-visible { outline: 2px solid var(--alv-presence); outline-offset: 2px; }
+.plans-node:active { transform: scale(0.98); transition-duration: 70ms; }
+.plans-node-point {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: currentColor;
+  opacity: 0.55;
+  transition: background-color 420ms var(--alv-ease), box-shadow 420ms var(--alv-ease), transform 520ms var(--alv-ease), opacity 420ms var(--alv-ease);
+}
+.plans-node-name {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-size: 21px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  transition: font-size 520ms var(--alv-ease);
+}
+.plans-node-meta { font-family: var(--font-mono), monospace; font-size: 11px; line-height: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.plans-node[aria-checked="true"] { color: var(--alv-ink); opacity: 1; }
+.plans-node[aria-checked="true"] .plans-node-point {
+  opacity: 1;
+  background: var(--alv-presence);
+  transform: scale(1.35);
+  box-shadow: 0 0 0 5px rgb(45 73 201 / 0.14), 0 0 18px 4px rgb(45 73 201 / 0.35);
+}
+.dark .plans-node[aria-checked="true"] .plans-node-point { box-shadow: 0 0 0 5px rgb(151 166 230 / 0.16), 0 0 22px 6px rgb(151 166 230 / 0.45); }
+.plans-node[aria-checked="true"] .plans-node-name { font-size: 27px; }
+.plans-node-you { font-family: var(--font-mono), monospace; font-size: 10.5px; line-height: 14px; letter-spacing: 0.02em; color: var(--alv-sub); }
+
+/* ── Dot rules: separators drawn in the engine's own dots ──────────────── */
+.plans-rule {
+  height: 3px;
+  color: hsl(var(--foreground) / 0.22);
+  background: radial-gradient(circle, currentColor 0.9px, transparent 1.25px) 0 50% / 6px 3px repeat-x;
+}
+.plans-rule-v {
+  width: 3px;
+  color: hsl(var(--foreground) / 0.18);
+  background: radial-gradient(circle, currentColor 0.9px, transparent 1.25px) 50% 0 / 3px 6px repeat-y;
+}
+
+/* The comparison's dots: included, not included, and how much. */
+.plans-dot { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: hsl(var(--foreground) / 0.85); }
+.plans-dot[data-off] { width: 4px; height: 4px; background: hsl(var(--foreground) / 0.18); }
+.plans-dot[data-new] { background: #2d49c9; box-shadow: 0 0 0 3px rgb(45 73 201 / 0.14); }
+.dark .plans-dot[data-new] { background: #97a6e6; box-shadow: 0 0 0 3px rgb(151 166 230 / 0.16); }
+.plans-usage { display: inline-flex; gap: 2.5px; align-items: center; }
+.plans-usage > i { width: 4px; height: 4px; border-radius: 99px; background: hsl(var(--foreground) / 0.16); }
+.plans-usage > i[data-on] { background: hsl(var(--foreground) / 0.82); }
+.plans-col[data-selected] { background: hsl(var(--foreground) / 0.035); }
+
+/* The price changing: the old figure leaves upward, the new one rises in. */
+@keyframes plans-roll-in { from { opacity: 0; transform: translateY(0.35em); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+.plans-roll { display: inline-block; animation: plans-roll-in 520ms var(--alv-ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .plans-stage, .plans-node, .plans-node-point, .plans-node-name { transition: none; }
+  .plans-roll { animation: none; }
+}
+
+/* ── Phone: the stage keeps the orbits, the list does the choosing ─────── */
+@media (max-width: 767px) {
+  .plans-stage { aspect-ratio: 4 / 3.4; border-radius: 22px; }
+  .plans-node { display: none; }
+  .plans-you-disc { width: 52px; height: 52px; }
+}

@@ -21,7 +21,8 @@ import { UserAvatar, UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
-import { JunoOrbit } from "@/components/ui/icons";
+import { ArrowUpCircle, JunoOrbit } from "@/components/ui/icons";
+import { upgradeNudge } from "@/lib/billing/upgrade-nudge";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -338,6 +339,7 @@ export function AppSidebar({
     user,
     quota,
     spend,
+    features,
   } = useApp();
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmState>(null);
@@ -845,6 +847,10 @@ export function AppSidebar({
   };
 
   const plan = PLANS[quota.plan];
+  // The way up, in the footer itself rather than one click into the menu:
+  // always on Free, and on a paid plan once it is near its limit
+  // (lib/billing/upgrade-nudge.ts).
+  const nudge = upgradeNudge({ plan: quota.plan, billing: features.billing, purchasablePlans: features.purchasablePlans, spend });
   /*
    * Usage in the footer is a WORD, not a meter.
    *
@@ -1576,9 +1582,42 @@ export function AppSidebar({
               </Tooltip>
             </NotificationsPopover>
           )}
+          {collapsed && nudge && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/upgrade"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label={nudge === "free" ? "Upgrade" : "Upgrade, close to this month's limit"}
+                  className="jicon-trigger flex size-9 items-center justify-center rounded-control text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover motion-reduce:transition-none coarse:size-11"
+                >
+                  <ArrowUpCircle className="size-4" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">{nudge === "free" ? "Upgrade" : "Upgrade · close to your limit"}</TooltipContent>
+            </Tooltip>
+          )}
           {collapsed ? (
             <UserMenu compact onOpenArchived={() => setArchivedOpen(true)} archivedLabel={isCode ? "Archived sessions" : "Archived chats"} />
           ) : (
+            <div className="flex min-w-0 flex-col gap-1">
+            {nudge && (
+              /* Its own row above the account, not a button squeezed beside
+                 it: at a 260px column the name and plan had no room left.
+                 A row with a reason, in the footer's own recipe. */
+              <Link
+                href="/upgrade"
+                onClick={() => setSidebarOpen(false)}
+                className="pressable group/up flex h-9 w-full min-w-0 items-center gap-2.5 rounded-control border border-border/70 px-2.5 text-left transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-sidebar-hover motion-reduce:transition-none coarse:h-11"
+              >
+                <ArrowUpCircle className="size-4 shrink-0 text-foreground" aria-hidden />
+                <span className="text-ui font-medium text-foreground">Upgrade</span>
+                <span className="ml-auto min-w-0 truncate text-caption text-muted-foreground">
+                  {nudge === "free" ? "Every model" : "More usage"}
+                </span>
+              </Link>
+            )}
+            <div className="min-w-0">
             <UserMenu
               onOpenArchived={() => setArchivedOpen(true)}
               archivedLabel={isCode ? "Archived sessions" : "Archived chats"}
@@ -1629,6 +1668,8 @@ export function AppSidebar({
                 </button>
               }
             />
+            </div>
+            </div>
           )}
         </motion.div>
 

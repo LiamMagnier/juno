@@ -46,11 +46,18 @@ export interface PlanConfig {
     | "STRIPE_PRICE_MAX20"
     | "STRIPE_PRICE_ULTRA";
   features: string[];
+  /**
+   * The month's usage as a multiple of Pro's: this plan's budget over Pro's
+   * (BUDGET_EUR in spend.ts, which tests/plan-capabilities.test.ts holds this
+   * to). What the plans page draws; null where nothing meters the account.
+   */
+  usageVsPro: number | null;
 }
 
 export const PLANS: Record<Plan, PlanConfig> = {
   FREE: {
     id: "FREE",
+    usageVsPro: 0.02,
     name: "Free",
     price: 0,
     tagline: "Try it, no card needed.",
@@ -78,6 +85,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   LITE: {
     id: "LITE",
+    usageVsPro: 0.45,
     name: "Lite",
     price: 9,
     tagline: "Everyday chat at an everyday price.",
@@ -100,6 +108,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   PRO: {
     id: "PRO",
+    usageVsPro: 1,
     name: "Pro",
     price: 20,
     tagline: "For everyday power use.",
@@ -124,6 +133,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   PLUS: {
     id: "PLUS",
+    usageVsPro: 2.5,
     name: "Plus",
     price: 50,
     tagline: "For the days Pro runs out by Thursday.",
@@ -147,6 +157,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   MAX: {
     id: "MAX",
+    usageVsPro: 5,
     // Display names only — the ids and the Stripe price mapping are untouched.
     // The multiplier is the ratio of enforced budgets (BUDGET_EUR in spend.ts:
     // 55 € against Pro's 11 €), and a true "×" rather than a letter x.
@@ -174,6 +185,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   MAX20: {
     id: "MAX20",
+    usageVsPro: 10,
     // "×10", not the "x20" the id still carries: the enforced budget is 110 €
     // against Pro's 11 € and the price is 200 € against 20 € — ten times on
     // both counts. The id is a Stripe/DB constant and cannot be renamed
@@ -203,6 +215,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   ULTRA: {
     id: "ULTRA",
+    usageVsPro: 25,
     name: "Ultra",
     price: 500,
     tagline: "Agents running all day, every day.",
@@ -227,6 +240,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   // Not purchasable — granted via OWNER_EMAILS. Not shown on the upgrade page.
   OWNER: {
     id: "OWNER",
+    usageVsPro: null,
     name: "Owner",
     price: 0,
     tagline: "Full, unlimited access to everything.",

@@ -5,9 +5,10 @@ import { ChevronDown, Loader2 } from "@/components/ui/icons";
 import { toast } from "sonner";
 import type { Plan } from "@prisma/client";
 
-import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { PlanCards, type PlanCardItem } from "@/components/billing/plan-cards";
-import { HeavyUsePlans, type HeavyUsePlanItem } from "@/components/billing/heavy-use-plans";
+import { AppPage } from "@/components/app/app-page";
+import { useApp } from "@/components/app/app-provider";
+import { PlanOrbit } from "@/components/billing/plan-orbit";
+import { PlanCompare } from "@/components/billing/plan-compare";
 import { usePriceLocale } from "@/components/billing/use-price-locale";
 import { Button } from "@/components/ui/button";
 import { MetalCta } from "@/components/effects/metal-cta";
@@ -16,35 +17,31 @@ import { planPriceParts, vatNote, type BillingInterval as PriceInterval } from "
 import type { AppBootstrap } from "@/types/app";
 import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
+import { capabilitiesLost, capabilityChanges } from "@/lib/billing/plan-capabilities";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { cn } from "@/lib/utils";
 
 type BillingInterval = PriceInterval;
 
 /*
- * Annual is ten months' price for twelve: two months free
- * (ANNUAL_MONTHS_BILLED in price-display.ts, the same figure the Stripe yearly
- * prices are created at). The entitlement is identical, and so is the budget:
- * it stays MONTHLY on both intervals, because a year of budget released at
- * once would be a different product.
+ * THE PLANS PAGE, in the house construction (styles in plans.css).
  *
- * Seven tiers are laid out as two groups. The four people actually choose
- * between (Free, Lite, Pro, Plus) are cards; the three that only add usage on
- * top of Pro (Max ×5, Max ×10, Ultra) are rows underneath (HeavyUsePlans).
- * Every figure on the page is tax-included via planPriceParts().
+ *   the opening   a centred serif line, as the homepage opens a section, with
+ *                 the month so far in the dot meter and the interval switch
+ *   the stage     every plan on its own orbit around you, drawn by the dot
+ *                 engine; picking one sends the presence trajectory to it
+ *   the decision  the chosen plan's name, price, what it adds to yours, and
+ *                 the page's one metal button, between dot rules
+ *   side by side  every plan in one table drawn in dots
+ *   questions     the terms in plain words
+ *
+ * A tier is offered only when its Stripe price is configured (checkout
+ * answers 503 otherwise); the reader's own plan always shows. Every figure is
+ * tax-included via planPriceParts(). Annual is ten months for twelve.
  */
-const PRIMARY: Plan[] = ["FREE", "LITE", "PRO", "PLUS"];
-const HEAVY: Plan[] = ["MAX", "MAX20", "ULTRA"];
+const ORDER: Plan[] = ["FREE", "LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"];
 
-function planLabel(plan: Plan): string {
-  return PLANS[plan].name;
-}
-
-/**
- * The questions people ask before they pay, answered in the product's own
- * words. Every line here restates something the code already enforces
- * (plans.ts, spend.ts, the CGU) so the page cannot promise what the service
- * does not do.
- */
+/** Questions people ask before they pay; each restates what the code enforces. */
 const FAQ: { q: string; a: string; annualOnly?: boolean }[] = [
   {
     q: "What does a plan actually buy?",
@@ -77,17 +74,6 @@ const FAQ: { q: string; a: string; annualOnly?: boolean }[] = [
   },
 ];
 
-/**
- * The FAQ rows stay native `<details>`: the disclosure semantics are the
- * platform's, and find-in-page still opens a shut answer when it matches.
- *
- * Continuous disclosure is layered on as progressive enhancement. Where the
- * browser has `::details-content` (and `interpolate-size` for the `auto`
- * end), the answer's box eases open and shut on the caret's own rung and
- * curve, and `content-visibility` flips discretely at the end of the close so
- * the text stays painted while it collapses. Elsewhere the rule is dropped
- * and the row opens as it always has, with the answer's fade-in.
- */
 const FAQ_DISCLOSURE =
   "group [interpolate-size:allow-keywords] " +
   "[&::details-content]:[block-size:0] [&::details-content]:overflow-clip " +
@@ -95,10 +81,19 @@ const FAQ_DISCLOSURE =
   "[&::details-content]:duration-base [&::details-content]:ease-in-out " +
   "[&[open]::details-content]:[block-size:auto] motion-reduce:[&::details-content]:transition-none";
 
-/**
- * The page itself, fed by props so /dev/pricing can render it for every plan
- * without a signed-in account.
- */
+/** The month so far, in the engine's own dots. */
+function MonthMeter({ pct }: { pct: number }) {
+  const dots = 28;
+  const on = Math.round((pct / 100) * dots);
+  return (
+    <span className="plans-usage" aria-hidden>
+      {Array.from({ length: dots }, (_, i) => (
+        <i key={i} data-on={i < on || undefined} />
+      ))}
+    </span>
+  );
+}
+
 export function UpgradeView({
   currentPlan,
   features,
@@ -106,28 +101,28 @@ export function UpgradeView({
   currentPlan: Plan;
   features: Pick<AppBootstrap["features"], "billing" | "purchasablePlans" | "purchasableAnnualPlans">;
 }) {
+  const { spend } = useApp();
   const locale = usePriceLocale();
   const [loading, setLoading] = React.useState<Plan | null>(null);
   const [interval, setInterval] = React.useState<BillingInterval>("month");
   const annualAvailable = features.purchasableAnnualPlans.length > 0;
 
-  // Only offer a tier whose Stripe price id is configured: checkout returns
-  // 503 "Plan price is not configured." otherwise, so rendering the button at
-  // all is a broken promise. A subscriber already on an unconfigured tier still
-  // sees it, because it is their current plan and hiding it would be a lie.
-  // Free is always shown: it is the floor every account stands on.
   const offerable = React.useCallback(
     (plan: Plan) => {
-      if (plan === "FREE") return true;
+      if (plan === "FREE" || plan === currentPlan) return true;
       const sellable = interval === "year" ? features.purchasableAnnualPlans : features.purchasablePlans;
-      return sellable.includes(plan) || plan === currentPlan;
+      return sellable.includes(plan);
     },
     [features.purchasablePlans, features.purchasableAnnualPlans, interval, currentPlan]
   );
+  const plans = ORDER.filter(offerable);
 
-  // Pro is the tier the page steers toward, until the reader already holds it
-  // or something above it: then nothing is singled out.
-  const recommend = planRank(currentPlan) < planRank("PRO");
+  // Opens on Pro for anyone below it, else the next plan up, else your own.
+  const [picked, setPicked] = React.useState<Plan>(() => {
+    if (planRank(currentPlan) < planRank("PRO") && plans.includes("PRO")) return "PRO";
+    return plans.find((p) => planRank(p) > planRank(currentPlan)) ?? (plans.includes(currentPlan) ? currentPlan : plans[0]);
+  });
+  const selected = plans.includes(picked) ? picked : plans[plans.length - 1];
 
   const checkout = async (plan: Plan) => {
     setLoading(plan);
@@ -153,185 +148,214 @@ export function UpgradeView({
     else toast.error(data.error ?? "Couldn’t open billing portal.");
   };
 
-  const cta = (plan: Plan, variant: "default" | "secondary") => {
-    const rankDiff = planRank(plan) - planRank(currentPlan);
-    if (plan === currentPlan) {
+  const price = (plan: Plan) => planPriceParts(PLANS[plan].price, interval, locale);
+  const usedPct =
+    spend.budgetMicroUsd != null && spend.budgetMicroUsd > 0
+      ? Math.min(100, Math.round(((spend.spentMicroUsd + spend.reservedMicroUsd) / spend.budgetMicroUsd) * 100))
+      : null;
+
+  const rank = planRank(selected) - planRank(currentPlan);
+  const changes = capabilityChanges(currentPlan, selected);
+  const lost = rank < 0 ? capabilitiesLost(currentPlan, selected) : [];
+  const p = price(selected);
+
+  const action = (() => {
+    if (selected === currentPlan) {
       return (
-        <Button variant="secondary" className="w-full" disabled>
-          Current plan
+        <Button variant="secondary" size="lg" className="w-full" disabled>
+          Your current plan
         </Button>
       );
     }
-    if (plan === "FREE") {
+    if (rank < 0) {
       return (
-        <Button variant="secondary" className="w-full" onClick={manage} disabled={!features.billing}>
-          Downgrade
+        <Button variant="secondary" size="lg" className="w-full" onClick={manage} disabled={!features.billing}>
+          {selected === "FREE" ? "Downgrade to Free" : `Switch to ${PLANS[selected].name}`}
         </Button>
       );
     }
-    if (rankDiff > 0) {
-      const button = (
-        <Button
-          variant={variant}
-          className="w-full"
-          onClick={() => checkout(plan)}
-          disabled={!features.billing || loading !== null}
-          aria-busy={loading === plan}
-        >
-          {loading === plan && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
-          {loading === plan ? "Redirecting…" : `Get ${planLabel(plan)}`}
-        </Button>
-      );
-      // The page's one metal object: the recommended plan's upgrade (the
-      // `default` variant is only ever that card). Every other CTA stays a
-      // plain button, so two metal buttons never sit side by side.
-      return variant === "default" && features.billing ? <MetalCta>{button}</MetalCta> : button;
-    }
-    return (
-      <Button variant="secondary" className="w-full" onClick={manage} disabled={!features.billing}>
-        Manage
+    const button = (
+      <Button size="lg" className="w-full" onClick={() => checkout(selected)} disabled={!features.billing || loading !== null} aria-busy={loading === selected}>
+        {loading === selected && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
+        {loading === selected ? "Opening checkout…" : `Get ${PLANS[selected].name}`}
       </Button>
     );
+    return features.billing ? <MetalCta>{button}</MetalCta> : button;
+  })();
+
+  const onPlanKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step =
+      event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = plans[Math.min(plans.length - 1, Math.max(0, plans.indexOf(selected) + step))];
+    setPicked(next);
+    event.currentTarget.querySelector<HTMLElement>(`[data-plan="${next}"]`)?.focus();
   };
 
-  const price = (plan: Plan) => planPriceParts(PLANS[plan].price, interval, locale);
-
-  const cards: PlanCardItem[] = PRIMARY.filter(offerable).map((id) => {
-    const p = price(id);
-    const recommended = recommend && id === "PRO";
-    return {
-      plan: PLANS[id],
-      price: p.amount,
-      priceSuffix: p.suffix,
-      priceNote: p.note,
-      recommended,
-      current: currentPlan === id,
-      action: cta(id, recommended ? "default" : "secondary"),
-    };
-  });
-
-  const heavy: HeavyUsePlanItem[] = HEAVY.filter(offerable).map((id) => {
-    const p = price(id);
-    return {
-      plan: PLANS[id],
-      price: p.amount,
-      priceSuffix: p.suffix,
-      priceNote: p.note,
-      current: currentPlan === id,
-      action: cta(id, "secondary"),
-    };
-  });
-
   const faq = FAQ.filter((entry) => !entry.annualOnly || annualAvailable);
+  const priceLabel = (plan: Plan) => (plan === "FREE" ? price(plan).amount : `${price(plan).amount}/mo`);
 
   return (
     <AppPage measure="wide">
-      <AppPageHeader
-        eyebrow="Plan"
-        heading="Upgrade"
-        lede={
-          <>
-            You’re on the{" "}
-            <span className="font-medium text-foreground">{planLabel(currentPlan)}</span> plan. Every plan is
-            metered by tokens, not messages, and a change applies the moment you make it.
-          </>
-        }
-      />
+      {/* The opening, as the homepage opens a section. */}
+      <header className="mx-auto mb-10 max-w-3xl text-center">
+        <h1 className="ed-rise text-balance font-serif text-[clamp(2.6rem,1.6rem+3.2vw,4.25rem)] font-normal leading-[1.02] tracking-[-0.02em]" style={{ ["--i" as string]: 0 }}>
+          Room to go further.
+        </h1>
+        <p className="ed-rise mx-auto mt-4 max-w-[36rem] text-pretty text-body-lg text-muted-foreground" style={{ ["--i" as string]: 1 }}>
+          Every plan is the same {PRODUCT_NAME}. A wider orbit is more of the month to spend, on more of the models.
+        </p>
+        <div className="ed-rise mt-7 flex flex-wrap items-center justify-center gap-x-8 gap-y-4" style={{ ["--i" as string]: 2 }}>
+          {usedPct != null && (
+            <span className="flex items-center gap-3">
+              <MonthMeter pct={usedPct} />
+              <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                {PLANS[currentPlan].name} · {usedPct}% of this month
+              </span>
+            </span>
+          )}
+          {annualAvailable && (
+            <span className="flex items-center gap-3">
+              <SegmentedControl<BillingInterval>
+                value={interval}
+                onChange={setInterval}
+                options={[
+                  { value: "month", label: "Monthly" },
+                  { value: "year", label: "Yearly" },
+                ]}
+                ariaLabel="Billing interval"
+                optionClassName="coarse:py-2"
+              />
+              <span className="text-caption text-muted-foreground">2 months free</span>
+            </span>
+          )}
+        </div>
+      </header>
 
       {!features.billing && (
-        // The same callout the two other warning callouts in the product use
-        // (settings' spend-ceiling notice, the permissions lockdown banner):
-        // rounded-field, /40 border, /10 fill.
-        <div
-          role="status"
-          className="mb-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body"
-        >
+        <div role="status" className="mb-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body">
           <StatusIcons.warning className="mt-1 size-4 shrink-0 text-warning" aria-hidden />
           Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades.
         </div>
       )}
 
-      {annualAvailable && (
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          {/* A one-of-N choice is a radiogroup with a gliding thumb and arrow
-              keys, and the product has exactly one of those. `coarse:py-2`
-              because this picks a price, and every other picker grows on touch. */}
-          <SegmentedControl<BillingInterval>
-            value={interval}
-            onChange={setInterval}
-            options={[
-              { value: "month", label: "Monthly" },
-              { value: "year", label: "Yearly" },
-            ]}
-            ariaLabel="Billing interval"
-            className="shrink-0"
-            optionClassName="coarse:py-2"
-          />
-          {/* Ten months for twelve (ANNUAL_MONTHS_BILLED). Plain words in the
-              muted ink, never a badge: the toggle is the control, this is
-              the reason to touch it. */}
-          <span className="text-caption text-muted-foreground">
-            {interval === "year" ? "2 months free: ten months’ price for twelve." : "Pay yearly and get 2 months free."}
-          </span>
-        </div>
-      )}
-
-      <PlanCards items={cards} />
-
-      <HeavyUsePlans items={heavy} />
-
-      <div className="mt-6 space-y-1.5 text-caption text-muted-foreground">
-        <p className="flex items-start gap-1.5">
-          <StatusIcons.info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <span>{vatNote(locale)}</span>
-        </p>
-        <p className="pl-5">
-          {`Fair use applies to keep ${PRODUCT_NAME} fast for everyone; we’ll always reach out before anything changes.`}
-        </p>
+      <div className="ed-rise" style={{ ["--i" as string]: 3 }}>
+        <PlanOrbit plans={plans} selected={selected} current={currentPlan} priceOf={priceLabel} onSelect={setPicked} onKeyDown={onPlanKey} />
       </div>
 
-      <section className="mt-10" aria-labelledby="upgrade-faq">
-        <h2 id="upgrade-faq" className="text-heading">
-          Questions
+      {/* Phone: the stage keeps the orbits; this row does the choosing. */}
+      <div role="radiogroup" aria-label="Plans" onKeyDown={onPlanKey} className="-mx-4 mt-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 md:hidden">
+        {plans.map((plan) => (
+          <button
+            key={plan}
+            type="button"
+            role="radio"
+            aria-checked={plan === selected}
+            data-plan={plan}
+            onClick={() => setPicked(plan)}
+            className={cn(
+              "grid shrink-0 snap-start justify-items-start gap-0.5 rounded-card px-4 py-2.5 text-left transition-colors duration-fast ease-out-soft",
+              plan === selected ? "bg-card text-foreground shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.14)]" : "text-muted-foreground"
+            )}
+          >
+            <span className="font-serif text-heading leading-none">{PLANS[plan].name}</span>
+            <span className="font-mono text-micro tabular-nums">{priceLabel(plan)}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* The decision. */}
+      <section aria-live="polite" className="mt-10 grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1fr)_3px_minmax(0,1.25fr)] md:gap-10">
+        <div key={`${selected}-${interval}`} className="min-w-0">
+          <h2 className="font-serif text-display font-normal leading-none">{PLANS[selected].name}</h2>
+          <p className="mt-3 text-body text-muted-foreground">{PLANS[selected].tagline}</p>
+          <p className="mt-6 flex items-baseline gap-2">
+            <span key={p.amount} className="plans-roll font-serif text-[3.5rem] font-normal leading-none tracking-[-0.02em] tabular-nums">
+              {p.amount}
+            </span>
+            <span className="font-mono text-caption text-muted-foreground">{p.suffix}</span>
+          </p>
+          {p.note && <p className="mt-1.5 text-caption text-muted-foreground">{p.note}</p>}
+          <div className="mt-7 max-w-[20rem]">{action}</div>
+          <p className="mt-3 text-caption text-muted-foreground">
+            {rank > 0 ? "Applies the moment you pay. Cancel any time." : rank < 0 ? "Takes effect at the end of the period you have paid for." : "Change plans any time."}
+          </p>
+        </div>
+        <div className="plans-rule-v hidden md:block" aria-hidden />
+        <div className="min-w-0">
+          <p className="font-mono text-caption text-muted-foreground">{rank > 0 ? `What ${PLANS[selected].name} adds` : `What ${PLANS[selected].name} includes`}</p>
+          <ul key={selected} className="ed-stagger mt-4 grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+            {changes.map((row) => {
+              const fresh = row.gained && rank > 0;
+              return (
+                <li key={row.id} className={cn("flex items-start gap-3 text-ui", (row.id === "models" || row.id === "usage") && "sm:col-span-2")}>
+                  <span className="mt-[6px] shrink-0">
+                    <span className="plans-dot" data-new={fresh || undefined} aria-hidden />
+                  </span>
+                  <span className={fresh ? "text-foreground" : "text-muted-foreground"}>
+                    {row.label}
+                    {fresh && <span className="sr-only"> (new)</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {lost.length > 0 && (
+            <p className="mt-5 text-caption text-muted-foreground">
+              You would give up: {lost.map((row) => row.label.split(":")[0].toLowerCase()).join(", ")}.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <div className="plans-rule mt-14" aria-hidden />
+
+      <section className="mt-14" aria-labelledby="plans-compare">
+        <h2 id="plans-compare" className="text-center font-serif text-[clamp(1.9rem,1.3rem+1.6vw,2.6rem)] font-normal leading-tight">
+          Every plan, side by side.
         </h2>
-        <p className="mt-1 text-body text-muted-foreground">The short version of the terms, before you agree to them.</p>
-        {/* Disclosure rows in a well: `surface-inset` at rounded-card with p-1
-            holds `rounded-control` rows (12 = 8 + 4, concentric). Each row is
-            the house tonal-hover row; the caret turns and the answer opens on
-            the same rung (see FAQ_DISCLOSURE). */}
-        <div className="surface-inset mt-4 rounded-card p-1">
-          {faq.map((entry) => (
-            <details key={entry.q} className={FAQ_DISCLOSURE}>
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-ui font-medium transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
-                {entry.q}
-                <ChevronDown
-                  className="size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground group-open:rotate-180 group-open:text-foreground motion-reduce:transition-none"
-                  aria-hidden="true"
-                />
-              </summary>
-              <p className="px-3 pb-3 pt-1 text-body text-muted-foreground motion-safe:animate-fade-in">{entry.a}</p>
-            </details>
+        <div className="mt-8">
+          <PlanCompare plans={plans} selected={selected} current={currentPlan} priceOf={priceLabel} onSelect={setPicked} />
+        </div>
+      </section>
+
+      <div className="plans-rule mt-14" aria-hidden />
+
+      <section className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]" aria-labelledby="upgrade-faq">
+        <div>
+          <h2 id="upgrade-faq" className="font-serif text-title font-normal">
+            Questions
+          </h2>
+          <p className="mt-2 text-caption text-muted-foreground">{vatNote(locale)}</p>
+        </div>
+        <div>
+          {faq.map((entry, i) => (
+            <div key={entry.q}>
+              {i > 0 && <div className="plans-rule" aria-hidden />}
+              <details className={FAQ_DISCLOSURE}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-4 text-ui font-medium transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+                  {entry.q}
+                  <ChevronDown
+                    className="size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground group-open:rotate-180 group-open:text-foreground motion-reduce:transition-none"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <p className="pb-4 text-body text-muted-foreground motion-safe:animate-fade-in">{entry.a}</p>
+              </details>
+            </div>
           ))}
         </div>
       </section>
 
-      {/* The terms were reachable from the landing footer and the sign-in page,
-          but not from the one screen where money changes hands. A consumer
-          agreeing to a subscription should be one click from what they are
-          agreeing to, at the moment they agree to it. */}
-      <p className="mt-6 text-caption text-muted-foreground">
+      <p className="mt-12 text-center text-caption text-muted-foreground">
+        {`Fair use keeps ${PRODUCT_NAME} fast for everyone; we reach out before anything changes. `}
         By subscribing you accept the{" "}
-        <a
-          href="/legal/cgu"
-          className="rounded-xs underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary focus-visible:text-primary"
-        >
+        <a href="/legal/cgu" className="rounded-xs underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground">
           terms of service
         </a>{" "}
         and the{" "}
-        <a
-          href="/legal/confidentialite"
-          className="rounded-xs underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary focus-visible:text-primary"
-        >
+        <a href="/legal/confidentialite" className="rounded-xs underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground">
           privacy policy
         </a>
         .

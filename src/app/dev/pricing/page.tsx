@@ -5,6 +5,7 @@ import type { Plan } from "@prisma/client";
 import { Pricing } from "@/components/landing/pricing";
 import "@/components/landing/overview.css";
 import { PricingGallery, type PricingView } from "./gallery";
+import "@/components/billing/plans.css";
 
 /**
  * Dev-only gallery for every surface that shows plans and prices, rendered
