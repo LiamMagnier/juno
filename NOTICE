@@ -1,0 +1,34 @@
+Liam Magnier / Juno
+Copyright 2024-2026 Liam Magnier and contributors
+
+This product includes software developed by Liam Magnier and contributors.
+
+========================================================================
+Third-Party and Vendored Notices
+========================================================================
+
+1. Agent Core (`runner/agent-core/`):
+   Vendored runtime component for cloud task execution.
+   See `runner/agent-core/VENDORED.md` for upstream provenance, divergence history,
+   and independent package dependency notices.
+
+2. Typography and Fonts:
+   - Newsreader font (`native/iOS/JunoMobile/Resources/Fonts/` and related web assets):
+     Licensed under the SIL Open Font License, Version 1.1.
+   - JetBrains Mono font (`native/iOS/JunoMobile/Resources/Fonts/`):
+     Licensed under the Apache License, Version 2.0.
+
+3. Artifact Runtime Bundles (`native/macOS/JunoDesktop/Resources/ArtifactRuntime/`):
+   - Mermaid (MIT License, Copyright Knut Sveidqvist)
+   - React (MIT License, Meta Platforms, Inc.)
+   - Babel standalone (MIT License)
+   - Tailwind Play standalone (MIT License)
+   - DOMPurify (Apache-2.0 / MPL-2.0, Cure53)
+
+4. Provider Trademarks and Logos (`public/provider-logos/`):
+   All third-party brand names, company names, product marks, and logos (e.g. OpenAI,
+   Anthropic, Google, Mistral, Meta, DeepSeek, xAI, Perplexity, Cohere, Together AI,
+   Groq, OpenRouter, Linear, GitHub, Notion, Slack, Google Calendar/Mail/Drive, Apple)
+   remain the property of their respective trademark holders. They are used herein
+   strictly for identification and interoperability purposes and are not licensed
+   under the Juno Apache-2.0 license.
