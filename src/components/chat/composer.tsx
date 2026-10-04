@@ -112,6 +112,7 @@ import {
 } from "@/lib/prompt-limits";
 import { duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { cachedJson, CachedJsonError } from "@/lib/client-cache";
 import {
   artifactEditRequestFromQuote,
   serializeQuote,
@@ -492,7 +493,7 @@ type ArmedMark = {
   remove: () => void;
 };
 
-export function Composer({
+function ComposerImpl({
   initialResearch = false,
   conversationId,
   model,
@@ -1960,21 +1961,22 @@ export function Composer({
   }, [plusOpen, privateMode, voiceActive, loadProjects]);
 
   const refreshConnectors = React.useCallback(
-    async (signal?: AbortSignal) => {
+    // `maxAgeMs`: opening a conversation reuses a list read in the last 30 s
+    // (lib/client-cache.ts; a connection change invalidates it). The + menu
+    // and the retry button ask for a fresh one, as before.
+    async (signal?: AbortSignal, maxAgeMs = 0) => {
       if (privateMode || !onToggleConnector) return;
       setConnectorsLoading(true);
       setConnectorsFailed(false);
       try {
-        const response = await fetch("/api/connectors", { signal });
-        if (!response.ok) return;
-        const data = (await response.json()) as {
+        const data = await cachedJson<{
           connectors?: {
             id: string;
             label: string;
             connected: boolean;
             configured?: boolean;
           }[];
-        };
+        }>("/api/connectors", { maxAgeMs });
         if (signal?.aborted) return;
         setAllConnectors(data.connectors ?? []);
         const connected = (data.connectors ?? []).filter(
@@ -1998,7 +2000,9 @@ export function Composer({
           removals.forEach((id) => onToggleConnector(id));
         }
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
+        // A non-2xx answer was always ignored quietly here; only a transport
+        // failure marks the list stale.
+        if (!(error instanceof DOMException && error.name === "AbortError") && !(error instanceof CachedJsonError)) {
           // Keep the last known list on a transient failure — a stale list is
           // more useful than an empty one — but record that it IS stale.
           setConnectorsFailed(true);
@@ -2015,7 +2019,7 @@ export function Composer({
   React.useEffect(() => {
     if (privateMode || voiceActive || !onToggleConnector) return;
     const controller = new AbortController();
-    void refreshConnectors(controller.signal);
+    void refreshConnectors(controller.signal, 30_000);
     const handleConnectionsChanged = () =>
       void refreshConnectors(controller.signal);
     window.addEventListener(
@@ -3361,3 +3365,11 @@ export function Composer({
     </div>
   );
 }
+
+/**
+ * Memoised: the chat view re-renders on every streamed token, and the composer
+ * has nothing to show for any of them. Its handler props come through
+ * `useLatestHandler` in chat-view.tsx so the comparison holds while a reply is
+ * written (measured in PERFORMANCE.md).
+ */
+export const Composer = React.memo(ComposerImpl);

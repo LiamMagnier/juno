@@ -23,6 +23,12 @@ test("a thousand turns keep search, streaming anchors and keyboard traversal", a
   await expect(page.getByRole("button", { name: "Stream 120 updates", exact: true })).toBeEnabled();
   await expect(target).toBeVisible();
   await expect.poll(async () => Math.abs((await position()).top - before.top)).toBeLessThan(2);
+  // Streaming isolation: the streamed row re-renders per update; settled rows
+  // only on the busy edges or when the window mounts them (StrictMode doubles
+  // every count in development).
+  const report = JSON.parse((await page.getByLabel("Performance measurement").textContent()) ?? "{}");
+  expect(report.streamingRowRenders).toBeGreaterThan(100);
+  expect(report.maxSettledRowRenders).toBeLessThanOrEqual(8);
 
   await scroller.press("Home");
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeLessThan(1);
@@ -58,4 +64,26 @@ test("primary navigation preserves the mounted application shell", async ({ page
     samples.push({ route, clickToHeadingMs: Date.now() - start });
   }
   console.log("Navigation development samples", JSON.stringify(samples));
+});
+
+test("a card growing above the reader does not move the line being read", async ({ page }) => {
+  await page.goto("/dev/performance");
+  await page.getByRole("button", { name: "Jump to message 906", exact: true }).click();
+  const reader = page.locator('[data-message-id="benchmark-906"]');
+  await expect(reader).toBeVisible();
+  // A reader's own gesture ends the jump's centring; from here the window
+  // anchors on the row the reader is looking at.
+  const scroller = page.locator('[aria-label="Conversation messages"]');
+  const box = (await scroller.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(300);
+  await expect(page.locator("[data-benchmark-card]")).toBeAttached();
+  const top = () => reader.evaluate((el) => el.getBoundingClientRect().top);
+  const before = await top();
+  const cardTop = await page.locator("[data-benchmark-card]").evaluate((el) => el.getBoundingClientRect().top);
+  expect(cardTop).toBeLessThan(before);
+  await page.getByRole("button", { name: "Grow card above reader", exact: true }).click();
+  await expect(page.locator("[data-benchmark-card]")).toContainText("expanded");
+  await expect.poll(async () => Math.abs((await top()) - before)).toBeLessThan(2);
 });

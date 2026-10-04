@@ -119,8 +119,13 @@
 @media (prefers-reduced-motion: no-preference) {
   .pj-cover-art { transition: transform 1200ms var(--pj-ease); }
   .pj-tile:hover .pj-cover-art { transform: scale(1.05) rotate(-1.2deg); }
-  /* The grid arrives in reading order, 50ms apart. */
-  .pj-grid > li > .pj-tile { animation: pj-arrive 720ms var(--pj-ease) backwards; animation-delay: calc(var(--i, 0) * 50ms + 120ms); }
+  /* The grid arrives in reading order, 30ms apart, starting on the first
+     frame. It used to wait 120ms and then 50ms per tile over 720ms, which held
+     tiles that were already in the DOM at opacity 0 for ~200ms after every
+     navigation (measured: the first tile was mounted at 47ms and first
+     visible at 247ms). An entrance may describe the arrival; it must not
+     delay it. */
+  .pj-grid > li > .pj-tile { animation: pj-arrive 420ms var(--pj-ease) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pj-actions, .pj-pinned { transition: none; }
@@ -141,7 +146,7 @@
 
 /* The Folders section's empty state arrives on the grid's own beat. */
 @media (prefers-reduced-motion: no-preference) {
-  .pj-empty { animation: pj-arrive 720ms var(--pj-ease) 120ms backwards; }
+  .pj-empty { animation: pj-arrive 420ms var(--pj-ease) backwards; }
 }
 
 /* The instructions sheet: a writing field inside a 6px frame. No ring on

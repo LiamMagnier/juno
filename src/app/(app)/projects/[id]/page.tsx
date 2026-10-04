@@ -63,6 +63,7 @@ import {
 import { ProjectInstructionsDialog, type InheritedInstructions } from "@/components/projects/project-instructions-dialog";
 import { MOVE_REFUSAL_MESSAGES, type DeleteChildrenMode, type MoveRefusal } from "@/lib/projects/project-tree";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { cachedJson } from "@/lib/client-cache";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -265,8 +266,9 @@ export default function ProjectDetailPage() {
   }, [id]);
 
   const loadAllProjects = React.useCallback(() => {
-    fetch("/api/projects")
-      .then((res) => res.json())
+    // The account's project list (for Move to… and the breadcrumbs) is the
+    // one the sidebar already read; share it instead of reading it again.
+    cachedJson<{ projects?: FolderProject[] }>("/api/projects")
       .then((p) => {
         if (p && Array.isArray(p.projects)) {
           setAllProjects(p.projects.map((row: FolderProject) => ({ ...row, parentId: row.parentId ?? null })));

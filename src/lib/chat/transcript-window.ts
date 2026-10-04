@@ -55,3 +55,51 @@ export const TRANSCRIPT_FOCUS_EVENT = "alevr:transcript-focus";
 export function focusTranscriptMessage(messageId: string) {
   window.dispatchEvent(new CustomEvent(TRANSCRIPT_FOCUS_EVENT, { detail: { messageId } }));
 }
+
+/**
+ * Where a durable run (research, a delegated task) sits in the transcript: the
+ * index of the reply after the last question asked at or before the run
+ * started, or -1 for the foot. The same rule as the desktop's
+ * `ChatWorkPlacement.anchor` (native/macOS/JunoDesktop/App/ChatWorkRunCard.swift),
+ * computed in one pass over the turns instead of re-parsing every message's
+ * date for every run on every streamed token.
+ */
+export function placeInlineRuns(
+  turns: readonly { role: string; createdAt: string }[],
+  runs: readonly { id: string; createdAt: string }[],
+): Map<number, string[]> {
+  const placed = new Map<number, string[]>();
+  if (!runs.length) return placed;
+  const userTimes: Array<[index: number, time: number]> = [];
+  turns.forEach((turn, index) => {
+    if (turn.role === "USER") userTimes.push([index, Date.parse(turn.createdAt)]);
+  });
+  for (const run of runs) {
+    const time = Date.parse(run.createdAt);
+    let index = -1;
+    for (const [i, t] of userTimes) if (t <= time) index = i;
+    if (index >= 0 && turns[index + 1]?.role === "ASSISTANT") index++;
+    placed.set(index, [...(placed.get(index) ?? []), run.id]);
+  }
+  return placed;
+}
+
+declare global {
+  interface Window {
+    /** Development-only: renders per transcript row key (see countTranscriptRender). */
+    __alevrTranscriptRenders?: Record<string, number>;
+  }
+}
+
+/**
+ * Development-only instrumentation: how many times each transcript row's
+ * message renderer ran. The benchmark (/dev/performance) and the e2e spec read
+ * it to prove a streamed token re-renders the streaming row and not settled
+ * history. Compiled out of production builds by the NODE_ENV guard at the call
+ * site.
+ */
+export function countTranscriptRender(key: string) {
+  if (typeof window === "undefined") return;
+  const counts = (window.__alevrTranscriptRenders ??= {});
+  counts[key] = (counts[key] ?? 0) + 1;
+}

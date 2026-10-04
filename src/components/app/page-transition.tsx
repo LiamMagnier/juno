@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
 
 /**
  * Cross-route entrance for the app shell's content area: a 160ms crossfade
@@ -40,24 +39,41 @@ function routeGroup(pathname: string): string {
   return SOFT_SURFACES.has(segments[1] ?? "") ? `/${segments[1]}` : `/${segments.slice(1, 3).join("/")}`;
 }
 
-function Entrance({ children }: { children: React.ReactNode }) {
-  const [settled, setSettled] = React.useState(false);
-  return (
-    <div
-      onAnimationEnd={(e) => {
-        if (e.target === e.currentTarget) setSettled(true);
-      }}
-      className={cn(
-        "h-full",
-        !settled && "motion-safe:animate-rise-in motion-safe:[animation-duration:var(--dur-exit)]",
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
+/**
+ * 3. THE SUBTREE IS NO LONGER REMOUNTED TO REPLAY IT (2026-10-04). It used to
+ *    be: the wrapper was keyed on the route group, so every cross-group click
+ *    (Chat → Projects, Orbit → an agent) threw away and rebuilt the whole page
+ *    tree under the shell. Rebuilt Suspense boundaries are NEW boundaries, and
+ *    React shows a new boundary's fallback even inside a navigation
+ *    transition — then holds the real content back until 300 ms after that
+ *    fallback appeared (its FALLBACK_THROTTLE_MS). Measured on a production
+ *    build: Orbit → agent took ~400 ms with the server answering in ~20 ms
+ *    (docs/rework/program/PERFORMANCE.md). Now the wrapper stays mounted and
+ *    the same entrance is played with the Web Animations API, which leaves no
+ *    `transform` behind when it finishes (constraint 1 still holds) and never
+ *    runs under reduced motion.
+ */
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  return <Entrance key={routeGroup(pathname)}>{children}</Entrance>;
+  const group = routeGroup(pathname ?? "/");
+  const ref = React.useRef<HTMLDivElement>(null);
+  const previous = React.useRef(group);
+  React.useLayoutEffect(() => {
+    if (previous.current === group) return;
+    previous.current = group;
+    const el = ref.current;
+    if (!el || typeof el.animate !== "function") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const style = getComputedStyle(document.documentElement);
+    const duration = parseFloat(style.getPropertyValue("--dur-exit")) || 160;
+    const easing = style.getPropertyValue("--ease-out-soft").trim() || "ease-out";
+    const shift = parseFloat(style.getPropertyValue("--motion-shift"));
+    const rise = 6 * (Number.isFinite(shift) ? shift : 1);
+    const animation = el.animate(
+      [{ opacity: 0, transform: `translateY(${rise}px)` }, { opacity: 1, transform: "none" }],
+      { duration, easing },
+    );
+    return () => animation.cancel();
+  }, [group]);
+  return <div ref={ref} className="h-full">{children}</div>;
 }

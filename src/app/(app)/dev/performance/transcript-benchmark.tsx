@@ -22,6 +22,14 @@ export function TranscriptBenchmark() {
   const [running, setRunning] = React.useState(false);
   const [showFind, setShowFind] = React.useState(false);
   const [report, setReport] = React.useState<object | null>(null);
+  // A research/artifact-sized card placed after turn 900 that grows late, like
+  // a run expanding or media finishing loading while the reader sits below it.
+  const [cardTall, setCardTall] = React.useState(false);
+  const inlineRuns = React.useMemo(() => [{
+    id: "benchmark-card",
+    createdAt: initialMessages[900].createdAt,
+    node: <div data-benchmark-card className="mt-5 rounded-card border p-4 text-ui" style={{ height: cardTall ? 640 : 120 }}>Research run fixture{cardTall ? " — expanded" : ""}</div>,
+  }], [cardTall]);
   const host = React.useRef<HTMLDivElement>(null);
   const timings = React.useRef<number[]>([]);
   const mount = React.useRef(0);
@@ -34,10 +42,16 @@ export function TranscriptBenchmark() {
   const measure = () => {
     const sorted = [...timings.current].sort((a, b) => a - b);
     const round = (n: number) => Math.round(n * 100) / 100;
-    setReport({ mountedMessages: host.current?.querySelectorAll("[data-message-id]").length, domElements: host.current?.querySelectorAll("*").length, mountMs: round(mount.current), commits: sorted.length, totalRenderMs: round(sorted.reduce((a, b) => a + b, 0)), p95RenderMs: round(sorted[Math.floor(sorted.length * 0.95)] ?? 0) });
+    // Row renders since the stream began (React StrictMode renders twice in
+    // development; compare rows with each other, not with the token count).
+    const renders = window.__alevrTranscriptRenders ?? {};
+    const lastKey = initialMessages[initialMessages.length - 1].id;
+    const settled = Object.entries(renders).filter(([key]) => key !== lastKey).map(([, n]) => n);
+    setReport({ streamingRowRenders: renders[lastKey] ?? 0, settledRowsRendered: settled.length, maxSettledRowRenders: Math.max(0, ...settled), mountedMessages: host.current?.querySelectorAll("[data-message-id]").length, domElements: host.current?.querySelectorAll("*").length, mountMs: round(mount.current), commits: sorted.length, totalRenderMs: round(sorted.reduce((a, b) => a + b, 0)), p95RenderMs: round(sorted[Math.floor(sorted.length * 0.95)] ?? 0) });
   };
   const stream = () => {
     timings.current = [];
+    window.__alevrTranscriptRenders = {};
     setRunning(true);
     let count = 0;
     const tick = () => {
@@ -54,6 +68,8 @@ export function TranscriptBenchmark() {
       <button onClick={stream} disabled={running}>{running ? "Streaming…" : "Stream 120 updates"}</button>
       <button onClick={() => setShowFind(!showFind)}>Find in conversation</button>
       <button onClick={() => focusTranscriptMessage("benchmark-42")}>Jump to message 42</button>
+      <button onClick={() => focusTranscriptMessage("benchmark-906")}>Jump to message 906</button>
+      <button onClick={() => setCardTall((t) => !t)}>Grow card above reader</button>
       <button onClick={measure}>Record measurement</button>
       <button onClick={() => { timings.current = []; setReport(null); }}>Reset measurements</button>
       <span className="text-muted-foreground">Tab to “Read full conversation” for the full-render comparison.</span>
@@ -62,7 +78,7 @@ export function TranscriptBenchmark() {
     {showFind && <ConversationFind messages={messages} onClose={() => setShowFind(false)} />}
     <div ref={host} className="flex min-h-0 flex-1 flex-col">
       <React.Profiler id="transcript" onRender={record}>
-        <MessageList messages={messages} artifacts={artifacts} busy={running} onOpenArtifact={noop} onFeedback={noop} conversationTitle="Performance fixture" />
+        <MessageList messages={messages} inlineRuns={inlineRuns} artifacts={artifacts} busy={running} onOpenArtifact={noop} onFeedback={noop} conversationTitle="Performance fixture" />
       </React.Profiler>
     </div>
   </div></TooltipProvider>;
