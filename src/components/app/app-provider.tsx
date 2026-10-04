@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
 import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
-import { MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { FREE_DEFAULT_EFFORT, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { withSupersededMarked } from "@/lib/model-metrics";
 
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
@@ -145,7 +145,11 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   // Start from defaults so SSR and first client render match; load the persisted
   // values right after mount to avoid a hydration mismatch.
-  const [composerPrefs, setComposerPrefsState] = React.useState<ComposerPrefs>(DEFAULT_COMPOSER_PREFS);
+  // Free starts its thinking at Low (its default is GPT-6 Luna Low, models.ts
+  // FREE_DEFAULT_EFFORT); a level the reader chose is restored over it below.
+  const [composerPrefs, setComposerPrefsState] = React.useState<ComposerPrefs>(() =>
+    bootstrap.quota.plan === "FREE" ? { ...DEFAULT_COMPOSER_PREFS, reasoningEffort: FREE_DEFAULT_EFFORT } : DEFAULT_COMPOSER_PREFS
+  );
   // Live list of models from each configured provider's API. The lazy initial
   // value uses the authoritative bootstrap provider set, so SSR/hydration never
   // exposes models whose API key is absent.

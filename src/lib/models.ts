@@ -1028,6 +1028,22 @@ const LEGACY_ALIAS: Record<string, string> = Object.fromEntries(CURATED.map((m) 
 // start on the provider that is actually funded and covered by release smoke.
 export const DEFAULT_MODEL: ModelId = "qwen:qwen3.8-flash";
 
+/**
+ * The Free plan's own default: GPT-6 Luna, thinking at Low (owner, 2026-10-04).
+ * A Free account that never chose a model starts here instead of on
+ * `DEFAULT_MODEL`; the account row stores `DEFAULT_MODEL` at sign-up, so that
+ * value on a Free account reads as "never chose" (`defaultModelFor`).
+ */
+export const FREE_DEFAULT_MODEL: ModelId = "openai:gpt-6-luna";
+export const FREE_DEFAULT_EFFORT = "low" as const;
+
+/** The model a new chat starts on for this plan, honouring a model the account chose. */
+export function defaultModelFor(plan: string, stored: string | null | undefined): string {
+  const chosen = stored && stored !== DEFAULT_MODEL ? stored : null;
+  if (chosen) return chosen;
+  return plan === "FREE" ? FREE_DEFAULT_MODEL : stored ?? DEFAULT_MODEL;
+}
+
 function isProvider(p: string): p is Provider {
   return (PROVIDER_LIST as string[]).includes(p);
 }

@@ -4,7 +4,7 @@ import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { canUseModel } from "@/lib/plans";
-import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { isModelId, getModel, DEFAULT_MODEL, FREE_DEFAULT_EFFORT, FREE_DEFAULT_MODEL, MODEL_LIST, defaultModelFor, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId, pickAutoModel, pickAutoReasoningEffort } from "@/lib/auto-model";
 import { receiptFromDecision, type RoutingReceipt } from "@/lib/router/receipt";
 import { NoAutoCandidateError, ROUTER_VERSION, isAutoPreference, type RouteDecision } from "@/lib/router/decide";
@@ -89,12 +89,17 @@ export async function resolveModel({
         ? namedModel
         : workspacePreferredModel
           ? workspacePreferredModel
-        : settings?.defaultModel && isModelId(settings.defaultModel)
-          ? settings.defaultModel
-          : DEFAULT_MODEL;
+        : (() => {
+            const fallback = defaultModelFor(plan, settings?.defaultModel);
+            return isModelId(fallback) ? fallback : DEFAULT_MODEL;
+          })();
   /** The thinking effort asked for: the agent's with its model, otherwise the composer's. */
   const requestedEffort =
-    agentModel.kind === "agent" && agentModel.reasoningEffort ? agentModel.reasoningEffort : input.reasoningEffort;
+    agentModel.kind === "agent" && agentModel.reasoningEffort
+      ? agentModel.reasoningEffort
+      : input.reasoningEffort ??
+        // Free's default is GPT-6 Luna thinking at Low, when nothing asked otherwise.
+        (plan === "FREE" && requestedId === FREE_DEFAULT_MODEL ? FREE_DEFAULT_EFFORT : undefined);
 
   let modelInfo: ModelInfo | undefined;
   /** When Auto routes, override the client's thinking slider with the pick. */

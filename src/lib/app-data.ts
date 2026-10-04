@@ -12,7 +12,7 @@ import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
 import { configuredProviders } from "@/lib/providers";
-import { DEFAULT_MODEL, providerSupportsWebSearch } from "@/lib/models";
+import { defaultModelFor, providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { chatSearchAvailable } from "@/lib/web/search";
 import { searchProviderStatus } from "@/lib/search/search-engine";
@@ -144,7 +144,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // then Qwen3.6 Flash, which went `legacy` when 3.8 shipped — because a
     // hand-written id here has nothing tying it to the catalogue. Importing
     // the constant is what makes the third drift impossible.
-    defaultModel: settings?.defaultModel ?? DEFAULT_MODEL,
+    // Free starts on its own default (GPT-6 Luna) until the account chooses.
+    defaultModel: defaultModelFor(plan, settings?.defaultModel),
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",
