@@ -195,3 +195,21 @@ The historical AUTH_SECRET-derived key remains in the decryption keyring for
 legacy rows. Configure the independent key, deploy, run `npm run crypto:rotate`,
 and verify all rows were rotated before changing AUTH_SECRET. A key migration
 and production restart have not been performed by this source change.
+
+## Automated Security Analysis & CI Gates
+
+To catch regressions early, Juno runs automated security mechanisms across pull requests and pushes:
+
+1. **GitHub Secret Scanning & Push Protection:** Verified enabled on the repository to block leaked credentials, API tokens, and provider keys before they land in git history.
+2. **CodeQL Static Analysis:** Automated CodeQL workflow (`.github/workflows/codeql.yml`) scanning JavaScript and TypeScript code for security vulnerabilities using the `security-extended` suite.
+3. **Dependabot Updates:** Automated weekly configuration (`.github/dependabot.yml`) tracking root npm packages, runner dependencies, and GitHub Actions.
+4. **Ownership Query Verification:** Dedicated static suite (`tests/ownership-guard-callsites.test.ts`) that verifies every Prisma database query on user-owned models is explicitly scoped to `userId` or annotated with an authorized bypass.
+5. **Action-Approval Policy Tests:** Comprehensive test gate (`tests/action-approval.test.ts`) verifying connector arguments, receipt hashing, permission boundary rules, and prompt-injection mitigations fail closed.
+
+## Vulnerability Disclosure Timeline
+
+- **Initial Acknowledgement:** Within 24–48 hours of report receipt at `security@liams.dev`.
+- **Triage & Severity Assessment:** Within 72 hours.
+- **Remediation & Patching:** High/critical issues are prioritized for deployment within 7 calendar days.
+- **Coordinated Disclosure:** Public release notes and security advisories are coordinated after fixes are deployed and verified.
+

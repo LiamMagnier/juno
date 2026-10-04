@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security Vulnerabilities
+    url: https://github.com/LiamMagnier/juno/blob/main/SECURITY.md
+    about: Please report security vulnerabilities privately via email.
+  - name: Documentation
+    url: https://github.com/LiamMagnier/juno/blob/main/docs/JUNO.md
+    about: Read the full architectural and development documentation.

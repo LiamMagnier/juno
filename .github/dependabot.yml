@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Maintain dependencies for root npm project
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        patterns:
+          - "@types/*"
+          - "eslint*"
+          - "prettier*"
+          - "typescript"
+      nextjs:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+
+  # Maintain dependencies for runner/agent-core
+  - package-ecosystem: "npm"
+    directory: "/runner/agent-core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+  # Maintain GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
