@@ -10,6 +10,7 @@ import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { sendableToolImages, toolImageIntro, withheldImagesNote } from "@/lib/tool-result-images";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
+import { geminiDeclarationForFunction } from "@/lib/gemini-core";
 import type { ToolLoop } from "@/lib/tools/loop";
 import type { ToolCallInput } from "@/lib/tools/types";
 import type { ModelInfo } from "@/lib/models";
@@ -54,14 +55,18 @@ export {
   type GeminiContent,
 };
 
-/** Convert tool declarations from McpToolset to Gemini functionDeclarations format. */
+/**
+ * Convert tool declarations from McpToolset to Gemini functionDeclarations.
+ *
+ * A schema inside the portable subset goes on `parameters` as it is. Anything
+ * else (a connector's own schema, with `$ref`, `oneOf` or vendor keys such as
+ * `x-mcp-header`) goes on `parametersJsonSchema`, cut to Google's documented
+ * subset: `parameters` rejects an unknown key with a 400 that takes the whole
+ * turn down, for every Gemini model, the moment one such connector is on.
+ */
 export function toGeminiFunctionDeclarations(toolset: McpToolset) {
   const wire = toWireTools(toolset.tools);
-  return wire.map((t) => ({
-    name: t.function.name,
-    description: t.function.description ?? "",
-    parameters: t.function.parameters ?? { type: "object", properties: {} },
-  }));
+  return wire.map((t) => geminiDeclarationForFunction(t.function));
 }
 
 /**

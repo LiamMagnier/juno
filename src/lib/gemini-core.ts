@@ -372,6 +372,24 @@ export type GeminiTool =
   | { google_search: Record<string, never> };
 
 /**
+ * One function as a Gemini declaration, judged by its schema alone: inside the
+ * portable subset it rides on `parameters`; anything else (a connector's own
+ * schema, vendor keys such as `x-mcp-header`) on `parametersJsonSchema`, cut
+ * to Google's documented subset, because `parameters` 400s on unknown keys.
+ */
+export function geminiDeclarationForFunction(fn: {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+}): Record<string, unknown> {
+  const parameters = fn.parameters ?? { type: "object", properties: {} };
+  const description = fn.description ?? "";
+  return portableSchemaIssues(parameters).length === 0
+    ? { name: fn.name, description, parameters: portableToGemini(parameters as unknown as PortableSchema) }
+    : { name: fn.name, description, parametersJsonSchema: sanitizeForGeminiJsonSchema(parameters) };
+}
+
+/**
  * The turn's tools as Gemini function declarations (SPEC §5.3 item 2, RC-4).
  *
  * Two kinds of schema, two fields, never both on one declaration. Juno's own
