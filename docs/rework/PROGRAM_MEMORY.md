@@ -1,5 +1,7 @@
 # Alevr memory milestone — 2026-10-04
 
+> **Follow-up:** the next memory vertical is recorded in [`program/MEMORY.md`](program/MEMORY.md). It covers the full evaluation suite (summary injection included), the answer-style contradiction fix, transitions and denials, merges, full-history encrypted session recall, Orbit agent memory grants, procedural (skill) proposals and the provenance UX. The open items below marked as next verticals are addressed there, and that document says which still remain. This record is preserved as written.
+
 The memory system already has substantial lifecycle and retrieval infrastructure. This milestone preserves it and fixes a reproduced correction/summary inconsistency. Production acceptance remains false in the existing canonical capability registry (`src/lib/capabilities.ts`).
 
 ## Current source audit
