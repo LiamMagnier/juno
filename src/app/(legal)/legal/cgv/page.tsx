@@ -120,11 +120,11 @@ export default function CgvPage() {
           <thead>
             <tr>
               <th scope="col">Offre</th>
-              <th scope="col">Volume d&apos;utilisation (Pro = 100)</th>
-              <th scope="col">Recherche web</th>
-              <th scope="col">Code, agents, recherche approfondie</th>
-              <th scope="col">Mode vocal</th>
-              <th scope="col">Fichiers jusqu&apos;à</th>
+              <th scope="col">Volume (Pro = 100)</th>
+              <th scope="col">Web</th>
+              <th scope="col">Code et agents</th>
+              <th scope="col">Voix</th>
+              <th scope="col">Fichiers</th>
             </tr>
           </thead>
           <tbody>
@@ -152,8 +152,10 @@ export default function CgvPage() {
           <strong>Offres payantes</strong> : chaque offre donne accès aux modèles indiqués sur la page
           d&apos;abonnement du Service. Lite donne accès aux modèles rapides du quotidien ; à partir de Pro,
           tous les modèles du catalogue ainsi que Code, les agents et la recherche approfondie sont
-          inclus. La colonne « volume d&apos;utilisation » compare le volume mensuel de chaque offre à celui
-          de l&apos;offre Pro.
+          inclus. La colonne « Volume » compare le volume d&apos;utilisation mensuel de chaque offre à celui
+          de l&apos;offre Pro (indice 100) ; « Web » désigne la recherche web, « Code et agents » le
+          produit Code, les agents et la recherche approfondie, « Voix » le mode vocal, et « Fichiers »
+          la taille maximale d&apos;un fichier envoyé.
         </li>
       </ul>
       <p>
@@ -436,8 +438,8 @@ export default function CgvPage() {
         vices cachés (articles 1641 à 1649 du code civil). Pour la mettre en œuvre, contactez le service
         client à <Fill value={SELLER.email} what="adresse e-mail du service client" />.
       </p>
-      <div className="mt-4 rounded-lg border border-border p-5">
-        <p className="mt-0">
+      <div className="mt-4 rounded-lg border border-border p-5 [&>p:first-child]:mt-0">
+        <p>
           Le consommateur a droit à la mise en œuvre de la garantie légale de conformité en cas
           d&apos;apparition d&apos;un défaut de conformité durant un délai de{" "}
           <strong>
@@ -659,8 +661,8 @@ export default function CgvPage() {
         (Veuillez compléter et renvoyer le présent formulaire uniquement si vous souhaitez vous rétracter
         du contrat.)
       </p>
-      <div className="mt-4 rounded-lg border border-border p-5">
-        <p className="mt-0">
+      <div className="mt-4 rounded-lg border border-border p-5 [&>p:first-child]:mt-0">
+        <p>
           À l&apos;attention de <Fill value={SELLER.name} what="raison sociale" />,{" "}
           <Fill value={SELLER.address} what="adresse postale" />, adresse électronique :{" "}
           <Fill value={SELLER.email} what="adresse e-mail du service client" /> :
