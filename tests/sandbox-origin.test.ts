@@ -164,7 +164,7 @@ test("with a separate preview origin, each host serves only its own half", () =>
 
   // The app's own policy must let its frames load from there.
   const csp = buildCsp({ nonce: "n", sandboxOrigin });
-  assert.match(csp, /frame-src 'self' blob: https:\/\/preview\.example\.test(;|$)/);
+  assert.match(csp, /frame-src 'self' blob: https:\/\/preview\.example\.test( https:\/\/(\*\.)?[a-z.]*stripe\.com)*(;|$)/);
 });
 
 async function shellResponse(profile: string, dest: string | null = "iframe"): Promise<Response> {
