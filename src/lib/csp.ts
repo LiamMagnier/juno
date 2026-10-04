@@ -25,10 +25,19 @@ export interface CspOptions {
   isDev?: boolean;
 }
 
+/**
+ * Stripe's embedded Checkout (the plans page pays inside Alevr, card, Apple
+ * Pay and Google Pay): the checkout frame and its API, from Stripe's own CSP
+ * guidance for embedded Checkout. Its script is loaded by our nonced code, so
+ * 'strict-dynamic' already admits it.
+ */
+export const STRIPE_CONNECT = ["https://api.stripe.com", "https://checkout.stripe.com"];
+export const STRIPE_FRAMES = ["https://js.stripe.com", "https://*.js.stripe.com", "https://checkout.stripe.com", "https://hooks.stripe.com"];
+
 export function buildCsp({ nonce, relayUrl, sandboxOrigin, isDev }: CspOptions): string {
   const allowEval = isDev ?? (process.env.NODE_ENV === "development");
-  const connect = ["'self'", relayUrl || null].filter(Boolean).join(" ");
-  const frames = ["'self'", "blob:", sandboxOrigin || null].filter(Boolean).join(" ");
+  const connect = ["'self'", relayUrl || null, ...STRIPE_CONNECT].filter(Boolean).join(" ");
+  const frames = ["'self'", "blob:", sandboxOrigin || null, ...STRIPE_FRAMES].filter(Boolean).join(" ");
   return [
     "default-src 'self'",
     // 'strict-dynamic' lets Next's nonced loader pull in its own chunks. The

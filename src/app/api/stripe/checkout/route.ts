@@ -11,6 +11,13 @@ const schema = z.object({
   plan: z.enum(["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"]),
   /** Defaults to monthly so an older client that omits it keeps working. */
   interval: z.enum(["month", "year"]).optional(),
+  /**
+   * Inside Alevr's own page (Stripe's embedded Checkout) rather than a
+   * redirect to Stripe's: the same session, the same VAT, consent and promo
+   * codes, answered with a client secret instead of a URL. Older clients omit
+   * it and keep the redirect.
+   */
+  embedded: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -78,11 +85,19 @@ export async function POST(req: Request) {
         message: subscriptionConsentMarkdown(env.appUrl),
       },
     },
-    success_url: `${env.appUrl}/chat?upgraded=1`,
-    cancel_url: `${env.appUrl}/upgrade`,
+    ...(parsed.data.embedded
+      ? {
+          ui_mode: "embedded_page" as const,
+          return_url: `${env.appUrl}/upgrade/welcome?session_id={CHECKOUT_SESSION_ID}`,
+        }
+      : {
+          success_url: `${env.appUrl}/chat?upgraded=1`,
+          cancel_url: `${env.appUrl}/upgrade`,
+        }),
     metadata: { userId: user.id, plan: parsed.data.plan, interval },
     subscription_data: { metadata: { userId: user.id } },
   });
 
+  if (parsed.data.embedded) return NextResponse.json({ clientSecret: session.client_secret });
   return NextResponse.json({ url: session.url });
 }

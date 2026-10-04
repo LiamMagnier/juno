@@ -9,6 +9,7 @@ import { AppPage } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { PlanOrbit } from "@/components/billing/plan-orbit";
 import { PlanCompare } from "@/components/billing/plan-compare";
+import { CheckoutSheet, inAppCheckoutAvailable } from "@/components/billing/checkout-sheet";
 import { usePriceLocale } from "@/components/billing/use-price-locale";
 import { Button } from "@/components/ui/button";
 import { MetalCta } from "@/components/effects/metal-cta";
@@ -19,7 +20,6 @@ import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
 import { capabilitiesLost, capabilityChanges } from "@/lib/billing/plan-capabilities";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import { cn } from "@/lib/utils";
 
 type BillingInterval = PriceInterval;
 
@@ -94,6 +94,11 @@ function MonthMeter({ pct }: { pct: number }) {
   );
 }
 
+/** A label mid-sentence: lower case, except the product's own names. */
+function inSentence(label: string): string {
+  return /^(Alevr|Deep Field|Orbit|Pro\b)/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
+}
+
 export function UpgradeView({
   currentPlan,
   features,
@@ -124,7 +129,13 @@ export function UpgradeView({
   });
   const selected = plans.includes(picked) ? picked : plans[plans.length - 1];
 
+  // In Alevr when the publishable key is configured, else Stripe's own page.
+  const [sheet, setSheet] = React.useState<Plan | null>(null);
   const checkout = async (plan: Plan) => {
+    if (inAppCheckoutAvailable) {
+      setSheet(plan);
+      return;
+    }
     setLoading(plan);
     try {
       const res = await fetch("/api/stripe/checkout", {
@@ -239,15 +250,26 @@ export function UpgradeView({
           {action}
         </div>
         {rank > 0 && reasons.length > 0 && (
-          <p key={selected} className="ed-stagger mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-ui text-muted-foreground">
-            {reasons.map((reason) => (
-              <span key={reason} className="flex items-center gap-2">
-                <span className="plans-dot" data-new aria-hidden />
-                {reason}
-              </span>
-            ))}
+          // Plain words, no marks: a reason is a fact, not a status.
+          <p key={selected} className="plans-roll mt-5 text-ui text-muted-foreground">
+            {reasons.length === 1
+              ? `${reasons[0]}.`
+              : `${reasons.slice(0, -1).join(", ")} and ${inSentence(reasons[reasons.length - 1])}.`}
           </p>
         )}
+        <button
+          type="button"
+          onClick={() =>
+            document.getElementById("plans-compare")?.scrollIntoView({
+              behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+              block: "start",
+            })
+          }
+          className="mt-4 flex items-center gap-1.5 rounded-control px-2 py-1 text-ui text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+        >
+          Compare all plans
+          <ChevronDown className="size-4" aria-hidden />
+        </button>
         {lost.length > 0 && (
           <p className="mt-5 text-caption text-muted-foreground">
             You would give up {lost.map((row) => row.label.split(":")[0].toLowerCase()).join(", ")}.
@@ -304,15 +326,19 @@ export function UpgradeView({
         <PlanOrbit plans={plans} selected={selected} current={currentPlan} priceOf={priceLabel} onSelect={setPicked} onKeyDown={onPlanKey} />
       </div>
 
-      <details className={cn(FAQ_DISCLOSURE, "mt-10")}>
-        <summary className="mx-auto flex w-fit cursor-pointer list-none items-center gap-2 rounded-control px-3 py-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
-          Compare all plans
-          <ChevronDown className="size-4 transition-transform duration-base ease-in-out group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
-        </summary>
-        <div className="mt-6">
+      <div className="plans-rule mt-14" aria-hidden />
+
+      <section id="plans-compare" className="scroll-mt-8 pt-14" aria-labelledby="plans-compare-title">
+        <h2 id="plans-compare-title" className="text-center font-serif text-[clamp(1.9rem,1.3rem+1.6vw,2.6rem)] font-normal leading-tight">
+          Every plan, side by side.
+        </h2>
+        <div className="mt-8">
           <PlanCompare plans={plans} selected={selected} current={currentPlan} priceOf={priceLabel} onSelect={setPicked} />
         </div>
-      </details>
+        <div className="mt-8 flex justify-center">
+          <div className="w-full sm:w-80">{action}</div>
+        </div>
+      </section>
 
       <div className="plans-rule mt-12" aria-hidden />
 
@@ -354,6 +380,12 @@ export function UpgradeView({
         </a>
         .
       </p>
+      <CheckoutSheet
+        plan={sheet}
+        interval={interval}
+        priceLine={sheet ? `${price(sheet).amount} ${interval === "year" ? "a month, billed yearly" : "a month"}. Cancel any time.` : ""}
+        onClose={() => setSheet(null)}
+      />
     </AppPage>
   );
 }

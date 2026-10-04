@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCsp } from "@/lib/csp";
+import { buildCsp, STRIPE_CONNECT, STRIPE_FRAMES } from "@/lib/csp";
 
 const NONCE = "0f3b2c11-0000-4000-8000-000000000000";
 const directives = (csp: string) =>
@@ -39,17 +39,24 @@ test("script-src never allows unsafe-eval", () => {
 
 test("the voice relay is allowed to connect only when configured", () => {
   const without = directives(buildCsp({ nonce: NONCE }));
-  assert.equal(without.get("connect-src"), "'self'");
+  assert.equal(without.get("connect-src"), `'self' ${STRIPE_CONNECT.join(" ")}`);
 
   const withRelay = directives(buildCsp({ nonce: NONCE, relayUrl: "wss://relay.example.test" }));
-  assert.equal(withRelay.get("connect-src"), "'self' wss://relay.example.test");
+  assert.equal(withRelay.get("connect-src"), `'self' wss://relay.example.test ${STRIPE_CONNECT.join(" ")}`);
 });
 
 test("an empty relay URL does not produce a dangling connect-src", () => {
   for (const relayUrl of ["", undefined]) {
     const d = directives(buildCsp({ nonce: NONCE, relayUrl }));
-    assert.equal(d.get("connect-src"), "'self'");
+    assert.equal(d.get("connect-src"), `'self' ${STRIPE_CONNECT.join(" ")}`);
   }
+});
+
+test("Stripe's embedded Checkout may load its frame and reach its API, and nothing wider", () => {
+  const d = directives(buildCsp({ nonce: NONCE }));
+  for (const origin of STRIPE_FRAMES) assert.ok(d.get("frame-src")!.split(" ").includes(origin), origin);
+  for (const origin of STRIPE_CONNECT) assert.ok(d.get("connect-src")!.split(" ").includes(origin), origin);
+  assert.ok(STRIPE_CONNECT.concat(STRIPE_FRAMES).every((o) => /^https:\/\/(\*\.)?[a-z.]*stripe\.com$/.test(o)));
 });
 
 test("violations have somewhere to go", () => {

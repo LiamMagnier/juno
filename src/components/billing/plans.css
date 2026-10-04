@@ -138,8 +138,8 @@
 /* The comparison's dots: included, not included, and how much. */
 .plans-dot { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: hsl(var(--foreground) / 0.85); }
 .plans-dot[data-off] { width: 4px; height: 4px; background: hsl(var(--foreground) / 0.18); }
-.plans-dot[data-new] { background: #2d49c9; box-shadow: 0 0 0 3px rgb(45 73 201 / 0.14); }
-.dark .plans-dot[data-new] { background: #97a6e6; box-shadow: 0 0 0 3px rgb(151 166 230 / 0.16); }
+.plans-dot[data-new] { background: #2d49c9; }
+.dark .plans-dot[data-new] { background: #97a6e6; }
 .plans-usage { display: inline-flex; gap: 2.5px; align-items: center; }
 .plans-usage > i { width: 4px; height: 4px; border-radius: 99px; background: hsl(var(--foreground) / 0.16); }
 .plans-usage > i[data-on] { background: hsl(var(--foreground) / 0.82); }
