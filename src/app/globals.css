@@ -1439,6 +1439,23 @@
       inset 0 1px 0 hsl(0 0% 100% / .06),
       0 1px 2px hsl(0 0% 0% / .4);
   }
+  /* The product switch (product-switch.tsx): Chat and Code named in the
+     greeting's serif at the ends of a dot-matrix orbit. The trail layer draws
+     its ring at zero ink so only the presence arc and its bloom show. */
+  .product-orbit-name {
+    font-family: var(--font-serif), Newsreader, serif;
+    font-size: 15.5px;
+    line-height: 20px;
+    letter-spacing: -0.01em;
+    font-optical-sizing: auto;
+    transition: color 200ms ease-out;
+  }
+  .product-orbit {
+    --dots-pitch: 2.4px;
+  }
+  .product-orbit-trail {
+    --dots-strength: 0;
+  }
   /* The same state on a trigger that owns its own `data-state`: the account
      row, whose "selected" is its menu being open. A className cannot read
      Radix's attribute, and the alternative is an arbitrary

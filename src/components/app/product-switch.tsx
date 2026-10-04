@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { motion, useReducedMotion, type MotionValue } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Lock } from "@/components/ui/icons";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
@@ -11,10 +11,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { PLANS, planRank } from "@/lib/plans";
 import { spring } from "@/lib/motion";
-import { useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
 import { BRAND, PRODUCT_NAME } from "@/lib/brand/names";
+import { DotRings } from "@/components/home/dot-construction";
+import type { ArcSpec, RingSpec } from "@/components/home/dot-scenes";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE ONE PRODUCT SWITCH.
@@ -179,23 +180,6 @@ export function ProductSwitch({
   // to scope it is not scoped.
   const thumbId = `${React.useId()}-product-thumb`;
   const thumbTransition = reduceMotion ? { duration: 0 } : spring.standard;
-  /*
-   * THE THUMB IS RUBBER, NOT A TILE (lib/micro.ts, `STRETCH`).
-   *
-   * `layoutId` already moves it, and a rigid box sliding 32px reads as a
-   * sprite being repositioned. Stretched 10% along the travel and squashed
-   * 6% across it, the same 32px reads as one object being pulled — the
-   * reference calls this dilation and runs it at 19%, which is right for a
-   * showcase and twice what a control pressed in the corner of a work tool
-   * should be doing.
-   *
-   * The counter lives HERE rather than on the segment, because the segment
-   * that receives the thumb has just mounted: its own first effect is the
-   * mount, which `useTravelSquash` deliberately swallows. The control
-   * persists across the change and is the only thing that can see it as a
-   * change.
-   */
-  const thumbSquash = useTravelSquash(PRODUCTS.findIndex((p) => p.id === active));
 
   if (collapsed) {
     return (
@@ -227,55 +211,71 @@ export function ProductSwitch({
 
   return (
     /*
-     * A LABELLED TWO-POSITION SWITCH, on its own row under the wordmark
-     * (premium pass, 2026-09-26).
+     * CHAT AND CODE AT THE TWO ENDS OF AN ORBIT (2026-10-04, owner).
      *
-     * It was a 64x28 pair of bare glyphs tucked into the header. Owners and
-     * new readers alike read it as two decorative icons: nothing said "this
-     * changes which product the column lists". Two equal cells with the word
-     * beside the mark cost one 36px row and remove the guesswork, which is the
-     * trade Claude's own Chat/Code switch makes.
+     * The two products are named in the greeting's serif at either end of
+     * one flattened orbit, drawn by the homepage's own dot engine
+     * (`DotRings`). The presence trajectory runs round the orbit to the
+     * product you are in and blooms there: round the FRONT going to Code,
+     * round the BACK coming home, the way the hero's trajectory travels.
+     * At rest the arc stays, so the row always says where you are.
      *
-     * Still LINKS (see the note at the top of the file), still one travelling
-     * raised thumb on a tonal track, still the plan gate and the chord in the
-     * tooltip. The track is full width so the two halves read as one object,
-     * and each cell is a 32px row, the same height as every row under it.
+     * Still LINKS (see the note at the top of the file), still the plan gate
+     * and the chord in the tooltip; the rail keeps its own track below.
      */
     <nav
       aria-label={`${PRODUCT_NAME} products`}
-      className="grid h-8 w-full shrink-0 grid-cols-2 gap-0.5 rounded-field bg-sidebar-accent/80 p-0.5 coarse:h-12"
+      className="flex h-8 w-full shrink-0 items-center gap-0.5 coarse:h-12"
     >
-      {PRODUCTS.map((product) => (
-        <Segment
-          key={product.id}
-          product={product}
-          active={product.id === active}
-          locked={isLocked(product, plan)}
-          thumbId={thumbId}
-          thumbTransition={thumbTransition}
-          thumbSquash={thumbSquash}
-          onNavigate={onNavigate}
-        />
-      ))}
+      <OrbitEnd product={PRODUCTS[0]} active={active === PRODUCTS[0].id} locked={isLocked(PRODUCTS[0], plan)} onNavigate={onNavigate} />
+      <OrbitTrack active={active} />
+      <OrbitEnd product={PRODUCTS[1]} active={active === PRODUCTS[1].id} locked={isLocked(PRODUCTS[1], plan)} onNavigate={onNavigate} />
     </nav>
   );
 }
 
-function Segment({
+/** One flattened orbit; the box is larger than the ring so the bloom is never cut square. */
+const ORBIT_RING: RingSpec[] = [{ cx: 0.5, cy: 0.5, rx: 0.34, ry: 0.17 }];
+/* Short trails, like the hero's trajectory: the last stretch of the way in. */
+const TRAIL_TO_CODE: ArcSpec[] = [{ ring: 0, from: 125, to: 0 }];
+const TRAIL_TO_CHAT: ArcSpec[] = [{ ring: 0, from: -55, to: -180 }];
+const REST_CHAT: ArcSpec[] = [{ ring: 0, from: 110, to: 180 }];
+const REST_CODE: ArcSpec[] = [{ ring: 0, from: 70, to: 0 }];
+
+/**
+ * The orbit between the two names. The ring holds still; over it the
+ * trajectory layer is remounted on each change of product (its clock restarts)
+ * with its own ring drawn at zero ink, so only the blue arc and its bloom show.
+ */
+function OrbitTrack({ active }: { active: ProductSurface }) {
+  const reduceMotion = useReducedMotion() ?? false;
+  const [turn, setTurn] = React.useState(0);
+  const seen = React.useRef(active);
+  React.useEffect(() => {
+    if (seen.current === active) return;
+    seen.current = active;
+    setTurn((n) => n + 1);
+  }, [active]);
+  const arcs = turn === 0 ? (active === "code" ? REST_CODE : REST_CHAT) : active === "code" ? TRAIL_TO_CODE : TRAIL_TO_CHAT;
+  return (
+    <span aria-hidden="true" className="product-orbit relative -mx-1.5 -my-2 h-12 w-[84px] shrink-0">
+      <DotRings rings={ORBIT_RING} animate={false} />
+      <span className="product-orbit-trail absolute inset-0">
+        <DotRings key={turn} rings={ORBIT_RING} arcs={arcs} animate={!reduceMotion && turn > 0} delay={0} stagger={0} draw={0.62} />
+      </span>
+    </span>
+  );
+}
+
+function OrbitEnd({
   product,
   active,
   locked,
-  thumbId,
-  thumbTransition,
-  thumbSquash,
   onNavigate,
 }: {
   product: Product;
   active: boolean;
   locked: boolean;
-  thumbId: string;
-  thumbTransition: object;
-  thumbSquash: { scaleX: MotionValue<number>; scaleY: MotionValue<number> };
   onNavigate?: () => void;
 }) {
   const chord = useChordLabel(product.chord);
@@ -288,45 +288,17 @@ function Segment({
           aria-current={active ? "page" : undefined}
           aria-label={accessibleName(product, locked)}
           className={cn(
-            // `.pressable` carries the press dip AND the colour transitions
-            // (globals.css); a `transition-colors` after it would override the
-            // shorthand and un-animate the press.
-            "pressable group relative flex h-full min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-ui font-medium",
+            "pressable product-orbit-name relative flex h-7 shrink-0 items-center gap-1 rounded-control px-1.5",
             "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
             locked
-              ? "text-muted-foreground/80 hover:text-muted-foreground"
+              ? "text-muted-foreground/70 hover:text-muted-foreground"
               : active
                 ? "text-foreground"
-                : "text-muted-foreground hover:bg-sidebar-hover/70 hover:text-foreground",
+                : "text-muted-foreground/70 hover:text-foreground",
           )}
         >
-          {active && (
-            // The raised cell: lifted out of its own track, which is the
-            // segmented-control idiom and deliberately not the sidebar row's
-            // deeper fill. The carriage travels (`layoutId`); the body inside
-            // it deforms (`useTravelSquash`). One node cannot do both.
-            <motion.span
-              layoutId={thumbId}
-              aria-hidden="true"
-              transition={thumbTransition}
-              className="absolute inset-0"
-              style={{ borderRadius: 8 }}
-            >
-              <motion.span
-                aria-hidden="true"
-                style={{ ...thumbSquash, borderRadius: 8 }}
-                className="product-switch-thumb block size-full"
-              />
-            </motion.span>
-          )}
-          {/* A locked surface is SHOWN with a lock in place of its mark, so a
-              gated cell is exactly as wide as an open one. */}
-          {locked ? (
-            <Lock className="relative size-4 shrink-0" aria-hidden="true" />
-          ) : (
-            <SidebarMotionIcon kind={product.kind} className="relative size-4 shrink-0" />
-          )}
-          <span className="relative truncate">{product.label}</span>
+          {locked && <Lock className="size-3.5 shrink-0" aria-hidden="true" />}
+          {product.label}
         </Link>
       </TooltipTrigger>
       <TooltipContent side="bottom">
