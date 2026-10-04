@@ -144,7 +144,9 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
       SUM("costMicroUsd") AS "costSum",
       COUNT("costMicroUsd") AS "costN"
     FROM "RoutingOutcome"
-    WHERE "createdAt" >= ${since}
+    -- Prisma stores UTC wall time in a zone-less column; compare as such, so a
+    -- session time zone other than UTC cannot shift the window.
+    WHERE "createdAt" >= ${since.toISOString()}::timestamp
     GROUP BY "modelId", "taskClass"
   `);
   const table = new Map<string, EvidenceCell>();
