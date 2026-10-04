@@ -1,6 +1,7 @@
 import { hasRetired, isSupersededModel, MODELS, type ModelInfo } from "@/lib/models";
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
+import { geminiFlashRate, type TokenPrice } from "@/lib/scheduled-prices";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
 
@@ -34,6 +35,9 @@ const official = (i: number, o: number, ctx: number, speed: number, intelligence
 interface FamilyRule {
   hints: string[]; // ALL must be substrings of the lowercased providerModel id
   metric: ModelMetrics;
+  /** A published price with an end date: replaces metric's in/out rates with
+   *  the ones in force at the moment asked about (scheduled-prices.ts). */
+  scheduled?: (at: Date | number) => TokenPrice;
 }
 
 // Per-provider family rules, MOST SPECIFIC FIRST — covers every family in the
@@ -117,11 +121,11 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // Hints are AND'd (every() in familyMetric), so the old single row with all
     // three ids could never match anything: 3.8 and 3.7 fell to the generic
     // `flash` row ($0.30/$2.50) and 3.6 hit a $1.50/$9 row. Google's pricing
-    // page lists all three at $0.75/$3.75 through 2026-12-31 ($1.50/$7.50 from
-    // 2027-01-01).
-    { hints: ["3.8-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
-    { hints: ["3.7-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
-    { hints: ["3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 8) },
+    // page lists all three at $0.75/$3.75 through 2026-12-31 and $1.50/$7.50
+    // from 2027-01-01; `scheduled` swaps the rates at 00:00 UTC that day.
+    { hints: ["3.8-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9), scheduled: geminiFlashRate },
+    { hints: ["3.7-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9), scheduled: geminiFlashRate },
+    { hints: ["3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 8), scheduled: geminiFlashRate },
     // BEFORE "3.5-flash", which `gemini-3.5-flash-lite` also contains: the
     // Lite is a sixth of the price and the fastest model Google ships, and
     // matching it against the full Flash row would have priced it 5x over.
@@ -326,12 +330,15 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   longcat: metric(0.75, 2.95, 1_000_000, 6, 7),
 };
 
-function familyMetric(model: ModelInfo): ModelMetrics | null {
+function familyMetric(model: ModelInfo, at: Date | number): ModelMetrics | null {
   const id = model.providerModel.toLowerCase();
   const rules = FAMILY_RULES[model.provider];
   if (rules) {
     for (const rule of rules) {
-      if (rule.hints.every((h) => id.includes(h))) return rule.metric;
+      if (!rule.hints.every((h) => id.includes(h))) continue;
+      if (!rule.scheduled) return rule.metric;
+      const price = rule.scheduled(at);
+      return { ...rule.metric, inputUsdPerMTok: price.input, outputUsdPerMTok: price.output };
     }
   }
   return PROVIDER_DEFAULT[model.provider] ?? null;
@@ -374,8 +381,8 @@ function overlayBenchmark(base: ModelMetrics, bench: ModelBenchmark | undefined)
   return out;
 }
 
-export function getModelMetrics(model: ModelInfo): ModelMetrics {
-  const known = familyMetric(model);
+export function getModelMetrics(model: ModelInfo, at: Date | number = Date.now()): ModelMetrics {
+  const known = familyMetric(model, at);
   const base: ModelMetrics = known ?? {
     inputUsdPerMTok: model.cost === 3 ? 2 : model.cost === 2 ? 0.5 : 0.1,
     outputUsdPerMTok: model.cost === 3 ? 10 : model.cost === 2 ? 2 : 0.4,

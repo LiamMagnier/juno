@@ -79,10 +79,14 @@ behind them (24 while its price is 0, 28, 29, 30), plus row 5's capped residual.
 
 ## Remaining risks
 
-- **Gemini promo rates expire 2027-01-01.** The catalog bills Gemini 3.8 Flash at $0.75/$3.75; Google's
-  page says $1.50/$7.50 from January 2027 (Flash TTS $9 → $18 audio). The new TTS/STT/delegate prices
-  already use the 2027 figures; **the chat catalog (`model-metrics.ts`) must be updated before 1 Jan
-  2027** or Gemini chat will be billed at half cost.
+- ~~**Gemini promo rates expire 2027-01-01.**~~ **Fixed.** Gemini 3.6/3.7/3.8 Flash chat is now
+  date-aware in both rate tables (`src/lib/scheduled-prices.ts`, read by `pricing.ts` baseRate and
+  `model-metrics.ts`): $0.75/$3.75 before 2027-01-01 00:00 UTC, $1.50/$7.50 from then (Google's page,
+  re-read 2026-10-04; cached input follows at 10%, batch/flex at 50%). The profile-stats ledger repair
+  now recomputes each row at its own `createdAt`, so 2026 rows are not repriced up in 2027. Pinned by
+  `tests/gemini-promo-schedule.test.ts`. No other text model Juno routes to has a scheduled change
+  (Gemini Robotics ER 2 does, but it is not in the catalog); the Flash TTS rows already bill at 2027
+  rates.
 - **GPT-Live delegation** has no documented usage event; it is billed an effort-scaled estimate
   (≈$0.03–$0.14 per delegated turn) and topped up only if a Responses `usage` arrives. If OpenAI's real
   per-delegation cost runs higher (long contexts, several searches), it is under-billed. Check the

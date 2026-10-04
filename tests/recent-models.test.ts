@@ -21,8 +21,9 @@ test("Fable 5.1 cache discount does not reprice Fable 5", () => {
   assert.equal(tokenRate(model("anthropic:claude-fable-5")).cacheRead, 1);
 });
 test("Gemini Flash promotional rates include cache reads", () => {
+  // Pinned inside the promo window; gemini-promo-schedule.test.ts covers 2027.
   for (const version of ["3.6", "3.7", "3.8"]) {
-    const rate = tokenRate(model(`google:gemini-${version}-flash`));
+    const rate = tokenRate(model(`google:gemini-${version}-flash`), false, Date.UTC(2026, 9, 4));
     assert.equal(rate.input, 0.75);
     assert.equal(rate.output, 3.75);
     assert.ok(Math.abs(rate.cacheRead - 0.075) < 1e-9);

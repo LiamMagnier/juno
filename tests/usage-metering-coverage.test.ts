@@ -62,7 +62,8 @@ const METERED: Record<string, string> = {
   "src/lib/env.ts": "configuration only",
   "src/lib/media-params.ts": "request bodies only; the call is image-gen/video-gen/audio-gen",
   // ── streamChat callers
-  "src/app/api/chat/route.ts": "reserveSpend → recordSpend(chat) + tool fees + mid-stream guard",
+  "src/lib/chat/turn/run-turn.ts": "checkBudget → reserveSpend → GenerationAccumulator → recordTurnSpend(chat) + tool fees + mid-stream guard",
+  "src/lib/chat/turn/private-turn.ts": "checkBudget → reserveSpend → GenerationAccumulator → recordTurnSpend(chat), private turns included",
   "src/app/api/design/[artifactId]/edit/route.ts": "admitMeteredCall + recordSpend(chat) on every exit",
   "src/lib/memory.ts": "runUtilityPrompt: checkBudget gate, recordSpend(utility) per attempt; null user capped per day",
   "src/lib/preflight-triage.ts": "recordSpend(utility) per attempt; route checks budget",
@@ -85,12 +86,13 @@ const METERED: Record<string, string> = {
   // ── search
   "src/lib/search/search-engine.ts": "engines; fees billed by each caller below",
   "src/lib/web-search.ts": "meteredWebSearch bills each keyed engine; webSearch() itself has no production caller",
-  "src/lib/web/search.ts": "chat web_search: ToolFeeAccumulator → recordToolFees",
+  "src/lib/search/alevr/backends.ts": "each engine priced by enginePriceMicroUsd; alevrSearch returns costMicroUsd → chat web_search feeMicroUsd (ToolFeeAccumulator → recordToolFees) and research searchTheWeb (research ledger)",
   // ── proxies and runners
   "src/app/api/agent/[...path]/route.ts": "plan + month + window gate, output cap, recordSpend(code) on every ending",
   "scripts/work-runner.ts": "WorkBudgetGuard (always priced) → recordWorkRunSpend; web search via meteredWebSearch",
   // ── operator scripts (never run per user)
   "scripts/check-gemini-live-auth.ts": "OPERATOR: manual diagnostic",
+  "scripts/eval-juno.ts": "OPERATOR: manual eval harness, run by the owner",
   "scripts/check-provider-keys.ts": "OPERATOR: manual diagnostic",
   "scripts/check-search-providers.ts": "OPERATOR: manual diagnostic",
   "scripts/probes/wire.ts": "OPERATOR: manual probe",
